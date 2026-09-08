@@ -109,23 +109,6 @@
           "output": 50,
           "cache_read": 1,
           "cache_write": 12.5
-        },
-        "experimental": {
-          "modes": {
-            "fast": {
-              "cost": {
-                "input": 20,
-                "output": 100,
-                "cache_read": 2,
-                "cache_write": 25
-              },
-              "provider": {
-                "body": {
-                  "service_tier": "priority"
-                }
-              }
-            }
-          }
         }
       }
     }

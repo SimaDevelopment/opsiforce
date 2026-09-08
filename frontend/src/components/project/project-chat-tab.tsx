@@ -99,7 +99,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         <PlatformProvider value={platform}>
           <AppBaseProviders>
             <AppInterface defaultServer={serverKey} servers={[server]} router={router}>
-              <OpencodeOverrides />
+              <OpencodeOverrides server={server} />
               <OpenCodeEventBridge server={server} onIdle={() => props.onAgentIdle()} onTitle={onTitle} />
             </AppInterface>
           </AppBaseProviders>
