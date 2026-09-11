@@ -10,7 +10,12 @@ import {
 import { randomUUID } from 'crypto';
 import { basename, extname } from 'path';
 import { isConvertibleToPdf, MAX_CONVERTIBLE_BYTES } from './convertible-formats';
-import { ConversionFailure, type ConversionOutcome, ConversionStatus, type ConversionStatusResponse } from './file-conversion.types';
+import {
+  ConversionFailure,
+  type ConversionOutcome,
+  ConversionStatus,
+  type ConversionStatusResponse,
+} from './file-conversion.types';
 import { GotenbergService } from './gotenberg.service';
 import { WorkspaceFileService } from './workspace-file.service';
 
@@ -98,7 +103,8 @@ export class FileConversionService implements OnModuleDestroy {
 
   result(projectId: string, directory: string, jobId: string): ConversionResult {
     const job = this.find(projectId, directory, jobId);
-    if (job.status !== ConversionStatus.Complete || !job.pdf) throw new NotFoundException('Conversion result not ready');
+    if (job.status !== ConversionStatus.Complete || !job.pdf)
+      throw new NotFoundException('Conversion result not ready');
     return { name: `${basename(job.name, extname(job.name))}.pdf`, pdf: job.pdf };
   }
 

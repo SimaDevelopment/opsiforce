@@ -1,0 +1,10 @@
+{
+  "id": "msg_01k6b2y7c9e0f1a2b3c4d5ed",
+  "time": { "created": 1757404812744, "completed": 1757404813902 },
+  "type": "shell",
+  "shellID": "sh_6b1d20fa",
+  "command": "yarn workspace @opsiforce/backend run ts",
+  "status": "exited",
+  "exit": 0,
+  "output": { "output": "Done in 8.42s\n", "cursor": 15, "size": 15, "truncated": false }
+}

@@ -1,11 +1,6 @@
 import { Match, Switch, createEffect, createSignal, on, onCleanup } from 'solid-js';
 import { ApiError } from '~/api/client';
-import {
-  fileConversionResultUrl,
-  readFileConversion,
-  startFileConversion,
-  type ConversionFailure,
-} from '~/api/files';
+import { fileConversionResultUrl, readFileConversion, startFileConversion, type ConversionFailure } from '~/api/files';
 import { FileDownloadCard } from './file-download-card';
 import { FilePreviewNotice } from './file-preview-notice';
 import { FileRenderedPreview } from './file-rendered-preview';

@@ -1,0 +1,16 @@
+{
+  "id": "evt_01K4Z7U13QW2N6M8B4V0H5R7C",
+  "created": 1757490003250,
+  "type": "session.text.ended",
+  "durable": {
+    "aggregateID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "seq": 14,
+    "version": 1
+  },
+  "data": {
+    "sessionID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "assistantMessageID": "msg_01K4Z7T6B3DK9E4G7H0J2L5N8Q",
+    "ordinal": 0,
+    "text": "I will add the route to the Fastify app."
+  }
+}

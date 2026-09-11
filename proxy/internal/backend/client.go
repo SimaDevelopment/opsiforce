@@ -47,6 +47,26 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("backend control plane returned status %d", e.StatusCode)
 }
 
+var ForwardedIdentityHeaders = []string{
+	"x-forwarded-user",
+	"x-forwarded-email",
+	"x-forwarded-preferred-username",
+	"x-forwarded-groups",
+}
+
+var ForwardedIdentityCacheHeaders = []string{
+	"x-forwarded-user",
+	"x-forwarded-groups",
+}
+
+func forwardIdentity(out http.Header, in http.Header) {
+	for _, name := range ForwardedIdentityHeaders {
+		if value := in.Get(name); value != "" {
+			out.Set(name, value)
+		}
+	}
+}
+
 type Client struct {
 	baseURL string
 	token   string
@@ -83,10 +103,7 @@ func (c *Client) Ensure(ctx context.Context, projectID string, surface Surface, 
 
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-proxy-control-token", c.token)
-
-	if groups := headers.Get("x-forwarded-groups"); groups != "" {
-		req.Header.Set("x-forwarded-groups", groups)
-	}
+	forwardIdentity(req.Header, headers)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

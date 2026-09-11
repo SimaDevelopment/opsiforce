@@ -43,7 +43,7 @@ interface PendingMove {
   toName: string;
 }
 
-export default function ProjectActionsMenu(props: {
+export function ProjectActionsMenu(props: {
   projectId: string;
   status: Project['status'];
   workspaceId: string | null;
@@ -68,6 +68,7 @@ export default function ProjectActionsMenu(props: {
   const canDisable = () => hasPermission(Permission.disableProject);
   const canRestart = () => hasPermission(Permission.restartProject);
   const canDuplicate = () => hasPermission(Permission.duplicateProject);
+  const canDelete = () => hasPermission(Permission.deleteProject);
   const canExport = () => hasPermission(Permission.exportProject);
   const canManageWorkspaces = () => hasPermission(Permission.manageWorkspaces);
   const isDisabled = () => props.status === 'disabled';
@@ -268,14 +269,16 @@ export default function ProjectActionsMenu(props: {
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           </Show>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            class="text-destructive data-[highlighted]:text-destructive"
-            onSelect={() => setConfirmAction('delete')}
-          >
-            <Trash2 class="w-3.5 h-3.5" />
-            Delete
-          </DropdownMenuItem>
+          <Show when={canDelete()}>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              class="text-destructive data-[highlighted]:text-destructive"
+              onSelect={() => setConfirmAction('delete')}
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              Delete
+            </DropdownMenuItem>
+          </Show>
         </DropdownMenuContent>
       </DropdownMenu>
 

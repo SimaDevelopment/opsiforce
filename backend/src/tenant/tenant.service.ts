@@ -33,8 +33,7 @@ export class TenantService {
   resolveAccessibleTenantNames(groupsHeader: string | undefined): string[] {
     const header = groupsHeader ?? '';
     const defaultTenantName = getDefaultTenantName();
-    const groupTenants =
-      mapGroupsToTenants(header) ?? this.parseGroupsByPrefix(header, OPSIFORCE_TENANT_GROUP_PREFIX);
+    const groupTenants = mapGroupsToTenants(header) ?? this.parseGroupsByPrefix(header, OPSIFORCE_TENANT_GROUP_PREFIX);
     return defaultTenantName ? [...new Set([defaultTenantName, ...groupTenants])] : groupTenants;
   }
 

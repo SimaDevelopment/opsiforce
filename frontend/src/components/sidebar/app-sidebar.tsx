@@ -62,7 +62,7 @@ export function AppSidebar() {
       navigate({
         to: '/projects/$projectId',
         params: { projectId: project.id },
-        search: { prompt: undefined },
+        search: { prompt: undefined, promptId: undefined },
       });
     } catch {
       toast.error('Failed to create project');

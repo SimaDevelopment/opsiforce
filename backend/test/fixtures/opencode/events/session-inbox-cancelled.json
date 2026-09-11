@@ -1,0 +1,14 @@
+{
+  "id": "evt_01K4Z7U06QW2N6M8B4V0H5R7C",
+  "created": 1757490001500,
+  "type": "session.inbox.cancelled",
+  "durable": {
+    "aggregateID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "seq": 7,
+    "version": 1
+  },
+  "data": {
+    "sessionID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "inboxID": "msg_01K4Z7T5A2CJ8D3F6G9H1K4M7P"
+  }
+}

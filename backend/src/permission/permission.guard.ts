@@ -1,6 +1,7 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, SetMetadata } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { getGroupsHeader, hasPermission } from './permission.utils';
+import { MissingPermissionException } from './missing-permission.exception';
 
 const REQUIRED_PERMISSION_KEY = 'requiredPermission';
 
@@ -19,7 +20,7 @@ export class PermissionGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     if (!hasPermission(getGroupsHeader(request), permission)) {
-      throw new ForbiddenException(`Missing permission: ${permission}`);
+      throw new MissingPermissionException(permission);
     }
 
     return true;

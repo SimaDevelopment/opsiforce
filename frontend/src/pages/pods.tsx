@@ -139,7 +139,7 @@ export function PodsPage() {
                               <Link
                                 to="/projects/$projectId"
                                 params={{ projectId: group.projectId }}
-                                search={{ prompt: undefined }}
+                                search={{ prompt: undefined, promptId: undefined }}
                                 class="inline-flex items-center justify-center w-6 h-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                                 aria-label="Open project"
                               >

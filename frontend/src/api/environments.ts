@@ -105,15 +105,27 @@ export function useProjectEnvironments(projectId: () => string, options?: { enab
   }));
 }
 
-export function useSetEnvironmentSession() {
+export interface OpencodeConnection {
+  environmentId: string;
+  baseUrl: string;
+  openapiUrl: string;
+  sessionId: string;
+  build: string | null;
+}
+
+export function useConnectEnvironment() {
   const qc = useQueryClient();
-  return (projectId: string, environmentId: string, sessionId: string | null) => {
-    qc.setQueryData<ProjectEnvironment[]>(environmentKeys.forProject(projectId), (prev) =>
-      prev?.map((e) => (e.id === environmentId ? { ...e, sessionId } : e))
+  return async (projectId: string, environmentId: string, signal?: AbortSignal): Promise<OpencodeConnection> => {
+    const connection = await api.post<OpencodeConnection>(
+      `/projects/${projectId}/environments/${environmentId}/connect`,
+      undefined,
+      { signal }
     );
-    api
-      .patch<{ ok: true }>(`/projects/${projectId}/environments/${environmentId}/session`, { sessionId })
-      .catch(() => {});
+    signal?.throwIfAborted();
+    qc.setQueryData<ProjectEnvironment[]>(environmentKeys.forProject(projectId), (prev) =>
+      prev?.map((e) => (e.id === environmentId ? { ...e, sessionId: connection.sessionId } : e))
+    );
+    return connection;
   };
 }
 

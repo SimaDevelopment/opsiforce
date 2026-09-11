@@ -185,7 +185,7 @@ export function ProjectSidebar(props: { search: string }) {
     navigate({
       to: '/projects/$projectId',
       params: { projectId },
-      search: { prompt: undefined },
+      search: { prompt: undefined, promptId: undefined },
     });
 
   const handleCreateInWorkspace = async (workspaceId: string, agentId?: string, folderId?: string) => {

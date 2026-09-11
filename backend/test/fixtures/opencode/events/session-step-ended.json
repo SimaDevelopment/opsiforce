@@ -1,0 +1,28 @@
+{
+  "id": "evt_01K4Z7U09QW2N6M8B4V0H5R7C",
+  "created": 1757490002250,
+  "type": "session.step.ended",
+  "durable": {
+    "aggregateID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "seq": 10,
+    "version": 1
+  },
+  "data": {
+    "sessionID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "assistantMessageID": "msg_01K4Z7T6B3DK9E4G7H0J2L5N8Q",
+    "finish": "stop",
+    "rawFinish": "end_turn",
+    "cost": 0.0421,
+    "tokens": {
+      "input": 18432,
+      "output": 742,
+      "reasoning": 0,
+      "cache": {
+        "read": 16384,
+        "write": 2048
+      }
+    },
+    "snapshot": "snp_01K4Z7T8D5FM1G6J9K2L4N7Q0S",
+    "files": ["src/health.ts"]
+  }
+}

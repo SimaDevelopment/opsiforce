@@ -1,1 +1,3 @@
 dist/
+.vite-cache/
+.vitest

@@ -12,6 +12,10 @@ export interface UserIdentity {
   displayName?: string;
 }
 
+export interface GetOrCreateUserOptions {
+  skipPrivateWorkspace?: boolean;
+}
+
 export interface UserRecord {
   id: string;
   keycloakId: string;
@@ -41,22 +45,32 @@ export class UserService {
     private readonly workspaceService: WorkspaceService
   ) {}
 
-  async getOrCreateUser(identity: UserIdentity, tenantId?: string): Promise<UserRecord> {
+  async getOrCreateUser(
+    identity: UserIdentity,
+    tenantId?: string,
+    options: GetOrCreateUserOptions = {}
+  ): Promise<UserRecord> {
     const cacheKey = tenantId ? `${identity.keycloakId}:${tenantId}` : identity.keycloakId;
     const pending = this.pendingUsers.get(cacheKey);
     if (pending) return pending;
 
-    const promise = this.doGetOrCreateUser(identity, tenantId).finally(() => this.pendingUsers.delete(cacheKey));
+    const promise = this.doGetOrCreateUser(identity, tenantId, options).finally(() =>
+      this.pendingUsers.delete(cacheKey)
+    );
     this.pendingUsers.set(cacheKey, promise);
     return promise;
   }
 
-  private async doGetOrCreateUser(identity: UserIdentity, tenantId?: string): Promise<UserRecord> {
+  private async doGetOrCreateUser(
+    identity: UserIdentity,
+    tenantId?: string,
+    options: GetOrCreateUserOptions = {}
+  ): Promise<UserRecord> {
     const [existing] = await db.select().from(users).where(eq(users.keycloakId, identity.keycloakId));
 
     if (existing) {
-      const newEmail = identity.email ?? null;
-      const newDisplayName = identity.displayName ?? null;
+      const newEmail = identity.email ?? existing.email;
+      const newDisplayName = identity.displayName ?? existing.displayName;
       const profileChanged = existing.email !== newEmail || existing.displayName !== newDisplayName;
       const now = new Date();
       await db
@@ -69,7 +83,9 @@ export class UserService {
         .where(eq(users.keycloakId, identity.keycloakId));
       if (tenantId) {
         await this.ensureUserTenant(existing.id, tenantId);
-        await this.workspaceService.ensurePrivateWorkspace(existing.id, tenantId);
+        if (!options.skipPrivateWorkspace) {
+          await this.workspaceService.ensurePrivateWorkspace(existing.id, tenantId);
+        }
       }
       return {
         ...existing,
@@ -95,7 +111,9 @@ export class UserService {
 
     if (tenantId) {
       await this.ensureUserTenant(user.id, tenantId);
-      await this.workspaceService.ensurePrivateWorkspace(user.id, tenantId);
+      if (!options.skipPrivateWorkspace) {
+        await this.workspaceService.ensurePrivateWorkspace(user.id, tenantId);
+      }
     }
 
     if (created) this.logger.log(`Created user ${user.email ?? user.keycloakId}`);

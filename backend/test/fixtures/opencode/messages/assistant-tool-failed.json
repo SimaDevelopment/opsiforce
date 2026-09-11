@@ -1,0 +1,29 @@
+{
+  "id": "msg_01k6b2y7c9e0f1a2b3c4d5f2",
+  "time": { "created": 1757404823010, "completed": 1757404824551 },
+  "type": "assistant",
+  "agent": "build",
+  "model": { "providerID": "opsiforce", "id": "claude-opus-5" },
+  "content": [
+    {
+      "type": "tool",
+      "id": "tool_9a2c42",
+      "name": "bash",
+      "executed": true,
+      "state": {
+        "status": "error",
+        "input": { "command": "yarn test" },
+        "error": { "type": "ToolError", "message": "command exited with 1" },
+        "content": [{ "type": "text", "text": "1 test failed" }]
+      },
+      "time": { "created": 1757404823100, "ran": 1757404823105, "completed": 1757404824400 }
+    }
+  ],
+  "finish": "error",
+  "error": { "type": "ProviderError", "message": "upstream returned 529", "status": 529 },
+  "retry": {
+    "attempt": 2,
+    "at": 1757404824500,
+    "error": { "type": "ProviderError", "message": "upstream returned 529", "status": 529 }
+  }
+}

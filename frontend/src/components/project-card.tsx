@@ -4,7 +4,7 @@ import type { Project } from '~/api/client';
 import { cn } from '~/lib/cn';
 import { projectDisplayTitle } from '~/lib/project-display';
 import { EnvironmentBadges } from './project/environment-badges';
-import ProjectActionsMenu from './project-actions-menu';
+import { ProjectActionsMenu } from './project-actions-menu';
 import Spinner from '~/components/ui/spinner';
 
 export function ProjectCard(props: {

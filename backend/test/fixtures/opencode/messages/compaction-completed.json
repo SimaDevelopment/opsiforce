@@ -1,0 +1,9 @@
+{
+  "type": "compaction",
+  "id": "msg_01k6b2y7c9e0f1a2b3c4d5f0",
+  "time": { "created": 1757404821440 },
+  "status": "completed",
+  "reason": "auto",
+  "summary": "The session added a /health endpoint and a database probe.",
+  "recent": "msg_01k6b2y7c9e0f1a2b3c4d5ee"
+}

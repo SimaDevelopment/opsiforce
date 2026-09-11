@@ -1,13 +1,14 @@
-import { Module } from '@nestjs/common';
+import { Global, Module, forwardRef } from '@nestjs/common';
+import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { PodModule } from '../pod/pod.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
-import { ProxyService } from '../proxy/proxy.service';
 import { AgentStatusService } from './agent-status.service';
 import { ProjectEventsModule } from './project-events.module';
 
+@Global()
 @Module({
-  imports: [ProjectEventsModule, ProjectEnvironmentModule, PodModule],
-  providers: [AgentStatusService, ProxyService],
+  imports: [ProjectEventsModule, ProjectEnvironmentModule, PodModule, forwardRef(() => AgentSessionModule)],
+  providers: [AgentStatusService],
   exports: [AgentStatusService],
 })
 export class AgentStatusModule {}

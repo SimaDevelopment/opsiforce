@@ -254,7 +254,9 @@ export class PlatformStorageSnapshotService {
     return [...tenantIds]
       .map((tenantId) => {
         const projectViews = [
-          ...(environmentsByTenantProject.get(tenantId) ?? new Map<string, PlatformStorageEnvironmentView[]>()).entries(),
+          ...(
+            environmentsByTenantProject.get(tenantId) ?? new Map<string, PlatformStorageEnvironmentView[]>()
+          ).entries(),
         ]
           .map(([projectId, environmentViews]) => ({
             id: projectId,
@@ -269,8 +271,7 @@ export class PlatformStorageSnapshotService {
         return {
           id: tenantId,
           name: tenantNames.get(tenantId) ?? tenantId,
-          totalBytes:
-            projectViews.reduce((total, project) => total + project.totalBytes, 0) + pendingDeletion.bytes,
+          totalBytes: projectViews.reduce((total, project) => total + project.totalBytes, 0) + pendingDeletion.bytes,
           error: projectViews.some((project) => project.error) || pendingDeletion.error,
           pendingDeletion,
           projects: projectViews,

@@ -1,0 +1,29 @@
+{
+  "id": "evt_01K4Z7U10QW2N6M8B4V0H5R7C",
+  "created": 1757490002500,
+  "type": "session.step.failed",
+  "durable": {
+    "aggregateID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "seq": 11,
+    "version": 1
+  },
+  "data": {
+    "sessionID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "assistantMessageID": "msg_01K4Z7T6B3DK9E4G7H0J2L5N8Q",
+    "error": {
+      "type": "ProviderRateLimit",
+      "message": "rate limit exceeded for anthropic/claude-opus-5",
+      "status": 429
+    },
+    "cost": 0.0031,
+    "tokens": {
+      "input": 18432,
+      "output": 742,
+      "reasoning": 0,
+      "cache": {
+        "read": 16384,
+        "write": 2048
+      }
+    }
+  }
+}

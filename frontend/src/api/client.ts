@@ -1,4 +1,9 @@
-const API_BASE = '/api';
+export const API_BASE = '/api';
+
+export function apiRelative(baseUrl: string): string {
+  const path = baseUrl.startsWith('http') ? new URL(baseUrl).pathname : baseUrl;
+  return path.startsWith(API_BASE) ? path.slice(API_BASE.length) : path;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -65,8 +70,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  post: <T>(path: string, body?: unknown, options?: Pick<RequestInit, 'signal'>) =>
     request<T>(path, {
+      ...options,
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
     }),

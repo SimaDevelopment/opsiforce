@@ -1,0 +1,9 @@
+{
+  "type": "compaction",
+  "id": "msg_01k6b2y7c9e0f1a2b3c4d5ef",
+  "time": { "created": 1757404819001 },
+  "status": "running",
+  "reason": "auto",
+  "summary": "",
+  "recent": ""
+}

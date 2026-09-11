@@ -1,0 +1,21 @@
+{
+  "id": "evt_01K4Z7U08QW2N6M8B4V0H5R7C",
+  "created": 1757490002000,
+  "type": "session.step.started",
+  "durable": {
+    "aggregateID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "seq": 9,
+    "version": 1
+  },
+  "data": {
+    "sessionID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "assistantMessageID": "msg_01K4Z7T6B3DK9E4G7H0J2L5N8Q",
+    "agent": "build",
+    "model": {
+      "id": "claude-opus-5",
+      "providerID": "anthropic",
+      "variant": "thinking"
+    },
+    "snapshot": "snp_01K4Z7T8D5FM1G6J9K2L4N7Q0S"
+  }
+}

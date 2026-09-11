@@ -13,6 +13,7 @@ yarn workspace @opsiforce/backend run ts        # tsc type-check
 yarn workspace @opsiforce/backend run lint       # one pass: applies safe autofixes, errors fail, warnings advisory
 yarn workspace @opsiforce/backend run format      # oxfmt rewrite (append --check for a CI dry run)
 yarn workspace @opsiforce/backend run check       # lint && ts — the pre-commit gate
+yarn workspace @opsiforce/backend run test        # Vitest; needs Docker (see [Testing](testing.md))
 ```
 
 `lint` is a single stack-tuned pass: the backend runs type-aware rules (`oxlint-tsgolint`) plus the `node`/`import`/`promise` plugins; the frontend runs `jsx-a11y` plus Solid and solid-query rules via oxlint `jsPlugins` (auto-discovered from `frontend/oxlint.config.ts`). The vendored `frontend/opencode/` tree is excluded.

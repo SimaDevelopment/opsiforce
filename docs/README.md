@@ -7,6 +7,7 @@
 - [Quickstart](quickstart.md) — what `yarn dev` does (macOS-only): the numbered steps, the two LLM choices, `--reset`, day-two re-runs, and the pinned-versions manifest
 - [Commands](development/commands.md) — type-check, lint, database, local ports (setup lives in [../README.md](../README.md))
 - [Local Orchestration](development/local-orchestration.md) — how `yarn dev` brings the stack up: the privileged tunnel, Tilt as the one-UI process orchestrator (in-cluster + host), and the static dev identity that lands you signed in
+- [Testing](development/testing.md) — the backend test suite: real Postgres via Testcontainers, a real pod client against a fake opencode pod, and what is faked
 - [Deployment](development/deployment.md) — CI/CD, the deploy-order dependency chain, rollout strategy
 - [Deploy to Azure (AKS)](development/deploy-azure.md) — the platform contract for self-hosting on Azure: VNet/AKS, Rook-Ceph storage, in-cluster operators, and Azure AI Foundry behind Bifrost
 
@@ -48,6 +49,11 @@
 - [External Services](external-services/overview.md) — the template every inbound service plugs into: the audience-first route tree and its dispatch, the identity discovery contract, ingest pipeline, per-environment SQLite storage, metering, the app doorbell
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment (Mailgun), lazily issued and agent-rotatable
 - [WhatsApp](external-services/whatsapp.md) — globally registered channels, per-environment chat allowlists, and onboarding a number
+
+**Public API** (`public-api/`) — the programmatic surface for the CLI, integrations and other Agents
+- [Public API](public-api/overview.md) — signing in as a program, the platform resources, connecting to an environment and then talking to its Agent in native opencode, Errors, the compatibility policy ([ADR-0038](adr/0038-chat-is-native-opencode-through-the-runtime-proxy.md), [ADR-0034](adr/0034-public-api-callers-are-idp-bearer-tokens-behind-a-caller.md), [ADR-0035](adr/0035-public-api-module-with-uri-versioning-and-additive-compat.md))
+- [Upgrading opencode](public-api/opencode-bump.md) — the runbook for moving the agent image to a new opencode build: the connection path, the prompt-stamp pattern, and the client/runtime pairing consumers depend on ([ADR-0036](adr/0036-agent-session-is-the-backends-only-door-to-a-pods-opencode-port.md))
+- [Consumer example](public-api/example/) — a runnable program that connects to a Project environment and chats with it using opencode's own client
 
 **Organization admin** (`organization/`)
 - [Settings](organization/settings.md) — the configuration surface (rail of gated sections) ([ADR-0014](adr/0014-admin-section-and-operational-view-module.md))

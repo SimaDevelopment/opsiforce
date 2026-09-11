@@ -135,7 +135,6 @@ body {
   z-index: 1000 !important;
 }
 
-
 .oc-chat-only header[data-slot='titlebar-v2'],
 .oc-chat-only button[aria-label='More options'],
 .oc-chat-only div[data-session-title] h1,
@@ -148,7 +147,12 @@ body {
   display: none !important;
 }
 
-.oc-chat-only [data-slot='session-chat-panel'] .h-12 > .shrink-0.flex.items-center.gap-2 [data-component='tooltip-v2-trigger'] > button {
+.oc-chat-only
+  [data-slot='session-chat-panel']
+  .h-12
+  > .shrink-0.flex.items-center.gap-2
+  [data-component='tooltip-v2-trigger']
+  > button {
   pointer-events: none;
 }
 

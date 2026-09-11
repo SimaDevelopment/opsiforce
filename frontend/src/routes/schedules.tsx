@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/solid-router';
-import SchedulesPage from '~/pages/schedules';
+import { SchedulesPage } from '~/pages/schedules';
 
 interface SchedulesSearch {
   environmentId?: string;
