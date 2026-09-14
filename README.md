@@ -4,7 +4,7 @@ Opsiforce is a self-hosted, multi-tenant **web platform** for building and runni
 
 It is meant to be an open alternative to products like Lovable, Base44, and AI coworker-style app builders, but with two different assumptions. First, building the app is only half the job. The platform should also **host and run** it, with a persistent runtime, live HTTPS URLs, and multiple environments, instead of generating code you then have to deploy and operate yourself. Second, the generated app should not be locked to one frontend framework, one backend runtime, or one database. Each app runs in a generic container with a persistent filesystem, project-level credentials, environment-specific configuration, and HTTPS routes managed by the platform.
 
-Community: [Join the Opsiforce Discord](https://discord.gg/kMUW2zR4R)
+Community: [Join the Opsiforce Discord](https://discord.gg/EG75jYgPR)
 
 ## Demo
 
