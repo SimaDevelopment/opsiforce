@@ -112,6 +112,7 @@ spec:
                 {{- end }}
                 - --skip-auth-route=GET=^/manifest.webmanifest$
                 - --skip-auth-route=GET=^/api/v1/openapi.json$
+                - --skip-auth-route=GET=^/api/v1/runtime/openapi.json$
                 - --skip-auth-route=GET=^/api/v1/docs(/.*)?$
                 - --api-route=^/api/(v1|proxy)/
                 - --skip-auth-route=POST=^/api/external-services/webhooks/.*$
