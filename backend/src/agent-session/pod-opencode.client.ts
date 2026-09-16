@@ -57,11 +57,11 @@ export class PodOpencodeClient {
     let oldest: SessionInfo | null = null;
     let path: string | null = '/api/session?parentID=null&order=asc';
     for (let pages = 0; path !== null; pages += 1) {
-      if (pages >= maxPages) {
-        throw new PodTimeout(`Root session list did not end within ${maxPages} pages; refusing to bind a partial scan`);
-      }
       const page: SessionPage = await this.call<SessionPage>(upstream, path, options);
       const roots = (page.data ?? []).filter(isRootSession);
+      if (roots.length > 0 && pages >= maxPages) {
+        throw new PodTimeout(`Root session list did not end within ${maxPages} pages; refusing to bind a partial scan`);
+      }
       for (const root of roots) if (oldest === null || createdBefore(root, oldest)) oldest = root;
       const next = page.cursor?.next ?? null;
       path = roots.length === 0 || next === null ? null : `/api/session?cursor=${encodeURIComponent(next)}`;

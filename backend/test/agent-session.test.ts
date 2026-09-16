@@ -342,6 +342,18 @@ describe('resolving the primary session', () => {
     expect(error).toBeInstanceOf(PodTimeout);
   });
 
+  it('lets the terminal empty page through when every root fits inside the page budget', async () => {
+    for (let i = 0; i < 49; i += 1) pod.addSession({ time: { created: 10_000 + i, updated: 10_000 + i } });
+    const oldest = pod.addSession({ time: { created: 1_000, updated: 99_000 } });
+    const client = harness.moduleRef.get(PodOpencodeClient);
+    const listed = callsSince('session.list');
+
+    const found = await client.oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 });
+
+    expect(found?.id).toBe(oldest.id);
+    expect(listed()).toBe(2);
+  });
+
   it('never adopts a child session as the primary one', async () => {
     const env = await createRunningProject();
     const root = pod.addSession({ time: { created: 5_000, updated: 5_000 } });
