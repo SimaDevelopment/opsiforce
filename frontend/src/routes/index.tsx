@@ -9,6 +9,7 @@ import { EXAMPLES, type Example } from '~/data/examples';
 import { ArrowUp, LoaderCircle, Upload } from '~/components/icons';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
 import { cn } from '~/lib/cn';
+import { opencodeMessageId } from '~/lib/opencode-id';
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -50,7 +51,7 @@ function HomePage() {
     navigate({
       to: '/projects/$projectId',
       params: { projectId: project.id },
-      search: { prompt: text || undefined },
+      search: text ? { prompt: text, promptId: opencodeMessageId() } : { prompt: undefined, promptId: undefined },
     });
   };
 

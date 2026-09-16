@@ -1,0 +1,11 @@
+{
+  "id": "evt_01K4Z7U12QW2N6M8B4V0H5R7C",
+  "created": 1757490003000,
+  "type": "session.text.delta",
+  "data": {
+    "sessionID": "ses_01K4Z7T3X9QW2N6M8B4V0H5R7C",
+    "assistantMessageID": "msg_01K4Z7T6B3DK9E4G7H0J2L5N8Q",
+    "ordinal": 0,
+    "delta": "I will add the route"
+  }
+}

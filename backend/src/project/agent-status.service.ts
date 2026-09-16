@@ -1,14 +1,12 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, forwardRef } from '@nestjs/common';
+import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
-import { ProxyService } from '../proxy/proxy.service';
 import { ProjectEventsService } from './project-events.service';
 import { AgentStatus, ProjectStatus } from './project.types';
 
-const RECONCILE_PROBE_TIMEOUT_MS = 3 * 1000;
 const RECONCILE_RETRY_BASE_MS = 5 * 1000;
 const RECONCILE_RETRY_MAX_MS = 60 * 1000;
-
 
 @Injectable()
 export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -20,7 +18,8 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
   constructor(
     private readonly projectEvents: ProjectEventsService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
-    private readonly proxyService: ProxyService
+    @Inject(forwardRef(() => AgentSessionGateway))
+    private readonly agentSessions: AgentSessionGateway
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -55,15 +54,9 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async reconcileEnvironment(env: ProjectEnvironmentContext): Promise<boolean> {
-    const upstream = this.proxyService.resolveUpstreamForProject(env);
-    const res = await fetch(`${upstream}/api/session/active`, {
-      signal: AbortSignal.timeout(RECONCILE_PROBE_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`status snapshot returned ${res.status}`);
-    const snapshot = (await res.json()) as { data?: Record<string, { type?: string }> };
-    const working = Object.keys(snapshot.data ?? {}).length > 0;
-    if (working) this.setWorking(env.projectId, env.id, true);
-    return working;
+    const { busy } = await this.agentSessions.activeSessions(env);
+    if (busy) this.setWorking(env.projectId, env.id, true);
+    return busy;
   }
 
   private scheduleReconcileRetry(envId: string): void {

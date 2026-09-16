@@ -59,7 +59,9 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
 
   const coverBootUntilComposerPaints = () => {
     const composerPainted = () =>
-      !!embedHost.querySelector('[data-component="composer-editor"][contenteditable="true"], [contenteditable="true"], textarea');
+      !!embedHost.querySelector(
+        '[data-component="composer-editor"][contenteditable="true"], [contenteditable="true"], textarea'
+      );
     const settle = () => {
       observer.disconnect();
       clearTimeout(maxTimer);
@@ -105,7 +107,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
           </AppBaseProviders>
         </PlatformProvider>
       ),
-      embedHost,
+      embedHost
     );
 
   return (

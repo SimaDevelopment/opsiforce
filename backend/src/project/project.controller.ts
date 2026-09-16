@@ -9,11 +9,11 @@ import {
   Param,
   Req,
   Res,
-  BadRequestException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { withConnectionCancellation } from '../common/connection-cancellation';
 import { ProjectService } from './project.service';
 import {
   CreateProjectDto,
@@ -21,7 +21,6 @@ import {
   DuplicateProjectDto,
   UpdateProjectAuthDto,
   UpdateProjectLoggingDto,
-  SetEnvironmentSessionDto,
   UpdateAppDto,
   UpdateProjectPodClassDto,
 } from './project.types';
@@ -32,7 +31,11 @@ import { UserService } from '../user/user.service';
 import { RequirePermission } from '../permission/permission.guard';
 import { Perms } from '../permission/permission.constants';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
+import { isServiceAccountRequest } from '../identity/forwarded-identity.service';
 import { ProjectEventsService } from './project-events.service';
+import { AgentConnectionService } from '../agent-session/agent-connection.service';
+import type { AgentConnection } from '../agent-session/agent-session.types';
+import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../project-environment/environment-variables.service';
 import type { UpdateEnvironmentVariablesDto } from '../project-environment/environment-variables.types';
 
@@ -43,7 +46,9 @@ export class ProjectController {
     private readonly userService: UserService,
     private readonly tenantService: TenantService,
     private readonly projectEventsService: ProjectEventsService,
-    private readonly environmentVariablesService: EnvironmentVariablesService
+    private readonly environmentVariablesService: EnvironmentVariablesService,
+    private readonly projectEnvironmentService: ProjectEnvironmentService,
+    private readonly agentConnections: AgentConnectionService
   ) {}
 
   @Post()
@@ -58,6 +63,7 @@ export class ProjectController {
 
   private async assertCanCreatePublicProject(tenantId: string, req: FastifyRequest): Promise<void> {
     if (hasPermission(getGroupsHeader(req), Perms.manageWorkspaces)) return;
+    if (isServiceAccountRequest(req)) return;
     if (await this.tenantService.isPrivateWorkspaceEnabled(tenantId)) {
       throw new ForbiddenException(`Missing permission: ${Perms.manageWorkspaces}`);
     }
@@ -213,6 +219,7 @@ export class ProjectController {
   }
 
   @Delete(':id')
+  @RequirePermission(Perms.deleteProject)
   async remove(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
     await this.gate(id, tenant, user);
     return this.projectService.remove(id, tenant.tenantId);
@@ -362,20 +369,22 @@ export class ProjectController {
     return result;
   }
 
-  @Patch(':id/environments/:environmentId/session')
-  async setEnvironmentSession(
+  @Post(':id/environments/:environmentId/connect')
+  async connectEnvironment(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
-    @Body() dto: SetEnvironmentSessionDto,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
-  ) {
+    @CurrentUser() user: UserContext,
+    @Res({ passthrough: true }) reply: FastifyReply
+  ): Promise<AgentConnection> {
     await this.gate(id, tenant, user);
-    if (dto?.sessionId !== null && typeof dto?.sessionId !== 'string') {
-      throw new BadRequestException('sessionId must be a string or null');
+
+    const environment = await this.projectEnvironmentService.findByIdOrNull(environmentId);
+    if (!environment || environment.projectId !== id) {
+      throw new NotFoundException(`Environment ${environmentId} does not belong to project ${id}`);
     }
-    await this.projectService.setEnvironmentSession(id, environmentId, tenant.tenantId, dto.sessionId);
-    return { ok: true };
+
+    return withConnectionCancellation(reply.raw, (signal) => this.agentConnections.connect(environment, { signal }));
   }
 
   @Delete(':id/environments/:environmentId')

@@ -6,8 +6,10 @@ import { BullBoardModule } from '@bull-board/nestjs';
 import { FastifyAdapter as BullBoardFastifyAdapter } from '@bull-board/fastify';
 import { configuration } from './config/configuration';
 import { PodModule } from './pod/pod.module';
+import { AgentStatusModule } from './project/agent-status.module';
 import { ProjectModule } from './project/project.module';
 import { TimeoutModule } from './timeout/timeout.module';
+import { IdentityModule } from './identity/identity.module';
 import { ProxyModule } from './proxy/proxy.module';
 import { FilesModule } from './files/files.module';
 import { TranscriptionModule } from './transcription/transcription.module';
@@ -33,6 +35,7 @@ import { ProjectExportModule } from './export/project-export.module';
 import { AdminModule } from './admin/admin.module';
 import { ExternalServicesModule } from './external-services';
 import { StorageModule } from './storage/storage.module';
+import { PublicApiModule } from './public-api/public-api.module';
 
 function parseRedisUrl(url: string) {
   const parsed = new URL(url);
@@ -62,8 +65,10 @@ function parseRedisUrl(url: string) {
     }),
     TenantModule,
     UserModule,
+    IdentityModule,
     PodModule,
     ProjectModule,
+    AgentStatusModule,
     WorkspaceModule,
     AgentModule,
     TimeoutModule,
@@ -86,6 +91,7 @@ function parseRedisUrl(url: string) {
     AdminModule,
     ExternalServicesModule,
     StorageModule,
+    PublicApiModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: TenantGuard }],

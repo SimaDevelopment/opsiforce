@@ -24,7 +24,6 @@ import {
 import { ProjectEventsModule } from './project-events.module';
 import { AppService } from './app.service';
 import { AppReadinessModule } from './app-readiness.module';
-import { AgentStatusModule } from './agent-status.module';
 import { PROJECT_DUPLICATE_QUEUE } from './project-duplicate.types';
 import { PROJECT_IMPORT_QUEUE } from './project-import.types';
 import { PodModule } from '../pod/pod.module';
@@ -37,6 +36,7 @@ import { GitModule } from '../git/git.module';
 import { ProjectPoolModule } from '../pool/project-pool.module';
 import { EnvironmentModule } from '../environment/environment.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
+import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
 
 @Module({
@@ -65,10 +65,10 @@ import { ExternalServicesModule } from '../external-services';
     ProjectPoolModule,
     EnvironmentModule,
     ProjectEnvironmentModule,
+    forwardRef(() => AgentSessionModule),
     ExternalServicesModule,
     GitModule,
     AppReadinessModule,
-    AgentStatusModule,
   ],
   controllers: [
     ProjectController,

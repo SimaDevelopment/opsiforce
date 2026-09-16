@@ -41,7 +41,7 @@ function cronToHuman(expr: string): string {
   return `Daily ${time}`;
 }
 
-export default function SchedulesPage() {
+export function SchedulesPage() {
   const qc = useQueryClient();
   const search = useSearch({ from: '/schedules' });
   const navigate = useNavigate();
@@ -187,7 +187,7 @@ export default function SchedulesPage() {
                 <Link
                   to="/projects/$projectId"
                   params={{ projectId: scopedProjectId() ?? '' }}
-                  search={{ prompt: undefined }}
+                  search={{ prompt: undefined, promptId: undefined }}
                   class="text-primary hover:underline underline-offset-2"
                 >
                   {title()}
@@ -360,7 +360,7 @@ function ScheduleTableSection(props: {
                         <Link
                           to="/projects/$projectId"
                           params={{ projectId: s.projectId }}
-                          search={{ prompt: undefined }}
+                          search={{ prompt: undefined, promptId: undefined }}
                           class="text-xs text-primary hover:underline underline-offset-2"
                         >
                           {s.projectTitle ?? s.projectId.slice(0, 8)}

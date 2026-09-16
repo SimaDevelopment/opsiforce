@@ -1,10 +1,11 @@
+import { Button } from '~/components/ui/button';
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
 import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
-import { useProjectEnvironments, useSetEnvironmentSession } from '~/api/environments';
+import { useProjectEnvironments } from '~/api/environments';
 import { deletionCoversPath } from '~/api/files';
 import Spinner from '~/components/ui/spinner';
 import { ProjectHeader, type ProjectTab } from '~/components/project/project-header';
@@ -17,9 +18,13 @@ import ProjectDisabled from '~/components/project/project-disabled';
 import ProjectFailed from '~/components/project/project-failed';
 import EnvProdBanner from '~/components/project/environments/env-prod-banner';
 import { useJobDock } from '~/components/project/jobs/job-dock-context';
-import { useOpenCodeConnection } from '~/components/project/use-opencode-connection';
+import { useOpenCodeConnection, type InitialPrompt } from '~/components/project/use-opencode-connection';
 
-export function ProjectView(props: { projectId: string; initialPrompt?: string }) {
+export function ProjectView(props: {
+  projectId: string;
+  initialPrompt: () => InitialPrompt | undefined;
+  onInitialPromptAdmitted: () => void;
+}) {
   const navigate = useNavigate();
   const jobDock = useJobDock();
   const { hasPermission } = usePermissions();
@@ -83,17 +88,13 @@ export function ProjectView(props: { projectId: string; initialPrompt?: string }
     }
   });
 
-  const setEnvironmentSession = useSetEnvironmentSession();
-  const rememberedSessionId = () => activeEnvironment()?.sessionId ?? null;
-
   const connection = useOpenCodeConnection({
     projectId: props.projectId,
     environmentId: activeEnvironmentId,
     status: connectionStatus,
-    rememberedSessionId,
     currentTitle: () => statusQuery.data?.title,
-    onResolveSession: (envId, sessionId) => setEnvironmentSession(props.projectId, envId, sessionId),
-    initialPrompt: props.initialPrompt,
+    initialPrompt: () => props.initialPrompt(),
+    onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
   const app = () => statusQuery.data?.app;
 
@@ -153,7 +154,19 @@ export function ProjectView(props: { projectId: string; initialPrompt?: string }
         >
           <Show when={connectionStatus() !== 'disabled'} fallback={<ProjectDisabled projectId={props.projectId} />}>
             <Show when={connectionStatus() !== 'failed'} fallback={<ProjectFailed projectId={props.projectId} />}>
-              <Show when={connection.router()} fallback={<Spinner label="Connecting..." />}>
+              <Show
+                when={connection.router()}
+                fallback={
+                  <Show when={connection.error()} fallback={<Spinner label="Connecting..." />}>
+                    {(message) => (
+                      <div class="flex flex-col items-center justify-center gap-3 p-6" role="alert">
+                        <p>{message()}</p>
+                        <Button onClick={connection.retry}>Retry</Button>
+                      </div>
+                    )}
+                  </Show>
+                }
+              >
                 {(router) => (
                   <ProjectChatTab
                     projectId={props.projectId}

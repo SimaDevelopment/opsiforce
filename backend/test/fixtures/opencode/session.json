@@ -1,0 +1,18 @@
+{
+  "id": "ses_8f21c0d4a13b47e6b9f05c72",
+  "projectID": "prj_4a91c7de",
+  "agent": "build",
+  "model": { "providerID": "opsiforce", "id": "claude-opus-5", "variant": "high" },
+  "cost": 0.18324,
+  "tokens": {
+    "input": 24310,
+    "output": 1204,
+    "reasoning": 512,
+    "cache": { "read": 18240, "write": 3072 }
+  },
+  "outcome": "succeeded",
+  "time": { "created": 1757404812331, "updated": 1757404981027, "idle": 1757404981027 },
+  "title": "Add a health check endpoint",
+  "location": { "directory": "/workspace/projects/4a91c7de", "workspaceID": "wrk_9c22ab10" },
+  "metadata": {}
+}

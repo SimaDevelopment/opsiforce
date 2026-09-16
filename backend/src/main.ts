@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { webhookBodyLimitHook } from './external-services/http/webhook-body-limit.hook';
 import { requirePermissionHook } from './permission/permission.hook';
+import { configurePublicApi, createHttpAdapter } from './public-api/public-api.bootstrap';
 
 const WEBHOOK_ROUTE_PREFIX = '/api/external-services/webhooks/';
 const WEBHOOK_JSON_BODY_LIMIT = 5 * 1024 * 1024;
@@ -10,7 +12,7 @@ const WEBHOOK_JSON_BODY_LIMIT = 5 * 1024 * 1024;
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ bodyLimit: Number.MAX_SAFE_INTEGER })
+    createHttpAdapter({ bodyLimit: Number.MAX_SAFE_INTEGER, genReqId: () => randomUUID() })
   );
 
   const fastify = app.getHttpAdapter().getInstance();
@@ -29,7 +31,7 @@ async function bootstrap() {
     threshold: 1024,
   });
 
-  app.setGlobalPrefix('api');
+  await configurePublicApi(app);
 
   fastify.addHook('onRequest', requirePermissionHook('/api/admin/queues', 'can_view_queue_dashboard'));
   fastify.addHook('preParsing', webhookBodyLimitHook(WEBHOOK_ROUTE_PREFIX, WEBHOOK_JSON_BODY_LIMIT));

@@ -76,7 +76,11 @@ export function JobDockHost(props: ParentProps) {
   const host: JobHost = {
     qc,
     navigate: (projectId) =>
-      navigate({ to: '/projects/$projectId', params: { projectId }, search: { prompt: undefined } }),
+      navigate({
+        to: '/projects/$projectId',
+        params: { projectId },
+        search: { prompt: undefined, promptId: undefined },
+      }),
     dismiss,
     retry: (key) => uploads.retry(key),
     projectView: (projectId) => projectViews.get(projectId),

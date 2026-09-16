@@ -1,0 +1,13 @@
+{
+  "name": "opsiforce-public-api-example",
+  "private": true,
+  "type": "module",
+  "description": "Runnable consumer: connect to a Project environment and talk to its opencode runtime natively.",
+  "scripts": {
+    "start": "node --experimental-strip-types chat.ts",
+    "test": "node --experimental-strip-types --test runtime.test.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/client": "0.0.0-beta-19059"
+  }
+}

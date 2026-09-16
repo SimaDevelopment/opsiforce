@@ -11,7 +11,7 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { V1Pod } from '@kubernetes/client-node';
-import { eq, and, desc, asc, inArray, isNull, notExists, or, sql, type SQL } from 'drizzle-orm';
+import { eq, and, desc, asc, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Queue } from 'bullmq';
 import crypto from 'crypto';
@@ -33,6 +33,7 @@ import {
   projectDuplicateJobs,
   projectTransferJobs,
 } from '../../db/schema';
+import { visibleProjectsFilter } from './project-visibility';
 import { PodService, PodStartupFailedError } from '../pod/pod.service';
 import { PodCacheService } from '../pod/pod.cache.service';
 import { ProxyService } from '../proxy/proxy.service';
@@ -790,7 +791,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
   async findAllForUser(params: { tenantId: string; userId: string }): Promise<ProjectResponse[]> {
     const { tenantId, userId } = params;
-    const visible = this.visibleToUser(tenantId, userId);
+    const visible = visibleProjectsFilter(tenantId, userId);
 
     const rows = (await db
       .select(projectSelectFields)
@@ -799,7 +800,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .innerJoin(projectSettings, eq(projectSettings.projectId, projects.id))
       .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
       .leftJoin(projectApps, eq(projectApps.projectEnvironmentId, projects.id))
-      .leftJoin(workspaceMembers, visible.memberJoin)
+      .leftJoin(workspaceMembers, visible.workspaceMemberJoin)
       .where(visible.where)
       .orderBy(...projectOrderBy())) as ProjectResponse[];
 
@@ -811,41 +812,14 @@ export class ProjectService implements OnApplicationBootstrap {
 
   async findVisibleProjectIds(params: { tenantId: string; userId: string }): Promise<string[]> {
     const { tenantId, userId } = params;
-    const visible = this.visibleToUser(tenantId, userId);
+    const visible = visibleProjectsFilter(tenantId, userId);
 
     const rows = await db
       .select({ id: projects.id })
       .from(projects)
-      .leftJoin(workspaceMembers, visible.memberJoin)
+      .leftJoin(workspaceMembers, visible.workspaceMemberJoin)
       .where(visible.where);
     return rows.map((row) => row.id);
-  }
-
-  private visibleToUser(tenantId: string, userId: string): { memberJoin: SQL; where: SQL } {
-    return {
-      memberJoin: and(eq(workspaceMembers.workspaceId, projects.workspaceId), eq(workspaceMembers.userId, userId))!,
-      where: and(
-        eq(projects.tenantId, tenantId),
-        or(isNull(projects.workspaceId), sql`${workspaceMembers.workspaceId} is not null`),
-        this.notInDisabledPrivateWorkspace()
-      )!,
-    };
-  }
-
-  private notInDisabledPrivateWorkspace(): SQL {
-    return notExists(
-      db
-        .select({ one: sql`1` })
-        .from(workspaces)
-        .innerJoin(tenantSettings, eq(tenantSettings.tenantId, workspaces.tenantId))
-        .where(
-          and(
-            eq(workspaces.id, projects.workspaceId),
-            eq(workspaces.type, 'private'),
-            eq(tenantSettings.privateWorkspaceEnabled, false)
-          )
-        )
-    );
   }
 
   async findAllInWorkspace(tenantId: string, workspaceId: string): Promise<ProjectResponse[]> {
@@ -998,20 +972,6 @@ export class ProjectService implements OnApplicationBootstrap {
           sessionId: env.sessionId,
         };
       });
-  }
-
-  async setEnvironmentSession(
-    projectId: string,
-    environmentId: string,
-    tenantId: string,
-    sessionId: string | null
-  ): Promise<void> {
-    await this.findOne(projectId, tenantId);
-    const env = await this.projectEnvironmentService.findById(environmentId);
-    if (env.projectId !== projectId) {
-      throw new NotFoundException(`Environment ${environmentId} does not belong to project ${projectId}`);
-    }
-    await this.projectEnvironmentService.patch(environmentId, { sessionId });
   }
 
   async update(id: string, dto: UpdateProjectDto, tenantId: string): Promise<ProjectResponse> {
