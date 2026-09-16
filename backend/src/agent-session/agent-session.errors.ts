@@ -50,3 +50,9 @@ export function isPodFailure(error: unknown): boolean {
   if (!(error instanceof PodResponded)) return false;
   return error.status >= 500 || error.tag === 'UnknownError' || error.tag === 'ServiceUnavailableError';
 }
+
+export function isPodDown(error: unknown): boolean {
+  if (error instanceof PodUnreachable) return true;
+  if (!(error instanceof PodResponded)) return false;
+  return error.status >= 500 && error.tag !== 'ServiceUnavailableError';
+}

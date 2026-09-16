@@ -11,9 +11,9 @@ import { ProjectStatus } from '../project/project.types';
 import { ProxyService } from '../proxy/proxy.service';
 import { ProjectService } from '../project/project.service';
 import { AgentSessionGateway } from './agent-session.gateway';
-import { EnvironmentNotRunning, isPodFailure, PodResponded, PodTimeout } from './agent-session.errors';
+import { EnvironmentNotRunning, isPodDown, PodResponded, PodTimeout } from './agent-session.errors';
 import { isRootSession, PodOpencodeClient } from './pod-opencode.client';
-import type { AgentConnection } from './agent-session.types';
+import type { AgentConnection, SessionInfo } from './agent-session.types';
 
 export interface ConnectOptions {
   signal?: AbortSignal;
@@ -48,8 +48,8 @@ export class AgentConnectionService {
     const ready = await this.gateway.wakeForConnection(env, deadline);
 
     return this.reportingPodFailures(ready.id, async () => {
+      const build = await this.readBuild(this.proxy.resolveUpstreamForProject(ready), deadline);
       const bound = await deadline.run(() => this.bindPrimarySession(ready, deadline), connectionBudgetExhausted);
-      const build = await this.readBuild(bound.upstream, deadline);
       const latest = await deadline.run(() => readBinding(db, ready.id), connectionBudgetExhausted);
       assertCurrentBinding(latest, bound.podIp);
       deadline.assertUnspent(connectionBudgetExhausted);
@@ -72,36 +72,46 @@ export class AgentConnectionService {
     assertCurrentBinding(current, ready.podIp);
     const upstream = this.proxy.resolveUpstreamForProject(current);
     const bound = (sessionId: string) => ({ sessionId, upstream, podIp: current.podIp });
+    const scope = describe(ready);
 
     if (current.sessionId !== null) {
       deadline.assertUnspent(connectionBudgetExhausted);
       const remembered = await this.pod.getSessionIfPresent(upstream, current.sessionId, {
         signal: deadline.signal(),
       });
-      if (remembered && isRootSession(remembered)) return bound(remembered.id);
+      if (remembered && isRootSession(remembered)) {
+        this.logger.log(`${scope}: kept remembered session ${remembered.id}`);
+        return bound(remembered.id);
+      }
+      this.logger.warn(
+        `${scope}: remembered session ${current.sessionId} ${describeMismatch(remembered)}; resolving again`
+      );
     }
 
     deadline.assertUnspent(connectionBudgetExhausted);
     const oldest = await this.pod.oldestRootSession(upstream, { signal: deadline.signal() });
-    if (oldest) return bound(await this.rebind(ready.id, current.sessionId, oldest.id));
+    if (oldest) return bound(await this.rebind(ready, current.sessionId, oldest.id));
 
     return bound(await this.createPrimarySession(ready, upstream, deadline));
   }
 
-  private async rebind(environmentId: string, observed: string | null, next: string): Promise<string> {
+  private async rebind(ready: ProjectEnvironmentContext, observed: string | null, next: string): Promise<string> {
+    const scope = describe(ready);
     const [claimed] = await db
       .update(projectEnvironments)
       .set({ sessionId: next })
-      .where(and(eq(projectEnvironments.id, environmentId), matchesBinding(observed)))
+      .where(and(eq(projectEnvironments.id, ready.id), matchesBinding(observed)))
       .returning({ sessionId: projectEnvironments.sessionId });
 
     if (claimed?.sessionId) {
-      this.logger.log(`primary session for ${environmentId}: ${observed ?? 'none'} -> ${next}`);
+      this.logger.log(`${scope}: adopted oldest root session ${next} (previously ${observed ?? 'none'})`);
       return claimed.sessionId;
     }
 
-    const winner = await readBinding(db, environmentId);
-    return winner?.sessionId ?? next;
+    const winner = await readBinding(db, ready.id);
+    const sessionId = winner?.sessionId ?? next;
+    this.logger.log(`${scope}: lost the rebind race to a concurrent connection; using ${sessionId}`);
+    return sessionId;
   }
 
   private async createPrimarySession(
@@ -109,6 +119,7 @@ export class AgentConnectionService {
     upstream: string,
     deadline: Deadline
   ): Promise<string> {
+    const scope = describe(ready);
     return db.transaction(async (tx) => {
       deadline.assertUnspent(connectionBudgetExhausted);
       await lockEnvironmentSession(tx, ready.id, deadline.remainingMs);
@@ -121,14 +132,26 @@ export class AgentConnectionService {
         const remembered = await this.pod.getSessionIfPresent(upstream, current.sessionId, {
           signal: deadline.signal(),
         });
-        if (remembered && isRootSession(remembered)) return remembered.id;
+        if (remembered && isRootSession(remembered)) {
+          this.logger.log(`${scope}: kept session ${remembered.id} bound by a concurrent connection`);
+          return remembered.id;
+        }
       }
 
       deadline.assertUnspent(connectionBudgetExhausted);
       const adopted = await this.pod.oldestRootSession(upstream, { signal: deadline.signal() });
+      if (adopted) {
+        this.logger.log(
+          `${scope}: adopted oldest root session ${adopted.id} under lock (previously ${current.sessionId ?? 'none'})`
+        );
+      }
       const session = adopted ?? (await this.pod.createSession(upstream, { signal: deadline.signal() }));
+      if (!adopted) {
+        const message = `${scope}: created session ${session.id} because the runtime reported no root session (previously ${current.sessionId ?? 'none'})`;
+        if (current.sessionId === null) this.logger.log(message);
+        else this.logger.warn(message);
+      }
 
-      this.logger.log(`primary session for ${ready.id}: ${current.sessionId ?? 'none'} -> ${session.id}`);
       await tx.update(projectEnvironments).set({ sessionId: session.id }).where(eq(projectEnvironments.id, ready.id));
       return session.id;
     });
@@ -149,7 +172,7 @@ export class AgentConnectionService {
     try {
       return await work();
     } catch (error) {
-      if (error instanceof Error && isPodFailure(error)) void this.reportPodFailure(environmentId, error);
+      if (error instanceof Error && isPodDown(error)) void this.reportPodFailure(environmentId, error);
       throw error;
     }
   }
@@ -176,6 +199,15 @@ async function readBinding(executor: DbExecutor, environmentId: string): Promise
     .limit(1);
 
   return row ?? null;
+}
+
+function describe(env: ProjectEnvironmentContext): string {
+  return `primary session for environment ${env.id} (project ${env.projectId})`;
+}
+
+function describeMismatch(remembered: SessionInfo | null): string {
+  if (!remembered) return 'is gone from the runtime';
+  return `is a child of ${remembered.parentID}`;
 }
 
 function matchesBinding(observed: string | null): SQL | undefined {

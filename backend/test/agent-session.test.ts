@@ -528,6 +528,19 @@ describe('the internal active probes', () => {
 });
 
 describe('reporting a pod failure back to the environment', () => {
+  it('does not report a pod failure when a live runtime answers a service error', async () => {
+    const env = await createRunningProject();
+    const remembered = pod.addSession();
+    await rememberSession(env.id, remembered.id);
+    await harness.fakes.pods.deletePod(harness.fakes.pods.assignedPodName(env.id));
+    pod.script('session.get', { status: 503, body: podErrors.unavailable('busy'), once: true });
+
+    await expect(harness.agentConnections.connect(env)).rejects.toBeInstanceOf(PodResponded);
+    await sleep(300);
+
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Active);
+  });
+
   it('reports an unreachable pod during a connection and restarts the environment', async () => {
     const env = await createRunningProject();
     await harness.fakes.pods.deletePod(harness.fakes.pods.assignedPodName(env.id));
