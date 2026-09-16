@@ -16,7 +16,7 @@ The platform had two competing stores for "which LLM does the agent run on". `ag
 
 ## Consequences
 
-- `agent-config/agents.json` is the **single source of truth** for the agent model (see [Agents](../agents/agent-system.md)); the baked default in `opencode.json` / `opencode.local.json` mirrors it.
+- `agent-config/agents.json` is the **single source of truth** for the agent model (see [Agents](../agent-system/agent.md)); the baked default in `opencode.json` / `opencode.local.json` mirrors it.
 - [Defaults](../organization/defaults.md) now covers **timeouts and budgets only**. The `can_manage_platform_defaults` / `can_manage_tenant_defaults` permissions are unchanged — they still gate those two.
 - Migration `0014` is immutable and still creates the agent tables; `0043` drops them forward. The budget/timeout tables `0014` created are untouched.
 - Re-introducing per-tenant or per-project model selection is now an explicit, reversible decision (a new migration + endpoints), not an accidental completion of half-built scaffolding.

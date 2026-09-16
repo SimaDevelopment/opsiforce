@@ -6,7 +6,7 @@ import {
 } from '~/api/external-services-usage';
 import { cn } from '~/lib/cn';
 import { Badge } from '~/components/ui/badge';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
 import { ChartColumn, ChevronRight, FolderKanban, Inbox, RefreshCw } from '~/components/icons';

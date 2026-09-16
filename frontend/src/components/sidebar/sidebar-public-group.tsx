@@ -1,8 +1,8 @@
 import { For, Show, type JSX } from 'solid-js';
 import { type Project } from '~/api/client';
 import { ChevronDown, ChevronRight, Globe } from '~/components/icons';
-import SidebarDraggableProjectRow from './sidebar-draggable-project-row';
-import SidebarDropZone from './sidebar-drop-zone';
+import { SidebarDraggableProjectRow } from './sidebar-draggable-project-row';
+import { SidebarDropZone } from './sidebar-drop-zone';
 import { SidebarCreateButton } from './sidebar-create-button';
 
 export function SidebarPublicGroup(props: {

@@ -10,6 +10,18 @@ AI coding-assistant platform: users converse with an agent inside a Kubernetes p
 The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the API — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
 _Avoid_: Tenant (internal name only — never user-facing); Account (collides with the user's login); Workspace (a grouping *within* an Organization, not the Organization itself)
 
+**Workspace**:
+A grouping of Projects within an Organization that decides who sees them: a shared Workspace is visible to its explicit members only, and every Project sits in exactly one Workspace or in Public. Folders group Projects inside a Workspace.
+_Avoid_: Team, Group, Space (non-canonical); Organization (the account that owns Workspaces); Files (the project tab, a different thing)
+
+**Personal Workspace**:
+The one private Workspace a member gets in an Organization, created on first sign-in, visible to and manageable by nobody else. Organizations can switch Personal Workspaces off, in which case existing ones are hidden rather than deleted.
+_Avoid_: Private workspace (the internal type name, not user-facing copy); My workspace, Home
+
+**Public Workspace**:
+The Organization-wide surface for Projects that belong to no Workspace, visible to every member of the Organization. Placing a Project there widens its audience to the whole Organization.
+_Avoid_: Unassigned (retired label); Default workspace, Shared (a shared Workspace is member-scoped, Public is not)
+
 **Folder**:
 A named, single-level grouping of Projects within a Workspace — an organizational label, not ownership: deleting a Folder releases its Projects to the Workspace; an empty Folder is fine. A Project sits either directly in its Workspace or in exactly one of its Folders, and a Folder's name is unique within its Workspace. Folders exist in shared Workspaces and the private Personal Workspace, never in Public. Moving a Folder to another Workspace carries its Projects and follows the same rules as moving the Projects themselves.
 _Avoid_: Group (vague — collides with UI grouping); Directory (filesystem connotation); Subfolder, nested folders (out of scope — one level only)
@@ -26,11 +38,15 @@ _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
 The short, immutable, URL-safe identifier an Environment carries alongside its name, shown as the environment suffix in an App's public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
-_Avoid_: Suffix (its position in the URL, not the concept); Short name; Code
+_Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:
 The color an Organization gives an Environment as its visual identity — the one hue that stands for that Environment wherever environments are shown at a glance (today, the environment markers beside a Project in the sidebar). Every Environment has one: the protected Development and Production Environments are seeded with defaults, and any Environment's color — protected ones included — can be changed by an admin from the Environment registry in Settings. It answers *which* Environment this is, and is deliberately a different axis from the status colors that signal *how* a running environment is doing (active, starting, suspended, failed) — a suspended Production is still "Production" and keeps its color.
 _Avoid_: Status color (the orthogonal running-state axis, not identity); Label color; Theme; Tag
+
+**Badge Label**:
+The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased.
+_Avoid_: Short name (the stored identifier, not user-facing copy); Abbreviation; Tag
 
 **ProjectEnvironment**:
 A per-Project instance of an Environment — the thing that actually runs. It owns the runtime state (its files, pod, URLs, and service-gateway key); it shares the Project's LLM virtual keys rather than owning its own. Every Project has one bound to Development; publishing creates additional ones bound to other Environments.

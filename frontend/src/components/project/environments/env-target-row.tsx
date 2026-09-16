@@ -1,7 +1,7 @@
 import { Show } from 'solid-js';
 import { Check, Rocket } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import EnvAppLinkButtons from './env-app-link-buttons';
+import { EnvAppLinkButtons } from './env-app-link-buttons';
 import type { PublishTarget } from '~/api/publish';
 
 export interface EnvTargetRowProps {
@@ -11,7 +11,7 @@ export interface EnvTargetRowProps {
   onPublish: () => void;
 }
 
-export default function EnvTargetRow(props: EnvTargetRowProps) {
+export function EnvTargetRow(props: EnvTargetRowProps) {
   return (
     <div class="col-span-full grid grid-cols-subgrid items-center rounded-md border border-dashed border-border/80 px-2.5 py-2">
       <span class="flex min-w-0 items-center gap-1.5">

@@ -6,7 +6,7 @@ export interface EnvProdBannerProps {
   onSwitchToDevelopment: () => void;
 }
 
-export default function EnvProdBanner(props: EnvProdBannerProps) {
+export function EnvProdBanner(props: EnvProdBannerProps) {
   const [dismissed, setDismissed] = createSignal(false);
 
   return (

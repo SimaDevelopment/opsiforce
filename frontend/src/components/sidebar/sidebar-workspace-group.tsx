@@ -4,9 +4,9 @@ import { useDroppable } from '@dnd-kit/solid';
 import { type Folder, type Project, type Workspace } from '~/api/client';
 import { useWorkspaceFolders } from '~/api/workspaces';
 import { DndType, DROP_ZONE_PRIORITY, folderMoveTargetId } from '~/lib/sidebar-dnd';
-import SidebarDropZone from './sidebar-drop-zone';
+import { SidebarDropZone } from './sidebar-drop-zone';
 import { Boxes, ChevronDown, ChevronRight, GripVertical, Lock, Settings } from '~/components/icons';
-import SidebarDraggableProjectRow from './sidebar-draggable-project-row';
+import { SidebarDraggableProjectRow } from './sidebar-draggable-project-row';
 import { SidebarFolderGroup } from './sidebar-folder-group';
 import { SidebarCreateButton } from './sidebar-create-button';
 

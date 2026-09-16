@@ -1,43 +1,36 @@
+---
+kind: explanation
+adrs: [0044]
+---
+
 # Service Gateway
 
-> Why agent-built apps reach external services (email, SMS, …) through a backend-owned gateway instead of holding real provider keys, and how the gateway isolates credentials per project. The non-LLM sibling of the [LLM Gateway](llm-gateway.md).
+> How do Apps and Agents reach non-LLM services and platform endpoints with one per-[Project](../../CONTEXT.md) token and no provider keys?
 
-Agents run LLM-generated code. Injecting a real Mailgun/Twilio/S3 key into a pod would mean a leaked key is usable from anywhere with full API scope, every project sharing one key (no per-project revocation, rate-limiting, or attribution), and no audit trail. The gateway removes the real key from the pod entirely: each project gets one **gateway token** (`gw-<uuid>`), the agent calls the gateway with it, and the gateway validates the token, resolves the project/tenant, and forwards to the real provider using centrally-held credentials.
+## How it works
+
+- Each Project holds one gateway token; the Agent calls the gateway with it, and the gateway validates the token, resolves the Project, [ProjectEnvironment](../../CONTEXT.md) and tenant, and forwards to the real provider with centrally held credentials ([ADR-0044](../adr/0044-apps-reach-non-llm-services-through-the-backend-owned-service-gateway.md)).
+- The endpoint is public to the cluster and authenticates on the token alone, because pods call it without the edge's identity headers; the gateway path is meant to be cluster-internal, so a leaked token is useless from the internet.
+- A provider registry keyed by service name means adding a provider is one class plus one line in the module factory; the email provider forces the sender to the configured address, so an Agent cannot spoof senders or manage the provider account.
+- The token is created with the Project, injected as `SERVICE_GATEWAY_API_KEY` next to `SERVICE_GATEWAY_URL`, and revoked by status on Project deletion; gateway keys live in their own table, never among the LLM virtual keys.
+- The same token resolves the calling environment for [Schedule](../projects/schedule.md) registration, the [App Readiness](../projects/app-readiness.md) and [Agent Status](../agent-system/agent-status.md) pushes, and the external-services agent endpoints ([Service template](../external-services/service-template.md)), which are mounted outside the gateway prefix and reached through a second base URL, `EXTERNAL_SERVICES_URL`.
+- Bifrost and the Service Gateway are separate channels: Bifrost carries LLM calls with two keys per Project, the gateway carries every other external HTTP service with one token and providers built into the backend ([LLM Gateway](llm-gateway.md)).
 
 ```
-Agent Pod ──POST /api/gateway──▶ GatewayController (@Public, token-guarded)
+Agent Pod ──POST /api/gateway──▶ GatewayController (token-guarded)
   Bearer gw-…                      └─▶ ProviderRegistry ─▶ EmailProvider ─▶ Mailgun
   { service, payload }
 ```
 
-The endpoint is `@Public()` (it bypasses the tenant/OIDC guards, since pods call it directly without oauth2-proxy headers) and authenticates solely on the gateway token. A **provider registry** keyed by service name means adding a new external service is one provider class plus one line in the module factory — no new keys, no schema change, no controller change.
+## Code
 
-## Security model
+- `backend/src/gateway/` — the controller, the token guard, the key service and the provider registry.
+- `project_gateway_keys` in `backend/db/schema.ts` — the per-Project tokens, with `gateway_audit_logs` beside it.
+- `backend/src/pod/pod.template.ts` — token and base URL injection.
 
-- **Per-project token** resolves caller identity; gateway keys live in their own table, never in `project_virtual_keys`, so Bifrost revocation/budget code never touches them by accident.
-- **Network restriction** — the gateway path is meant to be cluster-internal only (Traefik/nginx path block or a NetworkPolicy limiting it to `opsiforce-agent` pods), so a leaked token is useless from the internet.
-- **Surface & sender restriction** — agents can only invoke the operations a provider exposes (e.g. `sendEmail`), and the email provider forces `from` to the configured sender; agents can't spoof senders or manage the provider account.
-- **Lifecycle** — the token is created with the project, injected as `SERVICE_GATEWAY_API_KEY`, and revoked (status flipped, not deleted) on project deletion.
+## Related
 
-The same per-project token and `{projectId, environmentId, tenantId}` resolution is reused by other features rather than inventing new credentials: [Schedules](../projects/schedules.md) (the agent registers cron jobs over it), [App Readiness](../projects/app-readiness.md) (the in-pod reporter pushes go-live/serving over it), and the [External Services](../external-services/overview.md) agent endpoints under `/api/external-services/agent/…`, which are environment-scoped — they read the environment from the token and never from the request body. That mount deliberately sits outside `/api/gateway`: authentication is the bearer token, not the path, and the two mounts share one key. Pods therefore get a second base URL beside the gateway's — `EXTERNAL_SERVICES_URL` next to `SERVICE_GATEWAY_URL` and `SERVICE_GATEWAY_API_KEY`, injected under the same condition — so a skill can write one `curl "$EXTERNAL_SERVICES_URL/<service>/identity"` without knowing how the backend is mounted. Two base URLs for one key is the accepted cost of keeping the hand-wired platform agent API and the pluggable per-service layer as separate seams.
-
-## Gateway vs. Bifrost
-
-Both give a project metered, isolated access to an external dependency, but they are separate channels:
-
-| | Bifrost (LLM) | Service Gateway (everything else) |
-|---|---|---|
-| Scope | LLM calls only | any external HTTP service |
-| Keys per project | 2 (chat + backend) | 1 universal token |
-| Provider | external Bifrost service | built into the backend |
-| Adding a provider | Bifrost config | a new provider class |
-
-## See also
-
-- [LLM Gateway](llm-gateway.md) — the LLM-only channel and its virtual keys.
-- [Schedules](../projects/schedules.md) and [App Readiness](../projects/app-readiness.md) — the two features that reuse the gateway token.
-- Code: `backend/src/gateway/` — `gateway.controller.ts` (`@Public() POST /api/gateway`), `gateway-auth.guard.ts` (Bearer token), `providers/` (registry + `email.provider.ts`); tables `project_gateway_keys` + `gateway_audit_logs` in `backend/db/schema.ts`; token injection in `backend/src/pod/pod.template.ts`.
-
-## Future work
-
-Rate limiting (per-project/per-service, Redis sliding window), per-project service allow/deny lists, per-service cost tracking, and more providers (SMS, storage, webhooks) are all planned; only email (Mailgun) ships today.
+- [LLM Gateway](llm-gateway.md) — the LLM channel and its virtual keys.
+- [Schedule](../projects/schedule.md) — registers cron jobs over the token.
+- [App Readiness](../projects/app-readiness.md) — pushes Go-live over the token.
+- [Service template](../external-services/service-template.md) — the inbound endpoints that reuse the token.

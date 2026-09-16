@@ -3,7 +3,7 @@ import { type Project } from '~/api/client';
 import { DndType, type ProjectDragData } from '~/lib/sidebar-dnd';
 import { ProjectCard } from '../project-card';
 
-export default function SidebarDraggableProjectRow(props: {
+export function SidebarDraggableProjectRow(props: {
   project: Project;
   isActive: boolean;
   onSelect: () => void;

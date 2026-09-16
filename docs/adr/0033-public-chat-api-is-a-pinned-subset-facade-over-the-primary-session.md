@@ -1,6 +1,8 @@
-# The public chat API is a pinned subset facade over the environment's primary Session
+---
+status: superseded by ADR-0038
+---
 
-Status: superseded (2026-09-11) by [ADR-0038](0038-chat-is-native-opencode-through-the-runtime-proxy.md) — the facade shipped on `feature/public-api` and was removed before release
+# The public chat API is a pinned subset facade over the environment's primary Session
 
 > **Superseded.** The requirement that followed this decision was to chat with a Project through *the same API opencode has*, with opencode's own client — which this ADR's explicit non-goal ("`@opencode-ai/sdk` compatibility is not a goal") rules out. Chat is now native opencode through the runtime proxy; the platform keeps access, provisioning, lifecycle and the connection operation. The rationale below is kept because it records what the facade bought and what dropping it costs.
 
@@ -26,7 +28,7 @@ Semantics the copy alone does not carry, settled against a live pod:
 
 ## Consequences
 
-- An opencode bump is a deliberate event with a runbook ([opencode-bump.md](../public-api/opencode-bump.md)): only the adapter and mapper may change, the public schemas change only by decision.
+- An opencode bump is a deliberate event with a runbook ([opencode-bump.md](../operations/upgrade-opencode.md)): only the adapter and mapper may change, the public schemas change only by decision.
 - New upstream fields, kinds and variants are invisible to API consumers until added on purpose; that is the point, and it is also work.
 - Replay after a dropped stream, a public inbox view, and file attachments are known gaps recorded on the map, not accidents.
 - The Agent Status badge's dependence on the unpublished `session.status` event is a pre-existing agent-control bug the facade does not paper over.

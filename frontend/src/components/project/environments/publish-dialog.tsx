@@ -3,8 +3,8 @@ import { toast } from 'solid-sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Skeleton from '~/components/ui/skeleton';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { GitBranch, Rocket } from '~/components/icons';
 import { usePublish, usePublishForm, type PublishFormVariable, type PublishTarget } from '~/api/publish';
@@ -22,7 +22,7 @@ export interface PublishDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export default function PublishDialog(props: PublishDialogProps) {
+export function PublishDialog(props: PublishDialogProps) {
   const projectId = () => props.projectId;
   const targetId = () => props.target?.environmentId ?? null;
   const targetName = () => props.target?.name ?? 'this environment';

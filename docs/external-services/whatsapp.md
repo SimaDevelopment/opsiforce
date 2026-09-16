@@ -1,53 +1,57 @@
+---
+kind: explanation
+---
+
 # WhatsApp
 
-> Feeding messages from real WhatsApp chats and groups into an app. Unlike [incoming email](incoming-email.md), the routing identity here is **assigned by a platform operator**, never self-served by the agent — which shapes both the data model and the onboarding story.
+> How does a WhatsApp number feed messages into an App, and what belongs to the platform versus to one environment?
 
-A WhatsApp number is connected to the platform as a *channel* (via Whapi, which links the number by QR code). Messages from **allowlisted chats** — an individual conversation or a group — are verified, stored in the target environment's `external-services.db` with media bytes included, counted for the Organization, and announced to the app by the [doorbell](overview.md#the-doorbell). Everything in [External Services](overview.md) applies; this doc is the WhatsApp-specific half. Inbound only: nothing in the platform sends or replies on WhatsApp.
+## How it works
 
-## Channels are global; allowlists belong to environments
+### Channels and allowlists
 
-The data splits along the grain of what the two halves actually are. A **channel is a resource**: one row per physical number, platform-global, holding the provider's channel id, the API token an operator pasted from the provider dashboard, a server-generated webhook secret, and a human label. There is no tenant column — the label ("Sales number, Acme GmbH") carries the human context instead, and one number shared by two Organizations is one row referenced by both, not two copies of the same credential. That is the point: the token and secret exist exactly once, so they cannot drift, rotation is a single update, and the media-fetch path never has to guess which copy to use.
+- A number connects to the platform as a channel through Whapi, which links the number by QR code; messages from allowlisted chats are verified, stored in the target environment's database with media bytes, metered and announced by the doorbell ([Service template](service-template.md)). Nothing sends or replies.
+- A channel is a platform-global resource row: the provider's channel id, the API token an operator pasted, a server-generated webhook secret and a human label, with no tenant column, so one number shared by two [Organizations](../../CONTEXT.md) is one row.
+- Resource values are encrypted at rest with AES-256-GCM under a key from the environment; the token is used outbound (enumerating chats, configuring the webhook, fetching media) and the secret is pushed to the provider, echoed back as a header on every delivery, and never shown to an operator again.
+- Each [ProjectEnvironment](../../CONTEXT.md) has one configuration document listing the channels it listens to and the allowlisted chats under each; nothing arrives by default and there is no wildcard. Chat ids carry their kind in the suffix (`@s.whatsapp.net` individual, `@g.us` group).
+- Fan-out is allowed: one chat may appear in several environments' documents, each stored and metered independently.
+- The document cascades away with its environment while the channel survives; Duplication and Import copy nothing; a [Publish](../projects/publish.md) copies the document to the published environment once that version is healthy, as an idempotent upsert.
 
-The earlier design made a channel an Organization⇄channel *grant* and validated that an allowlisted environment belonged to the channel's Organization. Both dissolve here, safely: registration is global-admin-only (`can_manage_external_services`), and metering still attributes a tenant through the environment that received the message.
+### Ingest
 
-Resource values are **encrypted at rest** (AES-256-GCM, key from the environment) — which protects database dumps, backups and SQL-level read access, not a compromised app server; that honesty matters more than the checkbox. The API token is used outbound — enumerating chats, configuring the webhook, fetching media. The webhook secret goes the other way: the platform generates it, pushes it to the provider, which echoes it back as a header on every delivery, and never returns it to an operator afterwards (a token preview and a rotate action are all the UI offers).
+- Whapi posts batches mixing individual and group messages and does not sign them; verification compares the secret header in constant time against the secret stored for that channel id.
+- Each message is routed by chat id; a non-allowlisted chat is accepted and dropped.
+- Media arrives as a reference and is fetched before storing, with the channel's token and the payload's temporary link as fallback; it becomes an attachment row and a caption is promoted into the text column.
+- Deduplication keys on the provider's message id.
 
-## The allowlist, and fan-out
+### Webhook and management
 
-The other half is per-environment **configuration**: one document per (service, environment) listing the channels this environment listens to and, under each, the allowlisted chats. A chat delivers to an app only if that document says so. Nothing arrives by default and there is no wildcard — connecting a conversation is a deliberate act. Chat ids carry their kind in the suffix (`…@s.whatsapp.net` individual, `…@g.us` group), which is all the platform needs to handle both on the same event stream.
+- The platform configures the provider's webhook itself: the delivery URL is always the deployment's webhook base (`EXTERNAL_SERVICES_WEBHOOK_BASE_URL`) plus the fixed service path, and every mutation that changes what the provider should hold (registration, token correction, secret rotation) pushes the full configuration, merging with entries that are not its own.
+- Channels are registered under Admin, External services, gated by `can_manage_external_services`; chats are allowlisted per environment from the environment dropdown's External services dialog, which enumerates the channel's chats through the stored token ([Onboard a WhatsApp number](../operations/onboard-a-whatsapp-number.md)).
+- The `whatsapp` skill teaches the Agent to replace the template's 501 stub, read the shared tables with a `service = 'whatsapp'` filter, and see the wiring through `GET agent/whatsapp/identity`.
 
-**Fan-out is allowed**: one chat may appear in several environments' documents, so a test group can feed Development and a published environment at once. Each destination is stored and metered independently. Because the documents are small, the webhook path finds them by scanning this service's rows and filtering on (channel, chat) rather than by index.
+## Edge cases
 
-Lifecycle follows the environment: the config document cascades away with a deleted environment (the channel resource survives — it was never environment-owned), duplication and import copy nothing, and **publish copies the document** to the published environment once that version is healthy — deliberate fan-out, so both keep receiving, and republishing is an idempotent upsert. A publish that never came online leaves the published environment's existing document untouched.
+- When a chat is not allowlisted for any environment, the platform answers 200 and stores nothing; this is the common cause of "WhatsApp isn't working".
+- When an unknown channel posts or the secret mismatches, the handler answers 406.
+- When both media fetches fail, the attachment row is written with null bytes and the failure logged.
+- When the webhook push fails at registration, the channel stays registered and the badge shows what is missing; rotate re-sends the full configuration and is the repair action.
+- When a rotation cannot reach the provider, it fails and keeps the old secret.
+- When a Publish never comes online, the published environment's existing document is untouched.
 
-## Ingest specifics
+## Code
 
-Whapi posts batches — one event can carry several messages, individual and group mixed — and **does not sign its webhooks at all**. Verification is therefore the secret header compared, in constant time, against the secret stored on the resource row for that channel id; an unknown channel or a mismatched secret is a **406**.
+- `backend/src/external-services/whatsapp/whatsapp.definition.ts` — verification, routing, media fetch, publish carry, identity and the admin route table.
+- `backend/src/external-services/whatsapp/whatsapp-channel.service.ts` — the operator surface and the webhook push.
+- `backend/src/external-services/whatsapp/whapi.client.ts` — provider calls.
+- `externalServiceResource` in `backend/db/schema.ts` — channel credentials.
+- `frontend/src/pages/external-services-admin.tsx` — the Admin registration page.
+- `agent-config/skills/whatsapp/SKILL.md` — the App-side half.
 
-Each message is routed by its chat id. Non-allowlisted chats are **accepted and dropped**: Whapi has no permanent-reject, so answering anything but 200 would only buy retries that can never succeed. That is the single most common reason a user reports "WhatsApp isn't working" — the platform received the message and deliberately discarded it, so nothing appears in the app's database at all.
+## Related
 
-Media (`image`, `document`, `voice`, …) arrives as a reference, not bytes, so the platform fetches it **before** storing — a row isn't complete without its blob — using the channel's token, falling back to the payload's temporary download link. It is stored as an **attachment row**, the same shape email attachments get, with `media_id` left in the message payload; a media caption is promoted into `text_body`, so "the text of this message" is one column regardless of message type. If both fetches fail the attachment row is still written with its bytes null and the failure logged loudly; losing the text, or hiding the fact that a photo existed, would be worse. Deduplication keys on the provider's message id, as everywhere else.
-
-## Onboarding a WhatsApp number
-
-This is manual work, gated by `can_manage_external_services` — one permission covering every external service, with its own Keycloak role and group, deliberately *not* part of the admin bundle, so external-service administration can be delegated without handing over everything else. Step 2 reaches the platform-wide channel registry shared by every organization and has no environment to tenant-check against, so grant the permission as what it is in practice: platform-operator access, not an organization-admin convenience. The agent cannot do any of it; its skill tells the user what to ask an admin for. It can, however, *see* the result — `GET agent/whatsapp/identity` projects the environment's wired channels and allowlisted chats (labels included, credentials never), so an agent can tell the user what is connected without guessing.
-
-1. **Create the channel in the provider dashboard** and **link the number by QR code** — on the phone, WhatsApp → Settings → Linked devices. The channel must reach an authorised state before it delivers anything.
-2. **Register it** under **Admin → External services** (`/admin/external-services`): paste the channel id and API token, give it a label. Channels are platform-global — the label carries the human context. The platform generates the webhook secret itself; nobody types it, and it is never shown back — and it configures the webhook there and then, so registration is normally the last step an operator performs on the channel. That push is best-effort: a deployment with no webhook base, an unreachable provider or a mistyped token leaves the channel registered and the webhook badge showing what is missing, rather than throwing away pasted credentials.
-3. **Allowlist chats** from the project page: the environment dropdown's **External services** item opens a per-environment dialog. It enumerates the picked channel's chats and groups through the stored token so ids can be picked rather than transcribed from a phone, with validated manual entry as a fallback.
-
-Until step 3 names a specific environment, that environment receives nothing. The webhook pushed by step 2 is what makes messages arrive at the platform at all.
-
-There is no webhook-editing surface, deliberately. The delivery URL is not an input: it is always the deployment's webhook base plus the fixed service path, so every channel on a deployment posts to the same place and the status badge has exactly one truth to judge against — to point a local backend at a tunnel, set `EXTERNAL_SERVICES_WEBHOOK_BASE_URL` to the tunnel origin and restart, rather than editing any channel. Every push sets the delivery URL, the secret header and the message-event filter in one provider call, and every mutation that changes what the provider should hold pushes on its own: registration, correcting the API token, rotating the secret. A rotation that cannot reach the provider fails and keeps the old secret rather than silently muting the channel — which also makes **rotate the repair action** when the badge reports drift or a registration-time push failed, since it re-sends the full webhook configuration. The push **merges**: the provider replaces its whole webhook list on every write, so the platform reads the current list first and re-sends every entry that is not its own, identified by the secret header it sets. A channel that already posts to a customer's own integration keeps doing so.
-
-## What the agent does
-
-The `whatsapp` skill teaches the app-side half: replace the template's catch-all 501 stub with a real `POST /api/external-services/whatsapp` handler, and read the shared `messages` / `attachments` tables with a `service = 'whatsapp'` filter — chat id in `routing_key`, sender and text (body or caption) promoted, the rest (`type`, `from_me`, `media_id`, …) reached through `json_extract` on `payload`, media as attachment rows, and the undelivered rows to catch up on. It is explicit that connecting numbers and chats is operator work, and that the app can build everything *before* that work is done — but the skill now also has `GET $EXTERNAL_SERVICES_URL/whatsapp/identity`, so it can *see* the wiring (including chats allowlisted but never used, which the stored data cannot show) instead of inferring it from the table.
-
-## See also
-
-- [External Services](overview.md) — the pipeline, storage conventions, doorbell and metering this service plugs into.
-- [Incoming email](incoming-email.md) — the other shipped service, and the contrast in how routing identity is obtained.
-- [Admin](../organization/admin.md) — the operational admin section this tab lives in ([ADR-0014](../adr/0014-admin-section-and-operational-view-module.md)).
-- [Permissions](../organization/permissions.md) — `can_manage_external_services` and why frontend gating isn't enforcement.
-- Code: `backend/src/external-services/whatsapp/whatsapp.definition.ts` (verification, routing, media fetch, publish carry, the identity projection and the admin route table), `whatsapp-channel.service.ts` (operator surface behind those routes), `whapi.client.ts` (provider calls); channel credentials in `externalServiceResource` and per-environment chat allowlists in `externalServiceConfig` (`backend/db/schema.ts`); UI in `frontend/src/pages/external-services-admin.tsx` and `frontend/src/components/external-services/`; skill `agent-config/skills/whatsapp/SKILL.md`.
+- [Service template](service-template.md) — the pipeline, storage, doorbell and metering this plugs into.
+- [Incoming Email](incoming-email.md) — the other shipped service, with self-served identity.
+- [Onboard a WhatsApp number](../operations/onboard-a-whatsapp-number.md) — the operator steps.
+- [Admin](../organization/admin.md) — the section the registration page lives in.
+- [Permissions](../organization/permissions.md) — the external-services permissions.

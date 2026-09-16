@@ -36,10 +36,10 @@ import {
 } from '~/lib/sidebar-dnd';
 import { Permission } from '~/constants/permissions';
 import { Boxes } from '~/components/icons';
-import Spinner from '~/components/ui/spinner';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import ProjectSettings from '../project-settings';
-import WorkspaceSettings from '../workspace-settings';
+import { Spinner } from '~/components/ui/spinner';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { ProjectSettings } from '../project-settings';
+import { WorkspaceSettings } from '../workspace-settings';
 import { FolderDialog } from '~/components/folder-dialog';
 import { SidebarWorkspaceGroup } from './sidebar-workspace-group';
 import { SidebarPublicGroup } from './sidebar-public-group';

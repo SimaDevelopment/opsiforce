@@ -23,4 +23,4 @@ The rule this fixes: **new pod-side behaviour goes into `agent-session` or `Proj
 - Public prompts and browser prompts get the same wake, reload, stamp and failure behaviour by construction.
 - The failure report is belt-and-braces: the pod informer's delete event is the primary recovery path when a pod dies under an open stream.
 - Agent status could later subscribe to the hub's execution events instead of polling `session/active` (map fog).
-- An opencode bump has one place to re-check for paths and one runbook ([opencode-bump.md](../public-api/opencode-bump.md)).
+- An opencode bump has one place to re-check for paths and one runbook ([opencode-bump.md](../operations/upgrade-opencode.md)).

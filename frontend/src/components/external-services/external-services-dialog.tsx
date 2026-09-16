@@ -2,7 +2,7 @@ import { Index, Show } from 'solid-js';
 import { useExternalServices } from '~/api/external-services';
 import type { ProjectEnvironment } from '~/api/environments';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '~/components/ui/dialog';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { EnvironmentServiceSection } from './environment-service-section';
 
 export function ExternalServicesDialog(props: {

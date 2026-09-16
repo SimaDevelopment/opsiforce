@@ -13,15 +13,15 @@ import {
 import { usePublishTargets, type PublishTarget } from '~/api/publish';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Check, ChevronsUpDown, Layers, LoaderCircle } from '~/components/icons';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Skeleton from '~/components/ui/skeleton';
-import ProjectAuthDialog from '~/components/project-auth-dialog';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Skeleton } from '~/components/ui/skeleton';
+import { ProjectAuthDialog } from '~/components/project-auth-dialog';
 import { useJobDock } from '~/components/project/jobs/job-dock-context';
 import { EnvManageRow } from './env-manage-row';
-import EnvTargetRow from './env-target-row';
-import EnvStatusDot from './env-status-dot';
-import PublishDialog from './publish-dialog';
-import EnvironmentVariablesDialog from './environment-variables-dialog';
+import { EnvTargetRow } from './env-target-row';
+import { EnvStatusDot } from './env-status-dot';
+import { PublishDialog } from './publish-dialog';
+import { EnvironmentVariablesDialog } from './environment-variables-dialog';
 import { ExternalServicesDialog } from '~/components/external-services/external-services-dialog';
 
 export interface EnvironmentsPopoverProps {

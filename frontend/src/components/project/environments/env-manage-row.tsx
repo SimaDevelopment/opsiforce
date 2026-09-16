@@ -20,8 +20,8 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { Button } from '~/components/ui/button';
-import EnvStatusDot from './env-status-dot';
-import EnvAppLinkButtons from './env-app-link-buttons';
+import { EnvStatusDot } from './env-status-dot';
+import { EnvAppLinkButtons } from './env-app-link-buttons';
 import type { ProjectEnvironment } from '~/api/environments';
 
 export interface EnvManageRowProps {

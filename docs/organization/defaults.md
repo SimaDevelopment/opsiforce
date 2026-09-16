@@ -1,26 +1,27 @@
-# Configurable Defaults
+---
+kind: explanation
+---
 
-> Platform-wide and per-tenant defaults for agent timeouts and LLM budgets, tunable from the UI. Read this to understand what "Defaults" seeds and, importantly, what it does *not* cover.
+# Defaults
 
-Defaults **seed new entities at creation time** — they never retroactively change existing projects, keys, or pods. Edit a tenant's default budget and the *next* project created under it gets that budget; earlier projects keep what they had.
+> What do platform and [Organization](../../CONTEXT.md) defaults seed into new entities, and what do they leave out?
 
-## Two tiers
+## How it works
 
-Global defaults are the platform baseline; each tenant gets a copy that can diverge (a trial tenant on $50/month, an enterprise tenant on $500). A tenant with no row falls back transparently to the global value.
+- Defaults seed new entities at creation and never change existing [Projects](../../CONTEXT.md), keys or pods: editing a tenant's default budget affects the next Project created under it.
+- Two tiers: global defaults are the platform baseline, and each tenant gets a copy on creation that can diverge; a tenant with no row falls back to the global value.
+- Configurable values are the two idle timeouts (agent, app) and the budgets at tenant, Project and per-key level, each with a reset period; the seeded budgets become Bifrost caps ([LLM Gateway](../gateways/llm-gateway.md)).
+- Edited under Settings, Defaults, with a New organizations tab for the platform baseline behind `can_manage_platform_defaults` and a New projects tab for this Organization behind `can_manage_tenant_defaults` ([Settings](settings.md), [Permissions](permissions.md)).
+- The database is the single source of truth: changing seed values for future deployments is a migration that updates the rows.
+- The [Agent Model](../../CONTEXT.md) is not a default; it lives with the Agent profile and is uniform across tenants ([Agent](../agent-system/agent.md)).
 
-```
-Global → copied to each tenant on tenant creation → seeds the tenant's new projects / keys
-```
+## Code
 
-What's configurable: **timeouts** (agent idle, app idle) and **budgets** (caps at tenant, project, and per-key level, each with a reset period). Edited in **Settings → Defaults** with a *New organizations* tab (the platform baseline, admin-only) and a *New projects* tab (this organization), each shown by permission (`can_manage_platform_defaults` / `can_manage_tenant_defaults`). To change the seed values for future deployments, write a migration that UPDATEs the rows — the DB is the single source of truth, there is no config-file fallback.
+- `backend/src/defaults/` — the two tiers, fallback and the endpoints.
+- `frontend/src/pages/defaults.tsx` — the two tabs.
 
-## What Defaults deliberately excludes
+## Related
 
-The agent **model** is *not* configurable here. It lives with the agent profile in `agent-config/agents.json`, is uniform across every tenant, and changing it is a code/config rollout — not a tunable default. A two-tier model-defaults schema once existed and was removed precisely to prevent it becoming a per-tenant knob; that decision and its reasoning are [ADR-0008](../adr/0008-agent-model-owned-by-agent-config.md).
-
-## See also
-
-- [Agents](../agents/agent-system.md) — where the agent model actually lives.
-- [LLM Gateway](../gateways/llm-gateway.md) — how the seeded budgets become Bifrost caps.
-- [Settings](settings.md) · [Permissions](permissions.md).
-- Code: `backend/src/defaults/`; seed in `backend/db/migrations/0014_add-defaults-tables.sql` (the agent-model tables it also created were dropped in `0043`); frontend `frontend/src/pages/defaults.tsx`.
+- [Agent](../agent-system/agent.md) — where the model lives instead.
+- [LLM Gateway](../gateways/llm-gateway.md) — how seeded budgets become caps.
+- [Settings](settings.md) — the section.

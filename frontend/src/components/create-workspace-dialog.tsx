@@ -4,7 +4,7 @@ import { useCreateWorkspace } from '~/api/workspaces';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 
-export default function CreateWorkspaceDialog(props: {
+export function CreateWorkspaceDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (workspaceId: string) => void;

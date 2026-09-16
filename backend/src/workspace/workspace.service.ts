@@ -559,7 +559,7 @@ export class WorkspaceService {
 
     const memberCountByWs = new Map(memberRows.map((r) => [r.workspaceId, r.count]));
     const projectCountByWs = new Map(
-      projectRows.filter((r) => r.workspaceId !== null).map((r) => [r.workspaceId!, r.count])
+      projectRows.flatMap((r) => (r.workspaceId === null ? [] : [[r.workspaceId, r.count] as const]))
     );
 
     return rows.map((r) => ({

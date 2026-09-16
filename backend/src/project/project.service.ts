@@ -786,7 +786,7 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async findAll(tenantId: string): Promise<ProjectResponse[]> {
-    return this.selectProjects(eq(projects.tenantId, tenantId));
+    return this.selectProjects(tenantId);
   }
 
   async findAllForUser(params: { tenantId: string; userId: string }): Promise<ProjectResponse[]> {
@@ -823,10 +823,10 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async findAllInWorkspace(tenantId: string, workspaceId: string): Promise<ProjectResponse[]> {
-    return this.selectProjects(and(eq(projects.tenantId, tenantId), eq(projects.workspaceId, workspaceId))!);
+    return this.selectProjects(tenantId, eq(projects.workspaceId, workspaceId));
   }
 
-  private selectProjects(where: SQL): Promise<ProjectResponse[]> {
+  private selectProjects(tenantId: string, scope?: SQL): Promise<ProjectResponse[]> {
     return db
       .select(projectSelectFields)
       .from(projects)
@@ -834,7 +834,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .innerJoin(projectSettings, eq(projectSettings.projectId, projects.id))
       .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
       .leftJoin(projectApps, eq(projectApps.projectEnvironmentId, projects.id))
-      .where(where)
+      .where(and(eq(projects.tenantId, tenantId), scope))
       .orderBy(...projectOrderBy()) as Promise<ProjectResponse[]>;
   }
 

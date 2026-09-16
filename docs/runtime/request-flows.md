@@ -1,61 +1,79 @@
+---
+kind: explanation
+adrs: [0050]
+---
+
 # Request Flows
 
-> How a browser request reaches a project pod: the runtime-proxy topology, the shared lifecycle gate every surface goes through, and what each surface (chat, app, VS Code, DB, upload) does differently. For *why* the pod state model is shaped this way, see [Pod Lifecycle](pod-lifecycle.md).
+> How does a browser or program request reach the right ProjectEnvironment pod, and what does each surface do on the way?
 
-The Node backend is **not** a byte-streaming proxy for project traffic. Four stateless Go runtime proxies carry the bytes; the backend is the control plane they consult for lifecycle state.
+## How it works
 
-## Topology
+### Topology
+
+- The edge routes `/api/**` to the NestJS backend and every project surface to one of four stateless Go runtime proxies; the backend is a control plane that never streams project traffic.
+- The agent surface is path-routed under `/api/proxy/:id/*`; the App, VS Code and DB surfaces are subdomain-routed because their servers emit absolute asset paths ([Pod Tools](pod-tools.md)). `:id` is always the [ProjectEnvironment](../../CONTEXT.md) id, which for [Development](../../CONTEXT.md) equals the [Project](../../CONTEXT.md) id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
+- Inside the pod, agent-control listens on the control port (4910) for App restarts and status pushes and fronts OpenCode on 4096 ([OpenCode Embed](../frontend/opencode-embed.md)); the App serves on 3000, code-server on 8080 and Datasette on 8081.
+- Hosted deployments put oauth2-proxy at the edge; local development runs the edge in static auth mode with no identity provider and a fixed identity carrying every permission ([ADR-0050](../adr/0050-local-development-runs-on-tilt-with-a-static-identity-and-no-identity-provider.md), [Local orchestration](../operations/local-orchestration.md)).
 
 ```mermaid
 flowchart LR
-  Browser --> Edge["Edge: nginx (local) / public edge proxy + OAuth2 Proxy"]
-  Edge -->|"/api/proxy/:id/*"| Agent["agent proxy :3005"]
-  Edge -->|"{envId}-{slug}.apps…"| App["app proxy :3002"]
-  Edge -->|"{envId}.code…"| VSCode["vscode proxy :3003"]
-  Edge -->|"{envId}.db…"| DB["db proxy :3004"]
+  Browser --> Edge["Edge: nginx + oauth2-proxy (static identity locally)"]
+  Edge -->|"/api/**"| Backend["Backend control plane"]
+  Edge -->|"/api/proxy/:id/*"| Agent["agent proxy"]
+  Edge -->|"{envId}-{slug}.apps…"| App["app proxy"]
+  Edge -->|"{envId}.code…"| VSCode["vscode proxy"]
+  Edge -->|"{envId}.db…"| DB["db proxy"]
 
-  Agent & App & VSCode & DB -. "ensure / failure" .-> Backend["Backend control API"]
-  Backend --> State["Postgres + Redis + Kubernetes"]
+  Agent & App & VSCode & DB -. "ensure / activity / failure" .-> Backend
+  Backend --> State["Kubernetes API · PostgreSQL · Redis · Bifrost"]
 
-  Agent --> Pod["Environment pod"]
-  App --> Pod
-  VSCode --> Pod
-  DB --> Pod
-
-  Pod -->|4096| OpenCode["OpenCode agent"]
-  Pod -->|3000| Webapp["App server"]
-  Pod -->|8080| Code["code-server"]
-  Pod -->|8081| Datasette["DB viewer"]
+  Agent -->|4096| Control["agent-control (control port 4910)"]
+  Control --> OpenCode["OpenCode"]
+  App -->|3000| Webapp["App server"]
+  VSCode -->|8080| Code["code-server"]
+  DB -->|8081| Datasette["Datasette"]
+  Backend -->|4910| Control
 ```
 
-The agent surface is path-routed (`/api/proxy/:id/*`); app, VS Code, and DB are subdomain-routed (their servers emit absolute asset paths that break under a path prefix — see [Pod Tools](pod-tools.md)). The `:id` in every route is the **ProjectEnvironment id**; for a project's Development environment that equals the project id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
+### The ensure gate
 
-## The shared ensure gate
+- Every proxy calls the backend's ensure endpoint before forwarding; the gate dispatches on the environment's status and wakes, waits or fails ([Pod Lifecycle](pod-lifecycle.md)).
+- The gate touches one of the environment's two Redis keep-alive keys: App traffic touches the app key, every other surface the agent key ([Keep-alive activity](../../CONTEXT.md)).
+- Each proxy counts open WebSocket connections per environment and surface and re-touches that surface's activity through the activity endpoint on a fixed cadence (default one minute), so an open Code tab keeps the pod up.
+- Idle timeouts are validated against a five-minute floor wherever they are written, so several keep-alive touches fit inside the shortest timeout anyone can configure.
+- Each proxy caches a ready decision for about five seconds and a starting decision for about one second, and collapses concurrent ensures for the same environment, surface and auth signature into one backend call.
+- The proxy forwards the edge's identity headers, and the backend gates the runtime path by [Organization](../../CONTEXT.md) membership and the same Project visibility predicate the Project list uses ([Connection](../public-api/connection.md)).
+- When a live request fails mid-stream the proxy reports it to the failure endpoint; the backend re-reads the pod and answers 503 for a gone pod being recreated or 502 for a dead process inside a Ready pod.
 
-Every surface runs the same backend gate before proxying, so lifecycle behaviour is uniform. The gate is `ProjectService.ensureEnvironment`; its status dispatch and recovery logic are documented in [Pod Lifecycle](pod-lifecycle.md). Two things are specific to the request path:
+### Per surface
 
-- **Activity TTL.** The gate touches one of the environment's two Redis keep-alive keys — `opsiforce:app-timeout:{id}` for **app** traffic, `opsiforce:timeout:{id}` for every other surface. The two kinds are tracked independently, but the environment suspends only once **both** have expired — either kind of activity alone keeps the pod up.
-- **WebSockets.** The gate only fires per request, so a long-lived upgraded connection would let the TTL lapse mid-connection. Each proxy therefore counts live upgraded connections per environment *and surface*, and while any are open re-touches that surface's activity — once as the first connection is registered (the TTL in flight may have less than one interval left), then every `OPSIFORCE_PROXY_WS_KEEPALIVE_INTERVAL` (default 1m) — via `POST /internal/proxy/projects/{id}/activity`. That endpoint takes the same `surface` body as `/ensure` and shares its surface→activity mapping, so a keep-alive touch always refreshes exactly the key the gate would. An open websocket keeps the pod up; when the last one closes, the surface falls back to plain idle timeout.
-- **Why idle timeouts have a floor.** The cadence above only holds a connection if several touches fit inside the timeout being refreshed — one dropped touch must not be fatal. Idle timeouts are therefore validated against `MIN_IDLE_TIMEOUT_MS` (5 minutes, `backend/src/common/validation.ts`) wherever they are written — per-project settings and the org/platform defaults — which keeps five touches inside the shortest timeout anyone can configure. If the cadence is ever raised, that floor has to rise with it.
-- **Proxy-side caching.** Each Go proxy caches a "ready" decision ~5s and a "starting" decision ~1s, and collapses concurrent requests for the same `projectId + surface + auth-signature` key into one in-flight `ensure` call. So a hot environment is served without re-hitting the backend, and a request storm during startup costs one backend call, not thousands. (The dedupe is per proxy process; replicas and distinct auth contexts don't share it.)
+- Chat reaches OpenCode on 4096 through the agent proxy and touches agent activity.
+- The in-product App preview uses a dedicated preview hostname without [App Auth](../../CONTEXT.md); the public App uses `{envId}-{slug}` on the apps domain, where App Auth attaches its middleware ([Environments](../projects/environments.md)). Both touch app activity.
+- VS Code and the DB viewer reach 8080 and 8081 through their subdomain proxies and touch agent activity; code-server's WebSocket holds the pod while the page is open.
+- Uploading, listing, deleting and reading workspace files are backend filesystem paths on the shared volume that never wake a pod ([Files](../projects/files.md), [File preview](../projects/file-preview.md)).
+- Deleting a Project deletes every environment's pod, clears keep-alive keys, revokes the Bifrost team and tombstones each environment before removing the row ([Persistence](persistence.md)).
 
-When a live request fails mid-stream the proxy calls `/failure` rather than re-running the full gate. The backend checks the pod directly and keeps two outcomes distinct: **503** = pod gone, restart in progress (retry); **502** = process died inside a still-Ready pod (don't recycle the pod).
+## Edge cases
 
-## Per-surface behaviour
+- When a request arrives while the environment is starting, the proxy answers 503 with `Retry-After` and the frontend retries.
+- When the last WebSocket of a surface closes, that surface falls back to its plain idle timeout.
+- When the Kubernetes API is unavailable, ensure answers 5xx and nothing else compensates; the frontend retries.
+- When a client vanishes without closing (sleep, network loss), TCP keepalive detects it within a few minutes and the surface falls back to its idle timeout.
 
-- **Chat** (agent) — `POST /api/proxy/{id}/session/{sid}/message`; the proxy runs the gate with `activity=agent` and streams the OpenCode response from pod `:4096`. Extends the agent TTL.
-- **App preview & public app** — the in-product preview uses a dedicated preview hostname so it loads in the Opsiforce iframe without project-level OIDC; the public app uses `{envId}-{slug}.apps…`, where per-environment [App Auth](../projects/environments.md#app-auth) can attach its Traefik middleware. Both reach the same app proxy → pod `:3000`. Extends the app TTL.
-- **VS Code / DB viewer** — subdomain → pod `:8080` / `:8081`. Extends the agent TTL. code-server drives its session over a websocket, so once a user opens the Code tab the keep-alive above holds the pod up for as long as that page stays open — its iframe stays mounted after the user switches tabs, so hiding the tab does not release it. Closing or reloading the page drops the socket and the surface falls back to the plain agent TTL; a vanished client (sleep, network loss) is detected by TCP keepalive within a few minutes. See [Pod Tools](pod-tools.md).
-- **File upload** — `POST /api/projects/{id}/upload` writes straight to the persistent workspace and touches the agent TTL; an optional target folder inside the upload area lets the [Files tab](../projects/files-tab.md) drop files where the member is browsing. It is a persistence-first path, not a wake path: files land on storage whether or not a pod is running, and appear after the next startup. Listing and deleting workspace files are the same kind of path, and reading them back is the reverse one — as an attachment for [File Downloads](../projects/file-downloads.md), or inline for [File Preview](../projects/file-preview.md). None of the read paths touch a pod at all, so they serve a suspended environment unchanged.
+## Code
 
-## Project and environment teardown
+- `backend/src/proxy/` — the ensure, activity and failure endpoints the proxies call.
+- `backend/src/timeout/` — the two keep-alive keys and the idle-timeout floor.
+- `proxy/internal/server/` — the Go runtime proxy: routing modes, decision cache, WebSocket keep-alive, failure reporting.
+- `proxy/cmd/agent-control/` — the in-pod control port and the OpenCode front proxy.
+- `helm/opsiforce-proxy/` — the edge: oauth2-proxy and static auth mode.
 
-- **Delete project** — `DELETE /api/projects/{id}` deletes every environment's pod (404 ignored), clears timeout keys, revokes Bifrost keys and deletes the team, then tombstones each environment into `deleted_project_environments` before removing the project row. The workspace is retained 7 days, then reaped (see [Persistence — workspace cleanup](persistence.md#workspace-cleanup)).
-- **Duplicate / publish** — these are storage-preparation flows that then hand off to the normal startup gate; their progress streams over SSE. See [Duplication](../projects/duplication.md) and [Project Environments — Publishing](../projects/environments.md#publishing).
+## Related
 
-## See also
-
-- [Pod Lifecycle](pod-lifecycle.md) — the status model, recovery, and concurrency primitives behind the ensure gate.
-- [Pod Tools](pod-tools.md) — why VS Code and the DB viewer are subdomain-routed.
-- [Persistence & Storage](persistence.md) — TTL suspension, tombstones, what survives a pod swap.
-- Code: `backend/src/proxy/proxy.controller.ts` (`/ensure`, `/failure`), `backend/src/project/project.service.ts` (`ensureEnvironment`), `backend/src/timeout/` (TTL keys + listener), `proxy/internal/server/server.go` (Go proxy cache + failure handling).
+- [Pod Lifecycle](pod-lifecycle.md) — the status model, recovery and suspension behind the ensure gate.
+- [Pod Tools](pod-tools.md) — the processes in the pod and why two surfaces are subdomain-routed.
+- [Persistence](persistence.md) — what survives a pod swap and how teardown retains files.
+- [Environments](../projects/environments.md) — public hostnames and App Auth.
+- [Connection](../public-api/connection.md) — how a program reaches the same runtime path.
+- [Local orchestration](../operations/local-orchestration.md) — bringing the local stack up in static mode.

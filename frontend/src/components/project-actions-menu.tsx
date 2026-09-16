@@ -35,8 +35,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import ProjectSettings from './project-settings';
-import ConfirmDialog from './ui/confirm-dialog';
+import { ProjectSettings } from './project-settings';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 interface PendingMove {
   toWorkspaceId: string | null;

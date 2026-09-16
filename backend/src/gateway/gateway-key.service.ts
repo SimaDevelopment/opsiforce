@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
@@ -9,6 +10,8 @@ export interface GatewayIdentity {
   projectEnvironmentId: string | null;
   tenantId: string | null;
 }
+
+export type GatewayRequest = FastifyRequest & { gatewayContext: GatewayIdentity };
 
 @Injectable()
 export class GatewayKeyService {

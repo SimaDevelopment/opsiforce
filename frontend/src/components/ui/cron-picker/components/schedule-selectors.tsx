@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from 'solid-js';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '~/components/ui/select';
-import MultiSelect from './multi-select';
+import { MultiSelect } from './multi-select';
 import { getUnits } from '../lib/units';
 import { determineDefaultSelector, updateCronString } from '../lib/utils';
 import { type CronState, ScheduleSelector, type ScheduleSelectorObject, type ValuePayload } from '../lib/types';
@@ -24,7 +24,7 @@ const scheduleSelector: ScheduleSelectorObject[] = [
 
 const units = getUnits();
 
-export default function ScheduleSelectors(props: Props) {
+export function ScheduleSelectors(props: Props) {
   const activeOptions = createMemo(() =>
     scheduleSelector.filter((opt) => props.activeScheduleSelectors.includes(opt.name))
   );

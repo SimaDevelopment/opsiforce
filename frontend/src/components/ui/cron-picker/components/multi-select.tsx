@@ -20,7 +20,7 @@ interface Props {
   constructCronState: (val: { index: number; values: number[] }) => void;
 }
 
-export default function MultiSelect(props: Props) {
+export function MultiSelect(props: Props) {
   const allOptions = createMemo(() => spreadOption(props.options));
 
   const selectedValues = createMemo(() =>

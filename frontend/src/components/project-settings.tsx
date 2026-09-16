@@ -21,7 +21,7 @@ import { BudgetRow } from '~/components/ui/budget-row';
 import { TimeoutRow } from '~/components/ui/timeout-row';
 import { RequestLoggingControls } from '~/components/ui/request-logging-controls';
 import { ResourcesSelector } from '~/components/project/resources-selector';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { MIN_IDLE_TIMEOUT_LABEL, MIN_IDLE_TIMEOUT_MS, msToUnit, unitToMs } from '~/lib/duration-units';
 import { coresToMillicores, gibToMib, mibToGib, millicoresToCores, trimNumber } from '~/lib/pod-resources';
 import { type BudgetConfig } from '~/constants/budget';
@@ -43,7 +43,7 @@ interface BudgetDraft {
   duration: string;
 }
 
-export default function ProjectSettings(props: {
+export function ProjectSettings(props: {
   projectId: string;
   activeEnvironmentId?: string;
   open: boolean;

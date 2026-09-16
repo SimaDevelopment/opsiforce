@@ -1,21 +1,28 @@
-# Integrations (managed-auth tenant mapping)
+---
+kind: explanation
+---
 
-> Why a tenant stores an explicit mapping from its Organization to its name in the platform's managed identity provider. Surfaced in the UI as the **Integrations** section of [Settings](settings.md); the table and APIs keep the internal `tenant_settings` name.
+# Integrations
 
-When App Auth runs in **managed** mode, an Organization is backed by a tenant in the platform's shared identity provider — and that tenant may be named differently there than the Organization is named in Opsiforce. A project configured with managed auth gets a Traefik OIDC middleware asserting a tenant-scoped realm role (the configured role prefix, `MANAGED_TENANT_ROLE_PREFIX`, plus the external tenant name) — that name must match how the user's tenant is named in the identity provider.
-
-The Organization's Opsiforce name and its external tenant name are **not always identical**. Managed auth previously assumed they were; the `tenant_settings` table stores the explicit mapping (`external_tenant_name`) so it resolves the right counterpart instead of guessing. The table is designed to accumulate more cross-tenant configuration over time — today it holds just this one value.
+> How does an [Organization](../../CONTEXT.md) map itself to its tenant in the platform's managed identity provider, and what happens when the mapping changes?
 
 ## How it works
 
-A tenant admin opens **Settings → Integrations** and picks the corresponding external tenant from a dropdown whose options come from the user's own group memberships (parsed from `/oauth2/userinfo`'s `groups`, filtered by the configured role prefix) — so they can only pick a tenant they belong to, and the backend re-validates against `X-Forwarded-Groups` on save. When the mapping changes, every project in the tenant currently using managed auth is re-synced in the background via the `managed-auth-sync` BullMQ queue (one job per project, deterministic job id so rapid resaves collapse, failures isolated per project).
+- When [App Auth](../../CONTEXT.md) runs in managed mode, an App's OIDC middleware asserts a tenant-scoped realm role built from the configured role prefix and the Organization's external tenant name, which must match how the tenant is named in the identity provider ([Environments](../projects/environments.md)).
+- The Organization's name and its external tenant name are not always identical, so the tenant settings row stores the explicit mapping.
+- A tenant admin picks the external tenant under Settings, Integrations from a dropdown of their own group memberships filtered by the role prefix, and the backend re-validates the choice against the groups header on save ([Settings](settings.md)).
+- When the mapping changes, every [Project](../../CONTEXT.md) in the tenant using managed auth is re-synced in the background through a BullMQ queue, one job per Project with a deterministic id so rapid re-saves collapse and failures stay isolated.
+- Reading the mapping is open to any tenant member; changing it requires `can_manage_external_integration` ([Permissions](permissions.md)).
+- New tenants get their row in the same transaction as the tenant, so the resolver needs no fallback.
 
-## Who can use it
+## Code
 
-Reading the mapping is open to any tenant member (it isn't sensitive — it already appears as a public role assertion). Changing it is gated by a dedicated manage-integration permission. Existing tenants were backfilled with `external_tenant_name = tenants.name` (the legacy assumption), and new tenants get a row in the same transaction as the tenant, so the resolver needs no fallback in steady state.
+- `backend/src/private/tenant-settings/` — the mapping, the sync queue and its processor; part of the private seam, excluded from the standalone mirror.
+- `backend/src/tenant/tenant.service.ts` — resolving a tenant by external name and parsing groups by prefix.
+- `frontend/src/private/integrations/` — the Settings section.
 
-## See also
+## Related
 
 - [Settings](settings.md) — the surface this is a section of.
-- [Permissions](permissions.md) — the manage-integration permission that gates changes.
-- Code: `backend/src/tenant-settings/`; helpers in `backend/src/tenant/tenant.service.ts` (`getTenantByExternalName`, `parseGroupsByPrefix`); integration point `backend/src/project/project.service.ts`; frontend `frontend/src/pages/integrations.tsx`.
+- [Environments](../projects/environments.md) — the managed App Auth mode that consumes the mapping.
+- [Permissions](permissions.md) — the permission that gates changes.

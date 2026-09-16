@@ -2,7 +2,7 @@ import { Index, Show, createEffect, createSignal } from 'solid-js';
 import { toast } from 'solid-sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Button } from '~/components/ui/button';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from '~/components/ui/switch';
 import { Plus, SlidersHorizontal, Trash2 } from '~/components/icons';
 import { useEnvironmentVariables, useUpdateEnvironmentVariables } from '~/api/environment-variables';
@@ -19,7 +19,7 @@ export interface EnvironmentVariablesDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export default function EnvironmentVariablesDialog(props: EnvironmentVariablesDialogProps) {
+export function EnvironmentVariablesDialog(props: EnvironmentVariablesDialogProps) {
   const open = () => props.environment !== null;
   const environmentId = () => props.environment?.id ?? '';
   const environmentName = () => props.environment?.name ?? '';

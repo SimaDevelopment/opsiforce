@@ -7,7 +7,7 @@ interface Props {
   disableExplainerText?: boolean;
 }
 
-export default function ScheduleExplainer(props: Props) {
+export function ScheduleExplainer(props: Props) {
   return (
     <Show
       when={props.state.error === ''}

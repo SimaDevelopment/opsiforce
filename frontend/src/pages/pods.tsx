@@ -6,7 +6,7 @@ import { formatAgo, formatClock, formatDuration } from '~/lib/format-duration';
 import { formatCores, formatGib } from '~/lib/pod-resources';
 import { cn } from '~/lib/cn';
 import { Badge } from '~/components/ui/badge';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
 import { KeepAliveCell } from '~/components/pods/keep-alive-cell';

@@ -10,10 +10,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 import { ChevronDown, Plus, AppWindow, Trash2 } from '~/components/icons';
 
-export default function WorkspaceProjectsTab(props: {
+export function WorkspaceProjectsTab(props: {
   workspaceId: string;
   workspaceName: string;
   projects: Project[];
