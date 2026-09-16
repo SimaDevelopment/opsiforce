@@ -104,11 +104,3 @@ including query parameters the fake does not otherwise act on, so a test can ass
 
 **It never fakes the pod client.** The backend's own HTTP client, timeouts, SSE parsing and error
 mapping always run for real against this server; that is the point of using a socket instead of a mock.
-
-## The recorded opencode payloads
-
-`fixtures/opencode/` holds real opencode response bodies. They no longer pin a platform-owned schema —
-chat is native opencode through the runtime proxy, so the platform publishes no chat shapes to
-pin ([ADR-0038](../../docs/adr/0038-chat-is-native-opencode-through-the-runtime-proxy.md)). They stay
-as realistic payloads for the fake runtime and as a record of what a build actually emitted; see
-[the bump runbook](../../docs/operations/upgrade-opencode.md) and the note beside the fixtures.
