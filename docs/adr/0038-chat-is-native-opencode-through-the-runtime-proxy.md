@@ -33,7 +33,7 @@ Only the last step needs serializing, and the three paths pay different prices:
 
 The lock deliberately does **not** wrap the whole sequence. That would put a database lock around two or three network calls to a pod on every single connection; measured, a connection is ~40 ms, so the contention window it protects is tiny while the cost is paid every time. It also does not make PostgreSQL and opencode atomic: a crash between creating a Session upstream and persisting the binding leaves an unbound root, which the next connection adopts by the same rule. That is why nothing is ever deleted.
 
-Session ids are descending-encoded, so a newer Session sorts lower as a string. "Oldest root" means `order=asc&limit=1` by creation time — deriving it from the id would pick the newest and orphan the history.
+Session ids are descending-encoded, so a newer Session sorts lower as a string. "Oldest root" means the smallest `time.created`, and the platform computes it itself after paging through every root: opencode's list endpoint orders only by `time.updated`, so `order=asc&limit=1` returns the root nobody has touched for the longest time — on a pod with test residue that is an abandoned empty Session, not the conversation (observed 2026-09-16 on a duplicated Project with twenty roots). Deriving it from the id would pick the newest and orphan the history.
 
 ## Consequences — the losses, accepted deliberately
 

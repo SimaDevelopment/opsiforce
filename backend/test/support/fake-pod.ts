@@ -182,10 +182,20 @@ function writeEvent(res: ServerResponse, event: FakePodEvent): void {
   res.write(`data: ${JSON.stringify(event.data)}\n\n`);
 }
 
-function createdAt(session: SessionInfo): number {
+const DEFAULT_SESSIONS_LIMIT = 50;
+
+function updatedAt(session: SessionInfo): number {
   const time = session.time;
-  const created = typeof time === 'object' && time !== null && !Array.isArray(time) ? time.created : 0;
-  return typeof created === 'number' ? created : 0;
+  const updated = typeof time === 'object' && time !== null && !Array.isArray(time) ? time.updated : 0;
+  return typeof updated === 'number' ? updated : 0;
+}
+
+function encodeListCursor(query: Record<string, string>): string {
+  return Buffer.from(JSON.stringify(query)).toString('base64url');
+}
+
+function decodeListCursor(cursor: string): Record<string, string> {
+  return JSON.parse(Buffer.from(cursor, 'base64url').toString()) as Record<string, string>;
 }
 
 function asObject(value: JsonValue): JsonObject {
@@ -329,14 +339,17 @@ export async function startFakePod(): Promise<FakePod> {
       case 'health':
         return sendJson(res, health.status, health.body);
       case 'session.list': {
-        const wantsRoots = request.query.parentID === 'null';
+        const query = request.query.cursor === undefined ? request.query : decodeListCursor(request.query.cursor);
+        const wantsRoots = query.parentID === 'null';
         const listed = [...sessions.values()].filter((session) => !wantsRoots || session.parentID === null);
         const ordered = listed.toSorted((a, b) =>
-          request.query.order === 'desc' ? createdAt(b) - createdAt(a) : createdAt(a) - createdAt(b)
+          query.order === 'desc' ? updatedAt(b) - updatedAt(a) : updatedAt(a) - updatedAt(b)
         );
-        const limit = request.query.limit === undefined ? undefined : Number(request.query.limit);
-        const page = limit === undefined ? ordered : ordered.slice(0, limit);
-        return sendJson(res, 200, { data: page, cursor: { previous: null, next: null } });
+        const offset = Number(query.offset ?? 0);
+        const limit = request.query.limit === undefined ? DEFAULT_SESSIONS_LIMIT : Number(request.query.limit);
+        const page = ordered.slice(offset, offset + limit);
+        const next = page.length === 0 ? null : encodeListCursor({ ...query, offset: String(offset + page.length) });
+        return sendJson(res, 200, { data: page, cursor: { previous: null, next } });
       }
       case 'session.create': {
         const requested = asObject(request.body);

@@ -12,6 +12,7 @@ import {
   PodTimeout,
   PodUnreachable,
 } from '../src/agent-session/agent-session.errors';
+import { PodOpencodeClient } from '../src/agent-session/pod-opencode.client';
 import { Deadline } from '../src/common/deadline';
 import type { ProjectEnvironmentContext } from '../src/project-environment/project-environment.types';
 import { AgentStatus, ProjectStatus } from '../src/project/project.types';
@@ -301,21 +302,56 @@ describe('resolving the primary session', () => {
     expect(created()).toBe(0);
   });
 
-  it('falls back to the oldest root, asked for with order and limit', async () => {
+  it('falls back to the root created first, even when the runtime lists it last', async () => {
     const env = await createRunningProject();
-    const oldest = pod.addSession({ time: { created: 1_000, updated: 1_000 } });
+    const oldest = pod.addSession({ time: { created: 1_000, updated: 9_000 } });
     pod.addSession({ time: { created: 2_000, updated: 2_000 } });
+    pod.addSession({ time: { created: 3_000, updated: 1_000 } });
     await rememberSession(env.id, null);
 
     const connection = await harness.agentConnections.connect(env);
 
     expect(connection.sessionId).toBe(oldest.id);
-    expect(pod.requestsTo('session.list').at(-1)?.query).toMatchObject({
-      parentID: 'null',
-      order: 'asc',
-      limit: '1',
-    });
+    expect(pod.requestsTo('session.list')[0]?.query).toMatchObject({ parentID: 'null' });
+    expect(pod.requestsTo('session.list')[0]?.query).not.toHaveProperty('limit');
     expect(await rememberedSessionOf(env.id)).toBe(oldest.id);
+  });
+
+  it('walks every page of roots before choosing the one created first', async () => {
+    const env = await createRunningProject();
+    for (let i = 0; i < 60; i += 1) pod.addSession({ time: { created: 10_000 + i, updated: 10_000 + i } });
+    const oldest = pod.addSession({ time: { created: 1_000, updated: 99_000 } });
+    await rememberSession(env.id, null);
+
+    const connection = await harness.agentConnections.connect(env);
+
+    expect(connection.sessionId).toBe(oldest.id);
+    expect(pod.requestsTo('session.list').length).toBeGreaterThanOrEqual(2);
+    expect(pod.requestsTo('session.list').at(-1)?.query).toHaveProperty('cursor');
+  });
+
+  it('refuses to bind from a partial scan when the root list outlives the page budget', async () => {
+    for (let i = 0; i < 60; i += 1) pod.addSession({ time: { created: 10_000 + i, updated: 10_000 + i } });
+    pod.addSession({ time: { created: 1_000, updated: 99_000 } });
+    const client = harness.moduleRef.get(PodOpencodeClient);
+
+    const error: unknown = await client
+      .oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(PodTimeout);
+  });
+
+  it('lets the terminal empty page through when every root fits inside the page budget', async () => {
+    for (let i = 0; i < 49; i += 1) pod.addSession({ time: { created: 10_000 + i, updated: 10_000 + i } });
+    const oldest = pod.addSession({ time: { created: 1_000, updated: 99_000 } });
+    const client = harness.moduleRef.get(PodOpencodeClient);
+    const listed = callsSince('session.list');
+
+    const found = await client.oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 });
+
+    expect(found?.id).toBe(oldest.id);
+    expect(listed()).toBe(2);
   });
 
   it('never adopts a child session as the primary one', async () => {
