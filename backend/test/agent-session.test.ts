@@ -301,21 +301,32 @@ describe('resolving the primary session', () => {
     expect(created()).toBe(0);
   });
 
-  it('falls back to the oldest root, asked for with order and limit', async () => {
+  it('falls back to the root created first, even when the runtime lists it last', async () => {
     const env = await createRunningProject();
-    const oldest = pod.addSession({ time: { created: 1_000, updated: 1_000 } });
+    const oldest = pod.addSession({ time: { created: 1_000, updated: 9_000 } });
     pod.addSession({ time: { created: 2_000, updated: 2_000 } });
+    pod.addSession({ time: { created: 3_000, updated: 1_000 } });
     await rememberSession(env.id, null);
 
     const connection = await harness.agentConnections.connect(env);
 
     expect(connection.sessionId).toBe(oldest.id);
-    expect(pod.requestsTo('session.list').at(-1)?.query).toMatchObject({
-      parentID: 'null',
-      order: 'asc',
-      limit: '1',
-    });
+    expect(pod.requestsTo('session.list')[0]?.query).toMatchObject({ parentID: 'null' });
+    expect(pod.requestsTo('session.list')[0]?.query).not.toHaveProperty('limit');
     expect(await rememberedSessionOf(env.id)).toBe(oldest.id);
+  });
+
+  it('walks every page of roots before choosing the one created first', async () => {
+    const env = await createRunningProject();
+    for (let i = 0; i < 60; i += 1) pod.addSession({ time: { created: 10_000 + i, updated: 10_000 + i } });
+    const oldest = pod.addSession({ time: { created: 1_000, updated: 99_000 } });
+    await rememberSession(env.id, null);
+
+    const connection = await harness.agentConnections.connect(env);
+
+    expect(connection.sessionId).toBe(oldest.id);
+    expect(pod.requestsTo('session.list').length).toBeGreaterThanOrEqual(2);
+    expect(pod.requestsTo('session.list').at(-1)?.query).toHaveProperty('cursor');
   });
 
   it('never adopts a child session as the primary one', async () => {

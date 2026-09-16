@@ -4,6 +4,12 @@ import type { JsonObject } from '../common/json';
 import type { RuntimeHealth, SessionInfo } from './agent-session.types';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+const MAX_SESSION_LIST_PAGES = 100;
+
+interface SessionPage {
+  data?: SessionInfo[];
+  cursor?: { next?: string | null };
+}
 
 interface CallOptions {
   method?: 'GET' | 'POST';
@@ -44,12 +50,16 @@ export class PodOpencodeClient {
   }
 
   async oldestRootSession(upstream: string, options: CallOptions = {}): Promise<SessionInfo | null> {
-    const roots = await this.callForData<SessionInfo[]>(
-      upstream,
-      '/api/session?parentID=null&order=asc&limit=1',
-      options
-    );
-    return roots.find(isRootSession) ?? null;
+    let oldest: SessionInfo | null = null;
+    let path: string | null = '/api/session?parentID=null&order=asc';
+    for (let pages = 0; path !== null && pages < MAX_SESSION_LIST_PAGES; pages += 1) {
+      const page: SessionPage = await this.call<SessionPage>(upstream, path, options);
+      const roots = (page.data ?? []).filter(isRootSession);
+      for (const root of roots) if (oldest === null || createdBefore(root, oldest)) oldest = root;
+      const next = page.cursor?.next ?? null;
+      path = roots.length === 0 || next === null ? null : `/api/session?cursor=${encodeURIComponent(next)}`;
+    }
+    return oldest;
   }
 
   async createSession(upstream: string, options: CallOptions = {}): Promise<SessionInfo> {
@@ -91,6 +101,11 @@ export class PodOpencodeClient {
 
 export function isRootSession(session: SessionInfo): boolean {
   return session.parentID === undefined || session.parentID === null;
+}
+
+function createdBefore(candidate: SessionInfo, current: SessionInfo): boolean {
+  if (candidate.time.created !== current.time.created) return candidate.time.created < current.time.created;
+  return candidate.id > current.id;
 }
 
 function isConfirmedAbsence(error: PodResponded): boolean {
