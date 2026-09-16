@@ -12,13 +12,13 @@ import { Permission } from '~/constants/permissions';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Button } from '~/components/ui/button';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Skeleton from '~/components/ui/skeleton';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Settings, AppWindow, Trash2, Users } from '~/components/icons';
-import WorkspaceMembersTab from './workspace-members-tab';
-import WorkspaceProjectsTab from './workspace-projects-tab';
+import { WorkspaceMembersTab } from './workspace-members-tab';
+import { WorkspaceProjectsTab } from './workspace-projects-tab';
 
-export default function WorkspaceSettings(props: {
+export function WorkspaceSettings(props: {
   workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;

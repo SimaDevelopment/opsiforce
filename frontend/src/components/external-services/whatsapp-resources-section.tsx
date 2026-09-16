@@ -7,8 +7,8 @@ import {
   type WhatsappChannel,
 } from '~/api/whatsapp-channels';
 import { Button } from '~/components/ui/button';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Skeleton from '~/components/ui/skeleton';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Skeleton } from '~/components/ui/skeleton';
 import { MessageSquare, Plus } from '~/components/icons';
 import { ChannelCard } from './channel-card';
 import { ChannelDialog } from './channel-dialog';

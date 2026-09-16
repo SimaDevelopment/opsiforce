@@ -4,7 +4,7 @@ import { projectKeys } from '~/api/projects';
 import { AlertTriangle } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 
-export default function ProjectFailed(props: { projectId: string }) {
+export function ProjectFailed(props: { projectId: string }) {
   const qc = useQueryClient();
 
   const retry = createMutation(() => ({

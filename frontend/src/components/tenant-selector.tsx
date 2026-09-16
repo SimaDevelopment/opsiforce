@@ -11,7 +11,7 @@ import { SidebarMenu, SidebarMenuItem } from '~/components/ui/sidebar';
 import { Building2, ChevronsUpDown } from '~/components/icons';
 import { createAppQuery } from '~/lib/create-app-query';
 
-export default function TenantSelector() {
+export function TenantSelector() {
   const [currentTenant, setTenant] = createTenantState();
 
   const tenantsQuery = createAppQuery(() => ({

@@ -3,8 +3,8 @@ import { toast } from 'solid-sonner';
 import { ApiError } from '~/api/client';
 import { useIncomingEmailAddress, useRegenerateIncomingEmailAddress } from '~/api/incoming-email';
 import { Button } from '~/components/ui/button';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Skeleton from '~/components/ui/skeleton';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Copy, RotateCcw } from '~/components/icons';
 import type { EnvironmentSectionProps } from './environment-section-props';
 

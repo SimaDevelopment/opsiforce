@@ -1,9 +1,8 @@
 import { Controller, Post, Body, Req, UseGuards, BadRequestException } from '@nestjs/common';
-import { FastifyRequest } from 'fastify';
 import { Public } from '../tenant/tenant.decorator';
 import { GatewayAuthGuard } from './gateway-auth.guard';
 import { GatewayService } from './gateway.service';
-import type { GatewayIdentity } from './gateway-key.service';
+import type { GatewayRequest } from './gateway-key.service';
 
 interface GatewayRequestBody {
   service: string;
@@ -17,7 +16,7 @@ export class GatewayController {
   constructor(private readonly gatewayService: GatewayService) {}
 
   @Post()
-  async handle(@Body() body: GatewayRequestBody, @Req() req: FastifyRequest & { gatewayContext?: GatewayIdentity }) {
+  async handle(@Body() body: GatewayRequestBody, @Req() req: GatewayRequest) {
     if (!body?.service) {
       throw new BadRequestException("Missing 'service' field");
     }
@@ -26,7 +25,7 @@ export class GatewayController {
       throw new BadRequestException('Email sending is not supported on this platform.');
     }
 
-    const context = req.gatewayContext!;
+    const context = req.gatewayContext;
     if (!context.tenantId) {
       throw new BadRequestException('Gateway calls require a claimed project');
     }

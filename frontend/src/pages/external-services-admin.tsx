@@ -2,7 +2,7 @@ import { createMemo, Index, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useExternalServices } from '~/api/external-services';
 import { EXTERNAL_SERVICE_UI } from '~/components/external-services/service-registry';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Cable, RefreshCw } from '~/components/icons';
 import { cn } from '~/lib/cn';
 

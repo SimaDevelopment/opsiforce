@@ -67,7 +67,7 @@ The important distinction is that Opsiforce provides the workspace, hosting, pro
 
 Opsiforce is a Kubernetes-native control plane plus a set of runtime proxies.
 
-![Opsiforce architecture: the browser reaches a Traefik ingress (OAuth2 Proxy / OIDC, per-env App Auth); the frontend, NestJS control-plane backend, and four stateless Go runtime proxies run in-cluster; the backend drives the Kubernetes API, PostgreSQL, Redis, Bifrost, and a BullMQ schedule worker; runtime proxies stream to isolated per-environment pods (OpenCode :4096, app :3000, code-server :8080, Datasette :8081) on a persistent CephFS/RWX workspace volume](docs/assets/architecture.png)
+![Opsiforce architecture: the browser reaches a Traefik ingress (OAuth2 Proxy / OIDC, per-env App Auth); the frontend, NestJS control-plane backend, and four stateless Go runtime proxies run in-cluster; the backend drives the Kubernetes API, PostgreSQL, Redis, Bifrost, and a BullMQ schedule worker; runtime proxies stream to isolated per-environment pods (OpenCode :4096, app :3000, code-server :8080, Datasette :8081) on a persistent CephFS/RWX workspace volume](docs/assets/architecture/render.png)
 The backend is the control plane. It creates and wakes pods, manages projects and environments, writes settings, enforces permissions, talks to Kubernetes, and manages gateway credentials. It does not stream app traffic. The Go runtime proxies carry traffic to the right pod after checking with the backend that the environment is ready.
 
 Each project environment is disposable at the pod layer and durable at the workspace layer. If a pod is suspended, evicted, restarted, or recreated, the same persistent workspace is mounted back into the next pod.
@@ -130,10 +130,9 @@ The pod can be suspended when idle and recreated later against the same workspac
 
 Start with these docs when working on the system:
 
-- [Overview](docs/overview.md) for the architecture and package map.
-- [Documentation index](docs/README.md) for the complete doc tree.
+- [Documentation index](docs/README.md) for what Opsiforce is and the complete doc tree.
 - [Domain vocabulary](CONTEXT.md) for canonical product language.
-- [Project Environments](docs/projects/environments.md) for Development, Production, publishing, auth, and environment variables.
+- [Environments](docs/projects/environments.md) and [Publish](docs/projects/publish.md) for the Project/Environment model, App Auth, publishing and Environment Variables.
 - [Persistence](docs/runtime/persistence.md) for workspace durability and pod replacement.
 - [Request Flows](docs/runtime/request-flows.md) for how browser traffic reaches each pod surface.
 - [LLM Gateway](docs/gateways/llm-gateway.md) and [Service Gateway](docs/gateways/service-gateway.md) for credential isolation.
@@ -190,7 +189,7 @@ sudo apt-get update && sudo apt-get install -y mkcert libnss3-tools
 
 On Linux the cluster uses the Docker driver and `minikube tunnel` binds `127.0.0.1:80` and `:443` for ingress, so the Quickstart asks for `sudo` once to bind those privileged ports.
 
-For the LLM, the default local proxy lets you drive a **ChatGPT/Codex subscription** you already pay for (a one-time browser sign-in, no API credits) or **your own OpenAI API key**. You are not limited to those: the LLM gateway is Bifrost and the agent runtime is OpenCode, so you can use any provider they support (Anthropic, Google, Azure OpenAI, AWS Bedrock, OpenRouter, local or self-hosted models, and more) by configuring it in Bifrost and selecting the model in OpenCode. For the full walkthrough (every numbered step, the LLM choices, the pinned-versions manifest, and day-two re-runs), see the **[Quickstart guide](docs/quickstart.md)**.
+For the LLM, the default local proxy lets you drive a **ChatGPT/Codex subscription** you already pay for (a one-time browser sign-in, no API credits) or **your own OpenAI API key**. You are not limited to those: the LLM gateway is Bifrost and the agent runtime is OpenCode, so you can use any provider they support (Anthropic, Google, Azure OpenAI, AWS Bedrock, OpenRouter, local or self-hosted models, and more) by configuring it in Bifrost and selecting the model in OpenCode. For the full walkthrough (every numbered step, the LLM choices, the pinned-versions manifest, and day-two re-runs), see the **[Quickstart guide](docs/operations/quickstart.md)**.
 
 ## Local URLs
 
@@ -213,7 +212,7 @@ For the LLM, the default local proxy lets you drive a **ChatGPT/Codex subscripti
 
 ## Useful commands
 
-The day-to-day commands you run *while* developing (type-check, lint, format, database, and the per-workspace tasks) are in the command reference: [docs/development/commands.md](docs/development/commands.md).
+The day-to-day commands you run *while* developing (type-check, lint, format, database, and the per-workspace tasks) are in the command reference: [docs/operations/commands.md](docs/operations/commands.md).
 
 ## Running in production
 

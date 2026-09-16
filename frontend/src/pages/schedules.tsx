@@ -11,9 +11,9 @@ import { Calendar, Trash2, Pencil, Play, Clock, EllipsisVertical, ChevronLeft } 
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '~/components/ui/tabs';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter } from '~/components/ui/dialog';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Badge } from '~/components/ui/badge';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { CronPicker } from '~/components/ui/cron-picker';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Switch, SwitchControl, SwitchThumb } from '~/components/ui/switch';

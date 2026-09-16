@@ -9,7 +9,7 @@ export interface EnvAppLinkButtonsProps {
   disabledReason: string;
 }
 
-export default function EnvAppLinkButtons(props: EnvAppLinkButtonsProps) {
+export function EnvAppLinkButtons(props: EnvAppLinkButtonsProps) {
   const [copied, setCopied] = createSignal(false);
 
   const buttonClass = (extra?: string) =>

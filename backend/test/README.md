@@ -2,7 +2,7 @@
 
 `yarn workspace @opsiforce/backend run test` runs Vitest against a throwaway Postgres and a fake
 opencode pod. Docker must be running; there is no CI wiring — these tests are local only. The
-narrative version of this lives in [docs/development/testing.md](../../docs/development/testing.md).
+narrative version of this lives in [docs/backend/testing.md](../../docs/backend/testing.md).
 
 `setup/global-setup.ts` starts one Testcontainers Postgres for the whole run, applies the Drizzle
 migrations to it, and then clones that migrated database once per worker (`CREATE DATABASE …
@@ -104,11 +104,3 @@ including query parameters the fake does not otherwise act on, so a test can ass
 
 **It never fakes the pod client.** The backend's own HTTP client, timeouts, SSE parsing and error
 mapping always run for real against this server; that is the point of using a socket instead of a mock.
-
-## The recorded opencode payloads
-
-`fixtures/opencode/` holds real opencode response bodies. They no longer pin a platform-owned schema —
-chat is native opencode through the runtime proxy, so the platform publishes no chat shapes to
-pin ([ADR-0038](../../docs/adr/0038-chat-is-native-opencode-through-the-runtime-proxy.md)). They stay
-as realistic payloads for the fake runtime and as a record of what a build actually emitted; see
-[the bump runbook](../../docs/public-api/opencode-bump.md) and the note beside the fixtures.

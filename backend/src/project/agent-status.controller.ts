@@ -1,11 +1,8 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
-import { FastifyRequest } from 'fastify';
 import { Public } from '../tenant/tenant.decorator';
 import { GatewayAuthGuard } from '../gateway/gateway-auth.guard';
-import type { GatewayIdentity } from '../gateway/gateway-key.service';
+import type { GatewayRequest } from '../gateway/gateway-key.service';
 import { AgentStatusService } from './agent-status.service';
-
-type GatewayRequest = FastifyRequest & { gatewayContext: GatewayIdentity };
 
 interface AgentStatusDto {
   working?: boolean;

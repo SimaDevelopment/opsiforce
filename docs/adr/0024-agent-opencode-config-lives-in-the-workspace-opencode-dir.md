@@ -18,7 +18,7 @@ User-written provider config in the old file is not preserved. It was never func
 
 ## Consequences
 
-- The Agent Updates guarantee "agent-owned files reload via dispose" is now uniformly true for all three artifact kinds (prompt, skills, config) — see [Agent Updates](../agents/agent-updates.md).
+- The Agent Updates guarantee "agent-owned files reload via dispose" is now uniformly true for all three artifact kinds (prompt, skills, config) — see [Agent Updates](../agent-system/agent-updates.md).
 - Platform config outranks project-shipped `opencode.json` files. This is the intended policy.
 - Published (non-default) environments are excluded — the sweep targets default environments only. Bounded consequence: after its next publish-driven pod start a published environment loads both files (the new one via the init-container sync; the old one is never deleted there). Harmless because both files carry the same settings; a follow-up may extend the init-container sync to delete the old file.
 - Private-agent Projects have no ledger under their own Agent's name, so their first agent-aware sweep runs every migration in that Agent's directory — exactly this one, because the directory is otherwise empty. Backfilling that directory later invalidates this assumption and must be done knowingly. They also absorb one extra pod recreate during the transition (one under the old app-builder identity from a prior bump, one under their own).

@@ -28,9 +28,9 @@ import {
   DropdownMenuSeparator,
 } from '~/components/ui/dropdown-menu';
 import { Button } from '~/components/ui/button';
-import TenantSelector from '~/components/tenant-selector';
+import { TenantSelector } from '~/components/tenant-selector';
 import { ProjectSidebar } from './project-sidebar';
-import CreateWorkspaceDialog from '~/components/create-workspace-dialog';
+import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
 import { Calendar, ChevronsUpDown, FolderKanban, LogOut, Plus, Search, Server, Settings, X } from '~/components/icons';

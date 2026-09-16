@@ -1,46 +1,12 @@
 # Architecture Decision Records
 
-> The durable record of *why* Opsiforce is shaped the way it is. Each ADR captures one decision — its context, the choice, the alternatives rejected, and the consequences. Prose docs in `../` link here rather than restating rationale.
+> The durable record of *why* Opsiforce is shaped the way it is. Each ADR captures one decision: its context, the choice, the alternatives rejected, and the consequences. Pages under `../` link here rather than restating rationale.
 
-Format: Title / Status / Context + Decision / Considered options / Consequences. ADRs are append-only — a later decision that changes an earlier one is a new ADR that supersedes it (noted in both).
+**Format.** The `domain-modeling` skill's `ADR-FORMAT.md`: a one-line title, one to three sentences of context, decision and reason, optional Considered Options and Consequences. An ADR is written when the choice is hard to reverse, surprising without context, and the result of a real trade-off. A retirement ADR names every earlier ADR whose consequences it retires. Bodies are never edited; a change of mind is a new ADR.
 
-| # | Decision | Notes |
-|---|----------|-------|
-| [0001](0001-environment-vs-project-environment.md) | Two entities for environments: tenant `Environment` registry vs per-project `ProjectEnvironment` | foundation of [environments.md](../projects/environments.md) |
-| [0002](0002-development-environment-reuses-project-id.md) | The Development `ProjectEnvironment` reuses the `Project`'s id | partially superseded by 0012 |
-| [0003](0003-one-bifrost-team-per-project-keys-per-env.md) | One Bifrost team per project; one virtual-key pair shared across its environments | → [llm-gateway.md](../gateways/llm-gateway.md) |
-| [0004](0004-git-based-incremental-publish.md) | Publish via git: a published environment is a checkout of the dev repo | → [environments.md](../projects/environments.md) |
-| [0005](0005-pod-class-project-level-snapshot.md) | Pod class (Resources) is project-level policy, snapshotted as numbers | → [resources.md](../runtime/resources.md) |
-| [0006](0006-request-log-streaming-tee.md) | Request-log capture streams and tees a bounded prefix; verbosity is a separate policy | → [request-logging.md](../gateways/request-logging.md) |
-| [0007](0007-per-environment-app-auth.md) | App Auth is enforced per `ProjectEnvironment`, seeded once from Development | partially superseded by 0012 |
-| [0008](0008-agent-model-owned-by-agent-config.md) | Agent model is owned by agent-config, not a tenant/platform default | → [defaults.md](../organization/defaults.md), [agent-system.md](../agents/agent-system.md) |
-| [0009](0009-in-pod-control-process.md) | App restarts go through an in-pod control process, not exec or file-watching | → [environments.md](../projects/environments.md) |
-| [0010](0010-app-identity-read-at-runtime.md) | App identity is read at runtime, not hardcoded by the agent | → [project-apps.md](../projects/project-apps.md) |
-| [0011](0011-duplication-reuses-git-publish-path.md) | Duplication reuses the publish git path plus a subtractive runtime-state copy | → [duplication.md](../projects/duplication.md) |
-| [0012](0012-public-app-hostnames-carry-environment-slug.md) | Public app hostnames carry an immutable Environment slug | supersedes parts of 0002 & 0007 |
-| [0013](0013-pods-view-reads-live-keepalive-from-redis.md) | The Pods view reads keep-alive live from Redis, not from k8s or a new store | → [pods.md](../runtime/pods.md) |
-| [0014](0014-admin-section-and-operational-view-module.md) | Operational views live in an "Admin" section and their own backend module | → [admin.md](../organization/admin.md) |
-| [0015](0015-app-liveness-pushed-not-polled.md) | App liveness is pushed from the pod over the gateway channel, not polled | → [app-readiness.md](../projects/app-readiness.md); has a 2026-06-17 amendment |
-| [0016](0016-app-details-are-per-environment.md) | App Details are per-environment; each `ProjectEnvironment` is its own App | implemented (migration 0047) → [project-apps.md](../projects/project-apps.md) |
-| [0017](0017-project-export-is-a-faithful-full-workspace-zip.md) | A Project export is a faithful full-workspace zip, not a sanitized or rebuilt bundle | design — not yet implemented → [export-import.md](../projects/export-import.md) |
-| [0018](0018-standalone-llm-access-via-codex-proxy.md) | standalone local LLM runs through a host Codex-subscription proxy (BYO-key alternative) | implemented → [Quickstart](../quickstart.md) |
-| [0019](0019-externally-deleted-pods-recreated-eagerly.md) | Externally deleted pods are recreated eagerly — boot sweep + delete-event watcher | accepted — boot sweep implemented, delete-event watcher pending; amends the lazy-recovery trade-off in [pod-lifecycle.md](../runtime/pod-lifecycle.md) |
-| [0020](0020-agent-status-pushed-and-resynced-not-heartbeated.md) | Agent Status is pushed from the pod and re-synced at boundaries — no heartbeat, no persistence | implemented (self-healing) → [agent-status.md](../agents/agent-status.md) |
-| [0021](0021-sidebar-orders-by-last-prompt.md) | The project sidebar orders by a new `last_prompt_at` (user sends only), not keep-alive `last_active_at` | implemented (migration 0053) |
-| [0022](0022-environment-identity-color.md) | Environment identity color: a stored registry attribute, distinct from status color | implemented (migration 0054); builds on [0001](0001-environment-vs-project-environment.md) |
-| [0023](0023-tenant-switch-reacts-to-the-value.md) | A tenant switch is handled by reacting to the tenant value, not by the setter | implemented; fixes stale cross-tab project views |
-| [0024](0024-agent-opencode-config-lives-in-the-workspace-opencode-dir.md) | The agent-owned OpenCode config lives in the workspace `.opencode` dir, at highest file precedence | → [agent-updates.md](../agents/agent-updates.md); makes the dispose-reload guarantee true for config |
-| [0025](0025-private-workspaces-are-a-per-tenant-toggle.md) | Private workspaces are a per-tenant toggle that hides, not deletes | implemented (migration 0057) → [workspaces.md](../organization/workspaces.md) |
-| [0026](0026-chat-boot-suspense-contained-and-covered.md) | Chat boot runs in a separate Solid render root behind a DOM-observed connecting overlay; local Suspense and sync-store readiness probing were tried and removed (both dead-lock or race cold boots) | implemented; fixes the blank project view and dead cold boots after the opencode 1.3.2 → 1.18.18 upgrade |
-| [0027](0027-platform-scope-routes-opt-out-of-tenant-resolution.md) | Platform-scope routes opt out of tenant resolution via `@PlatformScope()` | implemented → [permissions.md](../organization/permissions.md) |
-| [0028](0028-storage-view-computes-usage-on-demand-from-cephfs-rstats.md) | The Storage view computes usage on demand from CephFS rstats — no usage table | implemented → [storage.md](../runtime/storage.md); same authority model as 0013 |
-| [0029](0029-project-rows-are-draggables-not-sortables.md) | Sidebar project rows are plain draggables — project order is never persisted, so nothing sorts them | implemented → [workspaces.md](../organization/workspaces.md); fixes the drag-and-drop move error that only showed once |
-| [0030](0030-agent-owned-file-changes-need-no-opencode-reload.md) | Agent-owned file changes need no OpenCode reload call — v2 watches `.opencode`, so writing the files is the reload; dispose/restart paths removed | implemented → [agent-updates.md](../agents/agent-updates.md); supersedes the reload half of 0024 |
-| [0031](0031-opencode-auth-and-path-prefix-stay-inside-the-platform.md) | OpenCode v2 Basic auth is injected by agent-control inside the pod and the client's dropped `/api/proxy` prefix is repaired by the embed's fetch, so no external caller changes | implemented → `opencode_proxy.go`, `platform.tsx` |
-| [0032](0032-model-catalog-is-a-file-in-the-agent-image.md) | The model picker is fed by `agent-config/models.json` via `OPENCODE_MODELS_PATH` — v2 has no whitelist, so the catalog file is the allow-list and the metadata source | implemented → [agent-system.md](../agents/agent-system.md) Model |
-| [0033](0033-public-chat-api-is-a-pinned-subset-facade-over-the-primary-session.md) | The public chat API is a pinned subset facade over the environment's primary Session, frozen at the vendored opencode snapshot | **superseded by [0038](0038-chat-is-native-opencode-through-the-runtime-proxy.md)** |
-| [0034](0034-public-api-callers-are-idp-bearer-tokens-behind-a-caller.md) | Public API callers authenticate with IdP bearer tokens through oauth2-proxy, behind a per-request `Caller`; no platform-issued tokens in v1 | accepted → [public-api/overview.md](../public-api/overview.md) |
-| [0035](0035-public-api-module-with-uri-versioning-and-additive-compat.md) | The public API is its own `public-api` module with `/api/v1` URI versioning and an additive-only compatibility policy | accepted → [public-api/overview.md](../public-api/overview.md) |
-| [0036](0036-agent-session-is-the-backends-only-door-to-a-pods-opencode-port.md) | `agent-session` is the backend's only door to a pod's opencode port; the Go proxy reports facts and never decides | accepted, amended by [0038](0038-chat-is-native-opencode-through-the-runtime-proxy.md) → [public-api/opencode-bump.md](../public-api/opencode-bump.md) |
-| [0037](0037-backend-tests-are-grouped-by-area-under-test-never-under-src.md) | Backend tests are grouped by area under `test/` (a directory at three files), never colocated under `src/`; helpers split central vs per-area by fan-in | accepted → [development/testing.md](../development/testing.md) |
-| [0038](0038-chat-is-native-opencode-through-the-runtime-proxy.md) | Chat is native opencode through the runtime proxy; the platform owns access, provisioning, lifecycle and connection | accepted → [public-api/overview.md](../public-api/overview.md) |
+**Status.** `docs/CONVENTIONS.md` § 7. The optional frontmatter key `status: proposed | accepted | deprecated | superseded by ADR-NNNN` is the only mutable thing in an ADR; no block means `accepted`. `superseded by` applies only when a later ADR answers the same question differently.
+
+**Finding an ADR.** There is no table.
+
+- `ls docs/adr/` lists every decision by number and title.
+- `grep -rl 'NNNN' docs/ --include='*.md'` finds the page whose frontmatter names the ADR as its home page.

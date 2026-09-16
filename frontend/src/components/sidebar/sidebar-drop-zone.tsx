@@ -2,7 +2,7 @@ import { type JSX } from 'solid-js';
 import { useDroppable } from '@dnd-kit/solid';
 import { DndType, DROP_ZONE_PRIORITY, PUBLIC_ID, activeDragType } from '~/lib/sidebar-dnd';
 
-export default function SidebarDropZone(props: { workspaceId: string | null; children: JSX.Element }) {
+export function SidebarDropZone(props: { workspaceId: string | null; children: JSX.Element }) {
   const droppable = useDroppable({
     get id() {
       return props.workspaceId ?? PUBLIC_ID;

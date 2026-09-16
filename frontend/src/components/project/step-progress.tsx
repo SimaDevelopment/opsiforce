@@ -16,7 +16,7 @@ export interface StepProgressProps {
   isDone: boolean;
 }
 
-export default function StepProgress(props: StepProgressProps) {
+export function StepProgress(props: StepProgressProps) {
   const stepState = (index: number): StepState => {
     if (props.isDone) return 'done';
     if (index < props.currentIndex) return 'done';

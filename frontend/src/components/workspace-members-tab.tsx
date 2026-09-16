@@ -10,10 +10,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 import { ChevronDown, Plus, Trash2 } from '~/components/icons';
 
-export default function WorkspaceMembersTab(props: { workspaceId: string; members: User[] }) {
+export function WorkspaceMembersTab(props: { workspaceId: string; members: User[] }) {
   const [pickerOpen, setPickerOpen] = createSignal(false);
   const users = useUsers(() => pickerOpen());
   const addMember = useAddWorkspaceMember();

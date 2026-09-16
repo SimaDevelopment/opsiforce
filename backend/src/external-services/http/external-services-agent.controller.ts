@@ -1,14 +1,11 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { FastifyRequest } from 'fastify';
 import { GatewayAuthGuard } from '../../gateway/gateway-auth.guard';
-import type { GatewayIdentity } from '../../gateway/gateway-key.service';
+import type { GatewayRequest } from '../../gateway/gateway-key.service';
 import { Public } from '../../tenant/tenant.decorator';
 import { definitionOf, jsonBodyOf, routeNotFound, subpathSegmentsOf } from './dispatch-request';
 import type { JsonValue, ServiceRouteMethod } from '../platform/external-service-definition';
 import { ExternalServiceRegistry } from '../platform/external-service-registry';
 import { matchServiceRoute } from './service-route-matcher';
-
-type GatewayRequest = FastifyRequest & { gatewayContext?: GatewayIdentity };
 
 const IDENTITY_SEGMENT = 'identity';
 
@@ -76,7 +73,7 @@ export class ExternalServicesAgentController {
 }
 
 function environmentIdOf(request: GatewayRequest): string {
-  const projectEnvironmentId = request.gatewayContext?.projectEnvironmentId;
+  const projectEnvironmentId = request.gatewayContext.projectEnvironmentId;
   if (!projectEnvironmentId) {
     throw new BadRequestException('External-services agent endpoints require an environment-scoped gateway key');
   }

@@ -19,7 +19,7 @@ npm install @opencode-ai/client@0.0.0-beta-19059
 
 Import `OpenCode` from it and call `OpenCode.make({ baseUrl, fetch })` — that is the whole entry point. Do **not** reach for `@opencode-ai/sdk`: its published `1.18.x` line is a different, older API, and its `create()` starts an *embedded* opencode rather than connecting to a remote one.
 
-When the agent image moves, change both rows together and re-run this example; that is step 4 of [the bump runbook](../opencode-bump.md).
+When the agent image moves, change both rows together and re-run this example; that is step 4 of [the bump runbook](../../operations/upgrade-opencode.md).
 
 ## Running it
 

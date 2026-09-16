@@ -1,7 +1,0 @@
-{
-  "id": "msg_01k6b2y7c9e0f1a2b3c4d5e6",
-  "time": { "created": 1757404812444 },
-  "type": "agent-switched",
-  "agent": "build",
-  "previous": "plan"
-}

@@ -6,9 +6,9 @@ import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
 import { useSyncProjectTitle } from '~/api/projects';
 import { FileUpload } from '~/components/file-upload';
 import { DictationButton } from '~/components/dictation-button';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 import { WorkspaceFileLinks } from './workspace-file-links';
-import OpencodeOverrides from './opencode-overrides';
+import { OpencodeOverrides } from './opencode-overrides';
 import { createProxyPlatform } from './platform';
 
 function OpenCodeEventBridge(props: {

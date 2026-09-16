@@ -1,35 +1,32 @@
-# Project Duplication
+---
+kind: explanation
+terms: [Duplicate]
+adrs: [0011]
+---
 
-> Copying a whole project — working state and all — into a new, independent project. The sibling of publishing: where publishing carries only app *source* into a fresh environment, duplication carries everything the source has been *living* with.
+# Duplication
 
-Duplication makes a new Project from an existing one, in the **same tenant and workspace**, preserving its working state so the copy opens exactly where the original left off — the agent conversation, the app's databases, environment variables, and settings. It answers a recurring need: branch from a working project (an automation wired to email, a tool with real data) without rebuilding it by hand.
-
-## What carries, and what doesn't
-
-A duplicate is a faithful copy of the source's **Development** environment, but a fully independent Project:
-
-- **Carried** — app source + git history, the agent's chat/session state, the app's databases, environment variables, the dev auth mode, project settings (timeouts, request logging), [Resources](../runtime/resources.md), and App Details (name, description, icon).
-- **Made fresh** — its own LLM keys and service-gateway key. A duplicate never shares credentials or budget plumbing with its source.
-- **Deliberately not carried** — history belonging to the original (publish jobs, audit logs).
-- **Carried but paused** — Schedules. They come across switched off, so a duplicate never silently fires the same automation as its original; the user reviews and enables them.
-
-Only the Development environment is duplicated; published environments are re-created by publishing from the duplicate.
+> How is a whole [Project](../../CONTEXT.md), working state included, copied into a new independent Project on the same deployment?
 
 ## How it works
 
-Duplication runs on the **same git mechanism as publishing**: commit the source's working tree, make the duplicate a local clone, detach it from its origin. Because a clone carries only git-*tracked* files, the runtime state git ignores — databases, the session store, the env file, **and the installed dependency store** — is then copied across separately, skipping only throwaway caches the app regenerates on its own.
+- A [Duplicate](../../CONTEXT.md) is a new Project in the same tenant and Workspace, copied from the source's [Development](../../CONTEXT.md) environment only; published environments are re-created by publishing from the copy.
+- Carried: App source and git history, the agent's chat and session state, the App's databases, [Environment Variables](../../CONTEXT.md), the Development [Auth mode](../../CONTEXT.md), project settings (timeouts, [Request Logging](../../CONTEXT.md)), [Resources](../../CONTEXT.md), and [App Details](../../CONTEXT.md).
+- Made fresh: the Project's LLM keys and service-gateway key; a Duplicate never shares credentials or budget plumbing with its source. Not carried: the source's publish jobs and audit logs.
+- [Schedules](../../CONTEXT.md) are carried paused, so a Duplicate never fires the same automation as its original until someone enables them ([Schedule](schedule.md)).
+- Duplication runs on the same git mechanism as [Publish](publish.md): commit the source's working tree, make the Duplicate a local clone, detach it from its origin ([ADR-0011](../adr/0011-duplication-reuses-git-publish-path.md)).
+- Runtime state that git ignores, including databases, the session store, the variables file and the installed dependency store, is then copied subtractively: everything ignored, minus a small skip-list of caches the App regenerates.
+- The job reports step progress (snapshot, clone, runtime-state copy, App starting) over its own SSE stream into the [Job Dock](../frontend/job-dock.md); the new Project shows as `starting` and "Open project" appears once its App responds ([App Readiness](app-readiness.md)).
+- Gated by `can_duplicate_project` ([Permissions](../organization/permissions.md)); the Duplicate lands in the source's Workspace, so it never widens who can see a Project.
 
-Crucially the dependency store is **copied, not reinstalled**. A duplicate is always a Development environment, and a dev workspace boots by running the app directly against dependencies that must already be present — it never installs (only a published *Production* environment installs on first start, which is why publishing can ship source alone and duplication cannot). Copying is also faster and more faithful than a network reinstall, since the artifacts already sit on the shared filesystem. This single most-important choice — and why runtime state is copied **subtractively** (everything ignored, minus a small skip-list) rather than from a preserve-list — is [ADR-0011](../adr/0011-duplication-reuses-git-publish-path.md): a forgotten skip-list entry only makes a copy slower, while a forgotten preserve-list entry would silently lose user data.
+## Code
 
-Publishing and duplicating share the git transfer code and can't run against the same project at once (both begin by committing the same working tree).
+- `backend/src/project/project-duplicate.processor.ts` — the job: snapshot, clone, subtractive copy, boot.
+- `backend/src/git/` — commit and local clone shared with Publish.
+- `frontend/src/components/project/jobs/` — the progress card and dialog.
 
-## Progress and access
+## Related
 
-Duplication is asynchronous and shows **step progress** (snapshot → clone → runtime-state copy → app starting) over its own SSE job stream, as a card in the global [job dock](../frontend/job-dock.md) — the same surface publish, export, and import use. The new project shows as `starting` in the project list while the copy runs, and the dock's final step waits for the app to actually respond, so "Open project" appears only once its app is reachable. It is gated by its own permission, lands in the **same workspace** as its source (so it never widens who can see a project), and — being tenant-agnostic by design — is the foundation for planned cross-tenant duplication.
-
-## See also
-
-- [Project Environments](environments.md) — publishing, the git path duplication reuses ([ADR-0004](../adr/0004-git-based-incremental-publish.md)).
-- [Job Dock](../frontend/job-dock.md) — the shared progress surface duplication now renders into.
-- [ADR-0011](../adr/0011-duplication-reuses-git-publish-path.md) — the subtractive runtime-state copy and the dependency-store decision.
-- Code: `backend/src/project/project-duplicate.*` (the job + its stream endpoint), `backend/src/git/` (`GitService`), progress UI in `frontend/src/components/project/jobs/`.
+- [Publish](publish.md) — the git path Duplication reuses.
+- [Export and Import](export-import.md) — the same copy across deployments, as a file.
+- [Job Dock](../frontend/job-dock.md) — the shared progress surface.

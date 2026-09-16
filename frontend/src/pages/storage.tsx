@@ -10,13 +10,13 @@ import {
 } from '~/api/platform-storage';
 import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '~/components/ui/popover';
 import { formatBytes, formatShare } from '~/lib/format-bytes';
 import { cn } from '~/lib/cn';
 import { Badge, badgeVariants } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
 import {

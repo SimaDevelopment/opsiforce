@@ -6,8 +6,8 @@ import { BadgeLabelInput } from './badge-label-input';
 import { useCreateEnvironment, useDeleteEnvironment, useEnvironments, type Environment } from '~/api/environments';
 import { Button } from '~/components/ui/button';
 import { ColorPicker } from '~/components/ui/color-picker';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Skeleton from '~/components/ui/skeleton';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Skeleton } from '~/components/ui/skeleton';
 import { Plus } from '~/components/icons';
 import { EnvironmentRow } from './environment-row';
 

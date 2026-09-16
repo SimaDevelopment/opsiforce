@@ -5,7 +5,9 @@ import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
 import type { ServerConnection } from '@opencode-ai/app';
 import { timelinePresets } from '@opencode-ai/session-ui/timeline/detail';
 
-const quietTimeline = timelinePresets.find((preset) => preset.id === 'quiet')!.value;
+const quietPreset = timelinePresets.find((preset) => preset.id === 'quiet');
+if (!quietPreset) throw new Error('opencode timeline presets no longer include "quiet"');
+const quietTimeline = quietPreset.value;
 
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
@@ -43,7 +45,7 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any) {
   });
 }
 
-export default function OpencodeOverrides(props: { server: ServerConnection.Any }) {
+export function OpencodeOverrides(props: { server: ServerConnection.Any }) {
   const theme = useTheme();
   const settings = useSettings();
 

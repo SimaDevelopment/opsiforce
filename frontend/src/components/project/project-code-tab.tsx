@@ -1,7 +1,7 @@
 import { Show, createEffect, createSignal, on } from 'solid-js';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 
-export default function ProjectCodeTab(props: { environmentId: string }) {
+export function ProjectCodeTab(props: { environmentId: string }) {
   const [loading, setLoading] = createSignal(true);
   const url = () => `https://${props.environmentId}.${import.meta.env.VITE_VSCODE_DOMAIN}/?folder=/workspace`;
 

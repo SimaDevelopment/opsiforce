@@ -1,8 +1,0 @@
-{
-  "type": "compaction",
-  "id": "msg_01k6b2y7c9e0f1a2b3c4d5f1",
-  "time": { "created": 1757404822107 },
-  "status": "failed",
-  "reason": "manual",
-  "error": { "type": "ProviderError", "message": "the model refused to summarise", "status": 502 }
-}

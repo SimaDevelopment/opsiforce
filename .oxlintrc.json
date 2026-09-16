@@ -11,7 +11,20 @@
     "no-debugger": "error",
     "no-await-in-loop": "off",
     "unicorn/no-useless-spread": "warn",
-    "unicorn/no-useless-fallback-in-spread": "warn"
+    "unicorn/no-useless-fallback-in-spread": "warn",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "import/no-default-export": "error"
   },
+  "overrides": [
+    {
+      "files": ["**/*.config.ts", "**/*.config.mts"],
+      "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": ["**/agent-config/**"],
+      "rules": { "import/no-default-export": "off" }
+    }
+  ],
   "ignorePatterns": ["**/dist/**", "**/build/**", "**/coverage/**", "**/*.d.ts"]
 }

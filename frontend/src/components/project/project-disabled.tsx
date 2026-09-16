@@ -7,7 +7,7 @@ import { projectKeys } from '~/api/projects';
 import { Ban } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 
-export default function ProjectDisabled(props: { projectId: string }) {
+export function ProjectDisabled(props: { projectId: string }) {
   const qc = useQueryClient();
   const { hasPermission } = usePermissions();
   const canDisable = () => hasPermission(Permission.disableProject);

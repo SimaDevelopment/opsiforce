@@ -9,7 +9,7 @@ export interface EnvStatusDotProps {
   class?: string;
 }
 
-export default function EnvStatusDot(props: EnvStatusDotProps) {
+export function EnvStatusDot(props: EnvStatusDotProps) {
   const meta = () => envStatusMeta(props.status);
   return (
     <span class={cn('inline-flex items-center gap-1.5 shrink-0', props.class)}>

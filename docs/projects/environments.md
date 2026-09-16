@@ -1,15 +1,23 @@
-# Project Environments & Publishing
+---
+kind: explanation
+terms: [Environment, Environment Slug, Environment Color, Badge Label, ProjectEnvironment, App Auth, Auth mode, Active environment, Development, Production]
+adrs: [0001, 0002, 0007, 0012, 0040]
+---
 
-> The model that splits a Project (a durable shell) from the ProjectEnvironments that actually run, and how an app is published from Development into other environments. This is the spine that most other features hang off — read it before working on publishing, auth, schedules, or app identity.
+# Environments
 
-A project used to be one running thing: one pod, one URL, one working copy. It is now a **Project** (identity, ownership, cross-environment policy — it runs nothing itself) grouping one or more **ProjectEnvironments** (the things that run). Every project is born with a Development environment where the agent builds, exactly as before, and can then be **published** into other environments (Production, Staging…) so the same app runs in a prod-like target.
+> How does a [Project](../../CONTEXT.md) run in several Environments, how is each one addressed and protected, and how does the workspace switch between them?
 
-## The two-entity model
+## How it works
 
-Keeping these separate is the whole point:
+### Two entities
 
-- An **Environment** is a tenant-scoped registry row (name, description, immutable URL slug). It is the *set of publish targets* offered to every project in the tenant. Each tenant has two **protected** environments — Development and Production — that can't be renamed or deleted; admins add others. Renaming a custom environment renames it for every project, because projects reference the registry by id. Each environment also carries a display identity — a color and an optional **badge label** (2–5 characters, e.g. `PROD`, `STG`) — rendered as tinted badges on the sidebar's project cards; when no label is configured, one is derived from the slug. Both are freely editable, even on protected environments, because they are pure display and never appear in URLs.
-- A **ProjectEnvironment** is a per-project instance bound to one Environment. It owns the runtime state: workspace directory, pod, status, pod IP, auth mode, schedules, and service-gateway key. It does **not** own LLM keys — those are project-scoped and shared across environments.
+- An [Environment](../../CONTEXT.md) is a tenant-wide publish target; a [ProjectEnvironment](../../CONTEXT.md) is one Project's running instance of it ([ADR-0001](../adr/0001-environment-vs-project-environment.md)).
+- Every Project starts with a ProjectEnvironment bound to [Development](../../CONTEXT.md) whose id is the Project's own id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)); each [Publish](publish.md) adds one with a fresh id, conventionally to [Production](../../CONTEXT.md) first.
+- Projects reference the Environment registry by id, so renaming a custom Environment renames it for every Project at once; the two protected Environments cannot be renamed or deleted.
+- Each Environment carries an [Environment Color](../../CONTEXT.md) and a [Badge Label](../../CONTEXT.md), editable text of 2 to 5 letters or digits stored as `environments.short_name`; the sidebar renders one badge per ProjectEnvironment with the label over the colour as tint ([ADR-0040](../adr/0040-environment-badges-carry-a-short-name-over-the-identity-colour.md)). Both are edited from the Environment registry in [Settings](../organization/settings.md), protected Environments included, since neither appears in a URL.
+- The Project owns identity, budget and idle timeouts, [Resources](../../CONTEXT.md), and the disabled flag, while the ProjectEnvironment owns files, pod, status, pod IP, [Auth mode](../../CONTEXT.md), [Schedules](../../CONTEXT.md), and service-gateway key. LLM keys are project-scoped: one Bifrost team and one key pair serve every environment ([ADR-0003](../adr/0003-one-bifrost-team-per-project-keys-per-env.md)).
+- Actions follow the split: rename, duplicate, disable, enable, and delete act on the Project, where disable tears down every environment's pod and delete removes every environment and the Bifrost team. Restart, Publish, App Auth, [Environment Variables](../../CONTEXT.md) ([Publish](publish.md)), and delete environment act on one ProjectEnvironment.
 
 ```
 Tenant ── Environment registry: [ Development* , Production* , Staging ]   (*protected)
@@ -18,41 +26,41 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
  (shell)        = the working copy              = a published snapshot
 ```
 
-Two structural decisions underpin this and are documented as ADRs rather than repeated here: the **two-entity split** ([ADR-0001](../adr/0001-environment-vs-project-environment.md)), and the fact that the **Development ProjectEnvironment reuses the project's id** ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)) — which is what kept every existing URL, pod name, and directory valid through a metadata-only migration. Published environments get fresh uuids.
+### Public URLs
 
-## What moved, what stayed
+- An App's public host is `{environmentId}-{slug}` under the apps domain, where the slug is the Environment's [Environment Slug](../../CONTEXT.md) ([ADR-0012](../adr/0012-public-app-hostnames-carry-environment-slug.md)); the routing key is the environment id alone.
+- The bare `{environmentId}` host also answers, and a request carrying a wrong slug redirects to the canonical host.
 
-The project shell keeps identity (tenant, workspace, agent, title), project-level budget and idle timeouts, [Resources](../runtime/resources.md), and a project-level **disabled** flag. Everything pod- and runtime-shaped moved to the environment. Actions follow the split: rename, duplicate, disable/enable, and delete act on the **project** (disable tears down every environment's pod; delete removes them all and the Bifrost team); restart, publish, auth, env-vars, and delete-environment act on a **single environment**. Budgets stay anchored at the project — one Bifrost team, one shared key pair across all environments ([ADR-0003](../adr/0003-one-bifrost-team-per-project-keys-per-env.md)).
+### App Auth
 
-## Public URLs
+- [App Auth](../../CONTEXT.md) is enforced by an OIDC gate on the environment's own host, keyed by routing id ([ADR-0007](../adr/0007-per-environment-app-auth.md)).
+- A newly published environment is seeded once, fail-closed, from Development's setting at first publish, then changed independently.
 
-An app's public hostname carries its environment: `{envId}-{slug}.apps…`, where the slug is `dev`/`prod` for protected environments and a slugified, editable-once, then-immutable identifier for custom ones. The routing key is still the environment id; the slug is a readable discriminator, and renames never change it, so published URLs outlive renames. Every environment also answers on its legacy bare `{envId}` host (old links keep working), and a wrong suffix redirects to the canonical one. The mechanics and trade-offs are in [ADR-0012](../adr/0012-public-app-hostnames-carry-environment-slug.md).
+### In the workspace
 
-## Publishing
+- One Environments switcher next to the workspace tabs lists Development and every registry target, published or not; choosing one makes it the [Active environment](../../CONTEXT.md).
+- The row menu holds App Auth, Environment Variables, Schedules, Restart, and delete; the project menu holds only project-level actions.
+- A banner on any non-Development Active environment warns that edits there are overwritten by the next Publish.
+- Gated by `can_manage_environments` and `can_delete_environment` ([Permissions](../organization/permissions.md)).
 
-Publishing materializes or updates a non-Development environment from Development's files. It is **git-based and incremental** ([ADR-0004](../adr/0004-git-based-incremental-publish.md)): the workspace is a git repo whose `.gitignore` is the deploy boundary, so a publish commits Development's tree and the target becomes a local clone reset to that commit; a *publish update* pulls only the diff. Because git ignores runtime state, the production database, installed dependencies, and the per-environment config file are preserved across updates by construction, and the deployed commit is recorded for rollback. Deploys are **in-place with rollback** — the environment holds a `publishing` status while files change and its pod rebuilds; a failed (or server-interrupted) deploy rolls back to the previous commit and variables, so production never runs a half-deployed version.
+## Edge cases
 
-Each environment carries its own config in `app/opsiforce.env.json` — a flat set of variables the app reads from the file at startup (distinct from platform-injected pod env vars). That file is excluded from the publish sync, so an update never clobbers production's values; the publish form pre-fills keys from Development and values from the target. **Schedules** travel as an opt-out copy: the dialog pre-checks Development's schedules and recreates the chosen ones for the target (see [Schedules](schedules.md)).
+- When the Badge Label is empty, the badge shows the Environment Slug's first letters, uppercased.
+- When a custom Environment's slug is saved, it is immutable from then on; renames never change it, so published URLs outlive renames.
 
-### Environment Variables editor
+## Code
 
-Beyond the publish form, every environment (including Development) has an **Environment variables editor** in its row menu, gated by its own permission. It edits the same `opsiforce.env.json` directly. Because the app reads the file once at boot, the editor offers a **"Restart app to apply now"** toggle that drives a lightweight **App restart** — killing just the app processes via the [in-pod control process](../adr/0009-in-pod-control-process.md) so the inner guards revive them with the new values, rather than recreating the whole pod. (Pods on an older image with no control port fall back to a full recreate.)
+- `backend/src/environment/` — the tenant-wide Environment registry: names, slugs, colours, Badge Labels.
+- `backend/src/project-environment/` — ProjectEnvironment rows, per-environment status, Auth mode and service-gateway key.
+- `proxy/internal/server/server.go` — parses `{environmentId}-{slug}` hosts and redirects a wrong slug to the canonical host.
+- `backend/src/project/project-auth.service.ts` — the App Auth gate configuration, keyed by routing id.
+- `frontend/src/components/project/environments/` — the Environments switcher, row menus and the non-Development banner.
+- `frontend/src/components/tenant-environments/` — the registry editor for colour and Badge Label.
 
-## App auth
+## Related
 
-How visitors reach an app — **public**, **manual** (the owner's OIDC), or **managed** (a shared identity provider configured by the platform operator, tenant-scoped) — is a property of the *environment*, not the project, enforced by a small OIDC gate on the environment's own host. A newly published environment **inherits Development's auth as a one-time, fail-closed seed** at first publish, then is managed independently. The enforcement model — keyed by routing id, seeded by cloning Development's middleware, applied before the app can serve — is [ADR-0007](../adr/0007-per-environment-app-auth.md).
-
-## Using it
-
-Everything environment-shaped lives behind one switcher-style **Environments** control next to the workspace tabs; its trigger shows the environment currently being viewed, and there is no global Publish button. The panel lists every environment the app can run in — Development, then each registry target whether published or not. Clicking an existing environment switches the whole workspace (app, code, DB, chat) to it; **Publish** sits on each non-Development row, pre-targeted, reading "Publish update" once something runs there, and always confirming first. The row menu holds the rest an environment owns — auth, environment variables, schedules, restart, delete — so an action always targets the row you pick, while the project menu stays strictly project-level (rename, duplicate, disable, delete, settings). When a non-Development environment is active, a banner warns that edits there diverge from Development and are overwritten on the next publish.
-
-A publish runs asynchronously and reports stage-by-stage progress (committing → building → migrating → done/failed) over the project's SSE event stream. Closing the progress dialog **minimises it to a corner card** rather than abandoning the publish; the Environments switcher trigger mirrors the state (spinner / success / failure) so an in-flight or failed publish always leaves a trace in the workspace chrome.
-
-Four permissions gate these surfaces: `can_manage_environments`, `can_publish_project`, `can_manage_environment_variables`, `can_delete_environment` (see [Permissions](../organization/permissions.md)).
-
-## See also
-
-- [Duplication](duplication.md) — the sibling flow that copies a whole project (working state included), reusing the same git path ([ADR-0011](../adr/0011-duplication-reuses-git-publish-path.md)).
-- [Project Apps](project-apps.md) — per-environment app identity ([ADR-0016](../adr/0016-app-details-are-per-environment.md)).
-- [App Readiness](app-readiness.md) · [Schedules](schedules.md) · [Resources](../runtime/resources.md).
-- Code: `backend/src/environment/` (registry), `backend/src/project-environment/` (per-project instances **and** the environment-variables service that writes `opsiforce.env.json`), `backend/src/publish/` (worker + SSE), `backend/src/git/` (`GitService`), `backend/src/project/project-auth.service.ts` (Traefik middleware keyed by routing id).
+- [Publish](publish.md) — moving the App from Development into an environment, and Environment Variables.
+- [App](app.md) — per-environment App Details.
+- [Duplication](duplication.md) — copies a whole Project through the same git path.
+- [Pod Lifecycle](../runtime/pod-lifecycle.md) — pod statuses, suspension, Restart.
+- [Settings](../organization/settings.md) — the Environment registry section.

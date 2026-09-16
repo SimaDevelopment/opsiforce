@@ -13,7 +13,7 @@ export type ConfirmDialogProps = ParentProps<{
   onConfirm: () => void;
 }>;
 
-export default function ConfirmDialog(props: ConfirmDialogProps) {
+export function ConfirmDialog(props: ConfirmDialogProps) {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent class="max-w-sm">

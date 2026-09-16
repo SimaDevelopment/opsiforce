@@ -10,15 +10,15 @@ declare module 'vitest' {
 
 let postgres: TestPostgres | null = null;
 
-export default async function setup(project: TestProject): Promise<() => Promise<void>> {
+export async function setup(project: TestProject): Promise<void> {
   const workerCount = project.vitest.config.maxWorkers ?? 1;
 
   postgres = await startTestPostgres(workerCount);
   project.provide('databaseUrl', postgres.url);
   project.provide('workerCount', workerCount);
+}
 
-  return async () => {
-    await postgres?.stop();
-    postgres = null;
-  };
+export async function teardown(): Promise<void> {
+  await postgres?.stop();
+  postgres = null;
 }
