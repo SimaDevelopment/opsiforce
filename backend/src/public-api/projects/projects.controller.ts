@@ -47,7 +47,7 @@ export class ProjectsController {
   @ApiOperation({
     summary: 'Create a Project',
     description:
-      'Answers at once, normally with the Development environment still starting; poll the Project until it reports active. Omit workspaceId and the Project lands where the app would put it: a member gets their Personal workspace, a service account gets the Organization-wide Public area.\n\n**Use it for** giving a piece of work its own Agent: one Project per support ticket, per customer, per chat thread. The usual sequence is List Agents to pick an agentId, Create a Project, poll Get a Project until the Development environment is active, then Send a Prompt. You can skip the polling — a Prompt wakes a cold environment by itself — so poll only when you want to show progress.',
+      'Answers at once, normally with the Development environment still starting; poll the Project until it reports active. Omit workspaceId and the Project lands where the app would put it: a member gets their Personal workspace, a service account the Organization-wide Public area. An Organization with private workspaces turned off puts every omitted placement in Public.\n\n**Use it for** giving a piece of work its own Agent: one Project per support ticket, per customer, per chat thread. The usual sequence is List Agents to pick an agentId, Create a Project, poll Get a Project until the Development environment is active, then Send a Prompt. You can skip the polling — a Prompt wakes a cold environment by itself — so poll only when you want to show progress.',
   })
   @ApiBody({
     required: true,
@@ -80,7 +80,7 @@ export class ProjectsController {
     },
   })
   @PublicResponse(201, ProjectSchema)
-  @PublicApiErrors('validation-error', 'invalid-reference', 'permission-denied')
+  @PublicApiErrors('validation-error', 'invalid-reference')
   create(@Caller() caller: Caller, @Body({ schema: CreateProjectSchema }) body: CreateProject): Promise<ProjectDto> {
     return this.projects.create(caller, body);
   }

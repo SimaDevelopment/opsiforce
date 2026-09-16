@@ -254,27 +254,13 @@ describe('projects write routes', () => {
       expect(await placementOf(projectId)).toMatchObject({ workspaceId: null, workspaceType: null });
     });
 
-    it('puts a service account Project in Public and never gives it a Personal workspace', async () => {
+    it('puts a service account Project in Public without can_manage_workspaces, and never gives it a Personal workspace', async () => {
       const organization = await createOrganization(app);
-      const serviceAccount = addServiceAccount(organization, [Perms.usePublicApi, Perms.manageWorkspaces]);
+      const serviceAccount = addServiceAccount(organization);
 
       const projectId = await createdProjectId(serviceAccount, {});
 
       expect(await placementOf(projectId)).toMatchObject({ workspaceId: null, workspaceType: null });
-      expect(await privateWorkspaceCountOf(serviceAccount.keycloakId)).toBe(0);
-    });
-
-    it('refuses a service account Public Project without can_manage_workspaces', async () => {
-      const organization = await createOrganization(app);
-      const serviceAccount = addServiceAccount(organization);
-
-      const res = await post(serviceAccount, { title: 'Unwelcome', agentId });
-
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({
-        type: 'urn:opsiforce:error:permission-denied',
-        permission: Perms.manageWorkspaces,
-      });
       expect(await privateWorkspaceCountOf(serviceAccount.keycloakId)).toBe(0);
     });
 

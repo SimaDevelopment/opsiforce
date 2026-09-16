@@ -29,6 +29,11 @@ export function identityKind(username: string): IdentityKind {
   return username.startsWith(SERVICE_ACCOUNT_USERNAME_PREFIX) ? 'service-account' : 'user';
 }
 
+export function isServiceAccountRequest(request: ForwardedHeaders): boolean {
+  const username = getUsernameHeader(request);
+  return username !== null && identityKind(username) === 'service-account';
+}
+
 @Injectable()
 export class ForwardedIdentityService {
   constructor(private readonly users: UserService) {}

@@ -71,9 +71,6 @@ export class ProjectPlacementService {
     const folderId = body.folderId ?? null;
     if (named !== undefined) return { workspaceId: namedWorkspaceId, folderId };
     if (personalIsDefault) return { workspaceId: await this.ensurePersonalWorkspaceId(access), folderId };
-    if (privateWorkspacesEnabled && !access.canManageWorkspaces) {
-      throw Errors.permissionDenied(Perms.manageWorkspaces);
-    }
     return { workspaceId: null, folderId };
   }
 

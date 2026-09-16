@@ -31,6 +31,7 @@ import { UserService } from '../user/user.service';
 import { RequirePermission } from '../permission/permission.guard';
 import { Perms } from '../permission/permission.constants';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
+import { isServiceAccountRequest } from '../identity/forwarded-identity.service';
 import { ProjectEventsService } from './project-events.service';
 import { AgentConnectionService } from '../agent-session/agent-connection.service';
 import type { AgentConnection } from '../agent-session/agent-session.types';
@@ -62,6 +63,7 @@ export class ProjectController {
 
   private async assertCanCreatePublicProject(tenantId: string, req: FastifyRequest): Promise<void> {
     if (hasPermission(getGroupsHeader(req), Perms.manageWorkspaces)) return;
+    if (isServiceAccountRequest(req)) return;
     if (await this.tenantService.isPrivateWorkspaceEnabled(tenantId)) {
       throw new ForbiddenException(`Missing permission: ${Perms.manageWorkspaces}`);
     }
