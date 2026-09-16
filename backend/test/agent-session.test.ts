@@ -12,6 +12,7 @@ import {
   PodTimeout,
   PodUnreachable,
 } from '../src/agent-session/agent-session.errors';
+import { PodOpencodeClient } from '../src/agent-session/pod-opencode.client';
 import { Deadline } from '../src/common/deadline';
 import type { ProjectEnvironmentContext } from '../src/project-environment/project-environment.types';
 import { AgentStatus, ProjectStatus } from '../src/project/project.types';
@@ -327,6 +328,18 @@ describe('resolving the primary session', () => {
     expect(connection.sessionId).toBe(oldest.id);
     expect(pod.requestsTo('session.list').length).toBeGreaterThanOrEqual(2);
     expect(pod.requestsTo('session.list').at(-1)?.query).toHaveProperty('cursor');
+  });
+
+  it('refuses to bind from a partial scan when the root list outlives the page budget', async () => {
+    for (let i = 0; i < 60; i += 1) pod.addSession({ time: { created: 10_000 + i, updated: 10_000 + i } });
+    pod.addSession({ time: { created: 1_000, updated: 99_000 } });
+    const client = harness.moduleRef.get(PodOpencodeClient);
+
+    const error: unknown = await client
+      .oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(PodTimeout);
   });
 
   it('never adopts a child session as the primary one', async () => {

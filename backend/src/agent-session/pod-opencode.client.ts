@@ -49,10 +49,17 @@ export class PodOpencodeClient {
     return (text.length > 0 ? JSON.parse(text) : undefined) as T;
   }
 
-  async oldestRootSession(upstream: string, options: CallOptions = {}): Promise<SessionInfo | null> {
+  async oldestRootSession(
+    upstream: string,
+    options: CallOptions & { maxPages?: number } = {}
+  ): Promise<SessionInfo | null> {
+    const maxPages = options.maxPages ?? MAX_SESSION_LIST_PAGES;
     let oldest: SessionInfo | null = null;
     let path: string | null = '/api/session?parentID=null&order=asc';
-    for (let pages = 0; path !== null && pages < MAX_SESSION_LIST_PAGES; pages += 1) {
+    for (let pages = 0; path !== null; pages += 1) {
+      if (pages >= maxPages) {
+        throw new PodTimeout(`Root session list did not end within ${maxPages} pages; refusing to bind a partial scan`);
+      }
       const page: SessionPage = await this.call<SessionPage>(upstream, path, options);
       const roots = (page.data ?? []).filter(isRootSession);
       for (const root of roots) if (oldest === null || createdBefore(root, oldest)) oldest = root;
