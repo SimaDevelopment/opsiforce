@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   Logger,
   Inject,
   forwardRef,
@@ -11,7 +12,7 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { V1Pod } from '@kubernetes/client-node';
-import { eq, and, desc, asc, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { eq, and, desc, asc, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Queue } from 'bullmq';
 import crypto from 'crypto';
@@ -33,7 +34,7 @@ import {
   projectDuplicateJobs,
   projectTransferJobs,
 } from '../../db/schema';
-import { visibleProjectsFilter } from './project-visibility';
+import { accessibleProjectsFilter, isHiddenProjectReachable, visibleProjectsFilter } from './project-visibility';
 import { PodService, PodStartupFailedError } from '../pod/pod.service';
 import { PodCacheService } from '../pod/pod.cache.service';
 import { ProxyService } from '../proxy/proxy.service';
@@ -65,6 +66,7 @@ import {
   UpdateProjectDto,
   DuplicateProjectDto,
   ProjectResponse,
+  ProjectCreationContext,
   ProjectEnvironmentSummary,
   ProjectStatus,
   ProjectState,
@@ -76,8 +78,10 @@ import {
   ProjectLoggingResponse,
   RequestLogMode,
   REQUEST_LOG_BODY_LIMIT_MAX,
+  TEST_PROJECT_KIND,
   availableAuthModes,
 } from './project.types';
+import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
 import {
   buildPodClassCatalog,
   clampCustom,
@@ -164,6 +168,7 @@ import {
 } from './project-duplicate.types';
 import { ACTIVE_IMPORT_STATUSES, ProjectImportStatus } from './project-import.types';
 import { ACTIVE_PUBLISH_STATUSES } from '../publish/publish.types';
+import { DeliveryService } from '../delivery/delivery.service';
 
 export type ProjectActivityKind = 'agent' | 'app';
 
@@ -194,6 +199,10 @@ const projectSelectFields = {
   description: projects.description,
   disabled: projects.disabled,
   bifrostProjectId: projects.bifrostProjectId,
+  createdBy: projects.createdBy,
+  createdByProjectId: projects.createdByProjectId,
+  kind: projects.kind,
+  importedAgent: projects.importedAgent,
   directory: projectEnvironments.directory,
   status: effectiveStatus.as('status'),
   podIp: projectEnvironments.podIp,
@@ -252,6 +261,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly proxyService: ProxyService,
+    private readonly deliveryService: DeliveryService,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
     private readonly duplicateQueue: Queue<ProjectDuplicateJobData>
   ) {}
@@ -432,10 +442,11 @@ export class ProjectService implements OnApplicationBootstrap {
   async create(
     dto: CreateProjectDto | undefined,
     tenantId: string,
-    workspaceId: string | null = null,
-    folderId: string | null = null
+    context: ProjectCreationContext = {}
   ): Promise<ProjectResponse> {
+    const { workspaceId = null, folderId = null, createdBy = null, createdByProjectId = null, kind = null } = context;
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId());
+    if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
 
     const claimedId = await this.projectPoolService
@@ -445,6 +456,9 @@ export class ProjectService implements OnApplicationBootstrap {
         folderId,
         title: dto?.title ?? null,
         description: dto?.description ?? null,
+        createdBy,
+        createdByProjectId,
+        kind,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
         timezone: dto?.timezone || 'UTC',
@@ -460,17 +474,23 @@ export class ProjectService implements OnApplicationBootstrap {
       return project;
     }
 
-    return this.createDirect(dto, tenantId, workspaceId, folderId, agentId, timeouts);
+    return this.createDirect(dto, tenantId, agentId, timeouts, {
+      workspaceId,
+      folderId,
+      createdBy,
+      createdByProjectId,
+      kind,
+    });
   }
 
   private async createDirect(
     dto: CreateProjectDto | undefined,
     tenantId: string,
-    workspaceId: string | null,
-    folderId: string | null,
     agentId: string,
-    timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number }
+    timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
+    context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
+    const { workspaceId, folderId, createdBy, createdByProjectId, kind } = context;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
@@ -485,6 +505,9 @@ export class ProjectService implements OnApplicationBootstrap {
         agentId,
         title: dto?.title ?? null,
         description: dto?.description ?? null,
+        createdBy,
+        createdByProjectId,
+        kind,
       });
 
       await tx.insert(projectSettings).values({
@@ -513,13 +536,24 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.externalServiceProvisioning.provisionEnvironment(id);
     await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKey(id, id, tenantId);
+    await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+    try {
+      await this.deliveryService.deliverAtCreate(id);
+    } catch (err) {
+      await this.discardHalfCreatedProject(id);
+      throw new InternalServerErrorException(`Could not deliver the agent's files: ${(err as Error).message}`);
+    }
     this.spawnStartupWorker(id);
 
     return this.findOne(id, tenantId);
   }
 
-  async duplicate(sourceId: string, tenantId: string, dto?: DuplicateProjectDto): Promise<ProjectResponse> {
+  async duplicate(
+    sourceId: string,
+    tenantId: string,
+    dto: DuplicateProjectDto | undefined,
+    createdBy: string | null
+  ): Promise<ProjectResponse> {
     const source = await this.findOne(sourceId, tenantId);
     await this.assertNoActiveGitOperation(source.id);
 
@@ -546,6 +580,8 @@ export class ProjectService implements OnApplicationBootstrap {
         agentId: source.agentId,
         title,
         description: source.description,
+        createdBy,
+        createdByProjectId: source.createdByProjectId,
       });
 
       await tx.insert(projectSettings).values({
@@ -615,7 +651,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.externalServiceProvisioning.provisionEnvironment(id);
     await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKey(id, id, tenantId);
+    await this.createGatewayKeys(id, id, tenantId, source.agentId, source.createdByProjectId);
     await this.enqueueDuplicateJob({
       duplicateJobId,
       sourceProjectId: source.id,
@@ -633,11 +669,13 @@ export class ProjectService implements OnApplicationBootstrap {
     title: string | null;
     timezone: string;
     agentId: string;
+    importedAgent: string | null;
     description: string | null;
     settings: ExportManifestSettings | null;
     resources: ExportManifestResources | null;
     appDetails: ExportManifestAppDetails | null;
     schedules: ExportManifestSchedule[];
+    createdBy: string | null;
   }): Promise<ProjectResponse> {
     const {
       tenantId,
@@ -646,11 +684,13 @@ export class ProjectService implements OnApplicationBootstrap {
       title,
       timezone,
       agentId,
+      importedAgent,
       description,
       settings,
       resources,
       appDetails,
       schedules,
+      createdBy,
     } = params;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
@@ -667,8 +707,10 @@ export class ProjectService implements OnApplicationBootstrap {
         workspaceId,
         folderId,
         agentId,
+        importedAgent,
         title,
         description,
+        createdBy,
       });
 
       await tx.insert(projectSettings).values({
@@ -729,7 +771,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.externalServiceProvisioning.provisionEnvironment(id);
     await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKey(id, id, tenantId);
+    await this.createGatewayKeys(id, id, tenantId, agentId, null);
 
     return this.findOne(id, tenantId);
   }
@@ -810,15 +852,16 @@ export class ProjectService implements OnApplicationBootstrap {
     return rows;
   }
 
+  /** Every Project this user may watch: the ordinary visible set plus the hidden ones they created. */
   async findVisibleProjectIds(params: { tenantId: string; userId: string }): Promise<string[]> {
     const { tenantId, userId } = params;
-    const visible = visibleProjectsFilter(tenantId, userId);
+    const accessible = accessibleProjectsFilter(tenantId, userId);
 
     const rows = await db
       .select({ id: projects.id })
       .from(projects)
-      .leftJoin(workspaceMembers, visible.workspaceMemberJoin)
-      .where(visible.where);
+      .leftJoin(workspaceMembers, accessible.workspaceMemberJoin)
+      .where(accessible.where);
     return rows.map((row) => row.id);
   }
 
@@ -834,7 +877,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .innerJoin(projectSettings, eq(projectSettings.projectId, projects.id))
       .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
       .leftJoin(projectApps, eq(projectApps.projectEnvironmentId, projects.id))
-      .where(and(eq(projects.tenantId, tenantId), scope))
+      .where(and(eq(projects.tenantId, tenantId), isNull(projects.kind), scope))
       .orderBy(...projectOrderBy()) as Promise<ProjectResponse[]>;
   }
 
@@ -851,9 +894,17 @@ export class ProjectService implements OnApplicationBootstrap {
     return project;
   }
 
+  async findOneUnlessHidden(id: string, tenantId: string, userId: string): Promise<ProjectResponse> {
+    const project = await this.findOne(id, tenantId);
+    if (project.kind !== null && !(await isHiddenProjectReachable(tenantId, userId, id))) {
+      throw new NotFoundException(`Project ${id} not found`);
+    }
+    return project;
+  }
+
   async findOneForUser(params: { projectId: string; tenantId: string; userId: string }): Promise<ProjectResponse> {
     const { projectId, tenantId, userId } = params;
-    const project = await this.findOne(projectId, tenantId);
+    const project = await this.findOneUnlessHidden(projectId, tenantId, userId);
     await this.assertProjectVisibleToUser(project.id, project.workspaceId, userId);
     return project;
   }
@@ -904,12 +955,17 @@ export class ProjectService implements OnApplicationBootstrap {
         disabled: projects.disabled,
         workspaceId: projects.workspaceId,
         title: projects.title,
+        kind: projects.kind,
+        createdBy: projects.createdBy,
       })
       .from(projects)
       .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
       .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)));
 
     if (!row) throw new NotFoundException(`Project ${projectId} not found`);
+    if (row.kind !== null && !(await isHiddenProjectReachable(tenantId, userId, projectId))) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
 
     await this.assertProjectVisibleToUser(row.id, row.workspaceId, userId);
 
@@ -1148,8 +1204,12 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.getAuth(projectId, env.id, tenantId);
   }
 
+  /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
   async remove(id: string, tenantId: string): Promise<void> {
     await this.findOne(id, tenantId);
+    for (const child of await this.testProjectsCreatedBy(id, tenantId)) {
+      await this.remove(child.id, tenantId);
+    }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
     await db
@@ -1183,6 +1243,19 @@ export class ProjectService implements OnApplicationBootstrap {
     }
 
     await db.delete(projects).where(eq(projects.id, id));
+  }
+
+  private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string }[]> {
+    return db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.tenantId, tenantId),
+          eq(projects.createdByProjectId, projectId),
+          eq(projects.kind, TEST_PROJECT_KIND)
+        )
+      );
   }
 
   async disable(id: string, tenantId: string): Promise<ProjectResponse> {
@@ -1306,7 +1379,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .where(eq(projectApps.projectEnvironmentId, targetEnv.id));
     if (!appRow) {
       throw new BadRequestException(
-        'APP_NOT_DETECTED: this environment has no detectable app yet. Make sure its web server is running and serves /api/app-meta before editing app details.'
+        'APP_NOT_DETECTED: this environment has no detectable app yet. Make sure app/startup.sh serves on $APP_PORT and app/app.meta.json exists before editing app details.'
       );
     }
 
@@ -1677,12 +1750,40 @@ export class ProjectService implements OnApplicationBootstrap {
     }
   }
 
-  private async createGatewayKey(projectId: string, environmentId: string, tenantId: string): Promise<void> {
+  private async createGatewayKeys(
+    projectId: string,
+    environmentId: string,
+    tenantId: string,
+    agentId: string,
+    createdByProjectId: string | null
+  ): Promise<void> {
     try {
       await this.gatewayKeyService.createKey(projectId, environmentId, tenantId);
+      if (await this.mintsPlatformApiKey(agentId, createdByProjectId)) {
+        await this.gatewayKeyService.createKey(projectId, environmentId, tenantId, 'platform-api');
+      }
     } catch (err) {
-      this.logger.warn(`Failed to create gateway key for environment ${environmentId}: ${(err as Error).message}`);
+      this.logger.warn(`Failed to create gateway keys for environment ${environmentId}: ${(err as Error).message}`);
     }
+  }
+
+  private async mintsPlatformApiKey(agentId: string, createdByProjectId: string | null): Promise<boolean> {
+    if (!(await this.agentService.callsPlatformApi(agentId))) return false;
+    return (await this.childChainDepth(createdByProjectId)) < MAX_PROJECT_CHAIN_DEPTH;
+  }
+
+  private async childChainDepth(createdByProjectId: string | null): Promise<number> {
+    let parentId = createdByProjectId;
+    let depth = 0;
+    while (parentId !== null && depth < MAX_PROJECT_CHAIN_DEPTH) {
+      depth += 1;
+      const [row] = await db
+        .select({ parentId: projects.createdByProjectId })
+        .from(projects)
+        .where(eq(projects.id, parentId));
+      parentId = row?.parentId ?? null;
+    }
+    return depth;
   }
 
   private async enqueueDuplicateJob(data: ProjectDuplicateJobData): Promise<void> {
@@ -1912,7 +2013,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
       if (settled.length > 0) {
         await this.projectEventsService.publish(projectId).catch(() => undefined);
-        if (!appReady) await this.cleanupFailedImport(projectId);
+        if (!appReady) await this.discardHalfCreatedProject(projectId);
       }
     })().catch((err) => {
       this.logger.warn(`Failed to finish import for project ${projectId}: ${(err as Error).message}`);
@@ -1946,11 +2047,12 @@ export class ProjectService implements OnApplicationBootstrap {
         })
         .where(eq(projectTransferJobs.id, job.id));
       await this.projectEventsService.publish(job.projectId).catch(() => undefined);
-      await this.cleanupFailedImport(job.projectId);
+      await this.discardHalfCreatedProject(job.projectId);
     }
   }
 
-  async cleanupFailedImport(projectId: string): Promise<void> {
+  /** Unwinds a Project whose creation or Import failed: its rows, its keys and its directory. */
+  async discardHalfCreatedProject(projectId: string): Promise<void> {
     const project = await this.findOneById(projectId).catch(() => null);
     if (!project || !project.tenantId) return;
 
@@ -1970,10 +2072,10 @@ export class ProjectService implements OnApplicationBootstrap {
   private async probeAppServing(envId: string): Promise<boolean> {
     try {
       const upstream = await this.proxyService.resolveAppUpstreamByEnvironmentId(envId);
-      const res = await fetch(`${upstream}/api/app-meta`, {
+      await fetch(`${upstream}/`, {
         signal: AbortSignal.timeout(APP_SERVING_PROBE_TIMEOUT_MS),
       });
-      return res.ok;
+      return true;
     } catch {
       return false;
     }
@@ -2128,10 +2230,11 @@ export class ProjectService implements OnApplicationBootstrap {
       throw new Error(`Cannot start pool environment ${env.id} without a tenant`);
     }
 
-    const [bifrostOptions, gatewayApiKey, agentName, podResources] = await Promise.all([
+    const [bifrostOptions, gatewayApiKey, platformApiKey, agentName, podResources] = await Promise.all([
       this.bifrostService.getEnvironmentPodOptions(env.id),
       this.gatewayKeyService.getEnvironmentToken(env.id),
-      this.agentService.resolveName(env.agentId),
+      this.gatewayKeyService.getEnvironmentToken(env.id, 'platform-api'),
+      this.agentService.resolvePackageName(env.agentId),
       this.podResourcesForProject(env.projectId),
     ]);
 
@@ -2141,11 +2244,24 @@ export class ProjectService implements OnApplicationBootstrap {
       );
     }
 
+    const platformApiUrl = this.configService.get<string>('platformApiUrl', '');
+    const runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
+
+    if (platformApiKey && !(platformApiUrl && runtimeProxyUrl)) {
+      throw new Error(
+        `Environment ${env.id} holds a platform-api key but OPSIFORCE_API_URL or OPSIFORCE_RUNTIME_PROXY_URL is unset; ` +
+          'refusing to start a pod that cannot reach the platform API'
+      );
+    }
+
     const tenantOptions = {
       ...bifrostOptions,
       agentName,
       gatewayApiKey: gatewayApiKey ?? undefined,
       gatewayUrl: this.configService.get<string>('gatewayUrl', ''),
+      platformApiKey: platformApiKey ?? undefined,
+      platformApiUrl,
+      runtimeProxyUrl,
       externalServicesUrl: this.configService.get<string>('externalServicesUrl', ''),
       opsiforceEnv: env.isDefault ? undefined : 'production',
       environmentSlug: env.environmentSlug,

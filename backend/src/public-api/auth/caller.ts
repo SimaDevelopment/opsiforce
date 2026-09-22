@@ -3,12 +3,14 @@ import type { FastifyRequest } from 'fastify';
 import type { TenantContext } from '../../tenant/tenant.decorator';
 import type { IdentityKind } from '../../identity/forwarded-identity.service';
 import type { OrganizationRef } from '../errors/error.schema';
+import { Errors } from '../errors/public-api-error';
 
-export type CallerSource = 'idp-bearer';
+export type CallerSource = 'idp-bearer' | 'gateway-key';
 export type CallerUserKind = IdentityKind;
 
 export interface Caller {
   source: CallerSource;
+  projectId?: string;
   user: {
     id: string;
     platformId: string;
@@ -29,3 +31,11 @@ export const Caller = createParamDecorator((_data: unknown, ctx: ExecutionContex
   if (!caller) throw new InternalServerErrorException('PublicApiGuard did not run');
   return caller;
 });
+
+export function assertPermission(caller: Caller, permission: string): void {
+  if (!caller.permissions.has(permission)) throw Errors.permissionDenied(permission);
+}
+
+export function chatProjectIdOf(caller: Caller): string | null {
+  return caller.source === 'gateway-key' ? (caller.projectId ?? null) : null;
+}

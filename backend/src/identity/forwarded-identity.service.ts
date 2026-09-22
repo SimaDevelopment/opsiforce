@@ -60,6 +60,7 @@ export class ForwardedIdentityService {
         keycloakId: identity.keycloakId,
         email: identity.email ?? undefined,
         displayName: identity.profileName,
+        groups: identity.groups,
       },
       tenantId,
       { skipPrivateWorkspace: identity.kind === 'service-account' }
@@ -70,6 +71,24 @@ export class ForwardedIdentityService {
       platformId: user.id,
       platformEmail: user.email,
       displayName: user.displayName ?? identity.username,
+    };
+  }
+
+  async resolveByPlatformId(platformUserId: string): Promise<PlatformIdentity | null> {
+    const user = await this.users.findByIdOrNull(platformUserId);
+    if (!user) return null;
+
+    const username = user.displayName ?? user.email ?? user.keycloakId;
+    return {
+      keycloakId: user.keycloakId,
+      username,
+      profileName: user.displayName ?? undefined,
+      email: user.email,
+      groups: user.groups ?? '',
+      kind: identityKind(username),
+      platformId: user.id,
+      platformEmail: user.email,
+      displayName: user.displayName ?? username,
     };
   }
 }

@@ -43,6 +43,10 @@ export const ProjectMapper = {
         ? null
         : { id: project.folderId, name: project.folderName },
     disabled: project.disabled,
+    createdBy: project.createdBy,
+    createdByProjectId: project.createdByProjectId,
+    kind: project.kind,
+    importedAgent: project.importedAgent,
     timezone: project.timezone,
     agentStatus,
     lastPromptAt: isoOrNull(project.lastPromptAt),

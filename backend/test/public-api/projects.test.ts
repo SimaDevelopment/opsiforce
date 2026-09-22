@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { db } from '../../db';
-import { agents } from '../../db/schema';
 import { ProjectStatus } from '../../src/project/project.types';
 import { ENVIRONMENT_FIELDS, PROJECT_FIELDS } from './support/dto-fields';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
@@ -19,6 +17,7 @@ import {
   type MemberFixture,
   type OrganizationFixture,
 } from '../support/project-fixtures';
+import { seedLiveAgent } from '../support/agent-fixtures';
 
 const EXCLUDED_PROJECT_FIELDS = [
   'tenantId',
@@ -308,8 +307,7 @@ describe('projects read routes', () => {
       workspaceId = await createSharedWorkspace(app, organization, member);
       inWorkspaceId = await createProject(app, organization, { title: 'Scoped', workspaceId });
       publicProjectId = await createProject(app, organization, { title: 'Unscoped' });
-      otherAgentId = randomUUID();
-      await db.insert(agents).values({ id: otherAgentId, name: `agent-${otherAgentId.slice(0, 8)}` });
+      otherAgentId = (await seedLiveAgent(organization.tenantId, member.userId)).id;
       otherAgentProjectId = await createProject(app, organization, { title: 'Agented', agentId: otherAgentId });
     });
 

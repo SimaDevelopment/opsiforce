@@ -41,24 +41,30 @@ func main() {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("POST /restart-app", func(w http.ResponseWriter, r *http.Request) {
-		provided := r.Header.Get(tokenHeader)
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-
+	mux.HandleFunc("POST /notify-config-change", authorized(token, handleNotifyConfigChange))
+	mux.HandleFunc("POST /restart-app", authorized(token, func(w http.ResponseWriter, _ *http.Request) {
 		killed := restartAppProcesses()
 		log.Printf("restart-app: killed %d processes", killed)
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]int{"killed": killed}); err != nil {
 			log.Printf("restart-app: failed to write response: %v", err)
 		}
-	})
+	}))
 
 	log.Printf("agent-control listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("agent-control server failed: %v", err)
+	}
+}
+
+func authorized(token string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provided := r.Header.Get(tokenHeader)
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		handler(w, r)
 	}
 }
 

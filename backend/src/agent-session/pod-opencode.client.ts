@@ -69,8 +69,18 @@ export class PodOpencodeClient {
     return oldest;
   }
 
-  async createSession(upstream: string, options: CallOptions = {}): Promise<SessionInfo> {
-    return this.callForData<SessionInfo>(upstream, '/api/session', { ...options, method: 'POST', body: {} });
+  async createSession(upstream: string, agent: string, options: CallOptions = {}): Promise<SessionInfo> {
+    return this.callForData<SessionInfo>(upstream, '/api/session', { ...options, method: 'POST', body: { agent } });
+  }
+
+  /** `POST /api/session/{id}/agent` — the runtime stores the id unvalidated and re-resolves it each step. */
+  async switchSessionAgent(
+    upstream: string,
+    sessionId: string,
+    agent: string,
+    options: CallOptions = {}
+  ): Promise<void> {
+    await this.call<void>(upstream, `/api/session/${sessionId}/agent`, { ...options, method: 'POST', body: { agent } });
   }
 
   async getSession(upstream: string, sessionId: string, options: CallOptions = {}): Promise<SessionInfo> {
@@ -92,6 +102,15 @@ export class PodOpencodeClient {
 
   async health(upstream: string, options: CallOptions = {}): Promise<RuntimeHealth> {
     return this.call<RuntimeHealth>(upstream, '/api/health', options);
+  }
+
+  /**
+   * `GET /api/skill` — the ids opencode currently serves. A skill's id is its directory name under
+   * `.opencode/skills/`, so this is what a delivery confirms itself against (ADR-0060 §11).
+   */
+  async skillIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
+    const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/skill', options);
+    return (listed.data ?? []).flatMap((skill) => (skill.id === undefined ? [] : [skill.id]));
   }
 
   async activeSessions(upstream: string, timeoutMs: number): Promise<string[]> {

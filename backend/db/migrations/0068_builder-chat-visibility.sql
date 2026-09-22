@@ -1,0 +1,2 @@
+ALTER TABLE "projects" ADD COLUMN "chat_visibility" text DEFAULT 'private' NOT NULL;--> statement-breakpoint
+ALTER TABLE "projects" ADD CONSTRAINT "projects_chat_visibility_check" CHECK ("projects"."chat_visibility" in ('private', 'public'));

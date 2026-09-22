@@ -1,4 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
+import { agentAppPort } from '../agent/agent-config';
 import { appPublicUrl } from '../common/app-host';
 import type { K8sResourceRequirements } from './pod-classes';
 
@@ -29,6 +30,9 @@ export interface PodTemplateOptions {
   bifrostBackendApiKey?: string;
   gatewayApiKey?: string;
   gatewayUrl?: string;
+  platformApiKey?: string;
+  platformApiUrl?: string;
+  runtimeProxyUrl?: string;
   externalServicesUrl?: string;
   controlToken?: string;
   controlPort?: number;
@@ -36,6 +40,7 @@ export interface PodTemplateOptions {
 
 export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
   const resolvedAgentName = options.agentName || 'app-builder';
+  const appPort = agentAppPort(resolvedAgentName);
   const routingId = options.environmentId ?? options.projectId;
 
   const volumeMounts: k8s.V1VolumeMount[] = [
@@ -82,13 +87,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
             'set -e; ' +
               `AGENT="\${AGENT_NAME:-app-builder}"; ` +
               'mkdir -p /workspace/.xdg/code-server; ' +
-              'AGENT_NAME=$AGENT WORKSPACE=/workspace agent-workspace-migrate --sync-agent-files; ' +
-              'if [ ! -d /workspace/app ]; then ' +
-              'cp -a /opt/agents/$AGENT/template/. /workspace/; ' +
-              "cd /workspace && printf '.config/\\n.cache/\\n.bun/\\n.opencode/\\n.opsiforce/\\n.xdg/\\nnode_modules/\\ndata/\\n**/.yarn/cache\\n**/.yarn/unplugged\\n**/.yarn/build-state.yml\\n**/.yarn/install-state.gz\\n**/.yarn/sdks\\n**/.pnp.*\\n' > .gitignore && " +
-              "git init && git config user.email 'agent@opsiforce.com' && git config user.name 'OpsiForce' && git add -A && git commit -m 'Initial template'; " +
-              'AGENT_NAME=$AGENT WORKSPACE=/workspace agent-workspace-migrate --seed-baseline; ' +
-              'fi',
+              'AGENT_NAME=$AGENT WORKSPACE=/workspace agent-workspace-migrate --sync-agent-files',
           ],
           volumeMounts,
         },
@@ -99,13 +98,14 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
           workingDir: '/workspace',
-          ports: [{ containerPort: options.agentPort }, { containerPort: 3000 }, { containerPort: 8080 }],
+          ports: [{ containerPort: options.agentPort }, { containerPort: appPort }, { containerPort: 8080 }],
           env: [
             { name: 'XDG_DATA_HOME', value: '/workspace/.xdg/share' },
             { name: 'XDG_CONFIG_HOME', value: '/workspace/.xdg/config' },
             { name: 'XDG_CACHE_HOME', value: '/workspace/.xdg/cache' },
             { name: 'XDG_STATE_HOME', value: '/workspace/.xdg/state' },
             { name: 'AGENT_NAME', value: resolvedAgentName },
+            { name: 'APP_PORT', value: String(appPort) },
             ...(options.controlToken
               ? [
                   { name: 'OPSIFORCE_CONTROL_TOKEN', value: options.controlToken },
@@ -157,6 +157,13 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                     name: 'EXTERNAL_SERVICES_URL',
                     value: options.externalServicesUrl ?? '',
                   },
+                ]
+              : []),
+            ...(options.platformApiKey && options.platformApiUrl && options.runtimeProxyUrl
+              ? [
+                  { name: 'OPSIFORCE_API_KEY', value: options.platformApiKey },
+                  { name: 'OPSIFORCE_API_URL', value: options.platformApiUrl },
+                  { name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl },
                 ]
               : []),
           ],

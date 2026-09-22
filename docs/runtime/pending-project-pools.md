@@ -14,7 +14,7 @@ adrs: [0041]
 - A pool of complete Projects with no tenant sits in status `pending`; creating a Project claims one and rewrites ownership in place ([ADR-0041](../adr/0041-pending-project-pool-replaces-the-warm-pod-pool.md)).
 - Each slot is a `projects` row with no tenant, an [Agent](../../CONTEXT.md) and a directory; an orphan Bifrost team with chat and backend virtual keys ([LLM Gateway](../gateways/llm-gateway.md)); a service-gateway key row; and a running pod with the workspace seeded and OpenCode reachable.
 - No LLM call happens against a slot before it is claimed, so cost attribution is meaningful from the claim onward.
-- Each agent in `agent-config/agents.json` declares its own `poolSize`; `POOL_SIZE_OVERRIDE` caps every agent's effective size, and `0` in either place disables the pool for that agent or globally.
+- Each agent in `agent-config/agents.json` declares its own `poolSize`, which the boot reconciler mirrors onto its `agents` row; the pool reads that column, so a Custom Agent's own row governs its pool the same way. `POOL_SIZE_OVERRIDE` caps every agent's effective size, and `0` in either place disables the pool for that agent or globally.
 
 ### Boot and claim
 
@@ -44,7 +44,7 @@ Project statuses a slot passes through.
 - `backend/src/pool/` — boot pass, claim, replenish, recycle and recovery.
 - `backend/src/bifrost/bifrost.service.ts` — orphan team creation and the customer reassignment at claim.
 - `backend/src/project/project.service.ts` — Project creation tries the pool before the direct path.
-- `agent-config/agents.json` — the per-agent pool size.
+- `agent-config/agents.json` — the per-agent pool size the reconciler mirrors onto `agents.pool_size`.
 
 ## Related
 

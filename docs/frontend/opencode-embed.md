@@ -16,12 +16,14 @@ adrs: [0026, 0031]
 - The platform and the embed share one TanStack QueryClient, and the platform forces the theme; every platform read goes through the store-backed [Query Adapter](query-adapter.md) so refetches never detach the chat's DOM.
 - The embed emits a debounced agent-idle signal that reloads the App preview and refetches [Files](../projects/files.md), and a mutation observer over its rendered markdown decorates `/workspace/...` links into file cards ([File preview](../projects/file-preview.md)).
 - The chat tab stays mounted after the user switches tabs, so returning to it never reloads the conversation ([Pod Tools](../runtime/pod-tools.md)).
+- The same embed is mounted a second time on a [Builder chat](../../CONTEXT.md) at `/store/builder/{id}`, which is carried by a Project like any other and connects to its [Development](../../CONTEXT.md) ProjectEnvironment; a slim header stands in for the Project header, and the boot, the router and the proxy path are unchanged.
 
 ## Code
 
 - `frontend/vite-plugins/` — the resolver that maps the OpenCode packages to the vendored source.
 - `frontend/opencode/` — vendored, never edited.
 - `frontend/src/components/project/project-chat-tab.tsx` — the render root, the overlay and the fetch adapter.
+- `frontend/src/pages/store/builder-chat.tsx` — the Builder chat page that mounts the same component.
 - `proxy/cmd/agent-control/opencode_proxy.go` — Basic auth injection in front of OpenCode.
 
 ## Related

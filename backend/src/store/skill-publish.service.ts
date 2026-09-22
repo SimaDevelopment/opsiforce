@@ -1,0 +1,109 @@
+import { Injectable } from '@nestjs/common';
+import { hashSkillTree, validateSkillTree, type GateResult, type SkillTree } from './gate';
+import { parseFrontmatter } from './gate/frontmatter';
+import { decodeText, SKILL_MANIFEST_PATH } from './gate/skill-tree';
+import { reservedSkillNames } from './skill-reconciler.service';
+import { SkillRepository } from './skill.repository';
+import { manifestDescription } from './skill-tree';
+import { nameUnavailable, validationFailed } from './store-errors';
+import type { SkillRow } from './skill-visibility';
+
+export interface PublishInput {
+  tenantId: string;
+  userId: string;
+  tree: SkillTree;
+  createdVia: string;
+  sourceRef?: string | null;
+  createdInChatProjectId?: string | null;
+}
+
+export interface CreateInput extends PublishInput {
+  name: string;
+  displayName?: string | null;
+}
+
+export interface PublishResult {
+  skillId: string;
+  version: number;
+}
+
+@Injectable()
+export class SkillPublishService {
+  constructor(private readonly repository: SkillRepository) {}
+
+  runGate(tree: SkillTree, expectedName?: string): GateResult {
+    return validateSkillTree(tree, {
+      ...(expectedName === undefined ? {} : { expectedName }),
+      reservedNames: [...reservedSkillNames()],
+    });
+  }
+
+  async assertNameAvailable(tenantId: string, name: string): Promise<void> {
+    if (reservedSkillNames().has(name) || (await this.repository.nameTaken(tenantId, name))) {
+      throw nameUnavailable(name);
+    }
+  }
+
+  async create(input: CreateInput): Promise<PublishResult> {
+    await this.assertNameAvailable(input.tenantId, input.name);
+    const gate = this.gateOrThrow(input.tree, input.name);
+
+    const { skillId, version } = await this.repository.createSkillWithFirstVersion({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      name: input.name,
+      displayName: input.displayName ?? null,
+      description: manifestDescription(gate.normalizedTree),
+      tree: gate.normalizedTree,
+      contentHash: hashSkillTree(gate.normalizedTree),
+      flags: gate.flags,
+      lints: gate.lints.map((lint) => lint.rule),
+      createdVia: input.createdVia,
+      sourceRef: input.sourceRef ?? null,
+      createdInChatProjectId: input.createdInChatProjectId ?? null,
+    });
+    return { skillId, version };
+  }
+
+  async addVersion(skill: SkillRow, input: PublishInput): Promise<PublishResult> {
+    const gate = this.gateOrThrow(input.tree, skill.name);
+
+    const { version } = await this.repository.mintNextVersion({
+      skillId: skill.id,
+      userId: input.userId,
+      description: manifestDescription(gate.normalizedTree),
+      tree: gate.normalizedTree,
+      contentHash: hashSkillTree(gate.normalizedTree),
+      flags: gate.flags,
+      lints: gate.lints.map((lint) => lint.rule),
+      createdVia: input.createdVia,
+      sourceRef: input.sourceRef ?? null,
+    });
+    return { skillId: skill.id, version };
+  }
+
+  private gateOrThrow(tree: SkillTree, expectedName: string): GateResult {
+    const gate = this.runGate(tree, expectedName);
+    if (gate.errors.length > 0) throw validationFailed(gate.errors, gate.lints);
+    return gate;
+  }
+}
+
+export function manifestName(tree: SkillTree): string | null {
+  const entry = frontmatterEntry(tree, 'name');
+  return entry ? entry.trim() || null : null;
+}
+
+export function manifestSourceRef(tree: SkillTree): string | null {
+  const metadata = frontmatterEntry(tree, 'metadata');
+  if (!metadata) return null;
+  const match = /(?:^|\s)source:\s*(\S+)/.exec(metadata);
+  return match ? match[1] : null;
+}
+
+function frontmatterEntry(tree: SkillTree, key: string): string | null {
+  const manifest = tree.find((file) => file.path === SKILL_MANIFEST_PATH);
+  if (!manifest) return null;
+  const entry = parseFrontmatter(decodeText(manifest.content)).entries.findLast((candidate) => candidate.key === key);
+  return entry?.value ?? null;
+}

@@ -3,7 +3,7 @@ import { Download, Trash2 } from '~/components/icons';
 import { ToolbarButton } from '~/components/ui/toolbar-button';
 import { formatBytes } from '~/lib/format-bytes';
 import { FileTypeBadge } from './file-type-badge';
-import { formatModified } from './format-modified';
+import { formatDate } from '~/lib/format-date';
 import type { FileEntry } from '~/api/files';
 
 export interface FilesCardsProps {
@@ -44,8 +44,8 @@ export function FilesCards(props: FilesCardsProps) {
                   {entry.name}
                 </div>
                 <div class="text-xs text-muted-foreground">
-                  <Show when={entry.type === 'file'} fallback={formatModified(entry.modifiedAt)}>
-                    {formatBytes(entry.size)} · {formatModified(entry.modifiedAt)}
+                  <Show when={entry.type === 'file'} fallback={formatDate(entry.modifiedAt)}>
+                    {formatBytes(entry.size)} · {formatDate(entry.modifiedAt)}
                   </Show>
                 </div>
               </div>

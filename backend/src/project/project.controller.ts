@@ -55,10 +55,12 @@ export class ProjectController {
   async create(
     @Body() dto: CreateProjectDto | undefined,
     @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext,
     @Req() req: FastifyRequest
   ) {
     await this.assertCanCreatePublicProject(tenant.tenantId, req);
-    return this.projectService.create(dto, tenant.tenantId);
+    const dbUserId = await this.userService.resolveUserId(user, tenant.tenantId);
+    return this.projectService.create(dto, tenant.tenantId, { createdBy: dbUserId });
   }
 
   private async assertCanCreatePublicProject(tenantId: string, req: FastifyRequest): Promise<void> {
@@ -233,8 +235,8 @@ export class ProjectController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ) {
-    await this.gate(id, tenant, user);
-    return this.projectService.duplicate(id, tenant.tenantId, dto);
+    const dbUserId = await this.gate(id, tenant, user);
+    return this.projectService.duplicate(id, tenant.tenantId, dto, dbUserId);
   }
 
   @Get(':id/duplicate/job')
@@ -412,12 +414,13 @@ export class ProjectController {
     return this.projectService.updateApp(id, tenant.tenantId, dto?.environmentId, dto ?? {});
   }
 
-  private async gate(projectId: string, tenant: TenantContext, user: UserContext): Promise<void> {
+  private async gate(projectId: string, tenant: TenantContext, user: UserContext): Promise<string> {
     const dbUserId = await this.userService.resolveUserId(user, tenant.tenantId);
     await this.projectService.findOneForUser({
       projectId,
       tenantId: tenant.tenantId,
       userId: dbUserId,
     });
+    return dbUserId;
   }
 }

@@ -79,6 +79,15 @@ matters because the run shares one database and an Organization row is created o
 Static mode needs no special app: it is the same headers with the deployment's fixed permission
 list.
 
+The harness also watches what the app answers. An `onSend` hook records every
+`application/problem+json` response against the route Fastify matched, and `close()` checks each one
+against the `type` enum that operation declares in the document the app serves at
+`/api/v1/openapi.json` — so a route that raises a Problem its `@PublicApiErrors` does not list fails
+the file that provoked it, wherever that Problem came from. Ambient Problems (the guards, the pipe
+and the filter raise these anywhere) are exempt, as is `ProbeController`, which is mounted on the API
+but deliberately outside the document. Coverage is therefore honest rather than exhaustive: it
+verifies the paths the tests exercise and says nothing about the rest.
+
 ## The fake pod
 
 `startFakePod()` serves the opencode routes a connection and a probe need — the ordered, limited root

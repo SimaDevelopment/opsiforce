@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, fo
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
-import { and, asc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,7 +18,7 @@ import {
   tenants,
 } from '../../db/schema';
 import { resolvePreset } from '../pod/pod-classes';
-import { ProjectStatus } from '../project/project.types';
+import { ProjectStatus, type ProjectKind } from '../project/project.types';
 import { PodService } from '../pod/pod.service';
 import { BifrostService } from '../bifrost/bifrost.service';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
@@ -26,7 +26,9 @@ import { DefaultsService } from '../defaults/defaults.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { EnvironmentService } from '../environment/environment.service';
 import { ExternalServiceProvisioningService } from '../external-services';
-import { readAgentConfig, type AgentModelSelection } from '../agent/agent-config';
+import { agentDeclaresPlatformApi, type AgentModelSelection } from '../agent/agent-config';
+import { AgentReconcilerService } from '../agent/agent-reconciler.service';
+import { DeliveryService } from '../delivery/delivery.service';
 import {
   PROJECT_POOL_QUEUE,
   PROJECT_POOL_TEARDOWN_QUEUE,
@@ -51,6 +53,9 @@ export interface PoolClaim {
   timeoutIdle: number;
   appTimeoutIdle: number;
   timezone: string;
+  createdBy: string | null;
+  createdByProjectId: string | null;
+  kind: ProjectKind | null;
 }
 
 interface PendingRow {
@@ -70,9 +75,9 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   private readonly externalServicesUrl: string;
   private readonly storageMountPath: string;
   private readonly poolSizeOverride: number | null;
-  private readonly agentTargetByName: Map<string, number>;
-  private readonly agentVersionByName: Map<string, string>;
-  private readonly agentModelSelectionByName: Map<string, AgentModelSelection>;
+  private agentTargetByName = new Map<string, number>();
+  private agentVersionByName = new Map<string, string>();
+  private agentModelSelectionByName = new Map<string, AgentModelSelection>();
   private readonly agentIdToName = new Map<string, string>();
   private readonly agentNameToId = new Map<string, string>();
   private integrityTimer: NodeJS.Timeout | null = null;
@@ -90,17 +95,15 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     private readonly timeoutService: TimeoutService,
     private readonly environmentService: EnvironmentService,
     private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly agentReconciler: AgentReconcilerService,
+    private readonly deliveryService: DeliveryService
   ) {
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
     this.externalServicesUrl = this.configService.get<string>('externalServicesUrl', '');
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.poolSizeOverride = this.configService.get<number | null>('poolSizeOverride', null);
-    const agentConfig = readAgentConfig();
-    this.agentTargetByName = agentConfig.poolSizes;
-    this.agentVersionByName = agentConfig.versions;
-    this.agentModelSelectionByName = agentConfig.modelSelections;
   }
 
   async onApplicationBootstrap(): Promise<void> {
@@ -132,6 +135,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   async claimPending(agentId: string, claim: PoolClaim): Promise<string | null> {
     const name = this.agentIdToName.get(agentId);
     if (!name) return null;
+    if (agentDeclaresPlatformApi(name)) return null;
 
     const reserved = await this.reservePending(agentId, claim);
     if (!reserved) return null;
@@ -181,6 +185,19 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         );
         await this.replenishIfEnabled(name, reserved.agentId);
       }
+      return null;
+    }
+
+    const delivered = await this.deliveryService.deliverAtCreate(reserved.id).then(
+      () => true,
+      (err: Error) => {
+        this.logger.warn(`Claim ${reserved.id} could not receive its agent files: ${err.message}`);
+        return false;
+      }
+    );
+    if (!delivered) {
+      await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'delivery failed').catch(() => {});
+      await this.replenishIfEnabled(name, reserved.agentId);
       return null;
     }
 
@@ -332,6 +349,9 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
           folderId: claim.folderId,
           title: claim.title,
           description: claim.description,
+          createdBy: claim.createdBy,
+          createdByProjectId: claim.createdByProjectId,
+          kind: claim.kind,
           lastPromptAt: null,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -415,6 +435,8 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
           folderId: null,
           title: null,
           description: null,
+          createdBy: null,
+          createdByProjectId: null,
           updatedAt: new Date(),
         })
         .where(eq(projects.id, projectId));
@@ -655,13 +677,10 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         }
         const patched = await this.patchBifrostTeamWithRetries(row.bifrostProjectId, customerId);
         if (patched !== 'patched') {
-          if (patched === 'clean-failed') {
-            await this.revertReservation(row.id);
-            continue;
-          }
           await this.destroyAndReplenish(row.id, 'recovery: bifrost patch failed permanently');
           continue;
         }
+        await this.deliveryService.deliverAtCreate(row.id);
         const finalized = await this.finalizeRecoveredClaim(row.id, row.tenantId);
         if (finalized) {
           await this.timeoutService.touch(row.id).catch((err) => {
@@ -671,7 +690,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         }
       } catch (err) {
         this.logger.warn(`Recovery for claim ${row.id} failed: ${(err as Error).message}`);
-        await this.destroyAndReplenish(row.id, 'recovery: error during finalize').catch(() => {});
+        await this.destroyAndReplenish(row.id, 'recovery: error during delivery or finalize').catch(() => {});
       }
     }
   }
@@ -809,13 +828,34 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async cacheAgentIds(): Promise<void> {
-    const names = [...this.agentTargetByName.keys()];
-    if (names.length === 0) return;
-    const rows = await db.select({ id: agents.id, name: agents.name }).from(agents).where(inArray(agents.name, names));
+    await this.agentReconciler.ready();
+    const rows = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        poolSize: agents.poolSize,
+        version: agents.version,
+        model: agents.model,
+        variant: agents.variant,
+      })
+      .from(agents)
+      .where(and(isNull(agents.tenantId), eq(agents.origin, 'built_in')));
+
+    const targets = new Map<string, number>();
+    const versions = new Map<string, string>();
+    const models = new Map<string, AgentModelSelection>();
     for (const row of rows) {
       this.agentIdToName.set(row.id, row.name);
       this.agentNameToId.set(row.name, row.id);
+      targets.set(row.name, row.poolSize);
+      if (row.version) versions.set(row.name, row.version);
+      if (row.model) {
+        models.set(row.name, { model: row.model, ...(row.variant ? { variant: row.variant } : {}) });
+      }
     }
+    this.agentTargetByName = targets;
+    this.agentVersionByName = versions;
+    this.agentModelSelectionByName = models;
   }
 
   private effectiveTarget(agentName: string): number {
@@ -831,8 +871,8 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     if (targetVersion) {
       const ledgerPath = join(this.storageMountPath, directory, '.opsiforce', 'agents', `${agentName}.json`);
       try {
-        const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as { agentVersion?: string };
-        if (ledger.agentVersion !== targetVersion) return false;
+        const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as { contentVersion?: string };
+        if (ledger.contentVersion !== targetVersion) return false;
       } catch {
         return false;
       }

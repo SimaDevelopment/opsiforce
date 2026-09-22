@@ -38,6 +38,22 @@ export interface PodTimeout {
   appIdleMs: number;
 }
 
+export interface PodSkillDelivery {
+  converged: boolean;
+  pendingSkills: string[];
+  failedAt: number | null;
+  error: string | null;
+}
+
+export type PodAgentUpdateStatus = 'pending' | 'running' | 'reload_pending' | 'applied' | 'conflict' | 'failed';
+
+export interface PodAgentUpdate {
+  status: PodAgentUpdateStatus;
+  targetVersion: string;
+  requiresPodRecreate: boolean;
+  error: string | null;
+}
+
 export interface PodDetail {
   podIp: string | null;
   startedAtMs: number | null;
@@ -57,6 +73,8 @@ export interface PodRow {
   keepAlive: PodKeepAlive;
   drift: boolean;
   dbStatus: PodDbStatus;
+  skillDelivery: PodSkillDelivery;
+  agentUpdate: PodAgentUpdate | null;
   detail: PodDetail;
 }
 

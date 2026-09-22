@@ -3,7 +3,14 @@ import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { TenantService } from './tenant.service';
 import { TenantAccessDeniedException } from './tenant-access-denied.exception';
-import { IS_PLATFORM_SCOPE_KEY, IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from './tenant.decorator';
+import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
+import {
+  IS_PLATFORM_SCOPE_KEY,
+  IS_PUBLIC_KEY,
+  RESOLVES_OWN_TENANT_KEY,
+  TENANT_NAME_HEADER,
+  type TenantContext,
+} from './tenant.decorator';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -21,6 +28,12 @@ export class TenantGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<FastifyRequest & { tenantContext: TenantContext }>();
     const groupsHeader = (request.headers['x-forwarded-groups'] as string | undefined) ?? '';
+
+    const resolvesOwnTenant = this.reflector.getAllAndOverride<boolean>(RESOLVES_OWN_TENANT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (resolvesOwnTenant && gatewayBearerOf(request.headers)) return true;
 
     const isPlatformScope = this.reflector.getAllAndOverride<boolean>(IS_PLATFORM_SCOPE_KEY, [
       context.getHandler(),

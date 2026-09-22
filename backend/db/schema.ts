@@ -21,7 +21,20 @@ import {
   uniqueIndex,
   unique,
   primaryKey,
+  check,
+  customType,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core"
+
+const bytea = customType<{ data: Buffer; default: false }>({
+  dataType: () => "bytea",
+})
+
+export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "test"
+
+export type ChatVisibilityValue = "private" | "public"
+
+export type GatewayKeyPurposeValue = "service" | "platform-api"
 
 export const projectStatusEnum = pgEnum("project_status", [
   "starting",
@@ -74,6 +87,7 @@ export const projectTransferStatusEnum = pgEnum("project_transfer_status", [
 ])
 
 export const agentUpdateStatusEnum = pgEnum("agent_update_status", [
+  "pending",
   "running",
   "reload_pending",
   "applied",
@@ -101,13 +115,43 @@ export const tenantSettings = pgTable("tenant_settings", {
   privateWorkspaceEnabled: boolean("private_workspace_enabled").notNull().default(true),
 })
 
-export const agents = pgTable("agents", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  displayName: text("display_name"),
-  description: text("description"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-})
+export const agents = pgTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    name: text("name").notNull(),
+    displayName: text("display_name"),
+    description: text("description"),
+    origin: text("origin").notNull().default("built_in"),
+    visibility: text("visibility").notNull().default("public"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
+    archived: boolean("archived").notNull().default(false),
+    version: text("version"),
+    model: text("model"),
+    variant: text("variant"),
+    poolSize: integer("pool_size").notNull().default(0),
+    createdInChatProjectId: text("created_in_chat_project_id").references((): AnyPgColumn => projects.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agents_tenant_id_name_unique")
+      .on(table.tenantId, table.name)
+      .where(sql`${table.tenantId} is not null`),
+    uniqueIndex("agents_global_name_unique")
+      .on(table.name)
+      .where(sql`${table.tenantId} is null`),
+    check("agents_origin_check", sql`${table.origin} in ('built_in', 'custom')`),
+    check("agents_visibility_check", sql`${table.visibility} in ('private', 'public')`),
+    check(
+      "agents_custom_ownership_check",
+      sql`${table.origin} = 'built_in' or (${table.tenantId} is not null and ${table.createdBy} is not null)`,
+    ),
+  ],
+)
 
 const tenantIdField = text("tenant_id")
   .references(() => tenants.id)
@@ -189,16 +233,35 @@ export const projects = pgTable(
       onDelete: "set null",
     }),
     agentId: text("agent_id")
-      .references(() => agents.id)
+      .references((): AnyPgColumn => agents.id)
       .notNull(),
     title: text("title"),
     description: text("description"),
     disabled: boolean("disabled").notNull().default(false),
     bifrostProjectId: text("bifrost_project_id"),
     lastPromptAt: timestamp("last_prompt_at"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
+    createdByProjectId: text("created_by_project_id").references((): AnyPgColumn => projects.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").$type<ProjectKindValue>(),
+    chatVisibility: text("chat_visibility").$type<ChatVisibilityValue>().notNull().default("private"),
+    importedAgent: text("imported_agent"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
+  (table) => [
+    index("idx_projects_created_by_project").on(table.createdByProjectId),
+    index("idx_projects_tenant_kind").on(table.tenantId, table.kind),
+    check(
+      "projects_kind_check",
+      sql`${table.kind} in ('skill_builder_chat', 'agent_builder_chat', 'test')`,
+    ),
+    check(
+      "projects_chat_visibility_check",
+      sql`${table.chatVisibility} in ('private', 'public')`,
+    ),
+  ],
 )
 
 export const environments = pgTable(
@@ -461,9 +524,13 @@ export const projectGatewayKeys = pgTable("project_gateway_keys", {
   tenantId: text("tenant_id").references(() => tenants.id),
   token: text("token").notNull().unique(),
   status: text("status").notNull().default("active"),
+  purpose: text("purpose").$type<GatewayKeyPurposeValue>().notNull().default("service"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [index("idx_project_gateway_keys_environment").on(table.projectEnvironmentId)])
+}, (table) => [
+  index("idx_project_gateway_keys_environment").on(table.projectEnvironmentId),
+  check("project_gateway_keys_purpose_check", sql`${table.purpose} in ('service', 'platform-api')`),
+])
 
 export const gatewayAuditLogs = pgTable("gateway_audit_logs", {
   id: text("id").primaryKey(),
@@ -550,6 +617,7 @@ export const users = pgTable("users", {
   keycloakId: text("keycloak_id").notNull().unique(),
   email: text("email"),
   displayName: text("display_name"),
+  groups: text("groups"),
   lastAccessTime: timestamp("last_access_time"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -687,5 +755,177 @@ export const tenantBudgetDefaults = pgTable("tenant_budget_defaults", {
     mode: "number",
   }).notNull(),
   defaultBackendBudgetDuration: text("default_backend_budget_duration").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const agentSettings = pgTable("agent_settings", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  defaultEnvironmentId: text("default_environment_id").references(() => environments.id, {
+    onDelete: "restrict",
+  }),
+  platformApi: boolean("platform_api").notNull().default(false),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const agentProfiles = pgTable(
+  "agent_profiles",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .references(() => agents.id, { onDelete: "cascade" })
+      .notNull(),
+    environmentId: text("environment_id")
+      .references(() => environments.id, { onDelete: "restrict" })
+      .notNull(),
+    promptBody: text("prompt_body"),
+    model: text("model"),
+    variant: text("variant"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("agent_profiles_agent_id_environment_id_unique").on(table.agentId, table.environmentId),
+    index("idx_agent_profiles_environment").on(table.environmentId),
+  ],
+)
+
+export const skills = pgTable(
+  "skills",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    origin: text("origin").notNull().default("built_in"),
+    name: text("name").notNull(),
+    displayName: text("display_name"),
+    description: text("description"),
+    visibility: text("visibility").notNull().default("public"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
+    archived: boolean("archived").notNull().default(false),
+    latestVersionId: text("latest_version_id").references((): AnyPgColumn => skillVersions.id, {
+      onDelete: "set null",
+    }),
+    createdInChatProjectId: text("created_in_chat_project_id").references((): AnyPgColumn => projects.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("skills_tenant_id_name_unique")
+      .on(table.tenantId, table.name)
+      .where(sql`${table.tenantId} is not null`),
+    uniqueIndex("skills_global_name_unique")
+      .on(table.name)
+      .where(sql`${table.tenantId} is null`),
+    check("skills_origin_check", sql`${table.origin} in ('built_in', 'custom')`),
+    check("skills_visibility_check", sql`${table.visibility} in ('private', 'public')`),
+    check(
+      "skills_custom_ownership_check",
+      sql`${table.origin} = 'built_in' or (${table.tenantId} is not null and ${table.createdBy} is not null)`,
+    ),
+  ],
+)
+
+export interface SkillFlags {
+  has_executables: boolean
+}
+
+export const skillVersions = pgTable(
+  "skill_versions",
+  {
+    id: text("id").primaryKey(),
+    skillId: text("skill_id")
+      .references(() => skills.id, { onDelete: "cascade" })
+      .notNull(),
+    version: integer("version").notNull(),
+    description: text("description"),
+    contentHash: text("content_hash").notNull(),
+    flags: jsonb("flags").$type<SkillFlags>().notNull().default({ has_executables: false }),
+    lints: jsonb("lints").$type<string[]>().notNull().default([]),
+    createdVia: text("created_via").notNull(),
+    sourceRef: text("source_ref"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("skill_versions_skill_id_version_unique").on(table.skillId, table.version),
+    index("idx_skill_versions_skill").on(table.skillId),
+    check(
+      "skill_versions_created_via_check",
+      sql`${table.createdVia} in ('form', 'builder', 'import', 'duplicate', 'reconciler')`,
+    ),
+  ],
+)
+
+export const skillVersionFiles = pgTable(
+  "skill_version_files",
+  {
+    id: text("id").primaryKey(),
+    versionId: text("version_id")
+      .references(() => skillVersions.id, { onDelete: "cascade" })
+      .notNull(),
+    path: text("path").notNull(),
+    content: bytea("content").notNull(),
+    size: integer("size").notNull(),
+    isBinary: boolean("is_binary").notNull(),
+    isExecutable: boolean("is_executable").notNull().default(false),
+  },
+  (table) => [unique("skill_version_files_version_id_path_unique").on(table.versionId, table.path)],
+)
+
+export const agentProfileSkills = pgTable(
+  "agent_profile_skills",
+  {
+    profileId: text("profile_id")
+      .references(() => agentProfiles.id, { onDelete: "cascade" })
+      .notNull(),
+    skillId: text("skill_id")
+      .references(() => skills.id, { onDelete: "restrict" })
+      .notNull(),
+    skillVersionId: text("skill_version_id")
+      .references(() => skillVersions.id, { onDelete: "restrict" })
+      .notNull(),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "agent_profile_skills_profile_id_skill_id_pk",
+      columns: [table.profileId, table.skillId],
+    }),
+    index("idx_agent_profile_skills_skill").on(table.skillId),
+  ],
+)
+
+export const projectSkillDeliveries = pgTable(
+  "project_skill_deliveries",
+  {
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    skillName: text("skill_name").notNull(),
+    skillVersionId: text("skill_version_id").references(() => skillVersions.id, { onDelete: "set null" }),
+    contentHash: text("content_hash").notNull(),
+    deliveredAt: timestamp("delivered_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "project_skill_deliveries_project_environment_id_skill_name_pk",
+      columns: [table.projectEnvironmentId, table.skillName],
+    }),
+  ],
+)
+
+export const projectSkillDeliveryState = pgTable("project_skill_delivery_state", {
+  projectEnvironmentId: text("project_environment_id")
+    .primaryKey()
+    .references(() => projectEnvironments.id, { onDelete: "cascade" }),
+  converged: boolean("converged").notNull().default(false),
+  pendingSkills: jsonb("pending_skills").$type<string[]>().notNull().default([]),
+  omittedSkills: jsonb("omitted_skills").$type<string[]>().notNull().default([]),
+  attempt: integer("attempt").notNull().default(0),
+  failedAt: timestamp("failed_at"),
+  error: text("error"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })

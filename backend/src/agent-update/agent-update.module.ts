@@ -8,12 +8,14 @@ import { AgentUpdateService } from './agent-update.service';
 import { AGENT_WORKSPACE_UPDATE_QUEUE } from './agent-update.types';
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ProjectModule } from '../project/project.module';
+import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: AGENT_WORKSPACE_UPDATE_QUEUE }),
     BullBoardModule.forFeature({ name: AGENT_WORKSPACE_UPDATE_QUEUE, adapter: BullMQAdapter }),
     ProjectModule,
+    ProjectEnvironmentModule,
     forwardRef(() => AgentSessionModule),
   ],
   providers: [AgentUpdateService, AgentUpdateProcessor, AgentUpdateK8sService],

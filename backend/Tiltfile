@@ -21,12 +21,8 @@ backend_only = [
     '.yarn/releases',
     pkg_prefix + 'backend',
     pkg_prefix + 'frontend/opencode/packages/protocol/openapi.json',
-    pkg_prefix + 'agent-config/agent-image-version.json',
-    pkg_prefix + 'agent-config/agents.json',
+    pkg_prefix + 'agent-config',
 ]
-private_registry = pkg_prefix + 'agent-config/private/agents.json'
-if os.path.exists(os.path.join(build_context, private_registry)):
-    backend_only.append(private_registry)
 
 docker_build(
     'opsiforce-backend',
@@ -42,7 +38,7 @@ docker_build(
         fall_back_on(root_up + '.yarn/releases'),
         sync('./src', '/app/' + pkg_prefix + 'backend/src'),
         sync('./db', '/app/' + pkg_prefix + 'backend/db'),
-        sync('../agent-config/agents.json', '/app/' + pkg_prefix + 'agent-config/agents.json'),
+        sync('../agent-config', '/app/' + pkg_prefix + 'agent-config'),
     ],
 )
 

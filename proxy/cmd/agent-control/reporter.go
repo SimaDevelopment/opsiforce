@@ -15,7 +15,6 @@ import (
 const (
 	watchDir            = "/workspace/app"
 	metaFileName        = "app.meta.json"
-	appMetaRoute        = "/api/app-meta"
 	defaultAppPort      = "3000"
 	probeTimeout        = 3 * time.Second
 	pushTimeout         = 5 * time.Second
@@ -64,7 +63,7 @@ func runReporter() {
 		appPort = defaultAppPort
 	}
 
-	probeURL := "http://127.0.0.1:" + appPort + appMetaRoute
+	probeURL := "http://127.0.0.1:" + appPort + "/"
 	pushURL := strings.TrimRight(base, "/") + "/app/state"
 
 	probeClient := &http.Client{Timeout: probeTimeout}
@@ -84,7 +83,7 @@ func runReporter() {
 	defer ticker.Stop()
 
 	evaluate := func() {
-		current := probeApp(probeClient, probeURL)
+		current := probeApp(probeClient, probeURL, watchDir)
 
 		if !current.Serving && last.positive() {
 			downStrikes++
@@ -129,30 +128,50 @@ func runReporter() {
 	}
 }
 
-func probeApp(client *http.Client, url string) appState {
-	resp, err := client.Get(url)
-	if err != nil {
-		return appState{}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+func probeApp(client *http.Client, url, appDir string) appState {
+	if !respondsOnPort(client, url) {
 		return appState{}
 	}
 
 	state := appState{Serving: true}
 
-	var body struct {
-		Exists      bool    `json:"exists"`
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
+	meta, found := readAppMeta(appDir)
+	if !found {
+		return state
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err == nil && body.Exists {
-		state.Live = true
-		state.Name = body.Name
-		state.Description = body.Description
-	}
+
+	state.Live = true
+	state.Name = meta.Name
+	state.Description = meta.Description
 	return state
+}
+
+func respondsOnPort(client *http.Client, url string) bool {
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
+}
+
+type appMeta struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+}
+
+func readAppMeta(appDir string) (appMeta, bool) {
+	content, err := os.ReadFile(filepath.Join(appDir, metaFileName))
+	if err != nil {
+		return appMeta{}, false
+	}
+
+	var meta appMeta
+	if err := json.Unmarshal(content, &meta); err != nil {
+		log.Printf("app-reporter: %s is not valid JSON: %v", metaFileName, err)
+		return appMeta{}, false
+	}
+	return meta, true
 }
 
 func pushState(client *http.Client, url, key string, state appState) bool {

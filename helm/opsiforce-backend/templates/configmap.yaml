@@ -16,7 +16,6 @@ data:
   {{- end }}
   AGENT_CONTAINER_IMAGE_PULL_POLICY: {{ .Values.config.agentContainerImagePullPolicy | quote }}
   AGENT_PORT: {{ .Values.config.agentPort | quote }}
-  APP_PORT: {{ .Values.config.appPort | quote }}
   VSCODE_PORT: {{ .Values.config.vscodePort | quote }}
   DB_VIEWER_PORT: {{ .Values.config.dbViewerPort | default "8081" | quote }}
   CEPHFS_PVC_NAME: {{ .Values.config.cephfsPvcName | quote }}
@@ -48,6 +47,12 @@ data:
   {{- end }}
   {{- if .Values.config.gatewayUrl }}
   SERVICE_GATEWAY_URL: {{ .Values.config.gatewayUrl | quote }}
+  {{- end }}
+  {{- if .Values.config.platformApiUrl }}
+  OPSIFORCE_API_URL: {{ .Values.config.platformApiUrl | quote }}
+  {{- end }}
+  {{- if .Values.config.runtimeProxyUrl }}
+  OPSIFORCE_RUNTIME_PROXY_URL: {{ .Values.config.runtimeProxyUrl | quote }}
   {{- end }}
   {{- if .Values.config.externalServicesUrl }}
   EXTERNAL_SERVICES_URL: {{ .Values.config.externalServicesUrl | quote }}

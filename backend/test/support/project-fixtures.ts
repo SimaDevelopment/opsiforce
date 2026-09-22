@@ -2,11 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
-import { agents, projects, tenantSettings, users, workspaces } from '../../db/schema';
+import { projects, tenantSettings, users, workspaces } from '../../db/schema';
+import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
+import { ensureBuiltInAgent } from './agent-fixtures';
 import { EnvironmentService } from '../../src/environment/environment.service';
+import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectService } from '../../src/project/project.service';
-import { ProjectStatus } from '../../src/project/project.types';
+import { ProjectStatus, type ChatVisibility, type ProjectKind } from '../../src/project/project.types';
 import { TenantService } from '../../src/tenant/tenant.service';
 import { UserService } from '../../src/user/user.service';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
@@ -28,6 +31,8 @@ export interface ProjectFixtureOptions {
   workspaceId?: string | null;
   folderId?: string | null;
   agentId?: string;
+  createdBy?: string | null;
+  createdByProjectId?: string | null;
 }
 
 export async function createOrganization(app: INestApplication): Promise<OrganizationFixture> {
@@ -49,12 +54,24 @@ export async function addMember(
   permissions?: string[]
 ): Promise<MemberFixture> {
   const keycloakId = randomUUID();
-  const user = await app.get(UserService).getOrCreateUser({ keycloakId }, organization.tenantId);
-  return {
-    keycloakId,
-    userId: user.id,
-    headers: proxyHeaders({ userId: keycloakId, organizations: [organization.name], permissions }),
-  };
+  const headers = proxyHeaders({ userId: keycloakId, organizations: [organization.name], permissions });
+  const user = await app
+    .get(UserService)
+    .getOrCreateUser({ keycloakId, groups: headers['x-forwarded-groups'] }, organization.tenantId);
+  return { keycloakId, userId: user.id, headers };
+}
+
+export async function removeMemberFromOrganization(member: MemberFixture): Promise<void> {
+  await db.update(users).set({ groups: '' }).where(eq(users.id, member.userId));
+}
+
+export async function setMemberPermissions(
+  organization: OrganizationFixture,
+  member: MemberFixture,
+  permissions: string[]
+): Promise<void> {
+  const headers = proxyHeaders({ userId: member.keycloakId, organizations: [organization.name], permissions });
+  await db.update(users).set({ groups: headers['x-forwarded-groups'] }).where(eq(users.id, member.userId));
 }
 
 export interface ServiceAccountFixture {
@@ -74,9 +91,7 @@ export function addServiceAccount(organization: OrganizationFixture, permissions
 }
 
 export async function createAgent(): Promise<string> {
-  const id = randomUUID();
-  await db.insert(agents).values({ id, name: `agent-${id.slice(0, 8)}` });
-  return id;
+  return ensureBuiltInAgent(DEFAULT_AGENT_NAME);
 }
 
 export interface ProjectPlacementRow {
@@ -159,10 +174,42 @@ export async function createProject(
     .create(
       { title: options.title ?? `project-${randomUUID().slice(0, 8)}`, agentId: options.agentId },
       organization.tenantId,
-      options.workspaceId ?? null,
-      options.folderId ?? null
+      {
+        workspaceId: options.workspaceId,
+        folderId: options.folderId,
+        createdBy: options.createdBy,
+        createdByProjectId: options.createdByProjectId,
+      }
     );
   return project.id;
+}
+
+export function platformApiKeyFor(
+  app: INestApplication,
+  organization: OrganizationFixture,
+  projectId: string
+): Promise<string> {
+  return app.get(GatewayKeyService).createKey(projectId, projectId, organization.tenantId, 'platform-api');
+}
+
+export function serviceKeyFor(
+  app: INestApplication,
+  organization: OrganizationFixture,
+  projectId: string
+): Promise<string> {
+  return app.get(GatewayKeyService).createKey(projectId, projectId, organization.tenantId);
+}
+
+export async function clearProjectCreator(projectId: string): Promise<void> {
+  await db.update(projects).set({ createdBy: null }).where(eq(projects.id, projectId));
+}
+
+export async function stampProjectKind(projectId: string, kind: ProjectKind): Promise<void> {
+  await db.update(projects).set({ kind }).where(eq(projects.id, projectId));
+}
+
+export async function setChatVisibility(chatId: string, chatVisibility: ChatVisibility): Promise<void> {
+  await db.update(projects).set({ chatVisibility }).where(eq(projects.id, chatId));
 }
 
 export async function disableProject(projectId: string): Promise<void> {

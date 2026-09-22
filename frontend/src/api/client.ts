@@ -8,7 +8,11 @@ export function apiRelative(baseUrl: string): string {
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    /** The `code` the backend's coded refusals carry, e.g. `model_unknown`, so a caller can place the message. */
+    public readonly code: string | null = null,
+    /** The rest of the refusal body — `model_unknown` names the failing `part`, `agent_in_use` the `projectCount`. */
+    public readonly details: Record<string, unknown> = {}
   ) {
     super(message);
   }
@@ -29,6 +33,18 @@ export function parseErrorMessage(text: string, fallback: string): string {
 export async function extractErrorMessage(res: Response, fallback: string): Promise<string> {
   const text = await res.text().catch(() => '');
   return parseErrorMessage(text, fallback);
+}
+
+export function parseApiError(text: string, status: number, fallback: string): ApiError {
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') body = parsed as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  const code = typeof body.code === 'string' ? body.code : null;
+  return new ApiError(status, parseErrorMessage(text, fallback), code, body);
 }
 
 export const TENANT_HEADER = 'x-tenant-name';
@@ -61,8 +77,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       window.location.href = '/permission-denied';
       throw new Error('Forbidden');
     }
-    const message = await extractErrorMessage(res, `Error: ${res.status}`);
-    throw new ApiError(res.status, message);
+    const text = await res.text().catch(() => '');
+    throw parseApiError(text, res.status, `Error: ${res.status}`);
   }
   const text = await res.text();
   return text ? JSON.parse(text) : (undefined as T);
@@ -124,6 +140,8 @@ export interface Project {
   workspaceId: string | null;
   folderId: string | null;
   agentId: string;
+  /** Set when an import could not find the Agent the export named; the runtime still runs this slug. */
+  importedAgent: string | null;
   title: string | null;
   description: string | null;
   status: ProjectStatus;

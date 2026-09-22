@@ -80,10 +80,19 @@ export interface ExportManifestSchedule {
   headers: Record<string, string> | null;
 }
 
+export interface ExportManifestAgent {
+  slug: string;
+  displayName: string | null;
+  origin: string;
+  package: string;
+}
+
 export interface ExportManifest {
   title: string | null;
   description: string | null;
+  /** @deprecated superseded by `agent`; still written and read so older archives keep importing. */
   agentName: string | null;
+  agent: ExportManifestAgent | null;
   settings: ExportManifestSettings;
   resources: ExportManifestResources;
   appDetails: ExportManifestAppDetails | null;

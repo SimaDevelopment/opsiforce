@@ -3,6 +3,7 @@ import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
 import { useProjects } from '~/api/projects';
 import { Code as CodeIcon, Database, Files, MessageSquare } from '~/components/icons';
+import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { ProjectActionsMenu } from '~/components/project-actions-menu';
 import { EnvironmentsPopover } from '~/components/project/environments/environments-popover';
@@ -72,6 +73,13 @@ export function ProjectHeader(props: ProjectHeaderProps) {
           onActiveEnvironmentChange={props.onActiveEnvironmentChange}
           onEnvironmentDeleted={handleEnvironmentDeleted}
         />
+        <Show when={project()?.importedAgent}>
+          {(slug) => (
+            <Badge variant="info" class="shrink-0 font-normal">
+              Imported agent: {slug()} (not in this organization)
+            </Badge>
+          )}
+        </Show>
       </div>
 
       <div class="flex items-center gap-1.5 shrink-0">

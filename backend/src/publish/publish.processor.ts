@@ -21,6 +21,8 @@ import { PodStartupFailedError } from '../pod/pod.service';
 import { writeJsonAtomic } from '../common/fs';
 import { clearEnvJsonBackup, writeEnvJsonBackup } from '../common/env-file';
 import { ExternalServicePublishService } from '../external-services';
+import { DeliveryService } from '../delivery/delivery.service';
+import { WorkspaceWriter } from '../delivery/workspace-writer';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
 const APP_READY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -41,7 +43,9 @@ export class PublishProcessor extends WorkerHost {
     private readonly scheduleService: ScheduleService,
     private readonly appReadiness: AppReadinessService,
     private readonly projectEvents: ProjectEventsService,
-    private readonly externalServicePublish: ExternalServicePublishService
+    private readonly externalServicePublish: ExternalServicePublishService,
+    private readonly deliveryService: DeliveryService,
+    private readonly workspaceWriter: WorkspaceWriter
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -91,6 +95,10 @@ export class PublishProcessor extends WorkerHost {
         await this.syncIncremental(devDir, prodDir, sha);
         previousEnvVars = await this.publishService.readEnvFile(prodEnv.directory);
         await writeEnvJsonBackup(this.storageMountPath, prodEnv.directory, previousEnvVars);
+      }
+
+      if (!(await this.workspaceWriter.hasOpencodeDir(prodEnv.directory))) {
+        await this.deliveryService.copyToNewEnvironment(devEnv.id, data.projectEnvironmentId);
       }
 
       await this.writeEnvFile(prodEnv.directory, data.variables, data.isFirstPublish);

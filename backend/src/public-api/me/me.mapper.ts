@@ -7,6 +7,7 @@ export const MeMapper = {
     username: caller.user.username,
     email: caller.user.email,
     displayName: caller.user.displayName,
+    source: caller.source,
     organization: caller.organization,
     organizations: caller.organizations,
     permissions: [...caller.permissions].toSorted(),

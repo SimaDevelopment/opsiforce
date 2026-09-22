@@ -76,7 +76,7 @@ export class ProjectImportService {
     const targetFolderId = workspaceId && folderId ? await this.resolveFolder(folderId, workspaceId) : null;
 
     const manifest = await this.readManifest(uploadPath);
-    const { agentId, agentFallbackFrom } = await this.resolveAgent(manifest.agentName);
+    const { agentId, importedAgent, agentFallbackFrom } = await this.resolveAgent(manifest, tenantId);
     const title = titleOverride?.trim() || manifest.title;
 
     const project = await this.projectService.createImportedProject({
@@ -86,11 +86,13 @@ export class ProjectImportService {
       title,
       timezone,
       agentId,
+      importedAgent,
       description: manifest.description ?? null,
       settings: manifest.settings ?? null,
       resources: manifest.resources ?? null,
       appDetails: manifest.appDetails ?? null,
       schedules: manifest.schedules ?? [],
+      createdBy: userId,
     });
 
     const importJobId = crypto.randomUUID();
@@ -114,7 +116,7 @@ export class ProjectImportService {
     } catch (err) {
       await rm(uploadPath, { force: true }).catch(() => {});
       await rm(archivePath, { force: true }).catch(() => {});
-      await this.projectService.cleanupFailedImport(project.id).catch(() => {});
+      await this.projectService.discardHalfCreatedProject(project.id).catch(() => {});
       throw err;
     }
 
@@ -160,14 +162,23 @@ export class ProjectImportService {
     return folder.id;
   }
 
-  private async resolveAgent(agentName: string | null): Promise<{ agentId: string; agentFallbackFrom: string | null }> {
-    if (agentName) {
-      const agentId = await this.agentService.findIdByName(agentName);
-      if (agentId) return { agentId, agentFallbackFrom: null };
-      this.logger.warn(`Imported agent "${agentName}" not found; falling back to the default agent`);
-      return { agentId: await this.agentService.getDefaultAgentId(), agentFallbackFrom: agentName };
-    }
-    return { agentId: await this.agentService.getDefaultAgentId(), agentFallbackFrom: null };
+  private async resolveAgent(
+    manifest: ExportManifest,
+    tenantId: string
+  ): Promise<{ agentId: string; importedAgent: string | null; agentFallbackFrom: string | null }> {
+    const slug = manifest.agent?.slug ?? manifest.agentName;
+    if (!slug)
+      return { agentId: await this.agentService.getDefaultAgentId(), importedAgent: null, agentFallbackFrom: null };
+
+    const agentId = await this.agentService.findIdByName(slug, tenantId);
+    if (agentId) return { agentId, importedAgent: null, agentFallbackFrom: null };
+
+    this.logger.warn(`Imported agent "${slug}" not found; linking the default agent and recording the original`);
+    return {
+      agentId: await this.agentService.getDefaultAgentId(),
+      importedAgent: slug,
+      agentFallbackFrom: manifest.agent?.displayName ?? slug,
+    };
   }
 
   async getLatestJob(projectId: string): Promise<ProjectImportJobResponse | null> {

@@ -12,7 +12,7 @@ adrs: [0010, 0016, 0039]
 
 - Every [ProjectEnvironment](../../CONTEXT.md) runs its own [App](../../CONTEXT.md) with its own [App Details](../../CONTEXT.md), so one [Project](../../CONTEXT.md) groups several Apps ([ADR-0016](../adr/0016-app-details-are-per-environment.md)); the `project_app` row is keyed by environment and each environment writes only its own row.
 - Nothing designates one App to stand for the Project: the catalog pin is retired ([ADR-0039](../adr/0039-project-app-pin-retired.md)) and each App is reached directly at its environment's URL ([Environments](environments.md)).
-- The App's source of identity is `app.meta.json` at the project root, holding name and description only; the agent template serves it at `/api/app-meta`.
+- The App's source of identity is `app.meta.json` at the project root, holding name and description only; the platform reads that file directly ([App Readiness](app-readiness.md)), and the agent template additionally serves it at `/api/app-meta` for its own tab title.
 - At [Go-live](../../CONTEXT.md) the pod pushes the App's state to the backend, which upserts that environment's row and notifies the open workspace over SSE so the app pane appears ([App Readiness](app-readiness.md)).
 - Humans re-curate name and description against the [Active environment](../../CONTEXT.md): the backend rewrites that environment's `app.meta.json` atomically and mirrors the values into its row, both or neither, then publishes an SSE event.
 - The rule is latest writer wins: the agent may rewrite the file later, and is instructed to carry an existing name forward verbatim unless asked to rename.

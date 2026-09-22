@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
 import {
@@ -334,7 +334,7 @@ export class WorkspaceService {
     const [{ projectCount }] = await db
       .select({ projectCount: sql<number>`count(*)::int` })
       .from(projects)
-      .where(eq(projects.folderId, row.id));
+      .where(and(eq(projects.folderId, row.id), isNull(projects.kind)));
     return { ...row, projectCount };
   }
 
@@ -416,7 +416,7 @@ export class WorkspaceService {
     const [{ projectCount }] = await db
       .select({ projectCount: sql<number>`count(*)::int` })
       .from(projects)
-      .where(eq(projects.folderId, folderId));
+      .where(and(eq(projects.folderId, folderId), isNull(projects.kind)));
     return projectCount;
   }
 
@@ -436,7 +436,7 @@ export class WorkspaceService {
     }
 
     const project = canManageWorkspaces
-      ? await this.projectService.findOne(projectId, tenantId)
+      ? await this.projectService.findOneUnlessHidden(projectId, tenantId, userId)
       : await this.projectService.findOneForUser({ projectId, tenantId, userId });
 
     const keepsWorkspace = workspaceId === project.workspaceId;
@@ -537,7 +537,11 @@ export class WorkspaceService {
     if (params.folderId != null) {
       await this.assertFolderInWorkspace(params.folderId, params.workspaceId);
     }
-    return this.projectService.create(params.dto, params.tenantId, params.workspaceId, params.folderId ?? null);
+    return this.projectService.create(params.dto, params.tenantId, {
+      workspaceId: params.workspaceId,
+      folderId: params.folderId,
+      createdBy: params.userId,
+    });
   }
 
   private async attachCounts(rows: WorkspaceBaseRow[]): Promise<WorkspaceResponse[]> {
@@ -553,7 +557,7 @@ export class WorkspaceService {
       db
         .select({ workspaceId: projects.workspaceId, count: sql<number>`count(*)::int` })
         .from(projects)
-        .where(inArray(projects.workspaceId, ids))
+        .where(and(inArray(projects.workspaceId, ids), isNull(projects.kind)))
         .groupBy(projects.workspaceId),
     ]);
 

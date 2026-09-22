@@ -13,8 +13,8 @@ import {
   workspaceMembers,
   workspaces,
 } from '../../../db/schema';
-import { visibleProjectsFilter } from '../../project/project-visibility';
-import type { ProjectStatus } from '../../project/project.types';
+import { reachableHiddenProjectsWhere, visibleProjectsFilter } from '../../project/project-visibility';
+import type { ProjectKind, ProjectStatus } from '../../project/project.types';
 import { beforeCursor, cursorValue, takePage, type TakenPage } from '../pagination';
 import type { ProjectListQuery } from './projects.schema';
 
@@ -25,6 +25,10 @@ const projectFields = {
   title: projects.title,
   description: projects.description,
   disabled: projects.disabled,
+  createdBy: projects.createdBy,
+  createdByProjectId: projects.createdByProjectId,
+  kind: projects.kind,
+  importedAgent: projects.importedAgent,
   lastPromptAt: projects.lastPromptAt,
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
@@ -44,6 +48,10 @@ export interface ProjectRow {
   title: string | null;
   description: string | null;
   disabled: boolean;
+  createdBy: string | null;
+  createdByProjectId: string | null;
+  kind: ProjectKind | null;
+  importedAgent: string | null;
   lastPromptAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -74,6 +82,11 @@ export interface EnvironmentRow {
 export interface ProjectScope {
   tenantId: string;
   userId: string;
+  createdByProjectId?: string;
+}
+
+function createdByCallingProject(scope: ProjectScope) {
+  return scope.createdByProjectId === undefined ? undefined : eq(projects.createdByProjectId, scope.createdByProjectId);
 }
 
 @Injectable()
@@ -87,6 +100,7 @@ export class PublicProjectsRepository {
           visible.where,
           query.workspaceId === undefined ? undefined : eq(projects.workspaceId, query.workspaceId),
           query.agentId === undefined ? undefined : eq(projects.agentId, query.agentId),
+          createdByCallingProject(scope),
           beforeCursor(projects.createdAt, projects.id, query.cursor)
         )
       )
@@ -105,7 +119,21 @@ export class PublicProjectsRepository {
     const visible = visibleProjectsFilter(scope.tenantId, scope.userId);
     const [row] = await this.baseQuery()
       .leftJoin(workspaceMembers, visible.workspaceMemberJoin)
-      .where(and(visible.where, eq(projects.id, projectId)))
+      .where(and(visible.where, eq(projects.id, projectId), createdByCallingProject(scope)))
+      .limit(1);
+
+    return row ?? null;
+  }
+
+  async findReachableHidden(scope: ProjectScope, projectId: string): Promise<ProjectRow | null> {
+    const [row] = await this.baseQuery()
+      .where(
+        and(
+          eq(projects.id, projectId),
+          reachableHiddenProjectsWhere(scope.tenantId, scope.userId),
+          createdByCallingProject(scope)
+        )
+      )
       .limit(1);
 
     return row ?? null;

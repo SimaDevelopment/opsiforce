@@ -3,7 +3,9 @@ import type { FastifyRequest } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
-import { projectGatewayKeys } from '../../db/schema';
+import { projectGatewayKeys, type GatewayKeyPurposeValue } from '../../db/schema';
+
+export type GatewayKeyPurpose = GatewayKeyPurposeValue;
 
 export interface GatewayIdentity {
   projectId: string;
@@ -17,12 +19,21 @@ export type GatewayRequest = FastifyRequest & { gatewayContext: GatewayIdentity 
 export class GatewayKeyService {
   private readonly logger = new Logger(GatewayKeyService.name);
 
-  async createKey(projectId: string, projectEnvironmentId: string, tenantId: string | null): Promise<string> {
+  async createKey(
+    projectId: string,
+    projectEnvironmentId: string,
+    tenantId: string | null,
+    purpose: GatewayKeyPurpose = 'service'
+  ): Promise<string> {
     const [existing] = await db
       .select()
       .from(projectGatewayKeys)
       .where(
-        and(eq(projectGatewayKeys.projectEnvironmentId, projectEnvironmentId), eq(projectGatewayKeys.status, 'active'))
+        and(
+          eq(projectGatewayKeys.projectEnvironmentId, projectEnvironmentId),
+          eq(projectGatewayKeys.purpose, purpose),
+          eq(projectGatewayKeys.status, 'active')
+        )
       );
 
     if (existing) return existing.token;
@@ -36,13 +47,14 @@ export class GatewayKeyService {
       tenantId,
       token,
       status: 'active',
+      purpose,
     });
 
-    this.logger.log(`Created gateway key for environment ${projectEnvironmentId}`);
+    this.logger.log(`Created ${purpose} gateway key for environment ${projectEnvironmentId}`);
     return token;
   }
 
-  async validateToken(token: string): Promise<GatewayIdentity | null> {
+  async validateToken(token: string, purpose: GatewayKeyPurpose = 'service'): Promise<GatewayIdentity | null> {
     const [key] = await db
       .select({
         projectId: projectGatewayKeys.projectId,
@@ -50,17 +62,30 @@ export class GatewayKeyService {
         tenantId: projectGatewayKeys.tenantId,
       })
       .from(projectGatewayKeys)
-      .where(and(eq(projectGatewayKeys.token, token), eq(projectGatewayKeys.status, 'active')));
+      .where(
+        and(
+          eq(projectGatewayKeys.token, token),
+          eq(projectGatewayKeys.purpose, purpose),
+          eq(projectGatewayKeys.status, 'active')
+        )
+      );
 
     return key ?? null;
   }
 
-  async getEnvironmentToken(projectEnvironmentId: string): Promise<string | null> {
+  async getEnvironmentToken(
+    projectEnvironmentId: string,
+    purpose: GatewayKeyPurpose = 'service'
+  ): Promise<string | null> {
     const [key] = await db
       .select({ token: projectGatewayKeys.token })
       .from(projectGatewayKeys)
       .where(
-        and(eq(projectGatewayKeys.projectEnvironmentId, projectEnvironmentId), eq(projectGatewayKeys.status, 'active'))
+        and(
+          eq(projectGatewayKeys.projectEnvironmentId, projectEnvironmentId),
+          eq(projectGatewayKeys.purpose, purpose),
+          eq(projectGatewayKeys.status, 'active')
+        )
       );
 
     return key?.token ?? null;

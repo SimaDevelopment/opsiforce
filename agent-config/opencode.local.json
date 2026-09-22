@@ -3,7 +3,6 @@
   "plugins": [
     "-opencode.provider.opencode"
   ],
-  "default_agent": "app-builder",
   "update": "disable",
   "snapshots": false,
   "websearch": {
@@ -19,6 +18,21 @@
       "action": "*",
       "resource": "*",
       "effect": "allow"
+    },
+    {
+      "action": "edit",
+      "resource": ".opencode/**",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": ".opsiforce/**",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "data/database.db",
+      "effect": "deny"
     }
   ],
   "providers": {

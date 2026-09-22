@@ -2,6 +2,10 @@ import { Body, Get, HttpException, HttpStatus, Module, NotFoundException, Post, 
 import { z } from 'zod';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../../../src/public-api/public-api.decorator';
 import { Errors } from '../../../src/public-api/errors/public-api-error';
+import { AllowsGatewayCaller } from '../../../src/public-api/auth/allows-gateway-caller.decorator';
+import { PublicApiAuthModule } from '../../../src/public-api/auth/public-api-auth.module';
+
+export const PROBE_PATH = 'probe';
 
 export const ProbeBodySchema = z.strictObject({ name: z.string() }).meta({ id: 'ProbeBody' });
 export const ProbeQuerySchema = z.strictObject({ limit: z.coerce.number().int().min(1).max(10) });
@@ -12,9 +16,10 @@ type ProbeBody = z.infer<typeof ProbeBodySchema>;
 type ProbeQuery = z.infer<typeof ProbeQuerySchema>;
 type ProbeReply = z.infer<typeof ProbeReplySchema>;
 
-@PublicApiController('probe')
+@PublicApiController(PROBE_PATH)
 export class ProbeController {
   @Post('echo')
+  @AllowsGatewayCaller()
   @PublicResponse(200, ProbeReplySchema)
   @PublicApiErrors('validation-error')
   echo(@Body({ schema: ProbeBodySchema }) body: ProbeBody): ProbeReply {
@@ -22,6 +27,7 @@ export class ProbeController {
   }
 
   @Get('paged')
+  @AllowsGatewayCaller()
   @PublicResponse(200, ProbeReplySchema)
   @PublicApiErrors('validation-error')
   paged(@Query({ schema: ProbeQuerySchema }) query: ProbeQuery): ProbeReply {
@@ -61,5 +67,5 @@ export class ProbeController {
   }
 }
 
-@Module({ controllers: [ProbeController] })
+@Module({ imports: [PublicApiAuthModule], controllers: [ProbeController] })
 export class ProbeModule {}

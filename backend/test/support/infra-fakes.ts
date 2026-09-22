@@ -83,8 +83,18 @@ export class FakePodService extends RecordingFake {
     });
   }
 
-  markPodReady(podName: string, podIp = '10.244.0.1'): void {
-    this.pods.set(podName, { metadata: { name: podName }, status: { podIP: podIp } });
+  setPod(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
+    this.pods.set(podName, {
+      metadata: { name: podName },
+      status: { podIP: podIp },
+      ...(controlToken
+        ? { spec: { containers: [{ name: 'agent', env: [{ name: 'OPSIFORCE_CONTROL_TOKEN', value: controlToken }] }] } }
+        : {}),
+    });
+  }
+
+  markPodReady(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
+    this.setPod(podName, podIp, controlToken);
     this.readiness.get(podName)?.resolve(podIp);
     this.readiness.delete(podName);
   }
@@ -219,10 +229,27 @@ export class FakeProjectEventsService extends RecordingFake {
   }
 }
 
+/** There is no cluster in a domain test: the Job is driven by the test that needs one. */
+export class FakeAgentUpdateK8sService extends RecordingFake {
+  async run(): Promise<{ logs: string; succeeded: boolean }> {
+    throw new Error('No Kubernetes in a domain test: drive the migrate script from the test instead');
+  }
+
+  async isJobRunning(updateId: string): Promise<boolean> {
+    this.record('isJobRunning', { updateId });
+    return false;
+  }
+}
+
 export class FakeQueue extends RecordingFake {
-  async add(name: string, data: JsonObject): Promise<{ id: string }> {
-    this.record('add', { name, data });
+  async add(name: string, data: JsonObject, opts?: JsonObject): Promise<{ id: string }> {
+    this.record('add', { name, data, ...(opts ? { opts } : {}) });
     return { id: `fake-job-${this.calls.length}` };
+  }
+
+  async addBulk(jobs: JsonObject[]): Promise<{ id: string }[]> {
+    this.record('addBulk', { jobs });
+    return jobs.map((_, index) => ({ id: `fake-bulk-job-${index}` }));
   }
 
   async upsertJobScheduler(name: string): Promise<void> {

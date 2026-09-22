@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentStatus, ProjectStatus } from '../../project/project.types';
+import { AgentStatus, PROJECT_KINDS, ProjectStatus, TEST_PROJECT_KIND } from '../../project/project.types';
 import { CursorPageQueryShape, pageSchema } from '../pagination';
 
 export const ResourceRefSchema = z.strictObject({ id: z.string(), name: z.string() }).meta({ id: 'ResourceRef' });
@@ -84,6 +84,21 @@ export const ProjectSchema = z
     workspace: WorkspaceRefSchema.nullable().describe('null when the Project is in the Organization-wide Public area'),
     folder: ResourceRefSchema.nullable(),
     disabled: z.boolean(),
+    createdBy: z
+      .string()
+      .nullable()
+      .describe('User who created the Project, or null for Projects created before provenance was recorded'),
+    createdByProjectId: z
+      .string()
+      .nullable()
+      .describe('The Project whose Agent created this one, when a pod made it; null when a person or the API did'),
+    kind: z
+      .enum(PROJECT_KINDS)
+      .nullable()
+      .describe(
+        'Set on Projects the platform keeps for itself; null on every ordinary Project. Only a test Project an Agent Caller created, read back by that caller or by the person it runs as, ever reports a value here'
+      ),
+    importedAgent: z.string().nullable().describe('Agent name this Project was imported under, when it was imported'),
     timezone: z.string(),
     agentStatus: z.enum(AgentStatus),
     lastPromptAt: z.iso.datetime().nullable(),
@@ -131,6 +146,12 @@ export const CreateProjectSchema = z
       .refine(isIanaTimezone, 'Not an IANA time zone name')
       .optional()
       .describe('IANA time zone name, defaults to UTC'),
+    kind: z
+      .literal(TEST_PROJECT_KIND)
+      .optional()
+      .describe(
+        'Only an Agent Caller running a Builder chat may send this, and only as "test": it makes a throwaway Project that stays out of every Project list and replaces the chat\'s previous one'
+      ),
   })
   .meta({
     id: 'CreateProject',

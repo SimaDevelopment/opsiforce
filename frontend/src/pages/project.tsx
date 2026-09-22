@@ -24,6 +24,7 @@ export function ProjectView(props: {
   projectId: string;
   initialPrompt: () => InitialPrompt | undefined;
   onInitialPromptAdmitted: () => void;
+  onGone?: () => void;
 }) {
   const navigate = useNavigate();
   const jobDock = useJobDock();
@@ -84,7 +85,7 @@ export function ProjectView(props: {
 
   createEffect(() => {
     if (statusQuery.error instanceof ApiError && statusQuery.error.status === 404) {
-      untrack(() => navigate({ to: '/' }));
+      untrack(() => (props.onGone ? props.onGone() : navigate({ to: '/' })));
     }
   });
 
@@ -135,7 +136,7 @@ export function ProjectView(props: {
             environments={environmentList()}
             activeEnvironmentId={activeEnvironmentId()}
             onActiveEnvironmentChange={setActiveEnvironmentId}
-            onDeleted={() => navigate({ to: '/' })}
+            onDeleted={() => (props.onGone ? props.onGone() : navigate({ to: '/' }))}
           />
         )}
       </Show>

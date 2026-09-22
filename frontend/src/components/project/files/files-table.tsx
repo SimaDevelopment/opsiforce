@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~
 import { ToolbarButton } from '~/components/ui/toolbar-button';
 import { formatBytes } from '~/lib/format-bytes';
 import { FileTypeBadge } from './file-type-badge';
-import { formatModified } from './format-modified';
+import { formatDate } from '~/lib/format-date';
 import type { FileEntry } from '~/api/files';
 
 export interface FilesTableProps {
@@ -45,7 +45,7 @@ export function FilesTable(props: FilesTableProps) {
                   {formatBytes(entry.size)}
                 </Show>
               </TableCell>
-              <TableCell class="text-xs text-muted-foreground">{formatModified(entry.modifiedAt)}</TableCell>
+              <TableCell class="text-xs text-muted-foreground">{formatDate(entry.modifiedAt)}</TableCell>
               <TableCell class="py-1">
                 <div class="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                   <Show when={entry.type === 'file'}>

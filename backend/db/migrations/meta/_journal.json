@@ -435,6 +435,62 @@
       "when": 1789031613387,
       "tag": "0061_add-agents-created-at",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789981917260,
+      "tag": "0062_agent-skill-platform-schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789985130390,
+      "tag": "0063_project-provenance-and-gateway-key-purpose",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1789985130391,
+      "tag": "0064_platform-api-caller-groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1789985130392,
+      "tag": "0065_project-skill-deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789985130393,
+      "tag": "0066_project-skill-delivery-state",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789985130394,
+      "tag": "0067_add-pending-agent-update-status",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1790024421965,
+      "tag": "0068_builder-chat-visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1790027067111,
+      "tag": "0069_drop-external-urls-flag-default",
+      "breakpoints": true
     }
   ]
 }

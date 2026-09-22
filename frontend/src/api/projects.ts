@@ -17,7 +17,13 @@ interface ProjectStatusErrorPayload {
   message?: string;
 }
 
-export function useProjectStatus(projectId: () => string, options?: { enabled?: () => boolean }) {
+export function useProjectStatus(
+  projectId: () => string,
+  options?: {
+    enabled?: () => boolean;
+    onEvent?: () => void;
+  }
+) {
   const qc = useQueryClient();
   const [data, setData] = createSignal<ProjectState>();
   const [error, setError] = createSignal<unknown>();
@@ -48,6 +54,7 @@ export function useProjectStatus(projectId: () => string, options?: { enabled?: 
       } catch (err) {
         setError(err);
       }
+      options?.onEvent?.();
     };
 
     events.addEventListener('error', (event) => {
