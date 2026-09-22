@@ -4,8 +4,8 @@ import * as k8s from '@kubernetes/client-node';
 import { loadKubeConfig } from '../common/k8s-client';
 import { resolvePreset, toK8sResources } from '../pod/pod-classes';
 import type { AgentUpdateMode } from './agent-update.types';
+import { AGENT_UPDATE_JOB_COMPLETION_GRACE_MS } from './agent-update.reaper';
 
-const JOB_COMPLETION_GRACE_MS = 60_000;
 
 const UPDATE_ID_LABEL = 'opsiforce.io/agent-update-id';
 
@@ -48,7 +48,7 @@ export class AgentUpdateK8sService {
     });
 
     try {
-      const succeeded = await this.waitForCompletion(jobName, this.jobTimeoutMs + JOB_COMPLETION_GRACE_MS);
+      const succeeded = await this.waitForCompletion(jobName, this.jobTimeoutMs + AGENT_UPDATE_JOB_COMPLETION_GRACE_MS);
       const logs = await this.readLogs(jobName);
       return { logs, succeeded };
     } finally {

@@ -1,17 +1,32 @@
 import { and, eq, lt } from 'drizzle-orm';
+import type { ConfigService } from '@nestjs/config';
 import { db } from '../../db';
 import { projectAgentUpdates } from '../../db/schema';
 import { AgentUpdateStatus } from './agent-update.types';
 
-/** How long a `running` row is believed before it is treated as a killed process's leftover. */
-export const AGENT_UPDATE_STALE_AFTER_MS = 15 * 60 * 1000;
+const DEFAULT_AGENT_UPDATE_JOB_TIMEOUT_MS = 30 * 60 * 1000;
+export const AGENT_UPDATE_JOB_COMPLETION_GRACE_MS = 60_000;
+
+/**
+ * A `running` row older than the Job's `activeDeadlineSeconds` plus the completion grace has no live
+ * Job behind it, because Kubernetes has already killed one that old; anything younger may still be writing.
+ */
+export function agentUpdateStaleAfterMs(configService: ConfigService): number {
+  return (
+    configService.get<number>('agentUpdateJobTimeoutMs', DEFAULT_AGENT_UPDATE_JOB_TIMEOUT_MS) +
+    AGENT_UPDATE_JOB_COMPLETION_GRACE_MS
+  );
+}
 
 /** Answers whether the Kubernetes Job behind a `running` row is still writing. */
 export type SurvivingJobProbe = (updateId: string) => Promise<boolean>;
 
-export async function reapStaleRunningAgentUpdates(isJobRunning?: SurvivingJobProbe): Promise<void> {
+export async function reapStaleRunningAgentUpdates(
+  staleAfterMs: number,
+  isJobRunning?: SurvivingJobProbe
+): Promise<void> {
   const now = new Date();
-  const cutoff = new Date(now.getTime() - AGENT_UPDATE_STALE_AFTER_MS);
+  const cutoff = new Date(now.getTime() - staleAfterMs);
   const stale = await db
     .select({ id: projectAgentUpdates.id })
     .from(projectAgentUpdates)

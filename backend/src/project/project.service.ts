@@ -78,6 +78,7 @@ import {
   ProjectLoggingResponse,
   RequestLogMode,
   REQUEST_LOG_BODY_LIMIT_MAX,
+  TEST_PROJECT_KIND,
   availableAuthModes,
 } from './project.types';
 import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
@@ -1203,8 +1204,12 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.getAuth(projectId, env.id, tenantId);
   }
 
+  /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
   async remove(id: string, tenantId: string): Promise<void> {
     await this.findOne(id, tenantId);
+    for (const child of await this.testProjectsCreatedBy(id, tenantId)) {
+      await this.remove(child.id, tenantId);
+    }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
     await db
@@ -1238,6 +1243,19 @@ export class ProjectService implements OnApplicationBootstrap {
     }
 
     await db.delete(projects).where(eq(projects.id, id));
+  }
+
+  private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string }[]> {
+    return db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.tenantId, tenantId),
+          eq(projects.createdByProjectId, projectId),
+          eq(projects.kind, TEST_PROJECT_KIND)
+        )
+      );
   }
 
   async disable(id: string, tenantId: string): Promise<ProjectResponse> {

@@ -429,7 +429,7 @@ describe('the bootstrap reaper', () => {
     ]);
     runner.aliveJobIds = new Set([surviving]);
 
-    await reapStaleRunningAgentUpdates((updateId) => runner.isJobRunning(updateId));
+    await reapStaleRunningAgentUpdates(15 * 60 * 1000, (updateId) => runner.isJobRunning(updateId));
 
     const rows = await db
       .select()

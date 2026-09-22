@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { and, asc, eq, gt, inArray, isNull, ne, or } from 'drizzle-orm';
 import { db } from '../../db';
 import {
@@ -9,7 +10,7 @@ import {
   projectSkillDeliveryState,
   projects,
 } from '../../db/schema';
-import { AGENT_UPDATE_STALE_AFTER_MS } from '../agent-update/agent-update.reaper';
+import { agentUpdateStaleAfterMs } from '../agent-update/agent-update.reaper';
 import { AgentUpdateStatus } from '../agent-update/agent-update.types';
 import { ProjectStatus } from '../project/project.types';
 
@@ -48,6 +49,8 @@ const UNREACHABLE_STATUSES = new Set<string>([ProjectStatus.Pending, ProjectStat
 
 @Injectable()
 export class SkillDeliveryRepository {
+  constructor(private readonly configService: ConfigService) {}
+
   /** Every ProjectEnvironment of a Built-in Agent in one Organization — the fan-out's targets. */
   async fanOutTargets(agentId: string, tenantId: string): Promise<FanOutTarget[]> {
     const rows = await db
@@ -108,7 +111,7 @@ export class SkillDeliveryRepository {
   }
 
   async hasRunningAgentUpdate(projectEnvironmentId: string, exceptUpdateId?: string): Promise<boolean> {
-    const cutoff = new Date(Date.now() - AGENT_UPDATE_STALE_AFTER_MS);
+    const cutoff = new Date(Date.now() - agentUpdateStaleAfterMs(this.configService));
     const [row] = await db
       .select({ id: projectAgentUpdates.id })
       .from(projectAgentUpdates)

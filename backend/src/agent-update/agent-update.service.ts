@@ -15,7 +15,7 @@ import { type AgentModelSelection } from '../agent/agent-config';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
 import { SkillReconcilerService } from '../store/skill-reconciler.service';
 import { AgentUpdateK8sService } from './agent-update.k8s.service';
-import { reapStaleRunningAgentUpdates } from './agent-update.reaper';
+import { agentUpdateStaleAfterMs, reapStaleRunningAgentUpdates } from './agent-update.reaper';
 import {
   AGENT_WORKSPACE_UPDATE_QUEUE,
   AgentUpdateStatus,
@@ -76,7 +76,9 @@ export class AgentUpdateService implements OnApplicationBootstrap {
 
   /** Public because a Skill delivery must not write to an environment a dead process still claims. */
   async reapStaleRunningRows(): Promise<void> {
-    await reapStaleRunningAgentUpdates((updateId) => this.k8sService.isJobRunning(updateId));
+    await reapStaleRunningAgentUpdates(agentUpdateStaleAfterMs(this.configService), (updateId) =>
+      this.k8sService.isJobRunning(updateId)
+    );
   }
 
   async loadAgentRuntime(): Promise<void> {

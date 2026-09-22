@@ -24,6 +24,7 @@ import type { FakeQueue } from '../support/infra-fakes';
 import { startFakePod, type FakePod } from '../support/fake-pod';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
 import { manifest, validDescription } from '../store/support/skill-fixtures';
+import { AGENT_UPDATE_JOB_COMPLETION_GRACE_MS } from '../../src/agent-update/agent-update.reaper';
 
 const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? '';
 const CONTROL_TOKEN = 'fan-out-control-token';
@@ -147,6 +148,9 @@ function enqueuedFor(projectEnvironmentId: string) {
       (call) => (call.args.data as { projectEnvironmentId?: string }).projectEnvironmentId === projectEnvironmentId
     );
 }
+
+/** Older than the Job's 30-minute deadline plus grace, so no live Job can stand behind the row. */
+const PAST_JOB_DEADLINE_MS = 30 * 60 * 1000 + AGENT_UPDATE_JOB_COMPLETION_GRACE_MS + 60 * 1000;
 
 describe('a Skill mutated on a Built-in Agent', () => {
   let projectEnvironmentIds: string[];
@@ -343,7 +347,7 @@ describe('the per-environment critical section', () => {
       agentId,
       targetVersion: '1.0.0',
       status: AgentUpdateStatus.Running,
-      startedAt: new Date(Date.now() - 20 * 60 * 1000),
+      startedAt: new Date(Date.now() - PAST_JOB_DEADLINE_MS),
     });
 
     // `reconcile` skips the boot reap, so only the staleness cutoff can let this through.
@@ -373,7 +377,7 @@ describe('the per-environment critical section', () => {
           agentId,
           targetVersion: '1.0.0',
           status: AgentUpdateStatus.Running,
-          startedAt: new Date(Date.now() - 20 * 60 * 1000),
+          startedAt: new Date(Date.now() - PAST_JOB_DEADLINE_MS),
         },
         {
           id: fresh,

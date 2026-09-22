@@ -1,7 +1,8 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
-import { reapStaleRunningAgentUpdates } from '../agent-update/agent-update.reaper';
+import { agentUpdateStaleAfterMs, reapStaleRunningAgentUpdates } from '../agent-update/agent-update.reaper';
 import { ProjectStatus } from '../project/project.types';
 import { SkillRepository } from '../store/skill.repository';
 import { DeliveryRepository, type PinnedSkill } from './delivery.repository';
@@ -35,6 +36,7 @@ export class SkillDeliveryService {
   constructor(
     @InjectQueue(SKILL_DELIVERY_QUEUE)
     private readonly queue: Queue<SkillDeliveryJobData>,
+    private readonly configService: ConfigService,
     private readonly delivery: DeliveryService,
     private readonly deliveries: DeliveryRepository,
     private readonly fanOut: SkillDeliveryRepository,
@@ -86,7 +88,7 @@ export class SkillDeliveryService {
 
   /** The reap resolves rows a killed process left `running`, which would block every writer. */
   async ready(): Promise<void> {
-    this.reaped ??= reapStaleRunningAgentUpdates();
+    this.reaped ??= reapStaleRunningAgentUpdates(agentUpdateStaleAfterMs(this.configService));
     await this.reaped;
   }
 

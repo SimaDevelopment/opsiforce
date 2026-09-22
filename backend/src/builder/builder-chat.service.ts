@@ -130,9 +130,9 @@ export class BuilderChatService {
     return this.summarizeOne(caller, chatId);
   }
 
+  /** Any holder may delete (ADR-0064 list hygiene); `ProjectService.remove` takes the live test Project with it. */
   async remove(caller: BuilderChatCaller, chatId: string): Promise<void> {
     await this.requireChat(caller, chatId);
-    await this.deleteTestProjectsOf(caller.tenantId, chatId);
     await this.projects.remove(chatId, caller.tenantId);
   }
 
