@@ -9,6 +9,7 @@ import { EXAMPLES, type Example } from '~/data/examples';
 import { ArrowUp, LoaderCircle, Upload } from '~/components/icons';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
 import { cn } from '~/lib/cn';
+import { branding } from '~/lib/branding';
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -89,7 +90,7 @@ function HomePage() {
             <div class="flex flex-col items-center gap-5 text-center">
               <div class="relative">
                 <div class="w-11 h-11 rounded-2xl bg-foreground/5 border border-foreground/10 flex items-center justify-center shadow-sm">
-                  <img alt="Opsiforce" src="/assets/icons/brands/opsiforce.svg" class="w-6 h-6" />
+                  <img alt={branding.name} src={branding.icon} class="w-6 h-6" />
                 </div>
               </div>
               <div class="flex flex-col gap-2">

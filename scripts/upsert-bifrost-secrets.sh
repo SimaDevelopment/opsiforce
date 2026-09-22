@@ -12,6 +12,8 @@ kubectl create secret generic opsiforce-bifrost-provider-keys \
   --namespace "${namespace}" \
   --from-literal=openai-api-key="${OPENAI_API_KEY:-}" \
   --from-literal=anthropic-api-key="${ANTHROPIC_API_KEY:-}" \
+  --from-literal=azure-api-key="${AZURE_FOUNDRY_API_KEY:-}" \
+  --from-literal=azure-endpoint="${AZURE_FOUNDRY_ENDPOINT:-}" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 

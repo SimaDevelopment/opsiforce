@@ -1,6 +1,6 @@
 import type { KeyType, BifrostProviderConfig } from './bifrost.types';
 
-export const BIFROST_PROVIDER_CONFIGS: Record<KeyType, BifrostProviderConfig[]> = {
+const defaultProviderConfigs: Record<KeyType, BifrostProviderConfig[]> = {
   chat: [
     { provider: 'openai', weight: 0 },
     { provider: 'anthropic', weight: 1 },
@@ -11,3 +11,12 @@ export const BIFROST_PROVIDER_CONFIGS: Record<KeyType, BifrostProviderConfig[]> 
     { provider: 'anthropic', weight: 1 },
   ],
 };
+
+const upstreamProvider = process.env.BIFROST_UPSTREAM_PROVIDER;
+
+export const BIFROST_PROVIDER_CONFIGS: Record<KeyType, BifrostProviderConfig[]> = upstreamProvider
+  ? {
+      chat: [{ provider: upstreamProvider, weight: 1 }],
+      backend: [{ provider: upstreamProvider, weight: 1 }],
+    }
+  : defaultProviderConfigs;

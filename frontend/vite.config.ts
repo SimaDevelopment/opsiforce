@@ -1,13 +1,34 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import solidPlugin from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { resolveBrand } from "./branding";
 
 import { OC_PACKAGES_ROOT, opencodeMessageStamp, opencodeResolver } from "./vite-plugins/index.ts";
 
 export default defineConfig(({ mode }) => ({
   plugins: [
+    {
+      name: "deployment-branding",
+      transformIndexHtml: {
+        order: "pre",
+        handler(html) {
+          const brand = resolveBrand(loadEnv(mode, import.meta.dirname));
+          const values: Record<string, string> = {
+            NAME: brand.name,
+            FAVICON: brand.favicon,
+            APPLE_TOUCH_ICON: brand.appleTouchIcon,
+            MANIFEST: brand.manifest,
+            THEME_COLOR: brand.themeColor,
+          };
+          return html.replace(/__BRAND_(\w+)__/g, (placeholder, key: string) => {
+            const value = values[key];
+            return value === undefined ? placeholder : value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+          });
+        },
+      },
+    },
     opencodeResolver(),
     opencodeMessageStamp(),
     tanstackRouter({

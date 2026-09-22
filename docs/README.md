@@ -9,6 +9,7 @@
 - [Local Orchestration](development/local-orchestration.md) — how `yarn dev` brings the stack up: the privileged tunnel, Tilt as the one-UI process orchestrator (in-cluster + host), and the static dev identity that lands you signed in
 - [Deployment](development/deployment.md) — CI/CD, the deploy-order dependency chain, rollout strategy
 - [Deploy to Azure (AKS)](development/deploy-azure.md) — the platform contract for self-hosting on Azure: VNet/AKS, Rook-Ceph storage, in-cluster operators, and Azure AI Foundry behind Bifrost
+- [Air-Gapped Single-Node Deployment](development/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
 
 **Runtime** (`runtime/`)
 - [Request Flows](runtime/request-flows.md) — runtime-proxy topology, the shared ensure gate, per-surface routing

@@ -41,6 +41,7 @@ config:
   bifrostPodProxyUrl: ""
   bifrostAdminUsername: ""
   bifrostAdminPassword: ""
+  bifrostUpstreamProvider: ""
   gatewayUrl: ""
   externalServicesUrl: ""
   mailgunApiKey: ""

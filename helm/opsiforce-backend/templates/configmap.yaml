@@ -46,6 +46,9 @@ data:
   {{- if .Values.config.bifrostPodProxyUrl }}
   BIFROST_POD_PROXY_URL: {{ .Values.config.bifrostPodProxyUrl | quote }}
   {{- end }}
+  {{- if .Values.config.bifrostUpstreamProvider }}
+  BIFROST_UPSTREAM_PROVIDER: {{ .Values.config.bifrostUpstreamProvider | quote }}
+  {{- end }}
   {{- if .Values.config.gatewayUrl }}
   SERVICE_GATEWAY_URL: {{ .Values.config.gatewayUrl | quote }}
   {{- end }}
