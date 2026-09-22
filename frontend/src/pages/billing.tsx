@@ -7,7 +7,7 @@ import { Permission } from '~/constants/permissions';
 import { Wallet, Settings } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { SettingsSection } from '~/components/settings/settings-section';
-import ProjectSettings from '~/components/project-settings';
+import { ProjectSettings } from '~/components/project-settings';
 import { DURATION_OPTIONS, durationLabel, type BudgetConfig } from '~/constants/budget';
 import {
   NumberField,

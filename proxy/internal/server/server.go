@@ -36,6 +36,11 @@ var promptSendPattern = regexp.MustCompile(`^/api/session/[^/]+/prompt$`)
 
 const environmentIDLength = 36
 
+const (
+	retryAfterHeader         = "Retry-After"
+	restartRetryAfterSeconds = "5"
+)
+
 var (
 	restartingBody = []byte(`{"error":"Pod is restarting, please retry"}`)
 	badGatewayBody = []byte(`{"error":"Project upstream is unavailable"}`)
@@ -455,7 +460,7 @@ func (s *Server) sendFailureResponse(w http.ResponseWriter, ctx context.Context,
 	}
 
 	if restart {
-		writeJSONStatus(w, http.StatusServiceUnavailable, restartingBody)
+		writeRestarting(w)
 		return
 	}
 
@@ -619,6 +624,7 @@ func (s *Server) serveReverseProxy(
 
 				if restart {
 					mutateResponse(resp, http.StatusServiceUnavailable, restartingBody)
+					resp.Header.Set(retryAfterHeader, restartRetryAfterSeconds)
 				} else {
 					mutateResponse(resp, http.StatusBadGateway, badGatewayBody)
 				}
@@ -905,7 +911,7 @@ func mutateResponse(resp *http.Response, statusCode int, body []byte) {
 func writeStateResponse(w http.ResponseWriter, state string) {
 	switch state {
 	case "starting":
-		writeJSONStatus(w, http.StatusServiceUnavailable, restartingBody)
+		writeRestarting(w)
 	case "disabled":
 		writeJSONStatus(w, http.StatusLocked, disabledBody)
 	default:
@@ -935,6 +941,11 @@ func writeJSONStatus(w http.ResponseWriter, statusCode int, body []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_, _ = w.Write(body)
+}
+
+func writeRestarting(w http.ResponseWriter) {
+	w.Header().Set(retryAfterHeader, restartRetryAfterSeconds)
+	writeJSONStatus(w, http.StatusServiceUnavailable, restartingBody)
 }
 
 func writeHeaderMap(target http.Header, source http.Header) {
@@ -1065,6 +1076,9 @@ func jsonHeader(headers http.Header) string {
 
 func authSignature(headers http.Header) string {
 	hash := sha1.New()
-	_, _ = hash.Write([]byte(headers.Get("x-forwarded-groups")))
+	for _, name := range backend.ForwardedIdentityCacheHeaders {
+		value := headers.Get(name)
+		_, _ = fmt.Fprintf(hash, "%d:%s", len(value), value)
+	}
 	return hex.EncodeToString(hash.Sum(nil))
 }

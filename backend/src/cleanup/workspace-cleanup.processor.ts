@@ -34,9 +34,7 @@ export class WorkspaceCleanupProcessor extends WorkerHost {
   }
 
   private async removeExpiredTombstones(scope: WorkspaceCleanupJobData): Promise<void> {
-    const cutoff = scope.ignoreRetention
-      ? new Date()
-      : new Date(Date.now() - this.retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = scope.ignoreRetention ? new Date() : new Date(Date.now() - this.retentionDays * 24 * 60 * 60 * 1000);
     const conditions: SQL[] = [lte(deletedProjectEnvironments.deletedAt, cutoff)];
     if (scope.tenantId) conditions.push(eq(deletedProjectEnvironments.tenantId, scope.tenantId));
     const expiredEnvironments = await db

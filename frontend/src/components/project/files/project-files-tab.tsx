@@ -1,7 +1,7 @@
 import { Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import { toast } from 'solid-sonner';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Spinner from '~/components/ui/spinner';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Spinner } from '~/components/ui/spinner';
 import { createPersistedSignal } from '~/lib/persisted-signal';
 import { createFileUpload, readDroppedUploadFiles, transferHasFiles, type UploadFile } from '~/lib/upload';
 import {

@@ -1,17 +1,30 @@
+---
+kind: explanation
+terms: [Admin]
+adrs: [0014]
+---
+
 # Admin
 
-> The Organization's operational surface — where a member observes and operates running state, as opposed to configuring it. The sibling of [Settings](settings.md).
+> Where does a member observe and operate running state, and how does a new operational view get added?
 
-**Admin** is reached from the avatar dropdown and built on the same left-rail layout as [Settings](settings.md): one page per area, each independently gated. The dividing line, worth keeping, decides where any future page goes: **if a page shows or acts on what is running right now, it belongs in Admin; if it changes stored configuration, it belongs in Settings.** (The rule is recorded in [`../CONTEXT.md`](../../CONTEXT.md) under Admin/Settings; the rationale for introducing Admin as its own surface and its own backend module — rather than growing the dropdown or folding operational code into the pod-lifecycle module — is [ADR-0014](../adr/0014-admin-section-and-operational-view-module.md).)
+## How it works
 
-## Pages
+- [Admin](../../CONTEXT.md) is reached from the avatar dropdown and built on the same left-rail layout as [Settings](settings.md): one page per area, each independently gated ([ADR-0014](../adr/0014-admin-section-and-operational-view-module.md)).
+- A page that shows or acts on what is running now belongs in Admin; a page that changes stored configuration belongs in Settings.
+- Its pages are [Pods](../runtime/pods.md), the first page and the [Organization](../../CONTEXT.md)'s running environment pods; [Storage](../runtime/storage.md), platform-wide disk usage gated by a [Platform-scope permission](../../CONTEXT.md); and External services, with channel registration and the Usage view ([WhatsApp](../external-services/whatsapp.md), [Service template](../external-services/service-template.md)).
+- The layout route redirects to the first permitted page, and the dropdown entry appears only when the member can see at least one Admin page.
+- A new operational view is one entry in the Admin tab config and one controller in the backend `admin` module; no navigational plumbing changes.
 
-- **[Pods](../runtime/pods.md)** — read-only view of the Organization's running environment pods and their keep-alive. Currently the only Admin page.
+## Code
 
-Admin is built to grow: a new operational view is a new entry in the Admin rail config (frontend) plus a new controller in the `admin` module (backend) — no new navigational plumbing. The rail itself is the same shared component Settings uses, driven by a per-section tab config; the layout route redirects to the first permitted page, and the dropdown entry appears only when the member can see at least one Admin page.
+- `frontend/src/routes/admin/` — the layout route and the pages.
+- `frontend/src/constants/admin-tabs.tsx` — the Admin tab config.
+- `backend/src/admin/` — the operational endpoints.
 
-## See also
+## Related
 
 - [Settings](settings.md) — the configuration sibling.
-- [Pods](../runtime/pods.md) — the current page ([ADR-0013](../adr/0013-pods-view-reads-live-keepalive-from-redis.md)).
-- Code: `frontend/src/routes/admin/`, `frontend/src/components/section-rail.tsx`, `frontend/src/constants/admin-tabs.tsx`; backend operational endpoints in `backend/src/admin/`.
+- [Pods](../runtime/pods.md) — the first Admin page.
+- [Storage](../runtime/storage.md) — the platform-wide page.
+- [Permissions](permissions.md) — how each page is gated.

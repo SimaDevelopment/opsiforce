@@ -1,7 +1,7 @@
 import { Show, createEffect } from 'solid-js';
 import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 import { SectionRail } from '~/components/section-rail';
 import { ADMIN_TABS, ADMIN_GROUP_ORDER, firstPermittedAdminTab, adminTabForPath } from '~/constants/admin-tabs';
 

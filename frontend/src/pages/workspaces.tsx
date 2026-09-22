@@ -4,10 +4,10 @@ import { useCreateWorkspace, useWorkspaces } from '~/api/workspaces';
 import { useTenantConfig, useUpdateTenantConfig } from '~/api/tenant-config';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 import { Switch, SwitchControl, SwitchThumb } from '~/components/ui/switch';
 import { SettingsSection } from '~/components/settings/settings-section';
-import WorkspaceSettings from '~/components/workspace-settings';
+import { WorkspaceSettings } from '~/components/workspace-settings';
 import { FolderKanban, Lock, Plus, Settings, AppWindow, Users } from '~/components/icons';
 
 export function WorkspacesPage() {

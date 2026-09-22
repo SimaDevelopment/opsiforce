@@ -92,6 +92,10 @@ export class ProjectEnvironmentService {
     return this.findById(this.defaultEnvironmentId(projectId));
   }
 
+  findDefaultByProjectIdOrNull(projectId: string): Promise<ProjectEnvironmentContext | null> {
+    return this.findByIdOrNull(this.defaultEnvironmentId(projectId));
+  }
+
   listByProjectId(projectId: string): Promise<ProjectEnvironmentContext[]> {
     return this.select(eq(projectEnvironments.projectId, projectId));
   }

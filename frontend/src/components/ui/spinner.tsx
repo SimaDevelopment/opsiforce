@@ -24,7 +24,7 @@ export interface SpinnerProps {
   overlay?: boolean;
 }
 
-export default function Spinner(props: SpinnerProps) {
+export function Spinner(props: SpinnerProps) {
   const content = (
     <div class="flex items-center justify-center gap-2 text-muted-foreground">
       <LoaderCircle class={spinnerIconVariants({ size: props.size })} />

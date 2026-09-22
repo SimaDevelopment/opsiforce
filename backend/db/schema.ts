@@ -106,6 +106,7 @@ export const agents = pgTable("agents", {
   name: text("name").notNull().unique(),
   displayName: text("display_name"),
   description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
 const tenantIdField = text("tenant_id")

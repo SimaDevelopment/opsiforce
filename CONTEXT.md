@@ -10,6 +10,18 @@ AI coding-assistant platform: users converse with an agent inside a Kubernetes p
 The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the API — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
 _Avoid_: Tenant (internal name only — never user-facing); Account (collides with the user's login); Workspace (a grouping *within* an Organization, not the Organization itself)
 
+**Workspace**:
+A grouping of Projects within an Organization that decides who sees them: a shared Workspace is visible to its explicit members only, and every Project sits in exactly one Workspace or in Public. Folders group Projects inside a Workspace.
+_Avoid_: Team, Group, Space (non-canonical); Organization (the account that owns Workspaces); Files (the project tab, a different thing)
+
+**Personal Workspace**:
+The one private Workspace a member gets in an Organization, created on first sign-in, visible to and manageable by nobody else. Organizations can switch Personal Workspaces off, in which case existing ones are hidden rather than deleted.
+_Avoid_: Private workspace (the internal type name, not user-facing copy); My workspace, Home
+
+**Public Workspace**:
+The Organization-wide surface for Projects that belong to no Workspace, visible to every member of the Organization. Placing a Project there widens its audience to the whole Organization.
+_Avoid_: Unassigned (retired label); Default workspace, Shared (a shared Workspace is member-scoped, Public is not)
+
 **Folder**:
 A named, single-level grouping of Projects within a Workspace — an organizational label, not ownership: deleting a Folder releases its Projects to the Workspace; an empty Folder is fine. A Project sits either directly in its Workspace or in exactly one of its Folders, and a Folder's name is unique within its Workspace. Folders exist in shared Workspaces and the private Personal Workspace, never in Public. Moving a Folder to another Workspace carries its Projects and follows the same rules as moving the Projects themselves.
 _Avoid_: Group (vague — collides with UI grouping); Directory (filesystem connotation); Subfolder, nested folders (out of scope — one level only)
@@ -26,11 +38,15 @@ _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
 The short, immutable, URL-safe identifier an Environment carries alongside its name, shown as the environment suffix in an App's public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
-_Avoid_: Suffix (its position in the URL, not the concept); Short name; Code
+_Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:
 The color an Organization gives an Environment as its visual identity — the one hue that stands for that Environment wherever environments are shown at a glance (today, the environment markers beside a Project in the sidebar). Every Environment has one: the protected Development and Production Environments are seeded with defaults, and any Environment's color — protected ones included — can be changed by an admin from the Environment registry in Settings. It answers *which* Environment this is, and is deliberately a different axis from the status colors that signal *how* a running environment is doing (active, starting, suspended, failed) — a suspended Production is still "Production" and keeps its color.
 _Avoid_: Status color (the orthogonal running-state axis, not identity); Label color; Theme; Tag
+
+**Badge Label**:
+The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased.
+_Avoid_: Short name (the stored identifier, not user-facing copy); Abbreviation; Tag
 
 **ProjectEnvironment**:
 A per-Project instance of an Environment — the thing that actually runs. It owns the runtime state (its files, pod, URLs, and service-gateway key); it shares the Project's LLM virtual keys rather than owning its own. Every Project has one bound to Development; publishing creates additional ones bound to other Environments.
@@ -115,12 +131,20 @@ Whether an Agent is **Working** — processing a run it was prompted to do, incl
 _Avoid_: Agent activity (a Keep-alive kind — user-driven traffic, a different concept); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
 
 **Prompt**:
-The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project.
+The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project. A Prompt sent while the Agent is already working is either _steered_ (folded into the running turn) or _queued_ (starts the next turn once the Agent is idle); a queued Prompt waits until a new turn begins.
 _Avoid_: Message (ambiguous — also covers the Agent's reply); Query, Command
 
 **Dictation**:
 Speaking into the chat instead of typing — a recording made from the prompt's mic button is transcribed to text and inserted into the prompt draft for review; nothing is sent until the user sends. The audio is transient input, never a stored artifact. The spoken language is auto-detected by default, with an explicit per-browser language override.
 _Avoid_: Voice message (implies the audio itself is attached or kept); Voice chat, Speech-to-text (the mechanism, not the feature); Transcription (the backend step, not the user-facing act)
+
+**Session**:
+The primary OpenCode conversation a ProjectEnvironment carries — the durable thread of Prompts and Agent replies every surface shares. "Prompting a Project" means prompting that environment's primary Session; the UI, a program connecting through the public API, and any channel wired to the Project all read and write the same thread. The platform resolves and remembers the binding during a Connection; a caller never has to pick it. Other native Sessions may exist in the environment — opencode allows them and a native client can create them — and they are not the platform's concern: they never become the primary one.
+_Avoid_: Chat, Conversation, Thread (non-canonical); Run (Trello shorthand for a Project)
+
+**Connection**:
+The act of making a ProjectEnvironment's OpenCode runtime usable, and the descriptor that answers it. One operation behind both the app and the public API: it authorizes the Project, wakes the environment inside a single budget, resolves and persists the primary Session, and reports where the runtime is (`baseUrl`, `openapiUrl`), which Session to open, and which build answered. A successful Connection describes a runtime that is usable now — not a promise it will not restart.
+_Avoid_: Handshake, Session open (a Connection binds a Session, it does not create the conversation); Attach
 
 ### Files
 
@@ -149,6 +173,16 @@ _Avoid_: Export (the Project Export & Import feature — a different thing); Ren
 **Schedule**:
 A recurring cron job an agent registers against an endpoint in the App, owned by **one ProjectEnvironment** — it fires only against that environment's running App. Publishing copies Development's chosen schedules into the target environment, so a same-named schedule can exist and fire **independently** in several environments (the copies are intentional, not duplicates).
 _Avoid_: Cron job (the mechanism, not the domain concept); Job (collides with BullMQ jobs and publish jobs)
+
+### Public API
+
+**API Token**:
+The credential a program — the CLI, an integration, another Agent — presents to call the public API on a user's behalf. Today it is the bearer token the deployment's identity provider issues when that user signs in, so it carries exactly the Organization memberships and permissions they hold in the UI; a token issued by Opsiforce itself is a possible later form of the same concept. The public API selects the Organization it acts in with the same organization header the UI already sends (implicit when the caller belongs to exactly one), and its documentation speaks of Organizations, never of the internal tenant vocabulary.
+_Avoid_: Client key; API key (non-canonical); Personal access token (canonical only in other products); Tenant header (internal name — never user-facing)
+
+**Error**:
+The public API's single error shape: every failed call, whatever its cause, answers with an Error that names the kind of failure (a stable, deployment-independent identifier a program can branch on), a fixed title for that kind, a per-occurrence explanation written for the caller, and the request id so support can find the call. It is the shape of `/api/v1` only — a failure on the runtime path is OpenCode's own error, or the edge's.
+_Avoid_: Problem, Problem Details (the RFC's own words for the format — the media type stays `application/problem+json`, but the concept is called an Error here); Exception (internal, never crosses the API boundary)
 
 ### Request Logging
 

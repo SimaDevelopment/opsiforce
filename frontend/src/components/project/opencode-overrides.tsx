@@ -3,9 +3,16 @@ import { useTheme } from '@opencode-ai/ui/theme/context';
 import { useSettings } from '@opencode-ai/app/settings/model';
 import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
 import type { ServerConnection } from '@opencode-ai/app';
-import { timelinePresets } from '@opencode-ai/session-ui/timeline/detail';
+import { timelinePresets, type TimelineDetail } from '@opencode-ai/session-ui/timeline/detail';
 
-const quietTimeline = timelinePresets.find((preset) => preset.id === 'quiet')!.value;
+const detailedPreset = timelinePresets.find((preset) => preset.id === 'detailed');
+if (!detailedPreset) throw new Error('opencode timeline presets no longer include "detailed"');
+const activityTimeline: TimelineDetail = {
+  ...detailedPreset.value,
+  shell: { placement: 'separate', details: 'collapsed' },
+  edit: { placement: 'separate', details: 'collapsed' },
+  thinking: { placement: 'separate', details: 'expanded' },
+};
 
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
@@ -43,7 +50,7 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any) {
   });
 }
 
-export default function OpencodeOverrides(props: { server: ServerConnection.Any }) {
+export function OpencodeOverrides(props: { server: ServerConnection.Any }) {
   const theme = useTheme();
   const settings = useSettings();
 
@@ -52,7 +59,7 @@ export default function OpencodeOverrides(props: { server: ServerConnection.Any 
     settings.appearance.setTabLayout('horizontal');
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
-    settings.general.setTimelineDetail(quietTimeline);
+    settings.general.setTimelineDetail(activityTimeline);
     settings.general.setReleaseNotes(false);
   });
 

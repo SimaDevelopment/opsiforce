@@ -164,10 +164,6 @@ export interface UpdateProjectAuthDto {
   bypassAuthPaths?: string[];
 }
 
-export interface SetEnvironmentSessionDto {
-  sessionId: string | null;
-}
-
 export interface UpdateAppDto {
   name?: string;
   description?: string | null;

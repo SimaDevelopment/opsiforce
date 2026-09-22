@@ -11,7 +11,7 @@ import {
 } from '~/api/whatsapp-channels';
 import { Button } from '~/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import Skeleton from '~/components/ui/skeleton';
+import { Skeleton } from '~/components/ui/skeleton';
 import { MessageSquare, Plus, RefreshCw, Trash2, Users } from '~/components/icons';
 import type { EnvironmentSectionProps } from './environment-section-props';
 import { LabeledTextField } from './labeled-text-field';

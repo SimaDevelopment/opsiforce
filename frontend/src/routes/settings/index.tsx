@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/solid-router';
-import Spinner from '~/components/ui/spinner';
+import { Spinner } from '~/components/ui/spinner';
 
 export const Route = createFileRoute('/settings/')({
   component: SettingsIndex,

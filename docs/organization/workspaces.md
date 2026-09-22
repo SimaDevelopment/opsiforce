@@ -1,44 +1,58 @@
+---
+kind: explanation
+terms: [Workspace, Personal Workspace, Public Workspace]
+adrs: [0021, 0025, 0029]
+---
+
 # Workspaces
 
-> How projects are grouped and made visible inside an Organization, and the membership-vs-permission rules that govern who sees what. Read this before touching project visibility or the sidebar.
+> How are [Projects](../../CONTEXT.md) grouped and made visible inside an [Organization](../../CONTEXT.md), and who may move them where?
 
-Opsiforce used to be flat: every project in a tenant was visible to everyone with access to it. Workspaces segment projects so a single tenant can house separate customers or internal groups. There are three kinds of grouping:
+## How it works
 
-- **Private workspace** — exactly one per (user, tenant), created automatically on first authentication. Owned by the user, invisible to everyone else, and immutable (can't be renamed, deleted, or have members added). The system maintains it. Can be switched off per tenant — see [Per-tenant toggle](#per-tenant-toggle).
-- **Shared workspace** — what "workspace" meant before this feature. Created by holders of `can_manage_workspaces` (the creator is auto-added as a member); has an explicit member list; only members see it.
-- **Public** — projects with no workspace (`workspace_id IS NULL`), visible to everyone in the tenant. (This is the surface previously labelled "Unassigned" — same data, clearer name.)
+### Three groupings
 
-## Visibility is membership, not permission
+- A shared [Workspace](../../CONTEXT.md) is created by holders of `can_manage_workspaces`, who are added as members; it has an explicit member list and only members see it.
+- A [Personal Workspace](../../CONTEXT.md) is created for each member on first authentication, one per user and Organization while the per-tenant toggle is on; it is owned by the user, invisible to everyone else, and cannot be renamed, deleted or given members.
+- The [Public Workspace](../../CONTEXT.md) holds Projects with no Workspace and is visible to every member of the Organization.
+- A [Folder](folder.md) groups Projects inside a shared or Personal Workspace, never in Public.
 
-The load-bearing rule: **the sidebar shows the workspaces you are a member of, full stop.** Permissions do not widen the sidebar — the only way a workspace appears there is a `workspace_members` row (your own private workspace and Public always show). "Invisible" is total: a non-member can't see a workspace or its projects in any listing, and opening one by direct link returns 404 — we don't leak even the existence of workspaces you can't access.
+### Visibility is membership
 
-The **one** exception is the management surface `/settings/workspaces`, gated by `can_manage_workspaces`: there a holder sees *every* shared workspace in the tenant (to rename, delete, or join), even ones they aren't a member of. Private workspaces are never listed there — there's nothing to manage.
+- The sidebar shows the Workspaces a member belongs to, plus their Personal Workspace and Public; permissions never widen it, and a non-member gets 404 on a direct link.
+- The one exception is the management surface at `/settings/workspaces`, where holders of `can_manage_workspaces` see every shared Workspace to rename, delete or join; Personal Workspaces are never listed there.
+- The sidebar orders Projects by the time of the last [Prompt](../../CONTEXT.md) a user sent, not by keep-alive activity ([ADR-0021](../adr/0021-sidebar-orders-by-last-prompt.md)).
+- Project rows are draggable but never sortable: a drop target is always a Workspace or Folder zone, since Project order is never persisted ([ADR-0029](../adr/0029-project-rows-are-draggables-not-sortables.md)).
 
-## The two workspace permissions
+### Moving Projects
 
-Workspace behaviour turns on two permissions (their Keycloak→backend flow is in [Permissions](permissions.md); the *semantics* live here):
+- `can_manage_workspaces` creates, renames and deletes shared Workspaces, manages members, creates Projects in Public and moves Projects into Public; `can_move_projects_between_workspaces` moves a Project between two shared Workspaces the mover belongs to or pulls a Public Project into one.
+- Moving into or out of one's own Personal Workspace needs no permission; moving into another user's Personal Workspace is impossible because it does not exist from the mover's point of view.
+- Making an existing Public or shared-Workspace Project personal is refused server-side, and the sidebar and the Move to menu mirror the rule so the attempt fails before the round trip.
 
-- **`can_manage_workspaces`** — an action permission: create/rename/delete shared workspaces, manage members, create projects in Public, and move projects *into* Public. It grants management access via `/settings/workspaces`; it does **not** grant sidebar visibility into workspaces you aren't a member of. Creating in Public is the single conditional entry here — see [Per-tenant toggle](#per-tenant-toggle).
-- **`can_move_projects_between_workspaces`** — move a project between two shared workspaces you belong to, or pull a Public project into one. Not a visibility elevator.
+### Per-tenant toggle
 
-Moving into or out of *your own* private workspace needs no permission. Moving *into* Public (widening the audience) needs `can_manage_workspaces`. Moving into another user's private workspace is impossible — that workspace doesn't exist from your point of view, so the drop 404s. Permission-less moves leave the row draggable but the drop is rejected server-side with a surfaced error. Making an existing Public or shared-workspace project private is refused outright — `WorkspaceService.assignProject` throws, and the sidebar and the project's "Move to" menu both mirror that rule client-side so the attempt fails before the round trip. How the sidebar drag itself behaves — rows are draggable but never sortable, so the destination is always a workspace or folder zone — is [ADR-0029](../adr/0029-project-rows-are-draggables-not-sortables.md).
+- Personal Workspaces are a per-tenant setting, on by default, flipped from `/settings/workspaces` by holders of `can_manage_workspaces` ([ADR-0025](../adr/0025-private-workspaces-are-a-per-tenant-toggle.md)).
+- When it is off, no Personal Workspace is provisioned, existing ones are hidden: listings, direct links, their Projects, and every write into them answer 404 while nothing is mutated, and Public becomes the default destination for new Projects, with the create permission requirement dropped for that tenant.
 
-## Per-tenant toggle
+## Edge cases
 
-Private workspaces are a per-tenant feature, controlled by `tenant_settings.private_workspace_enabled` (default **on**, so existing tenants keep the historical behaviour). Holders of `can_manage_workspaces` flip it from `/settings/workspaces` (`GET`/`PATCH /tenants/config`).
+- When a permission-less move is dropped, the row stays draggable but the server rejects the drop with a surfaced error.
+- When a shared Workspace is deleted, its members are cleared and its Projects land in Public; when a user is deleted, their Personal Workspace cascades away and its Projects land in Public.
+- When the toggle is switched back on, hidden Personal Workspaces reappear unchanged, and users who first signed in while it was off get theirs on their next request.
+- A Personal Workspace cannot be deleted through the API; only the owner-user cascade removes it.
 
-When a tenant switches it **off**:
+## Code
 
-- No private workspace is auto-provisioned on authentication (`ensurePrivateWorkspace` no-ops).
-- Existing private workspaces are **hidden, not deleted**: they disappear from every workspace listing, direct links 404, and their projects vanish from project listings — including for their owners. Writes are closed too, not just reads: creating a project or folder in one, importing into one, or moving a project into one all 404, so no new work can accumulate somewhere invisible. Nothing is mutated, so flipping the flag back restores everything exactly as it was, and users who first signed in while it was off get their Personal workspace on their next request.
-- **Public becomes the default destination for new projects.** The sidebar create button, the home-page prompt box, and the import dialog all target Public instead of the private workspace, and `POST /projects` drops its `can_manage_workspaces` requirement for that tenant so every member can use them. This is the one place the permission table below bends: creating a tenant-wide project normally needs `can_manage_workspaces`, but a tenant with no per-user workspace has nowhere else for its members to start. *Moving* an existing project into Public still needs the permission.
+- `backend/src/workspace/` — Workspace CRUD, membership, move rules and the toggle.
+- `backend/src/project/` — visibility enforcement on Project reads and moves.
+- `workspaces` in `backend/db/schema.ts` — Workspaces and their members.
+- `frontend/src/pages/workspaces.tsx` — the management surface and the toggle.
+- `frontend/src/lib/sidebar-dnd.ts` — the sidebar drop zones.
 
-## On deletes
+## Related
 
-Deleting a shared workspace clears its members and drops its projects into Public (nothing else is hard-deleted). Deleting a *user* cascades their private workspace away and drops its projects into Public. A private workspace can't be deleted through the API — only the owner-user cascade removes it.
-
-## See also
-
-- [Permissions](permissions.md) — how the two permission strings flow from Keycloak.
-- [Settings](settings.md) — the `/settings/workspaces` management surface.
-- Code: `backend/db/schema.ts` (`workspaces`, `workspace_members`; private-workspace backfill in `0023_add-private-workspaces`), `backend/src/project/` (move/visibility enforcement), `frontend/src/pages/workspaces.tsx`.
+- [Folder](folder.md) — the single-level grouping inside a Workspace.
+- [Permissions](permissions.md) — how the two permission strings flow from the identity provider.
+- [Settings](settings.md) — the management surface's section.
+- [API Token](../public-api/api-token.md) — where a service account's Projects land.

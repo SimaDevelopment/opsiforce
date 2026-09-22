@@ -72,6 +72,8 @@ export const configuration = () => {
     agentContainerImage: resolveAgentContainerImage(),
     agentPort: parseInt(process.env.AGENT_PORT || '4096', 10),
     agentControlPort: parseInt(process.env.AGENT_CONTROL_PORT || '4910', 10),
+    agentWakeHoldMs: parseInt(process.env.AGENT_WAKE_HOLD_MS || '30000', 10),
+    agentWakePollMs: parseInt(process.env.AGENT_WAKE_POLL_MS || '1000', 10),
     appPort: parseInt(process.env.APP_PORT || '3000', 10),
     vscodePort: parseInt(process.env.VSCODE_PORT || '8080', 10),
     dbViewerPort: parseInt(process.env.DB_VIEWER_PORT || '8081', 10),

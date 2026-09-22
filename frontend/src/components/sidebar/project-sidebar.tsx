@@ -36,10 +36,10 @@ import {
 } from '~/lib/sidebar-dnd';
 import { Permission } from '~/constants/permissions';
 import { Boxes } from '~/components/icons';
-import Spinner from '~/components/ui/spinner';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import ProjectSettings from '../project-settings';
-import WorkspaceSettings from '../workspace-settings';
+import { Spinner } from '~/components/ui/spinner';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { ProjectSettings } from '../project-settings';
+import { WorkspaceSettings } from '../workspace-settings';
 import { FolderDialog } from '~/components/folder-dialog';
 import { SidebarWorkspaceGroup } from './sidebar-workspace-group';
 import { SidebarPublicGroup } from './sidebar-public-group';
@@ -185,7 +185,7 @@ export function ProjectSidebar(props: { search: string }) {
     navigate({
       to: '/projects/$projectId',
       params: { projectId },
-      search: { prompt: undefined },
+      search: { prompt: undefined, promptId: undefined },
     });
 
   const handleCreateInWorkspace = async (workspaceId: string, agentId?: string, folderId?: string) => {

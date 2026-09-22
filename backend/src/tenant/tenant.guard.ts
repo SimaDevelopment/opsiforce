@@ -2,7 +2,8 @@ import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@
 import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { TenantService } from './tenant.service';
-import { IS_PLATFORM_SCOPE_KEY, IS_PUBLIC_KEY, type TenantContext } from './tenant.decorator';
+import { TenantAccessDeniedException } from './tenant-access-denied.exception';
+import { IS_PLATFORM_SCOPE_KEY, IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from './tenant.decorator';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -31,14 +32,14 @@ export class TenantGuard implements CanActivate {
     }
 
     const tenantNames = this.tenantService.resolveAccessibleTenantNames(groupsHeader);
-    if (tenantNames.length === 0) throw new ForbiddenException('No opsiforce tenants assigned');
+    if (tenantNames.length === 0) throw new TenantAccessDeniedException('No opsiforce tenants assigned');
 
     const query = request.query as { tenant?: string } | undefined;
     const requestedTenantName =
-      (request.headers['x-tenant-name'] as string | undefined) ?? query?.tenant ?? tenantNames[0];
+      (request.headers[TENANT_NAME_HEADER] as string | undefined) ?? query?.tenant ?? tenantNames[0];
 
     if (!tenantNames.includes(requestedTenantName)) {
-      throw new ForbiddenException(`No access to tenant: ${requestedTenantName}`);
+      throw new TenantAccessDeniedException(`No access to tenant: ${requestedTenantName}`);
     }
 
     const tenant = await this.tenantService.getOrCreateTenant(requestedTenantName);

@@ -1,63 +1,52 @@
+---
+kind: explanation
+terms: [Go-live]
+adrs: [0015]
+---
+
 # App Readiness
 
-> How the platform knows an App has gone live and is serving, without polling — the pod pushes; the backend listens. Read this to understand the one service that gates the app pane, publish, duplicate, and schedule.
->
-> **Status: implemented** ([ADR-0015](../adr/0015-app-liveness-pushed-not-polled.md)). The backend no longer polls `/api/app-meta`.
-
-Opsiforce cares about two separate facts about a Project's running App, and for a long time it conflated them:
-
-- **Go-live** — the App first exists and is running: the agent has written `app.meta.json` (so the App has a name) and its process answers on its port. This is what makes the in-workspace app pane appear.
-- **App serving** — the App's process is up and responding right now. Publishing, duplicating, and firing a schedule all have to wait for this before they proceed.
-
-These are different facts: an App can serve a starter page long before the agent decides to go live, and a gone-live App can later crash. Treating "does it serve?" and "has it gone live?" as one polled question is what produced both the wasted work and the confusing failure modes recorded in ADR-0015.
+> How does the platform learn that an App has gone live and is serving, and who waits on that signal?
 
 ## How it works
 
-The pod reports; the backend listens. Nothing polls.
+- Two facts are tracked per [ProjectEnvironment](../../CONTEXT.md): [Go-live](../../CONTEXT.md), the App first existing and running, and serving, the App's process answering right now.
+- The pod reports and the backend listens; nothing polls ([ADR-0015](../adr/0015-app-liveness-pushed-not-polled.md)). agent-control watches `app.meta.json` with inotify, probes the App's local port, and pushes one idempotent `{serving, live, name, description}` event over the Service Gateway channel whenever that state changes.
+- `live` means `app.meta.json` is present and the App answers locally; the push reuses the pod's gateway token, so the backend resolves the environment from the caller ([Service Gateway](../gateways/service-gateway.md)).
+- The backend's readiness service is the single owner of per-environment app state: it records identity into the App row ([App](app.md)), notifies the open workspace over SSE so the app pane appears, and resolves `awaitReady` for whatever [Publish](publish.md), [Duplication](duplication.md) or [Schedule](schedule.md) run is waiting.
+- Delivery is at least once: agent-control retries until acknowledged and resyncs at startup; identity persists in the App row, so a backend restart loses no detection.
+- Pushes happen only on edges (Go-live, serving up, serving down), never on a timer; every `awaitReady` consumer recreates or wakes the pod and marks `serving` down first, so it always waits for the next edge on a fresh pod ([ADR-0015](../adr/0015-app-liveness-pushed-not-polled.md)).
+- Identity is durable in the App row while `serving` is an in-memory edge the backend marks down at every pod boundary it controls (pod create, idle suspend, project disable) and clears on delete.
+- The runtime proxy's failure report is a separate path: it inspects pod state and recovers the pod from real traffic and never writes `serving` ([Request Flows](../runtime/request-flows.md)).
 
 ```
-AGENT POD (opencode container)              BACKEND
+AGENT POD                                   BACKEND
 ┌────────────────────────────┐           ┌───────────────────────────┐
-│ app — serves on its port    │           │ GatewayAuthGuard           │
-│                             │  push     │  token → {project, env}    │
-│ agent-control (Go)          │  state    │                            │
-│  • inotify(app.meta.json)   ├──────────►│ AppReadinessService        │
-│  • probe(localhost app port)│  /api/    │  • owns per-env app state  │
-│  reuses SERVICE_GATEWAY_*   │  gateway/ │  • awaitReady(env)         │
-│  (already in its env)       │  app/state│  → projectApps (identity)  │
-└────────────────────────────┘ at-least  │  → SSE to the workspace    │
-        ▲ same channel agents   once      │ proxy /failure ───────────►│ (pod recovery)
-        └ already use for schedules        └───────────────────────────┘
-
-consumers of AppReadinessService.awaitReady(): publish · duplicate · schedule
-the app pane reads identity (projectApps) over SSE — not awaitReady
+│ app — serves on its port    │  push     │ gateway token → {project,  │
+│ agent-control               │  state    │   environment}             │
+│  • inotify(app.meta.json)   ├──────────►│ readiness service          │
+│  • probe(localhost app port)│  on edges │  • per-env app state       │
+│                             │           │  • awaitReady(env)         │
+└────────────────────────────┘           │  → App row · SSE to UI     │
+                                          └───────────────────────────┘
+consumers of awaitReady: publish · duplicate · schedule
 ```
 
-`agent-control` pushes one idempotent `{serving, live, name, description}` event **only when that state changes** (no periodic re-assert — see [§ Why there is no heartbeat](#why-there-is-no-heartbeat)) — `live` meaning `app.meta.json` is present *and* the app answers locally. The backend's `AppReadinessService` is the single owner of per-environment app state: it records identity into `projectApps`, notifies the open workspace over SSE so the app pane appears, and resolves `awaitReady` for whatever publish/duplicate/schedule flow is waiting. The runtime proxy's real-path `/failure` report is a separate concern — pod **recovery**, not readiness: it inspects k8s pod state and restarts or wakes the pod from real traffic, and never writes `serving`.
+## Edge cases
 
-### Why the inotify watch is safe here (cf. ADR-0009)
+- When a pod is reachable by its kubelet but not by the cluster, the platform never learns the App is down; this gap is accepted.
+- When `app.meta.json` is written by the backend (a human edit), the in-pod watch does not fire; the edit path updates the App row and SSE directly, so the watch only ever needs the agent's in-pod write.
+- When the agent-control binary changes, the feature lands only as pods are recreated onto the new image, delivered by an agent-update migration that requires pod recreation ([Agent Updates](../agent-system/agent-updates.md)).
 
-ADR-0009 rejected an in-pod inotify watch for the *Environment Variables* file because the **backend** writes that file through its own CephFS client, and inotify events do not cross CephFS clients — an in-pod watch fires for agent edits but never for backend edits. App readiness relies on exactly the half that works: the reporter watches `app.meta.json` for the **agent's** in-pod write at go-live. That file does have a second writer — a human *Edit-details* save, which comes from the backend — but the reporter neither sees nor needs it: `updateApp` applies an Edit-details change to `projectApps` and the SSE stream directly. So the ADR-0009 rule still holds — we never depend on inotify to observe a backend-originated write.
+## Code
 
-## Reliability
+- `proxy/cmd/agent-control/reporter.go` — the in-pod watch, probe and push.
+- `backend/src/project/app-readiness.service.ts` — per-environment state, `awaitReady`, mark-down at pod boundaries.
+- `backend/src/project/app.controller.agent.ts` — the gateway-guarded push endpoint.
 
-Reliability rests on the push, not a backstop probe: at-least-once delivery (agent-control retries until acked), identity persisted in `projectApps` so a backend restart never loses detection, and a startup resync in agent-control. There is one deliberately-accepted gap — a pod its kubelet can reach but the cluster cannot. The properties, and why that gap is acceptable, are in [ADR-0015 § Consequences](../adr/0015-app-liveness-pushed-not-polled.md#consequences).
+## Related
 
-## Why there is no heartbeat
-
-The reporter pushes **only on edges** — go-live, serving↑, serving↓ — never on a timer, because **nothing reads `serving` as a standing value.** Its only consumer is `awaitReady` (publish, duplicate, schedule), and each recreates or wakes the pod — calling `markDown` — *before* it waits, so it always wants the next *edge* on a fresh pod, never a remembered level. A `serving` left stale by an ungraceful pod death is therefore never consulted.
-
-This splits the two facts by where they live: **identity** stays durable in `projectApps`, while **serving** is a thin in-memory edge owned by `AppReadinessService`, fed only by pushes. `markDown` keeps `serving` honest at every pod-lifecycle boundary the backend controls — pod (re)create (`spawnPodForEnvironment`), idle-suspend (`timeout.listener`), and project disable (`disable`); deleting a project or environment evicts the key (`clear`) so the map can't grow without bound.
-
-The trade behind dropping the re-push — why `serving` is never a Postgres column, and the multi-replica path (Redis with a TTL) when one backend replica is no longer enough — is in [ADR-0015 § Amendment](../adr/0015-app-liveness-pushed-not-polled.md#amendment-2026-06-17-edges-not-a-heartbeat).
-
-## Rollout
-
-`agent-control` is a baked binary, so the feature lands only when pods are **recreated onto a new image** — delivered by an empty `requiresPodRecreate` agent-update migration (`20260616_app_readiness_push`), not by a plain version bump. Why a file migration is the right lever for a binary swap is in [ADR-0015 § Consequences](../adr/0015-app-liveness-pushed-not-polled.md#consequences).
-
-## See also
-
-- [Project Apps](project-apps.md) — how detected identity becomes per-environment App Details.
-- [Service Gateway](../gateways/service-gateway.md) — the channel the reporter pushes over.
-- [ADR-0015](../adr/0015-app-liveness-pushed-not-polled.md) (incl. the 2026-06-17 edges-not-a-heartbeat amendment) · [ADR-0009](../adr/0009-in-pod-control-process.md) (the in-pod control process the reporter sits beside).
-- Code: in-pod reporter `proxy/cmd/agent-control/reporter.go` (beside the `/health`+`/restart-app` server in `main.go`); backend owner `backend/src/project/app-readiness.service.ts` (`awaitReady`); push endpoint `backend/src/project/app.controller.agent.ts` (`POST gateway/app/state`, `GatewayAuthGuard`); identity via `AppService.upsertProjectApp`.
+- [App](app.md) — how detected identity becomes per-environment App Details.
+- [Service Gateway](../gateways/service-gateway.md) — the channel and token the reporter pushes over.
+- [Publish](publish.md) — the `migrating` stage that waits on readiness.
+- [Pod Tools](../runtime/pod-tools.md) — agent-control among the pod's processes.

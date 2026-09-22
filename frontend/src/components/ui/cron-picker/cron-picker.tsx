@@ -5,8 +5,8 @@ import { Calendar, Code } from '~/components/icons';
 import { arrayToString, stringToArray } from './lib/part';
 import { Schedule } from './lib/schedule';
 import { type CronState, ScheduleSelector, type ValuePayload } from './lib/types';
-import ScheduleSelectors from './components/schedule-selectors';
-import ScheduleExplainer from './components/schedule-explainer';
+import { ScheduleSelectors } from './components/schedule-selectors';
+import { ScheduleExplainer } from './components/schedule-explainer';
 
 export const baseCron = '* * * * *';
 
@@ -39,7 +39,7 @@ function buildState(expression: string): CronState {
   }
 }
 
-export default function CronPicker(props: Props) {
+export function CronPicker(props: Props) {
   const [cronState, setCronState] = createSignal<CronState>(buildState(props.cronString || baseCron));
 
   createEffect(() => {

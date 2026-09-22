@@ -1,8 +1,8 @@
 import { Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { toast } from 'solid-sonner';
 import { Button } from '~/components/ui/button';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
-import Spinner from '~/components/ui/spinner';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Spinner } from '~/components/ui/spinner';
 import type { ProjectAuthMode, ProjectAuthOidcConfig } from '~/api/client';
 import { config } from '~/config/config';
 import { AuthModeSelector } from './auth-mode-selector';

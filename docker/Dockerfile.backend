@@ -41,6 +41,7 @@ COPY --from=builder /app/packages/opsiforce/backend/db ./packages/opsiforce/back
 COPY --from=builder /app/packages/opsiforce/backend/package.json ./packages/opsiforce/backend/package.json
 COPY ${PKG_PREFIX}backend/platform-version.json ./packages/opsiforce/backend/platform-version.json
 COPY --from=agent-registry /registry/ ./packages/opsiforce/agent-config/
+COPY ${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json ./packages/opsiforce/frontend/opencode/packages/protocol/openapi.json
 
 WORKDIR /app/packages/opsiforce/backend/
 

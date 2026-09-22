@@ -29,6 +29,4 @@ export interface ConversionStatusResponse {
   error?: string;
 }
 
-export type ConversionOutcome =
-  | { ok: true; pdf: Buffer }
-  | { ok: false; failure: ConversionFailure; error: string };
+export type ConversionOutcome = { ok: true; pdf: Buffer } | { ok: false; failure: ConversionFailure; error: string };

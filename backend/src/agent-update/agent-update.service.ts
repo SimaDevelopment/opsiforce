@@ -1,10 +1,13 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, forwardRef } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import { and, desc, eq, lt } from 'drizzle-orm';
 import { db } from '../../db';
 import { agents, projectAgentUpdates } from '../../db/schema';
+import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
+import { PodResponded } from '../agent-session/agent-session.errors';
+import type { PodEnvironmentRef } from '../agent-session/agent-session.types';
 import { ProjectService } from '../project/project.service';
 import { ProjectStatus } from '../project/project.types';
 import { readAgentConfig, type AgentModelSelection, type AgentRuntimeConfig } from '../agent/agent-config';
@@ -16,8 +19,6 @@ import {
   type AgentSweepJobData,
   type AgentUpdateJobData,
 } from './agent-update.types';
-
-const WORKSPACE_DIRECTORY = '/workspace';
 
 const RELOAD_RETRY_DELAYS_MS = [5, 15, 30, 60].map((m) => m * 60 * 1000);
 
@@ -33,16 +34,17 @@ type SessionStatus = { busy: true } | { busy: false } | { error: string; reloadS
 @Injectable()
 export class AgentUpdateService implements OnApplicationBootstrap {
   private readonly logger = new Logger(AgentUpdateService.name);
-  private readonly agentPort: number;
   private readonly agentConfig: AgentRuntimeConfig;
 
   constructor(
     @InjectQueue(AGENT_WORKSPACE_UPDATE_QUEUE)
     private readonly queue: Queue<AgentUpdateJobData>,
     private readonly configService: ConfigService,
-    private readonly projectService: ProjectService
+    @Inject(forwardRef(() => ProjectService))
+    private readonly projectService: ProjectService,
+    @Inject(forwardRef(() => AgentSessionGateway))
+    private readonly agentSessions: AgentSessionGateway
   ) {
-    this.agentPort = this.configService.getOrThrow<number>('agentPort');
     this.agentConfig = readAgentConfig();
   }
 
@@ -192,7 +194,7 @@ export class AgentUpdateService implements OnApplicationBootstrap {
       return this.deferReload(update.id, 'pending:no-pod-ip');
     }
 
-    const session = await this.checkSession(project.podIp);
+    const session = await this.checkSession({ id: project.id, podIp: project.podIp });
     if ('error' in session) return this.deferReload(update.id, session.reloadStatus, session.error);
     if (session.busy) return this.deferReload(update.id, 'pending:active-session');
 
@@ -205,18 +207,17 @@ export class AgentUpdateService implements OnApplicationBootstrap {
     }
   }
 
-  private async checkSession(podIp: string): Promise<SessionStatus> {
+  private async checkSession(env: PodEnvironmentRef): Promise<SessionStatus> {
     try {
-      const response = await fetch(this.agentUrl(podIp, '/api/session/active'));
-      if (response.ok) {
-        const snapshot = (await response.json()) as { data?: Record<string, { type?: string }> };
-        return { busy: Object.keys(snapshot.data ?? {}).length > 0 };
-      }
-      return {
-        error: `Session status returned ${response.status}`,
-        reloadStatus: `pending:session-status-${response.status}`,
-      };
+      const { busy } = await this.agentSessions.activeSessions(env);
+      return { busy };
     } catch (err) {
+      if (err instanceof PodResponded) {
+        return {
+          error: `Session status returned ${err.status}`,
+          reloadStatus: `pending:session-status-${err.status}`,
+        };
+      }
       const error = err instanceof Error ? err.message : String(err);
       return { error, reloadStatus: `pending:session-status:${error}` };
     }
@@ -254,12 +255,6 @@ export class AgentUpdateService implements OnApplicationBootstrap {
       .from(projectAgentUpdates)
       .where(eq(projectAgentUpdates.status, AgentUpdateStatus.ReloadPending));
     await Promise.all(rows.map((row) => this.enqueueReload(row.id, Math.max(1, row.attempt))));
-  }
-
-  private agentUrl(podIp: string, pathname: string): string {
-    const url = new URL(`http://${podIp}:${this.agentPort}${pathname}`);
-    url.searchParams.set('directory', WORKSPACE_DIRECTORY);
-    return url.toString();
   }
 
   private queueJobId(...parts: Array<number | string>): string {

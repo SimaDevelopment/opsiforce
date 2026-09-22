@@ -11,6 +11,8 @@ export const CurrentTenant = createParamDecorator((_data: unknown, ctx: Executio
   return request.tenantContext;
 });
 
+export const TENANT_NAME_HEADER = 'x-tenant-name';
+
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 

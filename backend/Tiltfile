@@ -20,6 +20,7 @@ backend_only = [
     '.yarnrc.yml',
     '.yarn/releases',
     pkg_prefix + 'backend',
+    pkg_prefix + 'frontend/opencode/packages/protocol/openapi.json',
     pkg_prefix + 'agent-config/agent-image-version.json',
     pkg_prefix + 'agent-config/agents.json',
 ]

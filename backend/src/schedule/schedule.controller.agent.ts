@@ -1,12 +1,9 @@
 import { Controller, Post, Get, Delete, Body, Param, Req, UseGuards, BadRequestException } from '@nestjs/common';
-import { FastifyRequest } from 'fastify';
 import { Public } from '../tenant/tenant.decorator';
 import { GatewayAuthGuard } from '../gateway/gateway-auth.guard';
 import { ScheduleService } from './schedule.service';
-import type { GatewayIdentity } from '../gateway/gateway-key.service';
+import type { GatewayRequest } from '../gateway/gateway-key.service';
 import type { CreateScheduleDto } from './schedule.types';
-
-type GatewayRequest = FastifyRequest & { gatewayContext: GatewayIdentity };
 
 @Public()
 @UseGuards(GatewayAuthGuard)

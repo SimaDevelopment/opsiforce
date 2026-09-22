@@ -1,35 +1,48 @@
-# Persistence & Storage
+---
+kind: explanation
+adrs: [0042]
+---
 
-> What survives a pod being replaced, where it lives, and how a project resumes its session. Read this to understand why a pod is disposable but a project's work is not.
+# Persistence
 
-A ProjectEnvironment's pod is ephemeral; its **workspace directory on shared storage is the durable thing**. The pod mounts that directory by `subPath` (`projects/{projectId}` for the Development environment, which reuses the project id; published environments get their own directories), so deleting and recreating the pod — for timeout, eviction, crash, or reassignment — loses nothing. Runtime state that must survive lives on the volume; everything in-process does not.
+> What survives a pod being replaced, where does it live, and how does an environment resume and eventually get cleaned up?
 
-| Persists (on the volume) | Does not (in the pod) |
-|---|---|
-| OpenCode session DB, chat history, app source + git history | in-memory process state, PTY sessions |
-| the app's SQLite databases and generated output | live network connections, in-flight streams |
-| agent config/skills copied onto the workspace | temp files outside `/workspace` |
-| code-server settings and extensions, uploaded files | |
+## How it works
 
-## XDG redirection makes session state durable
+### The workspace is the durable unit
 
-OpenCode and code-server write their state into XDG directories, which default to ephemeral container paths. The pod template redirects all four (`XDG_{DATA,CONFIG,CACHE,STATE}_HOME`) under `/workspace/.xdg/…`, so session databases, config, and extensions land on the persistent volume instead of vanishing with the pod.
+- A [ProjectEnvironment](../../CONTEXT.md)'s pod is disposable; its workspace directory on the shared claim is what persists, mounted into the pod by `subPath` ([ADR-0042](../adr/0042-pod-is-disposable-the-environment-workspace-is-the-durable-unit.md)).
+- [Development](../../CONTEXT.md)'s directory is `projects/{projectId}`; published environments get their own directories.
+- On the volume: the OpenCode session database and chat history, the App source and git history, the App's SQLite databases and generated output, agent config and skills copied into the workspace, code-server settings and extensions, and uploaded files.
+- In the pod only: in-memory process state, PTY sessions, live connections and in-flight streams, and temp files outside `/workspace`.
+- The pod template redirects all four XDG directories under `/workspace/.xdg/`, so OpenCode and code-server state lands on the volume.
 
-## Pod replacement
+### Replacement and resume
 
-When a pod is replaced, the workspace `subPath` stays intact, a new pod with the same deterministic name mounts it, OpenCode starts against the persisted XDG state, the backend caches the new pod IP and flips the environment to `active`, and the frontend reconnects. Project identity is stable even though pod identity changes. (The full state model is in [Pod Lifecycle](pod-lifecycle.md).)
+- A replacement pod carries the same deterministic name, mounts the same directory, and starts OpenCode against the persisted XDG state; the backend caches the new IP and flips the environment to `active`, and the frontend reconnects ([Pod Lifecycle](pod-lifecycle.md)).
+- The primary [Session](../../CONTEXT.md) binding is resolved during a [Connection](../public-api/connection.md) against the environment's live root sessions, so a replacement pod resumes the same conversation and a stale id never leaks into a freshly published environment.
 
-## Resume
+### Cleanup
 
-Resume is frontend-owned and scoped to the **active environment**, because each environment is its own deployment with its own OpenCode session store. The remembered session is pinned per environment (`project_environments.session_id`, Development included): the frontend asks the active environment for its root sessions, opens the pinned one if it still exists, otherwise opens (and pins) the oldest. Pinning the oldest anchors the UI to the canonical chat and ignores out-of-band sessions; validating the pinned id against the live list is also what stops a Development session id from leaking into a freshly published environment, where it would 404.
+- Deleting a [Project](../../CONTEXT.md) or environment writes a tombstone row per environment before the live rows go, so a directory is never untracked.
+- A daily job removes workspaces whose tombstone is older than seven days and sweeps the `projects/` root for directories with neither a live row nor a tombstone.
+- Operators holding `can_manage_platform_storage` can run the same job for one [Organization](../../CONTEXT.md) with the retention window ignored from the [Storage](storage.md) page.
 
-## Workspace cleanup
+## Edge cases
 
-Deleting a project or environment does not remove its files immediately — each environment gets a tombstone row in `deleted_project_environments`, written before the live rows are removed so a directory is never untracked. A daily BullMQ `workspace-cleanup` job (3 AM) then does two things: removes workspaces whose tombstone is older than **7 days** (a tombstone row is only deleted once its directory removal actually succeeds, so a failed removal retries on the next run), and sweeps the `projects/` root for orphaned directories that have neither a live environment row nor a tombstone. Hidden dot-directories (the `.<id>.copying` / `.<id>.git-rebuild` temp dirs that duplication and publish create there) are exempt from the orphan sweep until they are older than the same 7-day window, so an in-flight operation is never swept but a crashed one still gets reaped. The 7-day window allows recovery from an accidental delete. Operators with `can_manage_platform_storage` can skip the wait for one Organization from the [Storage page](storage.md) — that enqueues the same job scoped to the Organization with the retention window ignored.
+- When a directory removal fails, the tombstone stays and the next daily run retries it.
+- When a duplication or publish crashes, its hidden temp directory under `projects/` is exempt from the orphan sweep until it is seven days old, then reaped.
+- When an environment is deleted by mistake, its files are recoverable for seven days.
 
-## See also
+## Code
 
-- [Storage](storage.md) — how the bytes on this volume are counted and attributed back to Organizations.
-- [Pod Lifecycle](pod-lifecycle.md) — pod replacement, suspension, and the deterministic naming that makes the volume re-attach.
-- [Project Environments](../projects/environments.md) — why each environment has its own directory and session store.
-- Code: `backend/db/schema.ts` (`project_environments`, `deleted_project_environments`), `backend/src/pod/pod.template.ts` (XDG + `subPath`), `backend/src/cleanup/` (the workspace-cleanup queue/cron).
+- `backend/src/pod/pod.template.ts` — the `subPath` mount and the XDG redirection.
+- `backend/src/cleanup/` — the workspace cleanup job, retention window and orphan sweep.
+- `deleted_project_environments` in `backend/db/schema.ts` — the tombstones.
+
+## Related
+
+- [Storage](storage.md) — how the bytes on this volume are counted and attributed.
+- [Pod Lifecycle](pod-lifecycle.md) — pod replacement, suspension and the deterministic name.
+- [Connection](../public-api/connection.md) — how the primary Session is bound on every connection.
+- [Environments](../projects/environments.md) — why each environment has its own directory.

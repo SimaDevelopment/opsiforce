@@ -3,7 +3,7 @@ import { Dynamic } from 'solid-js/web';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Button } from '~/components/ui/button';
 import { AlertTriangle } from '~/components/icons';
-import StepProgress from '~/components/project/step-progress';
+import { StepProgress } from '~/components/project/step-progress';
 import { describeJob, jobActions, type JobActionDescriptor, type JobHost } from './job-kind';
 import type { TrackedJob } from './job-dock-context';
 

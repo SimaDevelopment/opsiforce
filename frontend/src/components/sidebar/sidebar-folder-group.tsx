@@ -26,10 +26,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import ConfirmDialog from '~/components/ui/confirm-dialog';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { FolderDialog } from '~/components/folder-dialog';
 import { SidebarCreateButton } from './sidebar-create-button';
-import SidebarDraggableProjectRow from './sidebar-draggable-project-row';
+import { SidebarDraggableProjectRow } from './sidebar-draggable-project-row';
 
 function deleteFolderDescription(folder: Folder): string {
   if (folder.projectCount === 0) return `"${folder.name}" is empty and will be deleted.`;

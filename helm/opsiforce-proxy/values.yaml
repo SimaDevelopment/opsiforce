@@ -19,6 +19,7 @@ auth:
       - can_disable_project
       - can_restart_project
       - can_duplicate_project
+      - can_delete_project
       - can_export_project
       - can_import_project
       - can_view_queue_dashboard
@@ -38,6 +39,7 @@ auth:
       - can_view_external_services_usage
       - can_view_platform_storage
       - can_manage_platform_storage
+      - can_use_public_api
 
 keycloakMs:
   enabled: true

@@ -82,12 +82,13 @@ export function createPersistedSignal<T>(
   if (sync && typeof window !== 'undefined') {
     const handler = (e: StorageEvent) => {
       if (e.key !== key) return;
-      if (e.newValue === null) {
+      const raw = e.newValue;
+      if (raw === null) {
         setValue(() => defaultValue);
         return;
       }
       try {
-        setValue(() => deserialize(e.newValue!));
+        setValue(() => deserialize(raw));
       } catch {
         // ignore — keep current value
       }

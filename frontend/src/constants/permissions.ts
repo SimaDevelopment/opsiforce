@@ -12,6 +12,7 @@ export const Permission = {
   disableProject: 'can_disable_project',
   restartProject: 'can_restart_project',
   duplicateProject: 'can_duplicate_project',
+  deleteProject: 'can_delete_project',
   exportProject: 'can_export_project',
   importProject: 'can_import_project',
   manageWorkspaces: 'can_manage_workspaces',
@@ -28,4 +29,5 @@ export const Permission = {
   manageExternalServices: 'can_manage_external_services',
   viewPlatformStorage: 'can_view_platform_storage',
   managePlatformStorage: 'can_manage_platform_storage',
+  usePublicApi: 'can_use_public_api',
 } as const;

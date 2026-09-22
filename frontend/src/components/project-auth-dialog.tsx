@@ -4,7 +4,7 @@ import { Permission } from '~/constants/permissions';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '~/components/ui/dialog';
 import { ProjectAuthTab } from '~/components/project-auth';
 
-export default function ProjectAuthDialog(props: {
+export function ProjectAuthDialog(props: {
   projectId: string;
   environmentId: string;
   environmentName?: string;
