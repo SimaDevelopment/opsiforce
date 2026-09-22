@@ -310,6 +310,43 @@ describe('an agent image bump', () => {
   });
 });
 
+describe('a Built-in Agent that declares a model variant', () => {
+  beforeAll(async () => {
+    await harness.projects.create({ agentId: builtInAgentId }, tenantId, { createdBy: userId });
+    await db
+      .update(agents)
+      .set({ model: 'openai/gpt-5.6-sol', variant: 'high' })
+      .where(eq(agents.id, builtInAgentId));
+    await layImage('1.5.0', '# platform v2.5\n');
+    await writeFile(
+      path.join(imageRoot, 'agents', 'agents.json'),
+      JSON.stringify({
+        agents: { [BUILT_IN_PACKAGE]: { version: '1.5.0', model: 'openai/gpt-5.6-sol', variant: 'high' } },
+      })
+    );
+    await sweep();
+  });
+
+  afterAll(async () => {
+    await db.update(agents).set({ model: null, variant: null }).where(eq(agents.id, builtInAgentId));
+  });
+
+  it('writes the variant into both model references', async () => {
+    const [environment] = await db
+      .select({ id: projectAgentUpdates.projectEnvironmentId })
+      .from(projectAgentUpdates)
+      .where(and(eq(projectAgentUpdates.targetVersion, '1.5.0'), eq(projectAgentUpdates.status, AgentUpdateStatus.Applied)))
+      .limit(1);
+    const config = JSON.parse(await readFile(workspace(environment.id as string, '.opencode', 'opencode.json'), 'utf8'));
+    expect(config.model).toBe('openai/gpt-5.6-sol#high');
+    expect(config.agents[BUILT_IN_PACKAGE].model).toBe('openai/gpt-5.6-sol#high');
+  });
+
+  it('is at target on the next sweep instead of re-running every Job', async () => {
+    expect(await sweep()).toEqual([]);
+  });
+});
+
 describe('a migration-carrying bump', () => {
   let project: { id: string };
   let publishedId: string;

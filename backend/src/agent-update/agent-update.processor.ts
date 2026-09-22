@@ -337,11 +337,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     const modelSelection = this.agentUpdateService.agentModelSelection(packageName);
     if (!modelSelection) return true;
     const config = await this.readWorkspaceOpenCodeConfig(directory);
-    const agentRef = config?.agents?.[packageName]?.model ?? '';
-    const [agentModel, agentVariant] = agentRef.split('#');
-    if (config?.model !== modelSelection.model || agentModel !== modelSelection.model) return false;
-    if (modelSelection.variant && agentVariant !== modelSelection.variant) return false;
-    return true;
+    const expected = modelSelection.variant ? `${modelSelection.model}#${modelSelection.variant}` : modelSelection.model;
+    return config?.model === expected && config?.agents?.[packageName]?.model === expected;
   }
 
   private async lastAppliedVersion(projectEnvironmentId: string, agentId: string): Promise<string | null> {

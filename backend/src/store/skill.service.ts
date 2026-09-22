@@ -51,7 +51,7 @@ export class SkillService {
 
   async findOne(caller: SkillCaller, skillId: string): Promise<SkillSummary> {
     await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
-    const row = await this.repository.findOne(skillId);
+    const row = await this.repository.findOne(caller.tenantId, caller.userId, skillId);
     if (!row) throw new NotFoundException(`Skill ${skillId} not found`);
     return toSummary(row, imageSkillNames());
   }

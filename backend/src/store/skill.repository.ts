@@ -70,8 +70,8 @@ export class SkillRepository {
         skill: skills,
         latestVersion: skillVersions,
         createdByName: createdByName(),
-        usedByAgentCount: usedByAgentCount(),
-        outdatedAgentCount: outdatedAgentCount(),
+        usedByAgentCount: usedByAgentCount(tenantId, userId),
+        outdatedAgentCount: outdatedAgentCount(tenantId, userId),
       })
       .from(skills)
       .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
@@ -94,14 +94,14 @@ export class SkillRepository {
     }));
   }
 
-  async findOne(skillId: string): Promise<SkillListRow | undefined> {
+  async findOne(tenantId: string, userId: string, skillId: string): Promise<SkillListRow | undefined> {
     const [row] = await db
       .select({
         skill: skills,
         latestVersion: skillVersions,
         createdByName: createdByName(),
-        usedByAgentCount: usedByAgentCount(),
-        outdatedAgentCount: outdatedAgentCount(),
+        usedByAgentCount: usedByAgentCount(tenantId, userId),
+        outdatedAgentCount: outdatedAgentCount(tenantId, userId),
       })
       .from(skills)
       .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
@@ -365,22 +365,27 @@ async function insertVersion(
   return versionId;
 }
 
-function usedByAgentCount(): SQL<number> {
+/** Counts agree with `agentPins`: only agents the caller may see, archived ones included. */
+function usedByAgentCount(tenantId: string, userId: string): SQL<number> {
   return sql<number>`(
     select count(distinct ${agentProfiles.agentId})
     from ${agentProfileSkills}
     inner join ${agentProfiles} on ${agentProfiles.id} = ${agentProfileSkills.profileId}
+    inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}
     where ${agentProfileSkills.skillId} = ${skills.id}
+      and ${visibleAgentsWhere(tenantId, userId, { includeArchived: true })}
   )`;
 }
 
-function outdatedAgentCount(): SQL<number> {
+function outdatedAgentCount(tenantId: string, userId: string): SQL<number> {
   return sql<number>`(
     select count(distinct ${agentProfiles.agentId})
     from ${agentProfileSkills}
     inner join ${agentProfiles} on ${agentProfiles.id} = ${agentProfileSkills.profileId}
+    inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}
     where ${agentProfileSkills.skillId} = ${skills.id}
       and ${agentProfileSkills.skillVersionId} is distinct from ${skills.latestVersionId}
+      and ${visibleAgentsWhere(tenantId, userId, { includeArchived: true })}
   )`;
 }
 
