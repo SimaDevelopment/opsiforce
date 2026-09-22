@@ -29,11 +29,12 @@ export function SkillsListPage(props: StoreListProps) {
     () => props.query,
     (query) => props.onQuery(query)
   );
+  const filter = () => (props.filter === 'archived' && !canManage() ? 'all' : props.filter);
   const skills = useSkills(
-    () => props.filter,
+    filter,
     () => props.query
   );
-  const narrowed = () => props.filter !== 'all' || props.query.trim().length > 0;
+  const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
 
   return (
     <SettingsSection
@@ -52,7 +53,7 @@ export function SkillsListPage(props: StoreListProps) {
         <FilterChips
           label="Filter skills"
           options={filterOptions(canManage())}
-          value={props.filter}
+          value={filter()}
           onChange={props.onFilter}
         />
       </div>

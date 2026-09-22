@@ -32,13 +32,14 @@ export function AgentsListPage(props: StoreListProps) {
     () => props.query,
     (query) => props.onQuery(query)
   );
+  const filter = () => (props.filter === 'archived' && !canManage() ? 'all' : props.filter);
   const agents = useStoreAgents(
-    () => props.filter,
+    filter,
     () => props.query
   );
   const environments = useEnvironments();
   const [createOpen, setCreateOpen] = createSignal(false);
-  const narrowed = () => props.filter !== 'all' || props.query.trim().length > 0;
+  const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
 
   const byId = createMemo(() => new Map((environments.data ?? []).map((environment) => [environment.id, environment])));
 
@@ -62,7 +63,7 @@ export function AgentsListPage(props: StoreListProps) {
         <FilterChips
           label="Filter agents"
           options={filterOptions(canManage())}
-          value={props.filter}
+          value={filter()}
           onChange={props.onFilter}
         />
       </div>

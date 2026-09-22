@@ -132,6 +132,7 @@ export class UserService {
         keycloakId: user.userId,
         email: user.email ?? undefined,
         displayName: user.displayName ?? undefined,
+        groups: user.groups,
       },
       tenantId
     );
