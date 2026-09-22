@@ -3,9 +3,11 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db } from '../../db';
-import { agents } from '../../db/schema';
+import { EnvironmentService } from '../../src/environment/environment.service';
 import { Perms } from '../../src/permission/permission.constants';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
+import { defaultEnvironmentId, seedLiveAgent } from '../support/agent-fixtures';
+import { createTenantRow, createUserRow } from '../support/org-fixtures';
 import { organizationName, proxyHeaders } from '../support/proxy-identity';
 
 const FUTURE_BASE_MS = Date.UTC(2100, 0, 1);
@@ -16,20 +18,18 @@ interface SeededAgent {
   name: string;
 }
 
+let tenantId: string;
+let userId: string;
+
 async function seedAgents(count: number): Promise<SeededAgent[]> {
-  const rows = Array.from({ length: count }, (_unused, index) => {
-    const id = randomUUID();
-    return {
-      id,
-      name: `agent-${id.slice(0, 8)}`,
-      displayName: `Agent ${index}`,
-      description: `seeded agent ${index}`,
-      createdAt: new Date(FUTURE_BASE_MS + (nextSlot + index) * 60_000),
-    };
-  });
+  const seeded: SeededAgent[] = [];
+  for (let index = 0; index < count; index += 1) {
+    seeded.push(
+      await seedLiveAgent(tenantId, userId, { createdAt: new Date(FUTURE_BASE_MS + (nextSlot + index) * 60_000) })
+    );
+  }
   nextSlot += count;
-  await db.insert(agents).values(rows);
-  return rows.toReversed().map(({ id, name }) => ({ id, name }));
+  return seeded.toReversed();
 }
 
 describe('GET /api/v1/agents', () => {
@@ -38,9 +38,13 @@ describe('GET /api/v1/agents', () => {
   let headers: Record<string, string>;
 
   beforeAll(async () => {
+    const organization = organizationName();
+    tenantId = await createTenantRow(organization);
+    userId = await createUserRow();
     harness = await createPublicApiTestApp();
     app = harness.app;
-    headers = proxyHeaders({ organizations: [organizationName()] });
+    await harness.app.get(EnvironmentService).ensureDefaultForTenant(tenantId);
+    headers = proxyHeaders({ organizations: [organization] });
   });
 
   afterAll(async () => {
@@ -109,10 +113,19 @@ describe('GET /api/v1/agents', () => {
   it('walks agents whose creation times differ only below the millisecond', async () => {
     const stamp = `2101-06-0${(nextSlot % 9) + 1} 00:00:00.123456`;
     nextSlot += 1;
+    const environmentId = await defaultEnvironmentId(tenantId);
     const seeded = Array.from({ length: 3 }, () => randomUUID());
     for (const id of seeded) {
       await db.execute(
-        sql`insert into agents (id, name, created_at) values (${id}, ${`agent-${id.slice(0, 8)}`}, timestamp ${sql.raw(`'${stamp}'`)})`
+        sql`insert into agents (id, tenant_id, name, origin, visibility, created_by, created_at)
+            values (${id}, ${tenantId}, ${`agent-${id.slice(0, 8)}`}, 'custom', 'public', ${userId},
+                    timestamp ${sql.raw(`'${stamp}'`)})`
+      );
+      await db.execute(
+        sql`insert into agent_settings (agent_id, default_environment_id) values (${id}, ${environmentId})`
+      );
+      await db.execute(
+        sql`insert into agent_profiles (id, agent_id, environment_id) values (${randomUUID()}, ${id}, ${environmentId})`
       );
     }
     const expected = seeded.toSorted((left, right) => right.localeCompare(left));

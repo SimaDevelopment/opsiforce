@@ -10,6 +10,7 @@ import type { ProjectEnvironmentContext } from '../project-environment/project-e
 import { ProjectStatus } from '../project/project.types';
 import { ProxyService } from '../proxy/proxy.service';
 import { ProjectService } from '../project/project.service';
+import { DeliveryService } from '../delivery/delivery.service';
 import { AgentSessionGateway } from './agent-session.gateway';
 import { EnvironmentNotRunning, isPodDown, PodResponded, PodTimeout } from './agent-session.errors';
 import { isRootSession, PodOpencodeClient } from './pod-opencode.client';
@@ -38,6 +39,7 @@ export class AgentConnectionService {
     private readonly proxy: ProxyService,
     @Inject(forwardRef(() => ProjectService))
     private readonly projectService: ProjectService,
+    private readonly deliveryService: DeliveryService,
     configService: ConfigService
   ) {
     this.budgetMs = configService.getOrThrow<number>('agentWakeHoldMs');
@@ -81,6 +83,7 @@ export class AgentConnectionService {
       });
       if (remembered && isRootSession(remembered)) {
         this.logger.log(`${scope}: kept remembered session ${remembered.id}`);
+        await this.pinAgent(ready, upstream, remembered, deadline);
         return bound(remembered.id);
       }
       this.logger.warn(
@@ -90,7 +93,10 @@ export class AgentConnectionService {
 
     deadline.assertUnspent(connectionBudgetExhausted);
     const oldest = await this.pod.oldestRootSession(upstream, { signal: deadline.signal() });
-    if (oldest) return bound(await this.rebind(ready, current.sessionId, oldest.id));
+    if (oldest) {
+      await this.pinAgent(ready, upstream, oldest, deadline);
+      return bound(await this.rebind(ready, current.sessionId, oldest.id));
+    }
 
     return bound(await this.createPrimarySession(ready, upstream, deadline));
   }
@@ -134,6 +140,7 @@ export class AgentConnectionService {
         });
         if (remembered && isRootSession(remembered)) {
           this.logger.log(`${scope}: kept session ${remembered.id} bound by a concurrent connection`);
+          await this.pinAgent(ready, upstream, remembered, deadline);
           return remembered.id;
         }
       }
@@ -145,7 +152,10 @@ export class AgentConnectionService {
           `${scope}: adopted oldest root session ${adopted.id} under lock (previously ${current.sessionId ?? 'none'})`
         );
       }
-      const session = adopted ?? (await this.pod.createSession(upstream, { signal: deadline.signal() }));
+      const session =
+        adopted ??
+        (await this.pod.createSession(upstream, await this.agentSlug(ready.id), { signal: deadline.signal() }));
+      if (adopted) await this.pinAgent(ready, upstream, adopted, deadline);
       if (!adopted) {
         const message = `${scope}: created session ${session.id} because the runtime reported no root session (previously ${current.sessionId ?? 'none'})`;
         if (current.sessionId === null) this.logger.log(message);
@@ -155,6 +165,24 @@ export class AgentConnectionService {
       await tx.update(projectEnvironments).set({ sessionId: session.id }).where(eq(projectEnvironments.id, ready.id));
       return session.id;
     });
+  }
+
+  /** A Project has one Agent, so an adopted session carrying none is re-pointed at it (ADR-0060 §7). */
+  private async pinAgent(
+    ready: ProjectEnvironmentContext,
+    upstream: string,
+    session: SessionInfo,
+    deadline: Deadline
+  ): Promise<void> {
+    if (typeof session.agent === 'string' && session.agent.length > 0) return;
+    const agent = await this.agentSlug(ready.id);
+    deadline.assertUnspent(connectionBudgetExhausted);
+    await this.pod.switchSessionAgent(upstream, session.id, agent, { signal: deadline.signal() });
+    this.logger.log(`${describe(ready)}: re-pointed session ${session.id} at agent ${agent}`);
+  }
+
+  private agentSlug(environmentId: string): Promise<string> {
+    return this.deliveryService.runtimeAgentSlugFor(environmentId);
   }
 
   private async readBuild(upstream: string, deadline: Deadline): Promise<string | null> {

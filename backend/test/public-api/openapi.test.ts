@@ -1,20 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { OpenAPIObject } from '@nestjs/swagger';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type ErrorSlug } from '../../src/public-api/errors/error-types';
-import { ERROR_MEDIA_TYPE } from '../../src/public-api/errors/error.schema';
+import { errorTypeUri } from '../../src/public-api/errors/error-types';
 import { PUBLIC_API_PREFIX } from '../../src/public-api/public-api.paths';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
-import { isErrorSlug, errorsRaisedByHandlers } from './support/controller-sources';
-
-const AMBIENT_SLUGS = new Set<ErrorSlug>([
-  'validation-error',
-  'unauthenticated',
-  'organization-required',
-  'organization-forbidden',
-  'permission-denied',
-  'route-not-found',
-  'unexpected',
-]);
+import { assertProblemsDeclared } from './support/declared-problems';
 
 interface ResponseSchema {
   $ref?: string;
@@ -26,7 +16,6 @@ interface NamedSchema {
 }
 
 interface DocumentOperation {
-  operationId?: string;
   parameters?: { name: string }[];
   requestBody?: { content?: Record<string, { schema?: ResponseSchema }> };
   responses?: Record<
@@ -35,37 +24,48 @@ interface DocumentOperation {
   >;
 }
 
-function declaredSlugs(document: OpenAPIObject): Map<string, Set<ErrorSlug>> {
-  const paths = document.paths as Record<string, Record<string, DocumentOperation>>;
-  const declared = new Map<string, Set<ErrorSlug>>();
-  for (const operations of Object.values(paths)) {
-    for (const operation of Object.values(operations)) {
-      const { operationId, responses } = operation;
-      if (typeof operationId !== 'string') continue;
-      const slugs = new Set<ErrorSlug>();
-      for (const response of Object.values(responses ?? {})) {
-        for (const type of response.content?.[ERROR_MEDIA_TYPE]?.schema?.allOf?.[1].properties?.type?.enum ?? []) {
-          const slug = type.replace('urn:opsiforce:error:', '');
-          if (isErrorSlug(slug)) slugs.add(slug);
-        }
-      }
-      declared.set(operationId.replace(/_v\d+$/, ''), slugs);
-    }
-  }
-  return declared;
-}
-
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete']);
 
 const V1_ROUTES = [
+  'DELETE /api/v1/agents/{id}/skills/{skillId}',
   'DELETE /api/v1/projects/{id}',
   'GET /api/v1/agents',
+  'GET /api/v1/agents/{id}',
+  'GET /api/v1/agents/{id}/skills',
   'GET /api/v1/me',
   'GET /api/v1/projects',
   'GET /api/v1/projects/{id}',
+  'GET /api/v1/skills',
+  'GET /api/v1/skills/{id}',
+  'GET /api/v1/skills/{id}/versions/{version}/files',
+  'POST /api/v1/agents',
+  'POST /api/v1/agents/{id}/duplicate',
   'POST /api/v1/projects',
   'POST /api/v1/projects/{id}/environments/{environmentId}/connect',
+  'POST /api/v1/skills',
+  'POST /api/v1/skills/validate',
+  'POST /api/v1/skills/{id}/duplicate',
+  'POST /api/v1/skills/{id}/versions',
+  'PUT /api/v1/agents/{id}/profile',
+  'PUT /api/v1/agents/{id}/skills/{skillId}',
 ].toSorted();
+
+/** Bounded by verb (ADR-0064): these never reach `/api/v1`, so a pod cannot be handed them. */
+const ABSENT_FROM_V1 = [
+  'DELETE /api/v1/skills/{id}',
+  'PATCH /api/v1/skills/{id}',
+  'POST /api/v1/skills/import',
+  'POST /api/v1/skills/{id}/archive',
+  'POST /api/v1/skills/{id}/restore',
+  'POST /api/v1/skills/{id}/visibility',
+  'DELETE /api/v1/agents/{id}',
+  'PATCH /api/v1/agents/{id}',
+  'POST /api/v1/agents/{id}/archive',
+  'POST /api/v1/agents/{id}/publish',
+  'POST /api/v1/agents/{id}/restore',
+  'POST /api/v1/agents/{id}/visibility',
+  'PUT /api/v1/agents/{id}/settings',
+];
 
 describe('public api openapi document', () => {
   let harness: PublicApiTestApp;
@@ -122,12 +122,45 @@ describe('public api openapi document', () => {
     expect(routes).toEqual(V1_ROUTES);
   });
 
+  it('publishes no destructive or widening verb on the Store resources', () => {
+    const routes = new Set(
+      Object.entries(document.paths).flatMap(([path, operations]) =>
+        Object.keys(operations)
+          .filter((method) => HTTP_METHODS.has(method))
+          .map((method) => `${method.toUpperCase()} ${path}`)
+      )
+    );
+
+    for (const route of ABSENT_FROM_V1) expect(routes.has(route), `${route} must not be published`).toBe(false);
+  });
+
   it('hoists every schema into components and leaves no inline $defs', () => {
     expect(Object.keys(document.components?.schemas ?? {})).toEqual(
       expect.arrayContaining([
         'Agent',
+        'AgentDetail',
         'AgentPage',
+        'AgentProfile',
+        'AgentSettings',
+        'AgentSkill',
+        'AgentSkillList',
         'Connection',
+        'CreateAgent',
+        'CreateSkill',
+        'CreateSkillVersion',
+        'DuplicateAgent',
+        'DuplicateSkill',
+        'GateFinding',
+        'SetAgentSkill',
+        'Skill',
+        'SkillFile',
+        'SkillFileInput',
+        'SkillFileList',
+        'SkillFlags',
+        'SkillList',
+        'SkillValidation',
+        'SkillVersionRef',
+        'UpdateAgentProfile',
         'CreateProject',
         'Environment',
         'Me',
@@ -156,6 +189,7 @@ describe('public api openapi document', () => {
       'username',
       'email',
       'displayName',
+      'source',
       'organization',
       'organizations',
       'permissions',
@@ -234,16 +268,41 @@ describe('public api openapi document', () => {
     expect(parameters).toContainEqual(expect.objectContaining({ name: 'x-tenant-name', in: 'header' }));
   });
 
-  it('never lets a handler raise a ApiError it does not declare', () => {
-    const declared = declaredSlugs(document);
-    const raised = errorsRaisedByHandlers();
-    expect(raised.size).toBeGreaterThan(0);
-    for (const [operationId, slugs] of declared) {
-      const handlerSlugs = raised.get(operationId);
-      expect(handlerSlugs, `no handler found for operation ${operationId}`).toBeDefined();
-      const undeclared = [...(handlerSlugs ?? [])].filter((slug) => !slugs.has(slug) && !AMBIENT_SLUGS.has(slug));
-      expect(undeclared, `${operationId} raises undeclared errors`).toEqual([]);
-    }
+  describe('the declared-Problem check the harness runs on close', () => {
+    it('records every Problem the app answers, against the document path', async () => {
+      const res = await harness.app.inject({ method: 'GET', url: `${PUBLIC_API_PREFIX}/projects/${randomUUID()}` });
+      expect(res.statusCode).toBe(401);
+      expect(harness.problems).toContainEqual({
+        method: 'GET',
+        url: `${PUBLIC_API_PREFIX}/projects/{id}`,
+        type: errorTypeUri('unauthenticated'),
+      });
+    });
+
+    it('accepts a Problem its operation declares, and the ambient ones anywhere', async () => {
+      await expect(
+        assertProblemsDeclared(harness.app, [
+          { method: 'POST', url: `${PUBLIC_API_PREFIX}/skills`, type: errorTypeUri('name-unavailable') },
+          { method: 'GET', url: `${PUBLIC_API_PREFIX}/me`, type: errorTypeUri('permission-denied') },
+        ])
+      ).resolves.toBeUndefined();
+    });
+
+    it('fails when an operation answers a Problem it does not declare', async () => {
+      await expect(
+        assertProblemsDeclared(harness.app, [
+          { method: 'POST', url: `${PUBLIC_API_PREFIX}/skills`, type: errorTypeUri('model-unknown') },
+        ])
+      ).rejects.toThrow('POST /api/v1/skills answered urn:opsiforce:error:model-unknown without declaring it');
+    });
+
+    it('fails when a Problem comes back from a route the document does not publish', async () => {
+      await expect(
+        assertProblemsDeclared(harness.app, [
+          { method: 'DELETE', url: `${PUBLIC_API_PREFIX}/skills/{id}`, type: errorTypeUri('name-unavailable') },
+        ])
+      ).rejects.toThrow('DELETE /api/v1/skills/{id} answered urn:opsiforce:error:name-unavailable but the document');
+    });
   });
 
   it('serves the Scalar reference without a token', async () => {

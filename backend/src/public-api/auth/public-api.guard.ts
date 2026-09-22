@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { GatewayKeyService } from '../../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../../identity/forwarded-identity.service';
 import { Perms } from '../../permission/permission.constants';
 import { parsePermissions } from '../../permission/permission.utils';
@@ -7,7 +8,10 @@ import { IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from '../../ten
 import { TenantService } from '../../tenant/tenant.service';
 import type { OrganizationRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
-import type { CallerRequest } from './caller';
+import { ALLOWS_GATEWAY_CALLER_KEY } from './allows-gateway-caller.decorator';
+import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
+import type { Caller, CallerRequest } from './caller';
+import { gatewayBearerOf } from './gateway-bearer';
 
 function toRef({ tenantId, tenantName }: TenantContext): OrganizationRef {
   return { id: tenantId, name: tenantName };
@@ -18,7 +22,9 @@ export class PublicApiGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tenantService: TenantService,
-    private readonly identities: ForwardedIdentityService
+    private readonly identities: ForwardedIdentityService,
+    private readonly gatewayKeys: GatewayKeyService,
+    private readonly provenance: ProjectProvenanceRepository
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -29,6 +35,15 @@ export class PublicApiGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<CallerRequest>();
+    const gatewayToken = gatewayBearerOf(request.headers);
+
+    request.caller = gatewayToken
+      ? await this.gatewayCaller(gatewayToken, context)
+      : await this.forwardedCaller(request);
+    return true;
+  }
+
+  private async forwardedCaller(request: CallerRequest): Promise<Caller> {
     const forwarded = this.identities.read(request);
     const { tenantContext } = request;
     if (!forwarded || !tenantContext) throw Errors.unauthenticated();
@@ -43,7 +58,7 @@ export class PublicApiGuard implements CanActivate {
 
     const identity = await this.identities.resolve(forwarded, tenantContext.tenantId);
 
-    request.caller = {
+    return {
       source: 'idp-bearer',
       user: {
         id: identity.keycloakId,
@@ -57,7 +72,50 @@ export class PublicApiGuard implements CanActivate {
       organizations,
       permissions,
     };
-    return true;
+  }
+
+  private async gatewayCaller(token: string, context: ExecutionContext): Promise<Caller> {
+    const key = await this.gatewayKeys.validateToken(token, 'platform-api');
+    if (!key?.tenantId) throw Errors.unauthenticated();
+
+    const creatorId = await this.provenance.findCreatorId(key.projectId);
+    if (!creatorId) throw Errors.unauthenticated();
+
+    const identity = await this.identities.resolveByPlatformId(creatorId);
+    if (!identity) throw Errors.unauthenticated();
+
+    const tenant = await this.tenantService.getTenantById(key.tenantId);
+    if (!tenant) throw Errors.unauthenticated();
+    if (!this.tenantService.resolveAccessibleTenantNames(identity.groups).includes(tenant.name)) {
+      throw Errors.organizationForbidden();
+    }
+
+    this.assertRouteOpenToGatewayCaller(context);
+
+    const organization: OrganizationRef = { id: tenant.id, name: tenant.name };
+    return {
+      source: 'gateway-key',
+      projectId: key.projectId,
+      user: {
+        id: identity.keycloakId,
+        platformId: identity.platformId,
+        username: identity.username,
+        email: identity.platformEmail,
+        displayName: identity.displayName,
+        kind: identity.kind,
+      },
+      organization,
+      organizations: [organization],
+      permissions: new Set(parsePermissions(identity.groups)),
+    };
+  }
+
+  private assertRouteOpenToGatewayCaller(context: ExecutionContext): void {
+    const allowed = this.reflector.getAllAndOverride<boolean>(ALLOWS_GATEWAY_CALLER_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!allowed) throw Errors.routeClosedToAgentCaller();
   }
 
   private async resolveOrganizations(groups: string, tenantContext: TenantContext): Promise<OrganizationRef[]> {

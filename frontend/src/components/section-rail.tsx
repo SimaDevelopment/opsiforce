@@ -1,11 +1,15 @@
-import { For, Show } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useLocation, useNavigate } from '@tanstack/solid-router';
 import { cn } from '~/lib/cn';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '~/components/ui/sidebar';
 import type { RailTab } from '~/constants/section-rail';
 
-export function SectionRail(props: { tabs: RailTab[]; groupOrder: readonly string[] }) {
+export function SectionRail(props: {
+  tabs: RailTab[];
+  groupOrder: readonly string[];
+  belowTabsOnDesktop?: JSX.Element;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const isActive = (to: string) => {
@@ -41,6 +45,7 @@ export function SectionRail(props: { tabs: RailTab[]; groupOrder: readonly strin
             );
           }}
         </For>
+        <Show when={props.belowTabsOnDesktop}>{props.belowTabsOnDesktop}</Show>
       </nav>
 
       <nav class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 md:hidden">

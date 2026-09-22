@@ -1,5 +1,6 @@
 import { Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
 import { Caller } from '../auth/caller';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../public-api.decorator';
 import { MeMapper } from './me.mapper';
@@ -9,6 +10,7 @@ import { MeSchema, type MeDto } from './me.schema';
 @PublicApiController('me')
 export class MeController {
   @Get()
+  @AllowsGatewayCaller()
   @ApiOperation({
     summary: 'Get the current user',
     description:

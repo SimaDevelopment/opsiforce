@@ -9,6 +9,7 @@ export type FakePodRoute =
   | 'session.create'
   | 'session.get'
   | 'session.delete'
+  | 'session.switchAgent'
   | 'session.prompt'
   | 'session.message'
   | 'session.wait'
@@ -17,6 +18,8 @@ export type FakePodRoute =
   | 'session.inbox.steer'
   | 'session.inbox.cancel'
   | 'session.active'
+  | 'skill.list'
+  | 'notify.configChange'
   | 'event';
 
 export interface RecordedPodRequest {
@@ -50,6 +53,7 @@ export interface SessionInfo extends JsonObject {
   parentID: string | null;
   projectID: string;
   title: string;
+  agent: string | null;
   cost: number;
   tokens: JsonObject;
   time: JsonObject;
@@ -80,6 +84,7 @@ export interface FakePod {
   setMessages: (sessionId: string, page: MessagePage) => void;
   setActive: (sessionIds: string[]) => void;
   setHealth: (health: { status: number; body: JsonValue }) => void;
+  serveSkills: (provider: () => string[] | Promise<string[]>) => void;
   script: (route: FakePodRoute, script: RouteScript) => void;
   clearScripts: () => void;
   replayToNewStreams: (events: FakePodEvent[]) => void;
@@ -91,6 +96,8 @@ export interface FakePod {
 }
 
 const JSON_TYPE = 'application/json';
+
+const noSkills = (): string[] => [];
 
 export const podErrors = {
   sessionNotFound: (sessionID: string): JsonObject => ({
@@ -129,6 +136,8 @@ function matchRoute(method: string, pathname: string): RouteMatch {
   if (pathname === '/api/health' && method === 'GET') return unscoped('health');
   if (pathname === '/api/event' && method === 'GET') return unscoped('event');
   if (pathname === '/api/session/active' && method === 'GET') return unscoped('session.active');
+  if (pathname === '/api/skill' && method === 'GET') return unscoped('skill.list');
+  if (pathname === '/notify-config-change' && method === 'POST') return unscoped('notify.configChange');
   if (pathname === '/api/session') {
     if (method === 'GET') return unscoped('session.list');
     if (method === 'POST') return unscoped('session.create');
@@ -146,6 +155,7 @@ function matchRoute(method: string, pathname: string): RouteMatch {
 
   if (rest === '' && method === 'GET') return scopedTo('session.get');
   if (rest === '' && method === 'DELETE') return scopedTo('session.delete');
+  if (rest === '/agent' && method === 'POST') return scopedTo('session.switchAgent');
   if (rest === '/prompt' && method === 'POST') return scopedTo('session.prompt');
   if (rest === '/message' && method === 'GET') return scopedTo('session.message');
   if (rest === '/wait' && method === 'POST') return scopedTo('session.wait');
@@ -221,6 +231,7 @@ export async function startFakePod(): Promise<FakePod> {
   const streams = new Set<ServerResponse>();
   let active: string[] = [];
   let health: { status: number; body: JsonValue } = { status: 200, body: { healthy: true, version: '1.18.4', pid: 1 } };
+  let skillProvider: () => string[] | Promise<string[]> = noSkills;
   let replayed: FakePodEvent[] = [];
   let sessionCounter = 0;
   let messageCounter = 0;
@@ -235,6 +246,7 @@ export async function startFakePod(): Promise<FakePod> {
       parentID: null,
       projectID: 'prj_fake',
       title: 'Fake session',
+      agent: null,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: now, updated: now },
@@ -270,6 +282,12 @@ export async function startFakePod(): Promise<FakePod> {
       case 'session.delete':
         sessions.delete(session.id);
         return sendNoContent(res);
+      case 'session.switchAgent': {
+        const agent = asOptionalString(asObject(request.body).agent);
+        if (agent === undefined) return sendJson(res, 400, podErrors.invalidRequest('agent is required'));
+        sessions.set(session.id, { ...session, agent });
+        return sendNoContent(res);
+      }
       case 'session.prompt': {
         const prompt = asObject(request.body);
         const { id: requested, delivery, ...rest } = prompt;
@@ -357,11 +375,17 @@ export async function startFakePod(): Promise<FakePod> {
         const id = asOptionalString(requested.id);
         const title = asOptionalString(requested.title);
         const parentID = asOptionalString(requested.parentID);
+        const agent = asOptionalString(requested.agent);
         if (id !== undefined) overrides.id = id;
         if (title !== undefined) overrides.title = title;
         if (parentID !== undefined) overrides.parentID = parentID;
+        if (agent !== undefined) overrides.agent = agent;
         return sendJson(res, 200, { data: addSession(overrides) });
       }
+      case 'notify.configChange':
+        return sendJson(res, 200, { notified: ['skills'], absent: [] });
+      case 'skill.list':
+        return sendJson(res, 200, { location: {}, data: [] });
       case 'session.active':
         return sendJson(res, 200, { data: Object.fromEntries(active.map((id) => [id, { type: 'running' }])) });
       default: {
@@ -399,6 +423,13 @@ export async function startFakePod(): Promise<FakePod> {
       if (request.route === 'unknown') return respond(request, res);
 
       const script = takeScript(request.route);
+      if (request.route === 'skill.list' && script?.status === undefined && script?.body === undefined) {
+        const names = await skillProvider();
+        return sendJson(res, 200, {
+          location: { directory: '/workspace', workspace: '/workspace' },
+          data: names.map((name) => ({ id: name, name, location: `/workspace/.opencode/skills/${name}`, content: '' })),
+        });
+      }
       if (script?.delayMs) await new Promise((resolve) => setTimeout(resolve, script.delayMs));
       if (script?.status !== undefined) {
         if (script.status === 204) return sendNoContent(res);
@@ -427,6 +458,9 @@ export async function startFakePod(): Promise<FakePod> {
     },
     setHealth: (next) => {
       health = next;
+    },
+    serveSkills: (provider) => {
+      skillProvider = provider;
     },
     script: (route, script) => scripts.set(route, script),
     clearScripts: () => scripts.clear(),

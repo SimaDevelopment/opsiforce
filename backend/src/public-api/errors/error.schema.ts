@@ -10,6 +10,9 @@ export const ValidationErrorItemSchema = z
     detail: z.string(),
     pointer: z.string(),
     in: z.enum(['body', 'query', 'path']),
+    rule: z.string().optional().describe('The validation rule that rejected the request, when one is named'),
+    file: z.string().optional().describe('The submitted file the item is about, for file-tree requests'),
+    line: z.int().optional().describe('1-based line inside `file`, when the rule found one'),
   })
   .meta({ id: 'ValidationErrorItem' });
 
@@ -21,6 +24,10 @@ export const ApiErrorSchema = z
     detail: z.string().optional(),
     instance: z.string().optional(),
     errors: z.array(ValidationErrorItemSchema).optional(),
+    lints: z
+      .array(ValidationErrorItemSchema)
+      .optional()
+      .describe('Warnings that did not block the request, recorded alongside it'),
     organizations: z.array(OrganizationRefSchema).optional(),
     permission: z.string().optional(),
   })

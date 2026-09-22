@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as PermissionDeniedRouteImport } from './routes/permission-denied'
+import { Route as StoreRouteRouteImport } from './routes/store/route'
 import { Route as SettingsRouteRouteImport } from './routes/settings/route'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StoreIndexRouteImport } from './routes/store/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsWorkspacesRouteImport } from './routes/settings/workspaces'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
@@ -24,7 +26,13 @@ import { Route as SettingsBillingRouteImport } from './routes/settings/billing'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as AdminStorageRouteImport } from './routes/admin/storage'
 import { Route as AdminPodsRouteImport } from './routes/admin/pods'
+import { Route as StoreSkillsIndexRouteImport } from './routes/store/skills/index'
+import { Route as StoreBuilderIndexRouteImport } from './routes/store/builder/index'
+import { Route as StoreAgentsIndexRouteImport } from './routes/store/agents/index'
 import { Route as AdminExternalServicesIndexRouteImport } from './routes/admin/external-services/index'
+import { Route as StoreSkillsIdRouteImport } from './routes/store/skills/$id'
+import { Route as StoreBuilderIdRouteImport } from './routes/store/builder/$id'
+import { Route as StoreAgentsIdRouteImport } from './routes/store/agents/$id'
 import { Route as AdminExternalServicesUsageRouteImport } from './routes/admin/external-services/usage'
 
 const SchedulesRoute = SchedulesRouteImport.update({
@@ -35,6 +43,11 @@ const SchedulesRoute = SchedulesRouteImport.update({
 const PermissionDeniedRoute = PermissionDeniedRouteImport.update({
   id: '/permission-denied',
   path: '/permission-denied',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoreRouteRoute = StoreRouteRouteImport.update({
+  id: '/store',
+  path: '/store',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRouteRoute = SettingsRouteRouteImport.update({
@@ -51,6 +64,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const StoreIndexRoute = StoreIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StoreRouteRoute,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
@@ -102,12 +120,42 @@ const AdminPodsRoute = AdminPodsRouteImport.update({
   path: '/pods',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const StoreSkillsIndexRoute = StoreSkillsIndexRouteImport.update({
+  id: '/skills/',
+  path: '/skills/',
+  getParentRoute: () => StoreRouteRoute,
+} as any)
+const StoreBuilderIndexRoute = StoreBuilderIndexRouteImport.update({
+  id: '/builder/',
+  path: '/builder/',
+  getParentRoute: () => StoreRouteRoute,
+} as any)
+const StoreAgentsIndexRoute = StoreAgentsIndexRouteImport.update({
+  id: '/agents/',
+  path: '/agents/',
+  getParentRoute: () => StoreRouteRoute,
+} as any)
 const AdminExternalServicesIndexRoute =
   AdminExternalServicesIndexRouteImport.update({
     id: '/external-services/',
     path: '/external-services/',
     getParentRoute: () => AdminRouteRoute,
   } as any)
+const StoreSkillsIdRoute = StoreSkillsIdRouteImport.update({
+  id: '/skills/$id',
+  path: '/skills/$id',
+  getParentRoute: () => StoreRouteRoute,
+} as any)
+const StoreBuilderIdRoute = StoreBuilderIdRouteImport.update({
+  id: '/builder/$id',
+  path: '/builder/$id',
+  getParentRoute: () => StoreRouteRoute,
+} as any)
+const StoreAgentsIdRoute = StoreAgentsIdRouteImport.update({
+  id: '/agents/$id',
+  path: '/agents/$id',
+  getParentRoute: () => StoreRouteRoute,
+} as any)
 const AdminExternalServicesUsageRoute =
   AdminExternalServicesUsageRouteImport.update({
     id: '/external-services/usage',
@@ -119,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/settings': typeof SettingsRouteRouteWithChildren
+  '/store': typeof StoreRouteRouteWithChildren
   '/permission-denied': typeof PermissionDeniedRoute
   '/schedules': typeof SchedulesRoute
   '/admin/pods': typeof AdminPodsRoute
@@ -131,8 +180,15 @@ export interface FileRoutesByFullPath {
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
+  '/store/': typeof StoreIndexRoute
   '/admin/external-services/usage': typeof AdminExternalServicesUsageRoute
+  '/store/agents/$id': typeof StoreAgentsIdRoute
+  '/store/builder/$id': typeof StoreBuilderIdRoute
+  '/store/skills/$id': typeof StoreSkillsIdRoute
   '/admin/external-services/': typeof AdminExternalServicesIndexRoute
+  '/store/agents/': typeof StoreAgentsIndexRoute
+  '/store/builder/': typeof StoreBuilderIndexRoute
+  '/store/skills/': typeof StoreSkillsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -149,14 +205,22 @@ export interface FileRoutesByTo {
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings': typeof SettingsIndexRoute
+  '/store': typeof StoreIndexRoute
   '/admin/external-services/usage': typeof AdminExternalServicesUsageRoute
+  '/store/agents/$id': typeof StoreAgentsIdRoute
+  '/store/builder/$id': typeof StoreBuilderIdRoute
+  '/store/skills/$id': typeof StoreSkillsIdRoute
   '/admin/external-services': typeof AdminExternalServicesIndexRoute
+  '/store/agents': typeof StoreAgentsIndexRoute
+  '/store/builder': typeof StoreBuilderIndexRoute
+  '/store/skills': typeof StoreSkillsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/settings': typeof SettingsRouteRouteWithChildren
+  '/store': typeof StoreRouteRouteWithChildren
   '/permission-denied': typeof PermissionDeniedRoute
   '/schedules': typeof SchedulesRoute
   '/admin/pods': typeof AdminPodsRoute
@@ -169,8 +233,15 @@ export interface FileRoutesById {
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
+  '/store/': typeof StoreIndexRoute
   '/admin/external-services/usage': typeof AdminExternalServicesUsageRoute
+  '/store/agents/$id': typeof StoreAgentsIdRoute
+  '/store/builder/$id': typeof StoreBuilderIdRoute
+  '/store/skills/$id': typeof StoreSkillsIdRoute
   '/admin/external-services/': typeof AdminExternalServicesIndexRoute
+  '/store/agents/': typeof StoreAgentsIndexRoute
+  '/store/builder/': typeof StoreBuilderIndexRoute
+  '/store/skills/': typeof StoreSkillsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -178,6 +249,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/settings'
+    | '/store'
     | '/permission-denied'
     | '/schedules'
     | '/admin/pods'
@@ -190,8 +262,15 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
+    | '/store/'
     | '/admin/external-services/usage'
+    | '/store/agents/$id'
+    | '/store/builder/$id'
+    | '/store/skills/$id'
     | '/admin/external-services/'
+    | '/store/agents/'
+    | '/store/builder/'
+    | '/store/skills/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -208,13 +287,21 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings'
+    | '/store'
     | '/admin/external-services/usage'
+    | '/store/agents/$id'
+    | '/store/builder/$id'
+    | '/store/skills/$id'
     | '/admin/external-services'
+    | '/store/agents'
+    | '/store/builder'
+    | '/store/skills'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/settings'
+    | '/store'
     | '/permission-denied'
     | '/schedules'
     | '/admin/pods'
@@ -227,14 +314,22 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
+    | '/store/'
     | '/admin/external-services/usage'
+    | '/store/agents/$id'
+    | '/store/builder/$id'
+    | '/store/skills/$id'
     | '/admin/external-services/'
+    | '/store/agents/'
+    | '/store/builder/'
+    | '/store/skills/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   SettingsRouteRoute: typeof SettingsRouteRouteWithChildren
+  StoreRouteRoute: typeof StoreRouteRouteWithChildren
   PermissionDeniedRoute: typeof PermissionDeniedRoute
   SchedulesRoute: typeof SchedulesRoute
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
@@ -254,6 +349,13 @@ declare module '@tanstack/solid-router' {
       path: '/permission-denied'
       fullPath: '/permission-denied'
       preLoaderRoute: typeof PermissionDeniedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/store': {
+      id: '/store'
+      path: '/store'
+      fullPath: '/store'
+      preLoaderRoute: typeof StoreRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -276,6 +378,13 @@ declare module '@tanstack/solid-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/store/': {
+      id: '/store/'
+      path: '/'
+      fullPath: '/store/'
+      preLoaderRoute: typeof StoreIndexRouteImport
+      parentRoute: typeof StoreRouteRoute
     }
     '/settings/': {
       id: '/settings/'
@@ -347,12 +456,54 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AdminPodsRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/store/skills/': {
+      id: '/store/skills/'
+      path: '/skills'
+      fullPath: '/store/skills/'
+      preLoaderRoute: typeof StoreSkillsIndexRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
+    '/store/builder/': {
+      id: '/store/builder/'
+      path: '/builder'
+      fullPath: '/store/builder/'
+      preLoaderRoute: typeof StoreBuilderIndexRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
+    '/store/agents/': {
+      id: '/store/agents/'
+      path: '/agents'
+      fullPath: '/store/agents/'
+      preLoaderRoute: typeof StoreAgentsIndexRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
     '/admin/external-services/': {
       id: '/admin/external-services/'
       path: '/external-services'
       fullPath: '/admin/external-services/'
       preLoaderRoute: typeof AdminExternalServicesIndexRouteImport
       parentRoute: typeof AdminRouteRoute
+    }
+    '/store/skills/$id': {
+      id: '/store/skills/$id'
+      path: '/skills/$id'
+      fullPath: '/store/skills/$id'
+      preLoaderRoute: typeof StoreSkillsIdRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
+    '/store/builder/$id': {
+      id: '/store/builder/$id'
+      path: '/builder/$id'
+      fullPath: '/store/builder/$id'
+      preLoaderRoute: typeof StoreBuilderIdRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
+    '/store/agents/$id': {
+      id: '/store/agents/$id'
+      path: '/agents/$id'
+      fullPath: '/store/agents/$id'
+      preLoaderRoute: typeof StoreAgentsIdRouteImport
+      parentRoute: typeof StoreRouteRoute
     }
     '/admin/external-services/usage': {
       id: '/admin/external-services/usage'
@@ -406,10 +557,35 @@ const SettingsRouteRouteWithChildren = SettingsRouteRoute._addFileChildren(
   SettingsRouteRouteChildren,
 )
 
+interface StoreRouteRouteChildren {
+  StoreIndexRoute: typeof StoreIndexRoute
+  StoreAgentsIdRoute: typeof StoreAgentsIdRoute
+  StoreBuilderIdRoute: typeof StoreBuilderIdRoute
+  StoreSkillsIdRoute: typeof StoreSkillsIdRoute
+  StoreAgentsIndexRoute: typeof StoreAgentsIndexRoute
+  StoreBuilderIndexRoute: typeof StoreBuilderIndexRoute
+  StoreSkillsIndexRoute: typeof StoreSkillsIndexRoute
+}
+
+const StoreRouteRouteChildren: StoreRouteRouteChildren = {
+  StoreIndexRoute: StoreIndexRoute,
+  StoreAgentsIdRoute: StoreAgentsIdRoute,
+  StoreBuilderIdRoute: StoreBuilderIdRoute,
+  StoreSkillsIdRoute: StoreSkillsIdRoute,
+  StoreAgentsIndexRoute: StoreAgentsIndexRoute,
+  StoreBuilderIndexRoute: StoreBuilderIndexRoute,
+  StoreSkillsIndexRoute: StoreSkillsIndexRoute,
+}
+
+const StoreRouteRouteWithChildren = StoreRouteRoute._addFileChildren(
+  StoreRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   SettingsRouteRoute: SettingsRouteRouteWithChildren,
+  StoreRouteRoute: StoreRouteRouteWithChildren,
   PermissionDeniedRoute: PermissionDeniedRoute,
   SchedulesRoute: SchedulesRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,

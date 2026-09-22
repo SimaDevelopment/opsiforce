@@ -1,17 +1,17 @@
 ---
 name: sqlite
-description: SQLite database via Node 24's built-in node:sqlite — migrations, DatabaseService API, full-text search (FTS5), and the read-only platform databases (observability, inbound external-service messages). Use for any data model change, schema work, or SQL query. Every data model change starts here with a migration file.
+description: The app's own SQLite database via Node 24's built-in node:sqlite — migrations, DatabaseService API, full-text search (FTS5), transactions, JSON and window functions, plus the read-only inbound external-services database. Use for any data model change, schema work, or SQL query. Every data model change starts here with a migration file.
 ---
 
 # SQLite
 
 The app uses Node 24's built-in `node:sqlite` (`DatabaseSync`). Synchronous API, zero dependencies, no native compile step. Imported as `import { DatabaseSync } from "node:sqlite"`. Database file is at `data/app.db`.
 
-There is also a per-project platform-managed observability database at `/workspace/data/database.db` (tables: `app_requests`, `process_logs`, `process_events`). Do not create tables or write to it — always open with `sqlite3 -readonly /workspace/data/database.db "..."`. When debugging a failed request, crash, or error, Read references/observability-db.md — it has the platform DB schema and ready-to-run queries.
+The platform's own read-only observability database is a different file with a different owner — its schema and the queries for debugging a failed request, a crash or a boot are in the `platform` skill.
 
 ## Inbound messages — `/workspace/data/external-services.db`
 
-A third platform-managed file holds inbound messages from external services (incoming email, WhatsApp). **The platform backend is the only writer** — agents, app code, and the DB viewer are read-only. Never create tables, write, or run migrations against it; open it with `sqlite3 -readonly` or `new DatabaseSync(path, { readOnly: true })`.
+The platform's other read-only file holds inbound messages from external services (incoming email, WhatsApp). **The platform backend is the only writer** — agents, app code, and the DB viewer are read-only. Never create tables, write, or run migrations against it; open it with `sqlite3 -readonly` or `new DatabaseSync(path, { readOnly: true })`.
 
 The schema is **fixed and the same for every service** — two tables, created lazily the first time any message arrives. Until then the file is empty, which is normal: "no such table: messages" means "nothing has arrived yet", not a broken setup.
 

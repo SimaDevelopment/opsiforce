@@ -1,12 +1,29 @@
 import { Global, InjectionToken, Module, type Provider, type Type } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
+import { AgentProfileService } from '../../src/agent/agent-profile.service';
+import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service';
+import { AgentRepository } from '../../src/agent/agent.repository';
 import { AgentService } from '../../src/agent/agent.service';
+import { SkillPublishService } from '../../src/store/skill-publish.service';
+import { SkillReconcilerService } from '../../src/store/skill-reconciler.service';
+import { SkillRepository } from '../../src/store/skill.repository';
+import { SkillService } from '../../src/store/skill.service';
 import { AgentConnectionService } from '../../src/agent-session/agent-connection.service';
 import { AgentSessionGateway } from '../../src/agent-session/agent-session.gateway';
 import { PodOpencodeClient } from '../../src/agent-session/pod-opencode.client';
+import { AgentUpdateK8sService } from '../../src/agent-update/agent-update.k8s.service';
 import { AgentUpdateService } from '../../src/agent-update/agent-update.service';
+import { BuilderChatRepository } from '../../src/builder/builder-chat.repository';
+import { BuilderChatService } from '../../src/builder/builder-chat.service';
 import { AGENT_WORKSPACE_UPDATE_QUEUE } from '../../src/agent-update/agent-update.types';
 import { DefaultsService } from '../../src/defaults/defaults.service';
+import { DeliveryRepository } from '../../src/delivery/delivery.repository';
+import { DeliveryService } from '../../src/delivery/delivery.service';
+import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
+import { PodReloadClient } from '../../src/delivery/pod-reload.client';
+import { SkillDeliveryRepository } from '../../src/delivery/skill-delivery.repository';
+import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
+import { WorkspaceWriter } from '../../src/delivery/workspace-writer';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { GitService } from '../../src/git/git.service';
@@ -17,6 +34,7 @@ import { AppService } from '../../src/project/app.service';
 import { AgentStatusService } from '../../src/project/agent-status.service';
 import { ProjectAuthService } from '../../src/project/project-auth.service';
 import { ProjectEventsService } from '../../src/project/project-events.service';
+import { ProjectProvenanceRepository } from '../../src/project/project-provenance.repository';
 import { ProjectFilesService } from '../../src/project/project-files.service';
 import { ProjectService } from '../../src/project/project.service';
 import { PROJECT_DUPLICATE_QUEUE } from '../../src/project/project-duplicate.types';
@@ -34,6 +52,7 @@ import { WorkspaceService } from '../../src/workspace/workspace.service';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ExternalServiceProvisioningService } from '../../src/external-services';
 import {
+  FakeAgentUpdateK8sService,
   FakeBifrostService,
   FakeExternalServiceProvisioningService,
   FakePodCacheService,
@@ -48,13 +67,20 @@ import {
 
 const REAL_SERVICES = [
   AgentConnectionService,
+  AgentProfileService,
+  AgentReconcilerService,
+  AgentRepository,
   AgentService,
   AgentSessionGateway,
   AgentStatusService,
   AgentUpdateService,
   AppReadinessService,
   AppService,
+  BuilderChatRepository,
+  BuilderChatService,
   DefaultsService,
+  DeliveryRepository,
+  DeliveryService,
   EnvironmentService,
   EnvironmentVariablesService,
   ForwardedIdentityService,
@@ -62,16 +88,26 @@ const REAL_SERVICES = [
   GitService,
   PermissionGuard,
   PodOpencodeClient,
+  PodReloadClient,
   ProjectEnvironmentService,
   ProjectFilesService,
+  ProjectProvenanceRepository,
   ProjectService,
   ProxyService,
+  SkillDeliveryRepository,
+  SkillDeliveryService,
+  SkillPublishService,
+  SkillReconcilerService,
+  SkillRepository,
+  SkillService,
   TenantService,
   UserService,
   WorkspaceService,
+  WorkspaceWriter,
 ];
 
 const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
+  { provide: AgentUpdateK8sService, useClass: FakeAgentUpdateK8sService },
   { provide: BifrostService, useClass: FakeBifrostService },
   { provide: ExternalServiceProvisioningService, useClass: FakeExternalServiceProvisioningService },
   { provide: PodCacheService, useClass: FakePodCacheService },
@@ -83,6 +119,7 @@ const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: TimeoutService, useClass: FakeTimeoutService },
   { provide: getQueueToken(PROJECT_DUPLICATE_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(AGENT_WORKSPACE_UPDATE_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(SKILL_DELIVERY_QUEUE), useClass: FakeQueue },
 ];
 
 export const DOMAIN_TEST_PROVIDERS: Provider[] = [...REAL_SERVICES, ...FAKED_SERVICES];

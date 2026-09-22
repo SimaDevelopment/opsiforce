@@ -17,6 +17,8 @@ import {
   type ApiResponseOptions,
 } from '@nestjs/swagger';
 import type { z } from 'zod';
+import { ResolvesOwnTenant } from '../tenant/tenant.decorator';
+import { ChatEventsInterceptor } from './auth/chat-events.interceptor';
 import { PublicApiGuard } from './auth/public-api.guard';
 import {
   ERROR_TYPES,
@@ -35,9 +37,10 @@ export function PublicApiController(path: string): ClassDecorator {
   return applyDecorators(
     Controller({ path, version: '1' }),
     ApiBearerAuth(),
+    ResolvesOwnTenant(),
     UseGuards(PublicApiGuard),
     UsePipes(PublicApiValidationPipe),
-    UseInterceptors(StandardSchemaSerializerInterceptor)
+    UseInterceptors(StandardSchemaSerializerInterceptor, ChatEventsInterceptor)
   );
 }
 

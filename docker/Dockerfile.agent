@@ -52,11 +52,13 @@ WORKDIR /workspace
 
 COPY ${OPENCODE_CONFIG} /opt/opencode/opencode.json
 COPY agent-config/models.json /opt/opencode/models.json
+COPY agent-config/agent-image-version.json /opt/opencode/agent-image-version.json
 
 COPY agent-config/ /opt/agent-config-src/
 ENV OPENCODE_MODELS_PATH=/opt/opencode/models.json OPENCODE_DISABLE_MODELS_FETCH=true
 RUN cp -a /opt/agent-config-src/agents/. /opt/agents/ \
     && if [ -d /opt/agent-config-src/private/agents ]; then cp -a /opt/agent-config-src/private/agents/. /opt/agents/; fi \
+    && mkdir -p /opt/agents/custom \
     && node /opt/agent-config-src/scripts/compose-skills.mjs /opt/agent-config-src/skills /opt/agents \
     && node /opt/agent-config-src/scripts/merge-registry.mjs /opt/agent-config-src/agents.json /opt/agent-config-src/private/agents.json /opt/agents/agents.json \
     && rm -rf /opt/agent-config-src /opt/agents/.gitkeep

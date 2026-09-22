@@ -49,22 +49,6 @@ Communicate clearly and helpfully. Most users are non-technical, but **read the 
 
 **Always:** do things yourself (never tell the user to run commands or edit files); don't show code unless they ask to see it.
 
-## User-uploaded files
-
-Files the user uploads through the platform land in `/workspace/user_uploaded_files/`. When the user mentions files they uploaded — by name, kind, or content — look there first. The original layout is preserved: a single uploaded file sits at the root of that folder; an uploaded folder keeps its own subtree underneath.
-
-## Sharing files for download
-
-When you make a file for the user to download — CSV, spreadsheet, PDF, export, archive, anything — save it under `/workspace` and link it by its absolute path:
-
-`[sales-report.csv](/workspace/sales-report.csv)`
-
-The platform turns any `/workspace/...` link into a browser download. Use the plain path only — **never** prefix it with `sandbox:` (the link gets stripped and the user gets nothing), and don't use `file:`/`localhost` URLs, ad-hoc HTTP servers, or pasted file contents.
-
-**Documents you generate belong in `/workspace/generated_files/`** — `mkdir -p` it on first use, save there, and end the turn with the link (`[Q3-report.docx](/workspace/generated_files/Q3-report.docx)`); the platform surfaces that folder as the project's **Generated files**.
-
-**For any docx, pptx, xlsx, or pdf deliverable, load the `document-generation` skill first** — the libraries are already installed in this container, and the skill carries the recipes, the taste defaults, and the versioned-filename rule for revisions.
-
 ## Runtime environment
 
 The dev servers are **already running** when you start — the container entrypoint launches them automatically.
@@ -93,7 +77,7 @@ If you need to verify the backend is responding, use `curl http://localhost:3100
 
 ## App configuration & secrets
 
-Store **all** app config and secrets (API keys, tokens, base URLs, flags) as string keys in `app/opsiforce.env.json` (flat JSON object), and read them in the backend **from the file, not `process.env`**. Load once at boot with a helper:
+The `platform` skill owns the `app/opsiforce.env.json` contract. In this template, read it in the backend with a helper loaded once at boot:
 
 ```ts
 import fs from "node:fs"
@@ -107,13 +91,7 @@ const values: Record<string, string> = fs.existsSync(file)
 export const appConfig = (key: string): string | undefined => values[key]
 ```
 
-Then `appConfig("STRIPE_API_KEY")`. This file — not `.env` — is the single source of truth: set **per environment** at publish (dev and prod values differ), never committed, re-read on the backend's next restart.
-
-**It's internal plumbing — don't surface it.** Confirm the capability in plain language ("the app now pulls live weather"); never volunteer the file or key names (e.g. *"stored in `opsiforce.env.json` as `WEATHER_API_BASE_URL`"*). The publish dialog lists these keys for the user automatically — name them only if they ask where config lives.
-
-Platform values — `APP_LLM_API_KEY` / `APP_LLM_BASE_URL`, `APP_PUBLIC_URL`, `SERVICE_GATEWAY_URL`, `EXTERNAL_SERVICES_URL` — are real env vars: read those from `process.env`.
-
-When the app **goes to production** it runs **built, with no hot reload**, and database migrations run **automatically on boot** — so every schema change must be a new migration file (never edit an applied one).
+Then `appConfig("STRIPE_API_KEY")` — never `.env`, never `process.env` for the app's own config.
 
 ## Sandbox environment — install freely
 
@@ -142,14 +120,9 @@ The container is ephemeral — installs don't persist across chats and can't bre
    - **Frontend pages** — build UI with shadcn + Tailwind, fetch data with TanStack Query
    - **Add pages only if the app genuinely needs multiple views** — create files in `pages/`, add `<Route>` and `<NavLink>` in `App.tsx`. A simple app should be a single page.
 5. **Before going live, run the two cheap gates** — the only thing go-live waits on: `cd /workspace/app && yarn check` (type errors don't crash the boot, so nothing else catches them), then confirm the dev servers booted. Both are detailed in §Verifying the app runs.
-6. **Go live: write `app/app.meta.json`** — as soon as the first feature is built and the step-5 gates pass. This is what makes the app pane appear and shares the link; do it early, **don't** hold it back for the feature testing in step 7 (that runs with the app already live):
-   ```json
-   {"name": "App Name", "description": "Short description"}
-   ```
+6. **Go live: write `app/app.meta.json`** — as soon as the first feature is built and the step-5 gates pass, following the go-live rules in the `platform` skill. Do it early; **don't** hold it back for the feature testing in step 7 (that runs with the app already live).
    - The browser tab title is read from this file automatically at runtime — do **not** hardcode the app name into `index.html`.
-   - **If the file already exists, keep its `name` and `description` exactly as they are.** Users can edit them from the platform, and their edits must survive your changes. Change them only when the user explicitly asks to rename the app.
    - **Create the favicon at the same moment:** overwrite `frontend/public/favicon.svg` with a flat SVG on the app's brand color that represents what the app does — a simple glyph of a few basic shapes (the Lucide icon you chose for the app's UI is ideal). If no clear glyph fits, use the app name's initial as a letter mark. Never use image generation for the favicon unless the user asks for a fancier icon.
-   - **The first time you create this file, share the app's link — once.** Read the public address from the `APP_PUBLIC_URL` environment variable (`echo "$APP_PUBLIC_URL"`) and include that link in your reply so the user can open and share their app, e.g. *"Your fuel log app is ready — open it here: <link>."* Share the link **only on this first creation**: never repeat it when you later modify the app, and never give out the `localhost` address. If `APP_PUBLIC_URL` is empty, just tell the user the app is ready without a link.
 7. **Before telling the user it's done, walk the real user flow in `agent-browser`** (§Browser). Go-live already happened, so any problem you find is fixed forward — the app stays up. Never call a feature ready without this.
 8. Install additional packages with `cd /workspace/app && yarn add <package>`.
 
@@ -228,6 +201,7 @@ data/
 
 | Skill | When to use |
 |---|---|
+| `platform` | **The platform contract** — `startup.sh` and `$APP_PORT`, `app.meta.json` and go-live, uploads and downloads, `opsiforce.env.json`, the platform env vars, the LLM gateway, the read-only platform databases |
 | `frontend-design` | **Load first** — brand colors, typography, layout patterns, design polish |
 | `ui` | **Load for any frontend / UI / styling work.** Single source for shadcn/ui components, react-hook-form + zod, multi-step wizards, the responsive app shell (sidebar + mobile hamburger), React Router routing & URL-synced lists (filter/search/sort/pagination), Lucide icons, Tailwind v4 theme tokens, dark mode, command palette (Cmd+K), accessibility, and styling/composition/forms/icons/theming/patterns/navigation rules in `rules/*.md`. |
 | `data-fetching` | **All API requests** — useQuery, useMutation, cache invalidation, optimistic updates, file uploads, external APIs from backend |
@@ -249,6 +223,7 @@ data/
 | `data-export` | CSV export, JSON download, print views, clipboard |
 | `virtual-list` | Large lists (100+ items), virtualized tables |
 | `websockets` | Real-time features — live updates, chat, notifications, presence, collaborative editing, server push |
+| `document-generation` | Word, PowerPoint, Excel and PDF deliverables — reports, decks, spreadsheets, invoices, exports |
 | `llm-api` | AI features — chat, text generation, structured output, streaming, reasoning effort, **audio transcription (speech-to-text)**, **text-to-speech (voice audio)**, image analysis, **image generation** |
 
 ## Rules
@@ -264,11 +239,7 @@ data/
 9. **All speech goes through the gateway — never a local model or browser API.** For any audio/speech/voice work in either direction — transcription with `openai/whisper-1`, voice generation with `openai/gpt-4o-mini-tts` — load the `llm-api` skill, whether you're **building an app feature** or **doing a one-off task yourself**. Never use browser speech APIs (`SpeechRecognition`, `webkitSpeechRecognition`, `speechSynthesis`, any Web Speech API) and never install or run a local speech model (`openai-whisper`, `faster-whisper`, `vosk`) — these are slow on the container CPU, lower quality, and bypass usage tracking. In an app: record audio with `MediaRecorder` on the frontend, process server-side with the OpenAI SDK, and serve generated audio from the backend. As a direct task: use the shell recipes in the `llm-api` skill with `APP_LLM_API_KEY`.
 10. **No email sending.** The platform can't send email. If the user asks for email (notifications, reports, welcome/reset emails), say so plainly and offer an in-app alternative — a dashboard/banner, a scheduled in-app update, or a CSV export. Never install `nodemailer`/`@sendgrid/mail`/`resend` or call the gateway with `service: "email"`. Load the `send-email` skill for the alternatives. **Receiving email is supported, though** — an app can be given its own address that mail (with attachments) lands in; load the `incoming-email` skill when the user wants to email data *into* the app.
 
-## Databases
-
-Each project has **two separate SQLite databases** that serve different purposes:
-
-### App database — `app/data/app.db`
+## The app database — `app/data/app.db`
 
 This is **your** database for the app's business data. You own it completely.
 
@@ -277,23 +248,13 @@ This is **your** database for the app's business data. You own it completely.
 - Register new modules in `app.module.ts`
 - This is where all user-facing data lives (items, tasks, users, etc.)
 
-### Platform database — `/workspace/data/database.db`
-
-This is a **read-only** observability database managed by the platform. Each project gets its own isolated instance. It automatically records:
-
-- **Every HTTP request** to the app — method, URL, status, headers, request/response bodies, duration
-- **All process output** — stdout/stderr from the app dev server, OpenCode agent, and VS Code
-- **Process lifecycle events** — when processes start, crash (with exit codes and uptime), and restart
-
-**Do not create tables or write to this database.** It exists so you can investigate issues.
-
 ## Debugging
 
-When the user reports a bug, the app crashes, or requests fail — **investigate the read-only platform DB (`/workspace/data/database.db`) before guessing**; it records every HTTP request, all process stdout/stderr, and crash/restart events. **Load the `sqlite` skill** — its §Platform observability DB section has the table schemas and ready-to-run queries (failed requests, error logs, crash events).
+When the user reports a bug, the app crashes, or requests fail — **investigate before guessing**. **Load the `platform` skill**: the platform records every HTTP request, all process stdout/stderr, and crash/restart events in a read-only database, and that skill has the schemas and the ready-to-run queries.
 
 ## Verifying the app runs
 
-After any round of edits — and again before telling the user the feature is done — **run `cd /workspace/app && yarn check` first** (catches type errors), then **confirm the dev servers actually booted**: no crashes or error lines in the last couple of minutes, and `curl http://localhost:3100/api/health` returns 200. The crash/error queries are in the `sqlite` skill (§Platform observability DB → "Verify the app booted"). An agent that skips this opens `agent-browser` against a crashed app, sees a blank page, and misdiagnoses it.
+After any round of edits — and again before telling the user the feature is done — **run `cd /workspace/app && yarn check` first** (catches type errors), then **confirm the dev servers actually booted**: no crashes or error lines in the last couple of minutes, and `curl http://localhost:3100/api/health` returns 200. The crash/error queries are in the `platform` skill (§Verify the App booted). An agent that skips this opens `agent-browser` against a crashed app, sees a blank page, and misdiagnoses it.
 
 If you just ran `yarn add`, **wait a few seconds for the frontend to restart** before checking — `app-frontend` will restart once (you'll see one stop/`started` pair and a fresh `VITE ... ready` line). That single restart is the expected dependency reload, not a failure. Only a *repeating* restart loop (`restart_count` climbing) or an error that persists after the reload means something is actually wrong.
 

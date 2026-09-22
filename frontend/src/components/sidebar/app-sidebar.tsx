@@ -8,6 +8,7 @@ import { useCreateDefaultProject } from '~/api/default-project-target';
 import { Permission } from '~/constants/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
+import { firstPermittedStoreTab } from '~/constants/store-tabs';
 import {
   Sidebar,
   SidebarHeader,
@@ -33,7 +34,18 @@ import { ProjectSidebar } from './project-sidebar';
 import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
-import { Calendar, ChevronsUpDown, FolderKanban, LogOut, Plus, Search, Server, Settings, X } from '~/components/icons';
+import {
+  Calendar,
+  ChevronsUpDown,
+  FolderKanban,
+  LogOut,
+  Plus,
+  Search,
+  Server,
+  Settings,
+  Store,
+  X,
+} from '~/components/icons';
 
 export function AppSidebar() {
   const navigate = useNavigate();
@@ -50,6 +62,7 @@ export function AppSidebar() {
 
   const canOpenSettings = () => !!firstPermittedSettingsTab(hasPermission);
   const canOpenAdmin = () => !!firstPermittedAdminTab(hasPermission);
+  const canOpenStore = () => !!firstPermittedStoreTab(hasPermission);
 
   const projectCreateDisabled = () => createDefaultProject.isPending() || !createDefaultProject.hasDestination();
   const menuDisabled = () =>
@@ -223,6 +236,12 @@ export function AppSidebar() {
                   <p class="text-sm font-medium truncate">{userName()}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <Show when={canOpenStore()}>
+                  <DropdownMenuItem onSelect={() => navigate({ to: '/store' })}>
+                    <Store class="w-4 h-4 text-muted-foreground" />
+                    Skill & Agent Store
+                  </DropdownMenuItem>
+                </Show>
                 <Show when={canOpenSettings()}>
                   <DropdownMenuItem onSelect={() => navigate({ to: '/settings' })}>
                     <Settings class="w-4 h-4 text-muted-foreground" />

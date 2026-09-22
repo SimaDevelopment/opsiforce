@@ -25,6 +25,9 @@ import { UserModule } from './user/user.module';
 import { DefaultsModule } from './defaults/defaults.module';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { AgentModule } from './agent/agent.module';
+import { StoreModule } from './store/store.module';
+import { BuilderModule } from './builder/builder.module';
+import { DeliveryModule } from './delivery/delivery.module';
 import { AgentUpdateModule } from './agent-update/agent-update.module';
 import { PRIVATE_MODULES } from './private-loader';
 import { ProjectPoolModule } from './pool/project-pool.module';
@@ -71,6 +74,9 @@ function parseRedisUrl(url: string) {
     AgentStatusModule,
     WorkspaceModule,
     AgentModule,
+    StoreModule,
+    BuilderModule,
+    DeliveryModule,
     TimeoutModule,
     ProxyModule,
     FilesModule,

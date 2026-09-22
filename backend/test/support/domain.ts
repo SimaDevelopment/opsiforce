@@ -3,9 +3,13 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { AgentService } from '../../src/agent/agent.service';
 import { AgentConnectionService } from '../../src/agent-session/agent-connection.service';
 import { AgentSessionGateway } from '../../src/agent-session/agent-session.gateway';
+import { BuilderChatService } from '../../src/builder/builder-chat.service';
 import { configuration } from '../../src/config/configuration';
+import { DeliveryService } from '../../src/delivery/delivery.service';
+import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { ProjectService } from '../../src/project/project.service';
+import { SkillService } from '../../src/store/skill.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectEventsService } from '../../src/project/project-events.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
@@ -33,9 +37,13 @@ export interface DomainTestHarness {
   agents: AgentService;
   agentSessions: AgentSessionGateway;
   agentConnections: AgentConnectionService;
+  builderChats: BuilderChatService;
+  delivery: DeliveryService;
+  skillDeliveries: SkillDeliveryService;
   environments: EnvironmentService;
   projects: ProjectService;
   projectEnvironments: ProjectEnvironmentService;
+  skills: SkillService;
   tenants: TenantService;
   users: UserService;
   workspaces: WorkspaceService;
@@ -61,9 +69,13 @@ export async function createDomainTestingModule(): Promise<DomainTestHarness> {
     agents: moduleRef.get(AgentService),
     agentSessions: moduleRef.get(AgentSessionGateway),
     agentConnections: moduleRef.get(AgentConnectionService),
+    builderChats: moduleRef.get(BuilderChatService),
+    delivery: moduleRef.get(DeliveryService),
+    skillDeliveries: moduleRef.get(SkillDeliveryService),
     environments: moduleRef.get(EnvironmentService),
     projects: moduleRef.get(ProjectService),
     projectEnvironments: moduleRef.get(ProjectEnvironmentService),
+    skills: moduleRef.get(SkillService),
     tenants: moduleRef.get(TenantService),
     users: moduleRef.get(UserService),
     workspaces: moduleRef.get(WorkspaceService),

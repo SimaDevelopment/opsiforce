@@ -11,7 +11,8 @@ adrs: [0009]
 
 ### Processes
 
-- Every environment pod runs five `guard`-supervised processes on the shared `/workspace` volume: the App server (3000), OpenCode (internal port, fronted on 4096), code-server (8080), Datasette (8081), and agent-control.
+- Every environment pod runs five `guard`-supervised processes on the shared `/workspace` volume: the App server (`$APP_PORT`, 3000 from the Agent's registry entry), OpenCode (internal port, fronted on 4096), code-server (8080), Datasette (8081), and agent-control.
+- The App's guard waits for an executable `/workspace/app/startup.sh` instead of running it straight away, so a workspace with no App yet idles quietly rather than crash-looping to `gave_up` ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)).
 - agent-control is the in-pod control process: it restarts the App's processes on request from the backend over the control port so the guards revive them with new values ([ADR-0009](../adr/0009-in-pod-control-process.md)), pushes [Go-live](../../CONTEXT.md) and [Agent Status](../../CONTEXT.md) to the backend, and fronts OpenCode with injected auth ([OpenCode Embed](../frontend/opencode-embed.md)).
 - Chat, Code and DB are lazy-loaded iframe tabs in the project view; once mounted a tab stays in the DOM, so switching never reloads it.
 

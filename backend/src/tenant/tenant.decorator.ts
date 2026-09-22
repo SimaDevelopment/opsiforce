@@ -18,3 +18,6 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
 export const IS_PLATFORM_SCOPE_KEY = 'isPlatformScope';
 export const PlatformScope = () => SetMetadata(IS_PLATFORM_SCOPE_KEY, true);
+
+export const RESOLVES_OWN_TENANT_KEY = 'resolvesOwnTenant';
+export const ResolvesOwnTenant = () => SetMetadata(RESOLVES_OWN_TENANT_KEY, true);

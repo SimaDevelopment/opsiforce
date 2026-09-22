@@ -1,10 +1,13 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { AgentConnectionService } from '../../agent-session/agent-connection.service';
+import type { ChatRow } from '../../builder/builder-chat.repository';
+import { BuilderChatService } from '../../builder/builder-chat.service';
 import { Perms } from '../../permission/permission.constants';
 import { AgentStatusService } from '../../project/agent-status.service';
 import { ProjectService } from '../../project/project.service';
+import { isChatKind, TEST_PROJECT_KIND } from '../../project/project.types';
 import { ProjectEnvironmentService } from '../../project-environment/project-environment.service';
-import type { Caller } from '../auth/caller';
+import { chatProjectIdOf, type Caller } from '../auth/caller';
 import { mappingAgentErrors } from '../errors/agent-error.mapper';
 import { Errors } from '../errors/public-api-error';
 import { ProjectPlacementService } from './project-placement.service';
@@ -13,7 +16,11 @@ import { PublicProjectsRepository, type ProjectRow, type ProjectScope } from './
 import type { ConnectionDto, CreateProject, ProjectDto, ProjectListQuery, ProjectPageDto } from './projects.schema';
 
 function scopeOf(caller: Caller): ProjectScope {
-  return { tenantId: caller.organization.id, userId: caller.user.platformId };
+  return {
+    tenantId: caller.organization.id,
+    userId: caller.user.platformId,
+    ...(caller.projectId === undefined ? {} : { createdByProjectId: caller.projectId }),
+  };
 }
 
 @Injectable()
@@ -24,7 +31,8 @@ export class PublicProjectsService {
     private readonly placement: ProjectPlacementService,
     private readonly projects: ProjectService,
     private readonly environments: ProjectEnvironmentService,
-    private readonly connections: AgentConnectionService
+    private readonly connections: AgentConnectionService,
+    private readonly builderChats: BuilderChatService
   ) {}
 
   async list(caller: Caller, query: ProjectListQuery): Promise<ProjectPageDto> {
@@ -33,19 +41,26 @@ export class PublicProjectsService {
   }
 
   async findVisible(caller: Caller, projectId: string): Promise<ProjectDto | null> {
-    const project = await this.repository.findVisible(scopeOf(caller), projectId);
+    const project = await this.findReachable(caller, projectId);
     if (!project) return null;
     const [dto] = await this.toDtos([project]);
     return dto;
   }
 
   async create(caller: Caller, body: CreateProject): Promise<ProjectDto> {
+    const chat = body.kind === undefined ? null : await this.requireCallingBuilderChat(caller);
     const placement = await this.placement.resolve(caller, body);
+    if (chat) await this.builderChats.deleteTestProjectsOf(caller.organization.id, chat.id);
+
     const created = await this.projects.create(
       { title: body.title, description: body.description, timezone: body.timezone, agentId: body.agentId },
       caller.organization.id,
-      placement.workspaceId,
-      placement.folderId
+      {
+        // ADR-0064 keeps a test Project out of every workspace, so placement applies only to ordinary ones.
+        ...(chat ? { kind: TEST_PROJECT_KIND } : { workspaceId: placement.workspaceId, folderId: placement.folderId }),
+        createdBy: caller.user.platformId,
+        createdByProjectId: caller.projectId ?? null,
+      }
     );
 
     const row = await this.repository.findById(created.id);
@@ -73,8 +88,30 @@ export class PublicProjectsService {
   }
 
   async requireVisible(caller: Caller, projectId: string): Promise<void> {
-    const visible = await this.repository.findVisible(scopeOf(caller), projectId);
-    if (!visible) throw Errors.projectNotFound();
+    if (!(await this.findReachable(caller, projectId))) throw Errors.projectNotFound();
+  }
+
+  private async findReachable(caller: Caller, projectId: string): Promise<ProjectRow | null> {
+    const scope = scopeOf(caller);
+    return (
+      (await this.repository.findVisible(scope, projectId)) ?? this.repository.findReachableHidden(scope, projectId)
+    );
+  }
+
+  /** Only an Agent Caller whose own Project is a Builder chat may stamp `kind`, and only as `test`. */
+  private async requireCallingBuilderChat(caller: Caller): Promise<ChatRow> {
+    const chatId = chatProjectIdOf(caller);
+    const chat = chatId === null ? null : await this.builderChats.findChatRow(caller.organization.id, chatId);
+    if (!chat || !isChatKind(chat.kind)) {
+      throw Errors.invalidReference([
+        {
+          detail: 'Only an Agent Caller running a Builder chat may create a test Project',
+          pointer: '#/kind',
+          in: 'body',
+        },
+      ]);
+    }
+    return chat;
   }
 
   async delete(caller: Caller, projectId: string): Promise<void> {

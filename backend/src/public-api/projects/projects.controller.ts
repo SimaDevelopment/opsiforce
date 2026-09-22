@@ -2,6 +2,7 @@ import { Body, Delete, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 import { withConnectionCancellation } from '../../common/connection-cancellation';
+import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
 import { Caller } from '../auth/caller';
 import { Errors } from '../errors/public-api-error';
 import { PublicApiController, PublicApiErrors, PublicNoContentResponse, PublicResponse } from '../public-api.decorator';
@@ -29,6 +30,7 @@ export class ProjectsController {
   constructor(private readonly projects: PublicProjectsService) {}
 
   @Get()
+  @AllowsGatewayCaller()
   @ApiOperation({
     summary: 'List Projects',
     description:
@@ -44,6 +46,7 @@ export class ProjectsController {
   }
 
   @Post()
+  @AllowsGatewayCaller()
   @ApiOperation({
     summary: 'Create a Project',
     description:
@@ -86,6 +89,7 @@ export class ProjectsController {
   }
 
   @Get(':id')
+  @AllowsGatewayCaller()
   @ApiOperation({
     summary: 'Get a Project',
     description:
@@ -100,6 +104,7 @@ export class ProjectsController {
   }
 
   @Post(':id/environments/:environmentId/connect')
+  @AllowsGatewayCaller()
   @ApiOperation({
     summary: 'Connect to an environment',
     description:
@@ -126,6 +131,7 @@ export class ProjectsController {
   }
 
   @Delete(':id')
+  @AllowsGatewayCaller()
   @ApiOperation({
     summary: 'Delete a Project',
     description:

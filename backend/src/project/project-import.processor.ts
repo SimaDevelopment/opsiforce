@@ -50,7 +50,7 @@ export class ProjectImportProcessor extends WorkerHost {
       await rm(archivePath, { force: true }).catch(() => {});
       const message = err instanceof Error ? err.message : String(err);
       await this.importService.markFailed(importJobId, projectId, userFacingImportError(message));
-      await this.projectService.cleanupFailedImport(projectId);
+      await this.projectService.discardHalfCreatedProject(projectId);
       this.logger.warn(`Failed to import project ${projectId}: ${message}`);
     }
   }

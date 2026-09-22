@@ -203,7 +203,13 @@ function PodEnvRow(props: {
         </TableCell>
 
         <TableCell>
-          <PodStatusCell status={props.row.status} drift={props.row.drift} dbStatus={props.row.dbStatus} />
+          <PodStatusCell
+            status={props.row.status}
+            drift={props.row.drift}
+            dbStatus={props.row.dbStatus}
+            skillDelivery={props.row.skillDelivery}
+            agentUpdate={props.row.agentUpdate}
+          />
         </TableCell>
 
         <TableCell>

@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { inject } from 'vitest';
 import { workerDatabaseUrl } from './workers';
 
@@ -14,4 +17,6 @@ process.env.DATABASE_URL = workerDatabaseUrl(inject('databaseUrl'), poolId);
 process.env.NODE_ENV ??= 'test';
 process.env.K8S_NAMESPACE ??= 'opsiforce-test';
 process.env.STORAGE_TYPE ??= 'hostPath';
-process.env.STORAGE_MOUNT_PATH ??= '/workspace-data';
+const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? path.join(tmpdir(), `opsiforce-test-storage-${poolId}`);
+mkdirSync(path.join(storageMountPath, 'projects'), { recursive: true });
+process.env.STORAGE_MOUNT_PATH = storageMountPath;

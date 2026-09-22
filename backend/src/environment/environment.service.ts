@@ -3,6 +3,8 @@ import { and, eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
 import { environments, projectEnvironments } from '../../db/schema';
+import { environmentInUse } from '../agent/agent-errors';
+import { AgentRepository } from '../agent/agent.repository';
 import {
   CreateEnvironmentDto,
   DEVELOPMENT_ENVIRONMENT_NAME,
@@ -53,6 +55,8 @@ export function slugifyEnvironmentName(name: string): string {
 
 @Injectable()
 export class EnvironmentService {
+  constructor(private readonly agents: AgentRepository) {}
+
   async listForTenant(tenantId: string): Promise<EnvironmentResponse[]> {
     const rows = await db.select().from(environments).where(eq(environments.tenantId, tenantId));
     return rows
@@ -196,6 +200,9 @@ export class EnvironmentService {
         'This environment still has published project instances. Delete those project environments first.'
       );
     }
+
+    const referencing = await this.agents.agentsReferencing(id);
+    if (referencing.length > 0) throw environmentInUse(referencing);
 
     await db.delete(environments).where(and(eq(environments.id, id), eq(environments.tenantId, tenantId)));
   }

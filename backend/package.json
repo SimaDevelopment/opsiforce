@@ -5,6 +5,7 @@
   "scripts": {
     "build": "nest build",
     "test": "vitest run",
+    "test:agent-config": "node --test '../agent-config/scripts/*.test.mjs'",
     "start": "NODE_OPTIONS='--max-http-header-size=128000' yarn node dist/src/main.js",
     "lint": "oxlint --type-aware --fix src test",
     "format": "oxfmt -c ../.oxfmtrc.json src test",

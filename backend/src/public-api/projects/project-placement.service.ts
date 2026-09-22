@@ -45,7 +45,7 @@ export class ProjectPlacementService {
     const named = body.workspaceId;
     const errors: ValidationErrorItem[] = [];
 
-    if (!(await this.repository.agentExists(body.agentId))) {
+    if (!(await this.repository.agentIsLive(body.agentId, access.tenantId, access.userId))) {
       errors.push(unknownReference('agentId', body.agentId));
     }
 

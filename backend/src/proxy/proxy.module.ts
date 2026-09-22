@@ -6,9 +6,19 @@ import { TenantModule } from '../tenant/tenant.module';
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { PodModule } from '../pod/pod.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
+import { GatewayModule } from '../gateway/gateway.module';
+import { ProjectProvenanceModule } from '../project/project-provenance.module';
 
 @Module({
-  imports: [ProjectModule, TenantModule, AgentSessionModule, PodModule, ProjectEnvironmentModule],
+  imports: [
+    ProjectModule,
+    TenantModule,
+    AgentSessionModule,
+    PodModule,
+    ProjectEnvironmentModule,
+    GatewayModule,
+    ProjectProvenanceModule,
+  ],
   providers: [ProxyService],
   controllers: [ProxyController],
   exports: [ProxyService],

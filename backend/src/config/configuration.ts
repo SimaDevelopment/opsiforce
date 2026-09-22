@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { sharedAppPort } from '../agent/agent-config';
 
 function parseJsonEnv<T>(env: string | undefined, fallback: T): T {
   if (!env) return fallback;
@@ -74,7 +75,9 @@ export const configuration = () => {
     agentControlPort: parseInt(process.env.AGENT_CONTROL_PORT || '4910', 10),
     agentWakeHoldMs: parseInt(process.env.AGENT_WAKE_HOLD_MS || '30000', 10),
     agentWakePollMs: parseInt(process.env.AGENT_WAKE_POLL_MS || '1000', 10),
-    appPort: parseInt(process.env.APP_PORT || '3000', 10),
+    skillDeliveryConfirmAttempts: parseInt(process.env.SKILL_DELIVERY_CONFIRM_ATTEMPTS || '10', 10),
+    skillDeliveryConfirmPollMs: parseInt(process.env.SKILL_DELIVERY_CONFIRM_POLL_MS || '1000', 10),
+    appPort: sharedAppPort(),
     vscodePort: parseInt(process.env.VSCODE_PORT || '8080', 10),
     dbViewerPort: parseInt(process.env.DB_VIEWER_PORT || '8081', 10),
     cephfsPvcName: process.env.CEPHFS_PVC_NAME || 'opsiforce-cephfs',
@@ -101,6 +104,8 @@ export const configuration = () => {
     exportRetentionMinutes: parseInt(process.env.EXPORT_RETENTION_MINUTES || '300', 10),
     requestLogRetentionDays: parseInt(process.env.REQUEST_LOG_RETENTION_DAYS || '3', 10),
     gatewayUrl: process.env.SERVICE_GATEWAY_URL || 'http://opsiforce-backend:3001/api/gateway',
+    platformApiUrl: process.env.OPSIFORCE_API_URL || '',
+    runtimeProxyUrl: process.env.OPSIFORCE_RUNTIME_PROXY_URL || '',
     externalServicesUrl:
       process.env.EXTERNAL_SERVICES_URL || 'http://opsiforce-backend:3001/api/external-services/agent',
     agentWorkspaceUpdateOnStartup: parseBooleanEnv(process.env.AGENT_WORKSPACE_UPDATE_ON_STARTUP, true),

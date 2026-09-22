@@ -3,6 +3,14 @@ import { constants } from "node:fs"
 import { access, cp, mkdir, readdir, rename, rm } from "node:fs/promises"
 import path from "node:path"
 
+export const CUSTOM_PACKAGE = "custom"
+export const CUSTOM_PACKAGE_SHARED_SKILLS = ["platform"]
+
+export function sharedSkillsForPackage(packageName, sharedNames) {
+  if (packageName !== CUSTOM_PACKAGE) return sharedNames
+  return sharedNames.filter((name) => CUSTOM_PACKAGE_SHARED_SKILLS.includes(name))
+}
+
 export function planCompose(sharedNames, overrideNames) {
   const overrides = new Set(overrideNames)
   const names = [...new Set([...sharedNames, ...overrideNames])].sort()
@@ -22,8 +30,11 @@ async function listSkillDirs(dir) {
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
 }
 
-export async function composeSkills({ sharedDir, overridesDir, outDir }) {
-  const plan = planCompose(await listSkillDirs(sharedDir), await listSkillDirs(overridesDir))
+export async function composeSkills({ packageName, sharedDir, overridesDir, outDir }) {
+  const plan = planCompose(
+    sharedSkillsForPackage(packageName, await listSkillDirs(sharedDir)),
+    await listSkillDirs(overridesDir),
+  )
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
   for (const { name, source } of plan) {
@@ -47,7 +58,7 @@ async function composeAgentsRoot(sharedDir, agentsRoot) {
     if (!entry.isDirectory()) continue
     const skillsDir = path.join(agentsRoot, entry.name, "skills")
     const stagingDir = path.join(agentsRoot, entry.name, ".skills-composed")
-    const plan = await composeSkills({ sharedDir, overridesDir: skillsDir, outDir: stagingDir })
+    const plan = await composeSkills({ packageName: entry.name, sharedDir, overridesDir: skillsDir, outDir: stagingDir })
     if (await exists(skillsDir)) await rm(skillsDir, { recursive: true, force: true })
     await rename(stagingDir, skillsDir)
     console.log(`${entry.name}: composed ${plan.length} skills (${plan.filter((s) => s.source === "override").length} override)`)

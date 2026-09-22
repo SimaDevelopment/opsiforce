@@ -30,4 +30,6 @@ export const Permission = {
   viewPlatformStorage: 'can_view_platform_storage',
   managePlatformStorage: 'can_manage_platform_storage',
   usePublicApi: 'can_use_public_api',
+  manageSkills: 'can_manage_skills',
+  manageAgents: 'can_manage_agents',
 } as const;

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { desc } from 'drizzle-orm';
+import { and, desc } from 'drizzle-orm';
 import { db } from '../../../db';
 import { agents } from '../../../db/schema';
+import { liveAgentsWhere } from '../../agent/agent-visibility';
 import { beforeCursor, cursorValue, takePage, type CursorPageQuery, type TakenPage } from '../pagination';
 
 export interface AgentRow {
@@ -14,7 +15,7 @@ export interface AgentRow {
 
 @Injectable()
 export class PublicAgentsRepository {
-  async page(query: CursorPageQuery): Promise<TakenPage<AgentRow>> {
+  async page(scope: { tenantId: string; userId: string }, query: CursorPageQuery): Promise<TakenPage<AgentRow>> {
     const rows = await db
       .select({
         id: agents.id,
@@ -24,7 +25,9 @@ export class PublicAgentsRepository {
         cursorAt: cursorValue(agents.createdAt),
       })
       .from(agents)
-      .where(beforeCursor(agents.createdAt, agents.id, query.cursor))
+      .where(
+        and(liveAgentsWhere(scope.tenantId, scope.userId), beforeCursor(agents.createdAt, agents.id, query.cursor))
+      )
       .orderBy(desc(agents.createdAt), desc(agents.id))
       .limit(query.limit + 1);
 

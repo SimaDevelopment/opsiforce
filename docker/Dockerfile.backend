@@ -31,9 +31,7 @@ COPY --from=builder /app/packages/opsiforce/backend/db ./packages/opsiforce/back
 COPY --from=builder /app/packages/opsiforce/backend/package.json ./packages/opsiforce/backend/package.json
 COPY ${PKG_PREFIX}backend/platform-version.json ./packages/opsiforce/backend/platform-version.json
 COPY ${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json ./packages/opsiforce/frontend/opencode/packages/protocol/openapi.json
-COPY ${PKG_PREFIX}agent-config/agent-image-version.json ./packages/opsiforce/agent-config/agent-image-version.json
-COPY ${PKG_PREFIX}agent-config/agents.json ./packages/opsiforce/agent-config/agents.json
-COPY ${PKG_PREFIX}agent-config/priv*/agents.json ./packages/opsiforce/agent-config/private/
+COPY ${PKG_PREFIX}agent-config/ ./packages/opsiforce/agent-config/
 
 WORKDIR /app/packages/opsiforce/backend/
 

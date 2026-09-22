@@ -10,6 +10,7 @@ export interface UserIdentity {
   keycloakId: string;
   email?: string;
   displayName?: string;
+  groups?: string;
 }
 
 export interface GetOrCreateUserOptions {
@@ -21,6 +22,7 @@ export interface UserRecord {
   keycloakId: string;
   email: string | null;
   displayName: string | null;
+  groups: string | null;
   lastAccessTime: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -71,13 +73,15 @@ export class UserService {
     if (existing) {
       const newEmail = identity.email ?? existing.email;
       const newDisplayName = identity.displayName ?? existing.displayName;
-      const profileChanged = existing.email !== newEmail || existing.displayName !== newDisplayName;
+      const newGroups = identity.groups ?? existing.groups;
+      const profileChanged =
+        existing.email !== newEmail || existing.displayName !== newDisplayName || existing.groups !== newGroups;
       const now = new Date();
       await db
         .update(users)
         .set(
           profileChanged
-            ? { email: newEmail, displayName: newDisplayName, lastAccessTime: now, updatedAt: now }
+            ? { email: newEmail, displayName: newDisplayName, groups: newGroups, lastAccessTime: now, updatedAt: now }
             : { lastAccessTime: now }
         )
         .where(eq(users.keycloakId, identity.keycloakId));
@@ -91,6 +95,7 @@ export class UserService {
         ...existing,
         email: newEmail ?? existing.email,
         displayName: newDisplayName ?? existing.displayName,
+        groups: newGroups ?? existing.groups,
         lastAccessTime: now,
       };
     }
@@ -102,6 +107,7 @@ export class UserService {
         keycloakId: identity.keycloakId,
         email: identity.email ?? null,
         displayName: identity.displayName ?? null,
+        groups: identity.groups ?? null,
         lastAccessTime: new Date(),
       })
       .onConflictDoNothing()
@@ -150,6 +156,11 @@ export class UserService {
     const [row] = await db.select().from(users).where(eq(users.id, id));
     if (!row) throw new NotFoundException(`User ${id} not found`);
     return row;
+  }
+
+  async findByIdOrNull(id: string): Promise<UserRecord | null> {
+    const [row] = await db.select().from(users).where(eq(users.id, id));
+    return row ?? null;
   }
 
   async findByKeycloakId(keycloakId: string): Promise<UserRecord | null> {

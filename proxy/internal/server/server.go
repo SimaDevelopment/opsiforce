@@ -1080,5 +1080,7 @@ func authSignature(headers http.Header) string {
 		value := headers.Get(name)
 		_, _ = fmt.Fprintf(hash, "%d:%s", len(value), value)
 	}
+	gateway := backend.GatewayBearer(headers)
+	_, _ = fmt.Fprintf(hash, "%d:%s", len(gateway), gateway)
 	return hex.EncodeToString(hash.Sum(nil))
 }

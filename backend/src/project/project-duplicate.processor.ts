@@ -7,6 +7,7 @@ import path from 'path';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectDuplicateJobs } from '../../db/schema';
+import { DeliveryService } from '../delivery/delivery.service';
 import { GitService } from '../git/git.service';
 import { ProjectService } from './project.service';
 import { ProjectEventsService } from './project-events.service';
@@ -31,7 +32,8 @@ export class ProjectDuplicateProcessor extends WorkerHost {
     private readonly projectService: ProjectService,
     private readonly projectEventsService: ProjectEventsService,
     private readonly gitService: GitService,
-    private readonly projectFilesService: ProjectFilesService
+    private readonly projectFilesService: ProjectFilesService,
+    private readonly delivery: DeliveryService
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -82,6 +84,7 @@ export class ProjectDuplicateProcessor extends WorkerHost {
       await persistProgress(true);
       await rm(targetPath, { recursive: true, force: true });
       await rename(tempPath, targetPath);
+      await this.delivery.copyLedger(sourceProjectId, targetProjectId);
       await this.markStarting(duplicateJobId, targetProjectId);
       await this.projectService.requestStartupForId(targetProjectId);
       this.logger.log(`Duplicated project ${sourceProjectId} to ${targetProjectId} in ${Date.now() - started}ms`);
