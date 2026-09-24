@@ -6,8 +6,9 @@ import { useImportSkill, useSkills, type Skill } from '~/api/skills';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
 import { SettingsSection } from '~/components/settings/settings-section';
+import { CreateEntryDialog } from '~/components/store/create-entry-dialog';
 import {
-  ArchivedBadge,
+  DisabledBadge,
   EmptyState,
   ErrorState,
   FilterChips,
@@ -18,7 +19,7 @@ import {
   UpdateBadge,
   VisibilityBadge,
 } from '~/components/store/store-list';
-import { ChevronRight, Files, Upload } from '~/components/icons';
+import { ChevronRight, Files, Plus, Upload } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { createSearchDraft, filterOptions, type StoreListProps } from './store-filters';
 
@@ -29,22 +30,29 @@ export function SkillsListPage(props: StoreListProps) {
     () => props.query,
     (query) => props.onQuery(query)
   );
-  const filter = () => (props.filter === 'archived' && !canManage() ? 'all' : props.filter);
+  const filter = () => (props.filter === 'disabled' && !canManage() ? 'all' : props.filter);
   const skills = useSkills(
     filter,
     () => props.query
   );
   const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
+  const [createOpen, setCreateOpen] = createSignal(false);
 
   return (
     <SettingsSection
       icon={Files}
       title="Skills"
-      description="Published skill versions your agents can pin. Saving a skill publishes a new version — there are no drafts, and pins never move on their own."
+      description="Skills your agents can pin. Every save publishes a new version, and an agent stays on the version it pinned until someone upgrades it."
       width="wide"
       action={
         <Show when={canManage()}>
-          <ImportSkillButton />
+          <div class="flex items-center gap-2">
+            <ImportSkillButton />
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus class="h-4 w-4" aria-hidden="true" />
+              New skill
+            </Button>
+          </div>
         </Show>
       }
     >
@@ -76,6 +84,8 @@ export function SkillsListPage(props: StoreListProps) {
           )}
         </Show>
       </Show>
+
+      <CreateEntryDialog type="skill" open={createOpen()} onOpenChange={setCreateOpen} />
     </SettingsSection>
   );
 }
@@ -84,7 +94,9 @@ function SkillsEmptyState(props: { narrowed: boolean }) {
   return (
     <Show
       when={props.narrowed}
-      fallback={<EmptyState icon={Files} title="No skills yet." hint="Import a .skill archive to add the first one." />}
+      fallback={
+        <EmptyState icon={Files} title="No skills yet." hint="New skill writes one with the Builder, or import a .skill archive." />
+      }
     >
       <EmptyState icon={Files} title="No skills match." hint="Try another filter, or clear the search." />
     </Show>
@@ -98,16 +110,26 @@ function SkillRow(props: { skill: Skill }) {
       <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span class="font-mono text-sm font-medium">{props.skill.name}</span>
-          <Show when={props.skill.latestVersion}>
+          <Show when={props.skill.displayName} fallback={<span class="font-mono text-sm font-medium">{props.skill.name}</span>}>
+            {(displayName) => (
+              <>
+                <span class="text-sm font-medium">{displayName()}</span>
+                <span class="font-mono text-[11px] text-muted-foreground">{props.skill.name}</span>
+              </>
+            )}
+          </Show>
+          <Show
+            when={props.skill.latestVersion}
+            fallback={<span class="text-xs text-muted-foreground">No version yet</span>}
+          >
             {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version().version}</span>}
           </Show>
           <OriginBadge origin={props.skill.origin} />
           <Show when={props.skill.visibility === 'private'}>
             <VisibilityBadge visibility="private" />
           </Show>
-          <Show when={props.skill.archived}>
-            <ArchivedBadge />
+          <Show when={props.skill.disabled}>
+            <DisabledBadge />
           </Show>
           <Show when={props.skill.outdatedAgentCount > 0}>
             <UpdateBadge agentCount={props.skill.outdatedAgentCount} />

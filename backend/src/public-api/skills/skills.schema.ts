@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SKILL_LIST_FILTERS = ['all', 'built_in', 'custom', 'private', 'archived'] as const;
+export const SKILL_LIST_FILTERS = ['all', 'mine', 'built_in', 'custom', 'private', 'disabled'] as const;
 
 export const SkillFlagsSchema = z
   .strictObject({
@@ -24,15 +24,15 @@ export const SkillSchema = z
     description: z.string().nullable().describe('The SKILL.md frontmatter description of the latest Version'),
     origin: z.enum(['built_in', 'custom']),
     visibility: z.enum(['private', 'public']),
-    archived: z.boolean(),
+    disabled: z.boolean(),
     available: z
       .boolean()
       .describe('False for a Built-in Skill the running agent image no longer ships; its rows survive'),
     createdBy: z.string().nullable(),
-    createdInChatProjectId: z
+    builderChatId: z
       .string()
       .nullable()
-      .describe('The Builder chat that authored it, when an Agent Caller created it'),
+      .describe('The one Builder chat that authors it, once someone has opened the Builder on it'),
     usedByAgentCount: z.int(),
     latestVersion: SkillVersionRefSchema.nullable(),
     createdAt: z.iso.datetime(),
@@ -52,9 +52,7 @@ export const SkillFileSchema = z
   })
   .meta({ id: 'SkillFile' });
 
-export const SkillFileListSchema = z
-  .strictObject({ items: z.array(SkillFileSchema) })
-  .meta({ id: 'SkillFileList' });
+export const SkillFileListSchema = z.strictObject({ items: z.array(SkillFileSchema) }).meta({ id: 'SkillFileList' });
 
 export const GateFindingSchema = z
   .strictObject({
@@ -89,10 +87,7 @@ const filesField = z
   .describe('The whole file tree, SKILL.md included; a submission replaces nothing, it mints a Version');
 
 export const SkillListQuerySchema = z.strictObject({
-  filter: z
-    .enum(SKILL_LIST_FILTERS)
-    .optional()
-    .describe('Defaults to all; archived needs can_manage_skills'),
+  filter: z.enum(SKILL_LIST_FILTERS).optional().describe('Defaults to all; disabled needs can_manage_skills'),
   q: z.string().optional().describe('Substring match on name, display name and description'),
 });
 
@@ -125,9 +120,7 @@ export const CreateSkillSchema = z
     ],
   });
 
-export const CreateSkillVersionSchema = z
-  .strictObject({ files: filesField })
-  .meta({ id: 'CreateSkillVersion' });
+export const CreateSkillVersionSchema = z.strictObject({ files: filesField }).meta({ id: 'CreateSkillVersion' });
 
 export const ValidateSkillSchema = z
   .strictObject({
@@ -135,6 +128,18 @@ export const ValidateSkillSchema = z
     files: filesField,
   })
   .meta({ id: 'ValidateSkill' });
+
+export const UpdateSkillSchema = z
+  .strictObject({
+    displayName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .nullable()
+      .describe('The name people see; null falls back to `name`, which never changes'),
+  })
+  .meta({ id: 'UpdateSkill', examples: [{ displayName: 'Release Notes' }] });
 
 export const DuplicateSkillSchema = z
   .strictObject({
@@ -154,4 +159,5 @@ export type SkillVersionPath = z.infer<typeof SkillVersionPathSchema>;
 export type CreateSkill = z.infer<typeof CreateSkillSchema>;
 export type CreateSkillVersion = z.infer<typeof CreateSkillVersionSchema>;
 export type ValidateSkill = z.infer<typeof ValidateSkillSchema>;
+export type UpdateSkill = z.infer<typeof UpdateSkillSchema>;
 export type DuplicateSkill = z.infer<typeof DuplicateSkillSchema>;

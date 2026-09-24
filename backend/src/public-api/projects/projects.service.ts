@@ -87,8 +87,10 @@ export class PublicProjectsService {
     return { baseUrl, openapiUrl, sessionId, build };
   }
 
-  async requireVisible(caller: Caller, projectId: string): Promise<void> {
-    if (!(await this.findReachable(caller, projectId))) throw Errors.projectNotFound();
+  async requireVisible(caller: Caller, projectId: string): Promise<ProjectRow> {
+    const project = await this.findReachable(caller, projectId);
+    if (!project) throw Errors.projectNotFound();
+    return project;
   }
 
   private async findReachable(caller: Caller, projectId: string): Promise<ProjectRow | null> {
@@ -112,6 +114,13 @@ export class PublicProjectsService {
       ]);
     }
     return chat;
+  }
+
+  async restart(caller: Caller, projectId: string): Promise<void> {
+    const project = await this.requireVisible(caller, projectId);
+    if (!caller.permissions.has(Perms.restartProject)) throw Errors.permissionDenied(Perms.restartProject);
+    if (project.disabled) throw Errors.environmentDisabled();
+    await this.projects.restart(projectId, caller.organization.id);
   }
 
   async delete(caller: Caller, projectId: string): Promise<void> {

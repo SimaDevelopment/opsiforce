@@ -30,7 +30,7 @@ oauth2-proxy  ──  x-forwarded-groups  ──▶  Backend  ──▶  GET /ap
 - The permissions endpoint powers UI gating only; enforcement is a route protected by `@RequirePermission`, at class or method level, checked by the global permission guard against the groups header.
 - A route with no `@RequirePermission` is open to any authenticated member, so gating a feature means gating its endpoint too.
 - Feature pages own their own permission semantics, such as how `can_manage_workspaces` widens visibility only on the management surface ([Workspaces](workspaces.md)).
-- The Store adds `can_manage_skills` and `can_manage_agents` to the canonical list. `can_manage_skills` gates Skill authoring: `SkillsController` carries a class-level `@RequirePermission` and lifts it per route with `@RelaxPermission()`, so listing Skills, reading every file of a Version and exporting one need no permission at all. `can_manage_agents` is read by `BuilderController`, which opens on either Store permission through `@RequireAnyPermission`.
+- The Store adds `can_manage_skills` and `can_manage_agents` to the canonical list. `can_manage_skills` gates Skill authoring: `SkillsController` carries a class-level `@RequirePermission` and lifts it per route with `@RelaxPermission()`, so listing Skills, reading every file of a Version and exporting one need no permission at all. `BuilderController` opens on either Store permission through `@RequireAnyPermission`, and each chat then needs the one matching its subject: `can_manage_skills` for a Skill's, `can_manage_agents` for an Agent's.
 
 ### Platform scope
 

@@ -18,7 +18,7 @@ import {
   createOrganization,
   createProject,
   createSharedWorkspace,
-  setChatVisibility,
+  setChatSubjectVisibility,
   stampProjectKind,
   type MemberFixture,
   type OrganizationFixture,
@@ -115,7 +115,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     }
   });
 
-  it('hands a shared chat and the test Project under it to another member, and still lists neither', async () => {
+  it('hands the chat of a public Skill and the test Project under it to another member, and still lists neither', async () => {
     const chatId = hiddenIds.get('agent_builder_chat');
     if (chatId === undefined) throw new Error('no chat-kind Project');
     const testId = await createProject(app, organization, {
@@ -131,7 +131,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     expect((await read(chatId)).statusCode).toBe(404);
     expect((await read(testId)).statusCode).toBe(404);
 
-    await setChatVisibility(chatId, 'public');
+    await setChatSubjectVisibility(chatId, 'public');
 
     expect((await read(chatId)).statusCode).toBe(200);
     expect((await read(testId)).statusCode).toBe(200);
@@ -139,7 +139,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     const listed = await app.inject({ method: 'GET', url: '/api/v1/projects', headers: otherMember.headers });
     expect(idsOf(listed.json<{ items: ProjectBody[] }>().items)).toEqual([ordinaryId]);
 
-    await setChatVisibility(chatId, 'private');
+    await setChatSubjectVisibility(chatId, 'private');
   });
 
   /** The chat page reads both of these, so a shared chat that 404s here renders without a title. */
@@ -151,12 +151,12 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     await expect(projectService.findOneForUser(forOther)).rejects.toBeInstanceOf(NotFoundException);
     await expect(projectService.getState(forOther)).rejects.toBeInstanceOf(NotFoundException);
 
-    await setChatVisibility(chatId, 'public');
+    await setChatSubjectVisibility(chatId, 'public');
 
     expect(await projectService.findOneForUser(forOther)).toMatchObject({ id: chatId });
     expect(await projectService.getState(forOther)).toMatchObject({ id: chatId });
 
-    await setChatVisibility(chatId, 'private');
+    await setChatSubjectVisibility(chatId, 'private');
   });
 
   it('leaves them out of the workspace and folder counts', async () => {
@@ -222,9 +222,12 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
   });
 
   it('reaches the chats only through the Builder repository', async () => {
-    const rows = await app.get(BuilderChatRepository).listChats(organization.tenantId);
+    const repository = app.get(BuilderChatRepository);
+    const found = await Promise.all(
+      [...hiddenIds.values()].map((id) => repository.findChat(organization.tenantId, id))
+    );
 
-    expect(idsOf(rows).toSorted(compareIds)).toEqual(
+    expect(found.flatMap((row) => (row ? [row.id] : [])).toSorted(compareIds)).toEqual(
       [hiddenIds.get('skill_builder_chat'), hiddenIds.get('agent_builder_chat')].toSorted(compareIds)
     );
   });
@@ -236,7 +239,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     if (chatId === undefined) throw new Error('no chat-kind Project');
     await db.update(projects).set({ createdByProjectId: chatId }).where(eq(projects.id, testProjectId));
 
-    const rows = await app.get(BuilderChatRepository).testProjectsOf([chatId]);
+    const rows = await app.get(BuilderChatRepository).testProjectsOf(chatId);
 
     expect(idsOf(rows)).toEqual([testProjectId]);
   });

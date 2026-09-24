@@ -5,10 +5,12 @@ import path from "node:path"
 
 export const CUSTOM_PACKAGE = "custom"
 export const CUSTOM_PACKAGE_SHARED_SKILLS = ["platform"]
+export const PACKAGE_SHARED_SKILL_EXCLUSIONS = { "makara-app-builder": ["web-app", "dates"] }
 
 export function sharedSkillsForPackage(packageName, sharedNames) {
-  if (packageName !== CUSTOM_PACKAGE) return sharedNames
-  return sharedNames.filter((name) => CUSTOM_PACKAGE_SHARED_SKILLS.includes(name))
+  if (packageName === CUSTOM_PACKAGE) return sharedNames.filter((name) => CUSTOM_PACKAGE_SHARED_SKILLS.includes(name))
+  const excluded = PACKAGE_SHARED_SKILL_EXCLUSIONS[packageName] ?? []
+  return sharedNames.filter((name) => !excluded.includes(name))
 }
 
 export function planCompose(sharedNames, overrideNames) {

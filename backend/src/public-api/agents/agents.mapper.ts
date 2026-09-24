@@ -28,7 +28,7 @@ export const AgentMapper = {
     description: agent.description,
     origin: agent.origin === 'built_in' ? 'built_in' : 'custom',
     visibility: agent.visibility === 'public' ? 'public' : 'private',
-    archived: agent.archived,
+    disabled: agent.disabled,
     createdBy: agent.createdBy,
     imageOwned: agent.imageOwned,
     live: agent.live,

@@ -60,5 +60,5 @@ function userFacingImportError(message: string): string {
   if (/unsafe|not a valid project export|malformed/i.test(message)) {
     return 'The uploaded file is not a valid project export.';
   }
-  return 'Import failed unexpectedly. Please try again, or contact support if it persists.';
+  return 'Import failed unexpectedly. Please try again.';
 }

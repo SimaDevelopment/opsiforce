@@ -104,7 +104,7 @@ describe('the Store routes of /api/v1', () => {
         name,
         origin: 'custom',
         visibility: 'private',
-        archived: false,
+        disabled: false,
         usedByAgentCount: 0,
         latestVersion: { version: 1, flags: { hasExecutables: false } },
       });
@@ -202,8 +202,8 @@ describe('the Store routes of /api/v1', () => {
       expect(custom.json().items.map((item: { name: string }) => item.name)).not.toContain(name);
     });
 
-    it('keeps the archived filter behind can_manage_skills', async () => {
-      const res = await app.inject({ method: 'GET', url: '/api/v1/skills?filter=archived', headers: bystander });
+    it('keeps the disabled filter behind can_manage_skills', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/skills?filter=disabled', headers: bystander });
 
       expect(res.statusCode).toBe(403);
       expect(res.json()).toMatchObject({
@@ -395,9 +395,7 @@ describe('the Store routes of /api/v1', () => {
 });
 
 function pinnedSkill(detail: { profiles: { skills: { skillId: string }[] | null }[] }, skillId: string) {
-  return detail.profiles
-    .flatMap((profile) => profile.skills ?? [])
-    .find((skill) => skill.skillId === skillId);
+  return detail.profiles.flatMap((profile) => profile.skills ?? []).find((skill) => skill.skillId === skillId);
 }
 
 describe('the Store routes seen by an Agent Caller', () => {
@@ -443,28 +441,85 @@ describe('the Store routes seen by an Agent Caller', () => {
     return res.json().id;
   }
 
-  it('authors a Skill and stamps it with the chat that made it', async () => {
+  it("authors a Skill its Agent needs without making it the chat's subject", async () => {
     const skillId = await createSkillAsPod();
 
     const res = await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) });
 
-    expect(res.json()).toMatchObject({ createdBy: creator.userId, createdInChatProjectId: chatProjectId });
+    expect(res.json()).toMatchObject({ createdBy: creator.userId, builderChatId: null });
   });
 
-  it('stamps a Custom Agent it creates with the same chat', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agents',
+  it('renames a Skill, keeps its name, and falls back to the name on null', async () => {
+    const skillId = await createSkillAsPod();
+    const name = (
+      await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) })
+    ).json().name;
+
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/skills/${skillId}`,
       headers: bearer(chatKey),
-      payload: { displayName: `Pod Agent ${randomUUID().slice(0, 6)}` },
+      payload: { displayName: 'Release Notes' },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json()).toMatchObject({ name, displayName: 'Release Notes' });
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/skills/${skillId}`,
+      headers: bearer(chatKey),
+      payload: { displayName: null },
+    });
+    expect(cleared.json()).toMatchObject({ name, displayName: null });
+
+    const renamingTheName = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/skills/${skillId}`,
+      headers: bearer(chatKey),
+      payload: { name: 'something-else' },
+    });
+    expect(renamingTheName.statusCode).toBe(400);
+  });
+
+  it('reads the Agent its chat authors off /me, then describes and renames it', async () => {
+    const subject = await seedLiveAgent(organization.tenantId, creator.userId, { visibility: 'private' });
+    await db.update(agents).set({ builderChatId: chatProjectId }).where(eq(agents.id, subject.id));
+
+    const me = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(chatKey) });
+    expect(me.json().builderSubject).toMatchObject({ type: 'agent', id: subject.id, name: subject.name });
+
+    const described = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/agents/${subject.id}`,
+      headers: bearer(chatKey),
+      payload: { description: 'Turns merged pull requests into release notes' },
+    });
+    expect(described.statusCode).toBe(200);
+    expect(described.json()).toMatchObject({
+      name: subject.name,
+      description: 'Turns merged pull requests into release notes',
     });
 
-    expect(res.statusCode).toBe(201);
-    const [row] = await db
-      .select({ createdInChatProjectId: agents.createdInChatProjectId })
-      .from(agents)
-      .where(eq(agents.id, res.json().id));
-    expect(row.createdInChatProjectId).toBe(chatProjectId);
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/agents/${subject.id}`,
+      headers: bearer(chatKey),
+      payload: { displayName: 'Release Notes' },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json()).toMatchObject({
+      name: subject.name,
+      displayName: 'Release Notes',
+      description: 'Turns merged pull requests into release notes',
+    });
+
+    const blank = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/agents/${subject.id}`,
+      headers: bearer(chatKey),
+      payload: { displayName: '  ' },
+    });
+    expect(blank.statusCode).toBe(400);
   });
 
   it('finds no destructive verb on /api/v1, though its creator holds both permissions', async () => {
@@ -472,7 +527,7 @@ describe('the Store routes seen by an Agent Caller', () => {
 
     const absent = await Promise.all([
       app.inject({ method: 'DELETE', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) }),
-      app.inject({ method: 'POST', url: `/api/v1/skills/${skillId}/archive`, headers: bearer(chatKey) }),
+      app.inject({ method: 'POST', url: `/api/v1/skills/${skillId}/disable`, headers: bearer(chatKey) }),
       app.inject({
         method: 'POST',
         url: `/api/v1/skills/${skillId}/visibility`,
@@ -480,7 +535,7 @@ describe('the Store routes seen by an Agent Caller', () => {
         payload: { visibility: 'public' },
       }),
       app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/publish`, headers: bearer(chatKey) }),
-      app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/archive`, headers: bearer(chatKey) }),
+      app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/disable`, headers: bearer(chatKey) }),
       app.inject({
         method: 'POST',
         url: `/api/v1/agents/${chatProjectId}/visibility`,

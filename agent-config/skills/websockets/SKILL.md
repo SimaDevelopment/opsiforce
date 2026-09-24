@@ -125,14 +125,6 @@ export function useWebSocket(onFrame: (frame: Frame) => void) {
 
 Always reconnect on close — the connection drops on backend restarts (every backend file save in dev) and network blips. Re-sync state from the server after each reconnect (like the `history` frame above) rather than assuming continuity.
 
-## Older apps
-
-If `@nestjs/websockets` is missing from `package.json`, bring the app up to date first:
-
-1. `yarn add @nestjs/websockets @nestjs/platform-ws ws` and `yarn add -D @types/ws`
-2. In `backend/src/main.ts`: `import { WsAdapter } from "@nestjs/platform-ws"` and call `app.useWebSocketAdapter(new WsAdapter(app))` after `app.enableCors()`
-3. In `frontend/vite.config.ts`, make both proxy entries forward upgrades: `"/api": { target: \`http://127.0.0.1:${backendPort}\`, ws: true }`
-
 ## When NOT to use WebSockets
 
 - One-way streaming of a single response (e.g. LLM output) — plain HTTP streaming is simpler.

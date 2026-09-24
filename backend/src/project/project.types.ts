@@ -1,4 +1,4 @@
-import type { ChatVisibilityValue, ProjectKindValue } from '../../db/schema';
+import type { ProjectKindValue } from '../../db/schema';
 import type { PodClass } from '../pod/pod-classes';
 
 export const ProjectStatus = {
@@ -92,14 +92,6 @@ export const TEST_PROJECT_KIND = 'test' satisfies ProjectKind;
 
 export function isChatKind(kind: ProjectKind | null | undefined): kind is ChatKind {
   return kind !== null && kind !== undefined && (CHAT_KINDS as readonly string[]).includes(kind);
-}
-
-export type ChatVisibility = ChatVisibilityValue;
-
-export const CHAT_VISIBILITIES = ['private', 'public'] as const satisfies readonly ChatVisibility[];
-
-export function isChatVisibility(value: unknown): value is ChatVisibility {
-  return (CHAT_VISIBILITIES as readonly unknown[]).includes(value);
 }
 
 export interface ProjectResponse {

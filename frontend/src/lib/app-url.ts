@@ -10,12 +10,16 @@ export function appPublicUrl(environmentId: string, slug: string | null | undefi
 }
 
 export function slugifyEnvironmentName(name: string): string {
+  return slugify(name, ENVIRONMENT_SLUG_MAX_LENGTH);
+}
+
+export function slugify(name: string, maxLength: number): string {
   return name
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, ENVIRONMENT_SLUG_MAX_LENGTH)
+    .slice(0, maxLength)
     .replace(/-+$/, '');
 }

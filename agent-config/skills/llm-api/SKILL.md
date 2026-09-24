@@ -1,16 +1,11 @@
 ---
 name: llm-api
-description: Call the LLM gateway (APP_LLM_API_KEY) for AI capabilities — chat/text completions, structured output, streaming, vision (image analysis), image generation, text-to-speech (voice audio), and audio/video transcription. Routes to OpenAI (GPT) and Anthropic (Claude) through Bifrost via one OpenAI-compatible key, with reasoning-effort control. Use whenever a task needs AI — adding a feature to an app being built, or doing a one-off job directly with no app. This is the only sanctioned path for transcription and speech generation; a local speech model or browser speech API must not be used.
+description: Worked recipes for AI through the platform's LLM gateway — chat and text completions, structured output, streaming, vision, image generation and editing, text-to-speech, and audio/video transcription, across OpenAI (GPT) and Anthropic (Claude) models with reasoning-effort control. Use whenever a task needs AI, whether in an App feature or a one-off job done directly from the shell.
 ---
 
 # AI API Integration
 
-A single OpenAI-compatible gateway is available via these environment variables — for the apps you build **and for one-off AI tasks you run yourself** (transcribing a file, analyzing an image, generating text/images):
-
-- `APP_LLM_API_KEY` — gateway API key
-- `APP_LLM_BASE_URL` — gateway base URL (already includes `/v1`)
-
-**Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call** — in app code and in direct shell tasks alike. Do NOT use `OPENAI_API_KEY` / `OPENAI_BASE_URL`; those are the coding agent's own chat key.
+The gateway, its `APP_LLM_*` variables and the ban on local models are in the `platform` skill; this skill is the recipes. `APP_LLM_BASE_URL` already includes `/v1`.
 
 The endpoint is a gateway that routes to both OpenAI and Anthropic. You select the provider with the `provider/model` prefix in the `model` field (e.g. `openai/gpt-5.6-sol`, `anthropic/claude-sonnet-5`). One SDK, one key, both providers. **Always include the prefix** — a prefixed model routes deterministically to that provider, while an unprefixed name makes the gateway search its catalog across all configured providers and may resolve somewhere you didn't intend.
 
@@ -396,7 +391,7 @@ const out = edited.data[0].b64_json!
 
 - **Always set `reasoning_effort`**, scaled to the task (omit it for Claude Sonnet / Opus) — see [Reasoning effort](#reasoning-effort-important).
 - **Use `max_completion_tokens`, never `max_tokens`** — see [Token limit](#token-limit--use-max_completion_tokens).
-- **All speech goes through the gateway** — never browser speech APIs (`SpeechRecognition`, `speechSynthesis`) or local speech models (`openai-whisper`, `faster-whisper`, `vosk`). In an app, record with `MediaRecorder` and process server-side; as a direct task, use the shell recipes above.
+- **Speech in an app** — record with `MediaRecorder` and process it server-side; as a direct task, use the shell recipes above.
 - **Verify unknown model names** — see [Picking a Model](#picking-a-model).
 - **Backend only** — never expose `APP_LLM_API_KEY` to the frontend or client-side code.
 - **For streaming responses to the frontend, use Server-Sent Events (SSE).**

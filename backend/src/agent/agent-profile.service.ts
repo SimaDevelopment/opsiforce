@@ -83,10 +83,10 @@ export class AgentProfileService {
   ): Promise<AgentProfileSkillResponse[]> {
     this.assertProfileWritable(agent, caller);
     const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
-    if (skill.archived) {
+    if (skill.disabled) {
       throw new ForbiddenException({
-        code: 'skill_archived',
-        message: `Skill \`${skill.name}\` is archived`,
+        code: 'skill_disabled',
+        message: `Skill \`${skill.name}\` is disabled`,
       });
     }
     if (skill.visibility === 'private') assertAgentCarriesNoPrivateSkill(agent, [skill.name]);

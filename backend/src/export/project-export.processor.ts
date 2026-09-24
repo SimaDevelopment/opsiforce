@@ -306,5 +306,5 @@ function userFacingExportError(message: string): string {
   if (/not a git repository|does not exist|ENOENT/i.test(message)) {
     return "Couldn't read the project's Development workspace. Please try again.";
   }
-  return 'Export failed unexpectedly. Please try again, or contact support if it persists.';
+  return 'Export failed unexpectedly. Please try again.';
 }

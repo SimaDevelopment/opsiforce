@@ -17,6 +17,7 @@ import {
   createProject,
   createSharedWorkspace,
   disablePrivateWorkspaces,
+  disableProject,
   placementOf,
   privateWorkspaceCountOf,
   privateWorkspaceIdOf,
@@ -57,6 +58,10 @@ describe('projects write routes', () => {
 
   function remove(caller: CallerHeaders, projectId: string): Promise<LightMyRequestResponse> {
     return app.inject({ method: 'DELETE', url: `/api/v1/projects/${projectId}`, headers: caller.headers });
+  }
+
+  function restart(caller: CallerHeaders, projectId: string): Promise<LightMyRequestResponse> {
+    return app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/restart`, headers: caller.headers });
   }
 
   async function createdProjectId(caller: CallerHeaders, body: Record<string, string>): Promise<string> {
@@ -362,6 +367,65 @@ describe('projects write routes', () => {
         });
         return res.json<CreatedProject>().environments[0].status === ProjectStatus.Active;
       });
+    });
+  });
+
+  describe('restarting a Project', () => {
+    let organization: OrganizationFixture;
+    let restarter: MemberFixture;
+
+    beforeAll(async () => {
+      organization = await createOrganization(app);
+      restarter = await addMember(app, organization, [Perms.usePublicApi, Perms.restartProject]);
+    });
+
+    it('answers 204 and recreates the Development pod on the same workspace', async () => {
+      const projectId = await createProject(app, organization, { title: 'Restarted' });
+      const podName = pods.assignedPodName(projectId);
+      const deletesBefore = pods.callsTo('deletePod').filter((call) => call.args.podName === podName).length;
+
+      const res = await restart(restarter, projectId);
+
+      expect(res.statusCode, res.body).toBe(204);
+      expect(res.body).toBe('');
+      expect(pods.callsTo('deletePod').filter((call) => call.args.podName === podName).length).toBe(
+        deletesBefore + 1
+      );
+    });
+
+    it('refuses a visible Project to a member without can_restart_project', async () => {
+      const projectId = await createProject(app, organization, { title: 'Kept running' });
+      const member = await addMember(app, organization);
+
+      const res = await restart(member, projectId);
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({
+        type: 'urn:opsiforce:error:permission-denied',
+        permission: Perms.restartProject,
+      });
+    });
+
+    it('reports a disabled Project as locked', async () => {
+      const projectId = await createProject(app, organization, { title: 'Disabled' });
+      await disableProject(projectId);
+
+      const res = await restart(restarter, projectId);
+
+      expect(res.statusCode).toBe(423);
+      expect(res.json().type).toBe('urn:opsiforce:error:environment-disabled');
+    });
+
+    it('answers 404 before the permission for a Project the caller cannot see', async () => {
+      const owner = await addMember(app, organization);
+      const workspaceId = await createSharedWorkspace(app, organization, owner);
+      const hiddenId = await createProject(app, organization, { title: 'Hidden', workspaceId });
+      const outsider = await addMember(app, organization);
+
+      const res = await restart(outsider, hiddenId);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().type).toBe('urn:opsiforce:error:project-not-found');
     });
   });
 

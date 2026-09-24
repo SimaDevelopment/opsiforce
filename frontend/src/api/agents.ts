@@ -16,9 +16,11 @@ export const agentKeys = {
 export interface StoreAgent extends Agent {
   origin: string;
   visibility: string;
-  archived: boolean;
+  disabled: boolean;
+  disableable: boolean;
   createdBy: string | null;
   imageOwned: boolean;
+  builderChatId: string | null;
   live: boolean;
   defaultEnvironmentId: string | null;
   profileEnvironmentIds: string[];
@@ -48,9 +50,17 @@ export interface AgentProfile {
   skills: AgentProfileSkill[] | null;
 }
 
+export interface ShippedSkill {
+  skillId: string | null;
+  name: string;
+  displayName: string | null;
+  version: number | null;
+}
+
 export interface AgentDetail extends StoreAgent {
   settings: { defaultEnvironmentId: string | null; platformApi: boolean };
   profiles: AgentProfile[];
+  shippedSkills: ShippedSkill[];
   projectCount: number;
 }
 
@@ -113,10 +123,11 @@ export function useStoreAgents(filter: () => StoreFilter, query: () => string) {
   }));
 }
 
-export function useAgent(id: () => string) {
+export function useAgent(id: () => string, enabled: () => boolean = () => true) {
   return createAppQuery(() => ({
     queryKey: agentKeys.detail(id()),
     queryFn: () => api.get<AgentDetail>(`/agents/${id()}`),
+    enabled: enabled(),
   }));
 }
 
@@ -178,6 +189,12 @@ function useAgentMutation<TVariables, TResult>(id: () => string, run: (agentId: 
   }));
 }
 
+export function useUpdateAgent(id: () => string) {
+  return useAgentMutation(id, (agentId, dto: { displayName?: string; description?: string | null }) =>
+    api.patch<AgentDetail>(`/agents/${agentId}`, dto)
+  );
+}
+
 export function useUpdateAgentProfile(id: () => string) {
   return useAgentMutation(id, (agentId, dto: UpdateAgentProfileDto) =>
     api.put<AgentDetail>(`/agents/${agentId}/profile`, dto)
@@ -214,9 +231,9 @@ export function useSetAgentVisibility(id: () => string) {
   );
 }
 
-export function useSetAgentArchived(id: () => string) {
-  return useAgentMutation(id, (agentId, archived: boolean) =>
-    api.post<AgentDetail>(`/agents/${agentId}/${archived ? 'archive' : 'restore'}`)
+export function useSetAgentDisabled(id: () => string) {
+  return useAgentMutation(id, (agentId, disabled: boolean) =>
+    api.post<AgentDetail>(`/agents/${agentId}/${disabled ? 'disable' : 'enable'}`)
   );
 }
 

@@ -5,7 +5,7 @@ description: Produce Word, PowerPoint, Excel, and PDF deliverables — reports, 
 
 # Document Generation — docx, pptx, xlsx, pdf
 
-Everything below is **already installed in this container**. Never run `npm install`, `yarn add`, `pip install`, or `apt-get install` for any of it — the pod may have no egress, so an install attempt fails and wastes the user's turn.
+Everything below is **already installed in this container** — never reinstall any of it with `npm install`, `yarn add`, `pip install` or `apt-get install`.
 
 | Need | Use | Version |
 |---|---|---|
@@ -17,19 +17,11 @@ Everything below is **already installed in this container**. Never run `npm inst
 | PDF manipulation | `pypdf` (Python) or `pdf-lib` (npm) | 6.16.1 / 1.17.1 |
 | Read an existing document | `pandoc`, `pdftotext`, `pdftoppm`, `openpyxl` | system |
 
-The three npm packages resolve from **anywhere** in the filesystem — `require("docx")` works in a script at `/tmp/gen.js` with no `package.json` and no install step. Write generator scripts to `/tmp`, never into `/workspace`: stray files at the workspace root show up in the user's Files tab as clutter.
+The three npm packages resolve from **anywhere** in the filesystem — `require("docx")` works in a script at `/workspace/generators/invoice/gen.js` with no `package.json` and no install step. Keep generator scripts, layouts and the source material a revision would need under `/workspace/generators/<deliverable>/`, never loose at the workspace root (the root shows in the user's Files tab) and never in `/tmp`, which goes with the pod: a user who asks for the same report next month with two more columns needs the generator that made the first one. Intermediates nobody revises — a rendered HTML page on its way to PDF, a chart PNG — can stay in `/tmp`.
 
-## Where the file goes, and how you announce it
+## Where the file goes
 
-Every deliverable goes in **`/workspace/generated_files/`** — the folder the platform shows as **Generated files** in the project's Files tab. Create it on first use and end the turn with a markdown link to the file:
-
-```bash
-mkdir -p /workspace/generated_files
-```
-
-> Your Q3 report is ready: [Q3-report.docx](/workspace/generated_files/Q3-report.docx)
-
-The link must be the plain absolute path — no `sandbox:` prefix, no `file:` URL, no HTTP server. A turn that produced a document and does not end in its link is unfinished.
+Every deliverable goes in `/workspace/generated_files/` and is shared as a link, as the `platform` skill says (§Files the user gives you, and files you give back). A turn that produced a document and does not end in its link is unfinished.
 
 ## Revising a document you already delivered
 
@@ -162,12 +154,9 @@ The only font family installed is **Liberation** (Sans/Serif/Mono, at `/usr/shar
 
 ## Common mistakes
 
-1. **Installing what is already there.** `npm install docx` / `pip install reportlab` fails on a pod with no egress and burns the turn. The stack above is baked into the image.
-2. **Saving outside `/workspace/generated_files/`.** The file still downloads, but it lands in the Files tab as a stray instead of a deliverable.
-3. **Ending the turn without the link.** The link is how the user opens and previews the document. No link, no deliverable.
-4. **Overwriting a delivered file on a revision.** Default to `_v2`; the earlier chat link must keep resolving to what it announced.
-5. **Shipping uncalculated spreadsheet formulas** as the answer — nothing recalculates them here. Write the computed values.
-6. **Fighting reportlab for a pretty layout.** If it needs design, write HTML and print it with Chromium.
-7. **Leaving generator scripts in `/workspace`.** Write them to `/tmp`; the user sees the workspace root.
-8. **Reopening a generated .docx with `docx`.** It only writes. Regenerate, or patch the XML.
-9. **Putting CJK or emoji in a PDF.** There are no fonts for them here and the failure is silent — blank boxes in a file that generated without error. Deliver docx/pptx instead, or tell the user.
+1. **Overwriting a delivered file on a revision.** Default to `_v2`; the earlier chat link must keep resolving to what it announced.
+2. **Shipping uncalculated spreadsheet formulas** as the answer — nothing recalculates them here. Write the computed values.
+3. **Fighting reportlab for a pretty layout.** If it needs design, write HTML and print it with Chromium.
+4. **Writing the generator anywhere but `/workspace/generators/<deliverable>/`.** A revision reuses the generator that made the original — same method, same conventions — and re-verifies the result the way the first run did.
+5. **Reopening a generated .docx with `docx`.** It only writes. Regenerate, or patch the XML.
+6. **Putting CJK or emoji in a PDF.** There are no fonts for them here and the failure is silent — blank boxes in a file that generated without error. Deliver docx/pptx instead, or tell the user.

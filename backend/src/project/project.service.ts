@@ -79,6 +79,7 @@ import {
   RequestLogMode,
   REQUEST_LOG_BODY_LIMIT_MAX,
   TEST_PROJECT_KIND,
+  isChatKind,
   availableAuthModes,
 } from './project.types';
 import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
@@ -445,7 +446,7 @@ export class ProjectService implements OnApplicationBootstrap {
     context: ProjectCreationContext = {}
   ): Promise<ProjectResponse> {
     const { workspaceId = null, folderId = null, createdBy = null, createdByProjectId = null, kind = null } = context;
-    const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId());
+    const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
 
@@ -554,7 +555,29 @@ export class ProjectService implements OnApplicationBootstrap {
     dto: DuplicateProjectDto | undefined,
     createdBy: string | null
   ): Promise<ProjectResponse> {
+    const [source] = await db
+      .select({ kind: projects.kind })
+      .from(projects)
+      .where(and(eq(projects.id, sourceId), eq(projects.tenantId, tenantId)));
+    if (source?.kind) {
+      throw new BadRequestException({
+        code: 'not_duplicable',
+        message: isChatKind(source.kind)
+          ? 'A Builder chat belongs to its skill or agent and cannot be duplicated'
+          : 'A test Project belongs to its Builder chat and cannot be duplicated',
+      });
+    }
+    return this.duplicateOne(sourceId, tenantId, dto, createdBy);
+  }
+
+  private async duplicateOne(
+    sourceId: string,
+    tenantId: string,
+    dto: DuplicateProjectDto | undefined,
+    createdBy: string | null
+  ): Promise<ProjectResponse> {
     const source = await this.findOne(sourceId, tenantId);
+    const parentProjectId = source.createdByProjectId;
     await this.assertNoActiveGitOperation(source.id);
 
     const id = crypto.randomUUID();
@@ -578,10 +601,11 @@ export class ProjectService implements OnApplicationBootstrap {
         tenantId,
         workspaceId: source.workspaceId,
         agentId: source.agentId,
+        kind: source.kind,
         title,
         description: source.description,
         createdBy,
-        createdByProjectId: source.createdByProjectId,
+        createdByProjectId: parentProjectId,
       });
 
       await tx.insert(projectSettings).values({
@@ -651,7 +675,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.externalServiceProvisioning.provisionEnvironment(id);
     await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, source.agentId, source.createdByProjectId);
+    await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
     await this.enqueueDuplicateJob({
       duplicateJobId,
       sourceProjectId: source.id,
@@ -1245,9 +1269,9 @@ export class ProjectService implements OnApplicationBootstrap {
     await db.delete(projects).where(eq(projects.id, id));
   }
 
-  private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string }[]> {
+  private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string; title: string | null }[]> {
     return db
-      .select({ id: projects.id })
+      .select({ id: projects.id, title: projects.title })
       .from(projects)
       .where(
         and(
@@ -1255,7 +1279,8 @@ export class ProjectService implements OnApplicationBootstrap {
           eq(projects.createdByProjectId, projectId),
           eq(projects.kind, TEST_PROJECT_KIND)
         )
-      );
+      )
+      .orderBy(desc(projects.createdAt));
   }
 
   async disable(id: string, tenantId: string): Promise<ProjectResponse> {

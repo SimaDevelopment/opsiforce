@@ -402,7 +402,9 @@ export function ProjectSidebar(props: { search: string }) {
                 <Show
                   when={canManageWorkspaces()}
                   fallback={
-                    <p class="text-xs text-muted-foreground/60 mt-0.5">Ask an admin to add you to a workspace.</p>
+                    <p class="text-xs text-muted-foreground/60 mt-0.5">
+                      Projects appear here once you're added to a workspace.
+                    </p>
                   }
                 >
                   <p class="text-xs text-muted-foreground/60 mt-0.5">

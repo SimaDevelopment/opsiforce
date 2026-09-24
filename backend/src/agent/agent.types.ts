@@ -1,7 +1,5 @@
 import type { SkillFlags } from '../store/gate';
-import { agents } from '../../db/schema';
-
-export type AgentRow = typeof agents.$inferSelect;
+export type { AgentRow } from './agent-visibility';
 
 export interface AgentResponse {
   id: string;
@@ -22,7 +20,6 @@ export interface AgentCaller {
   tenantId: string;
   userId: string;
   canManageAgents: boolean;
-  createdInChatProjectId?: string | null;
 }
 
 export interface AgentProfileSkillResponse {
@@ -55,9 +52,11 @@ export interface AgentSettingsResponse {
 export interface AgentSummary extends AgentResponse {
   origin: string;
   visibility: string;
-  archived: boolean;
+  disabled: boolean;
+  disableable: boolean;
   createdBy: string | null;
   imageOwned: boolean;
+  builderChatId: string | null;
   live: boolean;
   defaultEnvironmentId: string | null;
   profileEnvironmentIds: string[];
@@ -65,9 +64,17 @@ export interface AgentSummary extends AgentResponse {
   updatedAt: Date;
 }
 
+export interface ShippedSkillResponse {
+  skillId: string | null;
+  name: string;
+  displayName: string | null;
+  version: number | null;
+}
+
 export interface AgentDetail extends AgentSummary {
   settings: AgentSettingsResponse;
   profiles: AgentProfileResponse[];
+  shippedSkills: ShippedSkillResponse[];
   projectCount: number;
 }
 

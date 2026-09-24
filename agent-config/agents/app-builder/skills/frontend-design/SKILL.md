@@ -67,7 +67,7 @@ Use consistent, clear hierarchy:
 <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
 ```
 
-### Section spacing — `space-y-6` or `space-y-8` between major sections
+### Section spacing — `flex flex-col gap-6` or `gap-8` between major sections
 
 ### Card grid
 ```tsx
@@ -126,7 +126,7 @@ These fixed light/dark colour pairs are the **one** sanctioned use of raw Tailwi
 
 ### Dashboard
 ```tsx
-<div className="space-y-8">
+<div className="flex flex-col gap-8">
   <div>
     <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
     <p className="text-muted-foreground mt-1">Overview of your activity</p>
@@ -143,13 +143,13 @@ These fixed light/dark colour pairs are the **one** sanctioned use of raw Tailwi
 
 ### List page with header + actions
 ```tsx
-<div className="space-y-6">
+<div className="flex flex-col gap-6">
   <div className="flex items-center justify-between">
     <div>
       <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
       <p className="text-muted-foreground mt-1">{data.length} total</p>
     </div>
-    <Button><Plus className="h-4 w-4 mr-1" /> New Project</Button>
+    <Button><Plus data-icon="inline-start" /> New Project</Button>
   </div>
   {/* filter bar, then list/grid */}
 </div>
@@ -159,11 +159,11 @@ These fixed light/dark colour pairs are the **one** sanctioned use of raw Tailwi
 ```tsx
 <div className="flex flex-col items-center justify-center py-16 text-center">
   <div className="rounded-full bg-muted p-4 mb-4">
-    <Inbox className="h-8 w-8 text-muted-foreground" />
+    <Inbox className="size-8 text-muted-foreground" />
   </div>
   <h3 className="text-lg font-medium mb-1">No projects yet</h3>
   <p className="text-sm text-muted-foreground mb-4 max-w-sm">Get started by creating your first project.</p>
-  <Button><Plus className="h-4 w-4 mr-1" /> Create Project</Button>
+  <Button><Plus data-icon="inline-start" /> Create Project</Button>
 </div>
 ```
 
@@ -176,7 +176,7 @@ These fixed light/dark colour pairs are the **one** sanctioned use of raw Tailwi
 5. **Giant buttons** — oversized CTAs that dominate. Use `size="sm"` for secondary actions.
 6. **No empty states** — blank page when there's no data. Always show a friendly CTA.
 7. **Purple gradient on white** — the most clichéd "AI app" look. Be more creative.
-8. **Cramped layout** — no breathing room. Use generous `space-y-*` and `gap-*`.
+8. **Cramped layout** — no breathing room. Use generous `gap-*`.
 
 ## Design Checklist
 

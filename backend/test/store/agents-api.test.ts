@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import 'reflect-metadata';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, assert, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import {
@@ -9,6 +9,7 @@ import {
   agentSettings,
   agents,
   environments,
+  projects,
   skillVersions,
   skills,
 } from '../../db/schema';
@@ -91,7 +92,7 @@ async function code(action: Promise<unknown>): Promise<string> {
 }
 
 describe('the AgentController permission surface', () => {
-  const readRoutes = ['findAll', 'listStore', 'models', 'findOne', 'listSkills', 'delivery'];
+  const readRoutes = ['findAll', 'listStore', 'models', 'findOne', 'delivery'];
 
   it('carries a class-level @RequirePermission for can_manage_agents', () => {
     expect(Reflect.getMetadata('requiredPermission', AgentController)).toBe(Perms.manageAgents);
@@ -116,7 +117,7 @@ describe('creating a custom agent', () => {
       description: 'helper',
       origin: 'custom',
       visibility: 'private',
-      archived: false,
+      disabled: false,
       imageOwned: false,
       live: true,
       createdBy: author.userId,
@@ -268,7 +269,11 @@ describe('agent skills', () => {
     await skillService.setVisibility({ ...stranger, canManageSkills: true }, theirSkill.id, { visibility: 'public' });
     await service.setSkill(stranger, builtIn, theirSkill.id, {});
 
-    const all = await db.select().from(agentProfiles).where(eq(agentProfiles.agentId, builtIn));
+    const all = await db
+      .select({ id: agentProfiles.id })
+      .from(agentProfiles)
+      .innerJoin(environments, eq(environments.id, agentProfiles.environmentId))
+      .where(and(eq(agentProfiles.agentId, builtIn), inArray(environments.tenantId, [tenantId, otherTenantId])));
     expect(all).toHaveLength(2);
 
     const seen = await service.findOne(author, builtIn);
@@ -360,7 +365,7 @@ describe('picker liveness', () => {
     const builder = await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
     const live = await seedLiveAgent(tenantId, author.userId);
     const profileless = await seedLiveAgent(tenantId, author.userId, { withProfile: false });
-    const archived = await seedLiveAgent(tenantId, author.userId, { archived: true });
+    const disabled = await seedLiveAgent(tenantId, author.userId, { disabled: true });
 
     const offered = new Set((await service.findAll(author)).map((row) => row.id));
 
@@ -369,9 +374,9 @@ describe('picker liveness', () => {
     expect(offered.has(retired)).toBe(false);
     expect(offered.has(builder)).toBe(false);
     expect(offered.has(profileless.id)).toBe(false);
-    expect(offered.has(archived.id)).toBe(false);
+    expect(offered.has(disabled.id)).toBe(false);
 
-    for (const id of [retired, builder, profileless.id, archived.id]) {
+    for (const id of [retired, builder, profileless.id, disabled.id]) {
       expect((await service.findById(id)).id).toBe(id);
     }
   });
@@ -385,21 +390,21 @@ describe('picker liveness', () => {
   });
 
   it('refuses a project created on an agent that is not live', async () => {
-    const archived = await seedLiveAgent(tenantId, author.userId, { archived: true });
+    const disabled = await seedLiveAgent(tenantId, author.userId, { disabled: true });
 
-    await expect(service.assertLiveForProjectCreate(archived.id, tenantId, author.userId)).rejects.toThrow(
-      `Agent ${archived.id} not found`
+    await expect(service.assertLiveForProjectCreate(disabled.id, tenantId, author.userId)).rejects.toThrow(
+      `Agent ${disabled.id} not found`
     );
   });
 
-  it('lists archived rows under the Archived chip with live computed', async () => {
-    const archived = await seedLiveAgent(tenantId, author.userId, { archived: true });
+  it('lists disabled rows under the Disabled chip with live computed', async () => {
+    const disabled = await seedLiveAgent(tenantId, author.userId, { disabled: true });
 
-    const store = await service.listStore(author, 'archived');
-    const row = store.find((entry) => entry.id === archived.id);
+    const store = await service.listStore(author, 'disabled');
+    const row = store.find((entry) => entry.id === disabled.id);
 
-    expect(row).toMatchObject({ archived: true, live: false });
-    expect((await service.listStore({ ...colleague, canManageAgents: false })).some((e) => e.id === archived.id)).toBe(
+    expect(row).toMatchObject({ disabled: true, live: false });
+    expect((await service.listStore({ ...colleague, canManageAgents: false })).some((e) => e.id === disabled.id)).toBe(
       false
     );
   });
@@ -420,17 +425,17 @@ describe('the store agent list filters', () => {
     expect(searched.map((row) => row.id)).toEqual([mine.id]);
   });
 
-  it('keeps archived rows out of every chip but Archived', async () => {
-    const archived = await seedLiveAgent(tenantId, author.userId, { archived: true });
+  it('keeps disabled rows out of every chip but Disabled', async () => {
+    const disabled = await seedLiveAgent(tenantId, author.userId, { disabled: true });
 
     for (const filter of ['all', 'built_in', 'custom', 'private'] as const) {
-      expect((await service.listStore(author, filter)).some((row) => row.id === archived.id)).toBe(false);
+      expect((await service.listStore(author, filter)).some((row) => row.id === disabled.id)).toBe(false);
     }
-    expect((await service.listStore(author, 'archived')).some((row) => row.id === archived.id)).toBe(true);
+    expect((await service.listStore(author, 'disabled')).some((row) => row.id === disabled.id)).toBe(true);
   });
 
-  it('refuses the Archived chip and an unknown chip', async () => {
-    await expect(service.listStore({ ...author, canManageAgents: false }, 'archived')).rejects.toThrow(
+  it('refuses the Disabled chip and an unknown chip', async () => {
+    await expect(service.listStore({ ...author, canManageAgents: false }, 'disabled')).rejects.toThrow(
       /can_manage_agents/
     );
     expect(await code(service.listStore(author, 'nonsense'))).toBe('bad_request');
@@ -475,16 +480,41 @@ describe('agent lifecycle', () => {
     expect(development).toMatchObject({ promptBody: '', model: 'openai/gpt-5.6-sol', variant: 'high' });
   });
 
-  it('deletes only an archived agent with no projects', async () => {
+  it('deletes a never-published agent outright and hands its test projects over for removal', async () => {
     const agent = await service.create(author, { displayName: agentName() });
+    const testProjectId = await seedProject(agent.id, 'test');
+    const removed: string[][] = [];
 
-    expect(await code(service.remove(author, agent.id))).toBe('agent_not_archived');
+    await service.remove(author, agent.id, async (ids) => {
+      removed.push(ids);
+      await db.delete(projects).where(inArray(projects.id, ids));
+    });
 
-    await service.setArchived(author, agent.id, true);
-    await service.remove(author, agent.id);
-
+    expect(removed).toEqual([[testProjectId]]);
     const rows = await db.select({ id: agents.id }).from(agents).where(eq(agents.id, agent.id));
     expect(rows).toHaveLength(0);
+  });
+
+  it('asks for an agent published beyond Development to be disabled first', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+    await service.publish(author, agent.id, { environmentId: productionId });
+
+    expect(await code(service.remove(author, agent.id, noTestProjects))).toBe('agent_not_disabled');
+
+    await service.setDisabled(author, agent.id, true);
+    await service.remove(author, agent.id, noTestProjects);
+    expect(await db.select({ id: agents.id }).from(agents).where(eq(agents.id, agent.id))).toHaveLength(0);
+  });
+
+  it('refuses while an ordinary project runs on the agent and counts no test project', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+    await seedProject(agent.id, 'test');
+    expect((await service.findOne(author, agent.id)).projectCount).toBe(0);
+
+    await seedProject(agent.id, null);
+
+    expect((await service.findOne(author, agent.id)).projectCount).toBe(1);
+    expect(await code(service.remove(author, agent.id, noTestProjects))).toBe('agent_in_use');
   });
 
   it('points new projects at another environment through settings', async () => {
@@ -549,27 +579,27 @@ describe('identity and visibility', () => {
     );
   });
 
-  it('withdraws an archived agent from the picker and restores it', async () => {
+  it('withdraws a disabled agent from the picker and enables it again', async () => {
     const agent = await service.create(author, { displayName: agentName() });
     const offered = async () => new Set((await service.findAll(author)).map((row) => row.id));
 
     expect((await offered()).has(agent.id)).toBe(true);
 
-    expect((await service.setArchived(author, agent.id, true)).archived).toBe(true);
+    expect((await service.setDisabled(author, agent.id, true)).disabled).toBe(true);
     expect((await offered()).has(agent.id)).toBe(false);
 
-    expect((await service.setArchived(author, agent.id, false)).archived).toBe(false);
+    expect((await service.setDisabled(author, agent.id, false)).disabled).toBe(false);
     expect((await offered()).has(agent.id)).toBe(true);
   });
 });
 
 describe('the guards a caller cannot reach through the API', () => {
-  it('refuses an archived skill', async () => {
+  it('refuses a disabled skill', async () => {
     const agent = await service.create(author, { displayName: agentName() });
     const skill = await createSkill(skillAuthor, skillName());
-    await skillService.setArchived(skillAuthor, skill.id, true);
+    await skillService.setDisabled(skillAuthor, skill.id, true);
 
-    expect(await code(service.setSkill(author, agent.id, skill.id, {}))).toBe('skill_archived');
+    expect(await code(service.setSkill(author, agent.id, skill.id, {}))).toBe('skill_disabled');
   });
 
   it('refuses a second skill carrying a name the profile already has', async () => {
@@ -613,5 +643,118 @@ describe('the delivery view', () => {
       environments: [],
       summary: { total: 0, converged: 0 },
     });
+  });
+});
+
+const noTestProjects = async () => {};
+
+async function seedProject(agentId: string, kind: 'test' | null): Promise<string> {
+  const id = randomUUID();
+  await db.insert(projects).values({ id, tenantId, agentId, kind, title: `project-${id}` });
+  return id;
+}
+
+describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
+  async function freshOrganization(): Promise<AgentCaller> {
+    const id = await createTenantRow();
+    await harness.environments.ensureDefaultForTenant(id);
+    return { tenantId: id, userId: await createUserRow(), canManageAgents: true };
+  }
+
+  it('takes it out of that Organization only, and back on enable', async () => {
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const here = await freshOrganization();
+    const elsewhere = await freshOrganization();
+
+    const disabled = await service.setDisabled(here, makara, true);
+
+    expect(disabled.disabled).toBe(true);
+    expect((await service.findAll(here)).map((agent) => agent.id)).not.toContain(makara);
+    expect((await service.findAll(elsewhere)).map((agent) => agent.id)).toContain(makara);
+    expect((await service.findOne(elsewhere, makara)).disabled).toBe(false);
+
+    await service.setDisabled(here, makara, false);
+    expect((await service.findAll(here)).map((agent) => agent.id)).toContain(makara);
+  });
+
+  it('closes it to new projects there, and resolves an import by its name to nothing', async () => {
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshOrganization();
+    await service.setDisabled(caller, makara, true);
+
+    await expect(service.assertLiveForProjectCreate(makara, caller.tenantId, caller.userId)).rejects.toThrow();
+    expect(await service.findIdByName('makara-app-builder', caller.tenantId)).toBeNull();
+    expect(await service.findIdByName('makara-app-builder', otherTenantId)).toBe(makara);
+  });
+
+  it('refuses to disable the last built-in agent an Organization can start a project on, the Builder aside', async () => {
+    await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshOrganization();
+
+    await service.setDisabled(caller, makara, true);
+
+    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_built_in_agent');
+
+    await service.setDisabled(caller, makara, false);
+    await expect(service.setDisabled(caller, appBuilder, true)).resolves.toMatchObject({ disabled: true });
+  });
+
+  it('lets only one of two concurrent disables of the last two built-in agents through', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshOrganization();
+
+    const outcomes = await Promise.allSettled([
+      service.setDisabled(caller, appBuilder, true),
+      service.setDisabled(caller, makara, true),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect((await service.findAll(caller)).some((agent) => agent.id === appBuilder || agent.id === makara)).toBe(true);
+  });
+
+  it('starts a project that names no agent on the first built-in agent still enabled', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshOrganization();
+
+    expect(await service.getDefaultAgentId(caller.tenantId)).toBe(appBuilder);
+
+    await service.setDisabled(caller, appBuilder, true);
+
+    expect(await service.getDefaultAgentId(caller.tenantId)).toBe(makara);
+    expect(await service.getDefaultAgentId(otherTenantId)).toBe(appBuilder);
+  });
+
+  it('never disables the Skill & Agent Builder, says so up front, and asks for can_manage_agents', async () => {
+    const builder = await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshOrganization();
+
+    expect((await service.findOne(caller, builder)).disableable).toBe(false);
+    expect((await service.findOne(caller, makara)).disableable).toBe(true);
+    expect(await code(service.setDisabled(caller, builder, true))).toBe('not_disableable');
+    await expect(service.setDisabled({ ...caller, canManageAgents: false }, makara, true)).rejects.toThrow(
+      Perms.manageAgents
+    );
+  });
+
+  it('lists it under the disabled filter and nowhere else', async () => {
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshOrganization();
+    await service.setDisabled(caller, makara, true);
+
+    expect((await service.listStore(caller, 'disabled')).map((agent) => agent.id)).toContain(makara);
+    expect((await service.listStore(caller, 'built_in')).map((agent) => agent.id)).not.toContain(makara);
+  });
+
+  it("reports the skills a built-in agent's package ships", async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+
+    const detail = await service.findOne(author, appBuilder);
+
+    expect(detail.shippedSkills.map((skill) => skill.name)).toContain('platform');
   });
 });

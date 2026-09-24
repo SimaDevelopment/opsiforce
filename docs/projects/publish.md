@@ -24,7 +24,7 @@ adrs: [0004]
 - Each ProjectEnvironment stores its [Environment Variables](../../CONTEXT.md) in `app/opsiforce.env.json`, read once when the App starts; the file is excluded from the publish sync.
 - The publish form pre-fills keys from Development and values from the target, and pre-checks Development's Schedules for an opt-out copy.
 - The row-menu editor edits the file for any environment, Development included, and offers a "Restart app to apply now" toggle that performs an App restart through the in-pod control process ([ADR-0009](../adr/0009-in-pod-control-process.md)).
-- An App restart kills only the App's processes so the in-pod guards revive them with the new values; the row-level [Restart (environment)](../../CONTEXT.md) recreates the whole pod instead ([Pod Lifecycle](../runtime/pod-lifecycle.md)).
+- An App restart kills only the App's processes so the in-pod guards revive them with the new values: every process run by a `guard` that `startup.sh` started, whatever its name, while `startup.sh` itself keeps running so production does not reinstall or rebuild. When `startup.sh` supervises nothing there is nothing to restart in place, and the backend recreates the pod instead ([ADR-0068](../adr/0068-a-custom-agent-names-a-starter-and-the-web-app-know-how-is-a-skill-both-kinds-build-from.md)). The row-level [Restart (environment)](../../CONTEXT.md) always recreates the whole pod ([Pod Lifecycle](../runtime/pod-lifecycle.md)).
 
 ### In the workspace
 

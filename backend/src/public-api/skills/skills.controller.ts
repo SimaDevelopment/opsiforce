@@ -1,4 +1,4 @@
-import { Body, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
 import { Caller } from '../auth/caller';
@@ -15,6 +15,7 @@ import {
   SkillSchema,
   SkillValidationSchema,
   SkillVersionPathSchema,
+  UpdateSkillSchema,
   ValidateSkillSchema,
   type CreateSkill,
   type CreateSkillVersion,
@@ -26,6 +27,7 @@ import {
   type SkillPath,
   type SkillValidationDto,
   type SkillVersionPath,
+  type UpdateSkill,
   type ValidateSkill,
 } from './skills.schema';
 
@@ -39,7 +41,7 @@ export class SkillsController {
   @ApiOperation({
     summary: 'List Skills',
     description:
-      'Every Skill you can see: the Built-in ones the agent image ships, the public ones of your Organization, and your own private ones. Filter with `filter` and search with `q`; `filter=archived` needs `can_manage_skills`.\n\n**Use it for** finding a Skill to put on an Agent, or checking whether a name is taken before authoring one. The answer is the whole set — an Organization holds tens of Skills, not thousands, so this list does not paginate.',
+      'Every Skill you can see: the Built-in ones the agent image ships, the public ones of your Organization, and your own private ones. Filter with `filter` and search with `q`; `filter=disabled` needs `can_manage_skills`.\n\n**Use it for** finding a Skill to put on an Agent, or checking whether a name is taken before authoring one. The answer is the whole set — an Organization holds tens of Skills, not thousands, so this list does not paginate.',
   })
   @PublicResponse(200, SkillListSchema)
   @PublicApiErrors('validation-error', 'permission-denied')
@@ -72,10 +74,7 @@ export class SkillsController {
   })
   @PublicResponse(200, SkillValidationSchema)
   @PublicApiErrors('validation-error', 'permission-denied')
-  validate(
-    @Caller() caller: Caller,
-    @Body({ schema: ValidateSkillSchema }) body: ValidateSkill
-  ): SkillValidationDto {
+  validate(@Caller() caller: Caller, @Body({ schema: ValidateSkillSchema }) body: ValidateSkill): SkillValidationDto {
     return this.skills.validate(caller, body);
   }
 
@@ -90,6 +89,23 @@ export class SkillsController {
   @PublicApiErrors('not-found')
   get(@Caller() caller: Caller, @Param({ schema: SkillPathSchema }) path: SkillPath): Promise<SkillDto> {
     return this.skills.findOne(caller, path.id);
+  }
+
+  @Patch(':id')
+  @AllowsGatewayCaller()
+  @ApiOperation({
+    summary: 'Rename a Skill',
+    description:
+      "Sets the display name the Store and the Agent pages show. The `name` — the Skill's identity and its frontmatter `name` — stays what it was at creation.\n\n**Use it for** renaming when the author asks for another name.",
+  })
+  @PublicResponse(200, SkillSchema)
+  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'forbidden')
+  update(
+    @Caller() caller: Caller,
+    @Param({ schema: SkillPathSchema }) path: SkillPath,
+    @Body({ schema: UpdateSkillSchema }) body: UpdateSkill
+  ): Promise<SkillDto> {
+    return this.skills.update(caller, path.id, body);
   }
 
   @Get(':id/versions/:version/files')
@@ -113,7 +129,7 @@ export class SkillsController {
   @ApiOperation({
     summary: 'Publish a new Version',
     description:
-      'Submits the whole tree again and mints the next integer Version, moving the Skill\'s latest pointer. Agents keep the Version they pinned and start showing "update available"; nothing upgrades on its own.\n\n**Use it for** shipping a fix to a Skill you own. The frontmatter `name` must still match the Skill; rename is not a thing, Duplicate is.',
+      'Submits the whole tree again and mints the next integer Version, moving the Skill\'s latest pointer. Agents keep the Version they pinned and start showing "update available"; nothing upgrades on its own.\n\n**Use it for** shipping a fix to a Skill you own. The frontmatter `name` must still match the Skill; a copy under a new name is a Duplicate.',
   })
   @PublicResponse(201, SkillSchema)
   @PublicApiErrors(
@@ -137,7 +153,7 @@ export class SkillsController {
   @ApiOperation({
     summary: 'Duplicate a Skill',
     description:
-      'Copies the source\'s latest Version into a new private Skill of your own under a new name, rewriting the frontmatter `name` to match. Nothing about the source is recorded, and the copy never follows it.\n\n**Use it for** varying a Built-in or a colleague\'s public Skill you may not edit: duplicate it, then publish Versions on the copy.',
+      "Copies the source's latest Version into a new private Skill of your own under a new name, rewriting the frontmatter `name` to match. Nothing about the source is recorded, and the copy never follows it.\n\n**Use it for** varying a Built-in or a colleague's Skill you may not edit: duplicate it, then publish Versions on the copy.",
   })
   @PublicResponse(201, SkillSchema)
   @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'name-unavailable', 'validation-failed')

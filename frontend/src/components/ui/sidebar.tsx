@@ -262,6 +262,7 @@ export function SidebarMenuButton(
     isActive?: boolean;
     onClick?: (e: MouseEvent) => void;
     disabled?: boolean;
+    title?: string;
   }>
 ) {
   const [local, rest] = splitProps(props, ['class', 'children', 'isActive', 'onClick', 'disabled']);

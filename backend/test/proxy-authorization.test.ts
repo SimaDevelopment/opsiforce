@@ -26,7 +26,7 @@ import {
   privateWorkspaceCountOf,
   privateWorkspaceIdOf,
   serviceKeyFor,
-  setChatVisibility,
+  setChatSubjectVisibility,
   stampProjectKind,
   type MemberFixture,
   type OrganizationFixture,
@@ -294,41 +294,27 @@ describe('identity side effects of reaching a runtime', () => {
     }
   });
 
-  it('admits any member to a public Builder chat on every gated surface', async () => {
+  it('admits any member to the Builder chat of a public Skill on every gated surface', async () => {
     const organization = await createOrganization(app);
     const creator = await addMember(app, organization);
     const colleague = await addMember(app, organization);
     const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'agent_builder_chat');
-    await setChatVisibility(chatId, 'public');
+    await setChatSubjectVisibility(chatId, 'public');
 
     for (const surface of GATED_SURFACES) {
       expect((await ensure(chatId, colleague.headers, surface)).statusCode).toBe(201);
     }
   });
 
-  it('refuses the colleague again once the chat goes back to private', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const colleague = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
-    await stampProjectKind(chatId, 'agent_builder_chat');
-
-    await setChatVisibility(chatId, 'public');
-    expect((await ensure(chatId, colleague.headers)).statusCode).toBe(201);
-
-    await setChatVisibility(chatId, 'private');
-    expect((await ensure(chatId, colleague.headers)).statusCode).toBe(403);
-  });
-
-  it('still refuses a member of another organization a public chat', async () => {
+  it('still refuses a member of another organization the chat of a public Skill', async () => {
     const organization = await createOrganization(app);
     const elsewhere = await createOrganization(app);
     const creator = await addMember(app, organization);
     const stranger = await addMember(app, elsewhere);
     const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'skill_builder_chat');
-    await setChatVisibility(chatId, 'public');
+    await setChatSubjectVisibility(chatId, 'public');
 
     expect((await ensure(chatId, stranger.headers)).statusCode).toBe(404);
   });
@@ -351,7 +337,7 @@ describe('identity side effects of reaching a runtime', () => {
     }
   });
 
-  it('carries a public chat down to the test Project it is running', async () => {
+  it('carries a public subject down to the test Project its chat is running', async () => {
     const organization = await createOrganization(app);
     const creator = await addMember(app, organization);
     const colleague = await addMember(app, organization);
@@ -365,7 +351,7 @@ describe('identity side effects of reaching a runtime', () => {
 
     expect((await ensure(testProjectId, colleague.headers)).statusCode).toBe(403);
 
-    await setChatVisibility(chatId, 'public');
+    await setChatSubjectVisibility(chatId, 'public');
     expect((await ensure(testProjectId, colleague.headers)).statusCode).toBe(201);
   });
 

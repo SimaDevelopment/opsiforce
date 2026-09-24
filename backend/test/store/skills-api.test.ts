@@ -26,6 +26,7 @@ import type { SkillCaller, SkillService } from '../../src/store/skill.service';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import { manifest, validDescription } from './support/skill-fixtures';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
+import { ensureBuiltInSkill } from '../support/agent-fixtures';
 
 let harness: DomainTestHarness;
 let service: SkillService;
@@ -61,6 +62,13 @@ function skillName(): string {
 
 function files(name: string, body = '# Body\n') {
   return [{ path: 'SKILL.md', content: manifest(`name: ${name}\ndescription: ${validDescription}`, body) }];
+}
+
+async function noProjects(): Promise<void> {}
+
+async function anyAgentId(): Promise<string> {
+  const [row] = await db.select({ id: agents.id }).from(agents).limit(1);
+  return row.id;
 }
 
 async function code(action: Promise<unknown>): Promise<string> {
@@ -108,7 +116,7 @@ describe('creating a skill', () => {
       name,
       origin: 'custom',
       visibility: 'private',
-      archived: false,
+      disabled: false,
       available: true,
       usedByAgentCount: 0,
       createdBy: author.userId,
@@ -209,12 +217,12 @@ describe('versions', () => {
     expect((await service.listVersions(author, created.id)).map((version) => version.version)).toEqual([2, 1]);
   });
 
-  it('is refused on an archived skill', async () => {
+  it('is refused on a disabled skill', async () => {
     const name = skillName();
     const created = await service.create(author, { name, files: files(name) });
-    await service.setArchived(author, created.id, true);
+    await service.setDisabled(author, created.id, true);
 
-    expect(await code(service.addVersion(author, created.id, { files: files(name) }))).toBe('skill_archived');
+    expect(await code(service.addVersion(author, created.id, { files: files(name) }))).toBe('skill_disabled');
   });
 });
 
@@ -244,7 +252,7 @@ describe('export and import', () => {
     expect(files2.map((file) => file.path).toSorted()).toEqual(unpacked.map((file) => file.path).toSorted());
   });
 
-  it('lands the same tree in another organization, which is what the Skill page\'s Export offers', async () => {
+  it("lands the same tree in another organization, which is what the Skill page's Export offers", async () => {
     const name = skillName();
     const tree = [
       ...files(name),
@@ -259,9 +267,7 @@ describe('export and import', () => {
     expect(imported.id).not.toBe(created.id);
     expect(imported.name).toBe(name);
     expect(imported.latestVersion).toMatchObject({ version: 1 });
-    expect(await service.listFiles(outsider, imported.id, 1)).toEqual(
-      await service.listFiles(author, created.id, 1)
-    );
+    expect(await service.listFiles(outsider, imported.id, 1)).toEqual(await service.listFiles(author, created.id, 1));
   });
 
   it('refuses an import onto a name another member owns privately', async () => {
@@ -290,7 +296,7 @@ describe('duplicate', () => {
 });
 
 describe('delete', () => {
-  it('names the agent while pinned, asks for archiving next, and then deletes', async () => {
+  it('names the agent while pinned, asks for disabling next, and then deletes', async () => {
     const name = skillName();
     const created = await service.create(author, { name, files: files(name) });
     const pin = await pinToAgent(tenantId, created.id);
@@ -300,16 +306,74 @@ describe('delete', () => {
     expect(refusal.agents).toEqual([{ id: pin.agentId, displayName: pin.displayName }]);
 
     await db.delete(agentProfileSkills).where(eq(agentProfileSkills.skillId, created.id));
-    expect(await code(service.remove(author, created.id))).toBe('skill_not_archived');
+    expect(await code(service.remove(author, created.id, noProjects))).toBe('skill_not_disabled');
 
-    await service.setArchived(author, created.id, true);
-    await expect(service.remove(author, created.id)).resolves.toBeUndefined();
+    await service.setDisabled(author, created.id, true);
+    await expect(service.remove(author, created.id, noProjects)).resolves.toBeUndefined();
     expect(await db.select({ id: skills.id }).from(skills).where(eq(skills.id, created.id))).toHaveLength(0);
+  });
+
+  it('deletes a skill that never had a version without disabling it first', async () => {
+    const created = await service.create(author, { name: skillName() });
+
+    await expect(service.remove(author, created.id, noProjects)).resolves.toBeUndefined();
+    expect(await db.select({ id: skills.id }).from(skills).where(eq(skills.id, created.id))).toHaveLength(0);
+  });
+
+  it('takes its Builder chat with it', async () => {
+    const created = await service.create(author, { name: skillName() });
+    const chatId = randomUUID();
+    const removed: string[][] = [];
+    await db
+      .insert(projects)
+      .values({ id: chatId, tenantId, agentId: await anyAgentId(), kind: 'skill_builder_chat', createdBy: author.userId });
+    await db.update(skills).set({ builderChatId: chatId }).where(eq(skills.id, created.id));
+
+    await service.remove(author, created.id, async (ids) => {
+      removed.push(ids);
+    });
+
+    expect(removed).toEqual([[chatId]]);
+  });
+});
+
+describe('a skill named before it is written', () => {
+  it('starts with no version, private to its author, under the name it was given', async () => {
+    const name = skillName();
+
+    const created = await service.create(author, { name, displayName: 'Release Notes' });
+
+    expect(created).toMatchObject({ name, displayName: 'Release Notes', latestVersion: null, visibility: 'private' });
+    expect(await service.listVersions(author, created.id)).toEqual([]);
+  });
+
+  it('takes its first version like every later one', async () => {
+    const name = skillName();
+    const created = await service.create(author, { name });
+
+    const published = await service.addVersion(author, created.id, { files: files(name) });
+
+    expect(published.latestVersion?.version).toBe(1);
+  });
+
+  it('refuses a name that is not kebab-case, and a name already taken', async () => {
+    expect(await code(service.create(author, { name: 'Release Notes' }))).toBe('bad_request');
+
+    const name = skillName();
+    await service.create(author, { name });
+    expect(await code(service.create(author, { name }))).toBe('name_unavailable');
+  });
+
+  it('lists under the created-by-me filter for its author only', async () => {
+    const created = await service.create(author, { name: skillName() });
+
+    expect((await service.list(author, 'mine', undefined)).map((row) => row.id)).toContain(created.id);
+    expect((await service.list(colleague, 'mine', undefined)).map((row) => row.id)).not.toContain(created.id);
   });
 });
 
 describe('the list', () => {
-  it('counts the agents carrying a skill and gates the archived filter', async () => {
+  it('counts the agents carrying a skill and gates the disabled filter', async () => {
     const name = skillName();
     const created = await service.create(author, { name, files: files(name) });
     await pinToAgent(tenantId, created.id);
@@ -318,7 +382,7 @@ describe('the list', () => {
     expect(listed?.usedByAgentCount).toBe(1);
 
     const member: SkillCaller = { ...author, canManageSkills: false };
-    await expect(service.list(member, 'archived', undefined)).rejects.toThrow(/can_manage_skills/);
+    await expect(service.list(member, 'disabled', undefined)).rejects.toThrow(/can_manage_skills/);
   });
 
   it('counts the agents left behind once a newer version is minted', async () => {
@@ -336,18 +400,18 @@ describe('the list', () => {
   });
 });
 
-describe('archive and restore', () => {
-  it('drops the skill from the default list and puts it back, which is what the page\'s Undo does', async () => {
+describe('disable and enable', () => {
+  it("drops the skill from the default list and puts it back, which is what the page's Undo does", async () => {
     const name = skillName();
     const created = await service.create(author, { name, files: files(name) });
 
-    await service.setArchived(author, created.id, true);
+    await service.setDisabled(author, created.id, true);
     expect((await service.list(author, 'all', name)).map((row) => row.id)).not.toContain(created.id);
-    expect((await service.list(author, 'archived', name)).map((row) => row.id)).toContain(created.id);
+    expect((await service.list(author, 'disabled', name)).map((row) => row.id)).toContain(created.id);
 
-    await service.setArchived(author, created.id, false);
+    await service.setDisabled(author, created.id, false);
     expect((await service.list(author, 'all', name)).map((row) => row.id)).toContain(created.id);
-    expect((await service.list(author, 'archived', name)).map((row) => row.id)).not.toContain(created.id);
+    expect((await service.list(author, 'disabled', name)).map((row) => row.id)).not.toContain(created.id);
   });
 });
 
@@ -420,7 +484,7 @@ describe('the agents carrying a skill', () => {
     expect((await service.listAgents(author, created.id))[0]).toMatchObject({ omittedIn: 0 });
   });
 
-  it('counts only the collisions in the caller\'s own Organization', async () => {
+  it("counts only the collisions in the caller's own Organization", async () => {
     const name = skillName();
     const created = await service.create(author, { name, files: files(name) });
     const carrier = await pinToAgent(tenantId, created.id);
@@ -462,7 +526,7 @@ async function refusalFor(
   skillId: string
 ): Promise<{ code: string; agents: { id: string; displayName: string }[] }> {
   try {
-    await skillService.remove(caller, skillId);
+    await skillService.remove(caller, skillId, noProjects);
   } catch (error) {
     return (
       error as { getResponse: () => { code: string; agents: { id: string; displayName: string }[] } }
@@ -549,3 +613,42 @@ async function versionIdFor(skillId: string, version: number): Promise<string> {
     .limit(1);
   return row.id;
 }
+
+describe('disabling a built-in skill for one Organization (ADR-0072)', () => {
+  it('takes it out of that Organization only, and back on enable', async () => {
+    const { skillId } = await ensureBuiltInSkill('csv-digest');
+    const elsewhere = await createCaller(otherTenantId);
+
+    expect((await service.setDisabled(author, skillId, true)).disabled).toBe(true);
+
+    expect((await service.list(author, 'all', undefined)).map((row) => row.id)).not.toContain(skillId);
+    expect((await service.list(author, 'disabled', undefined)).map((row) => row.id)).toContain(skillId);
+    expect((await service.findOne(elsewhere, skillId)).disabled).toBe(false);
+
+    expect((await service.setDisabled(author, skillId, false)).disabled).toBe(false);
+  });
+
+  it('refuses to add a disabled built-in skill to an agent there', async () => {
+    const { skillId } = await ensureBuiltInSkill('csv-digest');
+    await harness.environments.ensureDefaultForTenant(tenantId);
+    const agentCaller = { tenantId, userId: author.userId, canManageAgents: true };
+    const agent = await harness.agents.create(agentCaller, { displayName: `Agent ${randomUUID().slice(0, 8)}` });
+    await service.setDisabled(author, skillId, true);
+
+    expect(await code(harness.agents.setSkill(agentCaller, agent.id, skillId, {}))).toBe('skill_disabled');
+
+    await service.setDisabled(author, skillId, false);
+  });
+
+  it('keeps the platform skill on, says so up front, and asks for can_manage_skills', async () => {
+    const platform = await ensureBuiltInSkill('platform');
+    const { skillId } = await ensureBuiltInSkill('csv-digest');
+
+    expect((await service.findOne(author, platform.skillId)).disableable).toBe(false);
+    expect((await service.findOne(author, skillId)).disableable).toBe(true);
+    expect(await code(service.setDisabled(author, platform.skillId, true))).toBe('not_disableable');
+    await expect(service.setDisabled({ ...author, canManageSkills: false }, skillId, true)).rejects.toThrow(
+      Perms.manageSkills
+    );
+  });
+});

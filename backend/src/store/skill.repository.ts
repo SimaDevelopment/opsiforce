@@ -11,12 +11,13 @@ import {
   skills,
   skillVersionFiles,
   skillVersions,
+  tenantDisabledSkills,
   users,
 } from '../../db/schema';
 import { visibleAgentsWhere } from '../agent/agent-visibility';
 import type { SkillTree } from './gate';
 import { isTextFile } from './gate/skill-tree';
-import { visibleSkillsWhere, type SkillRow } from './skill-visibility';
+import { skillColumnsIn, skillDisabledIn, visibleSkillsWhere, type SkillRow } from './skill-visibility';
 import { catalogFilterWhere, catalogSearchWhere, type CatalogColumns } from './catalog-filters';
 import type { SkillListFilter } from './skill.types';
 
@@ -27,7 +28,7 @@ const SKILL_CATALOG_COLUMNS: CatalogColumns = {
   description: skills.description,
   origin: skills.origin,
   visibility: skills.visibility,
-  archived: skills.archived,
+  createdBy: skills.createdBy,
 };
 
 export type SkillVersionRow = typeof skillVersions.$inferSelect;
@@ -67,7 +68,7 @@ export class SkillRepository {
   ): Promise<SkillListRow[]> {
     const rows = await db
       .select({
-        skill: skills,
+        skill: skillColumnsIn(tenantId),
         latestVersion: skillVersions,
         createdByName: createdByName(),
         usedByAgentCount: usedByAgentCount(tenantId, userId),
@@ -78,8 +79,8 @@ export class SkillRepository {
       .leftJoin(users, eq(users.id, skills.createdBy))
       .where(
         and(
-          visibleSkillsWhere(tenantId, userId, { includeArchived: true }),
-          catalogFilterWhere(SKILL_CATALOG_COLUMNS, filter),
+          visibleSkillsWhere(tenantId, userId, { includeDisabled: true }),
+          catalogFilterWhere(SKILL_CATALOG_COLUMNS, filter, { userId, disabled: skillDisabledIn(tenantId) }),
           catalogSearchWhere(SKILL_CATALOG_COLUMNS, query)
         )
       )
@@ -97,7 +98,7 @@ export class SkillRepository {
   async findOne(tenantId: string, userId: string, skillId: string): Promise<SkillListRow | undefined> {
     const [row] = await db
       .select({
-        skill: skills,
+        skill: skillColumnsIn(tenantId),
         latestVersion: skillVersions,
         createdByName: createdByName(),
         usedByAgentCount: usedByAgentCount(tenantId, userId),
@@ -163,7 +164,7 @@ export class SkillRepository {
 
   async findByName(tenantId: string, name: string): Promise<SkillRow | undefined> {
     const [row] = await db
-      .select()
+      .select(skillColumnsIn(tenantId))
       .from(skills)
       .where(and(eq(skills.name, name), eq(skills.tenantId, tenantId)))
       .limit(1);
@@ -194,7 +195,7 @@ export class SkillRepository {
       .innerJoin(agents, eq(agents.id, agentProfiles.agentId))
       .innerJoin(skillVersions, eq(skillVersions.id, agentProfileSkills.skillVersionId))
       .where(
-        and(eq(agentProfileSkills.skillId, skillId), visibleAgentsWhere(tenantId, userId, { includeArchived: true }))
+        and(eq(agentProfileSkills.skillId, skillId), visibleAgentsWhere(tenantId, userId, { includeDisabled: true }))
       )
       .orderBy(asc(agents.name), asc(skillVersions.version));
   }
@@ -216,6 +217,16 @@ export class SkillRepository {
     return new Map(rows.map((row) => [row.agentId, row.omittedIn]));
   }
 
+  async setDisabledIn(tenantId: string, skillId: string, disabled: boolean, userId: string): Promise<void> {
+    if (disabled) {
+      await db.insert(tenantDisabledSkills).values({ tenantId, skillId, disabledBy: userId }).onConflictDoNothing();
+      return;
+    }
+    await db
+      .delete(tenantDisabledSkills)
+      .where(and(eq(tenantDisabledSkills.tenantId, tenantId), eq(tenantDisabledSkills.skillId, skillId)));
+  }
+
   async updateSkill(skillId: string, patch: Partial<typeof skills.$inferInsert>): Promise<void> {
     await db
       .update(skills)
@@ -230,6 +241,25 @@ export class SkillRepository {
     });
   }
 
+  async createSkillWithoutVersion(input: {
+    tenantId: string;
+    userId: string;
+    name: string;
+    displayName: string | null;
+  }): Promise<string> {
+    const skillId = crypto.randomUUID();
+    await db.insert(skills).values({
+      id: skillId,
+      tenantId: input.tenantId,
+      origin: 'custom',
+      visibility: 'private',
+      name: input.name,
+      displayName: input.displayName,
+      createdBy: input.userId,
+    });
+    return skillId;
+  }
+
   async createSkillWithFirstVersion(input: {
     tenantId: string;
     userId: string;
@@ -242,7 +272,6 @@ export class SkillRepository {
     lints: string[];
     createdVia: string;
     sourceRef: string | null;
-    createdInChatProjectId: string | null;
   }): Promise<{ skillId: string; version: number }> {
     const skillId = crypto.randomUUID();
     await db.transaction(async (tx) => {
@@ -255,7 +284,6 @@ export class SkillRepository {
         displayName: input.displayName,
         description: input.description,
         createdBy: input.userId,
-        createdInChatProjectId: input.createdInChatProjectId,
       });
       const versionId = await insertVersion(tx, {
         skillId,
@@ -365,7 +393,6 @@ async function insertVersion(
   return versionId;
 }
 
-/** Counts agree with `agentPins`: only agents the caller may see, archived ones included. */
 function usedByAgentCount(tenantId: string, userId: string): SQL<number> {
   return sql<number>`(
     select count(distinct ${agentProfiles.agentId})
@@ -373,7 +400,7 @@ function usedByAgentCount(tenantId: string, userId: string): SQL<number> {
     inner join ${agentProfiles} on ${agentProfiles.id} = ${agentProfileSkills.profileId}
     inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}
     where ${agentProfileSkills.skillId} = ${skills.id}
-      and ${visibleAgentsWhere(tenantId, userId, { includeArchived: true })}
+      and ${visibleAgentsWhere(tenantId, userId, { includeDisabled: true })}
   )`;
 }
 
@@ -385,7 +412,7 @@ function outdatedAgentCount(tenantId: string, userId: string): SQL<number> {
     inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}
     where ${agentProfileSkills.skillId} = ${skills.id}
       and ${agentProfileSkills.skillVersionId} is distinct from ${skills.latestVersionId}
-      and ${visibleAgentsWhere(tenantId, userId, { includeArchived: true })}
+      and ${visibleAgentsWhere(tenantId, userId, { includeDisabled: true })}
   )`;
 }
 

@@ -1,7 +1,7 @@
 ---
 kind: explanation
-terms: [Skill, Built-in Skill, Custom Skill, Visibility, Skill Version, Publish (Skill), Agent Skills, Update available, Skill Store, Archive (Skill), Delete (Skill), Duplicate (Skill)]
-adrs: [0051, 0059]
+terms: [Skill, Built-in Skill, Custom Skill, Visibility, Skill Version, Publish (Skill), Agent Skills, Update available, Skill Store, Disable (Skill), Delete (Skill), Duplicate (Skill)]
+adrs: [0051, 0059, 0070]
 ---
 
 # Skill
@@ -13,9 +13,9 @@ adrs: [0051, 0059]
 ### The catalog
 
 - A [Skill](../../CONTEXT.md) is a directory with a `SKILL.md` and optional supporting files, stored as rows rather than on disk: `skills` holds identity, `skill_versions` an immutable content snapshot, and `skill_version_files` one row per file with its bytes, size, binary flag and executable bit. A [Built-in Skill](../../CONTEXT.md) is the global row (`tenant_id IS NULL`, `origin = 'built_in'`) the boot reconciler mints from the agent image; a [Custom Skill](../../CONTEXT.md) belongs to one Organization ([ADR-0051](../adr/0051-skill-catalog-append-only-store-tables.md)).
-- Content exists **only** as a published [Skill Version](../../CONTEXT.md): there is no draft row and no save short of publishing, and a Version once written is never edited ([ADR-0059](../adr/0059-skills-exist-only-as-published-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)). Version numbers are per Skill and unique, and a Version is minted only when the tree hash differs from the newest one, so republishing identical content is a no-op.
+- Content exists **only** as a published [Skill Version](../../CONTEXT.md): there is no draft row and no save short of publishing, and a Version once written is never edited ([ADR-0059](../adr/0059-skills-exist-only-as-published-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)). Version numbers are per Skill and unique, and a Version is minted only when the tree hash differs from the newest one, so republishing identical content is a no-op. A Skill named in the Store holds no Version until the Builder publishes its first, and until then it cannot be pinned ([ADR-0071](../adr/0071-a-builder-chat-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)).
 - [Visibility](../../CONTEXT.md) is a column on the Skill, not on a Version: **private** means listed and editable only for its creator, **public** hands it to the whole Organization. Making it public is irreversible; [Duplicate (Skill)](../../CONTEXT.md) into a fresh private Skill is the way back ([ADR-0057](../adr/0057-authored-skills-and-agents-are-private-or-public-within-one-organization.md)).
-- The [Skill Store](../../CONTEXT.md) list is one predicate over those columns — Built-in Skills, the Organization's public Custom ones, and the caller's own private ones — narrowed by a `filter` of `all`, `built_in`, `custom`, `private` or `archived` and a `q` search, both carried in the URL.
+- The [Skill Store](../../CONTEXT.md) list is one predicate over those columns — Built-in Skills, the Organization's public Custom ones, and the caller's own private ones — narrowed by a `filter` of `all`, `mine` (created by the caller), `built_in`, `custom`, `private` or `disabled` and a `q` search, both carried in the URL.
 - A Built-in Skill whose name leaves the image keeps its rows and is reported as unavailable rather than deleted, so an Agent that already pinned it keeps working.
 
 ### Publishing and the gate
@@ -35,8 +35,9 @@ adrs: [0051, 0059]
 
 ### Retiring
 
-- [Archive (Skill)](../../CONTEXT.md) flips a boolean: the Skill leaves the Store list and can be added to nothing new, while every Agent carrying it keeps its pinned Version. It is reversible from the Archived filter.
-- [Delete (Skill)](../../CONTEXT.md) is permanent and refused while any Agent carries the Skill, naming those Agents as links; the UI offers **Archive instead** rather than failing.
+- [Disable (Skill)](../../CONTEXT.md) records a row in `tenant_disabled_skills`: the Skill — Custom or Built-in — leaves that Organization's Store list and can be added to nothing new there, while every Agent carrying it keeps its pinned Version. Enable reverses it from the Disabled filter ([ADR-0070](../adr/0070-skills-and-agents-are-disabled-like-projects-not-archived.md), [ADR-0072](../adr/0072-disabling-is-an-organizations-choice-recorded-beside-the-agent-or-skill.md)).
+- The `platform` Skill is never disabled, since every new Agent pins it.
+- [Delete (Skill)](../../CONTEXT.md) is permanent and refused while any Agent carries the Skill, naming those Agents as links; the UI offers **Disable instead** rather than failing.
 
 ## States
 
@@ -45,10 +46,10 @@ A Skill's place in its Organization's catalog.
 | State | What happens |
 |---|---|
 | Private | Listed, pickable and editable for its creator alone; invisible to every other member |
-| Public | Listed for the whole Organization; any permission holder may edit, archive or delete it |
-| Archived | Out of the Store list and closed to new Agents; existing pins unaffected; reversible |
+| Public | Listed for the whole Organization; any permission holder may edit, disable or delete it |
+| Disabled | Out of the Store list and closed to new Agents; existing pins unaffected; reversible |
 | Unavailable | A Built-in Skill whose name left the image — rows kept, offered to nothing new |
-| Deleted | Rows and Versions gone; only reachable for an archived Skill no Agent carries |
+| Deleted | Rows, Versions and its Builder chat gone; only for a Skill no Agent carries that is disabled or never had a Version |
 
 ## Edge cases
 
@@ -63,7 +64,7 @@ A Skill's place in its Organization's catalog.
 - `backend/src/store/` — the catalog rows, the publish service, the Built-in Skill reconciler and the Store routes.
 - `backend/src/store/gate/` — the validator, the frontmatter parser, the tree hash, the flags and the `.skill` archive.
 - `agent-config/scripts/generate-validate-skill.mjs` — cuts the Builder's offline validator from those gate sources so the two cannot drift.
-- `frontend/src/pages/store/skill-page.tsx` — the Skill page: file tabs, version picker, export, archive and delete.
+- `frontend/src/pages/store/skill-page.tsx` — the Skill page: file tabs, version picker, export, the Builder entry, disable and delete.
 
 ## Related
 

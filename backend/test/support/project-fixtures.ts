@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
-import { projects, tenantSettings, users, workspaces } from '../../db/schema';
+import { projects, skills, tenantSettings, users, workspaces } from '../../db/schema';
 import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
 import { ensureBuiltInAgent } from './agent-fixtures';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectService } from '../../src/project/project.service';
-import { ProjectStatus, type ChatVisibility, type ProjectKind } from '../../src/project/project.types';
+import { ProjectStatus, type ProjectKind } from '../../src/project/project.types';
 import { TenantService } from '../../src/tenant/tenant.service';
 import { UserService } from '../../src/user/user.service';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
@@ -208,8 +208,26 @@ export async function stampProjectKind(projectId: string, kind: ProjectKind): Pr
   await db.update(projects).set({ kind }).where(eq(projects.id, projectId));
 }
 
-export async function setChatVisibility(chatId: string, chatVisibility: ChatVisibility): Promise<void> {
-  await db.update(projects).set({ chatVisibility }).where(eq(projects.id, chatId));
+export async function setChatSubjectVisibility(chatId: string, visibility: 'private' | 'public'): Promise<void> {
+  const [existing] = await db.select({ id: skills.id }).from(skills).where(eq(skills.builderChatId, chatId));
+  if (existing) {
+    await db.update(skills).set({ visibility }).where(eq(skills.id, existing.id));
+    return;
+  }
+  const [chat] = await db
+    .select({ tenantId: projects.tenantId, createdBy: projects.createdBy })
+    .from(projects)
+    .where(eq(projects.id, chatId));
+  const id = randomUUID();
+  await db.insert(skills).values({
+    id,
+    tenantId: chat.tenantId,
+    origin: 'custom',
+    name: `subject-${id.slice(0, 8)}`,
+    visibility,
+    createdBy: chat.createdBy,
+    builderChatId: chatId,
+  });
 }
 
 export async function disableProject(projectId: string): Promise<void> {

@@ -1,4 +1,4 @@
-import { Body, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
 import { Caller } from '../auth/caller';
@@ -12,9 +12,9 @@ import {
   AgentSkillListSchema,
   AgentSkillPathSchema,
   CreateAgentSchema,
-  DuplicateAgentSchema,
   SetAgentSkillSchema,
   UpdateAgentProfileSchema,
+  UpdateAgentSchema,
   type AgentDetailDto,
   type AgentListQuery,
   type AgentPageDto,
@@ -22,8 +22,8 @@ import {
   type AgentSkillListDto,
   type AgentSkillPath,
   type CreateAgent,
-  type DuplicateAgent,
   type SetAgentSkill,
+  type UpdateAgent,
   type UpdateAgentProfile,
 } from './agents.schema';
 
@@ -66,12 +66,29 @@ export class AgentsController {
   @ApiOperation({
     summary: 'Get an Agent',
     description:
-      "One Agent with its settings and one entry per Environment of the Organization. Every entry carries `environmentId`; `skills: null` marks an Environment this Agent has no profile at, which is how you tell \"never published there\" from \"published with no Skills\".\n\nA Built-in Agent reports `imageOwned: true` with `promptBody`, `model` and `variant` null — its behaviour comes from the agent image — but its Skills are the Organization's and are listed.\n\n**Use it for** reading the Development profile before editing it, and for `updateAvailable` on each pinned Skill.",
+      'One Agent with its settings and one entry per Environment of the Organization. Every entry carries `environmentId`; `skills: null` marks an Environment this Agent has no profile at, which is how you tell "never published there" from "published with no Skills".\n\nA Built-in Agent reports `imageOwned: true` with `promptBody`, `model` and `variant` null — its behaviour comes from the agent image — but its Skills are the Organization\'s and are listed.\n\n**Use it for** reading the Development profile before editing it, and for `updateAvailable` on each pinned Skill.',
   })
   @PublicResponse(200, AgentDetailSchema)
   @PublicApiErrors('not-found')
   get(@Caller() caller: Caller, @Param({ schema: AgentPathSchema }) path: AgentPath): Promise<AgentDetailDto> {
     return this.agents.findOne(caller, path.id);
+  }
+
+  @Patch(':id')
+  @AllowsGatewayCaller()
+  @ApiOperation({
+    summary: 'Rename or describe an Agent',
+    description:
+      "Sets a Custom Agent's display name, or the one line the Store and the Project picker show under it. The slug stays what it was at creation, so Projects and links keep working.\n\n**Use it for** settling the description once the brief is clear, and renaming when the author asks for another name.",
+  })
+  @PublicResponse(200, AgentDetailSchema)
+  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'not-publishable', 'forbidden')
+  update(
+    @Caller() caller: Caller,
+    @Param({ schema: AgentPathSchema }) path: AgentPath,
+    @Body({ schema: UpdateAgentSchema }) body: UpdateAgent
+  ): Promise<AgentDetailDto> {
+    return this.agents.update(caller, path.id, body);
   }
 
   @Put(':id/profile')
@@ -107,10 +124,7 @@ export class AgentsController {
   })
   @PublicResponse(200, AgentSkillListSchema)
   @PublicApiErrors('not-found')
-  skills(
-    @Caller() caller: Caller,
-    @Param({ schema: AgentPathSchema }) path: AgentPath
-  ): Promise<AgentSkillListDto> {
+  skills(@Caller() caller: Caller, @Param({ schema: AgentPathSchema }) path: AgentPath): Promise<AgentSkillListDto> {
     return this.agents.listSkills(caller, path.id);
   }
 
@@ -119,7 +133,7 @@ export class AgentsController {
   @ApiOperation({
     summary: 'Add or re-pin a Skill',
     description:
-      'Puts the Skill on the Development profile, pinned to `versionId` or, with an empty object, to the latest Version. Sending it again with a newer `versionId` is the upgrade.\n\nRefused when the Skill is archived, when the Agent already carries a different Skill of the same name — opencode would resolve the collision silently — and when a private Skill would land on a public or Built-in Agent.\n\n**Use it for** both adding and upgrading; there is no separate upgrade route. The answer is the whole Skill set, so you never have to re-read it.',
+      'Puts the Skill on the Development profile, pinned to `versionId` or, with an empty object, to the latest Version. Sending it again with a newer `versionId` is the upgrade.\n\nRefused when the Skill is disabled, when the Agent already carries a different Skill of the same name — opencode would resolve the collision silently — and when a private Skill would land on a public or Built-in Agent.\n\n**Use it for** both adding and upgrading; there is no separate upgrade route. The answer is the whole Skill set, so you never have to re-read it.',
   })
   @PublicResponse(200, AgentSkillListSchema)
   @PublicApiErrors(
@@ -152,29 +166,5 @@ export class AgentsController {
     @Param({ schema: AgentSkillPathSchema }) path: AgentSkillPath
   ): Promise<AgentSkillListDto> {
     return this.agents.removeSkill(caller, path.id, path.skillId);
-  }
-
-  @Post(':id/duplicate')
-  @AllowsGatewayCaller()
-  @ApiOperation({
-    summary: 'Duplicate an Agent',
-    description:
-      "Copies the source's Development profile — prompt, model pair and pinned Skills — into a new private Custom Agent of your own. A Built-in source contributes its Skills and the registry model with an empty prompt, since its prompt lives in the agent image. Nothing about the source is recorded.\n\n**Use it for** starting from something that works: duplicate, then edit the copy's profile.",
-  })
-  @PublicResponse(201, AgentDetailSchema)
-  @PublicApiErrors(
-    'validation-error',
-    'permission-denied',
-    'not-found',
-    'name-unavailable',
-    'model-unknown',
-    'bad-request'
-  )
-  duplicate(
-    @Caller() caller: Caller,
-    @Param({ schema: AgentPathSchema }) path: AgentPath,
-    @Body({ schema: DuplicateAgentSchema }) body: DuplicateAgent
-  ): Promise<AgentDetailDto> {
-    return this.agents.duplicate(caller, path.id, body);
   }
 }

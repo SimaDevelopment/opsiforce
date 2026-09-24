@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../db';
-import { agentProfiles, agentSettings, agents, environments, skillVersions, skills } from '../../db/schema';
+import {
+  agentProfiles,
+  agentSettings,
+  agents,
+  environments,
+  skillVersions,
+  skills,
+  tenantDisabledAgents,
+} from '../../db/schema';
 
 export interface SeededAgent {
   id: string;
@@ -13,7 +21,7 @@ export interface SeededAgent {
 export interface LiveAgentOptions {
   createdAt?: Date;
   visibility?: string;
-  archived?: boolean;
+  disabled?: boolean;
   withProfile?: boolean;
 }
 
@@ -31,7 +39,7 @@ export async function seedLiveAgent(
   userId: string,
   options: LiveAgentOptions = {}
 ): Promise<SeededAgent> {
-  const { withProfile = true, visibility = 'public', archived = false, createdAt } = options;
+  const { withProfile = true, visibility = 'public', disabled = false, createdAt } = options;
   const id = randomUUID();
   const seeded: SeededAgent = {
     id,
@@ -47,10 +55,10 @@ export async function seedLiveAgent(
     origin: 'custom',
     visibility,
     createdBy: userId,
-    archived,
     poolSize: 0,
     ...(createdAt ? { createdAt } : {}),
   });
+  if (disabled) await db.insert(tenantDisabledAgents).values({ tenantId, agentId: id });
   await db.insert(agentSettings).values({ agentId: id, defaultEnvironmentId: environmentId, platformApi: false });
   if (withProfile) {
     await db

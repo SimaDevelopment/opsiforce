@@ -7,8 +7,8 @@ release-notes/
   SKILL.md              required, at the root
   references/tone.md    loaded only when the body points at it
   references/api.md
-  scripts/collect.sh    optional; sets has_executables
-  assets/template.md    optional
+  scripts/collect.sh    optional; a tool the agent runs; sets has_executables
+  assets/template.md    optional; a format the agent fills in, never code it ships
 ```
 
 `references/`, `scripts/` and `assets/` are conventions, not rules — the gate only cares about the
@@ -24,8 +24,7 @@ description: Use this skill when the user asks for release notes, a changelog en
 ---
 ```
 
-- `name` — lowercase kebab-case, ≤ 64 characters, equal to the Skill's own name, immutable after
-  creation. It is the directory the runtime loads the Skill under.
+- `name` — lowercase kebab-case, ≤ 64 characters, equal to the Skill's own name.
 - `description` — required; the rest of this page is about it.
 - `license`, `metadata` — allowed, rarely useful.
 - `allowed-tools` — accepted and then **stripped**. The tool policy belongs to the pod.
@@ -67,19 +66,6 @@ stays quiet:
 `references/tone.md` has the house voice and three worked examples.
 ```
 
-## Who validates, and when
-
-The same gate runs three times, and only the middle one can refuse anything:
-
-1. **You, offline, before publishing** — `node /workspace/scripts/validate-skill.mjs scratch/<name>`.
-   That script is cut from the platform's gate source at image build, so its ERRORS and LINTS are the
-   API's, word for word, at no cost. Run it after every edit; a tree that passes here is accepted there.
-2. **The platform, on every write** — `POST /skills` and `POST /skills/{id}/versions` run the gate on
-   the tree you send and refuse the write on any ERROR. There is no way around it and nothing to ask
-   the author about; a refusal means the tree is wrong.
-3. **The Store, when a person adds the Skill** — nothing is re-validated, but `has_executables` and the
-   LINTS you left are what they see. Leaving a lint standing is a choice you make on their behalf.
-
 ## Writing for the reader
 
 The reader is a model mid-task, not a person browsing. Four checks before you validate:
@@ -97,12 +83,12 @@ The reader is a model mid-task, not a person browsing. Four checks before you va
 
 ## Versions
 
-A Skill is a name and a stack of Versions; the tree you submit becomes Version *n*, minted whole. No
-Version is ever edited or replaced, and an Agent carries a **pinned** Version — publishing a new one
-does not move any Agent onto it. So:
+A Skill is a name and a stack of Versions. No Version is ever edited or replaced, and an Agent
+carries a **pinned** Version — publishing a new one does not move any Agent onto it. So:
 
 - publish a Version when something is genuinely better, not on every keystroke;
 - tell the author the Version number, and that Agents already carrying the Skill stay where they are
   until someone upgrades them;
-- to change one line of a Skill you did not write, fetch
-  `GET /skills/{id}/versions/{n}/files` first and submit that tree with the line changed.
+- for the Agent this chat writes, re-pin it yourself (`PUT /agents/{id}/skills/{skillId}` with `{}`),
+  read the pin back, and test on a new test Project — an existing Project keeps the Skill it was
+  created with.

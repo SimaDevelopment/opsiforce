@@ -10,7 +10,7 @@ kind: operations
 
 - The backend image built from this branch. It ships the whole `agent-config/` tree, so the Built-in Skill reconciler has something to read; a backend built without it refuses to boot rather than presenting an empty catalogue.
 - The agent image built and pushed at the tag in `agent-config/agent-image-version.json`, **after** that file was bumped, and available to the cluster before the backend that names it. A Job that runs an older image than the backend names writes that image's content and stamps it with the new content version, and the sweep compares only the stamp — so the workspace is left stale and will not self-correct.
-- Migrations `0062_agent-skill-platform-schema` through `0069_drop-external-urls-flag-default` unapplied on the target database; the backend runs them on start.
+- Migrations `0062_agent-skill-platform-schema` through `0072_tenant-disabled-agents-and-skills` unapplied on the target database; the backend runs them on start.
 - Every per-environment value the platform needs set for this environment. `.github/workflows/opsiforce.yml` sets them on the Helm upgrade, each naming a Service directly rather than the identity proxy:
 
   | Helm value | Environment variable | What it is |
@@ -35,6 +35,6 @@ kind: operations
 
 - `grep -rl '0060' docs/ --include='*.md'` names exactly one page's frontmatter, and the same for every ADR of this effort; no term appears in two pages' `terms`.
 - `GET /api/v1/skills?filter=built_in` returns the image's Skills, `platform` among them, on the deployed environment — not `{"items":[]}`.
-- From inside a Builder chat's pod, `sh /workspace/scripts/api.sh call GET /me` answers with the chat's creator and `source: gateway-key`. Backend health does not cover this: the pod reaches a different Service.
-- A Builder chat and its test Project are absent from `GET /api/v1/projects`, from the sidebar and from every workspace list, while `GET /projects/{id}` answers for whoever may open the chat.
+- From inside a Builder chat's pod, `sh /workspace/scripts/api.sh call GET /me` answers with the chat's creator, `source: gateway-key` and the chat's `builderSubject`. Backend health does not cover this: the pod reaches a different Service.
+- A Builder chat and its test Project are absent from `GET /api/v1/projects`, from the sidebar and from every workspace list, while `GET /projects/{id}` answers for whoever may see the chat's Skill or Agent.
 - Adding a Skill to a Built-in Agent in the Store reaches a running Project's pod within seconds, with the pod's UID and restart count unchanged.

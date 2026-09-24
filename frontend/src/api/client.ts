@@ -134,9 +134,12 @@ export interface UpdateProjectPodClassDto {
   memoryLimitMib?: number;
 }
 
+export type ProjectKind = 'skill_builder_chat' | 'agent_builder_chat' | 'test';
+
 export interface Project {
   id: string;
   tenantId: string;
+  kind: ProjectKind | null;
   workspaceId: string | null;
   folderId: string | null;
   agentId: string;

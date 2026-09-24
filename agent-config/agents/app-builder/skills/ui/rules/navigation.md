@@ -149,7 +149,7 @@ function Breadcrumbs() {
         const label = segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ")
         return (
           <span key={path} className="flex items-center gap-1">
-            <ChevronRight className="h-3 w-3" />
+            <ChevronRight className="size-3" />
             {isLast ? (
               <span className="text-foreground font-medium">{label}</span>
             ) : (
@@ -202,7 +202,7 @@ function FilterBar({ statuses, categories }: { statuses: string[]; categories: s
   return (
     <div className="flex flex-wrap items-center gap-3 mb-6">
       <div className="relative flex-1 min-w-[200px]">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
           value={q}
           onChange={(e) => setFilter("q", e.target.value)}
@@ -225,7 +225,7 @@ function FilterBar({ statuses, categories }: { statuses: string[]; categories: s
       </select>
       {hasFilters && (
         <Button variant="ghost" size="sm" onClick={clearAll}>
-          <X className="h-4 w-4 mr-1" /> Clear
+          <X data-icon="inline-start" /> Clear
         </Button>
       )}
     </div>

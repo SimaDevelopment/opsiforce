@@ -60,7 +60,7 @@ function RecordingElapsed(props: { startedAt: number }) {
   return <span class="text-xs font-medium tabular-nums">{formatElapsed(now() - props.startedAt)}</span>;
 }
 
-export function DictationButton(props: { projectId: string; environmentId: string }) {
+export function DictationButton(props: { projectId: string; environmentId: string; host: () => HTMLElement }) {
   const [state, setState] = createSignal<DictationState>('idle');
   const [startedAt, setStartedAt] = createSignal(0);
   const [toolbarMount, setToolbarMount] = createSignal<HTMLElement>();
@@ -81,6 +81,8 @@ export function DictationButton(props: { projectId: string; environmentId: strin
     if (languages) reconcileDictationLanguage(languages);
   });
 
+  const promptEditor = () => props.host().querySelector<HTMLElement>(PROMPT_EDITOR_SELECTOR);
+
   let active: ActiveRecording | undefined;
   let savedRange: Range | undefined;
   let retainedBlob: Blob | undefined;
@@ -92,7 +94,7 @@ export function DictationButton(props: { projectId: string; environmentId: strin
 
     const attach = () => {
       if (container.isConnected) return;
-      const submit = document.querySelector(PROMPT_SUBMIT_SELECTOR);
+      const submit = props.host().querySelector(PROMPT_SUBMIT_SELECTOR);
       const parent = submit?.parentElement;
       if (!submit || !parent) {
         setToolbarMount(undefined);
@@ -104,11 +106,11 @@ export function DictationButton(props: { projectId: string; environmentId: strin
 
     attach();
     const observer = new MutationObserver(attach);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(props.host(), { childList: true, subtree: true });
     const graceTimer = setTimeout(() => setGraceExpired(true), TOOLBAR_GRACE_MS);
 
     const trackSelection = () => {
-      const editor = document.querySelector<HTMLElement>(PROMPT_EDITOR_SELECTOR);
+      const editor = promptEditor();
       const selection = window.getSelection();
       if (!editor || !selection || selection.rangeCount === 0) return;
       const range = selection.getRangeAt(0);
@@ -126,7 +128,7 @@ export function DictationButton(props: { projectId: string; environmentId: strin
   });
 
   function insertTranscript(text: string): boolean {
-    const editor = document.querySelector<HTMLElement>(PROMPT_EDITOR_SELECTOR);
+    const editor = promptEditor();
     if (!editor) return false;
     editor.focus();
     const selection = window.getSelection();

@@ -130,6 +130,19 @@ export class ProjectsController {
     );
   }
 
+  @Post(':id/restart')
+  @AllowsGatewayCaller()
+  @ApiOperation({
+    summary: 'Restart a Project',
+    description:
+      "Throws the Development environment's pod away and starts a new one on the same workspace. Files under /workspace survive; everything installed into the container in chat does not, and startup.sh runs from cold — which is exactly what happens when a Project idles out or is published. Requires can_restart_project. Answers 204 at once; poll Get a Project until environments[0].status is active, then Connect again, because a new pod is a new Connection. A disabled Project answers 423.\n\n**Use it for** proving an App comes back on its own — the Skill & Agent Builder runs it once per test after the child's App is live.",
+  })
+  @PublicNoContentResponse('The pod is being recreated')
+  @PublicApiErrors('project-not-found', 'permission-denied', 'environment-disabled')
+  restart(@Caller() caller: Caller, @Param({ schema: ProjectPathSchema }) path: ProjectPath): Promise<void> {
+    return this.projects.restart(caller, path.id);
+  }
+
   @Delete(':id')
   @AllowsGatewayCaller()
   @ApiOperation({

@@ -12,7 +12,7 @@ export interface SkillFileInput {
 export interface CreateSkillDto {
   name: string;
   displayName?: string;
-  files: SkillFileInput[];
+  files?: SkillFileInput[];
 }
 
 export interface CreateSkillVersionDto {
@@ -50,11 +50,12 @@ export interface SkillSummary {
   description: string | null;
   origin: string;
   visibility: string;
-  archived: boolean;
+  disabled: boolean;
+  disableable: boolean;
   available: boolean;
   createdBy: string | null;
   createdByName: string | null;
-  createdInChatProjectId: string | null;
+  builderChatId: string | null;
   usedByAgentCount: number;
   outdatedAgentCount: number;
   latestVersion: SkillVersionSummary | null;

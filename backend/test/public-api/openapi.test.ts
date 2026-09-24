@@ -38,10 +38,12 @@ const V1_ROUTES = [
   'GET /api/v1/skills',
   'GET /api/v1/skills/{id}',
   'GET /api/v1/skills/{id}/versions/{version}/files',
+  'PATCH /api/v1/agents/{id}',
+  'PATCH /api/v1/skills/{id}',
   'POST /api/v1/agents',
-  'POST /api/v1/agents/{id}/duplicate',
   'POST /api/v1/projects',
   'POST /api/v1/projects/{id}/environments/{environmentId}/connect',
+  'POST /api/v1/projects/{id}/restart',
   'POST /api/v1/skills',
   'POST /api/v1/skills/validate',
   'POST /api/v1/skills/{id}/duplicate',
@@ -49,23 +51,6 @@ const V1_ROUTES = [
   'PUT /api/v1/agents/{id}/profile',
   'PUT /api/v1/agents/{id}/skills/{skillId}',
 ].toSorted();
-
-/** Bounded by verb (ADR-0064): these never reach `/api/v1`, so a pod cannot be handed them. */
-const ABSENT_FROM_V1 = [
-  'DELETE /api/v1/skills/{id}',
-  'PATCH /api/v1/skills/{id}',
-  'POST /api/v1/skills/import',
-  'POST /api/v1/skills/{id}/archive',
-  'POST /api/v1/skills/{id}/restore',
-  'POST /api/v1/skills/{id}/visibility',
-  'DELETE /api/v1/agents/{id}',
-  'PATCH /api/v1/agents/{id}',
-  'POST /api/v1/agents/{id}/archive',
-  'POST /api/v1/agents/{id}/publish',
-  'POST /api/v1/agents/{id}/restore',
-  'POST /api/v1/agents/{id}/visibility',
-  'PUT /api/v1/agents/{id}/settings',
-];
 
 describe('public api openapi document', () => {
   let harness: PublicApiTestApp;
@@ -122,18 +107,6 @@ describe('public api openapi document', () => {
     expect(routes).toEqual(V1_ROUTES);
   });
 
-  it('publishes no destructive or widening verb on the Store resources', () => {
-    const routes = new Set(
-      Object.entries(document.paths).flatMap(([path, operations]) =>
-        Object.keys(operations)
-          .filter((method) => HTTP_METHODS.has(method))
-          .map((method) => `${method.toUpperCase()} ${path}`)
-      )
-    );
-
-    for (const route of ABSENT_FROM_V1) expect(routes.has(route), `${route} must not be published`).toBe(false);
-  });
-
   it('hoists every schema into components and leaves no inline $defs', () => {
     expect(Object.keys(document.components?.schemas ?? {})).toEqual(
       expect.arrayContaining([
@@ -148,7 +121,6 @@ describe('public api openapi document', () => {
         'CreateAgent',
         'CreateSkill',
         'CreateSkillVersion',
-        'DuplicateAgent',
         'DuplicateSkill',
         'GateFinding',
         'SetAgentSkill',
@@ -160,7 +132,9 @@ describe('public api openapi document', () => {
         'SkillList',
         'SkillValidation',
         'SkillVersionRef',
+        'UpdateAgent',
         'UpdateAgentProfile',
+        'UpdateSkill',
         'CreateProject',
         'Environment',
         'Me',
@@ -193,6 +167,7 @@ describe('public api openapi document', () => {
       'organization',
       'organizations',
       'permissions',
+      'builderSubject',
     ]);
   });
 

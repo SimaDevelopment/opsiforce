@@ -135,7 +135,7 @@ export function DevelopmentPanel(props: {
       <UnsavedChangesGuard dirty={() => props.canManage && dirty()} />
 
       <Show when={props.canManage}>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,18rem)_9rem]">
           <div>
             <label for="agent-model" class="mb-1.5 block text-xs font-medium text-muted-foreground">
               Model

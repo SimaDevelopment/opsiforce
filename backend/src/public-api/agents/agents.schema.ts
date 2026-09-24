@@ -61,7 +61,7 @@ export const AgentDetailSchema = z
     description: z.string().nullable(),
     origin: z.enum(['built_in', 'custom']),
     visibility: z.enum(['private', 'public']),
-    archived: z.boolean(),
+    disabled: z.boolean(),
     createdBy: z.string().nullable(),
     imageOwned: z.boolean().describe('True for an Agent the agent image ships; its profile is not editable'),
     live: z.boolean().describe('Whether the Agent is offered when creating a Project'),
@@ -84,13 +84,30 @@ export const CreateAgentSchema = z
   .strictObject({
     displayName: z.string().trim().min(1).max(80).describe('The slug is derived from this and cannot change later'),
     description: z.string().trim().max(500).optional(),
-    model: z.string().min(1).optional().describe('provider/model from the deployment catalog; defaults to the registry default'),
+    model: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('provider/model from the deployment catalog; defaults to the registry default'),
     variant: z.string().min(1).nullable().optional().describe('Reasoning effort; must be one the model offers'),
   })
   .meta({
     id: 'CreateAgent',
     examples: [{ displayName: 'Release Notes Writer', description: 'Turns merged pull requests into release notes' }],
   });
+
+export const UpdateAgentSchema = z
+  .strictObject({
+    displayName: z.string().trim().min(1).max(80).optional().describe('The name people see; the slug never changes'),
+    description: z
+      .string()
+      .trim()
+      .max(500)
+      .nullable()
+      .optional()
+      .describe('One line on what the Agent is for; null clears it'),
+  })
+  .meta({ id: 'UpdateAgent', examples: [{ description: 'Turns merged pull requests into release notes' }] });
 
 export const UpdateAgentProfileSchema = z
   .strictObject({
@@ -110,10 +127,6 @@ export const SetAgentSkillSchema = z
   })
   .meta({ id: 'SetAgentSkill', examples: [{}] });
 
-export const DuplicateAgentSchema = z
-  .strictObject({ displayName: z.string().trim().min(1).max(80) })
-  .meta({ id: 'DuplicateAgent' });
-
 export type AgentDto = z.infer<typeof AgentSchema>;
 export type AgentPageDto = z.infer<typeof AgentPageSchema>;
 export type AgentListQuery = z.infer<typeof AgentListQuerySchema>;
@@ -123,6 +136,6 @@ export type AgentDetailDto = z.infer<typeof AgentDetailSchema>;
 export type AgentPath = z.infer<typeof AgentPathSchema>;
 export type AgentSkillPath = z.infer<typeof AgentSkillPathSchema>;
 export type CreateAgent = z.infer<typeof CreateAgentSchema>;
+export type UpdateAgent = z.infer<typeof UpdateAgentSchema>;
 export type UpdateAgentProfile = z.infer<typeof UpdateAgentProfileSchema>;
 export type SetAgentSkill = z.infer<typeof SetAgentSkillSchema>;
-export type DuplicateAgent = z.infer<typeof DuplicateAgentSchema>;

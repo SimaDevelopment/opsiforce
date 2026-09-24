@@ -12,7 +12,7 @@
     "dev:frontend": "vite frontend --host 0.0.0.0",
     "dev:backend": "nest start --watch --path backend/tsconfig.json",
     "build": "vite build frontend && tsc -p backend/tsconfig.json",
-    "check": "tsc --noEmit -p frontend/tsconfig.json 2>&1 | head -20; tsc --noEmit -p backend/tsconfig.json 2>&1 | head -20",
+    "check": "tsc --noEmit -p frontend/tsconfig.json && tsc --noEmit -p backend/tsconfig.json",
     "start:backend": "yarn node backend/dist/main.js",
     "start:frontend": "vite preview frontend --host 0.0.0.0"
   },

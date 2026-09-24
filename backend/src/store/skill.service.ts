@@ -7,8 +7,8 @@ import { isTextFile } from './gate/skill-tree';
 import { imageSkillNames } from './skill-reconciler.service';
 import { manifestName, manifestSourceRef, SkillPublishService } from './skill-publish.service';
 import { SkillRepository, type SkillListRow, type SkillVersionRow } from './skill.repository';
-import { assertSkillVisibleToUser, canEditSkill, type SkillRow } from './skill-visibility';
-import { nameUnavailable, skillInUse, validationFailed, visibilityIncoherent } from './store-errors';
+import { assertSkillVisibleToUser, canDisableSkill, canEditSkill, type SkillRow } from './skill-visibility';
+import { nameUnavailable, notDisableable, skillInUse, validationFailed, visibilityIncoherent } from './store-errors';
 import type {
   CreateSkillDto,
   CreateSkillVersionDto,
@@ -30,7 +30,6 @@ export interface SkillCaller {
   tenantId: string;
   userId: string;
   canManageSkills: boolean;
-  createdInChatProjectId?: string | null;
 }
 
 @Injectable()
@@ -42,18 +41,18 @@ export class SkillService {
 
   async list(caller: SkillCaller, rawFilter: string | undefined, query: string | undefined): Promise<SkillSummary[]> {
     const filter = parseFilter(rawFilter);
-    if (filter === 'archived' && !caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
+    if (filter === 'disabled' && !caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
 
     const rows = await this.repository.list(caller.tenantId, caller.userId, filter, query);
     const fromImage = imageSkillNames();
-    return rows.map((row) => toSummary(row, fromImage));
+    return rows.map((row) => toSummary(row, fromImage, caller.userId));
   }
 
   async findOne(caller: SkillCaller, skillId: string): Promise<SkillSummary> {
     await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
     const row = await this.repository.findOne(caller.tenantId, caller.userId, skillId);
     if (!row) throw new NotFoundException(`Skill ${skillId} not found`);
-    return toSummary(row, imageSkillNames());
+    return toSummary(row, imageSkillNames(), caller.userId);
   }
 
   async listAgents(caller: SkillCaller, skillId: string): Promise<SkillAgentUsage[]> {
@@ -120,6 +119,16 @@ export class SkillService {
     const name = (dto.name ?? '').trim();
     if (!name) throw new BadRequestException({ code: 'bad_request', message: 'name is required' });
 
+    if (dto.files === undefined) {
+      const skillId = await this.publishService.createUnpublished({
+        tenantId: caller.tenantId,
+        userId: caller.userId,
+        name,
+        displayName: dto.displayName?.trim() || null,
+      });
+      return this.findOne(caller, skillId);
+    }
+
     const { skillId } = await this.publishService.create({
       tenantId: caller.tenantId,
       userId: caller.userId,
@@ -127,14 +136,13 @@ export class SkillService {
       displayName: dto.displayName ?? null,
       tree: readTree(dto.files),
       createdVia: 'form',
-      createdInChatProjectId: caller.createdInChatProjectId ?? null,
     });
     return this.findOne(caller, skillId);
   }
 
   async addVersion(caller: SkillCaller, skillId: string, dto: CreateSkillVersionDto): Promise<SkillSummary> {
     const skill = await this.assertEditable(caller, skillId);
-    if (skill.archived) throw archivedSkill(skill);
+    if (skill.disabled) throw disabledSkill(skill);
 
     await this.publishService.addVersion(skill, {
       tenantId: caller.tenantId,
@@ -174,7 +182,7 @@ export class SkillService {
     }
 
     if (!canEditSkill(existing, caller.userId)) throw nameUnavailable(name);
-    if (existing.archived) throw archivedSkill(existing);
+    if (existing.disabled) throw disabledSkill(existing);
 
     await this.publishService.addVersion(existing, {
       tenantId: caller.tenantId,
@@ -201,7 +209,6 @@ export class SkillService {
       displayName: dto.displayName ?? null,
       tree,
       createdVia: 'duplicate',
-      createdInChatProjectId: caller.createdInChatProjectId ?? null,
     });
     return this.findOne(caller, created);
   }
@@ -224,26 +231,41 @@ export class SkillService {
     return this.findOne(caller, skillId);
   }
 
-  async setArchived(caller: SkillCaller, skillId: string, archived: boolean): Promise<SkillSummary> {
-    await this.assertEditable(caller, skillId);
-    await this.repository.updateSkill(skillId, { archived });
+  async setDisabled(caller: SkillCaller, skillId: string, disabled: boolean): Promise<SkillSummary> {
+    const skill = await this.assertDisableable(caller, skillId);
+    if (disabled !== skill.disabled) await this.repository.setDisabledIn(caller.tenantId, skill.id, disabled, caller.userId);
     return this.findOne(caller, skillId);
   }
 
-  async remove(caller: SkillCaller, skillId: string): Promise<void> {
+  async remove(
+    caller: SkillCaller,
+    skillId: string,
+    removeProjects: (projectIds: string[]) => Promise<void>
+  ): Promise<void> {
     const skill = await this.assertEditable(caller, skillId);
 
     const agents = await this.repository.agentsUsing(skillId);
     if (agents.length > 0) throw skillInUse(agents);
 
-    if (!skill.archived) {
+    if (!skill.disabled && skill.latestVersionId !== null) {
       throw new BadRequestException({
-        code: 'skill_not_archived',
-        message: `Archive \`${skill.name}\` before deleting it`,
+        code: 'skill_not_disabled',
+        message: `Disable \`${skill.name}\` before deleting it`,
       });
     }
 
+    if (skill.builderChatId) await removeProjects([skill.builderChatId]);
     await this.repository.deleteSkill(skillId);
+  }
+
+  private async assertDisableable(caller: SkillCaller, skillId: string): Promise<SkillRow> {
+    const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
+    if (skill.origin === 'custom') return this.assertEditable(caller, skillId);
+    if (!canDisableSkill(skill, caller.userId)) {
+      throw notDisableable('The `platform` skill stays enabled: every agent carries it to know how the platform works');
+    }
+    if (!caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
+    return skill;
   }
 
   private async assertEditable(caller: SkillCaller, skillId: string): Promise<SkillRow> {
@@ -273,10 +295,10 @@ function agentLabel(agent: SkillAgentUsage): string {
   return agent.displayName ?? agent.name;
 }
 
-function archivedSkill(skill: SkillRow): BadRequestException {
+function disabledSkill(skill: SkillRow): BadRequestException {
   return new BadRequestException({
-    code: 'skill_archived',
-    message: `Skill \`${skill.name}\` is archived; restore it before publishing a new version`,
+    code: 'skill_disabled',
+    message: `Skill \`${skill.name}\` is disabled; enable it before publishing a new version`,
   });
 }
 
@@ -304,7 +326,7 @@ function renameManifest(tree: SkillTree, name: string): SkillTree {
   });
 }
 
-function toSummary(row: SkillListRow, fromImage: Set<string>): SkillSummary {
+function toSummary(row: SkillListRow, fromImage: Set<string>, userId: string): SkillSummary {
   const { skill, latestVersion } = row;
   return {
     id: skill.id,
@@ -313,11 +335,12 @@ function toSummary(row: SkillListRow, fromImage: Set<string>): SkillSummary {
     description: skill.description,
     origin: skill.origin,
     visibility: skill.visibility,
-    archived: skill.archived,
+    disabled: skill.disabled,
+    disableable: canDisableSkill(skill, userId),
     available: skill.origin !== 'built_in' || fromImage.has(skill.name),
     createdBy: skill.createdBy,
     createdByName: row.createdByName,
-    createdInChatProjectId: skill.createdInChatProjectId,
+    builderChatId: skill.builderChatId,
     usedByAgentCount: row.usedByAgentCount,
     outdatedAgentCount: row.outdatedAgentCount,
     latestVersion: latestVersion

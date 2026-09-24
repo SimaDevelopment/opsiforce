@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import type { AgentCaller } from '../../agent/agent.types';
 import { Perms } from '../../permission/permission.constants';
-import { assertPermission, chatProjectIdOf, type Caller } from '../auth/caller';
+import { assertPermission, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { AgentMapper } from './agents.mapper';
 import { PublicAgentsRepository } from './agents.repository';
@@ -12,8 +12,8 @@ import type {
   AgentPageDto,
   AgentSkillListDto,
   CreateAgent,
-  DuplicateAgent,
   SetAgentSkill,
+  UpdateAgent,
   UpdateAgentProfile,
 } from './agents.schema';
 
@@ -44,6 +44,11 @@ export class PublicAgentsService {
     return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.create(scopeOf(caller), body)));
   }
 
+  async update(caller: Caller, agentId: string, body: UpdateAgent): Promise<AgentDetailDto> {
+    const scope = await this.scopeAfterVisibleRead(caller, agentId);
+    return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.update(scope, agentId, body)));
+  }
+
   async updateProfile(caller: Caller, agentId: string, body: UpdateAgentProfile): Promise<AgentDetailDto> {
     const scope = await this.scopeAfterVisibleRead(caller, agentId);
     return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.updateProfile(scope, agentId, body)));
@@ -61,11 +66,6 @@ export class PublicAgentsService {
     return { items: skills.map(AgentMapper.toSkillDto) };
   }
 
-  async duplicate(caller: Caller, agentId: string, body: DuplicateAgent): Promise<AgentDetailDto> {
-    const scope = await this.scopeAfterVisibleRead(caller, agentId);
-    return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.duplicate(scope, agentId, body)));
-  }
-
   private async scopeAfterVisibleRead(caller: Caller, agentId: string): Promise<AgentCaller> {
     const scope = scopeOf(caller);
     await mappingStoreErrors(() => this.agents.findOne(scope, agentId));
@@ -79,6 +79,5 @@ function scopeOf(caller: Caller): AgentCaller {
     tenantId: caller.organization.id,
     userId: caller.user.platformId,
     canManageAgents: caller.permissions.has(Perms.manageAgents),
-    createdInChatProjectId: chatProjectIdOf(caller),
   };
 }

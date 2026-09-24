@@ -180,7 +180,7 @@ export class ProxyController {
   private async assertKindStampedVisibility(tenantId: string, projectId: string, userId: string): Promise<void> {
     if ((await this.provenance.findKind(projectId)) === null) return;
     if (await isHiddenProjectReachable(tenantId, userId, projectId)) return;
-    throw new ForbiddenException('This chat is private to the member who started it');
+    throw new ForbiddenException("This chat's skill or agent is private to the member who created it");
   }
 
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {

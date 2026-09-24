@@ -343,3 +343,17 @@ a[data-workspace-file-card] [data-workspace-file-download] svg {
 .skill-markdown img {
   max-width: 100%;
 }
+
+.panel-resizing,
+.panel-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.panel-resizing iframe {
+  pointer-events: none;
+}
+
+.panel-resizing .strip-tail {
+  width: 100vw;
+}

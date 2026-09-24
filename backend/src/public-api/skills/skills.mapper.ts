@@ -14,10 +14,10 @@ export const SkillMapper = {
     description: skill.description,
     origin: skill.origin === 'built_in' ? 'built_in' : 'custom',
     visibility: skill.visibility === 'public' ? 'public' : 'private',
-    archived: skill.archived,
+    disabled: skill.disabled,
     available: skill.available,
     createdBy: skill.createdBy,
-    createdInChatProjectId: skill.createdInChatProjectId,
+    builderChatId: skill.builderChatId,
     usedByAgentCount: skill.usedByAgentCount,
     latestVersion: skill.latestVersion
       ? {

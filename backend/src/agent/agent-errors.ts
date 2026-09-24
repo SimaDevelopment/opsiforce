@@ -10,6 +10,13 @@ export function notPublishable(message: string): ConflictException {
   return new ConflictException({ code: 'not_publishable', message });
 }
 
+export function lastBuiltInAgent(label: string): ConflictException {
+  return new ConflictException({
+    code: 'last_built_in_agent',
+    message: `Keep at least one built-in agent enabled — new projects need one to start on. Enable another before disabling ${label}.`,
+  });
+}
+
 export function agentInUse(projectCount: number): ConflictException {
   return new ConflictException({
     code: 'agent_in_use',

@@ -1,15 +1,26 @@
 import { NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, isNull, not, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
-import { agentProfiles, agentSettings, agents } from '../../db/schema';
+import { agentProfiles, agentSettings, agents, tenantDisabledAgents } from '../../db/schema';
 import { readMergedAgentRegistry } from './agent-config';
 
 export const BUILDER_AGENT_SLUG = 'skill-agent-builder';
 
-export type AgentRow = typeof agents.$inferSelect;
+export type AgentRow = typeof agents.$inferSelect & { disabled: boolean };
+
+export function agentDisabledIn(tenantId: string): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from ${tenantDisabledAgents}
+    where ${tenantDisabledAgents.agentId} = ${agents.id} and ${tenantDisabledAgents.tenantId} = ${tenantId}
+  )`;
+}
+
+export function agentColumnsIn(tenantId: string) {
+  return { ...getTableColumns(agents), disabled: agentDisabledIn(tenantId) };
+}
 
 export interface VisibilityOptions {
-  includeArchived?: boolean;
+  includeDisabled?: boolean;
 }
 
 export function visibleAgentsWhere(tenantId: string, userId: string, options: VisibilityOptions = {}): SQL | undefined {
@@ -17,7 +28,7 @@ export function visibleAgentsWhere(tenantId: string, userId: string, options: Vi
     and(isNull(agents.tenantId), eq(agents.origin, 'built_in')),
     and(eq(agents.tenantId, tenantId), or(eq(agents.visibility, 'public'), eq(agents.createdBy, userId)))
   );
-  return options.includeArchived ? scoped : and(scoped, eq(agents.archived, false));
+  return options.includeDisabled ? scoped : and(scoped, not(agentDisabledIn(tenantId)));
 }
 
 export async function findVisibleAgent(
@@ -26,9 +37,9 @@ export async function findVisibleAgent(
   agentId: string
 ): Promise<AgentRow | undefined> {
   const [row] = await db
-    .select()
+    .select(agentColumnsIn(tenantId))
     .from(agents)
-    .where(and(eq(agents.id, agentId), visibleAgentsWhere(tenantId, userId, { includeArchived: true })))
+    .where(and(eq(agents.id, agentId), visibleAgentsWhere(tenantId, userId, { includeDisabled: true })))
     .limit(1);
   return row;
 }
@@ -45,6 +56,20 @@ export function canEditAgent(agent: AgentRow, userId: string): boolean {
 
 export function liveBuiltInSlugs(): string[] {
   return Object.keys(readMergedAgentRegistry().agents).filter((slug) => slug !== BUILDER_AGENT_SLUG);
+}
+
+export function startableBuiltInAgentsWhere(tenantId: string): SQL | undefined {
+  const slugs = liveBuiltInSlugs();
+  return and(
+    eq(agents.origin, 'built_in'),
+    isNull(agents.tenantId),
+    slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`,
+    not(agentDisabledIn(tenantId))
+  );
+}
+
+export function canDisableAgent(agent: AgentRow, userId: string): boolean {
+  return agent.origin === 'custom' ? canEditAgent(agent, userId) : agent.name !== BUILDER_AGENT_SLUG;
 }
 
 export function liveAgentsWhere(tenantId: string, userId: string | null): SQL | undefined {

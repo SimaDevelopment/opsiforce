@@ -168,14 +168,14 @@ export class ProjectImportService {
   ): Promise<{ agentId: string; importedAgent: string | null; agentFallbackFrom: string | null }> {
     const slug = manifest.agent?.slug ?? manifest.agentName;
     if (!slug)
-      return { agentId: await this.agentService.getDefaultAgentId(), importedAgent: null, agentFallbackFrom: null };
+      return { agentId: await this.agentService.getDefaultAgentId(tenantId), importedAgent: null, agentFallbackFrom: null };
 
     const agentId = await this.agentService.findIdByName(slug, tenantId);
     if (agentId) return { agentId, importedAgent: null, agentFallbackFrom: null };
 
     this.logger.warn(`Imported agent "${slug}" not found; linking the default agent and recording the original`);
     return {
-      agentId: await this.agentService.getDefaultAgentId(),
+      agentId: await this.agentService.getDefaultAgentId(tenantId),
       importedAgent: slug,
       agentFallbackFrom: manifest.agent?.displayName ?? slug,
     };

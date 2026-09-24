@@ -18,9 +18,9 @@ const columns: ColumnDef<Item>[] = [
   {
     accessorKey: "title",
     header: ({ column }) => (
-      <button className="flex items-center gap-1" onClick={() => column.toggleSorting()}>
-        Title <ArrowUpDown className="h-3 w-3" />
-      </button>
+      <Button variant="ghost" size="sm" onClick={() => column.toggleSorting()}>
+        Title <ArrowUpDown data-icon="inline-end" />
+      </Button>
     ),
   },
   {
@@ -37,11 +37,11 @@ const columns: ColumnDef<Item>[] = [
     id: "actions",
     cell: ({ row }) => (
       <div className="flex gap-1">
-        <Button size="icon" variant="ghost" onClick={() => onEdit(row.original)}>
-          <Edit className="h-4 w-4" />
+        <Button size="icon" variant="ghost" aria-label="Edit" onClick={() => onEdit(row.original)}>
+          <Edit />
         </Button>
-        <Button size="icon" variant="ghost" onClick={() => onDelete(row.original.id)}>
-          <Trash2 className="h-4 w-4 text-destructive" />
+        <Button size="icon" variant="ghost" aria-label="Delete" onClick={() => onDelete(row.original.id)}>
+          <Trash2 className="text-destructive" />
         </Button>
       </div>
     ),
@@ -160,6 +160,7 @@ const table = useReactTable({
 
 ```tsx
 import { type RowSelectionState } from "@tanstack/react-table"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
@@ -167,10 +168,10 @@ const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 const selectColumn: ColumnDef<Item> = {
   id: "select",
   header: ({ table }) => (
-    <input type="checkbox" checked={table.getIsAllPageRowsSelected()} onChange={table.getToggleAllPageRowsSelectedHandler()} />
+    <Checkbox checked={table.getIsAllPageRowsSelected()} onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)} aria-label="Select all" />
   ),
   cell: ({ row }) => (
-    <input type="checkbox" checked={row.getIsSelected()} onChange={row.getToggleSelectedHandler()} />
+    <Checkbox checked={row.getIsSelected()} onCheckedChange={(v) => row.toggleSelected(!!v)} aria-label="Select row" />
   ),
 }
 
