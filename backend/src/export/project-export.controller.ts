@@ -4,6 +4,7 @@ import { open } from 'node:fs/promises';
 import { ProjectExportService } from './project-export.service';
 import { ProjectService } from '../project/project.service';
 import { ProjectEventsService } from '../project/project-events.service';
+import { isChatKind, type ProjectResponse } from '../project/project.types';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { UserService } from '../user/user.service';
@@ -26,7 +27,13 @@ export class ProjectExportController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ) {
-    await this.gate(projectId, tenant.tenantId, user);
+    const project = await this.gate(projectId, tenant.tenantId, user);
+    if (isChatKind(project.kind)) {
+      throw new BadRequestException({
+        code: 'not_exportable',
+        message: 'A Builder chat belongs to its skill or agent and cannot be exported',
+      });
+    }
     return this.exportService.startExport(projectId, tenant.tenantId);
   }
 
@@ -139,9 +146,9 @@ export class ProjectExportController {
     stream.pipe(reply.raw);
   }
 
-  private async gate(projectId: string, tenantId: string, user: UserContext): Promise<void> {
+  private async gate(projectId: string, tenantId: string, user: UserContext): Promise<ProjectResponse> {
     const userId = await this.userService.resolveUserId(user, tenantId);
-    await this.projectService.findOneForUser({ projectId, tenantId, userId });
+    return this.projectService.findOneForUser({ projectId, tenantId, userId });
   }
 }
 

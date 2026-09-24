@@ -89,7 +89,8 @@ export function ProjectActionsMenu(props: {
     return (workspaces.data ?? []).find((w) => w.id === props.workspaceId)?.name ?? 'workspace';
   });
 
-  const kind = () => props.project?.kind ?? null;
+  const kind = () => props.project?.kind;
+  const kindKnown = () => kind() !== undefined;
   const isBuilderChat = () => kind() === 'skill_builder_chat' || kind() === 'agent_builder_chat';
   const showMove = () =>
     kind() === null && (moveTargets().length > 0 || (canManageWorkspaces() && props.workspaceId !== null));
@@ -204,7 +205,7 @@ export function ProjectActionsMenu(props: {
             Restart
           </ActionsMenuItem>
         </Show>
-        <Show when={canDisable() && (isDisabled() || !isBuilderChat())}>
+        <Show when={canDisable() && (isDisabled() || (kindKnown() && !isBuilderChat()))}>
           <Show
             when={isDisabled()}
             fallback={

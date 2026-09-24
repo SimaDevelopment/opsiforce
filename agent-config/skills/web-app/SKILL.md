@@ -85,7 +85,7 @@ Then `appConfig("STRIPE_API_KEY")` — never `.env`, never `process.env` for the
 ## The build order
 
 1. **Before writing any code**, `cd /workspace/app && yarn install`. Not optional: nothing runs without installed dependencies.
-2. **Design first.** When you carry `frontend-design`, load it before any UI code: it holds the design system, the palettes and the anti-patterns. Every App gets a brand colour and a theme of its own; update the variables in `index.css`.
+2. **MANDATORY: load the `frontend-design` skill before writing any UI code** — call `skill({ name: "frontend-design" })`. Do not skip this. It holds the design system, the palettes and the anti-patterns. Every App gets a brand colour and a theme of its own, never generic gray defaults; update the variables in `index.css`. If you do not carry `frontend-design`, say so — the author can add it.
 3. **Check for an existing App** — `cat app/app.meta.json 2>/dev/null`. If it exists, modify what is there.
 4. **Build, in this order:**
    - **`pages/home.tsx` is the App.** Rewrite it with the real functionality. It is never a landing page that links to the real content.

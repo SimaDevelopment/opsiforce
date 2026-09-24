@@ -17,7 +17,7 @@ adrs: [0061, 0068]
 - Nothing is prepended to an Agent's prompt. A Custom Agent's body is its author's words alone, and the delivery writer wraps it in frontmatter and nothing else, so there is no rendered composite anywhere to inspect ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)).
 - Because a skill is loaded on demand, a prompt that needs the contract says one line — *"Load the `platform` skill before serving anything"* — and nothing more. A prompt that restates a platform fact instead freezes it at the moment its Project was created, which is the failure the split exists to prevent.
 - Its name is reserved and it cannot be removed from an Agent's Skills, so no Agent can be authored without it.
-- A change to it is an image bump and an [Agent Updates](agent-updates.md) `content` run, reaching every existing Project of every Agent kind with no pod restart — which is what makes the split cheap enough to be worth having.
+- A change to it is an image bump and an [Agent Updates](agent-updates.md) `content` run, reaching every existing Project of a Built-in Agent with no pod restart — which is what makes the split cheap enough to be worth having. A Custom Agent's Project keeps the `platform` Version it was created with: the `content` run skips a Skill the backend delivered rather than the image, and a re-pin reaches only Projects created after it.
 
 ### The App contract
 

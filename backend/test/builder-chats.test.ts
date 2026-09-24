@@ -12,18 +12,24 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../db';
 import { agents, projects, skills, tenantDisabledSkills } from '../db/schema';
 import { BUILDER_AGENT_SLUG } from '../src/agent/agent-visibility';
 import { BuilderController } from '../src/builder/builder.controller';
 import type { BuilderChatCaller } from '../src/builder/builder.types';
 import { configuration } from '../src/config/configuration';
+import { ProjectExportController } from '../src/export/project-export.controller';
+import type { ProjectExportService } from '../src/export/project-export.service';
 import { MissingPermissionException } from '../src/permission/missing-permission.exception';
 import { Perms } from '../src/permission/permission.constants';
 import { PermissionGuard } from '../src/permission/permission.guard';
+import type { ProjectEventsService } from '../src/project/project-events.service';
 import { isProjectAccessible } from '../src/project/project-visibility';
+import type { TenantContext } from '../src/tenant/tenant.decorator';
 import { TenantGuard } from '../src/tenant/tenant.guard';
+import type { UserContext } from '../src/user/user.decorator';
+import type { UserService } from '../src/user/user.service';
 import { ensureBuiltInAgent, seedLiveAgent } from './support/agent-fixtures';
 import { createDomainTestingModule, type DomainTestHarness } from './support/domain';
 import { DomainTestModule } from './support/domain-module';
@@ -269,6 +275,23 @@ describe('starting over and deleting', () => {
     await expect(harness.projects.duplicate(chat.id, tenantId, undefined, creator.userId)).rejects.toBeInstanceOf(
       BadRequestException
     );
+  });
+
+  it('refuses to export a chat, which would belong to nothing', async () => {
+    const skillId = await seedSkill();
+    const chat = await harness.builderChats.openFor(creator, { skillId });
+    const startExport = vi.fn();
+    const controller = new ProjectExportController(
+      { startExport } as unknown as ProjectExportService,
+      harness.projects,
+      {} as ProjectEventsService,
+      { resolveUserId: () => Promise.resolve(creator.userId) } as unknown as UserService
+    );
+
+    await expect(
+      controller.start(chat.id, { tenantId } as TenantContext, {} as UserContext)
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(startExport).not.toHaveBeenCalled();
   });
 });
 
