@@ -277,6 +277,16 @@ describe('starting over and deleting', () => {
     );
   });
 
+  it('refuses to duplicate a test Project, which would be a second live one for its chat', async () => {
+    const agentId = await seedAgent();
+    const chat = await harness.builderChats.openFor(creator, { agentId });
+    const testProjectId = await seedTestProject(chat.id, agentId);
+
+    await expect(
+      harness.projects.duplicate(testProjectId, tenantId, undefined, creator.userId)
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('refuses to export a chat, which would belong to nothing', async () => {
     const skillId = await seedSkill();
     const chat = await harness.builderChats.openFor(creator, { skillId });

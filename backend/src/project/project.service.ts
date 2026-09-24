@@ -559,10 +559,12 @@ export class ProjectService implements OnApplicationBootstrap {
       .select({ kind: projects.kind })
       .from(projects)
       .where(and(eq(projects.id, sourceId), eq(projects.tenantId, tenantId)));
-    if (isChatKind(source?.kind)) {
+    if (source?.kind) {
       throw new BadRequestException({
         code: 'not_duplicable',
-        message: 'A Builder chat belongs to its skill or agent and cannot be duplicated',
+        message: isChatKind(source.kind)
+          ? 'A Builder chat belongs to its skill or agent and cannot be duplicated'
+          : 'A test Project belongs to its Builder chat and cannot be duplicated',
       });
     }
     return this.duplicateOne(sourceId, tenantId, dto, createdBy);

@@ -31,9 +31,9 @@ skipped either.
 
 A Custom Agent's Project opens on an empty `/workspace/app`, and two Projects that each start from
 nothing end up as two different architectures. So every Agent that builds an App lays a **template**
-first — never on an empty `app/` — and its body states the **architecture** every one of its Projects
-follows. You decide both from the brief and report them; the author is not asked to choose between
-stacks they cannot compare.
+into that empty `app/` before it builds anything — never builds from nothing — and its body states the
+**architecture** every one of its Projects follows. You decide both from the brief and report them; the
+author is not asked to choose between stacks they cannot compare.
 
 **The template.** The default is the platform's web-app starter: a React frontend, a NestJS backend
 with its own database, and a `startup.sh` that already satisfies the App contract. The `web-app` skill

@@ -368,7 +368,7 @@ describe('the agent-authoring skill', () => {
 
   it('gives every building Agent a template to lay first and an Architecture in its body (ADR-0068)', () => {
     expect(agentAuthoring).toMatch(/Every Agent that builds starts from a template/);
-    expect(agentAuthoring).toMatch(/never on an empty `app\/`/);
+    expect(agentAuthoring).toMatch(/lays a \*\*template\*\*\s+into that empty `app\/` before it builds anything/);
     expect(agentAuthoring).toContain('Load the `web-app` skill before touching the app');
     expect(agentAuthoring).toMatch(/The architecture lives in the body/);
     expect(agentAuthoring).toMatch(/scaffold Skill/);
