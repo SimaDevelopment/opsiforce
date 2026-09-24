@@ -1,17 +1,15 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
-import { useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
-import { useCreateAgent, useStoreAgents, type StoreAgent } from '~/api/agents';
-import { ApiError } from '~/api/client';
+import { useStoreAgents, type StoreAgent } from '~/api/agents';
 import { useEnvironments, type Environment } from '~/api/environments';
 import { usePermissions } from '~/api/permissions';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Spinner } from '~/components/ui/spinner';
 import { EnvironmentBadge } from '~/components/environment-badge';
+import { CreateEntryDialog } from '~/components/store/create-entry-dialog';
 import { SettingsSection } from '~/components/settings/settings-section';
 import {
-  ArchivedBadge,
+  DefaultEnvironmentMark,
+  DisabledBadge,
   EmptyState,
   ErrorState,
   FilterChips,
@@ -32,7 +30,7 @@ export function AgentsListPage(props: StoreListProps) {
     () => props.query,
     (query) => props.onQuery(query)
   );
-  const filter = () => (props.filter === 'archived' && !canManage() ? 'all' : props.filter);
+  const filter = () => (props.filter === 'disabled' && !canManage() ? 'all' : props.filter);
   const agents = useStoreAgents(
     filter,
     () => props.query
@@ -87,7 +85,7 @@ export function AgentsListPage(props: StoreListProps) {
         </Show>
       </Show>
 
-      <CreateAgentDialog open={createOpen()} onOpenChange={setCreateOpen} />
+      <CreateEntryDialog type="agent" open={createOpen()} onOpenChange={setCreateOpen} />
     </SettingsSection>
   );
 }
@@ -120,8 +118,8 @@ function AgentRow(props: { agent: StoreAgent; environmentById: Map<string, Envir
           <Show when={props.agent.visibility === 'private'}>
             <VisibilityBadge visibility="private" />
           </Show>
-          <Show when={props.agent.archived}>
-            <ArchivedBadge />
+          <Show when={props.agent.disabled}>
+            <DisabledBadge />
           </Show>
         </div>
         <Show when={props.agent.description}>
@@ -139,8 +137,7 @@ function AgentRow(props: { agent: StoreAgent; environmentById: Map<string, Envir
                   <li class="inline-flex items-center gap-1">
                     <EnvironmentBadge environment={environment} />
                     <Show when={isDefault()}>
-                      <span class="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
-                      <span class="sr-only">{environment.name} is where new projects start</span>
+                      <DefaultEnvironmentMark environmentName={environment.name} plain />
                     </Show>
                   </li>
                 );
@@ -151,93 +148,5 @@ function AgentRow(props: { agent: StoreAgent; environmentById: Map<string, Envir
       </div>
       <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden="true" />
     </RowLink>
-  );
-}
-
-function CreateAgentDialog(props: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const navigate = useNavigate();
-  const createAgent = useCreateAgent();
-  const [displayName, setDisplayName] = createSignal('');
-  const [description, setDescription] = createSignal('');
-  const [error, setError] = createSignal<string | null>(null);
-
-  const close = () => {
-    setDisplayName('');
-    setDescription('');
-    setError(null);
-    props.onOpenChange(false);
-  };
-
-  const save = async () => {
-    const name = displayName().trim();
-    if (!name) return;
-    setError(null);
-    try {
-      const agent = await createAgent.mutateAsync({ displayName: name, description: description().trim() || null });
-      close();
-      toast.success(`Created ${agent.displayName ?? agent.name}`);
-      navigate({ to: `/store/agents/${agent.id}` });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'The agent could not be created.');
-    }
-  };
-
-  return (
-    <Dialog open={props.open} onOpenChange={(open) => (open ? props.onOpenChange(true) : close())}>
-      <DialogContent>
-        <DialogTitle>New agent</DialogTitle>
-        <DialogDescription>
-          The agent starts private, with an empty Development definition you edit and then publish onward.
-        </DialogDescription>
-
-        <div class="mt-4 space-y-3">
-          <div>
-            <label for="new-agent-name" class="mb-1 block text-xs text-muted-foreground">
-              Display name
-            </label>
-            <input
-              id="new-agent-name"
-              type="text"
-              value={displayName()}
-              onInput={(event) => {
-                setDisplayName(event.currentTarget.value);
-                setError(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && displayName().trim()) void save();
-              }}
-              class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              placeholder="e.g. Research Agent"
-              autofocus
-            />
-          </div>
-          <div>
-            <label for="new-agent-description" class="mb-1 block text-xs text-muted-foreground">
-              Description
-            </label>
-            <input
-              id="new-agent-description"
-              type="text"
-              value={description()}
-              onInput={(event) => setDescription(event.currentTarget.value)}
-              class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              placeholder="What this agent is for."
-            />
-          </div>
-          <Show when={error()}>
-            <p class="text-xs text-destructive">{error()}</p>
-          </Show>
-        </div>
-
-        <div class="mt-4 flex justify-end gap-2">
-          <Button size="sm" variant="outline" onClick={close}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={save} disabled={!displayName().trim() || createAgent.isPending}>
-            Create
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

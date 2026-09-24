@@ -5,6 +5,7 @@ import { RelaxPermission, RequirePermission } from '../permission/permission.gua
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
+import { ProjectService } from '../project/project.service';
 import { UserService } from '../user/user.service';
 import { modelCatalogResponse, type ModelCatalogProvider } from './agent-models';
 import { AgentService } from './agent.service';
@@ -31,7 +32,8 @@ import type {
 export class AgentController {
   constructor(
     private readonly agentService: AgentService,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    private readonly projectService: ProjectService
   ) {}
 
   @Get()
@@ -71,17 +73,6 @@ export class AgentController {
     @CurrentUser() user: UserContext
   ): Promise<AgentDetail> {
     return this.agentService.findOne(await this.caller(req, tenant, user), id);
-  }
-
-  @Get(':id/skills')
-  @RelaxPermission()
-  async listSkills(
-    @Param('id') id: string,
-    @Req() req: FastifyRequest,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
-  ): Promise<AgentProfileSkillResponse[]> {
-    return this.agentService.listSkills(await this.caller(req, tenant, user), id);
   }
 
   @Get(':id/delivery')
@@ -195,24 +186,24 @@ export class AgentController {
     return this.agentService.duplicate(await this.caller(req, tenant, user), id, dto);
   }
 
-  @Post(':id/archive')
-  async archive(
+  @Post(':id/disable')
+  async disable(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<AgentDetail> {
-    return this.agentService.setArchived(await this.caller(req, tenant, user), id, true);
+    return this.agentService.setDisabled(await this.caller(req, tenant, user), id, true);
   }
 
-  @Post(':id/restore')
-  async restore(
+  @Post(':id/enable')
+  async enable(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<AgentDetail> {
-    return this.agentService.setArchived(await this.caller(req, tenant, user), id, false);
+    return this.agentService.setDisabled(await this.caller(req, tenant, user), id, false);
   }
 
   @Delete(':id')
@@ -223,7 +214,9 @@ export class AgentController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<void> {
-    await this.agentService.remove(await this.caller(req, tenant, user), id);
+    await this.agentService.remove(await this.caller(req, tenant, user), id, async (projectIds) => {
+      for (const projectId of projectIds) await this.projectService.remove(projectId, tenant.tenantId);
+    });
   }
 
   private async caller(req: FastifyRequest, tenant: TenantContext, user: UserContext): Promise<AgentCaller> {

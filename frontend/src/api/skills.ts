@@ -52,11 +52,12 @@ export interface Skill {
   description: string | null;
   origin: string;
   visibility: string;
-  archived: boolean;
+  disabled: boolean;
+  disableable: boolean;
   available: boolean;
   createdBy: string | null;
   createdByName: string | null;
-  createdInChatProjectId: string | null;
+  builderChatId: string | null;
   usedByAgentCount: number;
   outdatedAgentCount: number;
   latestVersion: SkillVersionSummary | null;
@@ -87,10 +88,11 @@ export function useSkills(filter: () => StoreFilter, query: () => string) {
   }));
 }
 
-export function useSkill(id: () => string) {
+export function useSkill(id: () => string, enabled: () => boolean = () => true) {
   return createAppQuery(() => ({
     queryKey: skillKeys.detail(id()),
     queryFn: () => api.get<Skill>(`/skills/${id()}`),
+    enabled: enabled(),
   }));
 }
 
@@ -133,6 +135,14 @@ function useSkillMutation<TVariables>(call: (variables: TVariables) => Promise<S
   }));
 }
 
+export function useCreateSkill() {
+  return useSkillMutation((dto: { name: string; displayName: string }) => api.post<Skill>('/skills', dto));
+}
+
+export function useUpdateSkill(id: () => string) {
+  return useSkillMutation((dto: { displayName: string | null }) => api.patch<Skill>(`/skills/${id()}`, dto));
+}
+
 export function useDuplicateSkill(id: () => string) {
   return useSkillMutation((dto: { name: string }) => api.post<Skill>(`/skills/${id()}/duplicate`, dto));
 }
@@ -141,9 +151,9 @@ export function useSetSkillVisibility(id: () => string) {
   return useSkillMutation((visibility: string) => api.post<Skill>(`/skills/${id()}/visibility`, { visibility }));
 }
 
-export function useSetSkillArchived(id: () => string) {
-  return useSkillMutation((archived: boolean) =>
-    api.post<Skill>(`/skills/${id()}/${archived ? 'archive' : 'restore'}`, {})
+export function useSetSkillDisabled(id: () => string) {
+  return useSkillMutation((disabled: boolean) =>
+    api.post<Skill>(`/skills/${id()}/${disabled ? 'disable' : 'enable'}`, {})
   );
 }
 

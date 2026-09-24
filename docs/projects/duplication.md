@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [Duplicate]
-adrs: [0011]
+adrs: [0011, 0066]
 ---
 
 # Duplication
@@ -17,6 +17,7 @@ adrs: [0011]
 - Duplication runs on the same git mechanism as [Publish](publish.md): commit the source's working tree, make the Duplicate a local clone, detach it from its origin ([ADR-0011](../adr/0011-duplication-reuses-git-publish-path.md)).
 - Runtime state that git ignores, including databases, the session store, the variables file and the installed dependency store, is then copied subtractively: everything ignored, minus a small skip-list of caches the App regenerates.
 - The job reports step progress (snapshot, clone, runtime-state copy, App starting) over its own SSE stream into the [Job Dock](../frontend/job-dock.md); the new Project shows as `starting` and "Open project" appears once its App responds ([App Readiness](app-readiness.md)).
+- A [Builder chat](../../CONTEXT.md) is refused with `not_duplicable`, because a copy would belong to no Skill or Agent ([ADR-0071](../adr/0071-a-builder-chat-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)); the menu offers Duplicate only on ordinary Projects.
 - Gated by `can_duplicate_project` ([Permissions](../organization/permissions.md)); the Duplicate lands in the source's Workspace, so it never widens who can see a Project.
 
 ## Code

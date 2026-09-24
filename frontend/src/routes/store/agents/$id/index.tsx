@@ -2,14 +2,15 @@ import { createFileRoute, type SearchSchemaInput } from '@tanstack/solid-router'
 import { AgentPage } from '~/pages/store/agent-page';
 
 export interface AgentPageSearch {
-  /** The Environment whose panel is open. Empty means Development, which the page resolves. */
   env: string;
+  skill?: string;
 }
 
-export const Route = createFileRoute('/store/agents/$id')({
+export const Route = createFileRoute('/store/agents/$id/')({
   component: StoreAgent,
   validateSearch: (search: Record<string, unknown> & SearchSchemaInput): AgentPageSearch => ({
     env: typeof search.env === 'string' ? search.env : '',
+    ...(typeof search.skill === 'string' && search.skill ? { skill: search.skill } : {}),
   }),
 });
 
@@ -22,6 +23,7 @@ function StoreAgent() {
     <AgentPage
       agentId={params().id}
       env={search().env}
+      fromSkillId={search().skill}
       onEnv={(env) => navigate({ search: (prev) => ({ ...prev, env }), replace: true })}
     />
   );

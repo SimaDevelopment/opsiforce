@@ -5,11 +5,15 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { composeSkills, planCompose, sharedSkillsForPackage } from "./compose-skills.mjs"
 
-const shared = ["agent-browser", "llm-api", "platform", "sqlite"]
+const shared = ["agent-browser", "llm-api", "platform", "sqlite", "web-app"]
 
 describe("sharedSkillsForPackage", () => {
   it("gives a built-in package the whole shared pool", () => {
     assert.deepEqual(sharedSkillsForPackage("app-builder", shared), shared)
+  })
+
+  it("leaves the shadcn web-app skill out of the Makara package, whose starter is MUI", () => {
+    assert.deepEqual(sharedSkillsForPackage("makara-app-builder", shared), ["agent-browser", "llm-api", "platform", "sqlite"])
   })
 
   it("gives the custom package the platform skill and nothing else", () => {

@@ -5,8 +5,8 @@ $OPSIFORCE_API_KEY`; `scripts/api.sh call` does that. Runtime calls go to the te
 through the runtime proxy at `$OPSIFORCE_RUNTIME_PROXY_URL`, a different Service from the platform
 API; `scripts/api.sh runtime <baseUrl> …` resolves the Connection's `baseUrl` against it.
 
-Your key acts as the human who created this chat and reaches **only Projects this chat created**.
-Anything else answers 404, so a cleanup mistake cannot touch someone's work.
+Anything outside the Projects this chat created answers 404, so a cleanup mistake cannot touch
+someone's work.
 
 ## 0. Resume — which test Project is mine?
 
@@ -27,8 +27,7 @@ is gone, just create a new one — a create supersedes any predecessor anyway (s
 
 ## 1. Delete the predecessor
 
-A test Project is single-use: it froze the child's definition at its creation moment. Starting a new
-test replaces the old one.
+A new test replaces the old test Project.
 
 ```sh
 sh scripts/api.sh call DELETE "/projects/$P"      # 204, permanent, no undo
@@ -42,7 +41,7 @@ runs as — a 403 here is that permission, not a bug, and the automatic supersed
 ## 2. Create the test Project
 
 ```sh
-A=$AGENT_ID   # the child Agent's id, from POST /agents or GET /agents
+A=$(sh scripts/api.sh call GET /me | jq -r .builderSubject.id)
 P=$(sh scripts/api.sh call POST /projects \
       '{"agentId":"'"$A"'","title":"Test: release notes","kind":"test"}' | jq -r .id)
 ```
@@ -54,16 +53,24 @@ P=$(sh scripts/api.sh call POST /projects \
 
 ## 3. Wait for it to be ready
 
-One blocking line; a cold create is tens of seconds:
+One blocking line with a ceiling; a loop with no end is how a test run turns into a stuck chat:
 
 ```sh
-until [ "$(sh scripts/api.sh call GET "/projects/$P" | jq -r '.environments[0].status')" = "active" ]; do sleep 5; done
+wait_active() {   # $1 = attempts of 5 s; 36 is three minutes
+  for i in $(seq 1 "${1:-36}"); do
+    s=$(sh scripts/api.sh call GET "/projects/$P" | jq -r '.environments[0].status')
+    [ "$s" = "active" ] && return 0
+    [ "$s" = "failed" ] && { echo "environment failed"; return 1; }
+    sleep 5
+  done
+  echo "still $s after $((${1:-36} * 5)) s"; return 1
+}
+wait_active || exit 1
 ```
 
 `environments[0]` is Development. Other statuses worth recognising: `starting` (keep waiting),
-`failed` (stop — report it and do not prompt), `pending`/`claiming` (still being built). Put a ceiling
-on your own patience: if it is still not active after a couple of minutes, say so rather than looping
-forever.
+`failed` (stop — report it and do not prompt), `pending`/`claiming` (still being built). When the
+ceiling is hit, say so in the report rather than looping again.
 
 ## 4. Connect
 
@@ -93,39 +100,69 @@ sh scripts/api.sh runtime "$BASE" GET  "/api/session/$SES/message?limit=10&order
   and conflicts on a different one.
 - `wait` means *the Session went idle*, not *your prompt succeeded*. Read the outcome from the
   checks in step 6, not from the messages.
-- One Session, one workspace, prompts in sequence. Keep every prompt of the run in this Project; the
-  contract in `SKILL.md` says why a second and a third prompt are not optional.
+- **A child's turn can take many minutes, and `wait` holds until it ends.** Your shell stops a
+  command after two minutes unless told otherwise, so run the `wait` call with the shell tool's
+  `timeout` set to `1200000` (twenty minutes). Its return is the only signal you need; do not poll.
+- **When `wait` comes back without the child idle** — the ceiling hit or the connection dropped —
+  look once at the latest messages. Anything new since your prompt (a message, a tool call, a command
+  still producing output) means it is working: call `wait` again.
+- **Idle is not finished.** After every `wait`, read the child's last assistant message. A finished
+  turn ends on `"finish":"stop"`. `"finish":"error"` (it carries an `error`), or a last message that
+  still says `"finish":"tool-calls"`, means the turn broke off, whatever the cause — your interrupt, a
+  pod restart, a model error. Do not grade a broken turn. Send one prompt — *"Your last turn was cut off.
+  Continue where you stopped, then report each check you made and what it returned."* — and `wait`
+  again. A second broken turn is a stall: report the turn as unfinished.
+- One Session, one workspace, prompts in sequence; `SKILL.md` says why a second and a third prompt are
+  not optional.
 - **Ask for checks, not a verdict.** End a test prompt with *"report each check you made and what it
   returned, not a summary"*. "Layout checks passed" is a bundle you can only take or leave; the separate
   results behind it are things you can re-run and disagree with. Put this in the prompt you send, never
   in the Agent's own body — the body is the product and ships to real users.
-- `POST /api/session/$SES/interrupt` stops a child that is going nowhere.
+- `POST /api/session/$SES/interrupt` is for a genuine stall only: nothing new for about five minutes,
+  or the same failing command repeating — never while a build, an install or a test is still running.
+  An interrupted turn is a stall, not a failure of the definition: say so in the report, and prompt the
+  child once to continue or report it unfinished — never start another run to see if it was a fluke.
 
 ## 6. Verify — the shell for files and data, your own browser for the page
 
-Every machine-checkable row in `scratch/<agent>.expectations.md` already names the command that
-decides it. Grading is running those commands; nothing here asks you to decide what to believe.
+Grading is running the command each machine-checkable line of `scratch/<agent>.expectations.md`
+names.
 
 ### The test Project's shell
 
-Session-free, so it stays out of the child's transcript:
+Session-free, so it stays out of the child's transcript. A shell call does not remember the last one,
+so put `run` and `wait_active` in `scratch/helpers.sh` once and start every shell call that uses them
+with `. scratch/helpers.sh`:
 
 ```sh
 run() {
   # timeout is in MILLISECONDS — 60 would kill the command after a sixteenth of a second.
   id=$(sh scripts/api.sh runtime "$BASE" POST /api/shell "{\"command\":$(jq -Rn --arg c "$1" '$c'),\"timeout\":60000}" | jq -r .data.id)
-  until [ "$(sh scripts/api.sh runtime "$BASE" GET "/api/shell/$id" | jq -r .data.status)" != "running" ]; do sleep 2; done
+  for i in $(seq 1 45); do   # the runtime kills the command at 60 s; 90 s here means the runtime itself is gone
+    [ "$(sh scripts/api.sh runtime "$BASE" GET "/api/shell/$id" | jq -r .data.status)" != "running" ] && break
+    sleep 2
+  done
   sh scripts/api.sh runtime "$BASE" GET "/api/shell/$id/output" | jq -r .data.output
 }
 
 run 'cat /workspace/app/app.meta.json'                     # go-live: does it exist, is it {name, description}
 run 'ls -l /workspace/app/startup.sh'                      # the App contract: present and executable
+run 'cat /workspace/app/startup.sh'                        # every service the Architecture names: ensured, under guard, before the server?
+run 'find /workspace/app -maxdepth 3 -type d -not -path "*/node_modules*" -not -path "*/.yarn*"'   # the layout the Architecture names
 run 'curl -s -o /dev/null -w "%{http_code}" localhost:$APP_PORT'   # anything answering counts as serving
 run 'ls -1 /workspace/.opencode/skills'                    # the Skills the Agent actually carries
 run 'head -40 /workspace/.opencode/agents/*.md'            # the prompt as delivered
 run 'sqlite3 /workspace/app/data/app.db ".tables"'         # the App's own database, if it keeps one
 run 'sqlite3 -header -column /workspace/app/data/app.db "select * from <table> limit 20;"'
 ```
+
+The `sqlite3` lines here and below read the default starter's database. When the Architecture section
+replaced it, read the App's data with that store's own client instead — the Skill the body names for
+it says how.
+
+When the Architecture section replaced any layer of the starter, one machine-checkable expectation
+says the old layer is gone — its package out of the manifest, its code out of `app/` — because the
+Agent otherwise runs two of that layer, and the stack Skill for the old one still reads as current.
 
 For crashes, error lines and failed requests, run the queries the `platform` skill gives (§Verify the
 App booted, §Investigate failed requests and crashes) through `run`. They are the same queries the child
@@ -135,9 +172,7 @@ with a climbing `restart_count` is a crash loop, and it outranks anything the ch
 For an Agent with no App, the checks are whatever its job is: a file it was asked to write, a row it
 was asked to insert, the exit code of a command it claimed to run.
 
-Everything through `run` is a **read**. Do not create, edit or delete the child's files or rows from
-here — if a check needs different data, put it in the way a user would, through the page or the App's
-API, and let the child fix its own code through a prompt.
+Everything through `run` is a **read** — `SKILL.md` says why.
 
 ### Data written in one prompt, read back after the next
 
@@ -151,19 +186,25 @@ run 'sqlite3 /workspace/app/data/app.db "select count(*) from <table>;"'   # bef
 
 ### The Skills it carries, and the ones it used
 
-A listing of `.opencode/skills` proves delivery, not use. For an executable Skill, check the file is
-present and `-rwx` and runs under the child's node; then prove *use* from the artefact only that Skill
-could produce — run its script yourself on the same input and compare bytes with what the App serves,
-and, where the Skill says to copy the script rather than re-implement it, compare hashes:
+A listing of `.opencode/skills` proves delivery, not use. Use shows in the App: the structure a stack
+Skill describes is the one on disk, its contracts hold for what the App actually produces, and its
+definition-of-done checks pass when you run them yourself. When the Skill ships a checker in
+`scripts/`, run it on the App's real output — an export it made, a response it served — not on a
+sample of your own:
 
 ```sh
 run 'ls -l /workspace/.opencode/skills/<name>/scripts/'
-run 'printf %s "<sample input>" | node /workspace/.opencode/skills/<name>/scripts/<script>'
-run 'md5sum /workspace/.opencode/skills/<name>/scripts/<script> /workspace/app/scripts/<script>'
+run 'node /workspace/.opencode/skills/<name>/scripts/<checker> <what the App produced>'
 ```
 
-Identical bytes and identical output settle it. A hand-rolled re-implementation that happens to match
-on one case does not, so pick an input the format's edge cases show up in.
+Pick an output the contract's edge cases show up in; one easy case passing proves little.
+
+A scaffold's `check-skeleton.sh` is one expectation in every run of its Agent, graded after each
+prompt and again after the restart:
+
+```sh
+run 'bash /workspace/.opencode/skills/<name>/scripts/check-skeleton.sh; echo "exit=$?"'   # every line PASS, exit=0
+```
 
 ### The page: look at it yourself
 
@@ -199,19 +240,41 @@ Two cautions, both learned the hard way:
 - **When your check disagrees with the child, find out which of you is wrong before reporting it.** A
   false positive spent as a defect costs the author more than the check saved.
 
-What you leave to the author is taste: whether the page is pleasant, whether the spacing reads,
-whether a message helps. They have the test Project's preview open beside this chat — point them there.
+### Restart the pod, then check again
+
+Once the App is live, recreate the child's pod — once per run; a restart before go-live proves
+nothing. The container is thrown away and `startup.sh` runs from cold on the same workspace, as when
+the Project idles out and is resumed:
+
+```sh
+sh scripts/api.sh call POST "/projects/$P/restart"                    # 204: the pod is being recreated
+wait_active || exit 1
+C=$(sh scripts/api.sh call POST "/projects/$P/environments/$E/connect")   # a new pod is a new Connection
+BASE=$(printf '%s' "$C" | jq -r .baseUrl)
+run 'curl -s -o /dev/null -w "%{http_code}" localhost:$APP_PORT'          # serving again?
+run 'sqlite3 /workspace/app/data/app.db "select count(*) from <table>;"'  # data still there?
+```
+
+Then re-run the page sequence once.
 
 ## 7. Report and clean up
 
-Report against the expectations you wrote before the run, machine-checkable first, **in plain
-language**. The commands are how you grade; they are not what you say. "I added two expenses, reloaded,
-and the totals and the CSV were still right — and the page holds up on a phone" is the report. A list
-of shell lines is not, and neither is a transcript.
+Report against the expectations you wrote before the run, machine-checkable first — what you expected,
+what you saw, what you changed — **in plain language, not shell lines** and not a transcript: "I added
+two expenses, reloaded, and the totals and the CSV were still right — and the page holds up on a
+phone."
 
-Two things do belong in it: **which passes you saw for yourself and which you are relaying from the
-child**, and any check you did not run — that one is neither a pass nor a fail.
+Link every screenshot you took to decide a pass as a workspace path —
+`[phone, 375px](/workspace/scratch/shots/<agent>-375.png)` — which opens as a preview beside the chat,
+so the author sees what you looked at. A bare path in backticks opens nothing, and a "looks right" with no screenshot
+is a claim the author cannot check.
+
+Say **which passes you saw for yourself and which you are relaying from the child**, and name any check
+you did not run — it is neither a pass nor a fail. A 200 from the App is availability, not
+correctness: the pass is the expectation met by the content, the row or the page you checked.
 
 Leave the test Project alive while the author might want to open it — it is openable from this chat,
-and the transcript and App pane are the most useful thing about a failed run. Delete it when they are
-done, or let the next create supersede it.
+and the transcript and App pane are the most useful thing about a failed run. Before a new create
+supersedes it, copy what the next run will need to compare against into `scratch/` — the failing
+command and its output, the screenshot — because the create deletes the old Project with its
+workspace. Delete it when the author is done.

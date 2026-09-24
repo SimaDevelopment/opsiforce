@@ -1,5 +1,5 @@
 import { Button } from '~/components/ui/button';
-import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
@@ -8,7 +8,7 @@ import { useProjectStatus } from '~/api/projects';
 import { useProjectEnvironments } from '~/api/environments';
 import { deletionCoversPath } from '~/api/files';
 import { Spinner } from '~/components/ui/spinner';
-import { ProjectHeader, type ProjectTab } from '~/components/project/project-header';
+import { ProjectHeader, type ProjectSurfaceSlots, type ProjectTab } from '~/components/project/project-header';
 import { ProjectChatTab } from '~/components/project/project-chat-tab';
 import { ProjectCodeTab } from '~/components/project/project-code-tab';
 import { ProjectDbTab } from '~/components/project/project-db-tab';
@@ -19,13 +19,23 @@ import { ProjectFailed } from '~/components/project/project-failed';
 import { EnvProdBanner } from '~/components/project/environments/env-prod-banner';
 import { useJobDock } from '~/components/project/jobs/job-dock-context';
 import { useOpenCodeConnection, type InitialPrompt } from '~/components/project/use-opencode-connection';
+import { usePaneStripSlot } from '~/components/ui/pane-strip';
+import { ResizeHandle } from '~/components/ui/resize-handle';
+import { createResizablePanel } from '~/lib/create-resizable-panel';
+import { CHAT_COLUMN } from '~/lib/pane-widths';
+import { cn } from '~/lib/cn';
 
-export function ProjectView(props: {
+export interface ProjectViewProps extends ProjectSurfaceSlots {
   projectId: string;
   initialPrompt: () => InitialPrompt | undefined;
   onInitialPromptAdmitted: () => void;
   onGone?: () => void;
-}) {
+  footer?: JSX.Element;
+  onStatusEvent?: () => void;
+  onPreviewVisible?: () => void;
+}
+
+export function ProjectView(props: ProjectViewProps) {
   const navigate = useNavigate();
   const jobDock = useJobDock();
   const { hasPermission } = usePermissions();
@@ -51,7 +61,8 @@ export function ProjectView(props: {
 
   const projectId = () => props.projectId;
   const statusQuery = useProjectStatus(projectId, {
-    enabled: () => activeTab() === 'chat',
+    enabled: () => activeTab() === 'chat' || props.onStatusEvent !== undefined,
+    onEvent: () => props.onStatusEvent?.(),
   });
   const status = () => statusQuery.data?.status;
 
@@ -98,6 +109,26 @@ export function ProjectView(props: {
     onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
   const app = () => statusQuery.data?.app;
+  const previewVisible = () => app()?.exists === true || previewRequest() !== null;
+
+  createEffect(
+    on([() => statusQuery.data !== undefined, previewVisible], ([loaded, visible], previous) => {
+      const [wasLoaded, wasVisible] = previous ?? [false, false];
+      if (loaded && wasLoaded && visible && !wasVisible) props.onPreviewVisible?.();
+    })
+  );
+
+  const strip = usePaneStripSlot();
+  const chatColumn = strip
+    ? createResizablePanel({
+        storageKey: `opsiforce:pane-strip:${strip.pane}-chat`,
+        minWidth: () => Math.min(CHAT_COLUMN.min, strip.width()),
+        defaultWidth: () => Math.min(CHAT_COLUMN.default, strip.width()),
+        maxWidth: strip.width,
+        direction: 'right',
+      })
+    : undefined;
+  const contentFills = () => !strip || (strip.alone() && !previewVisible());
 
   const [agentIdleToken, setAgentIdleToken] = createSignal(0);
 
@@ -122,93 +153,118 @@ export function ProjectView(props: {
   });
 
   return (
-    <div class="h-full w-full flex flex-col overflow-hidden">
-      <Show when={statusQuery.data}>
-        {(data) => (
-          <ProjectHeader
-            projectId={props.projectId}
-            status={data().status}
-            workspaceId={data().workspaceId}
-            appExists={!!data().app?.exists}
-            showAgentTabs={!!connection.router()}
-            activeTab={activeTab()}
-            onActiveTabChange={selectTab}
-            environments={environmentList()}
-            activeEnvironmentId={activeEnvironmentId()}
-            onActiveEnvironmentChange={setActiveEnvironmentId}
-            onDeleted={() => (props.onGone ? props.onGone() : navigate({ to: '/' }))}
-          />
-        )}
-      </Show>
+    <div class={cn('h-full flex flex-col overflow-hidden', !strip && 'w-full')}>
+      <div class={cn('flex shrink-0 flex-col', strip && 'w-0 min-w-full')}>
+        <Show when={statusQuery.data}>
+          {(data) => (
+            <ProjectHeader
+              projectId={props.projectId}
+              status={data().status}
+              workspaceId={data().workspaceId}
+              appExists={!!data().app?.exists}
+              showAgentTabs={!!connection.router()}
+              activeTab={activeTab()}
+              onActiveTabChange={selectTab}
+              environments={environmentList()}
+              activeEnvironmentId={activeEnvironmentId()}
+              onActiveEnvironmentChange={setActiveEnvironmentId}
+              onDeleted={() => (props.onGone ? props.onGone() : navigate({ to: '/' }))}
+              headerLabel={props.headerLabel}
+              menuItems={props.menuItems}
+              deleteDescription={props.deleteDescription}
+              deleteEscapeHatch={props.deleteEscapeHatch}
+              onRename={props.onRename}
+            />
+          )}
+        </Show>
 
-      <Show when={!isDevelopmentActive()}>
-        <EnvProdBanner
-          environmentName={activeEnvironment()?.name ?? 'this'}
-          onSwitchToDevelopment={() => setActiveEnvironmentId(props.projectId)}
-        />
-      </Show>
+        <Show when={!isDevelopmentActive()}>
+          <EnvProdBanner
+            environmentName={activeEnvironment()?.name ?? 'this'}
+            onSwitchToDevelopment={() => setActiveEnvironmentId(props.projectId)}
+          />
+        </Show>
+      </div>
 
       <div class="flex-1 min-h-0 flex">
         <div
-          class="flex-1 min-w-0 flex flex-col oc-chat-only"
-          style={{ display: activeTab() === 'chat' ? 'flex' : 'none' }}
+          class={cn('relative flex min-h-0', contentFills() ? 'flex-1 min-w-0' : 'shrink-0', strip && 'snap-start')}
+          style={contentFills() || !chatColumn ? undefined : { width: `${chatColumn.width()}px` }}
         >
-          <Show when={connectionStatus() !== 'disabled'} fallback={<ProjectDisabled projectId={props.projectId} />}>
-            <Show when={connectionStatus() !== 'failed'} fallback={<ProjectFailed projectId={props.projectId} />}>
-              <Show
-                when={connection.router()}
-                fallback={
-                  <Show when={connection.error()} fallback={<Spinner label="Connecting..." />}>
-                    {(message) => (
-                      <div class="flex flex-col items-center justify-center gap-3 p-6" role="alert">
-                        <p>{message()}</p>
-                        <Button onClick={connection.retry}>Retry</Button>
-                      </div>
-                    )}
-                  </Show>
-                }
-              >
-                {(router) => (
-                  <ProjectChatTab
-                    projectId={props.projectId}
-                    environmentId={activeEnvironmentId()}
-                    router={router()}
-                    currentTitle={statusQuery.data?.title ?? null}
-                    onAgentIdle={handleAgentIdle}
-                    onPreviewFile={previewFile}
-                  />
-                )}
+          <div
+            class="flex-1 min-w-0 flex flex-col oc-chat-only"
+            style={{ display: activeTab() === 'chat' ? 'flex' : 'none' }}
+          >
+            <Show when={connectionStatus() !== 'disabled'} fallback={<ProjectDisabled projectId={props.projectId} />}>
+              <Show when={connectionStatus() !== 'failed'} fallback={<ProjectFailed projectId={props.projectId} />}>
+                <Show
+                  when={connection.router()}
+                  fallback={
+                    <Show when={connection.error()} fallback={<Spinner label="Connecting..." />}>
+                      {(message) => (
+                        <div class="flex flex-col items-center justify-center gap-3 p-6" role="alert">
+                          <p>{message()}</p>
+                          <Button onClick={connection.retry}>Retry</Button>
+                        </div>
+                      )}
+                    </Show>
+                  }
+                >
+                  {(router) => (
+                    <ProjectChatTab
+                      projectId={props.projectId}
+                      environmentId={activeEnvironmentId()}
+                      router={router()}
+                      currentTitle={statusQuery.data?.title ?? null}
+                      onAgentIdle={handleAgentIdle}
+                      onPreviewFile={previewFile}
+                    />
+                  )}
+                </Show>
               </Show>
             </Show>
+            {props.footer}
+          </div>
+
+          <Show when={visitedTabs().has('files')}>
+            <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'files' ? 'flex' : 'none' }}>
+              <ProjectFilesTab
+                projectId={props.projectId}
+                environmentId={activeEnvironmentId()}
+                active={activeTab() === 'files'}
+                refreshToken={agentIdleToken()}
+                onPreviewFile={previewFile}
+                onFileDeleted={closePreviewOfDeleted}
+              />
+            </div>
+          </Show>
+
+          <Show when={visitedTabs().has('code') && canViewCode()}>
+            <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'code' ? 'flex' : 'none' }}>
+              <ProjectCodeTab environmentId={activeEnvironmentId()} />
+            </div>
+          </Show>
+
+          <Show when={visitedTabs().has('db') && canViewDb()}>
+            <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'db' ? 'flex' : 'none' }}>
+              <ProjectDbTab environmentId={activeEnvironmentId()} />
+            </div>
+          </Show>
+
+          <Show when={!contentFills() && chatColumn}>
+            {(column) => (
+              <ResizeHandle
+                onPointerDown={column().startResize}
+                resizing={column().resizing()}
+                position="right"
+                panel={column()}
+                label="Resize this chat"
+              />
+            )}
           </Show>
         </div>
 
-        <Show when={visitedTabs().has('files')}>
-          <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'files' ? 'flex' : 'none' }}>
-            <ProjectFilesTab
-              projectId={props.projectId}
-              environmentId={activeEnvironmentId()}
-              active={activeTab() === 'files'}
-              refreshToken={agentIdleToken()}
-              onPreviewFile={previewFile}
-              onFileDeleted={closePreviewOfDeleted}
-            />
-          </div>
-        </Show>
-
-        <Show when={visitedTabs().has('code') && canViewCode()}>
-          <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'code' ? 'flex' : 'none' }}>
-            <ProjectCodeTab environmentId={activeEnvironmentId()} />
-          </div>
-        </Show>
-
-        <Show when={visitedTabs().has('db') && canViewDb()}>
-          <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'db' ? 'flex' : 'none' }}>
-            <ProjectDbTab environmentId={activeEnvironmentId()} />
-          </div>
-        </Show>
-
-        <Show when={app()?.exists === true || previewRequest() !== null}>
+        <Show when={previewVisible()}>
           <ProjectPreviewPanel
             projectId={props.projectId}
             environmentId={activeEnvironmentId()}
@@ -218,6 +274,12 @@ export function ProjectView(props: {
             previewRequest={previewRequest()}
             onClosePreview={closePreview}
             onReloadRef={onReloadRef}
+            column={
+              strip && {
+                storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,
+                stripWidth: strip.width,
+              }
+            }
           />
         </Show>
       </div>

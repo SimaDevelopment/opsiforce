@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { toast } from 'solid-sonner';
 import { usePermissions } from '~/api/permissions';
@@ -10,13 +10,13 @@ import { useJobDock } from '~/components/project/jobs/job-dock-context';
 import { useRestartProjectEnvironment } from '~/api/environments';
 import { PUBLIC_LABEL, useMoveProject, useWorkspaces } from '~/api/workspaces';
 import { projectMoveBlockReason } from '~/lib/project-move';
+import { projectTitleOf } from '~/lib/project-title';
 import {
   ArrowRightLeft,
   Ban,
   ChevronRight,
   CirclePlay,
   Copy,
-  EllipsisVertical,
   FolderKanban,
   Globe,
   Package,
@@ -26,15 +26,12 @@ import {
   Trash2,
 } from '~/components/icons';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
+import { ActionsMenu, ActionsMenuItem } from './actions-menu';
 import { ProjectSettings } from './project-settings';
 import { ConfirmDialog } from './ui/confirm-dialog';
 
@@ -53,6 +50,9 @@ export function ProjectActionsMenu(props: {
   onRename?: () => void;
   onSettings?: () => void;
   onDeleted?: () => void;
+  extraItems?: JSX.Element;
+  deleteDescription?: string;
+  deleteEscapeHatch?: (dismiss: () => void) => JSX.Element;
   triggerClass?: string;
   onTriggerClick?: (e: MouseEvent) => void;
 }) {
@@ -89,9 +89,14 @@ export function ProjectActionsMenu(props: {
     return (workspaces.data ?? []).find((w) => w.id === props.workspaceId)?.name ?? 'workspace';
   });
 
-  const showMove = () => moveTargets().length > 0 || (canManageWorkspaces() && props.workspaceId !== null);
+  const kind = () => props.project?.kind ?? null;
+  const isBuilderChat = () => kind() === 'skill_builder_chat' || kind() === 'agent_builder_chat';
+  const showMove = () =>
+    kind() === null && (moveTargets().length > 0 || (canManageWorkspaces() && props.workspaceId !== null));
+  const showDuplicate = () => canDuplicate() && kind() === null;
+  const showExport = () => canExport() && kind() === null;
 
-  const projectTitle = () => props.project?.title?.trim() || 'Untitled project';
+  const projectTitle = () => projectTitleOf(props.project);
 
   const requestMove = (move: PendingMove) => {
     const blockReason = projectMoveBlockReason({
@@ -177,110 +182,93 @@ export function ProjectActionsMenu(props: {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          class={
-            props.triggerClass ??
-            'inline-flex items-center justify-center rounded-md w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors'
-          }
-          onClick={(e: MouseEvent) => props.onTriggerClick?.(e)}
-          aria-label="Project actions"
-        >
-          <EllipsisVertical class="w-4 h-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent onClick={(e: MouseEvent) => e.stopPropagation()}>
-          <Show when={props.showRename && props.onRename}>
-            <DropdownMenuItem onSelect={() => props.onRename?.()}>
-              <Pencil class="w-3.5 h-3.5 text-muted-foreground" />
-              Rename
-            </DropdownMenuItem>
+      <ActionsMenu label="Project actions" triggerClass={props.triggerClass} onTriggerClick={props.onTriggerClick}>
+        {props.extraItems}
+        <Show when={props.showRename && props.onRename}>
+          <ActionsMenuItem icon={Pencil} onSelect={() => props.onRename?.()}>
+            Rename
+          </ActionsMenuItem>
+        </Show>
+        <Show when={showDuplicate()}>
+          <ActionsMenuItem icon={Copy} onSelect={() => setConfirmAction('duplicate')}>
+            Duplicate
+          </ActionsMenuItem>
+        </Show>
+        <Show when={showExport()}>
+          <ActionsMenuItem icon={Package} onSelect={() => setConfirmAction('export')}>
+            Export
+          </ActionsMenuItem>
+        </Show>
+        <Show when={canRestart() && !isDisabled()}>
+          <ActionsMenuItem icon={RotateCcw} onSelect={() => setConfirmAction('restart')}>
+            Restart
+          </ActionsMenuItem>
+        </Show>
+        <Show when={canDisable() && (isDisabled() || !isBuilderChat())}>
+          <Show
+            when={isDisabled()}
+            fallback={
+              <ActionsMenuItem icon={Ban} onSelect={() => setConfirmAction('disable')}>
+                Disable
+              </ActionsMenuItem>
+            }
+          >
+            <ActionsMenuItem icon={CirclePlay} onSelect={() => enableProject.mutate(undefined as never)}>
+              Enable
+            </ActionsMenuItem>
           </Show>
-          <Show when={canDuplicate()}>
-            <DropdownMenuItem onSelect={() => setConfirmAction('duplicate')}>
-              <Copy class="w-3.5 h-3.5 text-muted-foreground" />
-              Duplicate
-            </DropdownMenuItem>
-          </Show>
-          <Show when={canExport()}>
-            <DropdownMenuItem onSelect={() => setConfirmAction('export')}>
-              <Package class="w-3.5 h-3.5 text-muted-foreground" />
-              Export
-            </DropdownMenuItem>
-          </Show>
-          <Show when={canRestart() && !isDisabled()}>
-            <DropdownMenuItem onSelect={() => setConfirmAction('restart')}>
-              <RotateCcw class="w-3.5 h-3.5 text-muted-foreground" />
-              Restart
-            </DropdownMenuItem>
-          </Show>
-          <Show when={canDisable()}>
-            <Show
-              when={isDisabled()}
-              fallback={
-                <DropdownMenuItem onSelect={() => setConfirmAction('disable')}>
-                  <Ban class="w-3.5 h-3.5 text-muted-foreground" />
-                  Disable
-                </DropdownMenuItem>
-              }
-            >
-              <DropdownMenuItem onSelect={() => enableProject.mutate(undefined as never)}>
-                <CirclePlay class="w-3.5 h-3.5 text-muted-foreground" />
-                Enable
-              </DropdownMenuItem>
-            </Show>
-          </Show>
-          <Show when={canSeeSettings()}>
-            <DropdownMenuItem
-              onSelect={() => {
-                if (props.onSettings) props.onSettings();
-                else setSettingsOpen(true);
-              }}
-            >
-              <Settings class="w-3.5 h-3.5 text-muted-foreground" />
-              Settings
-            </DropdownMenuItem>
-          </Show>
-          <Show when={showMove()}>
-            <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <ArrowRightLeft class="w-3.5 h-3.5 text-muted-foreground" />
-                Move to
-                <ChevronRight class="ml-auto w-3.5 h-3.5 text-muted-foreground" />
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <For each={moveTargets()}>
-                  {(ws) => (
-                    <DropdownMenuItem onSelect={() => requestMove({ toWorkspaceId: ws.id, toName: ws.name })}>
-                      <FolderKanban class="w-3.5 h-3.5 text-muted-foreground" />
-                      {ws.name}
-                    </DropdownMenuItem>
-                  )}
-                </For>
-                <Show when={canManageWorkspaces() && props.workspaceId !== null}>
-                  <Show when={moveTargets().length > 0}>
-                    <DropdownMenuSeparator />
-                  </Show>
-                  <DropdownMenuItem onSelect={() => requestMove({ toWorkspaceId: null, toName: PUBLIC_LABEL })}>
-                    <Globe class="w-3.5 h-3.5 text-muted-foreground" />
-                    {PUBLIC_LABEL}
-                  </DropdownMenuItem>
+        </Show>
+        <Show when={canSeeSettings()}>
+          <ActionsMenuItem
+            icon={Settings}
+            onSelect={() => {
+              if (props.onSettings) props.onSettings();
+              else setSettingsOpen(true);
+            }}
+          >
+            Settings
+          </ActionsMenuItem>
+        </Show>
+        <Show when={showMove()}>
+          <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ArrowRightLeft class="w-3.5 h-3.5 text-muted-foreground" />
+              Move to
+              <ChevronRight class="ml-auto w-3.5 h-3.5 text-muted-foreground" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <For each={moveTargets()}>
+                {(ws) => (
+                  <ActionsMenuItem
+                    icon={FolderKanban}
+                    onSelect={() => requestMove({ toWorkspaceId: ws.id, toName: ws.name })}
+                  >
+                    {ws.name}
+                  </ActionsMenuItem>
+                )}
+              </For>
+              <Show when={canManageWorkspaces() && props.workspaceId !== null}>
+                <Show when={moveTargets().length > 0}>
+                  <DropdownMenuSeparator />
                 </Show>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          </Show>
-          <Show when={canDelete()}>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              class="text-destructive data-[highlighted]:text-destructive"
-              onSelect={() => setConfirmAction('delete')}
-            >
-              <Trash2 class="w-3.5 h-3.5" />
-              Delete
-            </DropdownMenuItem>
-          </Show>
-        </DropdownMenuContent>
-      </DropdownMenu>
+                <ActionsMenuItem
+                  icon={Globe}
+                  onSelect={() => requestMove({ toWorkspaceId: null, toName: PUBLIC_LABEL })}
+                >
+                  {PUBLIC_LABEL}
+                </ActionsMenuItem>
+              </Show>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </Show>
+        <Show when={canDelete()}>
+          <DropdownMenuSeparator />
+          <ActionsMenuItem icon={Trash2} destructive onSelect={() => setConfirmAction('delete')}>
+            Delete
+          </ActionsMenuItem>
+        </Show>
+      </ActionsMenu>
 
       <Show when={!props.onSettings}>
         <ProjectSettings
@@ -310,11 +298,16 @@ export function ProjectActionsMenu(props: {
           if (!open) setConfirmAction(null);
         }}
         title="Delete project"
-        description="This will permanently delete the project and all its data. This action cannot be undone."
+        description={
+          props.deleteDescription ??
+          'This will permanently delete the project and all its data. This action cannot be undone.'
+        }
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => deleteProject.mutate(undefined as never)}
-      />
+      >
+        {props.deleteEscapeHatch?.(() => setConfirmAction(null))}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmAction() === 'disable'}

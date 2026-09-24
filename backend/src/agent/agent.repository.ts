@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
 import {
   agentProfileSkills,
@@ -10,16 +10,21 @@ import {
   projects,
   skillVersions,
   skills,
+  tenantDisabledAgents,
 } from '../../db/schema';
+import { TEST_PROJECT_KIND } from '../project/project.types';
 import type { AgentProfileRow } from '../store/agent-profile.repository';
-import type { AgentProfileSkillResponse, AgentRow, AgentSettingsResponse } from './agent.types';
+import { agentColumnsIn, startableBuiltInAgentsWhere } from './agent-visibility';
+
+const BUILT_IN_DISABLE_LOCK = 'built-in-agent-disable:';
+import type { AgentProfileSkillResponse, AgentRow, AgentSettingsResponse, ShippedSkillResponse } from './agent.types';
 
 export type AgentSettingsRow = typeof agentSettings.$inferSelect;
 
 @Injectable()
 export class AgentRepository {
-  async list(where: SQL | undefined): Promise<AgentRow[]> {
-    return db.select().from(agents).where(where).orderBy(asc(agents.name));
+  async list(tenantId: string, where: SQL | undefined): Promise<AgentRow[]> {
+    return db.select(agentColumnsIn(tenantId)).from(agents).where(where).orderBy(asc(agents.name));
   }
 
   async profileEnvironmentIds(agentIds: string[], tenantId: string): Promise<Map<string, string[]>> {
@@ -64,8 +69,70 @@ export class AgentRepository {
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
       .from(projects)
-      .where(and(eq(projects.agentId, agentId), eq(projects.tenantId, tenantId)));
+      .where(and(eq(projects.agentId, agentId), eq(projects.tenantId, tenantId), isNull(projects.kind)));
     return Number(row?.count ?? 0);
+  }
+
+  async shippedSkills(names: Set<string>): Promise<ShippedSkillResponse[]> {
+    const found = names.size === 0
+      ? []
+      : await db
+          .select({
+            skillId: skills.id,
+            name: skills.name,
+            displayName: skills.displayName,
+            version: skillVersions.version,
+          })
+          .from(skills)
+          .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
+          .where(and(isNull(skills.tenantId), inArray(skills.name, [...names])));
+    const byName = new Map(found.map((row) => [row.name, row]));
+    return [...names]
+      .toSorted()
+      .map((name) => byName.get(name) ?? { skillId: null, name, displayName: null, version: null });
+  }
+
+  async disableIn(tenantId: string, agentId: string, userId: string): Promise<void> {
+    await db.insert(tenantDisabledAgents).values({ tenantId, agentId, disabledBy: userId }).onConflictDoNothing();
+  }
+
+  async enableIn(tenantId: string, agentId: string): Promise<void> {
+    await db
+      .delete(tenantDisabledAgents)
+      .where(and(eq(tenantDisabledAgents.tenantId, tenantId), eq(tenantDisabledAgents.agentId, agentId)));
+  }
+
+  async disableBuiltInUnlessLast(tenantId: string, agentId: string, userId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${BUILT_IN_DISABLE_LOCK}${tenantId}`}))`);
+      const [row] = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(agents)
+        .where(and(startableBuiltInAgentsWhere(tenantId), ne(agents.id, agentId)));
+      if (Number(row?.count ?? 0) === 0) return false;
+      await tx.insert(tenantDisabledAgents).values({ tenantId, agentId, disabledBy: userId }).onConflictDoNothing();
+      return true;
+    });
+  }
+
+  async testProjectIds(agentId: string, tenantId: string): Promise<string[]> {
+    const rows = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.agentId, agentId), eq(projects.tenantId, tenantId), eq(projects.kind, TEST_PROJECT_KIND)));
+    return rows.map((row) => row.id);
+  }
+
+  async publishedBeyondDevelopment(agentId: string, tenantId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: agentProfiles.id })
+      .from(agentProfiles)
+      .innerJoin(environments, eq(environments.id, agentProfiles.environmentId))
+      .where(
+        and(eq(agentProfiles.agentId, agentId), eq(environments.tenantId, tenantId), eq(environments.isDefault, false))
+      )
+      .limit(1);
+    return row !== undefined;
   }
 
   async environmentIds(tenantId: string): Promise<string[]> {

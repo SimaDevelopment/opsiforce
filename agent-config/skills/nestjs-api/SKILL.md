@@ -50,7 +50,7 @@ export class TasksController {
   }
 
   @Put(":id")
-  update(@Param("id", ParseIntPipe) id: number, @Body() body: Record<string, unknown>) {
+  update(@Param("id", ParseIntPipe) id: number, @Body() body: { title?: string; description?: string; status?: string }) {
     return this.tasksService.update(id, body)
   }
 
@@ -90,10 +90,12 @@ export class TasksService {
     return this.findOne(result.lastInsertRowid as number)
   }
 
-  update(id: number, data: Record<string, unknown>) {
+  update(id: number, data: { title?: string; description?: string; status?: string }) {
     this.findOne(id)
-    const sets = Object.keys(data).map(k => `${k} = ?`).join(", ")
-    this.db.run(`UPDATE tasks SET ${sets}, updated_at = datetime('now') WHERE id = ?`, [...Object.values(data), id])
+    this.db.run(
+      "UPDATE tasks SET title = COALESCE(?, title), description = COALESCE(?, description), status = COALESCE(?, status), updated_at = datetime('now') WHERE id = ?",
+      [data.title ?? null, data.description ?? null, data.status ?? null, id],
+    )
     return this.findOne(id)
   }
 
@@ -104,35 +106,11 @@ export class TasksService {
 }
 ```
 
-## CRITICAL: Register every new module
-
-Add to `backend/src/app.module.ts`:
-
-```typescript
-import { TasksModule } from "./tasks/tasks.module"
-
-@Module({
-  imports: [DatabaseModule, ItemsModule, TasksModule],
-  controllers: [AppController],
-})
-export class AppModule {}
-```
-
-Forgetting this is the #1 cause of "route not found" errors. Every new module MUST be added to the imports array.
-
-## File locations
-
-```
-backend/src/
-  tasks/
-    tasks.module.ts
-    tasks.controller.ts
-    tasks.service.ts
-```
+Name every column an update may touch — never build SQL from the request body's keys, which lets a client write any column. Register the module in `app.module.ts` (`web-app`).
 
 ## DatabaseService methods
 
-DatabaseService API (query/get/run/transaction): see the `sqlite` skill.
+`queryAll`, `queryOne`, `run` and `exec` are the whole API — the `sqlite` skill has their signatures and transactions.
 
 ## Key decorators
 
@@ -149,7 +127,3 @@ DatabaseService API (query/get/run/transaction): see the `sqlite` skill.
 - `UnauthorizedException` → 401
 - `ForbiddenException` → 403
 - `ConflictException` → 409
-
-## Existing example
-
-See `backend/src/items/` for a complete working CRUD module.

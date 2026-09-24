@@ -23,11 +23,8 @@ Run `agent-browser skills get core --full` before your first interaction in a se
 
 ## Debugging workflow
 
-**Before opening the browser**, verify the App booted — the crash and error queries are in the `platform` skill, §Verify the App booted (App Builder's template adds `cd /workspace/app && yarn check` for type errors). A blank page is almost always a crashed process, not a UI bug.
-
-When investigating UI issues, pair browser output with those platform-DB queries:
+Verify the App booted before opening the browser (`platform` §Verify the App booted). Then pair what the browser shows with the platform database:
 
 1. Open the app at `http://localhost:$APP_PORT` — see what the user sees
 2. Take a snapshot to inspect the DOM
-3. Query `app_requests` for failed API calls (4xx/5xx + response body)
-4. Query `process_logs` / `process_events` for dev-server errors or crashes
+3. Check the failed requests and process errors behind it (`platform` §Investigate failed requests and crashes)

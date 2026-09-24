@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [Platform Skill, App contract]
-adrs: [0061]
+adrs: [0061, 0068]
 ---
 
 # Platform Skill
@@ -13,7 +13,7 @@ adrs: [0061]
 ### One place for the platform's facts
 
 - The [Platform Skill](../../CONTEXT.md) is the built-in skill named `platform`. It ships in the shared pool, so every package composes it — `custom` included — and every workspace is laid with it, whatever Agent the Project runs ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)).
-- It holds the [App contract](../../CONTEXT.md), where uploads and generated files live, `app/opsiforce.env.json` and what Publish does to it, the pod's environment variables, the LLM gateway with the ban on locally run models, and the two read-only platform databases with the queries that read them.
+- It holds the rule that the agent does the work itself — the person in the chat never runs a command — and installs whatever a task needs as root in the sandbox; the [App contract](../../CONTEXT.md); the rule that the pod is disposable and the workspace durable — what a pod recreate wipes, that `startup.sh` is the one repeatable recipe that brings the App up from nothing — ensuring every runtime dependency idempotently, keeping state under `app/data/`, running every long-running process under `guard` in the foreground — and that Publish is a git checkout carrying code but no `data/`, so the App creates its own schema and seed data on boot. It also says to judge whether a service is running by asking the service rather than a pid file, that a server reconnects when a dependency restarts under it, and that only install lines are rerun by hand to check them. It names no particular service; the rules are stated once for any stack. It also fixes Yarn as the package manager for every Node project (Plug'n'Play by default, `node-modules` only when PnP cannot work with the stack), and the dependency rule for any language: latest stable release when added, never a pre-release unless asked, then fixed by the lockfile with no unrequested major upgrades ([ADR-0068](../adr/0068-a-custom-agent-names-a-starter-and-the-web-app-know-how-is-a-skill-both-kinds-build-from.md)) — where uploads and generated files live, `app/opsiforce.env.json` and what Publish does to it, the pod's environment variables, the LLM gateway with the ban on locally run models, and the two read-only platform databases with the queries that read them.
 - Nothing is prepended to an Agent's prompt. A Custom Agent's body is its author's words alone, and the delivery writer wraps it in frontmatter and nothing else, so there is no rendered composite anywhere to inspect ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)).
 - Because a skill is loaded on demand, a prompt that needs the contract says one line — *"Load the `platform` skill before serving anything"* — and nothing more. A prompt that restates a platform fact instead freezes it at the moment its Project was created, which is the failure the split exists to prevent.
 - Its name is reserved and it cannot be removed from an Agent's Skills, so no Agent can be authored without it.
@@ -23,7 +23,7 @@ adrs: [0061]
 
 - Three things make an App: an executable `/workspace/app/startup.sh` the pod runs, restarts and re-runs in a published Environment; a server answering on `$APP_PORT`; and `app/app.meta.json` naming the App.
 - Any HTTP answer on the port at any status counts as serving — no health route is required — and serving plus the meta file present is [Go-live](../projects/app-readiness.md).
-- The starter template satisfies the contract out of the box and ships without `app.meta.json`, so a Built-in Agent's first build writes it. A Custom Agent has no template and satisfies the contract by writing all three files itself.
+- The starter template satisfies the contract out of the box and ships without `app.meta.json`, so a Built-in Agent's first build writes it. A Custom Agent has no template of its own and satisfies the contract by laying the template its Skills name, or by writing all three files itself.
 - A workspace with no `startup.sh` is not an error: the pod's wait loop idles quietly and the Project simply reports no App. The [Skill & Agent Builder](skill-agent-builder.md)'s own chat is exactly that case.
 
 ## Edge cases

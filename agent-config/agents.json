@@ -5,7 +5,7 @@
       "description": "Build apps and assist with your requests.",
       "default": true,
       "port": 3000,
-      "version": "0.3.0",
+      "version": "0.4.0",
       "model": "openai/gpt-5.6-sol",
       "variant": "high",
       "poolSize": 3
@@ -15,7 +15,7 @@
       "description": "Author Skills and Custom Agents by conversation, and test them.",
       "default": false,
       "port": 3000,
-      "version": "1.0.0",
+      "version": "1.1.0",
       "model": "openai/gpt-5.6-sol",
       "variant": "high",
       "poolSize": 0,

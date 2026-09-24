@@ -2,6 +2,7 @@ import { For, Show, createUniqueId, type Component, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useNavigate } from '@tanstack/solid-router';
 import { Badge } from '~/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { ArrowUp, Box, Globe, Lock, Package, Search } from '~/components/icons';
 import { cn } from '~/lib/cn';
 
@@ -20,7 +21,7 @@ export function RowLink(props: { href: string; class?: string; children: JSX.Ele
       onClick={(event) => {
         if (!isPlainClick(event)) return;
         event.preventDefault();
-        navigate({ to: props.href });
+        navigate({ href: props.href });
       }}
       class={cn(
         'flex w-full items-center gap-3 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/40',
@@ -77,10 +78,34 @@ export function VisibilityBadge(props: { visibility: string }) {
   );
 }
 
-export function ArchivedBadge() {
+const DEFAULT_MARK_CLASS =
+  'inline-flex cursor-default items-center rounded px-1 text-[10px] font-semibold uppercase tracking-wide text-primary';
+
+export function DefaultEnvironmentMark(props: { environmentName: string; plain?: boolean }) {
+  const explanation = () => `New projects start from ${props.environmentName}.`;
+  return (
+    <Show
+      when={!props.plain}
+      fallback={
+        <span class={DEFAULT_MARK_CLASS} title={explanation()}>
+          Default<span class="sr-only">: {explanation()}</span>
+        </span>
+      }
+    >
+      <Tooltip>
+        <TooltipTrigger as="span" tabIndex={0} class={cn(DEFAULT_MARK_CLASS, FOCUS_RING)}>
+          Default
+        </TooltipTrigger>
+        <TooltipContent>{explanation()}</TooltipContent>
+      </Tooltip>
+    </Show>
+  );
+}
+
+export function DisabledBadge() {
   return (
     <Badge variant="outline" class="font-medium text-muted-foreground">
-      Archived
+      Disabled
     </Badge>
   );
 }

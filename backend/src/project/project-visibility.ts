@@ -1,7 +1,8 @@
 import { and, eq, exists, isNotNull, isNull, notExists, or, sql, type SQL } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../db';
-import { projects, tenantSettings, workspaceMembers, workspaces } from '../../db/schema';
+import { agents, projects, skills, tenantSettings, workspaceMembers, workspaces } from '../../db/schema';
+import { visibleAgentsWhere } from '../agent/agent-visibility';
+import { visibleSkillsWhere } from '../store/skill-visibility';
 import { TEST_PROJECT_KIND } from './project.types';
 
 export interface ProjectVisibilityFilter {
@@ -44,21 +45,28 @@ function governingChatId(): SQL {
   return sql`case when ${projects.kind} = ${TEST_PROJECT_KIND} then ${projects.createdByProjectId} else ${projects.id} end`;
 }
 
-function governingChatIsPublic(): SQL {
-  const chat = alias(projects, 'governing_chat');
-  return exists(
+function governingChatSubjectVisibleTo(tenantId: string, userId: string): SQL | undefined {
+  const visible = { includeDisabled: true };
+  const agentSubject = exists(
     db
       .select({ one: sql`1` })
-      .from(chat)
-      .where(and(eq(chat.id, governingChatId()), eq(chat.chatVisibility, 'public')))
+      .from(agents)
+      .where(and(eq(agents.builderChatId, governingChatId()), visibleAgentsWhere(tenantId, userId, visible)))
   );
+  const skillSubject = exists(
+    db
+      .select({ one: sql`1` })
+      .from(skills)
+      .where(and(eq(skills.builderChatId, governingChatId()), visibleSkillsWhere(tenantId, userId, visible)))
+  );
+  return or(agentSubject, skillSubject);
 }
 
 export function reachableHiddenProjectsWhere(tenantId: string, userId: string): SQL | undefined {
   return and(
     eq(projects.tenantId, tenantId),
     isNotNull(projects.kind),
-    or(eq(projects.createdBy, userId), governingChatIsPublic())
+    or(eq(projects.createdBy, userId), governingChatSubjectVisibleTo(tenantId, userId))
   );
 }
 

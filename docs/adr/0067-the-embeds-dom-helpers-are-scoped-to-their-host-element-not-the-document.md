@@ -1,0 +1,21 @@
+# The embed's DOM helpers are scoped to their host element, not the document
+
+The opencode embed is vendored and never edited, so the platform's additions to it — dictation, file upload, workspace file links — reach into its markup from outside rather than through its API. Each was written when a page could only ever hold one embed, and each took the shortest path: `document.querySelector('[data-component="composer-editor"]')` to find the composer, `document.addEventListener(…, true)` and a `MutationObserver` on `document.body` to catch link clicks anywhere. That assumption was true by accident, not by design. [ADR-0066](0066-a-builder-chat-is-an-ordinary-project-surface-and-its-test-project-sits-beside-it-in-a-scrolling-strip.md) makes a Builder chat and its test Project visible side by side, and two embeds turn every one of those selectors into a first-match-in-document-order lottery.
+
+**Every platform helper that reaches into the embed's markup is scoped to the host element its own instance rendered into, and none of them touches `document`.** The host element already exists — `ProjectChatTab` holds a per-instance ref and renders its Solid root into it, and [ADR-0026](0026-chat-boot-suspense-contained-and-covered.md) established that each chat boots in a render root of its own. The helpers are handed that ref and query, listen and observe within it. Concretely: `DictationButton` and `FileUpload` resolve the composer and its submit control inside their host; `WorkspaceFileLinks` attaches its capture-phase `click`/`keydown` listeners to the host rather than `document` and observes the host subtree rather than `document.body`; and the preview iframe's hardcoded `webapp-preview` id becomes a per-instance ref, with `reload()` calling through it instead of `document.getElementById`. The preview panel's width, computed from `window.innerWidth` against a single shared storage key, is measured against its own container instead.
+
+This is a bug fix on its own merits and lands before the layout change, not with it. Every failure it prevents is already reachable by a determined reader today, because both panes are mounted simultaneously behind `display: none` and a hidden element is still a `querySelector` match.
+
+## Considered options
+
+- **Ship the strip with dictation, upload and file-link decoration suppressed in the right pane** — rejected: the test Project is precisely the pane where someone wants to attach a screenshot of what the child agent produced, so the suppression would fall on the surface that needs it most.
+- **Disambiguate by passing the project id and filtering matches** — rejected: it keeps the document-wide query and adds a second thing to keep correct, and the markup carries no project id to filter on without the platform injecting one.
+- **Render each pane into a shadow root or an iframe for isolation** — rejected as far more than the problem requires; a container ref is already threaded to the place each helper is constructed, and the embed's own theming and CSS overrides ride on document-level classes that a shadow boundary would sever.
+- **Leave it and accept the collisions** — rejected on the strength of one of them: `WorkspaceFileLinks` rewrites each link's download target with *its own* project and environment id, so the failure is not a dead button but a file quietly fetched from the wrong Project.
+
+## Consequences
+
+- Three shared components stop being usable as bare siblings of the embed: they now require the host element to be passed in, which makes the dependency explicit at every call site.
+- The `webapp-preview` id disappears. Anything outside the frontend that reached for it by name — a test selector, a console habit — breaks, which is the point: a hardcoded id on a component that can exist twice was never a contract.
+- `opsiforce:preview-width` stops being one width shared by every preview on the page. Whether it becomes per-pane or stays one remembered preference is a sizing question for [ADR-0066](0066-a-builder-chat-is-an-ordinary-project-surface-and-its-test-project-sits-beside-it-in-a-scrolling-strip.md), not a correctness one.
+- Nothing in the vendored embed changes, as `docs/frontend/opencode-embed.md` requires. The fix is entirely on the consuming side.

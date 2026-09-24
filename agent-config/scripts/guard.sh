@@ -1,5 +1,5 @@
 #!/bin/bash
-# Guard script: runs a command, restarts on crash with exponential backoff
+# Guard script: runs a command and restarts it with exponential backoff whenever it exits
 # Usage: guard <name> <command...>
 
 NAME="$1"
@@ -45,16 +45,10 @@ while true; do
     break
   fi
 
-  if [ $EXIT_CODE -eq 0 ]; then
-    guard_log "[guard:$NAME] Exited cleanly after ${elapsed}s"
-    guard_event "stopped" "0" "$elapsed" "$restart_count"
-    break
-  fi
-
   restart_count=$((restart_count + 1))
 
   if [ $restart_count -ge $MAX_RESTARTS ]; then
-    guard_log "[guard:$NAME] Crashed with exit code $EXIT_CODE after ${elapsed}s. Giving up after $MAX_RESTARTS restarts."
+    guard_log "[guard:$NAME] Exited with code $EXIT_CODE after ${elapsed}s. Giving up after $MAX_RESTARTS restarts."
     guard_event "crashed" "$EXIT_CODE" "$elapsed" "$restart_count"
     guard_event "gave_up" "$EXIT_CODE" "$elapsed" "$restart_count"
     break
@@ -64,8 +58,13 @@ while true; do
     delay=$INITIAL_DELAY
   fi
 
-  guard_log "[guard:$NAME] Crashed with exit code $EXIT_CODE after ${elapsed}s, restarting in ${delay}s... ($restart_count/$MAX_RESTARTS)"
-  guard_event "crashed" "$EXIT_CODE" "$elapsed" "$restart_count"
+  if [ $EXIT_CODE -eq 0 ]; then
+    guard_log "[guard:$NAME] Exited cleanly after ${elapsed}s, restarting in ${delay}s... ($restart_count/$MAX_RESTARTS)"
+    guard_event "stopped" "0" "$elapsed" "$restart_count"
+  else
+    guard_log "[guard:$NAME] Crashed with exit code $EXIT_CODE after ${elapsed}s, restarting in ${delay}s... ($restart_count/$MAX_RESTARTS)"
+    guard_event "crashed" "$EXIT_CODE" "$elapsed" "$restart_count"
+  fi
   sleep $delay
 
   if [ $delay -lt $MAX_DELAY ]; then

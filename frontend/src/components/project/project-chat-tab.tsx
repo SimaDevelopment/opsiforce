@@ -55,6 +55,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
   const onTitle = (title: string) => syncTitle(props.projectId, title, props.currentTitle);
 
   let embedHost!: HTMLDivElement;
+  const host = () => embedHost;
   const [booting, setBooting] = createSignal(true);
 
   const coverBootUntilComposerPaints = () => {
@@ -113,11 +114,12 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
   return (
     <div class="relative flex-1 min-h-0 flex flex-col">
       <div ref={embedHost} class="contents" />
-      <DictationButton projectId={props.projectId} environmentId={props.environmentId} />
-      <FileUpload projectId={props.projectId} environmentId={props.environmentId} />
+      <DictationButton projectId={props.projectId} environmentId={props.environmentId} host={host} />
+      <FileUpload projectId={props.projectId} environmentId={props.environmentId} host={host} />
       <WorkspaceFileLinks
         projectId={props.projectId}
         environmentId={props.environmentId}
+        host={host}
         onPreviewFile={props.onPreviewFile}
       />
       <Show when={booting()}>

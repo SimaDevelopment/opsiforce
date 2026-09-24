@@ -75,6 +75,13 @@ export class EnvironmentVariablesService {
         this.logger.warn(`Control restart for environment ${environmentId} returned ${response.status}`);
         return false;
       }
+      const { killed } = (await response.json()) as { killed?: number };
+      if (!killed) {
+        this.logger.warn(
+          `Control restart for environment ${environmentId} found no supervised App process, falling back to pod recreate`
+        );
+        return false;
+      }
       return true;
     } catch (err) {
       this.logger.warn(

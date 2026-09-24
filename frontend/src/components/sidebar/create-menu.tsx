@@ -8,6 +8,7 @@ import {
 } from '~/components/ui/dropdown-menu';
 import { Boxes, Bot, FolderPlus, Package } from '~/components/icons';
 import { FOLDER_DESCRIPTION } from '~/components/folder-dialog';
+import { ScrollShadow } from '~/components/ui/scroll-shadow';
 import { cn } from '~/lib/cn';
 
 export function CreateMenu(props: {
@@ -35,17 +36,19 @@ export function CreateMenu(props: {
             when={(props.agents ?? []).length > 0}
             fallback={<div class="px-2 py-1.5 text-xs italic text-muted-foreground">No agents available</div>}
           >
-            <For each={props.agents}>
-              {(agent) => (
-                <RichMenuItem
-                  icon={<Bot class="w-4 h-4" />}
-                  title={agent.displayName ?? agent.name}
-                  description={agent.description ?? 'Start a new project with this agent.'}
-                  disabled={props.disabled}
-                  onSelect={() => props.onCreateProject(agent.id)}
-                />
-              )}
-            </For>
+            <ScrollShadow class="max-h-[min(22rem,50vh)]" label="Agents">
+              <For each={props.agents}>
+                {(agent) => (
+                  <RichMenuItem
+                    icon={<Bot class="w-4 h-4" />}
+                    title={agent.displayName ?? agent.name}
+                    description={agent.description ?? 'Start a new project with this agent.'}
+                    disabled={props.disabled}
+                    onSelect={() => props.onCreateProject(agent.id)}
+                  />
+                )}
+              </For>
+            </ScrollShadow>
           </Show>
           <Show when={hasSecondary()}>
             <MenuDividerLabel>OR</MenuDividerLabel>
@@ -112,7 +115,7 @@ function RichMenuItem(props: {
         <span class={cn('font-medium leading-none text-foreground', props.compact ? 'text-xs' : 'text-sm')}>
           {props.title}
         </span>
-        <span class="text-xs leading-snug text-muted-foreground">{props.description}</span>
+        <span class="line-clamp-2 text-xs leading-snug text-muted-foreground">{props.description}</span>
       </span>
     </DropdownMenuItem>
   );

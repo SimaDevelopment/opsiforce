@@ -5,7 +5,7 @@ description: Scheduled/cron background tasks — use when the user asks for recu
 
 # Scheduled Tasks
 
-Register cron-scheduled HTTP callbacks that fire against endpoints in the app you're building. The platform scheduler calls the endpoint internally (intra-cluster) at `http://<pod-ip>:3000<targetPath>` — NOT the public URL — so it does not need to be publicly reachable or handle auth. If the pod is suspended when a schedule fires, the platform wakes it automatically.
+Register cron-scheduled HTTP callbacks that fire against endpoints in the app you're building. The platform scheduler calls the endpoint internally (intra-cluster) at `http://<pod-ip>:$APP_PORT<targetPath>` — NOT the public URL — so it does not need to be publicly reachable or handle auth. If the pod is suspended when a schedule fires, the platform wakes it automatically.
 
 Typical use cases:
 
@@ -17,11 +17,6 @@ Typical use cases:
 - Copying, moving, or syncing files on a cadence (e.g. archive yesterday's uploads into a dated folder every night, mirror a source directory into a backup location hourly, rotate log files weekly)
 
 The scheduler is general-purpose — use it for any background work that needs to run on a cadence. It is not tied to any specific output channel.
-
-## Environment Variables
-
-- `SERVICE_GATEWAY_URL` — base URL for the gateway API
-- `SERVICE_GATEWAY_API_KEY` — Bearer token for authentication
 
 ## Create a Schedule
 
@@ -100,10 +95,10 @@ A scheduled endpoint is just a regular endpoint in your app. When it fires, it c
 Pick the output that fits the use case. A few patterns:
 
 - **Update in-app data** — write a summary row, mark stale records, refresh a materialized view. Users see the result next time they open the relevant page.
-- **Call an external HTTP API** — if the job needs to push to a third-party service, do it with `fetch` from inside the endpoint handler. Any config or secret the endpoint reads (API keys, base URLs) comes from the app's own config — store it in `app/opsiforce.env.json` and read it via your `appConfig` helper (see agent.md → App configuration & secrets), not `process.env`. Those values are **per-environment** (set separately for dev and production at publish time), so the same schedule can hit a test endpoint in dev and the real one in production.
+- **Call an external HTTP API** — if the job needs to push to a third-party service, do it with `fetch` from inside the endpoint handler. Any key or base URL it reads is App configuration (`platform` §App config and secrets), set per environment — so the same schedule can hit a test endpoint in dev and the real one in production.
 - **Log and surface in the UI** — append to a `job_runs` table so the user can see in the app whether the scheduled job succeeded.
 
-> **Email note:** sending emails is **not supported** on this platform. If the user asks for a scheduled email (daily digest, weekly report, reminder email), see the `send-email` skill and propose an in-app alternative (dashboard page, in-app inbox, export button) instead.
+> A scheduled email (daily digest, weekly report, reminder) becomes an in-app alternative — see `send-email`.
 
 ## Important Notes
 

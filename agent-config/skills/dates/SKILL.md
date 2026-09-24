@@ -11,7 +11,7 @@ Use this skill to implement, review, and refactor date/time code with modern `da
 
 ## Version baseline
 
-- `date-fns` verified `4.1.0`; `@date-fns/tz` verified `1.4.1`. To re-check versions/sources, Read references/version-and-sources.md.
+- Written against `date-fns` major v4 and `@date-fns/tz` major v1. For the primary docs, Read references/version-and-sources.md.
 
 ## Non-negotiable rules
 

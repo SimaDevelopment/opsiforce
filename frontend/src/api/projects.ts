@@ -111,6 +111,14 @@ export function useProjects(options?: { enabled?: () => boolean }) {
   }));
 }
 
+export function useProject(projectId: () => string, options?: { enabled?: () => boolean }) {
+  return createAppQuery(() => ({
+    queryKey: projectKeys.detail(projectId()),
+    queryFn: () => api.get<Project>(`/projects/${projectId()}`),
+    enabled: options?.enabled ? options.enabled() : true,
+  }));
+}
+
 export function useRenameProject() {
   const qc = useQueryClient();
   return createMutation(() => ({

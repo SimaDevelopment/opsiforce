@@ -1,45 +1,63 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { AgentService } from '../agent/agent.service';
-import { findVisibleAgent } from '../agent/agent-visibility';
+import { canEditAgent, findVisibleAgent } from '../agent/agent-visibility';
+import { MissingPermissionException } from '../permission/missing-permission.exception';
+import { Perms } from '../permission/permission.constants';
 import { ProjectService } from '../project/project.service';
-import {
-  CHAT_VISIBILITIES,
-  isChatKind,
-  isChatVisibility,
-  CHAT_KINDS,
-  ProjectStatus,
-  type ChatVisibility,
-} from '../project/project.types';
-import { findVisibleSkill } from '../store/skill-visibility';
-import { BuilderChatRepository, type ChatRow, type TestProjectRow } from './builder-chat.repository';
-import {
-  BUILDER_CHAT_FILTERS,
-  type BuilderChatCaller,
-  type BuilderChatCreated,
-  type BuilderChatFilter,
-  type BuilderChatSummary,
-  type BuilderSeed,
-  type CreateBuilderChatDto,
-  type ProducedArtifact,
+import { ProjectStatus, type ChatKind } from '../project/project.types';
+import { canEditSkill, findVisibleSkill } from '../store/skill-visibility';
+import { BuilderChatRepository, type ChatRow, type SubjectRow, type TestProjectRow } from './builder-chat.repository';
+import type {
+  BuilderChatCaller,
+  BuilderChatSummary,
+  BuilderSubject,
+  BuilderSubjectRef,
+  BuilderSubjectType,
 } from './builder.types';
 
-const DEFAULT_TITLES = {
-  skill_builder_chat: 'New Skill',
-  agent_builder_chat: 'New Agent',
-} as const;
+const CHAT_KIND_OF: Record<BuilderSubjectType, ChatKind> = {
+  agent: 'agent_builder_chat',
+  skill: 'skill_builder_chat',
+};
 
-function isSkillSeed(seed: BuilderSeed): seed is { skillId: string } {
-  return 'skillId' in seed && typeof seed.skillId === 'string';
+interface ResolvedSubject extends BuilderSubject {
+  builderChatId: string | null;
+  editable: boolean;
 }
 
-function isAgentSeed(seed: BuilderSeed): seed is { agentId: string } {
-  return 'agentId' in seed && typeof seed.agentId === 'string';
+interface SubjectColumns {
+  id: string;
+  name: string;
+  displayName: string | null;
+  disabled: boolean;
+  builderChatId: string | null;
+}
+
+function subjectFields(type: BuilderSubjectType, row: SubjectColumns): Omit<ResolvedSubject, 'editable'> {
+  return {
+    type,
+    id: row.id,
+    name: row.name,
+    displayName: row.displayName,
+    disabled: row.disabled,
+    builderChatId: row.builderChatId,
+  };
+}
+
+function subjectRowOf(ref: BuilderSubjectRef | undefined): SubjectRow {
+  if (ref && 'agentId' in ref && typeof ref.agentId === 'string') return { type: 'agent', id: ref.agentId };
+  if (ref && 'skillId' in ref && typeof ref.skillId === 'string') return { type: 'skill', id: ref.skillId };
+  throw new BadRequestException({
+    code: 'validation_failed',
+    message: 'A Builder chat is opened for either an agentId or a skillId',
+  });
 }
 
 @Injectable()
@@ -50,11 +68,16 @@ export class BuilderChatService {
     private readonly agents: AgentService
   ) {}
 
-  async create(caller: BuilderChatCaller, dto: CreateBuilderChatDto): Promise<BuilderChatCreated> {
-    if (!isChatKind(dto.kind)) {
+  async openFor(caller: BuilderChatCaller, ref: BuilderSubjectRef): Promise<BuilderChatSummary> {
+    const target = subjectRowOf(ref);
+    const subject = await this.requireEditableSubject(caller, target);
+    const existing = await this.existingChat(caller.tenantId, subject);
+    if (existing) return this.summarize(await this.enableWithSubject(caller.tenantId, existing, subject), subject);
+
+    if (subject.disabled) {
       throw new BadRequestException({
-        code: 'validation_failed',
-        message: `kind must be one of ${CHAT_KINDS.join(', ')}`,
+        code: 'subject_disabled',
+        message: `Enable \`${subject.name}\` before opening the Builder on it`,
       });
     }
 
@@ -63,91 +86,24 @@ export class BuilderChatService {
       throw new ServiceUnavailableException('The Skill & Agent Builder is not installed on this deployment');
     }
 
-    const seedPrompt = dto.seed === undefined ? null : await this.renderSeed(caller, dto.seed);
-
     const project = await this.projects.create(
-      { title: dto.title?.trim() || DEFAULT_TITLES[dto.kind], agentId },
+      { title: `Builder: ${subject.displayName ?? subject.name}`, agentId },
       caller.tenantId,
-      { createdBy: caller.userId, kind: dto.kind }
+      { createdBy: caller.userId, kind: CHAT_KIND_OF[subject.type] }
     );
-
-    return { ...(await this.summarizeOne(caller, project.id)), seedPrompt };
-  }
-
-  async list(caller: BuilderChatCaller, filter: BuilderChatFilter = 'active'): Promise<BuilderChatSummary[]> {
-    if (!BUILDER_CHAT_FILTERS.includes(filter)) {
-      throw new BadRequestException({ code: 'validation_failed', message: `Unknown filter "${filter}"` });
+    if (await this.repository.claim(target, project.id)) {
+      return this.summarize(await this.requireChatRow(caller.tenantId, project.id), subject);
     }
 
-    const rows = await this.repository.listChats(caller.tenantId);
-    const matching = rows.filter((row) => {
-      if (filter === 'archived') return row.disabled;
-      if (filter === 'mine') return !row.disabled && row.createdBy === caller.userId;
-      return !row.disabled;
-    });
-
-    return this.summarize(caller, matching);
-  }
-
-  async open(caller: BuilderChatCaller, chatId: string): Promise<BuilderChatSummary> {
-    const chat = await this.requireChat(caller, chatId);
-    if (!canOpen(caller, chat)) throw new NotFoundException(`Builder chat ${chatId} not found`);
-    return this.summarizeOne(caller, chatId);
-  }
-
-  /** Creator-only, and reversible where a Skill's widening is not (ADR-0065). */
-  async setVisibility(
-    caller: BuilderChatCaller,
-    chatId: string,
-    visibility: ChatVisibility
-  ): Promise<BuilderChatSummary> {
-    if (!isChatVisibility(visibility)) {
-      throw new BadRequestException({
-        code: 'validation_failed',
-        message: `visibility must be one of ${CHAT_VISIBILITIES.join(', ')}`,
-      });
-    }
-
-    const chat = await this.requireChat(caller, chatId);
-    if (!isCreator(caller, chat)) {
-      throw new ForbiddenException('Only the member who started this chat may change who can open it');
-    }
-
-    if (chat.visibility !== visibility) await this.repository.setVisibility(chatId, visibility);
-    return this.summarizeOne(caller, chatId);
-  }
-
-  /** The list is Organization property, so any holder may archive; only the creator can read it. */
-  async archive(caller: BuilderChatCaller, chatId: string): Promise<BuilderChatSummary> {
-    const chat = await this.requireChat(caller, chatId);
-    if (!chat.disabled) await this.projects.disable(chatId, caller.tenantId);
-    return this.summarizeOne(caller, chatId);
-  }
-
-  async restore(caller: BuilderChatCaller, chatId: string): Promise<BuilderChatSummary> {
-    const chat = await this.requireChat(caller, chatId);
-    if (chat.disabled) await this.projects.enable(chatId, caller.tenantId);
-    return this.summarizeOne(caller, chatId);
-  }
-
-  /** Any holder may delete (ADR-0064 list hygiene); `ProjectService.remove` takes the live test Project with it. */
-  async remove(caller: BuilderChatCaller, chatId: string): Promise<void> {
-    await this.requireChat(caller, chatId);
-    await this.projects.remove(chatId, caller.tenantId);
-  }
-
-  async removeTestProject(caller: BuilderChatCaller, chatId: string): Promise<void> {
-    const chat = await this.requireChat(caller, chatId);
-    if (!canOpen(caller, chat)) {
-      throw new ForbiddenException('Only a member who can open this chat may delete its test project');
-    }
-    await this.deleteTestProjectsOf(caller.tenantId, chatId);
+    await this.projects.remove(project.id, caller.tenantId);
+    const winner = await this.existingChat(caller.tenantId, await this.requireEditableSubject(caller, target));
+    if (!winner) throw new ConflictException('The Builder chat could not be opened; try again');
+    return this.summarize(winner, subject);
   }
 
   /** ADR-0063's one-live-per-chat rule, applied by the public API before the successor is made. */
   async deleteTestProjectsOf(tenantId: string, chatId: string): Promise<void> {
-    const existing = await this.repository.testProjectsOf([chatId]);
-    for (const row of existing) {
+    for (const row of await this.repository.testProjectsOf(chatId)) {
       await this.projects.remove(row.id, tenantId);
     }
   }
@@ -156,79 +112,74 @@ export class BuilderChatService {
     return this.repository.findChat(tenantId, chatId);
   }
 
-  private async summarizeOne(caller: BuilderChatCaller, chatId: string): Promise<BuilderChatSummary> {
-    const [summary] = await this.summarize(caller, [await this.requireChat(caller, chatId)]);
-    return summary;
+  async subjectOfChat(tenantId: string, userId: string, chatId: string): Promise<BuilderSubject | null> {
+    const chat = await this.repository.findChat(tenantId, chatId);
+    const target = chat && (await this.repository.subjectOf(chat.id));
+    if (!target) return null;
+    const subject = await this.readSubject(tenantId, userId, target);
+    return subject ? publicSubject(subject) : null;
   }
 
-  private async requireChat(caller: BuilderChatCaller, chatId: string): Promise<ChatRow> {
-    const chat = await this.repository.findChat(caller.tenantId, chatId);
+  private async enableWithSubject(tenantId: string, chat: ChatRow, subject: ResolvedSubject): Promise<ChatRow> {
+    if (!chat.disabled || subject.disabled) return chat;
+    await this.projects.enable(chat.id, tenantId);
+    return this.requireChatRow(tenantId, chat.id);
+  }
+
+  private async existingChat(tenantId: string, subject: ResolvedSubject): Promise<ChatRow | null> {
+    return subject.builderChatId ? this.repository.findChat(tenantId, subject.builderChatId) : null;
+  }
+
+  private async requireChatRow(tenantId: string, chatId: string): Promise<ChatRow> {
+    const chat = await this.repository.findChat(tenantId, chatId);
     if (!chat) throw new NotFoundException(`Builder chat ${chatId} not found`);
     return chat;
   }
 
-  private async summarize(caller: BuilderChatCaller, rows: ChatRow[]): Promise<BuilderChatSummary[]> {
-    const ids = rows.map((row) => row.id);
-    const [testProjects, produced] = await Promise.all([
-      this.repository.testProjectsOf(ids),
-      this.repository.producedBy(ids),
-    ]);
-    const liveTest = new Map<string, TestProjectRow>();
-    for (const row of testProjects) {
-      if (row.chatId && !liveTest.has(row.chatId)) liveTest.set(row.chatId, row);
-    }
+  private async requireEditableSubject(caller: BuilderChatCaller, target: SubjectRow): Promise<ResolvedSubject> {
+    const permission = target.type === 'agent' ? Perms.manageAgents : Perms.manageSkills;
+    const permitted = target.type === 'agent' ? caller.canManageAgents : caller.canManageSkills;
+    if (!permitted) throw new MissingPermissionException(permission);
 
-    return rows.map((row) => this.toSummary(caller, row, liveTest.get(row.id), produced.get(row.id) ?? []));
+    const subject = await this.readSubject(caller.tenantId, caller.userId, target);
+    if (!subject) throw new NotFoundException(`${target.type === 'agent' ? 'Agent' : 'Skill'} ${target.id} not found`);
+    if (!subject.editable) {
+      throw new ForbiddenException({ code: 'not_editable', message: `\`${subject.name}\` cannot be edited` });
+    }
+    return subject;
   }
 
-  private toSummary(
-    caller: BuilderChatCaller,
-    row: ChatRow,
-    test: TestProjectRow | undefined,
-    produced: ProducedArtifact[]
-  ): BuilderChatSummary {
+  private async readSubject(tenantId: string, userId: string, target: SubjectRow): Promise<ResolvedSubject | null> {
+    if (target.type === 'agent') {
+      const agent = await findVisibleAgent(tenantId, userId, target.id);
+      return agent ? { ...subjectFields('agent', agent), editable: canEditAgent(agent, userId) } : null;
+    }
+    const skill = await findVisibleSkill(tenantId, userId, target.id);
+    return skill ? { ...subjectFields('skill', skill), editable: canEditSkill(skill, userId) } : null;
+  }
+
+  private async summarize(chat: ChatRow, subject: ResolvedSubject): Promise<BuilderChatSummary> {
+    const [test] = await this.repository.testProjectsOf(chat.id);
     return {
-      id: row.id,
-      title: row.title,
-      kind: row.kind,
-      visibility: row.visibility,
-      createdBy:
-        row.createdBy === null ? null : { id: row.createdBy, displayName: row.creatorDisplayName ?? row.createdBy },
-      createdAt: row.createdAt,
-      lastPromptAt: row.lastPromptAt,
-      disabled: row.disabled,
-      canOpen: canOpen(caller, row),
-      canShare: isCreator(caller, row),
+      id: chat.id,
+      kind: chat.kind,
+      subject: publicSubject(subject),
+      createdAt: chat.createdAt,
+      lastPromptAt: chat.lastPromptAt,
+      disabled: chat.disabled,
       ...(test === undefined ? {} : { testProject: { id: test.id, environmentStatus: statusOf(test) } }),
-      produced,
     };
   }
-
-  private async renderSeed(caller: BuilderChatCaller, seed: BuilderSeed): Promise<string> {
-    if (isSkillSeed(seed)) {
-      const skill = await findVisibleSkill(caller.tenantId, caller.userId, seed.skillId);
-      if (!skill) throw new NotFoundException(`Skill ${seed.skillId} not found`);
-      return `Let's work on the Skill \`${skill.name}\` (id ${skill.id}). Read it first, then ask me what to change.`;
-    }
-    if (isAgentSeed(seed)) {
-      const agent = await findVisibleAgent(caller.tenantId, caller.userId, seed.agentId);
-      if (!agent) throw new NotFoundException(`Agent ${seed.agentId} not found`);
-      const name = agent.displayName ?? agent.name;
-      return `Let's work on the Agent \`${name}\` (id ${agent.id}). Read its Development profile first, then ask me what to change.`;
-    }
-    throw new BadRequestException({
-      code: 'validation_failed',
-      message: 'A seed names either a skillId or an agentId',
-    });
-  }
 }
 
-function isCreator(caller: BuilderChatCaller, chat: ChatRow): boolean {
-  return chat.createdBy === caller.userId;
-}
-
-function canOpen(caller: BuilderChatCaller, chat: ChatRow): boolean {
-  return isCreator(caller, chat) || chat.visibility === 'public';
+function publicSubject(subject: ResolvedSubject): BuilderSubject {
+  return {
+    type: subject.type,
+    id: subject.id,
+    name: subject.name,
+    displayName: subject.displayName,
+    disabled: subject.disabled,
+  };
 }
 
 function statusOf(row: TestProjectRow): ProjectStatus {

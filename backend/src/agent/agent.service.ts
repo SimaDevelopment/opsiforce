@@ -7,11 +7,19 @@ import {
 } from '@nestjs/common';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
 import { Perms } from '../permission/permission.constants';
-import { and, asc, eq, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, not, or, sql } from 'drizzle-orm';
 import { db } from '../../db';
-import { agentProfileSkills, agentProfiles, agentSettings, agents, environments, skills } from '../../db/schema';
+import {
+  agentProfileSkills,
+  agentProfiles,
+  agentSettings,
+  agents,
+  environments,
+  skills,
+} from '../../db/schema';
 import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
 import { SkillDeliveryRepository } from '../delivery/skill-delivery.repository';
+import { packageSkillNames } from '../store/skill-tree';
 import { developmentEnvironmentId } from '../store/agent-profile.repository';
 import {
   CATALOG_LIST_FILTERS,
@@ -20,18 +28,21 @@ import {
   type CatalogColumns,
   type CatalogListFilter,
 } from '../store/catalog-filters';
-import { nameUnavailable, visibilityIncoherent } from '../store/store-errors';
+import { nameUnavailable, notDisableable, visibilityIncoherent } from '../store/store-errors';
 import { agentDeclaresPlatformApi, readMergedAgentRegistry, registryDefaultModel } from './agent-config';
-import { agentInUse, notPublishable } from './agent-errors';
+import { agentInUse, lastBuiltInAgent, notPublishable } from './agent-errors';
 import { isChatKind, type ProjectKind } from '../project/project.types';
 import { assertModelSelection } from './agent-models';
 import { AgentProfileService, assertAgentCarriesNoPrivateSkill } from './agent-profile.service';
 import { AgentRepository } from './agent.repository';
 import {
+  agentDisabledIn,
   assertAgentVisibleToUser,
   BUILDER_AGENT_SLUG,
+  canDisableAgent,
   canEditAgent,
   liveAgentsWhere,
+  startableBuiltInAgentsWhere,
   visibleAgentsWhere,
 } from './agent-visibility';
 import {
@@ -67,7 +78,7 @@ const AGENT_CATALOG_COLUMNS: CatalogColumns = {
   description: agents.description,
   origin: agents.origin,
   visibility: agents.visibility,
-  archived: agents.archived,
+  createdBy: agents.createdBy,
 };
 
 export function slugifyAgentName(displayName: string): string {
@@ -83,8 +94,6 @@ export function slugifyAgentName(displayName: string): string {
 
 @Injectable()
 export class AgentService {
-  private defaultAgentIdCache: string | null = null;
-
   constructor(
     private readonly repository: AgentRepository,
     private readonly profiles: AgentProfileService,
@@ -92,18 +101,22 @@ export class AgentService {
   ) {}
 
   async findAll(caller: AgentCaller): Promise<AgentResponse[]> {
-    const rows = await this.repository.list(liveAgentsWhere(caller.tenantId, caller.userId));
+    const rows = await this.repository.list(caller.tenantId, liveAgentsWhere(caller.tenantId, caller.userId));
     return rows.map(toResponse);
   }
 
   async listStore(caller: AgentCaller, rawFilter?: string, query?: string): Promise<AgentSummary[]> {
     const filter = parseFilter(rawFilter);
-    if (filter === 'archived' && !caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
+    if (filter === 'disabled' && !caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
 
     const rows = await this.repository.list(
+      caller.tenantId,
       and(
-        visibleAgentsWhere(caller.tenantId, caller.userId, { includeArchived: true }),
-        catalogFilterWhere(AGENT_CATALOG_COLUMNS, filter),
+        visibleAgentsWhere(caller.tenantId, caller.userId, { includeDisabled: true }),
+        catalogFilterWhere(AGENT_CATALOG_COLUMNS, filter, {
+          userId: caller.userId,
+          disabled: agentDisabledIn(caller.tenantId),
+        }),
         catalogSearchWhere(AGENT_CATALOG_COLUMNS, query)
       )
     );
@@ -115,7 +128,7 @@ export class AgentService {
     ]);
 
     return rows.map((row) =>
-      toSummary(row, live.has(row.id), profileEnvironments.get(row.id) ?? [], defaults.get(row.id) ?? null)
+      toSummary(row, caller.userId, live.has(row.id), profileEnvironments.get(row.id) ?? [], defaults.get(row.id) ?? null)
     );
   }
 
@@ -128,12 +141,14 @@ export class AgentService {
     return {
       ...toSummary(
         agent,
+        caller.userId,
         live.has(agent.id),
         profiles.map((profile) => profile.environmentId),
         settings.defaultEnvironmentId
       ),
       settings,
       profiles,
+      shippedSkills: agent.origin === 'built_in' ? await this.repository.shippedSkills(packageSkillNames(agent.name)) : [],
       projectCount: await this.repository.projectCount(agent.id, caller.tenantId),
     };
   }
@@ -167,7 +182,6 @@ export class AgentService {
         visibility: 'private',
         createdBy: caller.userId,
         poolSize: 0,
-        createdInChatProjectId: caller.createdInChatProjectId ?? null,
       });
       await tx.insert(agentSettings).values({ agentId, defaultEnvironmentId: environmentId, platformApi: false });
 
@@ -281,23 +295,36 @@ export class AgentService {
     return this.findOne(caller, created.id);
   }
 
-  async setArchived(caller: AgentCaller, agentId: string, archived: boolean): Promise<AgentDetail> {
-    const agent = await this.assertEditable(caller, agentId);
-    await db.update(agents).set({ archived, updatedAt: new Date() }).where(eq(agents.id, agent.id));
+  async setDisabled(caller: AgentCaller, agentId: string, disabled: boolean): Promise<AgentDetail> {
+    const agent = await this.assertDisableable(caller, agentId);
+    if (disabled === agent.disabled) return this.findOne(caller, agentId);
+    if (!disabled) {
+      await this.repository.enableIn(caller.tenantId, agent.id);
+    } else if (agent.origin === 'custom') {
+      await this.repository.disableIn(caller.tenantId, agent.id, caller.userId);
+    } else if (!(await this.repository.disableBuiltInUnlessLast(caller.tenantId, agent.id, caller.userId))) {
+      throw lastBuiltInAgent(agent.displayName ?? agent.name);
+    }
     return this.findOne(caller, agentId);
   }
 
-  async remove(caller: AgentCaller, agentId: string): Promise<void> {
+  async remove(
+    caller: AgentCaller,
+    agentId: string,
+    removeProjects: (projectIds: string[]) => Promise<void>
+  ): Promise<void> {
     const agent = await this.assertEditable(caller, agentId);
-    if (!agent.archived) {
+    if (!agent.disabled && (await this.repository.publishedBeyondDevelopment(agent.id, caller.tenantId))) {
       throw new BadRequestException({
-        code: 'agent_not_archived',
-        message: `Archive \`${agent.name}\` before deleting it`,
+        code: 'agent_not_disabled',
+        message: `\`${agent.name}\` is published beyond Development; disable it before deleting it`,
       });
     }
     const projectCount = await this.repository.projectCount(agent.id, caller.tenantId);
     if (projectCount > 0) throw agentInUse(projectCount);
 
+    const testProjects = await this.repository.testProjectIds(agent.id, caller.tenantId);
+    await removeProjects(agent.builderChatId ? [...testProjects, agent.builderChatId] : testProjects);
     await db.delete(agents).where(eq(agents.id, agent.id));
   }
 
@@ -435,27 +462,36 @@ export class AgentService {
     const rows = await db
       .select({ id: agents.id, tenantId: agents.tenantId })
       .from(agents)
-      .where(and(eq(agents.name, name), or(isNull(agents.tenantId), eq(agents.tenantId, tenantId))));
+      .where(
+        and(
+          eq(agents.name, name),
+          or(isNull(agents.tenantId), eq(agents.tenantId, tenantId)),
+          not(agentDisabledIn(tenantId))
+        )
+      );
     const builtIn = rows.find((row) => row.tenantId === null);
     return (builtIn ?? rows[0])?.id ?? null;
   }
 
-  /**
-   * Default agent for new projects when the create DTO doesn't specify one.
-   * Resolved from the `agents` table by well-known name and cached for the
-   * process lifetime. The seed migration guarantees this row exists.
-   */
-  async getDefaultAgentId(): Promise<string> {
-    if (this.defaultAgentIdCache) return this.defaultAgentIdCache;
+  async getDefaultAgentId(tenantId: string): Promise<string> {
     const [row] = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.name, DEFAULT_AGENT_NAME), isNull(agents.tenantId)));
-    if (!row) {
-      throw new Error(`Default agent "${DEFAULT_AGENT_NAME}" not found in agents table`);
-    }
-    this.defaultAgentIdCache = row.id;
+      .where(startableBuiltInAgentsWhere(tenantId))
+      .orderBy(sql`${agents.name} = ${DEFAULT_AGENT_NAME} desc`, asc(agents.name))
+      .limit(1);
+    if (!row) throw new Error(`No built-in agent is enabled for tenant ${tenantId}`);
     return row.id;
+  }
+
+  private async assertDisableable(caller: AgentCaller, agentId: string): Promise<AgentRow> {
+    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    if (agent.origin === 'custom') return this.assertEditable(caller, agentId);
+    if (!canDisableAgent(agent, caller.userId)) {
+      throw notDisableable('The Skill & Agent Builder is always available to whoever may author');
+    }
+    if (!caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
+    return agent;
   }
 
   private async assertEditable(caller: AgentCaller, agentId: string): Promise<AgentRow> {
@@ -516,6 +552,7 @@ function toResponse(row: AgentRow): AgentResponse {
 
 function toSummary(
   row: AgentRow,
+  userId: string,
   live: boolean,
   profileEnvironmentIds: string[],
   defaultEnvironmentId: string | null
@@ -524,9 +561,11 @@ function toSummary(
     ...toResponse(row),
     origin: row.origin,
     visibility: row.visibility,
-    archived: row.archived,
+    disabled: row.disabled,
+    disableable: canDisableAgent(row, userId),
     createdBy: row.createdBy,
     imageOwned: row.origin === 'built_in',
+    builderChatId: row.builderChatId,
     live,
     defaultEnvironmentId,
     profileEnvironmentIds,

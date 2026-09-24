@@ -302,9 +302,9 @@ function userFacingPublishError(err: unknown, phase: PublishStatus): string {
       return 'Not enough capacity to start the app right now. Please try again in a few minutes.';
     }
     if (err.reason === 'ImagePullBackOff') {
-      return "The app image couldn't be loaded. Please try again, or contact support if this keeps happening.";
+      return "The app image couldn't be loaded. Please try again in a few minutes.";
     }
-    return 'The app failed to start. Please try again, or contact support if this keeps happening.';
+    return 'The app failed to start. Please try again.';
   }
 
   const message = err instanceof Error ? err.message : String(err);
@@ -321,8 +321,5 @@ function userFacingPublishError(err: unknown, phase: PublishStatus): string {
     return 'This environment is missing its LLM credentials. Please reconfigure it and try again.';
   }
 
-  return (
-    PHASE_FAILURE_MESSAGE[phase] ??
-    'Publishing failed unexpectedly. Please try again, or contact support if it persists.'
-  );
+  return PHASE_FAILURE_MESSAGE[phase] ?? 'Publishing failed unexpectedly. Please try again.';
 }

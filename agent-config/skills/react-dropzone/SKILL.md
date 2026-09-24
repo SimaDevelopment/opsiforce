@@ -1,6 +1,6 @@
 ---
 name: react-dropzone
-description: Handle file uploads with drag-and-drop using react-dropzone. Use when users need to upload files, images, documents, or any binary data. Covers the drop zone UI, file preview, and error handling inline; backend receive-and-store is covered in a reference.
+description: File uploads with drag-and-drop using react-dropzone — the drop zone, previews, validation errors, and sending the file to the App's backend and storing it. Use whenever users upload files, images, documents, or any binary data.
 ---
 
 # react-dropzone — File Upload

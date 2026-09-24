@@ -491,6 +491,27 @@
       "when": 1790027067111,
       "tag": "0069_drop-external-urls-flag-default",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1790175065699,
+      "tag": "0070_store-entries-disable",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1790178392241,
+      "tag": "0071_builder-chat-subject",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1790183030405,
+      "tag": "0072_tenant-disabled-agents-and-skills",
+      "breakpoints": true
     }
   ]
 }

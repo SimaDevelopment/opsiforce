@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
+import { Link } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import {
   useRemoveAgentSkill,
@@ -12,7 +13,7 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import {
-  ArchivedBadge,
+  DisabledBadge,
   FOCUS_RING,
   OriginBadge,
   RowList,
@@ -21,6 +22,7 @@ import {
 } from '~/components/store/store-list';
 import { ArrowUp, Check, Files, Lock, Plus } from '~/components/icons';
 import { cn } from '~/lib/cn';
+import { DEFAULT_SKILL_FILE } from './skill-page';
 
 function refusalMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : 'The change could not be saved.';
@@ -96,16 +98,21 @@ export function AgentSkillList(props: {
       <RowList>
         <For each={props.skills}>
           {(skill) => (
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
-              <span class="flex min-w-0 flex-1 items-center gap-2">
+            <div class="relative flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/40 has-[a:focus-visible]:ring-1 has-[a:focus-visible]:ring-ring">
+              <Link
+                to="/store/skills/$id"
+                params={{ id: skill.skillId }}
+                search={{ v: skill.pinnedVersion, file: DEFAULT_SKILL_FILE, agent: props.agent.id }}
+                class="flex min-w-0 flex-1 items-center gap-2 after:absolute after:inset-0 focus-visible:outline-none"
+              >
                 <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span class="truncate font-mono text-sm text-foreground">{skill.name}</span>
                 <span class="shrink-0 text-xs tabular-nums text-muted-foreground">v{skill.pinnedVersion}</span>
                 <Show when={skill.visibility === 'private'}>
                   <Lock class="h-3 w-3 shrink-0 text-amber-600" role="img" aria-label="Private" />
                 </Show>
-              </span>
-              <div class="flex shrink-0 items-center gap-2">
+              </Link>
+              <div class="relative flex shrink-0 items-center gap-2">
                 <Show when={skill.updateAvailable ? skill.latestVersion : null}>
                   {(latest) => (
                     <>
@@ -143,7 +150,7 @@ interface Verdict {
 }
 
 export function skillAddable(agent: AgentDetail, carried: AgentProfileSkill[], skill: Skill): Verdict {
-  if (skill.archived) return { ok: false, reason: 'Archived' };
+  if (skill.disabled) return { ok: false, reason: 'Disabled' };
   if (!skill.latestVersion) return { ok: false, reason: 'No published version' };
   if (carried.some((pinned) => pinned.skillId === skill.id)) return { ok: false, reason: 'Already on this agent' };
   if (carried.some((pinned) => pinned.name === skill.name))
@@ -265,8 +272,8 @@ export function AddSkillsDialog(props: {
                           <Show when={skill.visibility === 'private'}>
                             <VisibilityBadge visibility="private" />
                           </Show>
-                          <Show when={skill.archived}>
-                            <ArchivedBadge />
+                          <Show when={skill.disabled}>
+                            <DisabledBadge />
                           </Show>
                         </span>
                         <span class="mt-0.5 block truncate text-xs text-muted-foreground">

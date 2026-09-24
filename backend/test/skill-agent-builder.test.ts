@@ -22,6 +22,8 @@ const platformSkill = readFileSync(join(agentConfig, 'skills', 'platform', 'SKIL
 const skillAuthoring = readFileSync(join(packageRoot, 'skills', 'skill-authoring', 'SKILL.md'), 'utf8');
 const agentAuthoring = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'SKILL.md'), 'utf8');
 const testLoop = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'test-loop.md'), 'utf8');
+const stackSkill = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'stack-skill.md'), 'utf8');
+const webAppSkill = readFileSync(join(agentConfig, 'skills', 'web-app', 'SKILL.md'), 'utf8');
 const gateRules = readFileSync(
   join(packageRoot, 'skills', 'skill-authoring', 'references', 'gate-rules.md'),
   'utf8'
@@ -290,8 +292,21 @@ describe('the persona', () => {
     }
   });
 
+  it('reads the one subject its chat authors from the API, not from the workspace (ADR-0071)', () => {
+    expect(persona).toContain('builderSubject');
+    expect(persona).not.toContain('builder-subject.json');
+    expect(persona).toMatch(/[Dd]o not announce\s+the reads/);
+    expect(persona).toMatch(/Never `POST \/agents` for it/);
+  });
+
+  it('decides and does rather than asking for permission', () => {
+    expect(persona).toMatch(/Decide, do, report/);
+    expect(persona).toMatch(/nothing to ask permission for/);
+    expect(persona).toMatch(/one\*\* question only when/);
+  });
+
   it('says what the chat cannot do, and where those acts live instead', () => {
-    for (const refusal of ['public', 'archive', 'delete', 'Store']) {
+    for (const refusal of ['public', 'disable', 'delete', 'Store']) {
       expect(persona.toLowerCase()).toContain(refusal.toLowerCase());
     }
   });
@@ -306,7 +321,7 @@ describe('the skill-authoring skill', () => {
   it('names the built-in catalogue call and all three offers', () => {
     expect(skillAuthoring).toContain('/skills?filter=built_in');
     for (const offer of ['Reuse', 'Extend', 'Fresh']) expect(skillAuthoring).toContain(offer);
-    expect(skillAuthoring).toContain('/duplicate');
+    expect(skillAuthoring).toContain('/skills/$ID/versions');
   });
 
   it('splits ERRORS from LINTS and says which one blocks', () => {
@@ -351,6 +366,59 @@ describe('the agent-authoring skill', () => {
     expect(agentAuthoring).toMatch(/observability database/);
   });
 
+  it('gives every building Agent a template to lay first and an Architecture in its body (ADR-0068)', () => {
+    expect(agentAuthoring).toMatch(/Every Agent that builds starts from a template/);
+    expect(agentAuthoring).toMatch(/never on an empty `app\/`/);
+    expect(agentAuthoring).toContain('Load the `web-app` skill before touching the app');
+    expect(agentAuthoring).toMatch(/The architecture lives in the body/);
+    expect(agentAuthoring).toMatch(/scaffold Skill/);
+    expect(agentAuthoring).toMatch(/Runtime dependencies are ensured by `startup.sh`, never by hand/);
+    expect(agentAuthoring).toMatch(/Restart the child's pod/);
+    expect(webAppSkill).toMatch(/What the starter fixes and what you change/);
+    expect(webAppSkill).toContain("ls -A | grep -vxE 'data|opsiforce");
+    expect(webAppSkill).not.toMatch(/\[ -e \/workspace\/app\/startup\.sh \] \|\| cp/);
+  });
+
+  it('has authored Skills frame the work and never ship an implementation to copy', () => {
+    expect(agentAuthoring).toMatch(/Skills frame the work; the child writes it/);
+    for (const section of ['Structure', 'Stack and libraries', 'Contracts', 'Style guide', 'Runtime', 'Anti-patterns', 'Definition of done']) {
+      expect(stackSkill).toContain(`**${section}**`);
+    }
+    expect(stackSkill).toMatch(/What it never holds — an implementation/);
+    expect(stackSkill).toMatch(/How often the checks run/);
+    expect(stackSkill).toMatch(/No version pins/);
+    expect(stackSkill).toContain("grep -vxE 'data|opsiforce");
+    for (const text of [agentAuthoring, stackSkill, testLoop]) {
+      expect(text).not.toMatch(/cp -a \/workspace\/\.opencode\/skills/);
+      expect(text).not.toMatch(/md5sum/);
+    }
+    expect(skillAuthoring).toMatch(/never an implementation for the agent to copy/);
+  });
+
+  it('keeps the shared guidance free of any one service', () => {
+    for (const [name, text] of Object.entries({ platformSkill, webAppSkill, agentAuthoring, stackSkill, testLoop, persona })) {
+      expect(text, `${name} names a specific service`).not.toMatch(/postgres|mysql|redis|mongo/i);
+    }
+  });
+
+  it('shares the durable-workspace rule through the platform skill, not its own words', () => {
+    expect(platformSkill).toMatch(/The pod is disposable, the workspace is durable/);
+    expect(platformSkill).toContain('startup.sh');
+    expect(platformSkill).toMatch(/idempotently/);
+    expect(platformSkill).toMatch(/runs under `guard`, in the foreground/);
+    expect(platformSkill).toMatch(/What Publish carries/);
+    expect(platformSkill).toMatch(/Node projects use Yarn/);
+    expect(platformSkill).toMatch(/Never npm, pnpm or bun for a project/);
+    expect(platformSkill).toMatch(/take its latest stable release/);
+    expect(platformSkill).toMatch(/never reinstall or re-enable it from `startup.sh`/);
+    expect(platformSkill).toMatch(/restarts it whenever it exits, crashed or not/);
+    expect(platformSkill).toMatch(/never by a process number read from a file/);
+    expect(platformSkill).toMatch(/Survive a dependency restarting/);
+    expect(platformSkill).toMatch(/Never run a `guard` line or the whole script by hand/);
+    expect(persona).toMatch(/disposable/);
+    expect(persona).not.toMatch(/apt-get/);
+  });
+
   it('states all four fidelity gaps', () => {
     const gaps = agentAuthoring.split('four fidelity gaps')[1] ?? '';
 
@@ -370,7 +438,7 @@ describe('the agent-authoring skill', () => {
 /** `METHOD /base/segment/:p` for every `/api/v1` route carrying `@AllowsGatewayCaller()`. */
 function gatewayOpenRoutes(): Set<string> {
   const open = new Set<string>();
-  for (const resource of ['projects', 'agents', 'skills']) {
+  for (const resource of ['projects', 'agents', 'skills', 'me']) {
     const source = readFileSync(
       join(process.cwd(), 'src', 'public-api', resource, `${resource}.controller.ts`),
       'utf8'
@@ -431,7 +499,9 @@ describe('the test loop reference', () => {
   it('creates the test Project the way the API accepts it', () => {
     expect(testLoop).toContain('"kind":"test"');
     expect(testLoop).toContain('POST /projects');
-    expect(testLoop).toMatch(/until \[.*environments\[0\]\.status.*\]; do sleep/);
+    expect(testLoop).toMatch(/environments\[0\]\.status/);
+    expect(testLoop).toMatch(/wait_active\(\) \{[\s\S]*seq 1[\s\S]*"failed"[\s\S]*return 1/);
+    expect(testLoop).not.toMatch(/until \[.*environments\[0\]\.status.*\]; do sleep/);
   });
 
   it('prompts and reads through the runtime, and shells for verification', () => {
@@ -439,6 +509,12 @@ describe('the test loop reference', () => {
     expect(testLoop).toContain('/api/session/$SES/wait');
     expect(testLoop).toContain('/api/session/$SES/message');
     expect(testLoop).toContain('POST /api/shell');
+    expect(testLoop).toContain('/restart');
+    expect(testLoop).toContain('`timeout` set to `1200000`');
+    expect(testLoop).toMatch(/genuine stall only/);
+    expect(testLoop).toMatch(/Idle is not finished/);
+    expect(testLoop).toContain('"finish":"error"');
+    expect(agentAuthoring).toMatch(/A long turn is\s+not a stuck one/);
     expect(testLoop).toContain('/api/shell/$id/output');
   });
 

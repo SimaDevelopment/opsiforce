@@ -13,6 +13,18 @@ export const MeSchema = z
     organization: OrganizationRefSchema,
     organizations: z.array(OrganizationRefSchema),
     permissions: z.array(z.string()),
+    builderSubject: z
+      .strictObject({
+        type: z.enum(['agent', 'skill']),
+        id: z.string(),
+        name: z.string().describe('The slug: the Agent\'s, or the `name` every Version of the Skill must carry'),
+        displayName: z.string().nullable(),
+        disabled: z.boolean(),
+      })
+      .nullable()
+      .describe(
+        'For the gateway key of a Skill & Agent Builder chat: the one Skill or Agent that chat authors. Null for every other caller.'
+      ),
   })
   .meta({ id: 'Me' });
 

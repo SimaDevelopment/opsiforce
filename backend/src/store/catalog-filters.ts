@@ -1,8 +1,8 @@
-import { and, eq, ilike, isNotNull, or, type Column, type SQL } from 'drizzle-orm';
+import { and, eq, ilike, isNotNull, not, or, type Column, type SQL } from 'drizzle-orm';
 
-export type CatalogListFilter = 'all' | 'built_in' | 'custom' | 'private' | 'archived';
+export type CatalogListFilter = 'all' | 'mine' | 'built_in' | 'custom' | 'private' | 'disabled';
 
-export const CATALOG_LIST_FILTERS: CatalogListFilter[] = ['all', 'built_in', 'custom', 'private', 'archived'];
+export const CATALOG_LIST_FILTERS: CatalogListFilter[] = ['all', 'mine', 'built_in', 'custom', 'private', 'disabled'];
 
 export interface CatalogColumns {
   tenantId: Column;
@@ -11,21 +11,29 @@ export interface CatalogColumns {
   description: Column;
   origin: Column;
   visibility: Column;
-  archived: Column;
+  createdBy: Column;
 }
 
-export function catalogFilterWhere(columns: CatalogColumns, filter: CatalogListFilter): SQL | undefined {
+export interface CatalogScope {
+  userId: string;
+  disabled: SQL<boolean>;
+}
+
+export function catalogFilterWhere(columns: CatalogColumns, filter: CatalogListFilter, scope: CatalogScope): SQL | undefined {
+  const enabled = not(scope.disabled);
   switch (filter) {
+    case 'mine':
+      return and(eq(columns.createdBy, scope.userId), enabled);
     case 'built_in':
-      return and(eq(columns.origin, 'built_in'), eq(columns.archived, false));
+      return and(eq(columns.origin, 'built_in'), enabled);
     case 'custom':
-      return and(eq(columns.origin, 'custom'), eq(columns.archived, false));
+      return and(eq(columns.origin, 'custom'), enabled);
     case 'private':
-      return and(eq(columns.visibility, 'private'), isNotNull(columns.tenantId), eq(columns.archived, false));
-    case 'archived':
-      return eq(columns.archived, true);
+      return and(eq(columns.visibility, 'private'), isNotNull(columns.tenantId), enabled);
+    case 'disabled':
+      return scope.disabled;
     default:
-      return eq(columns.archived, false);
+      return enabled;
   }
 }
 

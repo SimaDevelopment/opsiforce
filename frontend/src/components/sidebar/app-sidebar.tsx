@@ -8,7 +8,6 @@ import { useCreateDefaultProject } from '~/api/default-project-target';
 import { Permission } from '~/constants/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
-import { firstPermittedStoreTab } from '~/constants/store-tabs';
 import {
   Sidebar,
   SidebarHeader,
@@ -62,7 +61,6 @@ export function AppSidebar() {
 
   const canOpenSettings = () => !!firstPermittedSettingsTab(hasPermission);
   const canOpenAdmin = () => !!firstPermittedAdminTab(hasPermission);
-  const canOpenStore = () => !!firstPermittedStoreTab(hasPermission);
 
   const projectCreateDisabled = () => createDefaultProject.isPending() || !createDefaultProject.hasDestination();
   const menuDisabled = () =>
@@ -236,12 +234,10 @@ export function AppSidebar() {
                   <p class="text-sm font-medium truncate">{userName()}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <Show when={canOpenStore()}>
-                  <DropdownMenuItem onSelect={() => navigate({ to: '/store' })}>
-                    <Store class="w-4 h-4 text-muted-foreground" />
-                    Skill & Agent Store
-                  </DropdownMenuItem>
-                </Show>
+                <DropdownMenuItem onSelect={() => navigate({ to: '/store' })}>
+                  <Store class="w-4 h-4 text-muted-foreground" />
+                  Skill & Agent Store
+                </DropdownMenuItem>
                 <Show when={canOpenSettings()}>
                   <DropdownMenuItem onSelect={() => navigate({ to: '/settings' })}>
                     <Settings class="w-4 h-4 text-muted-foreground" />

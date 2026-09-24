@@ -104,6 +104,10 @@ _Avoid_: Secrets (they may hold secrets but are not only secrets); the pod's pro
 Recreating a ProjectEnvironment's pod from scratch — the row-level Restart action. Distinct from the lighter **App restart** that applying Environment Variables performs, which restarts only the App's processes inside the running pod.
 _Avoid_: Reboot; conflating with App restart
 
+**Disable (Project)**:
+Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a test Project, whose pods stop, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
+_Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
+
 **App Auth**:
 Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **managed** (a shared identity provider configured by the platform operator, scoped to the tenant). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
 _Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)
@@ -127,7 +131,7 @@ The LLM an Agent runs on, named directly as a provider/model pair together with 
 _Avoid_: Model Preset (retired 2026-09-17 — Agents name the model directly); Default model (it is **not** a configurable default — Defaults covers timeouts and budgets only)
 
 **Custom Agent**:
-An Agent authored in the platform rather than shipped in the image, owned by one Organization and carrying a Visibility. It consists of what its author writes — identity, plus one Agent Profile per Environment holding instructions, the Agent Model and its Skills — and nothing else: a Custom Agent has no starter template and no workspace migrations, so its Projects start from an empty workspace and the agent builds what its instructions describe. It becomes pickable for new Projects only once it has an Agent Profile in its Default environment (Agent).
+An Agent authored in the platform rather than shipped in the image, owned by one Organization and carrying a Visibility. It consists of what its author writes — identity, plus one Agent Profile per Environment holding instructions, the Agent Model and its Skills — and nothing else: a Custom Agent has no starter template and no workspace migrations, so its Projects open on an empty workspace and the agent starts from a template before it builds — it lays the platform's web-app template through `web-app`, or creates the skeleton a scaffold Skill the Skill & Agent Builder constructed describes — as the Architecture section of its instructions directs, which also states what the Agent changes about that template so every Project of it starts from one shape. It becomes pickable for new Projects only once it has an Agent Profile in its Default environment (Agent).
 _Avoid_: Dynamic agent, User agent, Tenant agent (non-canonical); Global agent (retired — Custom Agents never span Organizations); Base Agent, chassis (retired 2026-09-17 — a Custom Agent rides the platform's shared runtime, not a chosen Built-in Agent)
 
 **Built-in Agent**:
@@ -146,20 +150,20 @@ _Avoid_: Deploy, Release, Promote (reserved against the environment vocabulary);
 The Environment a Custom Agent's new Projects are created from — one per Agent, set by a holder of `can_manage_agents`. Until the Agent has an Agent Profile there, the Agent is not offered in the picker at all. Choosing Development is the fast-iteration mode: each new Project picks up whatever Development holds at that moment.
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
 
-**Archive (Agent)**:
-An Organization retiring one of its own Custom Agents: hidden from the Agent picker and closed to new Projects, its warm pool drained, while existing Projects keep running unchanged. Reversible. A never-published or archived Custom Agent can be deleted outright; Built-in Agents are never archived — one that leaves the registry simply stops being offered.
-_Avoid_: Delete (the permanent sibling); Disable, Deactivate (non-canonical)
+**Disable (Agent)**:
+An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Built-in Agent enabled, and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
+_Avoid_: Delete (the permanent sibling); Archive, Deactivate (non-canonical)
 
 **Duplicate (Custom Agent)**:
 Forking any Agent a member can see — a public Custom Agent, a Built-in Agent, or their own private one — into a new private Custom Agent they own, carrying its identity, instructions, Agent Model and Skills into the new Agent's Development Profile. The way to base a new Agent on one that already works, and the only way back from a Visibility already made public.
 _Avoid_: Copy, Clone, Fork (non-canonical); Base Agent (retired); Lineage (nothing records what a Duplicate was copied from)
 
 **Platform Skill**:
-The built-in skill named `platform`, shipped in the agent image and laid into every workspace, carrying the facts every Agent needs about running here — the App contract, where uploads and generated files live, the gateway and its environment variables, the two read-only databases and how to query them, what must never be installed — so an Agent's own prompt never restates them. Agent Updates refresh it in every existing Project of every Agent kind; its name is reserved, and it cannot be removed from an Agent's Skills.
+The built-in skill named `platform`, shipped in the agent image and laid into every workspace, carrying the facts every Agent needs about running here — the App contract, that the pod is disposable and the workspace durable, where uploads and generated files live, the gateway and its environment variables, the two read-only databases and how to query them, what must never be installed — so an Agent's own prompt never restates them. Agent Updates refresh it in every existing Project of every Agent kind; its name is reserved, and it cannot be removed from an Agent's Skills.
 _Avoid_: Harness (not a term — the thing is a skill); Base prompt, System preamble (nothing is prepended to an Agent's prompt; the prompt is the author's body alone)
 
 **App contract**:
-The three things the platform needs from an App to run it in any stack: an executable `/workspace/app/startup.sh` the pod runs, restarts and re-runs in a published Environment; a server answering on `$APP_PORT`; and `app/app.meta.json` naming the App. Any HTTP answer on the port is serving, and serving plus the file present is live. The starter template satisfies it out of the box; a Custom Agent's App satisfies it by writing the files.
+The three things the platform needs from an App to run it in any stack: an executable `/workspace/app/startup.sh` the pod runs, restarts and re-runs in a published Environment; a server answering on `$APP_PORT`; and `app/app.meta.json` naming the App. Any HTTP answer on the port is serving, and serving plus the file present is live. The starter template satisfies it out of the box; a Custom Agent's App satisfies it by laying a template that does, or by writing the files.
 _Avoid_: Start command (startup.sh already is one); Health check route (no route is required); Manifest (the meta file holds a name and description only)
 
 **Agent Status**:
@@ -219,11 +223,11 @@ A Skill authored in the platform rather than shipped in the image — through th
 _Avoid_: Dynamic skill, User skill, Tenant skill (non-canonical)
 
 **Visibility**:
-Whether an authored Skill or Custom Agent is **private** — listed, pickable and editable only for the member who created it — or **public**, meaning every member of the Organization can see and use it and every permission holder can edit, archive or delete it. Making something public is irreversible and hands it to the Organization; the way back is to Duplicate. Private means unlisted, never secret: what an Agent carries is written into its Project's workspace, so anyone who can see the Project can read it.
+Whether an authored Skill or Custom Agent is **private** — listed, pickable and editable only for the member who created it — or **public**, meaning every member of the Organization can see and use it and every permission holder can edit, disable or delete it. Making something public is irreversible and hands it to the Organization; the way back is to Duplicate. Private means unlisted, never secret: what an Agent carries is written into its Project's workspace, so anyone who can see the Project can read it.
 _Avoid_: Shared (a shared Workspace is member-scoped — Visibility is Organization-wide); Published (reserved for the Skill and App senses); Scope (retired — there is no scope above the Organization)
 
 **Skill Version**:
-The immutable snapshot of a Skill's content created each time it is published, and the only form in which a Skill's content exists — there is no unpublished Skill. An Agent's Skills each pin one Version, and a Version, once published, never changes.
+The immutable snapshot of a Skill's content created each time it is published, and the only form in which a Skill's content exists — there is no unpublished content. A Skill named in the Store before its Builder chat has written it holds no Version yet, and nothing can pin it until one exists. An Agent's Skills each pin one Version, and a Version, once published, never changes.
 _Avoid_: Revision, Draft Revision (retired — the Builder chat holds the work in progress, and nothing unfinished is stored); Release
 
 **Publish (Skill)**:
@@ -242,13 +246,13 @@ _Avoid_: Outdated, Stale (judgemental — a pin behind the newest Version is a v
 The catalog where members browse their Organization's Skills — Built-in and public Custom ones, plus their own private ones — inspect their contents, and add them to Agents. It is the Skills tab of Store, not a destination of its own.
 _Avoid_: Marketplace (implies cross-Organization publishing or commerce — out of scope); Library, Hub (non-canonical); Store (the containing section, which also holds Agents)
 
-**Archive (Skill)**:
-An Organization retiring one of its own published Skills: hidden from the Store and closed to new use, while every Agent that already carries it keeps working unchanged. Reversible.
-_Avoid_: Delete (the separate, permanent act); Unpublish, Revoke, Deprecate (retired — nothing withdraws a Skill from Agents that already carry it)
+**Disable (Skill)**:
+An Organization taking a Skill out of use for itself — one of its own or a Built-in Skill: hidden from the Store and closed to new use, while every Agent that already carries it keeps working unchanged. Reversible by Enable. Another Organization is unaffected, and the Platform Skill is never disabled.
+_Avoid_: Delete (the separate, permanent act); Archive (retired); Unpublish, Revoke, Deprecate (retired — nothing withdraws a Skill from Agents that already carry it)
 
 **Delete (Skill)**:
-Permanently removing a Skill and its Versions. Available for an archived Skill once no Agent carries it — the attempt is refused while any does, naming them. The one act with no undo.
-_Avoid_: Remove (the act of taking a Skill off one Agent); Archive (the reversible sibling)
+Permanently removing a Skill and its Versions. Available for a disabled Skill once no Agent carries it — the attempt is refused while any does, naming them. The one act with no undo.
+_Avoid_: Remove (the act of taking a Skill off one Agent); Disable (the reversible sibling)
 
 **Duplicate (Skill)**:
 Forking any Skill a member can see — a public one, a Built-in one, or their own private one — into a new private Skill they own, whose first Version copies the original's content. What it was copied from is not recorded. The way to vary content someone else published, and the only way back from a Visibility that has already been made public.
@@ -259,23 +263,19 @@ How what an Agent carries reaches a Project's workspace. A Project's files are l
 _Avoid_: Sync, Push, Install (mechanism words); Update (collides with Agent Updates, the image-version pipeline)
 
 **Skill & Agent Builder**:
-The Built-in Agent that authors Skills and Custom Agents through conversation. Reached from the Store's Builder surface rather than the project workspace, and shipped in every distribution. It interviews, drafts in conversation, publishes on its author's word, and tests a Custom Agent it wrote by conversing with it in a test Project rather than trusting its own transcript; everything it writes is judged as the permissions of the user who created the Builder chat, and its pod may create and edit but never delete, archive or make anything public.
+The Built-in Agent that authors Skills and Custom Agents through conversation. Reached from a Skill's or a Custom Agent's page in the Store rather than the project workspace, and shipped in every distribution. It interviews, drafts in conversation, publishes on its author's word, and tests a Custom Agent it wrote by conversing with it in a test Project rather than trusting its own transcript; everything it writes is judged as the permissions of the user who opened the Builder chat, and its pod may create and edit but never delete, rename, disable or make anything public.
 _Avoid_: Builder alone in user-facing copy (ambiguous beside app-builder); Studio, Workshop, Creator, Copilot (non-canonical); conflating with app-builder (the Agent that builds Apps)
 
 **Builder chat**:
-One authoring conversation with the Skill & Agent Builder — started from the Store's Builder surface as a **New Skill** or **New Agent** chat, one of many a user may keep and revisit. Every permission holder sees it listed — title, chat kind, creator, what it produced — and whether it opens depends on its **chat visibility**: private to its creator by default, or shared with the whole Organization. It is where unfinished work lives: nothing half-written is stored anywhere else, so the chat is the draft. From the chat an author publishes Skill Versions, creates a Custom Agent, edits its Development Agent Profile and its Skills, and runs a test Project; Publish (Agent) to another Environment, making a Skill or an Agent public, Archive and Delete stay in the Store, while the chat's own visibility flips from the chat itself. Carried by a kind-stamped Project — plumbing that never appears in workspaces or the project list — archived by disabling it and deleted outright together with its test Project.
-_Avoid_: Builder Project (retired — a Builder chat is not a workspace artifact); Builder session (collides with the runtime's session); Shared chat (the state is _public_ chat visibility, not a kind of chat)
-
-**chat visibility**:
-Whether a Builder chat opens for its creator alone (**private**, the default) or for every member of the Organization (**public**), on the API and on every runtime surface alike. Only the creator flips it, and unlike a Skill or a Custom Agent it flips back: a chat publishes nothing by being shared, so nothing is stranded by un-sharing it. A public chat is writable — two people may prompt it — and its test Project inherits the state rather than carrying one of its own.
-_Avoid_: sharing, publishing a chat (Publish belongs to Agents); read-only sharing (there is none); org-wide, internal (the two states are private and public, as everywhere else in the Store)
+The one authoring conversation that belongs to a Skill or a Custom Agent — its **subject** — with the Skill & Agent Builder. A subject has at most one: New skill and New agent name the entry and open its chat, and the entry's page opens the same chat again later. Whoever may see the subject, with the permission matching it, may open and prompt its chat, so it widens when the subject is made public. It is where unfinished work lives: nothing half-written is stored anywhere else. From the chat the Builder publishes the Skill's Versions, or writes the Agent's Development Agent Profile, its Skills and its description, and runs a test Project; Publish (Agent) to another Environment, renaming, making anything public, Disable and Delete stay on the subject's page. The pod reads its subject from the platform API. Carried by a kind-stamped Project — plumbing that never appears in workspaces or the project list — deleted to start the conversation over, and deleted with its subject.
+_Avoid_: Builder Project (retired — a Builder chat is not a workspace artifact); Builder session (collides with the runtime's session); chat visibility (retired — who opens a chat follows its subject); chat list (there is none — a chat is reached from its subject)
 
 **chat kind**:
-The facet a Builder chat is stamped with when it is started — Skill or Agent — choosing which authoring skill opens the conversation and which list it files under; it never limits what the chat may go on to author. The same column marks a test Project, and its absence is what makes a Project an ordinary one that lists show.
+The facet a Builder chat is stamped with when it is made — Skill or Agent, following its subject — choosing which authoring skill opens the conversation. The same column marks a test Project, and its absence is what makes a Project an ordinary one that lists show.
 _Avoid_: Project type, Project kind unqualified (the column is internal — users see Skill chat / Agent chat); Mode
 
 **test Project**:
-A throwaway Project the Skill & Agent Builder creates on a Custom Agent it authored, from that Agent's Development Agent Profile, to converse with the child and verify its claims inside the child's pod. One live per Builder chat — starting a new test deletes the previous one, and deleting the chat deletes it — hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it as an ordinary Project. Single-use: Dynamic Delivery freezes the definition at creation, so testing an edit needs a new one.
+A throwaway Project the Skill & Agent Builder creates on a Custom Agent it authored, from that Agent's Development Agent Profile, to converse with the child and verify its claims inside the child's pod. One live per Builder chat — starting a new test deletes the previous one, and deleting the chat deletes it — hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it beside the chat as an ordinary Project. Single-use: Dynamic Delivery freezes the definition at creation, so testing an edit needs a new one.
 _Avoid_: Sandbox, Eval, Preview project (non-canonical); Draft project (there is no draft — the Development Profile is what runs)
 
 ### Schedules
@@ -295,7 +295,7 @@ The per-ProjectEnvironment `gw-` token a pod holds, carrying a purpose: the `ser
 _Avoid_: API key (collides with API Token); Pod token, Service token unqualified (the purpose is the distinction)
 
 **Agent Caller**:
-A public-API caller whose credential is a Gateway Key: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and reaches only the routes opened to it — Projects it created itself with full creator authority, Skills and Custom Agents with every verb except Delete, Archive and making public. Its Projects record which Project's pod made them, and the chain stops at depth two. At launch only the Skill & Agent Builder's pods are Agent Callers.
+A public-API caller whose credential is a Gateway Key: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and reaches only the routes opened to it — Projects it created itself with full creator authority, Skills and Custom Agents with every verb except Delete, Disable and making public. Its Projects record which Project's pod made them, and the chain stops at depth two. At launch only the Skill & Agent Builder's pods are Agent Callers.
 _Avoid_: Bot (a service account is an ordinary user); Machine user; Pod identity (the identity is the human's)
 
 **Error**:
@@ -333,7 +333,7 @@ The permission-gated surface where a member **observes and operates** running st
 _Avoid_: Settings (the configuration sibling — a different destination); Admin panel, Console, Operations, Monitoring (non-canonical — say Admin); conflating with Pods (the first page within Admin, not the whole)
 
 **Store**:
-The third sibling on the same left-rail layout as Settings and Admin, reached from the avatar dropdown at `/store`, where a member browses the Organization's catalog of Agents and Skills and, with `can_manage_skills` or `can_manage_agents`, authors them. Its Agents and Skills tabs are open to every member because consuming the catalog is free; only the Skill & Agent Builder tab is permission-gated. It contains the Skill Store, which is its Skills tab rather than a separate destination. The test for where a view belongs: if it browses or authors the catalog, it is Store; if it shows what is running now, it is Admin; if it changes stored configuration, it is Settings.
+The third sibling beside Settings and Admin, reached from the avatar dropdown at `/store`, where a member browses the Organization's catalog of Agents and Skills and, with `can_manage_skills` or `can_manage_agents`, authors them — each through its own Builder chat. Its two sections, Agents and Skills, sit in a tab bar and are open to every member because consuming the catalog is free. It contains the Skill Store, which is its Skills section rather than a separate destination. The test for where a view belongs: if it browses or authors the catalog, it is Store; if it shows what is running now, it is Admin; if it changes stored configuration, it is Settings.
 _Avoid_: Marketplace, Catalog, Library (non-canonical — say Store); Skill Store (one tab within Store, not the whole); Settings, Admin (the sibling destinations)
 
 **Platform-scope permission**:

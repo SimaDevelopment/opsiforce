@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { hashSkillTree, validateSkillTree, type GateResult, type SkillTree } from './gate';
 import { parseFrontmatter } from './gate/frontmatter';
 import { decodeText, SKILL_MANIFEST_PATH } from './gate/skill-tree';
@@ -14,7 +14,6 @@ export interface PublishInput {
   tree: SkillTree;
   createdVia: string;
   sourceRef?: string | null;
-  createdInChatProjectId?: string | null;
 }
 
 export interface CreateInput extends PublishInput {
@@ -60,9 +59,22 @@ export class SkillPublishService {
       lints: gate.lints.map((lint) => lint.rule),
       createdVia: input.createdVia,
       sourceRef: input.sourceRef ?? null,
-      createdInChatProjectId: input.createdInChatProjectId ?? null,
     });
     return { skillId, version };
+  }
+
+  async createUnpublished(input: {
+    tenantId: string;
+    userId: string;
+    name: string;
+    displayName: string | null;
+  }): Promise<string> {
+    const invalid = this.runGate(nameOnlyTree(input.name), input.name).errors.find(
+      (error) => error.rule === 'name_format' || error.rule === 'name_length'
+    );
+    if (invalid) throw new BadRequestException({ code: 'bad_request', message: invalid.message });
+    await this.assertNameAvailable(input.tenantId, input.name);
+    return this.repository.createSkillWithoutVersion(input);
   }
 
   async addVersion(skill: SkillRow, input: PublishInput): Promise<PublishResult> {
@@ -87,6 +99,10 @@ export class SkillPublishService {
     if (gate.errors.length > 0) throw validationFailed(gate.errors, gate.lints);
     return gate;
   }
+}
+
+function nameOnlyTree(name: string): SkillTree {
+  return [{ path: SKILL_MANIFEST_PATH, content: Buffer.from(`---\nname: ${name}\n---\n`, 'utf8'), executable: false }];
 }
 
 export function manifestName(tree: SkillTree): string | null {

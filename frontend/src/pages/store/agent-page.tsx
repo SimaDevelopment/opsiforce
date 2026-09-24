@@ -6,51 +6,60 @@ import {
   useAgentDelivery,
   useDeleteAgent,
   useDuplicateAgent,
-  useSetAgentArchived,
+  useSetAgentDisabled,
   useSetAgentVisibility,
-  useUpdateAgentSettings,
+  useUpdateAgent,
   type AgentDeliverySummary,
   type AgentDetail,
   type AgentProfile,
+  type ShippedSkill,
 } from '~/api/agents';
 import { ApiError } from '~/api/client';
 import { useEnvironments, type Environment } from '~/api/environments';
+import { useSkill } from '~/api/skills';
 import { usePermissions } from '~/api/permissions';
 import { useUsers } from '~/api/users';
 import { Button } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
+import { DropdownMenuSeparator } from '~/components/ui/dropdown-menu';
+import { ActionsMenu, ActionsMenuItem } from '~/components/actions-menu';
 import { Spinner } from '~/components/ui/spinner';
-import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { EnvironmentBadge } from '~/components/environment-badge';
 import {
-  ArchivedBadge,
+  DefaultEnvironmentMark,
+  DisabledBadge,
   EmptyState,
   ErrorState,
   FOCUS_RING,
   OriginBadge,
+  RowLink,
   RowList,
   SectionTitle,
   VisibilityBadge,
 } from '~/components/store/store-list';
-import { EditWithBuilderButton } from '~/components/store/edit-with-builder-button';
+import { InlineEdit } from '~/components/store/inline-edit';
+import { OpenBuilderButton } from '~/components/store/open-builder-button';
 import {
   AlertTriangle,
+  Ban,
   Bot,
   ChevronLeft,
+  ChevronRight,
+  CirclePlay,
   Copy,
-  EllipsisVertical,
+  Files,
   Globe,
   Plus,
   Rocket,
+  Trash2,
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
@@ -62,6 +71,7 @@ import { AddSkillsDialog, AgentSkillList } from './agent-skills';
 export interface AgentPageProps {
   agentId: string;
   env: string;
+  fromSkillId?: string;
   onEnv: (environmentId: string) => void;
 }
 
@@ -79,6 +89,14 @@ export function AgentPage(props: AgentPageProps) {
   const loaded = createMemo(() =>
     agent.data && environments.data ? { agent: agent.data, environments: environments.data } : undefined
   );
+  const fromSkill = useSkill(
+    () => props.fromSkillId ?? '',
+    () => !!props.fromSkillId
+  );
+  const back = () =>
+    props.fromSkillId
+      ? { to: `/store/skills/${props.fromSkillId}`, label: fromSkill.data?.name ?? 'Skill' }
+      : { to: '/store/agents', label: 'Agents' };
   const selectedId = () => {
     const known = (environments.data ?? []).some((environment) => environment.id === props.env);
     return known ? props.env : (development()?.id ?? '');
@@ -88,14 +106,14 @@ export function AgentPage(props: AgentPageProps) {
     <div class="h-full overflow-y-auto bg-background">
       <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
         <Link
-          to="/store/agents"
+          to={back().to}
           class={cn(
-            '-ml-1 mb-3 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground',
+            '-ml-1 mb-3 inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground',
             FOCUS_RING
           )}
         >
-          <ChevronLeft class="h-3.5 w-3.5" aria-hidden="true" />
-          Agents
+          <ChevronLeft class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span class="truncate">{back().label}</span>
         </Link>
 
         <Show when={!agent.isError} fallback={<ErrorState message="This agent could not be loaded." />}>
@@ -141,13 +159,16 @@ function AgentBody(props: {
   const developmentProfile = () => (props.development ? profileFor(props.development.id) : undefined);
   const carried = () => developmentProfile()?.skills ?? [];
   const targets = createMemo(() => props.environments.filter((environment) => !environment.isDefault));
+  const isDefaultSelected = () => props.selectedId === props.development?.id;
 
   return (
     <>
       <AgentHeader
         agent={props.agent}
         canManage={props.canManage}
-        onPublish={() => setPublishing({})}
+        publishedBeyondDevelopment={targets().some((environment) => isPublished(profileFor(environment.id)))}
+        env={props.selectedId}
+        onPublish={() => setPublishing(isDefaultSelected() ? {} : { preselect: props.selectedId })}
       />
 
       <Show when={isBuiltIn()}>
@@ -155,30 +176,26 @@ function AgentBody(props: {
       </Show>
 
       <Show when={!isBuiltIn()}>
-        <div class="space-y-8">
-          <EnvironmentSection
+        <div class="grid grid-cols-[minmax(0,1fr)_16rem] gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
+          <EnvironmentPanel
             agent={props.agent}
             environments={props.environments}
-            development={props.development}
             selectedId={props.selectedId}
             profileFor={profileFor}
             canManage={props.canManage}
-            onEnv={props.onEnv}
             onAdd={() => setAdding(true)}
-            onPublish={(environmentId) => setPublishing({ preselect: environmentId })}
           />
-
-          <PublishingStrip
-            targets={targets()}
-            development={developmentProfile()}
-            profileFor={profileFor}
-            canManage={props.canManage}
-            onPublish={(environmentId) => setPublishing({ preselect: environmentId })}
-          />
-
-          <Show when={props.canManage}>
-            <NewProjectsSection agent={props.agent} environments={props.environments} profileFor={profileFor} />
-          </Show>
+          <aside class="sticky top-4 self-start">
+            <SectionTitle>Environments</SectionTitle>
+            <EnvironmentList
+              agent={props.agent}
+              environments={props.environments}
+              development={developmentProfile()}
+              selectedId={props.selectedId}
+              profileFor={profileFor}
+              onEnv={props.onEnv}
+            />
+          </aside>
         </div>
       </Show>
 
@@ -186,6 +203,7 @@ function AgentBody(props: {
         {(state) => (
           <PublishAgentDialog
             agent={props.agent}
+            environments={props.environments}
             development={developmentProfile()}
             targets={targets()}
             profileFor={profileFor}
@@ -203,47 +221,97 @@ function AgentBody(props: {
   );
 }
 
-function AgentHeader(props: { agent: AgentDetail; canManage: boolean; onPublish: () => void }) {
+function AgentHeader(props: {
+  agent: AgentDetail;
+  canManage: boolean;
+  publishedBeyondDevelopment: boolean;
+  env: string;
+  onPublish: () => void;
+}) {
   const { hasPermission } = usePermissions();
   const users = useUsers(() => hasPermission(Permission.manageWorkspaces) && props.agent.createdBy !== null);
+  const update = useUpdateAgent(() => props.agent.id);
   const creator = () =>
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.displayName ??
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.email ??
     null;
+  const editable = () => props.canManage && props.agent.origin === 'custom';
+  const name = () => props.agent.displayName ?? props.agent.name;
+
+  const save = async (patch: { displayName?: string; description?: string | null }) => {
+    try {
+      await update.mutateAsync(patch);
+    } catch (error) {
+      toast.error(refusal(error, 'The change could not be saved.'));
+      throw error;
+    }
+  };
 
   return (
     <header class="mb-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <Bot class="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <h1 class="text-balance text-xl font-semibold tracking-tight text-foreground">
-              {props.agent.displayName ?? props.agent.name}
+            <h1 class="min-w-0 text-balance text-xl font-semibold tracking-tight text-foreground">
+              <Show when={editable()} fallback={name()}>
+                <InlineEdit
+                  value={name()}
+                  label="Name"
+                  placeholder="Name"
+                  required
+                  maxLength={80}
+                  onSave={(displayName) => save({ displayName })}
+                />
+              </Show>
             </h1>
             <OriginBadge origin={props.agent.origin} />
             <VisibilityBadge visibility={props.agent.visibility} />
-            <Show when={props.agent.archived}>
-              <ArchivedBadge />
+            <Show when={props.agent.disabled}>
+              <DisabledBadge />
             </Show>
           </div>
-          <Show when={props.agent.description}>
-            <p class="mt-1.5 max-w-2xl text-pretty text-sm text-muted-foreground">{props.agent.description}</p>
-          </Show>
+          <div class="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+            <Show
+              when={editable()}
+              fallback={
+                <Show when={props.agent.description}>
+                  <p class="text-pretty">{props.agent.description}</p>
+                </Show>
+              }
+            >
+              <InlineEdit
+                value={props.agent.description}
+                label="Description"
+                placeholder="Add a description — what this agent is for…"
+                multiline
+                flushLeft
+                maxLength={500}
+                onSave={(description) => save({ description: description || null })}
+              />
+            </Show>
+          </div>
           <div class="mt-1.5 text-xs text-muted-foreground">
-            <span class="font-mono">{props.agent.name}</span>
-            <Show when={creator()}>{(name) => <span> · created by {name()}</span>}</Show>
+            <span class="font-mono" title="The slug is fixed once the agent exists">
+              {props.agent.name}
+            </span>
+            <Show when={creator()}>{(creatorName) => <span> · created by {creatorName()}</span>}</Show>
           </div>
         </div>
         <Show when={props.canManage}>
           <div class="flex shrink-0 flex-wrap items-center gap-2">
             <Show when={props.agent.origin === 'custom'}>
-              <EditWithBuilderButton seed={{ agentId: props.agent.id }} />
+              <OpenBuilderButton
+                subject={{ type: 'agent', id: props.agent.id }}
+                returnEnv={props.env}
+                disabled={props.agent.disabled}
+              />
               <Button size="sm" onClick={props.onPublish}>
                 <Rocket class="h-4 w-4" aria-hidden="true" />
                 Publish
               </Button>
             </Show>
-            <AgentActionsMenu agent={props.agent} />
+            <AgentActionsMenu agent={props.agent} publishedBeyondDevelopment={props.publishedBeyondDevelopment} />
           </div>
         </Show>
       </div>
@@ -252,28 +320,26 @@ function AgentHeader(props: { agent: AgentDetail; canManage: boolean; onPublish:
   );
 }
 
-function AgentActionsMenu(props: { agent: AgentDetail }) {
-  const navigate = useNavigate();
+function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopment: boolean }) {
   const [duplicating, setDuplicating] = createSignal(false);
   const [widening, setWidening] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
-  const setArchived = useSetAgentArchived(() => props.agent.id);
+  const setDisabled = useSetAgentDisabled(() => props.agent.id);
   const setVisibility = useSetAgentVisibility(() => props.agent.id);
-  const remove = useDeleteAgent(() => props.agent.id);
 
-  const archive = async (archived: boolean) => {
+  const toggleDisabled = async (disabled: boolean) => {
     try {
-      await setArchived.mutateAsync(archived);
+      await setDisabled.mutateAsync(disabled);
     } catch (error) {
       toast.error(refusal(error, 'The agent could not be updated.'));
       return;
     }
-    toast.success(archived ? 'Agent archived' : 'Agent restored', {
+    toast.success(disabled ? 'Agent disabled' : 'Agent enabled', {
       action: {
         label: 'Undo',
         onClick: () => {
-          void setArchived
-            .mutateAsync(!archived)
+          void setDisabled
+            .mutateAsync(!disabled)
             .catch((error: unknown) => toast.error(refusal(error, 'The agent could not be updated.')));
         },
       },
@@ -289,47 +355,38 @@ function AgentActionsMenu(props: { agent: AgentDetail }) {
     }
   };
 
-  const destroy = async () => {
-    try {
-      await remove.mutateAsync();
-    } catch (error) {
-      toast.error(refusal(error, 'The agent could not be deleted.'));
-      return;
-    }
-    toast.success('Agent deleted');
-    void navigate({ to: '/store/agents' });
-  };
-
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger as={Button} variant="outline" size="icon" class="h-8 w-8" aria-label="More actions">
-          <EllipsisVertical class="h-4 w-4" aria-hidden="true" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent class="min-w-48">
-          <DropdownMenuItem onSelect={() => setDuplicating(true)}>
-            <Copy class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            Duplicate as private copy
-          </DropdownMenuItem>
-          <Show when={props.agent.visibility === 'private' && props.agent.origin === 'custom'}>
-            <DropdownMenuItem onSelect={() => setWidening(true)}>
-              <Globe class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              Make public…
-            </DropdownMenuItem>
+      <ActionsMenu label="Agent actions" variant="outline">
+        <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
+          Duplicate
+        </ActionsMenuItem>
+        <Show when={props.agent.origin === 'custom' && props.agent.visibility === 'private'}>
+          <ActionsMenuItem icon={Globe} onSelect={() => setWidening(true)}>
+            Make public
+          </ActionsMenuItem>
+        </Show>
+        <Show when={props.agent.disableable}>
+          <Show
+            when={props.agent.disabled}
+            fallback={
+              <ActionsMenuItem icon={Ban} onSelect={() => void toggleDisabled(true)}>
+                Disable
+              </ActionsMenuItem>
+            }
+          >
+            <ActionsMenuItem icon={CirclePlay} onSelect={() => void toggleDisabled(false)}>
+              Enable
+            </ActionsMenuItem>
           </Show>
-          <Show when={props.agent.origin === 'custom'}>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void archive(!props.agent.archived)}>
-              {props.agent.archived ? 'Restore' : 'Archive'}
-            </DropdownMenuItem>
-            <Show when={props.agent.archived}>
-              <DropdownMenuItem class="text-destructive" onSelect={() => setDeleting(true)}>
-                Delete…
-              </DropdownMenuItem>
-            </Show>
-          </Show>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </Show>
+        <Show when={props.agent.origin === 'custom'}>
+          <DropdownMenuSeparator />
+          <ActionsMenuItem icon={Trash2} destructive onSelect={() => setDeleting(true)}>
+            Delete
+          </ActionsMenuItem>
+        </Show>
+      </ActionsMenu>
 
       <DuplicateAgentDialog agent={props.agent} open={duplicating()} onOpenChange={setDuplicating} />
 
@@ -337,7 +394,7 @@ function AgentActionsMenu(props: { agent: AgentDetail }) {
         open={widening()}
         onOpenChange={setWidening}
         title={`Make ${props.agent.displayName ?? props.agent.name} public?`}
-        description="Every member of the organization will see and use it, and anyone with can_manage_agents can edit, publish, archive or delete it. It stops being only yours."
+        description="Every member of the organization will see and use it, and anyone with can_manage_agents can edit, publish, disable or delete it. It stops being only yours."
         confirmLabel="Make public"
         onConfirm={() => void makePublic()}
       >
@@ -349,20 +406,85 @@ function AgentActionsMenu(props: { agent: AgentDetail }) {
         </div>
       </ConfirmDialog>
 
-      <ConfirmDialog
+      <DeleteAgentDialog
+        agent={props.agent}
+        publishedBeyondDevelopment={props.publishedBeyondDevelopment}
         open={deleting()}
         onOpenChange={setDeleting}
-        title={`Delete ${props.agent.displayName ?? props.agent.name}?`}
-        description={
-          props.agent.projectCount > 0
-            ? `It still has ${props.agent.projectCount} project(s) and cannot be deleted. Leave it archived instead.`
-            : 'Its definitions in every environment are removed. Projects that already received them keep what they have.'
-        }
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => void destroy()}
+        onDisable={() => void toggleDisabled(true)}
       />
     </>
+  );
+}
+
+function DeleteAgentDialog(props: {
+  agent: AgentDetail;
+  publishedBeyondDevelopment: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDisable: () => void;
+}) {
+  const navigate = useNavigate();
+  const remove = useDeleteAgent(() => props.agent.id);
+  const inUse = () => props.agent.projectCount > 0;
+  const needsDisable = () => props.publishedBeyondDevelopment && !props.agent.disabled;
+  const name = () => props.agent.displayName ?? props.agent.name;
+
+  const reason = () => {
+    if (inUse()) {
+      const count = props.agent.projectCount;
+      return `${count} ${count === 1 ? 'project runs' : 'projects run'} on it, so it can't be deleted. Disable it to stop new projects from starting on it.`;
+    }
+    if (needsDisable()) return "It's published beyond Development. Disable it first, then delete it.";
+    return "Its definitions in every environment, its Builder conversation and any test project running it are removed. This can't be undone.";
+  };
+
+  const destroy = async () => {
+    try {
+      await remove.mutateAsync();
+    } catch (error) {
+      toast.error(refusal(error, 'The agent could not be deleted.'));
+      return;
+    }
+    props.onOpenChange(false);
+    toast.success(`Deleted ${name()}`);
+    void navigate({ to: '/store/agents' });
+  };
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent class="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Delete {name()}?</DialogTitle>
+          <DialogDescription>{reason()}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => props.onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Show
+            when={!inUse() && !needsDisable()}
+            fallback={
+              <Show when={!props.agent.disabled}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    props.onDisable();
+                    props.onOpenChange(false);
+                  }}
+                >
+                  Disable
+                </Button>
+              </Show>
+            }
+          >
+            <Button variant="destructive" size="sm" loading={remove.isPending} onClick={() => void destroy()}>
+              Delete
+            </Button>
+          </Show>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -390,7 +512,7 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Duplicate as private copy</DialogTitle>
+          <DialogTitle>Duplicate {props.agent.displayName ?? props.agent.name}</DialogTitle>
           <DialogDescription>
             The copy starts private, with this agent's Development definition and its pinned skills.
           </DialogDescription>
@@ -401,7 +523,9 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
           </label>
           <input
             id="duplicate-agent-name"
+            name="displayName"
             type="text"
+            autocomplete="off"
             value={displayName()}
             onInput={(event) => {
               setDisplayName(event.currentTarget.value);
@@ -449,9 +573,9 @@ function BuiltInBody(props: {
       <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <div class="font-medium">Ships with the platform</div>
         <div class="mt-0.5 text-xs text-blue-900/80">
-          Its prompt and template come from the agent image and update with releases. The skills below are your
-          organization's — they reach <strong>every existing project</strong> on this agent, in every environment, as
-          soon as you change them.
+          Its prompt, template and the skills it ships come from the agent image and update with releases. Skills your
+          organization adds reach <strong>every existing project</strong> on this agent, in every environment, as soon
+          as you change them.
         </div>
       </div>
 
@@ -466,7 +590,7 @@ function BuiltInBody(props: {
             </Show>
           }
         >
-          Skills
+          Added by your organization
         </SectionTitle>
         <AgentSkillList
           agent={props.agent}
@@ -483,7 +607,54 @@ function BuiltInBody(props: {
         </Show>
         <OmittedSkills omitted={omitted()} />
       </section>
+
+      <section>
+        <SectionTitle>Ships with the agent</SectionTitle>
+        <ShippedSkillList agentId={props.agent.id} skills={props.agent.shippedSkills} />
+      </section>
     </div>
+  );
+}
+
+function ShippedSkillList(props: { agentId: string; skills: ShippedSkill[] }) {
+  return (
+    <Show
+      when={props.skills.length > 0}
+      fallback={
+        <p class="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          This agent's package ships no skills of its own.
+        </p>
+      }
+    >
+      <RowList>
+        <For each={props.skills}>
+          {(skill) => (
+            <Show
+              when={skill.skillId}
+              fallback={
+                <div class="flex items-center gap-3 px-4 py-2.5">
+                  <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span class="font-mono text-sm">{skill.name}</span>
+                </div>
+              }
+            >
+              {(skillId) => (
+                <RowLink
+                  href={`/store/skills/${skillId()}?${new URLSearchParams({ agent: props.agentId })}`}
+                  class="px-4 py-2.5"
+                >
+                  <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span class="min-w-0 flex-1 truncate font-mono text-sm">{skill.name}</span>
+                  <Show when={skill.version}>
+                    {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version()}</span>}
+                  </Show>
+                </RowLink>
+              )}
+            </Show>
+          )}
+        </For>
+      </RowList>
+    </Show>
   );
 }
 
@@ -511,16 +682,70 @@ function OmittedSkills(props: { omitted: AgentDeliverySummary['omitted'] }) {
   );
 }
 
-function EnvironmentSection(props: {
+function EnvironmentList(props: {
   agent: AgentDetail;
   environments: Environment[];
-  development: Environment | undefined;
+  development: AgentProfile | undefined;
+  selectedId: string;
+  profileFor: (environmentId: string) => AgentProfile | undefined;
+  onEnv: (environmentId: string) => void;
+}) {
+  return (
+    <RowList>
+      <For each={props.environments}>
+        {(environment) => {
+          const selected = () => environment.id === props.selectedId;
+          const status = () =>
+            environment.isDefault ? 'Where you edit' : driftText(props.development, props.profileFor(environment.id));
+          const stale = () =>
+            !environment.isDefault &&
+            isPublished(props.profileFor(environment.id)) &&
+            status() !== 'Same as Development';
+          return (
+            <button
+              type="button"
+              aria-pressed={selected()}
+              onClick={() => props.onEnv(environment.id)}
+              class={cn(
+                'group flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/60',
+                FOCUS_RING,
+                selected() && 'bg-accent'
+              )}
+            >
+              <span class="min-w-0 flex-1 space-y-0.5">
+                <span class="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  <EnvironmentBadge environment={environment} />
+                  <span class="truncate">{environment.name}</span>
+                  <Show when={props.agent.settings.defaultEnvironmentId === environment.id}>
+                    <DefaultEnvironmentMark environmentName={environment.name} plain />
+                  </Show>
+                </span>
+                <span class={cn('block truncate text-xs', stale() ? 'text-amber-700' : 'text-muted-foreground')}>
+                  {status()}
+                </span>
+              </span>
+              <ChevronRight
+                class={cn(
+                  'h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5',
+                  selected() ? 'text-foreground' : 'text-muted-foreground'
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          );
+        }}
+      </For>
+    </RowList>
+  );
+}
+
+function EnvironmentPanel(props: {
+  agent: AgentDetail;
+  environments: Environment[];
   selectedId: string;
   profileFor: (environmentId: string) => AgentProfile | undefined;
   canManage: boolean;
-  onEnv: (environmentId: string) => void;
   onAdd: () => void;
-  onPublish: (environmentId: string) => void;
 }) {
   const selected = () => props.environments.find((environment) => environment.id === props.selectedId);
   const isDevelopment = () => selected()?.isDefault === true;
@@ -530,35 +755,18 @@ function EnvironmentSection(props: {
   });
 
   return (
-    <section class="space-y-6">
-      <Tabs value={props.selectedId} onChange={props.onEnv}>
-        <TabsList class="w-full sm:w-auto" aria-label="Environment">
-          <For each={props.environments}>
-            {(environment) => (
-              <TabsTrigger value={environment.id} class="flex-1 gap-1.5 sm:flex-none">
-                <EnvironmentBadge environment={environment} />
-                <span class="hidden sm:inline">{environment.name}</span>
-                <span class="sr-only sm:hidden">{environment.name}</span>
-                <Show when={props.agent.settings.defaultEnvironmentId === environment.id}>
-                  <span
-                    class="h-1.5 w-1.5 rounded-full bg-primary"
-                    role="img"
-                    aria-label="New projects start here"
-                  />
-                </Show>
-              </TabsTrigger>
-            )}
-          </For>
-        </TabsList>
-      </Tabs>
-
+    <section class="min-w-0 space-y-6" aria-label={selected()?.name}>
       <Show
         when={profile()}
         fallback={
           <EmptyState
             icon={Rocket}
             title={`Nothing published to ${selected()?.name ?? 'this environment'} yet.`}
-            hint="Publish Development here to make this environment available to new projects."
+            hint={
+              props.canManage
+                ? 'Publish, at the top of the page, copies Development here and offers it to new projects.'
+                : 'Until Development is published here, new projects cannot start from it.'
+            }
           />
         }
       >
@@ -583,144 +791,6 @@ function EnvironmentSection(props: {
           </Show>
         )}
       </Show>
-
-      <Show when={!profile() && props.canManage && !isDevelopment()}>
-        <div class="flex justify-center">
-          <Button size="sm" onClick={() => props.onPublish(props.selectedId)}>
-            <Rocket class="h-3.5 w-3.5" aria-hidden="true" />
-            Publish Development to {selected()?.name}
-          </Button>
-        </div>
-      </Show>
-    </section>
-  );
-}
-
-function PublishingStrip(props: {
-  targets: Environment[];
-  development: AgentProfile | undefined;
-  profileFor: (environmentId: string) => AgentProfile | undefined;
-  canManage: boolean;
-  onPublish: (environmentId: string) => void;
-}) {
-  return (
-    <section>
-      <SectionTitle>Publishing</SectionTitle>
-      <Show
-        when={props.targets.length > 0}
-        fallback={
-          <p class="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-            This organization has only the Development environment.
-          </p>
-        }
-      >
-        <RowList>
-          <For each={props.targets}>
-            {(environment) => {
-              const target = () => props.profileFor(environment.id);
-              const published = () => isPublished(target());
-              const text = () => driftText(props.development, target());
-              const stale = () => published() && text() !== 'Same as Development';
-              return (
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-                  <span class="inline-flex min-w-32 items-center gap-1.5">
-                    <EnvironmentBadge environment={environment} />
-                    <span class="text-xs font-medium text-foreground">{environment.name}</span>
-                  </span>
-                  <span class={cn('min-w-0 flex-1 text-xs', stale() ? 'text-amber-700' : 'text-muted-foreground')}>
-                    {text()}
-                  </span>
-                  <Show when={props.canManage}>
-                    <Button
-                      size="sm"
-                      variant={!published() || stale() ? 'default' : 'outline'}
-                      class="h-7"
-                      onClick={() => props.onPublish(environment.id)}
-                    >
-                      <Rocket class="h-3.5 w-3.5" aria-hidden="true" />
-                      {published() ? 'Publish update' : 'Publish'}
-                    </Button>
-                  </Show>
-                </div>
-              );
-            }}
-          </For>
-        </RowList>
-      </Show>
-    </section>
-  );
-}
-
-function NewProjectsSection(props: {
-  agent: AgentDetail;
-  environments: Environment[];
-  profileFor: (environmentId: string) => AgentProfile | undefined;
-}) {
-  const updateSettings = useUpdateAgentSettings(() => props.agent.id);
-  const chosen = () =>
-    props.environments.find((environment) => environment.id === props.agent.settings.defaultEnvironmentId) ?? null;
-  const offered = () => isPublished(props.profileFor(props.agent.settings.defaultEnvironmentId ?? ''));
-
-  const choose = async (environment: Environment) => {
-    try {
-      await updateSettings.mutateAsync(environment.id);
-      toast.success(`New projects start from ${environment.name}`);
-    } catch (error) {
-      toast.error(refusal(error, 'The setting could not be saved.'));
-    }
-  };
-
-  return (
-    <section>
-      <SectionTitle>New projects</SectionTitle>
-      <RowList>
-        <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div class="min-w-0">
-            <label for="agent-default-environment" class="text-sm font-medium">
-              Start new projects from
-            </label>
-            <div class="mt-0.5 text-xs text-muted-foreground">
-              A project copies this environment's definition once, when it is created, and keeps it.
-            </div>
-          </div>
-          <div class="w-full sm:w-44">
-            <Select
-              options={props.environments}
-              optionValue="id"
-              optionTextValue="name"
-              value={chosen()}
-              onChange={(option) => option && void choose(option)}
-              itemComponent={(itemProps) => (
-                <SelectItem item={itemProps.item}>
-                  <span class="flex items-center gap-1.5">
-                    <EnvironmentBadge environment={itemProps.item.rawValue} />
-                    {itemProps.item.rawValue.name}
-                  </span>
-                </SelectItem>
-              )}
-            >
-              <SelectTrigger id="agent-default-environment" aria-label="Start new projects from">
-                <SelectValue<Environment>>
-                  {(state) => (
-                    <span class="flex items-center gap-1.5">
-                      <Show when={state.selectedOption()}>
-                        {(environment) => <EnvironmentBadge environment={environment()} />}
-                      </Show>
-                      {state.selectedOption()?.name ?? 'Select'}
-                    </span>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
-          </div>
-        </div>
-        <Show when={!offered()}>
-          <p class="px-4 py-2.5 text-xs text-amber-700">
-            Not offered in the picker when creating a project — nothing is published to {chosen()?.name ?? 'it'} yet.
-          </p>
-        </Show>
-      </RowList>
     </section>
   );
 }

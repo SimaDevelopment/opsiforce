@@ -10,22 +10,21 @@ Every path below is relative to `$OPSIFORCE_API_URL`, and every call carries
 | `GET /skills?filter=all\|built_in\|custom\|private&q=…` | everything you can see; no pagination |
 | `GET /skills/{id}` | one Skill: `latestVersion`, `visibility`, `usedByAgentCount`, `flags` |
 | `GET /skills/{id}/versions/{n}/files` | the stored tree of one Version |
+| `PATCH /skills/{id}` | set `displayName` when the author asks for another name; `null` falls back to `name`, which never changes |
 | `POST /skills/validate` | the gate, writing nothing; 200 either way, read `valid` |
-| `POST /skills` | create, private to the author, at Version 1 |
-| `POST /skills/{id}/versions` | mint the next Version from a whole tree |
-| `POST /skills/{id}/duplicate` | a private copy under a new name, frontmatter `name` rewritten for you |
+| `POST /skills` | create a Skill the Agent you are writing needs, private to the author, at Version 1 — never the Skill this chat authors, which already exists |
+| `POST /skills/{id}/versions` | mint the next Version from a whole tree — Version 1 too, for a Skill created without one |
+| `POST /skills/{id}/duplicate` | a private copy under a new name, frontmatter `name` rewritten for you — how an Agent's chat varies a built-in or a Skill it may not write |
 
-## What it may not, and what to say instead
+## Not on this pod's key
 
-Make public, archive, restore, delete, rename, export `.skill`, import — **none of these are on this
-pod's key**, by design. They live in the Store, where a human does them and can see what they affect.
-When an author asks for one, say so in one line and tell them where: *"I can't make it public from
-here — open it in the Store and use Make public."*
+Besides what `agent.md` says this chat cannot do: exporting or importing a `.skill` archive. Both are
+the Store's.
 
 ## Bodies
 
 ```sh
-# create — name must equal the frontmatter name
+# create a Skill the Agent needs — name must equal the frontmatter name
 sh scripts/api.sh call POST /skills @scratch/body.json
 # body.json: {"name":"release-notes","displayName":"Release Notes","files":[{"path":"SKILL.md","content":"---\n…"}]}
 
@@ -33,12 +32,12 @@ sh scripts/api.sh call POST /skills @scratch/body.json
 sh scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json
 # body.json: {"files":[ … ]}
 
-# duplicate a built-in to extend it
+# vary a built-in for the Agent you are writing
 sh scripts/api.sh call POST "/skills/$ID/duplicate" '{"name":"house-release-notes"}'
 
 # validate without writing
 sh scripts/api.sh call POST /skills/validate @scratch/validate.json
-# body.json: {"name":"release-notes","files":[ … ]}
+# validate.json: {"name":"release-notes","files":[ … ]}
 ```
 
 `scripts/pack-skill.mjs --json <dir>` prints the body from a directory. Pass `--name` (and optionally
@@ -62,7 +61,7 @@ and `detail`.
 | 422 | `validation-failed` | the gate refused; `errors[]` and `lints[]` carry `rule`, `file`, `line` — the same findings the local script prints |
 | 409 | `name-unavailable` | the name is taken in this Organization, or the image ships it |
 | 404 | `not-found` | no such Skill, or it is not visible to you |
-| 403 | `forbidden` | a Skill you may see but not write — Duplicate it instead |
+| 403 | `forbidden` | a Skill you may see but not write — Duplicate it and change the copy |
 | 400 | `validation-error` | the request body itself is malformed, before any gate ran |
 
 A 422 is a work list, not a dead end: fix what it names and resubmit. Run the local validator first

@@ -2,7 +2,6 @@ import { createEffect, createSignal } from 'solid-js';
 import type { SearchSchemaInput } from '@tanstack/solid-router';
 import { debounce } from '@solid-primitives/scheduled';
 import { STORE_FILTERS, type StoreFilter } from '~/api/store';
-import { BUILDER_CHAT_FILTERS, type BuilderChatFilter } from '~/api/builder';
 
 export interface StoreListSearch {
   filter: StoreFilter;
@@ -21,15 +20,17 @@ export function validateStoreSearch(search: Record<string, unknown> & SearchSche
   return { filter: filter ?? 'all', q: typeof search.q === 'string' ? search.q : '' };
 }
 
-export const BASE_FILTER_OPTIONS: { id: StoreFilter; label: string }[] = [
+const FILTER_OPTIONS: { id: StoreFilter; label: string; managersOnly?: boolean }[] = [
   { id: 'all', label: 'All' },
+  { id: 'mine', label: 'Created by me', managersOnly: true },
   { id: 'built_in', label: 'Built-in' },
   { id: 'custom', label: 'Custom' },
   { id: 'private', label: 'Private' },
+  { id: 'disabled', label: 'Disabled', managersOnly: true },
 ];
 
-export function filterOptions(canSeeArchived: boolean): { id: StoreFilter; label: string }[] {
-  return canSeeArchived ? [...BASE_FILTER_OPTIONS, { id: 'archived', label: 'Archived' }] : BASE_FILTER_OPTIONS;
+export function filterOptions(canManage: boolean): { id: StoreFilter; label: string }[] {
+  return FILTER_OPTIONS.filter((option) => canManage || !option.managersOnly);
 }
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -59,18 +60,3 @@ export function createSearchDraft(urlQuery: () => string, push: (query: string) 
     },
   };
 }
-
-export interface BuilderListSearch {
-  filter: BuilderChatFilter;
-}
-
-export function validateBuilderSearch(search: Record<string, unknown>): BuilderListSearch {
-  const filter = BUILDER_CHAT_FILTERS.find((candidate) => candidate === search.filter);
-  return { filter: filter ?? 'active' };
-}
-
-export const BUILDER_FILTER_OPTIONS: { id: BuilderChatFilter; label: string }[] = [
-  { id: 'active', label: 'Active' },
-  { id: 'mine', label: 'Started by me' },
-  { id: 'archived', label: 'Archived' },
-];

@@ -82,7 +82,7 @@ Driven by `--radius` (default `0.625rem`). Sizes are computed:
 
 ## Dark mode
 
-Toggle with `next-themes` (pre-installed):
+Toggle with `next-themes` — the starter does not ship it, so `yarn add next-themes` first:
 
 ```tsx
 import { useTheme } from "next-themes"
@@ -92,8 +92,8 @@ function ThemeToggle() {
   const { theme, setTheme } = useTheme()
   return (
     <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
-      <Sun className="size-4 dark:hidden" />
-      <Moon className="hidden size-4 dark:block" />
+      <Sun className="dark:hidden" />
+      <Moon className="hidden dark:block" />
     </Button>
   )
 }

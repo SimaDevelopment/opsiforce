@@ -133,6 +133,7 @@ describe('the app port', () => {
   });
 });
 
+
 describe('the platform-api credential in the pod', () => {
   const platformApi = {
     platformApiKey: 'gw-platform',

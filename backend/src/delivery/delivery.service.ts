@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SkillRepository } from '../store/skill.repository';
 import { packageSkillNames } from '../store/skill-tree';
 import { DeliveryRepository, type DeliveryTarget, type PinnedSkill } from './delivery.repository';
-import { modelReference, renderAgentFile, type DeliveryPlan, type DeliverySkill } from './delivery.types';
+import {
+  modelReference,
+  renderAgentFile,
+  type DeliveryPlan,
+  type DeliverySkill,
+} from './delivery.types';
 import { runtimeAgentSlug } from './runtime-agent-slug';
 import { WorkspaceWriter } from './workspace-writer';
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Perms } from '../../permission/permission.constants';
 import { SkillService, type SkillCaller } from '../../store/skill.service';
-import { assertPermission, chatProjectIdOf, type Caller } from '../auth/caller';
+import { assertPermission, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { SkillMapper } from './skills.mapper';
 import type {
@@ -13,6 +13,7 @@ import type {
   SkillListDto,
   SkillListQuery,
   SkillValidationDto,
+  UpdateSkill,
   ValidateSkill,
 } from './skills.schema';
 
@@ -49,6 +50,11 @@ export class PublicSkillsService {
     return SkillMapper.toDto(await mappingStoreErrors(() => this.skills.addVersion(scope, skillId, body)));
   }
 
+  async update(caller: Caller, skillId: string, body: UpdateSkill): Promise<SkillDto> {
+    const scope = await this.scopeAfterVisibleRead(caller, skillId);
+    return SkillMapper.toDto(await mappingStoreErrors(() => this.skills.update(scope, skillId, body)));
+  }
+
   async duplicate(caller: Caller, skillId: string, body: DuplicateSkill): Promise<SkillDto> {
     const scope = await this.scopeAfterVisibleRead(caller, skillId);
     return SkillMapper.toDto(await mappingStoreErrors(() => this.skills.duplicate(scope, skillId, body)));
@@ -67,6 +73,5 @@ function scopeOf(caller: Caller): SkillCaller {
     tenantId: caller.organization.id,
     userId: caller.user.platformId,
     canManageSkills: caller.permissions.has(Perms.manageSkills),
-    createdInChatProjectId: chatProjectIdOf(caller),
   };
 }

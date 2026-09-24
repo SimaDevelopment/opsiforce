@@ -1,40 +1,37 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
+import { useAgent } from '~/api/agents';
 import { ApiError } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import {
   skillExportUrl,
   useDeleteSkill,
   useDuplicateSkill,
-  useSetSkillArchived,
+  useSetSkillDisabled,
   useSetSkillVisibility,
   useSkill,
   useSkillAgents,
   useSkillFiles,
   useSkillVersions,
+  useUpdateSkill,
   type Skill,
   type SkillAgentUsage,
-  type SkillFlags,
   type SkillVersion,
 } from '~/api/skills';
 import { Badge } from '~/components/ui/badge';
 import { Button, buttonVariants } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu';
+import { DropdownMenuSeparator } from '~/components/ui/dropdown-menu';
+import { ActionsMenu, ActionsMenuItem } from '~/components/actions-menu';
 import { Spinner } from '~/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { SkillContent } from '~/components/store/skill-content';
-import { EditWithBuilderButton } from '~/components/store/edit-with-builder-button';
+import { InlineEdit } from '~/components/store/inline-edit';
+import { OpenBuilderButton } from '~/components/store/open-builder-button';
 import {
-  ArchivedBadge,
+  DisabledBadge,
   EmptyState,
   ErrorState,
   FOCUS_RING,
@@ -48,14 +45,14 @@ import {
 import { StorePageHeader } from '~/components/store/store-page';
 import {
   AlertTriangle,
+  Ban,
   Bot,
+  CirclePlay,
   Copy,
   Download,
-  EllipsisVertical,
   Files,
   Globe,
-  MessageSquare,
-  Terminal,
+  Trash2,
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
@@ -68,6 +65,7 @@ export interface SkillPageProps {
   /** The Version picked in the URL; undefined falls back to the latest. */
   version: number | undefined;
   file: string;
+  fromAgentId?: string;
   onVersion: (version: number | undefined) => void;
   onFile: (file: string) => void;
 }
@@ -88,6 +86,17 @@ export function SkillPage(props: SkillPageProps) {
   const skill = useSkill(skillId);
   const versions = useSkillVersions(skillId);
   const agents = useSkillAgents(skillId);
+  const fromAgent = useAgent(
+    () => props.fromAgentId ?? '',
+    () => !!props.fromAgentId
+  );
+  const back = () =>
+    props.fromAgentId
+      ? {
+          to: `/store/agents/${props.fromAgentId}`,
+          label: fromAgent.data ? (fromAgent.data.displayName ?? fromAgent.data.name) : 'Agent',
+        }
+      : { to: '/store/skills', label: 'Skills' };
 
   const latestVersion = () => skill.data?.latestVersion?.version ?? 0;
   /** The URL is trusted until the version list can contradict it, so the files load once. */
@@ -98,10 +107,6 @@ export function SkillPage(props: SkillPageProps) {
     return versions.data.some((version) => version.version === picked) ? picked : latestVersion();
   };
   const files = useSkillFiles(skillId, selectedVersion);
-  /** The badges describe the version being read, not whichever one happens to be latest. */
-  const flagsOfSelected = () =>
-    versions.data?.find((version) => version.version === selectedVersion())?.flags ??
-    skill.data?.latestVersion?.flags;
   const isCustom = () => skill.data?.origin === 'custom';
 
   return (
@@ -119,9 +124,9 @@ export function SkillPage(props: SkillPageProps) {
             {(loaded) => (
               <>
                 <SkillHeader
+                  back={back()}
                   skill={loaded()}
                   version={selectedVersion()}
-                  flags={flagsOfSelected()}
                   canManage={canManage()}
                   agents={agents.data ?? []}
                 />
@@ -137,6 +142,7 @@ export function SkillPage(props: SkillPageProps) {
                 </Show>
 
                 <div class="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+                  <Show when={latestVersion() > 0} fallback={<NoVersionYet canBuild={canManage() && isCustom()} />}>
                   <div class="min-w-0 space-y-6">
                     <section>
                       <SectionTitle>Contents · v{selectedVersion()}</SectionTitle>
@@ -177,11 +183,12 @@ export function SkillPage(props: SkillPageProps) {
                       </Show>
                     </section>
                   </div>
+                  </Show>
 
                   <aside class="space-y-6">
                     <section>
                       <SectionTitle>On agents</SectionTitle>
-                      <OnAgents agents={agents.data ?? []} latest={latestVersion()} />
+                      <OnAgents skillId={props.skillId} agents={agents.data ?? []} latest={latestVersion()} />
                     </section>
                     <section>
                       <SectionTitle>Origin</SectionTitle>
@@ -198,6 +205,10 @@ export function SkillPage(props: SkillPageProps) {
   );
 }
 
+function agentHref(agentId: string, skillId: string): string {
+  return `/store/agents/${agentId}?${new URLSearchParams({ skill: skillId })}`;
+}
+
 function NotVisible() {
   return (
     <EmptyState
@@ -209,43 +220,65 @@ function NotVisible() {
 }
 
 function SkillHeader(props: {
+  back: { to: string; label: string };
   skill: Skill;
   version: number;
-  flags: SkillFlags | undefined;
   canManage: boolean;
   agents: SkillAgentUsage[];
 }) {
   const isCustom = () => props.skill.origin === 'custom';
-  const flags = () => props.flags;
+  const editable = () => props.canManage && isCustom();
+  const update = useUpdateSkill(() => props.skill.id);
+  const title = () => props.skill.displayName ?? props.skill.name;
+
+  const rename = async (displayName: string) => {
+    try {
+      await update.mutateAsync({ displayName: displayName || null });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'The name could not be saved.');
+      throw err;
+    }
+  };
 
   return (
     <StorePageHeader
-      backTo="/store/skills"
-      backLabel="Skills"
+      backTo={props.back.to}
+      backLabel={props.back.label}
       icon={Files}
-      title={props.skill.name}
-      mono
+      title={
+        <Show when={editable()} fallback={title()}>
+          <InlineEdit
+            value={props.skill.displayName ?? props.skill.name}
+            label="Display name"
+            placeholder={props.skill.name}
+            maxLength={80}
+            onSave={rename}
+          />
+        </Show>
+      }
+      mono={props.skill.displayName === null}
       description={props.skill.description}
+      meta={
+        props.skill.displayName !== null ? (
+          <span class="font-mono" title="A skill's name is fixed once it exists">
+            {props.skill.name}
+          </span>
+        ) : undefined
+      }
       badges={
         <>
-          <Show when={props.skill.latestVersion}>
-            {(version) => <span class="text-sm tabular-nums text-muted-foreground">v{version().version}</span>}
+          <Show when={props.version > 0}>
+            <span class="text-sm tabular-nums text-muted-foreground">
+              v{props.version}
+              <Show when={props.skill.latestVersion && props.skill.latestVersion.version !== props.version}>
+                <span class="text-xs"> · latest is v{props.skill.latestVersion?.version}</span>
+              </Show>
+            </span>
           </Show>
           <OriginBadge origin={props.skill.origin} />
           <VisibilityBadge visibility={props.skill.visibility} />
-          <Show when={props.skill.archived}>
-            <ArchivedBadge />
-          </Show>
-          <Show when={flags()?.has_executables}>
-            <Tooltip>
-              <TooltipTrigger as="span">
-                <Badge variant="warning" class="gap-1 font-medium">
-                  <Terminal class="h-3 w-3" aria-hidden="true" />
-                  Executables
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>This skill ships files the agent can run.</TooltipContent>
-            </Tooltip>
+          <Show when={props.skill.disabled}>
+            <DisabledBadge />
           </Show>
         </>
       }
@@ -261,8 +294,11 @@ function SkillHeader(props: {
               Export .skill
             </a>
           </Show>
-          <Show when={isCustom()}>
-            <EditWithBuilderButton seed={{ skillId: props.skill.id }} />
+          <Show when={editable()}>
+            <OpenBuilderButton
+              subject={{ type: 'skill', id: props.skill.id }}
+              disabled={props.skill.disabled}
+            />
           </Show>
           <Show when={props.canManage}>
             <SkillActionsMenu skill={props.skill} agents={props.agents} />
@@ -273,20 +309,19 @@ function SkillHeader(props: {
   );
 }
 
-/** Built-in skills are owned by the agent image, so only Duplicate is offered on them. */
 function SkillActionsMenu(props: { skill: Skill; agents: SkillAgentUsage[] }) {
   const isCustom = () => props.skill.origin === 'custom';
   const [duplicating, setDuplicating] = createSignal(false);
   const [widening, setWidening] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
 
-  const setArchived = useSetSkillArchived(() => props.skill.id);
+  const setDisabled = useSetSkillDisabled(() => props.skill.id);
 
-  const toggleArchived = async (archived: boolean) => {
+  const toggleDisabled = async (disabled: boolean) => {
     try {
-      await setArchived.mutateAsync(archived);
-      toast.success(archived ? `Archived ${props.skill.name}` : `Restored ${props.skill.name}`, {
-        action: { label: 'Undo', onClick: () => void setArchived.mutateAsync(!archived) },
+      await setDisabled.mutateAsync(disabled);
+      toast.success(disabled ? `Disabled ${props.skill.name}` : `Enabled ${props.skill.name}`, {
+        action: { label: 'Undo', onClick: () => void setDisabled.mutateAsync(!disabled) },
       });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'The change could not be saved.');
@@ -295,32 +330,38 @@ function SkillActionsMenu(props: { skill: Skill; agents: SkillAgentUsage[] }) {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger as={Button} variant="outline" size="icon" class="h-9 w-9" aria-label="More actions">
-          <EllipsisVertical class="h-4 w-4" aria-hidden="true" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent class="min-w-48">
-          <DropdownMenuItem onSelect={() => setDuplicating(true)}>
-            <Copy class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+      <ActionsMenu label="Skill actions" variant="outline">
+        <Show when={props.skill.latestVersion}>
+          <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate
-          </DropdownMenuItem>
-          <Show when={isCustom()}>
-            <Show when={props.skill.visibility === 'private'}>
-              <DropdownMenuItem onSelect={() => setWidening(true)}>
-                <Globe class="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                Make public…
-              </DropdownMenuItem>
-            </Show>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void toggleArchived(!props.skill.archived)}>
-              {props.skill.archived ? 'Restore' : 'Archive'}
-            </DropdownMenuItem>
-            <DropdownMenuItem class="text-destructive" onSelect={() => setDeleting(true)}>
-              Delete…
-            </DropdownMenuItem>
+          </ActionsMenuItem>
+        </Show>
+        <Show when={isCustom() && props.skill.visibility === 'private'}>
+          <ActionsMenuItem icon={Globe} onSelect={() => setWidening(true)}>
+            Make public
+          </ActionsMenuItem>
+        </Show>
+        <Show when={props.skill.disableable}>
+          <Show
+            when={props.skill.disabled}
+            fallback={
+              <ActionsMenuItem icon={Ban} onSelect={() => void toggleDisabled(true)}>
+                Disable
+              </ActionsMenuItem>
+            }
+          >
+            <ActionsMenuItem icon={CirclePlay} onSelect={() => void toggleDisabled(false)}>
+              Enable
+            </ActionsMenuItem>
           </Show>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </Show>
+        <Show when={isCustom()}>
+          <DropdownMenuSeparator />
+          <ActionsMenuItem icon={Trash2} destructive onSelect={() => setDeleting(true)}>
+            Delete
+          </ActionsMenuItem>
+        </Show>
+      </ActionsMenu>
 
       <DuplicateSkillDialog skill={props.skill} open={duplicating()} onOpenChange={setDuplicating} />
       <MakePublicDialog skill={props.skill} open={widening()} onOpenChange={setWidening} />
@@ -369,7 +410,10 @@ function DuplicateSkillDialog(props: { skill: Skill; open: boolean; onOpenChange
           </label>
           <input
             id="duplicate-skill-name"
+            name="name"
             type="text"
+            autocomplete="off"
+            spellcheck={false}
             value={name()}
             onInput={(event) => {
               setName(event.currentTarget.value);
@@ -416,7 +460,7 @@ function MakePublicDialog(props: { skill: Skill; open: boolean; onOpenChange: (o
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={`Make ${props.skill.name} public?`}
-      description="Every member of the organization will see it, and anyone with can_manage_skills can publish a version, archive or delete it. It stops being only yours."
+      description="Every member of the organization will see it, and anyone with can_manage_skills can publish a version, disable or delete it. It stops being only yours."
       confirmLabel="Make public"
       onConfirm={() => void confirm()}
     >
@@ -436,7 +480,7 @@ function DeleteSkillDialog(props: {
 }) {
   const navigate = useNavigate();
   const remove = useDeleteSkill(() => props.skill.id);
-  const setArchived = useSetSkillArchived(() => props.skill.id);
+  const setDisabled = useSetSkillDisabled(() => props.skill.id);
   const [refusedInUse, setRefusedInUse] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -444,7 +488,8 @@ function DeleteSkillDialog(props: {
     props.agents.map((agent) => ({ id: agent.id, label: agent.displayName ?? agent.name }))
   );
   const inUse = () => blockers().length > 0 || refusedInUse();
-  const blocked = () => inUse() || !props.skill.archived;
+  const unpublished = () => props.skill.latestVersion === null;
+  const blocked = () => inUse() || (!props.skill.disabled && !unpublished());
 
   const close = () => {
     setRefusedInUse(false);
@@ -468,15 +513,15 @@ function DeleteSkillDialog(props: {
     }
   };
 
-  const archiveInstead = async () => {
+  const disableInstead = async () => {
     try {
-      await setArchived.mutateAsync(true);
+      await setDisabled.mutateAsync(true);
       close();
-      toast.success(`Archived ${props.skill.name}`, {
-        action: { label: 'Undo', onClick: () => void setArchived.mutateAsync(false) },
+      toast.success(`Disabled ${props.skill.name}`, {
+        action: { label: 'Undo', onClick: () => void setDisabled.mutateAsync(false) },
       });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'The skill could not be archived.');
+      setError(err instanceof ApiError ? err.message : 'The skill could not be disabled.');
     }
   };
 
@@ -485,12 +530,12 @@ function DeleteSkillDialog(props: {
       <DialogContent>
         <DialogTitle>Delete {props.skill.name}?</DialogTitle>
         <DialogDescription>
-          <Show when={inUse()} fallback={<NotArchivedYet archived={props.skill.archived} />}>
+          <Show when={inUse()} fallback={<NotDisabledYet disabled={props.skill.disabled} unpublished={unpublished()} />}>
             <Show
               when={blockers().length > 0}
-              fallback="It can't be deleted while an agent still pins it, and the agent holding it isn't one you can open. Archive it instead."
+              fallback="It can't be deleted while an agent still pins it, and the agent holding it isn't one you can open. Disable it instead."
             >
-              It can't be deleted while agents still pin it. Remove it from these agents first, or archive it instead.
+              It can't be deleted while agents still pin it. Remove it from these agents first, or disable it instead.
             </Show>
           </Show>
         </DialogDescription>
@@ -499,7 +544,7 @@ function DeleteSkillDialog(props: {
           <RowList>
             <For each={blockers()}>
               {(agent) => (
-                <RowLink href={`/store/agents/${agent.id}`} class="px-3 py-2 text-sm">
+                <RowLink href={agentHref(agent.id, props.skill.id)} class="px-3 py-2 text-sm">
                   <Bot class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span class="min-w-0 flex-1 truncate">{agent.label}</span>
                 </RowLink>
@@ -516,14 +561,14 @@ function DeleteSkillDialog(props: {
           <Button size="sm" variant="outline" onClick={close}>
             Cancel
           </Button>
-          <Show when={blocked() && !props.skill.archived}>
+          <Show when={blocked() && !props.skill.disabled}>
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => void archiveInstead()}
-              disabled={setArchived.isPending}
+              onClick={() => void disableInstead()}
+              disabled={setDisabled.isPending}
             >
-              Archive instead
+              Disable instead
             </Button>
           </Show>
           <Button
@@ -540,13 +585,18 @@ function DeleteSkillDialog(props: {
   );
 }
 
-function NotArchivedYet(props: { archived: boolean }) {
+function NotDisabledYet(props: { disabled: boolean; unpublished: boolean }) {
   return (
     <Show
-      when={props.archived}
-      fallback="Archive it first — a live skill is never deleted outright, so the step is deliberate."
+      when={props.disabled || props.unpublished}
+      fallback="Disable it first — a live skill is never deleted outright, so the step is deliberate."
     >
-      Every version is removed. Projects that already received it keep their files.
+      <Show
+        when={!props.unpublished}
+        fallback="It has no version yet, so nothing received it. Its Builder conversation goes with it."
+      >
+        Every version and its Builder conversation are removed. Projects that already received it keep their files.
+      </Show>
     </Show>
   );
 }
@@ -578,11 +628,6 @@ function VersionList(props: {
                 <Show when={version.version === props.latest}>
                   <Badge variant="success">Latest</Badge>
                 </Show>
-                <Show when={version.lints.length > 0}>
-                  <Badge variant="outline" class="tabular-nums text-muted-foreground">
-                    {version.lints.length} lint{version.lints.length === 1 ? '' : 's'}
-                  </Badge>
-                </Show>
               </span>
               <span class="text-xs text-muted-foreground">
                 {formatDate(version.createdAt)} · {CREATED_VIA_LABELS[version.createdVia] ?? version.createdVia}
@@ -612,7 +657,7 @@ function OmittedBadge(props: { count: number }) {
   );
 }
 
-function OnAgents(props: { agents: SkillAgentUsage[]; latest: number }) {
+function OnAgents(props: { skillId: string; agents: SkillAgentUsage[]; latest: number }) {
   return (
     <Show
       when={props.agents.length > 0}
@@ -628,7 +673,7 @@ function OnAgents(props: { agents: SkillAgentUsage[]; latest: number }) {
             /** Several pins mean several Environments, so the list is spelled out rather than collapsed. */
             const split = () => agent.pinnedVersions.length > 1;
             return (
-              <RowLink href={`/store/agents/${agent.id}`} class="px-3 py-2.5 text-sm">
+              <RowLink href={agentHref(agent.id, props.skillId)} class="px-3 py-2.5 text-sm">
                 <Bot class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span class="min-w-0 flex-1 truncate">{agent.displayName ?? agent.name}</span>
                 <Show when={split() || !agent.outdated}>
@@ -664,17 +709,22 @@ function Origin(props: { skill: Skill }) {
         <div class="text-muted-foreground">Created</div>
         <div class="mt-0.5 text-sm font-medium">{formatDate(props.skill.createdAt)}</div>
       </div>
-      <Show when={props.skill.createdInChatProjectId}>
-        {(chatId) => (
-          <RowLink href={`/store/builder/${chatId()}`} class="px-3 py-2.5 text-xs">
-            <MessageSquare class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span class="min-w-0 flex-1">
-              <span class="block text-muted-foreground">Made in the chat</span>
-              <span class="block truncate text-sm font-medium text-foreground">Open the chat</span>
-            </span>
-          </RowLink>
-        )}
-      </Show>
     </RowList>
+  );
+}
+
+function NoVersionYet(props: { canBuild: boolean }) {
+  return (
+    <div class="min-w-0">
+      <EmptyState
+        icon={Files}
+        title="No version yet."
+        hint={
+          props.canBuild
+            ? 'Open the Builder to write it — its first save becomes version 1.'
+            : 'Nothing has been published under this name yet.'
+        }
+      />
+    </div>
   );
 }

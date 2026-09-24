@@ -73,3 +73,5 @@ export { default as Store } from 'lucide-solid/icons/store';
 export { default as Terminal } from 'lucide-solid/icons/terminal';
 export { default as Archive } from 'lucide-solid/icons/archive';
 export { default as ArchiveRestore } from 'lucide-solid/icons/archive-restore';
+export { default as PanelLeftClose } from 'lucide-solid/icons/panel-left-close';
+export { default as PanelLeftOpen } from 'lucide-solid/icons/panel-left-open';

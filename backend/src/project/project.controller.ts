@@ -189,13 +189,6 @@ export class ProjectController {
     return this.projectService.updateAuth(id, environmentId, dto, tenant.tenantId);
   }
 
-  @Get(':id/logging')
-  @RequirePermission(Perms.manageProjectLoggingSettings)
-  async getLogging(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
-    await this.gate(id, tenant, user);
-    return this.projectService.getLogging(id, tenant.tenantId);
-  }
-
   @Put(':id/logging')
   @RequirePermission(Perms.manageProjectLoggingSettings)
   async updateLogging(
@@ -237,17 +230,6 @@ export class ProjectController {
   ) {
     const dbUserId = await this.gate(id, tenant, user);
     return this.projectService.duplicate(id, tenant.tenantId, dto, dbUserId);
-  }
-
-  @Get(':id/duplicate/job')
-  @RequirePermission(Perms.duplicateProject)
-  async duplicateJob(
-    @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
-  ) {
-    await this.gate(id, tenant, user);
-    return this.projectService.getLatestDuplicateJob(id);
   }
 
   @Get(':id/duplicate/job/stream')

@@ -9,7 +9,7 @@ export function StorePageHeader(props: {
   backTo: string;
   backLabel: string;
   icon?: Component<{ class?: string }>;
-  title: string;
+  title: JSX.Element;
   mono?: boolean;
   badges?: JSX.Element;
   description?: string | null;
@@ -21,12 +21,12 @@ export function StorePageHeader(props: {
       <Link
         to={props.backTo}
         class={cn(
-          '-ml-1 mb-3 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground',
+          '-ml-1 mb-3 inline-flex max-w-full items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground',
           FOCUS_RING
         )}
       >
-        <ChevronLeft class="h-3.5 w-3.5" aria-hidden="true" />
-        {props.backLabel}
+        <ChevronLeft class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span class="truncate">{props.backLabel}</span>
       </Link>
       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
@@ -37,7 +37,10 @@ export function StorePageHeader(props: {
               )}
             </Show>
             <h1
-              class={cn('text-balance text-xl font-semibold tracking-tight text-foreground', props.mono && 'font-mono')}
+              class={cn(
+                'min-w-0 text-balance text-xl font-semibold tracking-tight text-foreground',
+                props.mono && 'font-mono'
+              )}
             >
               {props.title}
             </h1>

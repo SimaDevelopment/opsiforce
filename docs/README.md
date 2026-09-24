@@ -31,7 +31,7 @@
 - [Skill](agent-system/skills.md) — the catalog, the publish gate, Versions and what an Agent pins
 - [Dynamic Delivery](agent-system/dynamic-delivery.md) — who writes which file in a workspace, and when a change reaches one
 - [Platform Skill](agent-system/platform-skill.md) — the shared skill carrying the App contract every Agent runs under
-- [Skill & Agent Builder](agent-system/skill-agent-builder.md) — authoring by conversation, chat visibility and the test Project
+- [Skill & Agent Builder](agent-system/skill-agent-builder.md) — authoring by conversation, one chat per Skill or Agent, and the test Project
 - [Agent Updates](agent-system/agent-updates.md) — bringing existing workspaces in line with a newer profile
 - [Agent Status](agent-system/agent-status.md) — the Working/Idle signal behind the sidebar spinner
 - [Document Generation](agent-system/document-generation.md) — the baked docx, pptx, xlsx and pdf stack and the Generated files convention

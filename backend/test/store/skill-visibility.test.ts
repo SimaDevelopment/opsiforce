@@ -3,9 +3,10 @@ import { and, eq } from 'drizzle-orm';
 import { NotFoundException } from '@nestjs/common';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { skills } from '../../db/schema';
+import { skills, tenantDisabledSkills } from '../../db/schema';
 import {
   assertSkillVisibleToUser,
+  skillColumnsIn,
   canEditSkill,
   visibleSkillsWhere,
   type SkillRow,
@@ -22,7 +23,7 @@ let ownPrivate: string;
 let otherPrivate: string;
 let tenantPublic: string;
 let foreignPublic: string;
-let archived: string;
+let disabled: string;
 
 beforeAll(async () => {
   tenantA = await createTenantRow();
@@ -35,7 +36,8 @@ beforeAll(async () => {
   otherPrivate = await createSkill({ tenantId: tenantA, createdBy: colleague, visibility: 'private' });
   tenantPublic = await createSkill({ tenantId: tenantA, createdBy: colleague, visibility: 'public' });
   foreignPublic = await createSkill({ tenantId: tenantB, createdBy: author, visibility: 'public' });
-  archived = await createSkill({ tenantId: tenantA, createdBy: author, visibility: 'public', archived: true });
+  disabled = await createSkill({ tenantId: tenantA, createdBy: author, visibility: 'public' });
+  await db.insert(tenantDisabledSkills).values({ tenantId: tenantA, skillId: disabled });
 });
 
 async function createSkill(overrides: Partial<typeof skills.$inferInsert>): Promise<string> {
@@ -49,16 +51,16 @@ async function createSkill(overrides: Partial<typeof skills.$inferInsert>): Prom
   return id;
 }
 
-async function visibleIds(tenantId: string, userId: string, includeArchived = false): Promise<string[]> {
+async function visibleIds(tenantId: string, userId: string, includeDisabled = false): Promise<string[]> {
   const rows = await db
     .select({ id: skills.id })
     .from(skills)
-    .where(visibleSkillsWhere(tenantId, userId, { includeArchived }));
+    .where(visibleSkillsWhere(tenantId, userId, { includeDisabled }));
   return rows.map((row) => row.id);
 }
 
 async function skillRow(id: string): Promise<SkillRow> {
-  const [row] = await db.select().from(skills).where(eq(skills.id, id)).limit(1);
+  const [row] = await db.select(skillColumnsIn(tenantA)).from(skills).where(eq(skills.id, id)).limit(1);
   return row;
 }
 
@@ -78,9 +80,9 @@ describe('visibleSkillsWhere', () => {
     expect(await visibleIds(tenantB, colleague)).toContain(builtIn);
   });
 
-  it('hides an archived row unless includeArchived is set', async () => {
-    expect(await visibleIds(tenantA, author)).not.toContain(archived);
-    expect(await visibleIds(tenantA, author, true)).toContain(archived);
+  it('hides a disabled row unless includeDisabled is set', async () => {
+    expect(await visibleIds(tenantA, author)).not.toContain(disabled);
+    expect(await visibleIds(tenantA, author, true)).toContain(disabled);
   });
 
   it('hides a public row belonging to another Organization', async () => {
@@ -118,12 +120,12 @@ describe('canEditSkill', () => {
   });
 });
 
-describe('the archived flag', () => {
+describe('the disabled flag', () => {
   it('leaves the row readable through the assert helper', async () => {
     const rows = await db
       .select({ id: skills.id })
       .from(skills)
-      .where(and(eq(skills.id, archived), visibleSkillsWhere(tenantA, author, { includeArchived: true })));
+      .where(and(eq(skills.id, disabled), visibleSkillsWhere(tenantA, author, { includeDisabled: true })));
     expect(rows).toHaveLength(1);
   });
 });

@@ -17,7 +17,7 @@ export function ProjectFailed(props: { projectId: string }) {
       <AlertTriangle class="w-8 h-8 text-destructive" />
       <p class="text-sm font-medium">This project couldn't start</p>
       <p class="text-xs max-w-md">
-        The agent container image is unavailable. Ask your administrator to verify the deployment, then retry.
+        Its environment could not be started. This is usually temporary, so retry in a moment.
       </p>
       <Button size="sm" class="mt-1" loading={retry.isPending} onClick={() => retry.mutate(undefined as never)}>
         Retry

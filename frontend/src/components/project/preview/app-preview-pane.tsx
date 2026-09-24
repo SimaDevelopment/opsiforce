@@ -39,8 +39,10 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
     )
   );
 
+  let iframeRef: HTMLIFrameElement | undefined;
+
   function reload() {
-    const iframe = document.getElementById('webapp-preview') as HTMLIFrameElement | null;
+    const iframe = iframeRef;
     if (!iframe) return;
     setIframeLoading(true);
     // oxlint-disable-next-line no-self-assign -- reassigning src forces the iframe to reload
@@ -106,7 +108,7 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
       </div>
       <div class="flex-1 min-h-0">
         <iframe
-          id="webapp-preview"
+          ref={iframeRef}
           src={previewUrl()}
           title="App preview"
           class="w-full h-full border-0"

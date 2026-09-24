@@ -1,8 +1,7 @@
 # Every gate rule
 
-`scripts/validate-skill.mjs` is a generated copy of the platform's gate, so these are exactly the
-findings `POST /skills`, `POST /skills/{id}/versions` and `POST /skills/validate` answer. Each finding
-carries `rule`, `message`, `file` and `line`; the `rule` id is stable and safe to branch on.
+These are the findings `scripts/validate-skill.mjs`, `POST /skills`, `POST /skills/{id}/versions` and
+`POST /skills/validate` answer. Each finding carries `rule`, `message`, `file` and `line`; the `rule` id is stable and safe to branch on.
 
 ## Limits
 

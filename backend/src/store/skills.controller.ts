@@ -19,21 +19,19 @@ import { RelaxPermission, RequirePermission } from '../permission/permission.gua
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
+import { ProjectService } from '../project/project.service';
 import { UserService } from '../user/user.service';
 import { MAX_TREE_BYTES } from './gate';
 import { SkillService, type SkillCaller } from './skill.service';
 import type {
   CreateSkillDto,
-  CreateSkillVersionDto,
   DuplicateSkillDto,
-  GateResponse,
   SetSkillVisibilityDto,
   SkillAgentUsage,
   SkillFileResponse,
   SkillSummary,
   SkillVersionResponse,
   UpdateSkillDto,
-  ValidateSkillDto,
 } from './skill.types';
 
 interface MultipartRequest extends FastifyRequest {
@@ -45,7 +43,8 @@ interface MultipartRequest extends FastifyRequest {
 export class SkillsController {
   constructor(
     private readonly skillService: SkillService,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    private readonly projectService: ProjectService
   ) {}
 
   @Get()
@@ -137,12 +136,6 @@ export class SkillsController {
     return this.skillService.create(await this.caller(req, tenant, user), dto);
   }
 
-  @Post('validate')
-  @HttpCode(200)
-  validate(@Body() dto: ValidateSkillDto): GateResponse {
-    return this.skillService.validate(dto);
-  }
-
   @Post('import')
   async import(
     @Req() req: MultipartRequest,
@@ -151,17 +144,6 @@ export class SkillsController {
   ): Promise<SkillSummary> {
     const caller = await this.caller(req, tenant, user);
     return this.skillService.import(caller, await readArchive(req));
-  }
-
-  @Post(':id/versions')
-  async addVersion(
-    @Param('id') id: string,
-    @Body() dto: CreateSkillVersionDto,
-    @Req() req: FastifyRequest,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
-  ): Promise<SkillSummary> {
-    return this.skillService.addVersion(await this.caller(req, tenant, user), id, dto);
   }
 
   @Post(':id/duplicate')
@@ -197,24 +179,24 @@ export class SkillsController {
     return this.skillService.update(await this.caller(req, tenant, user), id, dto);
   }
 
-  @Post(':id/archive')
-  async archive(
+  @Post(':id/disable')
+  async disable(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<SkillSummary> {
-    return this.skillService.setArchived(await this.caller(req, tenant, user), id, true);
+    return this.skillService.setDisabled(await this.caller(req, tenant, user), id, true);
   }
 
-  @Post(':id/restore')
-  async restore(
+  @Post(':id/enable')
+  async enable(
     @Param('id') id: string,
     @Req() req: FastifyRequest,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<SkillSummary> {
-    return this.skillService.setArchived(await this.caller(req, tenant, user), id, false);
+    return this.skillService.setDisabled(await this.caller(req, tenant, user), id, false);
   }
 
   @Delete(':id')
@@ -225,7 +207,9 @@ export class SkillsController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<void> {
-    await this.skillService.remove(await this.caller(req, tenant, user), id);
+    await this.skillService.remove(await this.caller(req, tenant, user), id, async (projectIds) => {
+      for (const projectId of projectIds) await this.projectService.remove(projectId, tenant.tenantId);
+    });
   }
 
   private async caller(req: FastifyRequest, tenant: TenantContext, user: UserContext): Promise<SkillCaller> {

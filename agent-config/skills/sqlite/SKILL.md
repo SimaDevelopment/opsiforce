@@ -1,70 +1,13 @@
 ---
 name: sqlite
-description: The app's own SQLite database via Node 24's built-in node:sqlite — migrations, DatabaseService API, full-text search (FTS5), transactions, JSON and window functions, plus the read-only inbound external-services database. Use for any data model change, schema work, or SQL query. Every data model change starts here with a migration file.
+description: The App's own SQLite database via Node 24's built-in node:sqlite — migrations, the DatabaseService API, transactions, upserts, full-text search (FTS5), JSON and window functions. Use for any data model change, schema work, or SQL query against the App's database.
 ---
 
 # SQLite
 
 The app uses Node 24's built-in `node:sqlite` (`DatabaseSync`). Synchronous API, zero dependencies, no native compile step. Imported as `import { DatabaseSync } from "node:sqlite"`. Database file is at `data/app.db`.
 
-The platform's own read-only observability database is a different file with a different owner — its schema and the queries for debugging a failed request, a crash or a boot are in the `platform` skill.
-
-## Inbound messages — `/workspace/data/external-services.db`
-
-The platform's other read-only file holds inbound messages from external services (incoming email, WhatsApp). **The platform backend is the only writer** — agents, app code, and the DB viewer are read-only. Never create tables, write, or run migrations against it; open it with `sqlite3 -readonly` or `new DatabaseSync(path, { readOnly: true })`.
-
-The schema is **fixed and the same for every service** — two tables, created lazily the first time any message arrives. Until then the file is empty, which is normal: "no such table: messages" means "nothing has arrived yet", not a broken setup.
-
-```sql
-CREATE TABLE messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  service TEXT NOT NULL,               -- 'incoming-email', 'whatsapp', …
-  received_at TEXT NOT NULL,           -- when the platform stored it (ISO)
-  raw_payload TEXT NOT NULL,           -- the provider's original payload, as received
-  app_delivered_at TEXT,               -- when the app's doorbell handler ACKed; NULL = never
-  provider_message_id TEXT NOT NULL,   -- unique per service: a replayed delivery is a no-op
-  routing_key TEXT NOT NULL,           -- what the message was addressed to (email recipient, chat id)
-  sender TEXT,                         -- who sent it
-  text_body TEXT,                      -- the message text
-  payload TEXT NOT NULL                -- JSON: everything service-specific
-);
-CREATE UNIQUE INDEX messages_service_provider_message_id ON messages (service, provider_message_id);
-
-CREATE TABLE attachments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  message_id INTEGER NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
-  filename TEXT,
-  content_type TEXT,
-  size_bytes INTEGER NOT NULL,
-  content BLOB                         -- NULL = the platform could not fetch the bytes; the row still exists
-);
-```
-
-Two consequences to write queries around:
-
-- **Always filter by `service`.** Every service's messages share the table, so a query without `WHERE service = '…'` mixes email and WhatsApp rows.
-- **`routing_key` / `sender` / `text_body` mean the same thing everywhere**, which is what keeps hot queries plain SQL. Everything else is in `payload` and comes out with `json_extract` — the per-service field inventory lives in that service's own skill:
-
-```sql
-SELECT id, received_at, sender, text_body,
-       json_extract(payload, '$.subject') AS subject
-  FROM messages
- WHERE service = 'incoming-email'
- ORDER BY id DESC LIMIT 20;
-```
-
-`app_delivered_at` is the "was the app rung?" signal. Delivery is a single fire-and-forget attempt with no retries, so `NULL` rows are the ones the app has not processed — the handler isn't implemented (the app template's catch-all stub answers 501), it returned a non-2xx, or the pod was cold when the message landed. Reading undelivered rows is how an app catches up, and it is the first thing to check when a message "never arrived":
-
-```typescript
-import { DatabaseSync } from "node:sqlite"
-
-const db = new DatabaseSync("/workspace/data/external-services.db", { readOnly: true })
-const pending = db
-  .prepare("SELECT * FROM messages WHERE service = ? AND app_delivered_at IS NULL ORDER BY id")
-  .all("incoming-email")
-```
-
-The handler contract and each service's `payload` fields live in that service's own skill (`incoming-email`, `whatsapp`) — load it before wiring an app to a service.
+The platform's two read-only databases — observability (`/workspace/data/database.db`) and inbound messages (`/workspace/data/external-services.db`) — are different files with a different owner: the `platform` skill has their rules, and `incoming-email` / `whatsapp` have the inbound columns and queries.
 
 ## DatabaseService API
 
@@ -123,7 +66,7 @@ backend/src/migrations/
 
 - Files run in alphabetical order, each only once
 - Migrations run **automatically on every boot** (dev and production), each in its **own transaction** (the whole file commits, or rolls back on error). Once a migration has run it is recorded and skipped forever.
-- **Never modify an existing migration** — it has already been applied and won't re-run; editing it has no effect (and in production would diverge environments). Every schema change is a **new** file.
+- Migrations are forward-only — the `platform` skill (§What Publish carries).
 - **Never modify the existing `items` table** — create your own tables
 - Naming: `NNN_description.sql`
 

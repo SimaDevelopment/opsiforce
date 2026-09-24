@@ -22,9 +22,7 @@ No, when it is:
 - a **one-off instruction** — say it in the chat, or put it in the Agent's prompt;
 - something the model already does well — a skill that restates common knowledge only adds a trigger
   that misfires;
-- **anything the `platform` skill covers** — the App contract, `$APP_PORT`, `app.meta.json`, uploads
-  and generated files, `opsiforce.env.json`, the platform environment variables, the LLM gateway, the
-  two read-only databases. Every agent already has `platform`. Never copy a line of it;
+- **anything the `platform` skill covers** — every agent already has it. Never copy a line of it;
 - already in the **built-in catalogue** — check first (below).
 
 Offer the author the honest answer, including "this does not need a Skill".
@@ -36,49 +34,46 @@ Before drafting anything, list what already exists and read the closest match:
 ```sh
 sh /workspace/scripts/api.sh call GET '/skills?filter=built_in'
 sh /workspace/scripts/api.sh call GET '/skills?q=release'
-sh /workspace/scripts/api.sh call GET "/skills/$ID/versions/1/files"
+sh /workspace/scripts/api.sh call GET "/skills/$ID"                       # its latest version number is here
+sh /workspace/scripts/api.sh call GET "/skills/$ID/versions/$N/files"      # read that one, or the one an Agent pins — never assume 1
 ```
 
-Then put three options to the author in plain language:
+Then decide, and say which you did:
 
-| Offer | When | How |
+| Path | When | How |
 |---|---|---|
-| **Reuse** | an existing Skill already does it | add it to the Agent — no new Skill at all |
-| **Extend** | close, but needs house specifics | `POST /skills/{id}/duplicate {"name":"…"}` → a private copy under a new name, then publish a Version onto it |
-| **Fresh** | nothing close | draft in `scratch/` |
+| **Reuse** | an existing Skill already does it | add it to the Agent — no new Skill at all. In a Skill's chat, tell the author which one already covers it |
+| **Extend** | close, but needs house specifics | in an Agent's chat, `POST /skills/{id}/duplicate {"name":"…"}` → a private copy under a new name, then publish a Version onto it and add it. In a Skill's chat, read its files and publish them, changed, as a Version of this chat's Skill |
+| **Fresh** | nothing close | draft in `scratch/<name>/` |
 
-Duplicate works from a built-in row, and the copy is private to the author's Organization. It is the
-only honest way to "edit a built-in": the built-in itself is image-owned and cannot be changed.
+Put the choice to the author only when Reuse and Extend are both plausible and the brief does not say
+which; with nothing close, draft. Duplicate works from a built-in row, and the copy is private to the
+author. It is the only honest way to "edit a built-in": the built-in itself is image-owned and cannot
+be changed.
 
 ## The authoring loop
 
-Draft, validate offline, publish, read back. Never publish blind and never claim a publish you did
-not read back.
+Draft, validate offline, publish, read back — in one pass, once the tree validates.
 
 ```sh
 # 1. draft under scratch/<name>/ — SKILL.md plus any references/
 # 2. the same gate the API runs, offline:
 node /workspace/scripts/validate-skill.mjs scratch/release-notes --name release-notes
-# 3. publish (a new Skill, or a Version onto one that exists):
-node /workspace/scripts/pack-skill.mjs --json scratch/release-notes --name release-notes > scratch/body.json
-sh /workspace/scripts/api.sh call POST /skills @scratch/body.json
-# a Version onto a Skill that exists takes the files alone — no --name, which that route refuses:
-# node /workspace/scripts/pack-skill.mjs --json scratch/release-notes > scratch/body.json
-# sh /workspace/scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json
+# 3. publish a Version onto the Skill — files alone, no --name, which that route refuses:
+node /workspace/scripts/pack-skill.mjs --json scratch/release-notes > scratch/body.json
+sh /workspace/scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json
+# only a new Skill an Agent needs is created instead, with its name:
+# node /workspace/scripts/pack-skill.mjs --json scratch/release-notes --name release-notes > scratch/body.json
+# sh /workspace/scripts/api.sh call POST /skills @scratch/body.json
 # 4. read back what landed, and say the Version number to the author:
 sh /workspace/scripts/api.sh call GET "/skills/$ID/versions/$N/files"
 ```
 
-`POST /skills/validate` exists for the same check server-side; prefer the local script — it is a
-generated copy of the platform's gate, so the findings are the same and cost nothing.
+`POST /skills/validate` runs the same check server-side; prefer the local script, which costs nothing.
 
 **Every submission is a whole tree.** A Version is minted from the files you send, and nothing is
 merged with the Version before it. To change one line, send every file again with that line changed —
 fetch the current files first if you did not write them.
-
-**A Skill's `name` is immutable**, is the directory the runtime loads it under, and must equal the
-frontmatter `name`. Names the agent image already ships (`platform`, `sqlite`, `ui`, …) are refused.
-Only `displayName` and content can change afterwards.
 
 ## ERRORS block, LINTS do not
 
@@ -95,24 +90,21 @@ The gate answers two lists, and they mean different things:
 
 ## Frontmatter, description, body, references
 
-The contract in one line: `SKILL.md` at the root, YAML frontmatter with `name` and `description`
-(`license` and `metadata` optional; nothing else allowed), then the body.
+`SKILL.md` sits at the root: YAML frontmatter with `name` and `description` (optionally `license` and
+`metadata`; `allowed-tools` is stripped, any other key refused), then the body. The **description is
+the trigger** — write it as *when to use this*, in the user's words. The **body** is the decision
+layer; long tables, API surfaces, variants and edge cases go in `references/<topic>.md`.
 
-The **description is the trigger** — the only part the model reads without loading the skill. Write
-it as *when to use this*, naming the words a user would actually say, in the third person, twenty
-words or more. "Use when the user asks for release notes, a changelog or a summary of merged pull
-requests" beats "Release notes helper".
+A Skill frames work: decisions, contracts, conventions, libraries and short examples —
+never an implementation for the agent to copy into what it builds. `scripts/` holds tools the agent
+runs, not code an App ships. For a stack Skill an Agent carries, `agent-authoring` has the frame.
 
-Keep the **body** the decision layer: what this is for, the rules that are easy to get wrong, the
-shortest worked example. Push long tables, full API surfaces, alternative recipes and edge-case
-catalogues into `references/<topic>.md` and link them from the body, so they load only when needed.
-
-`references/skill-anatomy.md` has the full contract, a description recipe and the body/references
+`references/skill-anatomy.md` has the full contract, the description recipe and the body/references
 split with examples; `references/api.md` has every call this loop makes, with bodies and Problem
 shapes.
 
 ## Reporting to the author
 
 Name the Skill, its Version, and its visibility in plain language: a new Skill is **private to you**
-until someone makes it public from the Store — and this chat cannot make it public. Say what it does
-and what you fixed on the way. Never paste the whole tree back at them.
+until someone makes it public from the Store. Say what it does and what you fixed on the way. Never
+paste the whole tree back at them.

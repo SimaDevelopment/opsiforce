@@ -11,6 +11,7 @@ const DOWNLOAD_ICON_PATHS = ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm7 10
 export interface WorkspaceFileLinksProps {
   projectId: string;
   environmentId: string;
+  host: () => HTMLElement;
   onPreviewFile: (path: string) => void;
 }
 
@@ -65,22 +66,23 @@ export function WorkspaceFileLinks(props: WorkspaceFileLinksProps) {
     if (decorationFrame) return;
     decorationFrame = requestAnimationFrame(() => {
       decorationFrame = 0;
-      decorateGeneratedFileLinks();
+      decorateGeneratedFileLinks(props.host());
     });
   });
 
   onMount(() => {
-    document.addEventListener('click', handleClick, true);
-    document.addEventListener('keydown', handleKeyDown, true);
-    observer.observe(document.body, { childList: true, subtree: true });
-    decorateGeneratedFileLinks();
-  });
+    const host = props.host();
+    host.addEventListener('click', handleClick, true);
+    host.addEventListener('keydown', handleKeyDown, true);
+    observer.observe(host, { childList: true, subtree: true });
+    decorateGeneratedFileLinks(host);
 
-  onCleanup(() => {
-    document.removeEventListener('click', handleClick, true);
-    document.removeEventListener('keydown', handleKeyDown, true);
-    observer.disconnect();
-    if (decorationFrame) cancelAnimationFrame(decorationFrame);
+    onCleanup(() => {
+      host.removeEventListener('click', handleClick, true);
+      host.removeEventListener('keydown', handleKeyDown, true);
+      observer.disconnect();
+      if (decorationFrame) cancelAnimationFrame(decorationFrame);
+    });
   });
 
   return null;
@@ -107,8 +109,8 @@ function workspacePathOf(anchor: Element): string | null {
   }
 }
 
-function decorateGeneratedFileLinks(): void {
-  for (const anchor of document.querySelectorAll(`a[href*="${WORKSPACE_PREFIX}"]`)) {
+function decorateGeneratedFileLinks(host: HTMLElement): void {
+  for (const anchor of host.querySelectorAll(`a[href*="${WORKSPACE_PREFIX}"]`)) {
     const relativePath = workspacePathOf(anchor);
     if (!relativePath || !relativePath.startsWith(`${GENERATED_FILES_DIRECTORY}/`)) continue;
     decorateFileCard(anchor, relativePath);

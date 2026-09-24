@@ -62,7 +62,7 @@ The contract:
 
 ## Reading stored messages
 
-`/workspace/data/external-services.db` — **the platform backend is the only writer.** Open it read-only from app code and from the shell; never create tables, write, or point a migration at it. (See the `sqlite` skill for the full schema and the wider read-only-platform-database rules; the app's own data still lives in `app.db`.)
+`/workspace/data/external-services.db` is read-only and its tables appear with the first message — the `platform` skill (§Inbound messages). The app's own data still lives in `app.db`.
 
 All services share **one `messages` table and one `attachments` table**, so every query needs `service = 'whatsapp'`. For WhatsApp:
 
@@ -90,8 +90,6 @@ Media arrives as **attachment rows**, exactly like email attachments — there a
 Worth designing around:
 
 - **`content` can be `NULL` on an attachment row.** The platform fetches the bytes from the provider before storing; if that fetch fails the row survives with its metadata and no bytes (and `payload.media_fetch_failed` is `true`), so the app can say "photo, 2.1 MB, unavailable" instead of showing nothing. There is no way to re-fetch from the app.
-
-The tables are created lazily the first time any message arrives for the environment. Before that the file is a valid but **empty** database — a query for `messages` fails with "no such table", which means "nothing has arrived yet", not a broken setup.
 
 ```typescript
 import { DatabaseSync } from "node:sqlite"

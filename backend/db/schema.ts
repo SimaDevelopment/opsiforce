@@ -32,8 +32,6 @@ const bytea = customType<{ data: Buffer; default: false }>({
 
 export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "test"
 
-export type ChatVisibilityValue = "private" | "public"
-
 export type GatewayKeyPurposeValue = "service" | "platform-api"
 
 export const projectStatusEnum = pgEnum("project_status", [
@@ -126,12 +124,11 @@ export const agents = pgTable(
     origin: text("origin").notNull().default("built_in"),
     visibility: text("visibility").notNull().default("public"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
-    archived: boolean("archived").notNull().default(false),
     version: text("version"),
     model: text("model"),
     variant: text("variant"),
     poolSize: integer("pool_size").notNull().default(0),
-    createdInChatProjectId: text("created_in_chat_project_id").references((): AnyPgColumn => projects.id, {
+    builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -144,6 +141,7 @@ export const agents = pgTable(
     uniqueIndex("agents_global_name_unique")
       .on(table.name)
       .where(sql`${table.tenantId} is null`),
+    uniqueIndex("agents_builder_chat_id_unique").on(table.builderChatId),
     check("agents_origin_check", sql`${table.origin} in ('built_in', 'custom')`),
     check("agents_visibility_check", sql`${table.visibility} in ('private', 'public')`),
     check(
@@ -245,7 +243,6 @@ export const projects = pgTable(
       onDelete: "set null",
     }),
     kind: text("kind").$type<ProjectKindValue>(),
-    chatVisibility: text("chat_visibility").$type<ChatVisibilityValue>().notNull().default("private"),
     importedAgent: text("imported_agent"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -256,10 +253,6 @@ export const projects = pgTable(
     check(
       "projects_kind_check",
       sql`${table.kind} in ('skill_builder_chat', 'agent_builder_chat', 'test')`,
-    ),
-    check(
-      "projects_chat_visibility_check",
-      sql`${table.chatVisibility} in ('private', 'public')`,
     ),
   ],
 )
@@ -802,11 +795,10 @@ export const skills = pgTable(
     description: text("description"),
     visibility: text("visibility").notNull().default("public"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
-    archived: boolean("archived").notNull().default(false),
     latestVersionId: text("latest_version_id").references((): AnyPgColumn => skillVersions.id, {
       onDelete: "set null",
     }),
-    createdInChatProjectId: text("created_in_chat_project_id").references((): AnyPgColumn => projects.id, {
+    builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -819,6 +811,7 @@ export const skills = pgTable(
     uniqueIndex("skills_global_name_unique")
       .on(table.name)
       .where(sql`${table.tenantId} is null`),
+    uniqueIndex("skills_builder_chat_id_unique").on(table.builderChatId),
     check("skills_origin_check", sql`${table.origin} in ('built_in', 'custom')`),
     check("skills_visibility_check", sql`${table.visibility} in ('private', 'public')`),
     check(
@@ -826,6 +819,36 @@ export const skills = pgTable(
       sql`${table.origin} = 'built_in' or (${table.tenantId} is not null and ${table.createdBy} is not null)`,
     ),
   ],
+)
+
+export const tenantDisabledAgents = pgTable(
+  "tenant_disabled_agents",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    agentId: text("agent_id")
+      .references(() => agents.id, { onDelete: "cascade" })
+      .notNull(),
+    disabledAt: timestamp("disabled_at").defaultNow().notNull(),
+    disabledBy: text("disabled_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.agentId] })],
+)
+
+export const tenantDisabledSkills = pgTable(
+  "tenant_disabled_skills",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    skillId: text("skill_id")
+      .references(() => skills.id, { onDelete: "cascade" })
+      .notNull(),
+    disabledAt: timestamp("disabled_at").defaultNow().notNull(),
+    disabledBy: text("disabled_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.skillId] })],
 )
 
 export interface SkillFlags {

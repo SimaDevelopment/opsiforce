@@ -14,6 +14,10 @@ export function validationFailed(errors: GateFinding[], lints: GateFinding[]): U
   });
 }
 
+export function notDisableable(message: string): ConflictException {
+  return new ConflictException({ code: 'not_disableable', message });
+}
+
 export function skillInUse(agents: { id: string; displayName: string }[]): ConflictException {
   return new ConflictException({
     code: 'skill_in_use',

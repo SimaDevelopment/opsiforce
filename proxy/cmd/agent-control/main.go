@@ -19,7 +19,7 @@ const (
 	termPollEvery = 100 * time.Millisecond
 )
 
-var appGuardNames = []string{"app-backend", "app-frontend"}
+const appRootGuard = "webapp"
 
 func main() {
 	go runOpencodeAuthProxy()
@@ -75,29 +75,7 @@ type proc struct {
 }
 
 func restartAppProcesses() int {
-	procs := listProcs()
-	children := map[int][]int{}
-	for _, p := range procs {
-		children[p.ppid] = append(children[p.ppid], p.pid)
-	}
-
-	targets := map[int]bool{}
-	for _, p := range procs {
-		if !isAppGuard(p.args) {
-			continue
-		}
-		queue := append([]int{}, children[p.pid]...)
-		for len(queue) > 0 {
-			pid := queue[0]
-			queue = queue[1:]
-			child, ok := procs[pid]
-			if !ok || isLogWriter(child.args) {
-				continue
-			}
-			targets[pid] = true
-			queue = append(queue, children[pid]...)
-		}
-	}
+	targets := appRestartTargets(listProcs())
 
 	for pid := range targets {
 		_ = syscall.Kill(pid, syscall.SIGTERM)
@@ -118,19 +96,54 @@ func restartAppProcesses() int {
 	return len(targets)
 }
 
-func isAppGuard(args []string) bool {
-	for i := 0; i < len(args)-1; i++ {
-		base := args[i][strings.LastIndex(args[i], "/")+1:]
-		if base != "guard" {
-			continue
-		}
-		for _, name := range appGuardNames {
-			if args[i+1] == name {
-				return true
+func appRestartTargets(procs map[int]*proc) map[int]bool {
+	children := map[int][]int{}
+	for _, p := range procs {
+		children[p.ppid] = append(children[p.ppid], p.pid)
+	}
+
+	targets := map[int]bool{}
+	var supervisedBy func(pid int)
+	supervisedBy = func(pid int) {
+		for _, childPid := range children[pid] {
+			child, ok := procs[childPid]
+			if !ok || isLogWriter(child.args) {
+				continue
 			}
+			targets[childPid] = true
+			supervisedBy(childPid)
 		}
 	}
-	return false
+	var nestedGuardsUnder func(pid int)
+	nestedGuardsUnder = func(pid int) {
+		for _, childPid := range children[pid] {
+			child, ok := procs[childPid]
+			if !ok {
+				continue
+			}
+			if guardName(child.args) != "" {
+				supervisedBy(childPid)
+				continue
+			}
+			nestedGuardsUnder(childPid)
+		}
+	}
+
+	for _, p := range procs {
+		if guardName(p.args) == appRootGuard {
+			nestedGuardsUnder(p.pid)
+		}
+	}
+	return targets
+}
+
+func guardName(args []string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i][strings.LastIndex(args[i], "/")+1:] == "guard" {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func isLogWriter(args []string) bool {
