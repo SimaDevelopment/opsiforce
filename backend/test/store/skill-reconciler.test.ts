@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, asc, eq, isNull } from 'drizzle-orm';
@@ -9,7 +9,7 @@ import { skills, skillVersionFiles, skillVersions } from '../../db/schema';
 import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service';
 import { hashSkillTree, validateSkillTree } from '../../src/store/gate';
 import { reservedSkillNames, SkillReconcilerService } from '../../src/store/skill-reconciler.service';
-import { readComposedSkills } from '../../src/store/skill-tree';
+import { readComposedSkills, skillSourceDirectories } from '../../src/store/skill-tree';
 
 const agentReconciler = { ready: () => Promise.resolve() } as AgentReconcilerService;
 
@@ -234,5 +234,21 @@ describe('the composed skill reader', () => {
     const [composed] = readComposedSkills(root);
 
     expect(composed.contentHash).toBe(hashSkillTree(composed.tree));
+  });
+});
+
+describe('the shipped agent-config', () => {
+  it('ships every Skill name from exactly one directory, because the Store keeps one row per name', () => {
+    const directoriesByName = new Map<string, string[]>();
+    for (const directory of skillSourceDirectories().filter((candidate) => existsSync(candidate))) {
+      for (const entry of readdirSync(directory, { withFileTypes: true }).filter((item) => item.isDirectory())) {
+        directoriesByName.set(entry.name, [...(directoriesByName.get(entry.name) ?? []), directory]);
+      }
+    }
+
+    const shippedTwice = [...directoriesByName].filter(([, directories]) => directories.length > 1);
+
+    expect(directoriesByName.size).toBeGreaterThan(10);
+    expect(shippedTwice).toEqual([]);
   });
 });

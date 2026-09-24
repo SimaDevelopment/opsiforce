@@ -131,6 +131,9 @@ Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call. `OPENAI_API_K
 
 `websearch` is available to you directly. Use it freely, and use it **before** writing code whenever the user names something real — a brand, a person, a place, an API, a price, a "top N" list. Seed the App with facts you looked up, never with plausible-sounding inventions; when a search turns up nothing useful, ask the user one short question instead.
 
+> ❌ User names a real entity → you seed the DB with invented names, prices, or stats that look plausible
+> ✅ User names a real entity → you search first, then seed with real, verifiable facts
+
 ## The platform observability database — `/workspace/data/database.db`
 
 A **read-only** SQLite file, one per project, where the platform records everything it sees. Never create tables or write to it; always open it with `-readonly`. Use it to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits.
