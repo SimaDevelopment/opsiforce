@@ -17,6 +17,7 @@ import {
   useUpdateSkill,
   type Skill,
   type SkillAgentUsage,
+  type SkillFlags,
   type SkillVersion,
 } from '~/api/skills';
 import { Badge } from '~/components/ui/badge';
@@ -52,6 +53,7 @@ import {
   Download,
   Files,
   Globe,
+  Terminal,
   Trash2,
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
@@ -107,6 +109,8 @@ export function SkillPage(props: SkillPageProps) {
     return versions.data.some((version) => version.version === picked) ? picked : latestVersion();
   };
   const files = useSkillFiles(skillId, selectedVersion);
+  const flagsOfSelected = () =>
+    versions.data?.find((version) => version.version === selectedVersion())?.flags ?? skill.data?.latestVersion?.flags;
   const isCustom = () => skill.data?.origin === 'custom';
 
   return (
@@ -127,6 +131,7 @@ export function SkillPage(props: SkillPageProps) {
                   back={back()}
                   skill={loaded()}
                   version={selectedVersion()}
+                  flags={flagsOfSelected()}
                   canManage={canManage()}
                   agents={agents.data ?? []}
                 />
@@ -223,6 +228,7 @@ function SkillHeader(props: {
   back: { to: string; label: string };
   skill: Skill;
   version: number;
+  flags: SkillFlags | undefined;
   canManage: boolean;
   agents: SkillAgentUsage[];
 }) {
@@ -279,6 +285,17 @@ function SkillHeader(props: {
           <VisibilityBadge visibility={props.skill.visibility} />
           <Show when={props.skill.disabled}>
             <DisabledBadge />
+          </Show>
+          <Show when={props.flags?.has_executables}>
+            <Tooltip>
+              <TooltipTrigger as="span">
+                <Badge variant="warning" class="gap-1 font-medium">
+                  <Terminal class="h-3 w-3" aria-hidden="true" />
+                  Executables
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>This skill ships files the agent can run.</TooltipContent>
+            </Tooltip>
           </Show>
         </>
       }

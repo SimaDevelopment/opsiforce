@@ -106,7 +106,17 @@ export function AgentSkillList(props: {
                 class="flex min-w-0 flex-1 items-center gap-2 after:absolute after:inset-0 focus-visible:outline-none"
               >
                 <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span class="truncate font-mono text-sm text-foreground">{skill.name}</span>
+                <Show
+                  when={skill.displayName}
+                  fallback={<span class="truncate font-mono text-sm text-foreground">{skill.name}</span>}
+                >
+                  {(displayName) => (
+                    <>
+                      <span class="truncate text-sm text-foreground">{displayName()}</span>
+                      <span class="shrink-0 font-mono text-[11px] text-muted-foreground">{skill.name}</span>
+                    </>
+                  )}
+                </Show>
                 <span class="shrink-0 text-xs tabular-nums text-muted-foreground">v{skill.pinnedVersion}</span>
                 <Show when={skill.visibility === 'private'}>
                   <Lock class="h-3 w-3 shrink-0 text-amber-600" role="img" aria-label="Private" />
@@ -183,6 +193,7 @@ export function AddSkillsDialog(props: {
       (skill) =>
         !needle ||
         skill.name.toLowerCase().includes(needle) ||
+        (skill.displayName ?? '').toLowerCase().includes(needle) ||
         (skill.description ?? '').toLowerCase().includes(needle)
     );
   });
@@ -262,7 +273,14 @@ export function AddSkillsDialog(props: {
                       </span>
                       <span class="min-w-0 flex-1">
                         <span class="flex flex-wrap items-center gap-1.5">
-                          <span class="font-mono text-sm">{skill.name}</span>
+                          <Show when={skill.displayName} fallback={<span class="font-mono text-sm">{skill.name}</span>}>
+                            {(displayName) => (
+                              <>
+                                <span class="text-sm">{displayName()}</span>
+                                <span class="font-mono text-[11px] text-muted-foreground">{skill.name}</span>
+                              </>
+                            )}
+                          </Show>
                           <Show when={skill.latestVersion}>
                             {(version) => (
                               <span class="text-xs tabular-nums text-muted-foreground">v{version().version}</span>

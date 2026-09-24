@@ -13,11 +13,11 @@ App Builder's Projects arrive with the starter already in `/workspace/app`. Any 
 
 ```bash
 cd /workspace/app
-[ -z "$(ls -A | grep -vxE 'data|opsiforce\.env(\.backup)?\.json')" ] && cp -a /opt/agents/app-builder/template/app/. .
+[ -z "$(ls -A | grep -vxE 'data|opsiforce\.env(\.backup)?\.json')" ] && tar -C /opt/agents/app-builder/template/app --exclude=./data -cf - . | tar -xf -
 [ -e startup.sh ] && chmod +x startup.sh
 ```
 
-Run that before anything else on a first build — nothing below is true until it has. The starter is laid only into an `app/` that holds nothing but what the platform puts in every workspace: `data/` and the App's configuration file. Anything else there is someone's work, and a copy over it would replace their files and their database. So:
+Run that before anything else on a first build — nothing below is true until it has. The starter is laid only into an `app/` that holds nothing but what the platform puts in every workspace: `data/` and the App's configuration file — and never over `data/`, which is the App's own; the backend creates its database there on its first start. Anything else there is someone's work, and a copy over it would replace their files and their database. So:
 
 - **`app/` holds other files but no `startup.sh`** — never lay the starter. When the rest is the starter's (`frontend/` and `backend/` are there), copy back the one file: `cp -a /opt/agents/app-builder/template/app/startup.sh .`. When it is anything else, stop and tell the user what you found before changing it.
 - **`startup.sh` exists but is not executable** — the `chmod` repairs it; it is never a reason to copy.
@@ -86,7 +86,7 @@ Then `appConfig("STRIPE_API_KEY")` — never `.env`, never `process.env` for the
 
 1. **Before writing any code**, `cd /workspace/app && yarn install`. Not optional: nothing runs without installed dependencies.
 2. **MANDATORY: load the `frontend-design` skill before writing any UI code** — call `skill({ name: "frontend-design" })`. Do not skip this. It holds the design system, the palettes and the anti-patterns. Every App gets a brand colour and a theme of its own, never generic gray defaults; update the variables in `index.css`. If you do not carry `frontend-design`, say so — the author can add it.
-3. **Check for an existing App** — `cat app/app.meta.json 2>/dev/null`. If it exists, modify what is there.
+3. **Check for an existing App** — `cat /workspace/app/app.meta.json 2>/dev/null`. If it exists, modify what is there.
 4. **Build, in this order:**
    - **`pages/home.tsx` is the App.** Rewrite it with the real functionality. It is never a landing page that links to the real content.
    - **Layout** in `App.tsx` — nav links, branding, colours. It is pre-configured with BrowserRouter, Layout and routes: build on it, do not rewrite it.
