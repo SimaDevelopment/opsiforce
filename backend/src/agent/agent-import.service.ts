@@ -51,10 +51,12 @@ import type { AgentCaller } from './agent.types';
 const TEMPLATE_PREFIX = `${AGENT_EXPORT_TEMPLATE_DIR}/`;
 const SKILLS_PREFIX = `${AGENT_EXPORT_SKILLS_DIR}/`;
 const FREE_SPACE_RESERVE_BYTES = 512 * 1024 * 1024;
+const MAX_SKILL_PACKS_BYTES = 100 * 1024 * 1024;
 
 interface ArchiveContents {
   templateDir: string;
   skillPacks: Map<string, Buffer>;
+  skillPacksTooLarge: boolean;
   problems: AgentImportProblem[];
 }
 
@@ -88,7 +90,11 @@ export class AgentImportService {
     const manifest = await readAgentManifest(archivePath);
     const workDir = join(this.importsRoot, `.agent-import-${randomUUID()}`);
     try {
-      const contents = await extractArchive(archivePath, join(workDir, AGENT_EXPORT_TEMPLATE_DIR));
+      const contents = await extractArchive(
+        archivePath,
+        join(workDir, AGENT_EXPORT_TEMPLATE_DIR),
+        customSkillNames(manifest)
+      );
       const plan = await this.resolve(caller, manifest, contents, displayName);
       if (plan.problems.length > 0) throw importRefused(plan.problems, nameFromFile(manifest));
 
@@ -130,7 +136,10 @@ export class AgentImportService {
 
     await this.resolveName(caller, plan);
     resolveModel(plan);
-    for (const skill of manifest.skills) await this.resolveSkill(caller, skill, contents.skillPacks, plan);
+    for (const skill of manifest.skills) {
+      if (skill.origin === 'custom' && contents.skillPacksTooLarge) continue;
+      await this.resolveSkill(caller, skill, contents.skillPacks, plan);
+    }
     if (!contents.problems.some((problem) => problem.kind === 'template')) {
       await this.resolveTemplate(manifest, contents.templateDir, plan);
     }
@@ -379,8 +388,21 @@ async function fitsOnVolume(root: string, entries: yauzl.Entry[]): Promise<boole
   return declared <= volume.bavail * volume.bsize - FREE_SPACE_RESERVE_BYTES;
 }
 
-async function extractArchive(archivePath: string, templateDir: string): Promise<ArchiveContents> {
-  const contents: ArchiveContents = { templateDir, skillPacks: new Map(), problems: [] };
+function customSkillNames(manifest: AgentExportManifest): Set<string> {
+  return new Set(manifest.skills.filter((skill) => skill.origin === 'custom').map((skill) => skill.name));
+}
+
+function skillPackName(entry: yauzl.Entry): string | null {
+  if (!entry.fileName.startsWith(SKILLS_PREFIX) || !entry.fileName.endsWith('.zip')) return null;
+  return entry.fileName.slice(SKILLS_PREFIX.length, -'.zip'.length);
+}
+
+async function extractArchive(
+  archivePath: string,
+  templateDir: string,
+  wantedPacks: Set<string>
+): Promise<ArchiveContents> {
+  const contents: ArchiveContents = { templateDir, skillPacks: new Map(), skillPacksTooLarge: false, problems: [] };
   const root = resolve(templateDir);
   await mkdir(root, { recursive: true });
 
@@ -394,11 +416,21 @@ async function extractArchive(archivePath: string, templateDir: string): Promise
         message: "The Template unpacks to more than this deployment's storage has room for",
       });
     }
+    const packEntries = entries.filter((entry) => wantedPacks.has(skillPackName(entry) ?? ''));
+    const packBytes = packEntries.reduce((total, entry) => total + Math.min(entry.uncompressedSize, MAX_TREE_BYTES), 0);
+    if (packBytes > MAX_SKILL_PACKS_BYTES) {
+      contents.skillPacksTooLarge = true;
+      contents.problems.push({
+        kind: 'skill',
+        message: `The Skill packs together unpack to more than ${MAX_SKILL_PACKS_BYTES / 1024 / 1024} MiB`,
+      });
+    }
     for (const entry of entries) {
       if (entry.fileName.endsWith('/')) continue;
 
-      if (entry.fileName.startsWith(SKILLS_PREFIX) && entry.fileName.endsWith('.zip')) {
-        const name = entry.fileName.slice(SKILLS_PREFIX.length, -'.zip'.length);
+      const name = skillPackName(entry);
+      if (name !== null) {
+        if (!wantedPacks.has(name) || contents.skillPacksTooLarge) continue;
         if (entry.uncompressedSize > MAX_TREE_BYTES) {
           contents.problems.push({ kind: 'skill', name, message: `\`${name}\`'s Skill pack is too large` });
           continue;

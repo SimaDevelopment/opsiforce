@@ -597,6 +597,8 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
     ];
   };
 
+  const refused = () => preview.error instanceof ApiError && preview.error.status >= 400 && preview.error.status < 500;
+
   const download = () => {
     downloadAgentExport(props.agent.id, props.agent.name);
     props.onOpenChange(false);
@@ -624,9 +626,19 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
             <Show
               when={!preview.error}
               fallback={
-                <p class="text-xs text-destructive" role="alert">
-                  {refusal(preview.error, 'The agent could not be checked for export.')}
-                </p>
+                <Show
+                  when={refused()}
+                  fallback={
+                    <p class="text-xs text-amber-900" role="alert">
+                      The file couldn't be checked for keys or secrets. You can still download it; check it before you
+                      share it.
+                    </p>
+                  }
+                >
+                  <p class="text-xs text-destructive" role="alert">
+                    {refusal(preview.error, 'The agent could not be checked for export.')}
+                  </p>
+                </Show>
               }
             >
               <Show when={hits().length > 0}>
@@ -653,7 +665,7 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
           <Button type="button" variant="outline" size="sm" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" disabled={preview.isPending || Boolean(preview.error)} onClick={download}>
+          <Button size="sm" disabled={preview.isPending || refused()} onClick={download}>
             Download
           </Button>
         </DialogFooter>

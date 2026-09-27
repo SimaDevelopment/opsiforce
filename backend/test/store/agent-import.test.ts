@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -15,6 +15,7 @@ import type { AgentImportService } from '../../src/agent/agent-import.service';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
 import type { AgentCaller, AgentDetail } from '../../src/agent/agent.types';
 import { hashSkillTree, packSkill, unpackSkill, type SkillTree } from '../../src/store/gate';
+import { MAX_TREE_BYTES } from '../../src/store/gate/skill-tree';
 import { readSkillTree } from '../../src/store/skill-tree';
 import {
   agentTemplateFolders,
@@ -498,6 +499,16 @@ describe('refusing an import', () => {
       path: 'AGENTS.md',
       message: expect.stringContaining('template/AGENTS.md'),
     });
+  });
+
+  it('ignores a Skill pack the manifest does not name, even an oversized one', async () => {
+    const source = await sourceAgent();
+    const archive = await rewrite(await exportOf(source.agent.id), (_written, tree) => [
+      ...tree,
+      { path: 'skills/stray.zip', content: randomBytes(MAX_TREE_BYTES + 1), executable: false },
+    ]);
+
+    await expect(runImport(archive, uniqueName('Stray pack'))).resolves.toMatchObject({ agent: { origin: 'custom' } });
   });
 
   it('refuses a manifest whose Agent fields have the wrong types as not an Agent export', async () => {
