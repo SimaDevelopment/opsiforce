@@ -148,7 +148,7 @@ export class ProjectsController {
   @ApiOperation({
     summary: 'Update a Test Project',
     description:
-      "Overlays the Agent's saved Development Template onto the Test Project's workspace and commits the files it wrote as \"Template update\". It overwrites and adds, and never deletes: remove a file the Template dropped through the shell yourself. The pod keeps running and the conversation carries on, so restart the Project yourself when something that runs has changed. The Project's Bifrost spend keeps its running total.\n\nOnly the gateway key of the Builder chat that created the Test Project may call it. Everyone else is refused with 403.\n\n**Use it for** getting a Template fix into the child byte for byte after saving it, without losing the conversation.",
+      "Overlays the Agent's saved Development Template onto the Test Project's workspace and commits the files it wrote as \"Template update\". It overwrites and adds, replacing a path the Template turned from a file into a folder or back, and deletes nothing else: remove a file the Template dropped through the shell yourself. The pod keeps running and the conversation carries on, so restart the Project yourself when something that runs has changed. The Project's Bifrost spend keeps its running total.\n\nOnly the gateway key of the Builder chat that created the Test Project may call it. Everyone else is refused with 403.\n\n**Use it for** getting a Template fix into the child byte for byte after saving it, without losing the conversation.",
   })
   @PublicNoContentResponse('The Template is overlaid and committed')
   @PublicApiErrors('project-not-found', 'permission-denied')

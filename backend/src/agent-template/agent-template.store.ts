@@ -127,7 +127,7 @@ export class AgentTemplateStore {
     return laid?.hash ?? null;
   }
 
-  /** Like `layInto`, but overwrites and adds over what `targetDir` already holds, deleting nothing. */
+  /** Like `layInto`, but overwrites and adds over what `targetDir` already holds, deleting only a path whose file/directory kind the Template changed. */
   async overlayInto(agentId: string, environmentId: string, targetDir: string): Promise<TemplateOverlay | null> {
     return this.placeVersion(agentId, environmentId, targetDir, overlayEntries);
   }
@@ -373,8 +373,13 @@ async function overlayEntries(from: string, into: string): Promise<void> {
   for (const dirent of await readdir(from, { withFileTypes: true })) {
     const source = join(from, dirent.name);
     const target = join(into, dirent.name);
-    if (dirent.isDirectory() && (await isDirectory(target))) await overlayEntries(source, target);
-    else await rename(source, target);
+    const targetIsDirectory = await isDirectory(target);
+    if (dirent.isDirectory() && targetIsDirectory) {
+      await overlayEntries(source, target);
+      continue;
+    }
+    if (dirent.isDirectory() || targetIsDirectory) await rm(target, { recursive: true, force: true });
+    await rename(source, target);
   }
 }
 

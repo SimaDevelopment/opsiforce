@@ -228,6 +228,33 @@ describe('publishing a Template (ADR-0073)', () => {
   });
 });
 
+describe('overlaying a Template onto a workspace', () => {
+  it('replaces a path whose file or directory kind the Template changed, and keeps the rest', async () => {
+    const draft = await authoring();
+    await draft.write('config');
+    await draft.write('lib/seed.json', '{}');
+    await draft.save();
+    const workspace = join(dirname(draft.templateDir), `overlay-${randomUUID().slice(0, 8)}`);
+    await mkdir(join(workspace, 'config'), { recursive: true });
+    await writeFile(join(workspace, 'config', 'old.json'), '{}');
+    await writeFile(join(workspace, 'lib'), 'was a file');
+    await writeFile(join(workspace, 'notes.md'), 'mine');
+
+    const overlay = await new AgentTemplateStore(new ConfigService(configuration())).overlayInto(
+      draft.agentId,
+      org.developmentId,
+      workspace
+    );
+
+    expect(overlay?.paths.toSorted()).toEqual(['config', 'lib/seed.json']);
+    expect((await lstat(join(workspace, 'config'))).isFile()).toBe(true);
+    expect((await lstat(join(workspace, 'lib'))).isDirectory()).toBe(true);
+    expect(existsSync(join(workspace, 'lib', 'seed.json'))).toBe(true);
+    expect(existsSync(join(workspace, 'notes.md'))).toBe(true);
+    await rm(workspace, { recursive: true, force: true });
+  });
+});
+
 describe('Delete and Disable (Agent) and the Template', () => {
   it('removes every Template of a deleted Agent', async () => {
     const draft = await authoring();
