@@ -22,12 +22,26 @@ export interface DeliverySkill {
   tree: SkillTree;
 }
 
+export const BUILDER_TEMPLATE_DIR = 'template';
+
+export interface TemplateLay {
+  agentId: string;
+  environmentId: string;
+  intoDirectory: string;
+}
+
 export interface DeliveryPlan {
   projectEnvironmentId: string;
   directory: string;
   runtimeAgentSlug: string;
+  template: TemplateLay | null;
   agentFile: AgentFile | null;
   skills: DeliverySkill[];
+}
+
+/** The Custom Agent whose Development Template a fresh Builder chat opens with (ADR-0073). */
+export interface DeliveryAtCreateOptions {
+  builderSubjectAgentId?: string | null;
 }
 
 export function modelReference(model: string | null, variant: string | null): string | null {
@@ -42,7 +56,7 @@ export function renderAgentFile(file: AgentFile): string {
 
 export const SKILL_DELIVERY_QUEUE = 'skill-delivery';
 
-/** The ladder the Agent-Updates reload already retries on (ADR-0060 §12). */
+/** The ladder the Agent-Updates reload already retries on (ADR-0060). */
 export const SKILL_DELIVERY_RETRY_DELAYS_MS = [5, 15, 30, 60].map((minutes) => minutes * 60 * 1000);
 
 export const SKILL_DELIVERY_DEFER_DELAY_MS = 30 * 1000;

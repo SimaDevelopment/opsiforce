@@ -17,7 +17,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { Queue } from 'bullmq';
 import crypto from 'crypto';
 import path from 'path';
-import { rm } from 'node:fs/promises';
+import { lstat, mkdir, rm } from 'node:fs/promises';
 import { db } from '../../db';
 import {
   projectSettings,
@@ -104,6 +104,7 @@ const STARTUP_RETRY_BASE_MS = 5 * 1000;
 const STARTUP_RETRY_MAX_MS = 5 * 60 * 1000;
 const DUPLICATE_APP_READY_TIMEOUT_MS = 5 * 60 * 1000;
 const APP_SERVING_PROBE_TIMEOUT_MS = 3 * 1000;
+const TEMPLATE_UPDATE_COMMIT_MESSAGE = 'Template update';
 
 interface AppMetaPatch {
   name?: string;
@@ -445,7 +446,14 @@ export class ProjectService implements OnApplicationBootstrap {
     tenantId: string,
     context: ProjectCreationContext = {}
   ): Promise<ProjectResponse> {
-    const { workspaceId = null, folderId = null, createdBy = null, createdByProjectId = null, kind = null } = context;
+    const {
+      workspaceId = null,
+      folderId = null,
+      createdBy = null,
+      createdByProjectId = null,
+      kind = null,
+      builderSubjectAgentId = null,
+    } = context;
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
@@ -481,6 +489,7 @@ export class ProjectService implements OnApplicationBootstrap {
       createdBy,
       createdByProjectId,
       kind,
+      builderSubjectAgentId,
     });
   }
 
@@ -491,7 +500,7 @@ export class ProjectService implements OnApplicationBootstrap {
     timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
     context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
-    const { workspaceId, folderId, createdBy, createdByProjectId, kind } = context;
+    const { workspaceId, folderId, createdBy, createdByProjectId, kind, builderSubjectAgentId } = context;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
@@ -539,7 +548,7 @@ export class ProjectService implements OnApplicationBootstrap {
     await this.createBifrostResources(id, tenantId);
     await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
     try {
-      await this.deliveryService.deliverAtCreate(id);
+      await this.deliveryService.deliverAtCreate(id, { builderSubjectAgentId });
     } catch (err) {
       await this.discardHalfCreatedProject(id);
       throw new InternalServerErrorException(`Could not deliver the agent's files: ${(err as Error).message}`);
@@ -1345,6 +1354,42 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
     return this.findOne(id, tenantId);
+  }
+
+  /** Update (Test Project): overlay Development's Template and commit it, leaving the pod and the chat running. */
+  async updateTestProject(id: string): Promise<void> {
+    const env = await this.projectEnvironmentService.findById(id);
+    const written = await this.deliveryService.overlayTemplate(env.id);
+    const workspace = this.workspacePath(env.directory);
+    if (written.length === 0 || !(await isGitWorkspace(workspace))) return;
+    await db.transaction(async (tx) => {
+      await lockProjectGit(tx, id);
+      await this.gitService.commitPaths(workspace, written, TEMPLATE_UPDATE_COMMIT_MESSAGE);
+    });
+  }
+
+  /** Reset (Test Project): the same Project laid again from scratch, with a new session and a fresh budget. */
+  async resetTestProject(id: string): Promise<void> {
+    const env = await this.projectEnvironmentService.findById(id);
+    this.agentStatusService.clear(env.projectId, env.id);
+    this.appReadiness.markDown(env.id);
+    await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
+    await this.podService.deletePodAndWait(this.podService.assignedPodName(env.id));
+
+    const workspace = this.workspacePath(env.directory);
+    await rm(workspace, { recursive: true, force: true });
+    await mkdir(workspace, { recursive: true });
+    await this.deliveryService.redeliverIntoWipedWorkspace(env.id);
+    await this.projectEnvironmentService.patch(env.id, { sessionId: null });
+    await this.bifrostService.resetProjectSpend(env.projectId);
+
+    await this.requestEnvironmentStartup(await this.projectEnvironmentService.findById(env.id), {
+      deleteExistingPod: false,
+    });
+  }
+
+  private workspacePath(directory: string): string {
+    return path.join(this.configService.getOrThrow<string>('storageMountPath'), directory);
   }
 
   async removeEnvironment(projectId: string, environmentId: string, tenantId: string): Promise<void> {
@@ -2386,5 +2431,14 @@ export class ProjectService implements OnApplicationBootstrap {
     void this.touchEnvironmentActivity(envId, activity).catch((err) => {
       this.logger.warn(`Failed to touch ${activity} activity for environment ${envId}: ${err.message}`);
     });
+  }
+}
+
+async function isGitWorkspace(workspace: string): Promise<boolean> {
+  try {
+    await lstat(path.join(workspace, '.git'));
+    return true;
+  } catch {
+    return false;
   }
 }

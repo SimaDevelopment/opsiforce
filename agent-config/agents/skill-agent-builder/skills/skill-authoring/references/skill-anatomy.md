@@ -90,5 +90,5 @@ carries a **pinned** Version — publishing a new one does not move any Agent on
 - tell the author the Version number, and that Agents already carrying the Skill stay where they are
   until someone upgrades them;
 - for the Agent this chat writes, re-pin it yourself (`PUT /agents/{id}/skills/{skillId}` with `{}`),
-  read the pin back, and test on a new test Project — an existing Project keeps the Skill it was
-  created with.
+  read the pin back, and refresh the Test Project by `agent-authoring`'s test loop §5 (a re-pin is a
+  reset). Any other Project keeps the Skill it was created with.

@@ -14,6 +14,7 @@ adrs: [0017]
 
 - An [Export](../../CONTEXT.md) seals a Project's [Development](../../CONTEXT.md) working state into a [Project export](../../CONTEXT.md); an [Import](../../CONTEXT.md) creates a new independent Project from one, with fresh keys and paused Schedules like a [Duplicate](duplication.md) ([ADR-0017](../adr/0017-project-export-is-a-faithful-full-workspace-zip.md)).
 - The zip holds the workspace files, including full git history, the agent conversation, databases, uploads, the [Environment Variables](../../CONTEXT.md) file with values and the installed dependency store, plus a manifest of database-row state: title, description, settings, [App Details](../../CONTEXT.md), [Schedules](../../CONTEXT.md), and the [Resources](../../CONTEXT.md) class.
+- The manifest says `kind: "project"`, so a Project export is never taken for an [Agent export](../../CONTEXT.md), which says `kind: "agent"`; a manifest without `kind`, from an older archive, is a Project export.
 - The manifest carries the [Agent](../../CONTEXT.md) as `{slug, displayName, origin, package}`. Import resolves the slug within the target Organization's reach — the global [Built-in Agent](../../CONTEXT.md) of that name, or its own [Custom Agent](../../CONTEXT.md); another Organization's Custom Agent of the same name is not a match. A slug the target does not have links the default Built-in Agent, because `projects.agent_id` is NOT NULL, and records the original slug in `projects.imported_agent`, which the Project header shows as "Imported agent: `<slug>` (not in this organization)" and which the runtime then runs the Project under — so identity keeps matching the prompt file the archive carried ([ADR-0060](../adr/0060-agent-files-are-laid-once-and-shared-with-the-backend-by-ownership-list.md)). Import binds the new environment to the target's Development and re-resolves the Resources class on the target's hardware, carrying explicit CPU and memory only for Custom.
 - Set on arrival: identity, tenant and Workspace; LLM and service-gateway keys; the timezone, with Schedules re-stamped to it; and the [Auth mode](../../CONTEXT.md), which resets to public.
 
@@ -29,7 +30,8 @@ adrs: [0017]
 - The archive is untrusted: writes are confined to the new directory, escaping symlinks are rejected, and a failed or interrupted Import removes the half-created Project, directory and keys.
 - The file arrives as an upload session of 8 MiB chunks (`IMPORT_CHUNK_SIZE`, server-returned), each a short `PUT` carrying its own SHA-256 and renamed into place only when length and digest match, so no request outlives the edge's 60-second read timeout and replicas need no coordination.
 - Finalize claims the session by renaming its staging directory, so exactly one finalize wins; it verifies the parts are contiguous and full-sized, concatenates them into the regular Import path, and the zip's own CRC32s are the final check.
-- Gated by `can_import_project` ([Permissions](../organization/permissions.md)).
+- Finalize refuses a manifest whose `kind` is anything but `project`, such as an Agent export, with 400.
+- Finalize is gated by `can_import_project`. The upload-session routes accept `can_import_project` or `can_manage_agents`, because [Import (Agent)](../agent-system/agent-copies.md) uploads through them too ([Permissions](../organization/permissions.md)).
 
 ## Edge cases
 

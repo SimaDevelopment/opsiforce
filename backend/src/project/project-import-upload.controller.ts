@@ -4,10 +4,11 @@ import type { Readable } from 'node:stream';
 import { ProjectImportUploadService } from './project-import-upload.service';
 import type { CreateImportUploadDto, CreateImportUploadResult } from './project-import.types';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
-import { RequirePermission } from '../permission/permission.guard';
+import { RequireAnyPermission } from '../permission/permission.guard';
 import { Perms } from '../permission/permission.constants';
 
 const CHUNK_DIGEST_HEADER = 'x-chunk-sha256';
+const IMPORT_UPLOAD_PERMISSIONS = [Perms.importProject, Perms.manageAgents];
 
 interface ChunkRequest extends FastifyRequest {
   body: Readable;
@@ -18,7 +19,7 @@ export class ProjectImportUploadController {
   constructor(private readonly uploadService: ProjectImportUploadService) {}
 
   @Post()
-  @RequirePermission(Perms.importProject)
+  @RequireAnyPermission(IMPORT_UPLOAD_PERMISSIONS)
   create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateImportUploadDto | undefined
@@ -27,7 +28,7 @@ export class ProjectImportUploadController {
   }
 
   @Put(':uploadId/chunks/:index')
-  @RequirePermission(Perms.importProject)
+  @RequireAnyPermission(IMPORT_UPLOAD_PERMISSIONS)
   @HttpCode(204)
   async putChunk(
     @Param('uploadId') uploadId: string,
@@ -46,7 +47,7 @@ export class ProjectImportUploadController {
   }
 
   @Delete(':uploadId')
-  @RequirePermission(Perms.importProject)
+  @RequireAnyPermission(IMPORT_UPLOAD_PERMISSIONS)
   @HttpCode(204)
   async cancel(@Param('uploadId') uploadId: string, @CurrentTenant() tenant: TenantContext): Promise<void> {
     await this.uploadService.deleteSession({ tenantId: tenant.tenantId, uploadId });

@@ -27,12 +27,19 @@ export interface PlatformStoragePendingDeletionView {
   error: boolean;
 }
 
+export interface PlatformStorageTemplatesView {
+  bytes: number;
+  count: number;
+  error: boolean;
+}
+
 export interface PlatformStorageTenantView {
   id: string;
   name: string;
   totalBytes: number;
   error: boolean;
   pendingDeletion: PlatformStoragePendingDeletionView;
+  templates: PlatformStorageTemplatesView;
   projects: PlatformStorageProjectView[];
 }
 
@@ -51,6 +58,7 @@ export interface PlatformStorageBucketsView {
   pool: PlatformStorageBucketView;
   tombstoned: PlatformStorageBucketView;
   orphaned: PlatformStorageOrphanedBucketView;
+  templates: PlatformStorageTemplatesView;
   exports: PlatformStorageBucketView;
   imports: PlatformStorageBucketView;
 }

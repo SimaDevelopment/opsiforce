@@ -32,6 +32,17 @@ export const AgentSkillListSchema = z.strictObject({ items: z.array(AgentSkillSc
   id: 'AgentSkillList',
 });
 
+export const AgentTemplateSchema = z
+  .strictObject({
+    hash: z
+      .string()
+      .describe('Content hash of the saved Template (path, mode and bytes); equal hashes mean equal files'),
+    damaged: z
+      .boolean()
+      .describe('True when the Environment points at a Template version that is missing; save it again'),
+  })
+  .meta({ id: 'AgentTemplate' });
+
 export const AgentProfileSchema = z
   .strictObject({
     environmentId: z.string().describe('Every Environment of the Organization appears, profile or not'),
@@ -43,6 +54,9 @@ export const AgentProfileSchema = z
       .array(AgentSkillSchema)
       .nullable()
       .describe('null marks an Environment this Agent has no profile at; a Built-in Agent reports []'),
+    template: AgentTemplateSchema.nullable().describe(
+      'The Template new Projects read from this Environment; null when it has none'
+    ),
   })
   .meta({ id: 'AgentProfile' });
 
@@ -127,6 +141,24 @@ export const SetAgentSkillSchema = z
   })
   .meta({ id: 'SetAgentSkill', examples: [{}] });
 
+const TemplatePathNoteSchema = z.strictObject({ path: z.string(), reason: z.string() });
+
+export const TemplateSaveSchema = z
+  .strictObject({
+    hash: z
+      .string()
+      .nullable()
+      .describe('The saved version; null when template/ was missing or empty and the Template was removed'),
+    files: z
+      .array(z.strictObject({ path: z.string(), size: z.int(), executable: z.boolean() }))
+      .describe('Every file the Template now holds, relative to template/'),
+    skipped: z.array(TemplatePathNoteSchema).describe('Paths left out of the Template, each with why'),
+    warnings: z
+      .array(TemplatePathNoteSchema)
+      .describe('Key-like strings found in saved files; the save still went through'),
+  })
+  .meta({ id: 'TemplateSave' });
+
 export type AgentDto = z.infer<typeof AgentSchema>;
 export type AgentPageDto = z.infer<typeof AgentPageSchema>;
 export type AgentListQuery = z.infer<typeof AgentListQuerySchema>;
@@ -139,3 +171,4 @@ export type CreateAgent = z.infer<typeof CreateAgentSchema>;
 export type UpdateAgent = z.infer<typeof UpdateAgentSchema>;
 export type UpdateAgentProfile = z.infer<typeof UpdateAgentProfileSchema>;
 export type SetAgentSkill = z.infer<typeof SetAgentSkillSchema>;
+export type TemplateSaveDto = z.infer<typeof TemplateSaveSchema>;

@@ -83,7 +83,7 @@ export class ProjectsController {
     },
   })
   @PublicResponse(201, ProjectSchema)
-  @PublicApiErrors('validation-error', 'invalid-reference')
+  @PublicApiErrors('validation-error', 'invalid-reference', 'test-project-exists')
   create(@Caller() caller: Caller, @Body({ schema: CreateProjectSchema }) body: CreateProject): Promise<ProjectDto> {
     return this.projects.create(caller, body);
   }
@@ -141,6 +141,32 @@ export class ProjectsController {
   @PublicApiErrors('project-not-found', 'permission-denied', 'environment-disabled')
   restart(@Caller() caller: Caller, @Param({ schema: ProjectPathSchema }) path: ProjectPath): Promise<void> {
     return this.projects.restart(caller, path.id);
+  }
+
+  @Post(':id/test/update')
+  @AllowsGatewayCaller()
+  @ApiOperation({
+    summary: 'Update a Test Project',
+    description:
+      "Overlays the Agent's saved Development Template onto the Test Project's workspace and commits the files it wrote as \"Template update\". It overwrites and adds, and never deletes: remove a file the Template dropped through the shell yourself. The pod keeps running and the conversation carries on, so restart the Project yourself when something that runs has changed. The Project's Bifrost spend keeps its running total.\n\nOnly the gateway key of the Builder chat that created the Test Project may call it. Everyone else is refused with 403.\n\n**Use it for** getting a Template fix into the child byte for byte after saving it, without losing the conversation.",
+  })
+  @PublicNoContentResponse('The Template is overlaid and committed')
+  @PublicApiErrors('project-not-found', 'permission-denied')
+  updateTest(@Caller() caller: Caller, @Param({ schema: ProjectPathSchema }) path: ProjectPath): Promise<void> {
+    return this.projects.updateTest(caller, path.id);
+  }
+
+  @Post(':id/test/reset')
+  @AllowsGatewayCaller()
+  @ApiOperation({
+    summary: 'Reset a Test Project',
+    description:
+      "Stops the pod, wipes the workspace, and lays the Template, prompt and Skills from the Agent's Development exactly as a create does. It then unpins the primary Session, so the next Connect binds a new one, resets the Project's Bifrost spend, and starts the pod, so first boot runs again. The Project id, its side pane and its preview URL stay the same. Answers 204 once the pod is starting; poll Get a Project until environments[0].status is active, then Connect again.\n\nOnly the gateway key of the Builder chat that created the Test Project may call it. Everyone else is refused with 403. A disabled Project answers 423.\n\n**Use it for** a clean start in the same Test Project, when the child's conversation or workspace no longer tells you anything about the Template.",
+  })
+  @PublicNoContentResponse('The workspace is laid again and the pod is starting')
+  @PublicApiErrors('project-not-found', 'permission-denied', 'environment-disabled')
+  resetTest(@Caller() caller: Caller, @Param({ schema: ProjectPathSchema }) path: ProjectPath): Promise<void> {
+    return this.projects.resetTest(caller, path.id);
   }
 
   @Delete(':id')

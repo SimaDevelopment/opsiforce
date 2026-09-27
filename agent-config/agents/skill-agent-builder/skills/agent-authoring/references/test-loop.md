@@ -1,280 +1,347 @@
-# The test loop, exactly
+# The test loop
 
-Every platform call is relative to `$OPSIFORCE_API_URL` and carries `Authorization: Bearer
-$OPSIFORCE_API_KEY`; `scripts/api.sh call` does that. Runtime calls go to the test Project's opencode
-through the runtime proxy at `$OPSIFORCE_RUNTIME_PROXY_URL`, a different Service from the platform
-API; `scripts/api.sh runtime <baseUrl> …` resolves the Connection's `baseUrl` against it.
+Testing an Agent, end to end: the contract first, then the steps in order (§1–6). Test after writing
+or meaningfully changing a definition, **without being asked**, the way a coding agent runs the build.
 
-Anything outside the Projects this chat created answers 404, so a cleanup mistake cannot touch
-someone's work.
+## The contract
 
-## 0. Resume — which test Project is mine?
+- **Announce first, with the spend.** One line before you start: what you will run, roughly how long it
+  takes and what it spends (the first two fidelity gaps below). Then go, without waiting for a reply.
+- **The chat has one Test Project**, created once (§2) and refreshed in place after every save (§5). It
+  reads what you last saved (§1). Never refresh for an unchanged definition, and test a change once the
+  author has finished describing it.
+- **Write expectations before the run**, into `scratch/expectations.md`, in the shape
+  `scripts/check-expectations.mjs` checks:
+  - **`## Prompts`** — one line per prompt, sent word for word every round. A change under test adds
+    its prompt at the end.
+  - **`## Machine-checkable`** — a file exists, a row is there, the App answers again after its pod is
+    restarted, and, for an Agent with a Template, the directories it laid are still there. One line
+    each: ``- <expectation> — `<command>` → <the answer that passes>``.
+  - **`## Judgement`** — tone, whether a refusal was graceful, whether the page is understandable.
+  - **`## Fixes`** — the fix log (§Rounds).
 
-The API deliberately hides `kind`-stamped Projects from `GET /projects`, so the list will **not** show
-your test Project. Remember its id yourself, in the workspace, and confirm it by id:
+  *If you cannot write the command, it is a judgement expectation.* Deciding that beforehand is the
+  point; deciding it afterwards, against a confident report, is how a claim gets graded as a fact.
+- **The expectations file is the Agent's, not the run's.** This chat is the only one that authors the
+  Agent, so the file outlives every run. Add to it; rewrite nothing in it. Each run grades every
+  machine-checkable line still in it, plus the new ones for the change under test — a change that
+  breaks what passed before is a failure of that change. When the author changes behaviour on purpose,
+  delete the lines that no longer hold, and name them in your report.
+- **Several prompts, one warm workspace.** A child that builds something correct once and breaks it on
+  the next instruction passes a single-prompt test and fails in use. Make the second prompt change what
+  the first built, then re-run the first prompt's checks. A third prompt that asks for something the
+  Agent should refuse is the only way to see the refusal under real conditions.
+- **When the Project has a `startup.sh`, restart the child's pod once it is live, and check again**
+  (§4).
+- **A secret the job needs goes in the Test Project's Environment settings**, as every Environment
+  carries its own. Name the key the author sets there, never its value, and mark each line that needs
+  it *not checked* until the value is there.
 
-```sh
-# after every create:
-echo '{"projectId":"'"$P"'","agentId":"'"$A"'","createdAt":"'"$(date -Is)"'"}' > scratch/test-project.json
+### Who checks what
 
-# on resume:
-P=$(jq -r .projectId scratch/test-project.json 2>/dev/null || true)
-[ -n "$P" ] && sh scripts/api.sh status GET "/projects/$P"   # 200 = still there, 404 = gone
-```
+- **The child** checks its own work the way its skills and body tell it to. What the runtime recorded
+  it doing — each command with its output and exit code, the files and screenshots it saved — is
+  **evidence**. What it writes about itself is a **claim**.
+- **You** read that record against the expectations, then:
+  - use the result once the way the brief's user would: run the App's main flow in your own browser,
+    or open the file it delivered and read it against the brief;
+  - check every expectation the record does not cover — a line is **covered** only when a command the
+    child ran after the last change decides it;
+  - re-run at least one covered line, the one your verdict leans on most. When it disagrees with the
+    record, distrust that run's records and re-run every covered line.
 
-`GET /projects/$P` works for the id even though the list omits it. If the note is missing or the id
-is gone, just create a new one — a create supersedes any predecessor anyway (step 2).
+  Pages with **your own** `agent-browser`; files, data and logs through the Test Project's shell (§4).
+- **The author** judges what needs a person's eye — whether the page is pleasant, whether a message
+  helps — in the Test Project's preview beside this chat, and decides publishing. Point them there
+  rather than grading taste on their behalf.
 
-## 1. Delete the predecessor
+**The shell is for looking: files, rows, logs.** Its only writes are the platform's refreshes and
+removing a file a Template update dropped. Change what the App holds only the way a user would —
+through its page or its API. A row you delete by hand is a state no user can reach, and it hides the
+bug that a user would have hit.
 
-A new test replaces the old test Project.
+### Whose failure it is
 
-```sh
-sh scripts/api.sh call DELETE "/projects/$P"      # 204, permanent, no undo
-```
+Decide from the record, not from what the child says:
 
-You do not have to: `POST /projects` with `kind: "test"` deletes this chat's previous test Project
-itself. Delete explicitly when the author is finished testing, or before a slow create so the old
-Project is not lingering while you wait. `DELETE` needs `can_delete_project` on the person this chat
-runs as — a 403 here is that permission, not a bug, and the automatic supersede still works.
+- **Template** — before doing what was asked, the child had to create, repair or install something
+  the Template should have given it, or it failed on a file it was given.
+- **Body** — it did something a stated rule would have prevented, or did not know what finished means.
+- **Skill** — it followed wrong know-how or lacked know-how it needed. A shared built-in Skill is the
+  author's to raise, not yours to fix: tell the author and work around it in the body. Never add a
+  Skill with the same name.
+- **Slip** — the rule exists and it ignored it once. Prompt it to fix that in the same session and
+  change nothing.
 
-## 2. Create the test Project
+### Rounds
 
-```sh
-A=$(sh scripts/api.sh call GET /me | jq -r .builderSubject.id)
-P=$(sh scripts/api.sh call POST /projects \
-      '{"agentId":"'"$A"'","title":"Test: release notes","kind":"test"}' | jq -r .id)
-```
+A **round** is one pass through `## Prompts`. Re-prompt slips on the spot; log every other fault and
+run the round to its last prompt, unless the child cannot go on. At round end, in this order:
 
-- `kind: "test"` is accepted **only** from a Builder chat; anywhere else it is a 422.
-- It is created on the child's **Development** profile — the one this chat edits — and is hidden from
-  every Project list while remaining openable from this chat by the author.
-- `title` is at most 30 characters.
+1. **Log the fixes.** One line per fix under `## Fixes`:
+   `- R<n> · <failed expectation> · <template|body|skill> · <the record that showed it, in words> · <what you change> · <update|reset>`,
+   the last field being the round's one refresh.
+2. **Apply** every logged fix together.
+3. **Check, save, refresh** — one of each: the check `template.md` gives, the save (§1), and the
+   refresh §5 decides before the save.
+4. **Run the next round.** After a reset, from the first prompt. After an update the workspace still
+   holds what the prompts built: re-grade every machine-checkable line on it, then send the prompts
+   whose lines failed and any new one. A round with nothing to fix ends in the report (§6).
 
-## 3. Wait for it to be ready
+Two fixing rounds in a row that turn no failing line into a pass is the point to stop, show the author
+`## Fixes`, and ask. That stop rule, not the budget, is what ends a runaway loop.
 
-One blocking line with a ceiling; a loop with no end is how a test run turns into a stuck chat:
+### The four fidelity gaps — say them when they matter
 
-```sh
-wait_active() {   # $1 = attempts of 5 s; 36 is three minutes
-  for i in $(seq 1 "${1:-36}"); do
-    s=$(sh scripts/api.sh call GET "/projects/$P" | jq -r '.environments[0].status')
-    [ "$s" = "active" ] && return 0
-    [ "$s" = "failed" ] && { echo "environment failed"; return 1; }
-    sleep 5
-  done
-  echo "still $s after $((${1:-36} * 5)) s"; return 1
-}
-wait_active || exit 1
-```
+- A Test Project is **always cold** — a Custom Agent keeps no warm pool, so create takes tens of
+  seconds and the first prompt is slower than a user's.
+- Its **spend lands on this Organization** like any Project, and shows in Admin storage.
+- **External services it calls are the real ones** — if the child emails, posts or writes somewhere,
+  that happened. So a prompt that makes the child send, post or change something outside the Project
+  targets something the author owns and named in the brief; with none, leave that prompt out and mark
+  its line *not checked*.
+- It tests the definition **as of its last refresh**; after an update, its conversation is not a
+  clean start.
 
-`environments[0]` is Development. Other statuses worth recognising: `starting` (keep waiting),
-`failed` (stop — report it and do not prompt), `pending`/`claiming` (still being built). When the
-ceiling is hit, say so in the report rather than looping again.
+## `scripts/tp.sh`
 
-## 4. Connect
+Every step below is one `sh scripts/tp.sh <command>`, and its state in `scratch/test-project.json`
+carries over to a new shell or a resumed chat. For a call it lacks: `scripts/api.sh call` (the
+platform) and `runtime <baseUrl>` (the Test Project, through the runtime proxy); outside this chat's
+Projects, 404.
 
-```sh
-E=$(sh scripts/api.sh call GET "/projects/$P" | jq -r '.environments[0].id')
-C=$(sh scripts/api.sh call POST "/projects/$P/environments/$E/connect")
-BASE=$(printf '%s' "$C" | jq -r .baseUrl)
-SES=$(printf '%s' "$C" | jq -r .sessionId)
-```
+## 1. Save first
 
-`connect` wakes the environment inside a 30-second budget and binds the primary Session. A 503 with
-`Retry-After` means still starting — retry, do not treat it as a failure.
+The Test Project lays the Agent's Development as last saved — prompt, model, Skills and Template —
+never `template/` itself. Save (`template.md`) before the create and before every refresh (§5).
 
-## 5. Prompt, wait, read
-
-Everything from here is opencode's own API, forwarded verbatim by the proxy. The authoritative
-reference is the `openapiUrl` the Connection reported.
-
-```sh
-sh scripts/api.sh runtime "$BASE" POST "/api/session/$SES/prompt" \
-  '{"id":"msg_'"$(date +%s)"'","text":"Write release notes for the two merged PRs in the repo."}'
-sh scripts/api.sh runtime "$BASE" POST "/api/session/$SES/wait"          # returns when the Session goes idle
-sh scripts/api.sh runtime "$BASE" GET  "/api/session/$SES/message?limit=10&order=desc"
-```
-
-- Send your own `id` (prefix `msg_`) so a retry is harmless: the runtime readmits the same id and body
-  and conflicts on a different one.
-- `wait` means *the Session went idle*, not *your prompt succeeded*. Read the outcome from the
-  checks in step 6, not from the messages.
-- **A child's turn can take many minutes, and `wait` holds until it ends.** Your shell stops a
-  command after two minutes unless told otherwise, so run the `wait` call with the shell tool's
-  `timeout` set to `1200000` (twenty minutes). Its return is the only signal you need; do not poll.
-- **When `wait` comes back without the child idle** — the ceiling hit or the connection dropped —
-  look once at the latest messages. Anything new since your prompt (a message, a tool call, a command
-  still producing output) means it is working: call `wait` again.
-- **Idle is not finished.** After every `wait`, read the child's last assistant message. A finished
-  turn ends on `"finish":"stop"`. `"finish":"error"` (it carries an `error`), or a last message that
-  still says `"finish":"tool-calls"`, means the turn broke off, whatever the cause — your interrupt, a
-  pod restart, a model error. Do not grade a broken turn. Send one prompt — *"Your last turn was cut off.
-  Continue where you stopped, then report each check you made and what it returned."* — and `wait`
-  again. A second broken turn is a stall: report the turn as unfinished.
-- One Session, one workspace, prompts in sequence; `SKILL.md` says why a second and a third prompt are
-  not optional.
-- **Ask for checks, not a verdict.** End a test prompt with *"report each check you made and what it
-  returned, not a summary"*. "Layout checks passed" is a bundle you can only take or leave; the separate
-  results behind it are things you can re-run and disagree with. Put this in the prompt you send, never
-  in the Agent's own body — the body is the product and ships to real users.
-- `POST /api/session/$SES/interrupt` is for a genuine stall only: nothing new for about five minutes,
-  or the same failing command repeating — never while a build, an install or a test is still running.
-  An interrupted turn is a stall, not a failure of the definition: say so in the report, and prompt the
-  child once to continue or report it unfinished — never start another run to see if it was a fluke.
-
-## 6. Verify — the shell for files and data, your own browser for the page
-
-Grading is running the command each machine-checkable line of `scratch/<agent>.expectations.md`
-names.
-
-### The test Project's shell
-
-Session-free, so it stays out of the child's transcript. A shell call does not remember the last one,
-so put `run` and `wait_active` in `scratch/helpers.sh` once and start every shell call that uses them
-with `. scratch/helpers.sh`:
+## 2. Bring it up
 
 ```sh
-run() {
-  # timeout is in MILLISECONDS — 60 would kill the command after a sixteenth of a second.
-  id=$(sh scripts/api.sh runtime "$BASE" POST /api/shell "{\"command\":$(jq -Rn --arg c "$1" '$c'),\"timeout\":60000}" | jq -r .data.id)
-  for i in $(seq 1 45); do   # the runtime kills the command at 60 s; 90 s here means the runtime itself is gone
-    [ "$(sh scripts/api.sh runtime "$BASE" GET "/api/shell/$id" | jq -r .data.status)" != "running" ] && break
-    sleep 2
-  done
-  sh scripts/api.sh runtime "$BASE" GET "/api/shell/$id/output" | jq -r .data.output
-}
-
-run 'cat /workspace/app/app.meta.json'                     # go-live: does it exist, is it {name, description}
-run 'ls -l /workspace/app/startup.sh'                      # the App contract: present and executable
-run 'cat /workspace/app/startup.sh'                        # every service the Architecture names: ensured, under guard, before the server?
-run 'find /workspace/app -maxdepth 3 -type d -not -path "*/node_modules*" -not -path "*/.yarn*"'   # the layout the Architecture names
-run 'curl -s -o /dev/null -w "%{http_code}" localhost:$APP_PORT'   # anything answering counts as serving
-run 'ls -1 /workspace/.opencode/skills'                    # the Skills the Agent actually carries
-run 'head -40 /workspace/.opencode/agents/*.md'            # the prompt as delivered
-run 'sqlite3 /workspace/app/data/app.db ".tables"'         # the App's own database, if it keeps one
-run 'sqlite3 -header -column /workspace/app/data/app.db "select * from <table> limit 20;"'
+sh scripts/tp.sh up
 ```
 
-The `sqlite3` lines here and below read the default starter's database. When the Architecture section
-replaced it, read the App's data with that store's own client instead — the Skill the body names for
-it says how.
+It finds the chat's one Test Project, or creates it on this chat's Agent, waits for it and connects.
+The Project reads the Agent's **Development** for everything, and no Project list shows it: the author
+opens it from this chat.
 
-When the Architecture section replaced any layer of the starter, one machine-checkable expectation
-says the old layer is gone — its package out of the manifest, its code out of `app/` — because the
-Agent otherwise runs two of that layer, and the stack Skill for the old one still reads as current.
+- The wait has a ceiling of three minutes. When it is hit, say so in the report rather than looping
+  again.
+- A `failed` environment means the pod could not start — most likely node capacity, never the
+  Template. `up` retries it once through a restart; a second failure is where you stop and say so.
+- **`disabled:`** — someone switched the Test Project off. Say once that it comes back from the Test
+  run pane's menu beside this chat, run the checks the change allows without it, and report the
+  definition *saved*, not *tested*.
+- The `openapi` path `up` prints is the runtime's own reference for any call you add.
 
-For crashes, error lines and failed requests, run the queries the `platform` skill gives (§Verify the
-App booted, §Investigate failed requests and crashes) through `run`. They are the same queries the child
-is supposed to run on itself, kept in one place so this file cannot drift from them. A recent `crashed`
-with a climbing `restart_count` is a crash loop, and it outranks anything the child said about itself.
-
-For an Agent with no App, the checks are whatever its job is: a file it was asked to write, a row it
-was asked to insert, the exit code of a command it claimed to run.
-
-Everything through `run` is a **read** — `SKILL.md` says why.
-
-### Data written in one prompt, read back after the next
-
-The App's database at `/workspace/app/data/app.db` is the child's own. Read a row the child claims to
-have written rather than believing the claim, and read it again after the *next* prompt — a schema
-change that drops the table takes the data with it, and only a warm workspace shows that.
+## 3. Prompt, wait, read
 
 ```sh
-run 'sqlite3 /workspace/app/data/app.db "select count(*) from <table>;"'   # before prompt 2, and after
+sh scripts/tp.sh prompt '<the next line of ## Prompts, word for word>'
 ```
 
-### The Skills it carries, and the ones it used
+It sends the prompt and waits for the turn. Run it, `tp.sh turn` and `tp.sh answer` with the shell
+tool's `timeout` set to `1200000` (twenty minutes): the wait ends at `TURN_TIMEOUT` seconds (default
+900), always before your shell stops it.
+Wait only through `tp.sh`: the runtime's own `wait` has no deadline, and a turn held by a Form never
+goes idle, so it would hold your shell for good. Its exit code says what the turn did:
 
-A listing of `.opencode/skills` proves delivery, not use. Use shows in the App: the structure a stack
-Skill describes is the one on disk, its contracts hold for what the App actually produces, and its
-definition-of-done checks pass when you run them yourself. When the Skill ships a checker in
-`scripts/`, run it on the App's real output — an export it made, a response it served — not on a
-sample of your own:
+- **Exit 0, finished.** The Session went idle on a finished turn — which is not *your prompt
+  succeeded*. Read the outcome from the record and your own checks (§4), not from the child's prose.
+- **Exit 4, the deadline.** A long turn is not a stuck one: a child's turn can take many minutes. Look
+  once at the latest messages (`tp.sh evidence`): anything new since your prompt or your last look means
+  it is working, so run `sh scripts/tp.sh turn` again. Nothing new across two deadlines is a stall.
+  Report a timed-out turn as unfinished.
+- **Exit 5, a broken turn** — your interrupt, a pod restart, a model error. Grade only a finished turn:
+  send *"Your last turn was cut off. Continue where you stopped."* once, and a second exit 5 is a stall:
+  report the turn unfinished.
+- **Exit 3, a Form.** The child asked the user a question, printed with its fields, and its turn waits
+  for the answer. Answer it as the author's user would:
+
+  ```sh
+  sh scripts/tp.sh answer '{"<field key>":"<the option value you chose>"}'
+  ```
+
+  - **The answer comes from the author's intent**: the brief and this prompt's lines in the
+    expectations file. Pick the option a user who wants that would pick, on its meaning — its position
+    and a "(Recommended)" label carry none.
+  - When no option fits, give the one closest to the expectations, or, when the field allows
+    `custom`, a short answer in the user's own words.
+  - One entry per field: a `string` field takes one value, a `multiselect` field an array of values.
+    A refusal saying the Form is already settled means someone answered it in the preview: run
+    `sh scripts/tp.sh turn`. Any other refusal names what it rejected: fix the answer and send it again.
+  - Always answer a Form, never cancel it: a dismissed question ends the child's turn in an error, a
+    broken turn you caused.
+  - Note every Form in the round's report (§6): the question, the answer you gave and why, and say so
+    when no option fitted. A question is part of the record, so judge whether asking was right against
+    the expectations, as you would any other thing the child did.
+- One Session, one workspace, prompts in sequence; §The contract says why a second and a third prompt
+  are not optional.
+- **Write test prompts the way a user would**: ask for the result, and leave how to test and what to
+  report to the child — telling it makes it test harder than it does for real users.
+- `sh scripts/tp.sh interrupt` is for a genuine stall only: nothing new for about five minutes with no
+  Form open, or the same failing command repeating — while a build, an install or a test still runs, it
+  is working. An interrupted turn is a stall, not a failure of the definition: say so in the report, and
+  prompt the child once to continue or report it unfinished. A reset is never the way to see if it was
+  a fluke.
+
+## 4. Verify — the child's record first, then your own checks
+
+Grade every machine-checkable line of `scratch/expectations.md` in three steps: read the record, check
+what it does not cover, re-run one line it does cover (§Who checks what).
+
+### The child's record
 
 ```sh
-run 'ls -l /workspace/.opencode/skills/<name>/scripts/'
-run 'node /workspace/.opencode/skills/<name>/scripts/<checker> <what the App produced>'
+sh scripts/tp.sh evidence
 ```
 
-Pick an output the contract's edge cases show up in; one easy case passing proves little.
+Each command the child ran since your last prompt, with its exit code and output, and each question it
+asked — `question (open)` is a Form nobody has answered yet; its screenshots land in `scratch/shots/`
+as `child-<name>`. Mark each line **covered** when a command recorded after the last change decides
+it, and a **gap** otherwise.
 
-A scaffold's `check-skeleton.sh` is one expectation in every run of its Agent, graded after each
-prompt and again after the restart:
+### The Test Project's shell
+
+For the gaps and your re-run. `tp.sh sh` runs one command in the Test Project, session-free so it stays
+out of the child's transcript, prints all of its output and exits with its exit code:
 
 ```sh
-run 'bash /workspace/.opencode/skills/<name>/scripts/check-skeleton.sh; echo "exit=$?"'   # every line PASS, exit=0
+sh scripts/tp.sh sh 'curl -s -o /dev/null -w "%{http_code}" localhost:$APP_PORT'   # anything answering counts as serving
+sh scripts/tp.sh sh 'ls -1 /workspace/.opencode/skills'                   # the Skills the Agent actually carries
+sh scripts/tp.sh sh 'head -40 /workspace/.opencode/agents/*.md'           # the prompt as delivered
+sh scripts/tp.sh sh 'git -C /workspace log --oneline | tail -3'           # "Initial template", then any "Template update"
+sh scripts/tp.sh sh 'find /workspace -maxdepth 3 -type d -not -path "*/node_modules*" -not -path "*/.*"'   # the Template's directories, still there
 ```
+
+The `platform` skill's boot and crash queries are the child's to run. Run them through `tp.sh sh` only
+when its record has none since the last change. A recent `crashed` with a climbing `restart_count` is
+a crash loop, and it outranks anything the child said about itself.
+
+Everything through `tp.sh sh` is a **read** (§Who checks what).
 
 ### The page: look at it yourself
 
 The child's App answers on its own address inside the platform, and this Project reaches that address
-directly. Ask the test Project's shell for it once, then drive `agent-browser` from **here**, so every
-screenshot lands in your own workspace where you can read it:
+directly. Drive `agent-browser` from **here**, so every screenshot lands in your own workspace where you
+can read it:
 
 ```sh
-APP="http://$(run 'hostname -i' | tr -d '[:space:]'):$(run 'echo $APP_PORT' | tr -d '[:space:]')"
+APP=$(sh scripts/tp.sh app-url)
 mkdir -p scratch/shots
 agent-browser --session test open "$APP"
-agent-browser --session test set viewport 375 812          # the narrow width is the one worth checking
-agent-browser --session test reload
 agent-browser --session test wait --load networkidle
-agent-browser --session test screenshot scratch/shots/<agent>-375.png
+agent-browser --session test screenshot scratch/shots/<what>.png
 agent-browser --session test snapshot                      # the accessibility tree: every label, control, value
-agent-browser --session test eval "document.documentElement.scrollWidth > innerWidth"
 agent-browser --session test console
 agent-browser --session test close
 ```
 
+These commands are all this loop needs; load `agent-browser` only for one they do not cover.
+
 Then **read the screenshot** — it is a file in your workspace and you can see it. The snapshot answers
 how many options a select has, whether an edit control exists and what the headline number reads;
-`eval` answers anything else you wrote a command for; `console` shows errors the page swallowed. Redo
-the sequence after every prompt that changes the page. Your browser session is your own and does not
-disturb the child's.
+`agent-browser --session test eval "<expression>"` answers anything else you wrote a command for;
+`console` shows errors the page swallowed. Use it for the main job, for page lines the record does not
+cover, and for your one re-run. Set a viewport only when an expectation names a width. Your browser
+session is your own and does not disturb the child's.
 
 Two cautions, both learned the hard way:
 
 - **Ask only about what a person can reach.** Counting inputs without labels catches a component
   library's hidden value-carriers unless you exclude `aria-hidden` and unfocusable ones, and reports a
   defect the page does not have.
-- **When your check disagrees with the child, find out which of you is wrong before reporting it.** A
-  false positive spent as a defect costs the author more than the check saved.
+- **When your check disagrees with the record, find out which is wrong before reporting it.** A false
+  positive spent as a defect costs the author more than the check saved; a record that was wrong means
+  re-running every covered line.
 
 ### Restart the pod, then check again
 
-Once the App is live, recreate the child's pod — once per run; a restart before go-live proves
-nothing. The container is thrown away and `startup.sh` runs from cold on the same workspace, as when
-the Project idles out and is resumed:
+When the Project has a `startup.sh`, recreate the child's pod once per round after it is live; a
+restart before go-live proves nothing. `sh scripts/tp.sh restart` throws the container away, waits and
+connects again: `startup.sh` runs from cold on the same workspace, as when the Project idles out and is
+resumed. Then check it serves again and re-run the line your verdict leans on.
+
+## 5. Refresh: update or reset
+
+Every refresh lays what was last saved — save first (§1). Both are this chat's alone. One rule decides
+which, for a round's fixes and for a change the author asked for alike, and the word it turns on is
+**touched**:
+
+> The child **touched** or built on what the change alters, or the change is in the body or a Skill
+> (a re-pinned Version included) → **reset**. Otherwise → **update**.
+
+Decide *touched* for Template files by command, after the check and before the save:
 
 ```sh
-sh scripts/api.sh call POST "/projects/$P/restart"                    # 204: the pod is being recreated
-wait_active || exit 1
-C=$(sh scripts/api.sh call POST "/projects/$P/environments/$E/connect")   # a new pod is a new Connection
-BASE=$(printf '%s' "$C" | jq -r .baseUrl)
-run 'curl -s -o /dev/null -w "%{http_code}" localhost:$APP_PORT'          # serving again?
-run 'sqlite3 /workspace/app/data/app.db "select count(*) from <table>;"'  # data still there?
+sh scripts/tp.sh touched
 ```
 
-Then re-run the page sequence once.
+Each `touched <path>` is a file both the child changed since the last lay and the save changes, taken
+from `template-snapshot.sh diff`; `untouched` means none. A Template file the child never opened, including one the change adds, is
+untouched. *Built on* — the child relying on a file it never edited — is yours to judge from the
+record. An update lays only Template files — it keeps the prompt and the pinned Skills the Project was
+laid with, so a body or Skill change reaches the child only through a reset.
 
-## 7. Report and clean up
+Run one of the two:
 
-Report against the expectations you wrote before the run, machine-checkable first — what you expected,
-what you saw, what you changed — **in plain language, not shell lines** and not a transcript: "I added
-two expenses, reloaded, and the totals and the CSV were still right — and the page holds up on a
-phone."
+```sh
+sh scripts/tp.sh update   # the saved Template over the workspace, committed as "Template update"
+```
 
-Link every screenshot you took to decide a pass as a workspace path —
-`[phone, 375px](/workspace/scratch/shots/<agent>-375.png)` — which opens as a preview beside the chat,
-so the author sees what you looked at. A bare path in backticks opens nothing, and a "looks right" with no screenshot
-is a claim the author cannot check.
+```sh
+sh scripts/tp.sh reset    # wipe and lay as at create, a new Session and a fresh budget
+```
 
-Say **which passes you saw for yourself and which you are relaying from the child**, and name any check
-you did not run — it is neither a pass nor a fail. A 200 from the App is availability, not
-correctness: the pass is the expectation met by the content, the row or the page you checked.
+- **Update** overwrites and adds and deletes nothing: remove each `dropped <path>` that `touched`
+  printed with `tp.sh sh`. When something that runs changed, restart the pod (§4) afterwards. The
+  conversation carries on.
+- **Reset** keeps the Project, its preview and its side pane, but not its workspace or conversation.
+  Copy into `scratch/` whatever the next round compares against first; `reset` then waits and connects
+  the new Session.
 
-Leave the test Project alive while the author might want to open it — it is openable from this chat,
-and the transcript and App pane are the most useful thing about a failed run. Before a new create
-supersedes it, copy what the next run will need to compare against into `scratch/` — the failing
-command and its output, the screenshot — because the create deletes the old Project with its
-workspace. Delete it when the author is done.
+## 6. Report
+
+Results live in the conversation — there is no stored run. Fill in this shape after every test run,
+in plain language — what you did as the user would and what the App or the files showed afterwards,
+not shell lines or a transcript:
+
+```markdown
+**What I tested:** <the definition as last saved, the prompts in one line each, update or reset>
+
+**Expectations**
+- <expectation> — <pass | fail> (<mine | the child's record: …>) — <what you saw, with the screenshot link>
+- <expectation> — not checked — <why>
+- …judgement lines last, with what the author should look at in the preview
+
+**Forms the child raised**
+- <the question> — <the answer you gave, and why; say so when no option fitted>
+
+## Fixes
+- <each line of the expectations file's `## Fixes`, in words>
+
+**Not covered:** <what nothing checked, and why>
+```
+
+- A graded line carries exactly one source: **mine** (checked myself) or **the child's record** (name
+  the record in words: "the test command it ran after the second prompt"). A line nothing decided is
+  **not checked**, its own line shape, which is neither a pass nor a fail. A line that passed only after
+  an update adds *passed after a Template update*.
+- A 200 from the App is availability, not correctness: the pass is the expectation met by the content,
+  the row or the page you checked.
+- Link every screenshot that decided a pass as a workspace path, labelled with who took it —
+  `[after the restart, mine](/workspace/scratch/shots/restart.png)` — which opens as a preview beside
+  the chat, so the author sees what you looked at. A bare path in backticks opens nothing, and a
+  "looks right" with no screenshot is a claim the author cannot check.
+- Write *none* under a heading with nothing in it, so an empty one reads as checked.
+
+**The report is done when:**
+
+- `node scripts/check-expectations.mjs` exits 0;
+- every expectation line is either `pass` or `fail` with one source, or `not checked` with its why;
+- `## Fixes` has one entry per fixing round, matching the expectations file;
+- every Form the child raised is listed with its answer: every `question` entry `tp.sh evidence`
+  printed.
+
+Leave the Test Project alive: it lives as long as this chat, it is openable from here, and its
+transcript and App pane are the most useful thing about a failed run.

@@ -6,6 +6,7 @@ import { and, eq, lte, type SQL } from 'drizzle-orm';
 import { readdir, rm, rmdir, stat } from 'fs/promises';
 import path from 'path';
 import { db } from '../../db';
+import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { deletedProjectEnvironments, projectEnvironments } from '../../db/schema';
 
 export const WORKSPACE_CLEANUP_QUEUE = 'workspace-cleanup';
@@ -21,7 +22,10 @@ export class WorkspaceCleanupProcessor extends WorkerHost {
   private readonly storageMountPath: string;
   private readonly retentionDays: number;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly templates: AgentTemplateStore
+  ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.retentionDays = this.configService.getOrThrow<number>('workspaceCleanupRetentionDays');
@@ -30,7 +34,9 @@ export class WorkspaceCleanupProcessor extends WorkerHost {
   async process(job: Job<WorkspaceCleanupJobData | undefined>): Promise<void> {
     const scope = job.data ?? {};
     await this.removeExpiredTombstones(scope);
-    if (!scope.tenantId) await this.removeOrphanedDirectories();
+    if (scope.tenantId) return;
+    await this.removeOrphanedDirectories();
+    await this.templates.sweep();
   }
 
   private async removeExpiredTombstones(scope: WorkspaceCleanupJobData): Promise<void> {

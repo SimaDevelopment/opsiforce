@@ -1,9 +1,14 @@
 import { Global, InjectionToken, Module, type Provider, type Type } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
+import { AgentBundleReader } from '../../src/agent/agent-bundle.reader';
+import { AgentBundleWriter } from '../../src/agent/agent-bundle.writer';
+import { AgentExportService } from '../../src/agent/agent-export.service';
+import { AgentImportService } from '../../src/agent/agent-import.service';
 import { AgentProfileService } from '../../src/agent/agent-profile.service';
 import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service';
 import { AgentRepository } from '../../src/agent/agent.repository';
 import { AgentService } from '../../src/agent/agent.service';
+import { AgentTemplateStore } from '../../src/agent-template/agent-template.store';
 import { SkillPublishService } from '../../src/store/skill-publish.service';
 import { SkillReconcilerService } from '../../src/store/skill-reconciler.service';
 import { SkillRepository } from '../../src/store/skill.repository';
@@ -38,6 +43,9 @@ import { ProjectProvenanceRepository } from '../../src/project/project-provenanc
 import { ProjectFilesService } from '../../src/project/project-files.service';
 import { ProjectService } from '../../src/project/project.service';
 import { PROJECT_DUPLICATE_QUEUE } from '../../src/project/project-duplicate.types';
+import { ProjectImportService } from '../../src/project/project-import.service';
+import { ProjectImportUploadService } from '../../src/project/project-import-upload.service';
+import { PROJECT_IMPORT_QUEUE } from '../../src/project/project-import.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../../src/project-environment/environment-variables.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
@@ -66,13 +74,18 @@ import {
 } from './infra-fakes';
 
 const REAL_SERVICES = [
+  AgentBundleReader,
+  AgentBundleWriter,
   AgentConnectionService,
+  AgentExportService,
+  AgentImportService,
   AgentProfileService,
   AgentReconcilerService,
   AgentRepository,
   AgentService,
   AgentSessionGateway,
   AgentStatusService,
+  AgentTemplateStore,
   AgentUpdateService,
   AppReadinessService,
   AppService,
@@ -91,6 +104,8 @@ const REAL_SERVICES = [
   PodReloadClient,
   ProjectEnvironmentService,
   ProjectFilesService,
+  ProjectImportService,
+  ProjectImportUploadService,
   ProjectProvenanceRepository,
   ProjectService,
   ProxyService,
@@ -118,6 +133,7 @@ const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: ScheduleService, useClass: FakeScheduleService },
   { provide: TimeoutService, useClass: FakeTimeoutService },
   { provide: getQueueToken(PROJECT_DUPLICATE_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(PROJECT_IMPORT_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(AGENT_WORKSPACE_UPDATE_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(SKILL_DELIVERY_QUEUE), useClass: FakeQueue },
 ];

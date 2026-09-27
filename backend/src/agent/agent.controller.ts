@@ -1,12 +1,36 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { contentDisposition } from '../files/file-content-types';
 import { Perms } from '../permission/permission.constants';
 import { RelaxPermission, RequirePermission } from '../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
+import { MissingPermissionException } from '../permission/missing-permission.exception';
+import { ProjectImportUploadService } from '../project/project-import-upload.service';
 import { ProjectService } from '../project/project.service';
 import { UserService } from '../user/user.service';
+import type { AgentExportPreview } from './agent-export';
+import { AgentExportService } from './agent-export.service';
+import type { AgentImportResult, ImportAgentDto } from './agent-import';
+import { AgentImportService } from './agent-import.service';
 import { modelCatalogResponse, type ModelCatalogProvider } from './agent-models';
 import { AgentService } from './agent.service';
 import type {
@@ -32,6 +56,9 @@ import type {
 export class AgentController {
   constructor(
     private readonly agentService: AgentService,
+    private readonly exportService: AgentExportService,
+    private readonly importService: AgentImportService,
+    private readonly uploadService: ProjectImportUploadService,
     private readonly userService: UserService,
     private readonly projectService: ProjectService
   ) {}
@@ -94,6 +121,30 @@ export class AgentController {
     @CurrentUser() user: UserContext
   ): Promise<AgentDetail> {
     return this.agentService.create(await this.caller(req, tenant, user), dto);
+  }
+
+  @Post('import')
+  async import(
+    @Body() dto: ImportAgentDto | undefined,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentImportResult> {
+    if (!hasPermission(getGroupsHeader(req), Perms.manageSkills)) {
+      throw new MissingPermissionException(Perms.manageSkills);
+    }
+    const uploadId = dto?.uploadId?.trim();
+    if (!uploadId) throw new BadRequestException('An "uploadId" from a chunked upload session is required');
+
+    const caller = await this.caller(req, tenant, user);
+    const archivePath = join(this.uploadService.stagingRoot(), `.agent-import-${randomUUID()}.zip`);
+    try {
+      return await this.uploadService.consumeUpload({ tenantId: tenant.tenantId, uploadId }, archivePath, () =>
+        this.importService.import(caller, archivePath, dto?.displayName ?? null)
+      );
+    } finally {
+      await rm(archivePath, { force: true }).catch(() => {});
+    }
   }
 
   @Patch(':id')
@@ -184,6 +235,34 @@ export class AgentController {
     @CurrentUser() user: UserContext
   ): Promise<AgentDetail> {
     return this.agentService.duplicate(await this.caller(req, tenant, user), id, dto);
+  }
+
+  @Get(':id/export')
+  async export(
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<void> {
+    const exported = await this.exportService.export(await this.caller(req, tenant, user), id);
+    await reply
+      .header('Content-Type', 'application/zip')
+      .header('Content-Length', exported.archive.byteLength)
+      .header('Content-Disposition', contentDisposition(exported.fileName, 'attachment'))
+      .header('Cache-Control', 'no-store')
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(exported.archive);
+  }
+
+  @Get(':id/export/preview')
+  async exportPreview(
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentExportPreview> {
+    return this.exportService.preview(await this.caller(req, tenant, user), id);
   }
 
   @Post(':id/disable')

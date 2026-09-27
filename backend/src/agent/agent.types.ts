@@ -1,3 +1,4 @@
+import type { EnvironmentTemplate, TemplateComparison } from '../agent-template/agent-template.types';
 import type { SkillFlags } from '../store/gate';
 export type { AgentRow } from './agent-visibility';
 
@@ -42,6 +43,7 @@ export interface AgentProfileResponse {
   variant: string | null;
   updatedAt: Date | null;
   skills: AgentProfileSkillResponse[] | null;
+  template: EnvironmentTemplate | null;
 }
 
 export interface AgentSettingsResponse {
@@ -54,6 +56,7 @@ export interface AgentSummary extends AgentResponse {
   visibility: string;
   disabled: boolean;
   disableable: boolean;
+  duplicable: boolean;
   createdBy: string | null;
   imageOwned: boolean;
   builderChatId: string | null;
@@ -122,6 +125,7 @@ export interface PublishAgentResponse {
     prompt: 'changed' | 'same';
     model: { from: string | null; to: string | null } | null;
     skills: { added: string[]; removed: string[]; repinned: string[] };
+    template: TemplateComparison;
   };
 }
 

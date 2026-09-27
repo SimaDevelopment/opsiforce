@@ -44,12 +44,15 @@ const V1_ROUTES = [
   'POST /api/v1/projects',
   'POST /api/v1/projects/{id}/environments/{environmentId}/connect',
   'POST /api/v1/projects/{id}/restart',
+  'POST /api/v1/projects/{id}/test/reset',
+  'POST /api/v1/projects/{id}/test/update',
   'POST /api/v1/skills',
   'POST /api/v1/skills/validate',
   'POST /api/v1/skills/{id}/duplicate',
   'POST /api/v1/skills/{id}/versions',
   'PUT /api/v1/agents/{id}/profile',
   'PUT /api/v1/agents/{id}/skills/{skillId}',
+  'PUT /api/v1/agents/{id}/template',
 ].toSorted();
 
 describe('public api openapi document', () => {
@@ -117,6 +120,7 @@ describe('public api openapi document', () => {
         'AgentSettings',
         'AgentSkill',
         'AgentSkillList',
+        'AgentTemplate',
         'Connection',
         'CreateAgent',
         'CreateSkill',
@@ -132,6 +136,7 @@ describe('public api openapi document', () => {
         'SkillList',
         'SkillValidation',
         'SkillVersionRef',
+        'TemplateSave',
         'UpdateAgent',
         'UpdateAgentProfile',
         'UpdateSkill',
@@ -168,6 +173,7 @@ describe('public api openapi document', () => {
       'organizations',
       'permissions',
       'builderSubject',
+      'builderTestProject',
     ]);
   });
 
@@ -191,6 +197,12 @@ describe('public api openapi document', () => {
     expect(create.responses?.['201'].content?.['application/json'].schema).toEqual({
       $ref: '#/components/schemas/Project',
     });
+
+    expect(
+      create.responses?.['409'].content?.['application/problem+json'].schema?.allOf?.[1].properties?.type?.enum
+    ).toEqual([errorTypeUri('test-project-exists')]);
+    const schemas = document.components?.schemas as Record<string, NamedSchema> | undefined;
+    expect(Object.keys(schemas?.ApiError.properties ?? {})).toContain('testProjectId');
 
     const remove = paths[`${PUBLIC_API_PREFIX}/projects/{id}`].delete;
     expect(Object.keys(remove.responses ?? {})).toContain('204');

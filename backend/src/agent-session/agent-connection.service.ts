@@ -167,7 +167,7 @@ export class AgentConnectionService {
     });
   }
 
-  /** A Project has one Agent, so an adopted session carrying none is re-pointed at it (ADR-0060 §7). */
+  /** A Project has one Agent, so an adopted session carrying none is re-pointed at it (ADR-0060). */
   private async pinAgent(
     ready: ProjectEnvironmentContext,
     upstream: string,

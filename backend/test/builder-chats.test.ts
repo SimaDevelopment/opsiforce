@@ -282,9 +282,9 @@ describe('starting over and deleting', () => {
     const chat = await harness.builderChats.openFor(creator, { agentId });
     const testProjectId = await seedTestProject(chat.id, agentId);
 
-    await expect(
-      harness.projects.duplicate(testProjectId, tenantId, undefined, creator.userId)
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(harness.projects.duplicate(testProjectId, tenantId, undefined, creator.userId)).rejects.toBeInstanceOf(
+      BadRequestException
+    );
   });
 
   it('refuses to export a chat, which would belong to nothing', async () => {
@@ -298,25 +298,24 @@ describe('starting over and deleting', () => {
       { resolveUserId: () => Promise.resolve(creator.userId) } as unknown as UserService
     );
 
-    await expect(
-      controller.start(chat.id, { tenantId } as TenantContext, {} as UserContext)
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.start(chat.id, { tenantId } as TenantContext, {} as UserContext)).rejects.toBeInstanceOf(
+      BadRequestException
+    );
     expect(startExport).not.toHaveBeenCalled();
   });
 });
 
-describe('one live test Project per chat', () => {
-  it('leaves one row behind when a chat tests twice', async () => {
+describe('one Test Project per chat', () => {
+  it("names the chat's Test Project, and nothing for a chat without one or for a Test Project itself", async () => {
     const agentId = await seedAgent();
     const chat = await harness.builderChats.openFor(creator, { agentId });
-    const first = await seedTestProject(chat.id, agentId);
+    expect(await harness.builderChats.testProjectOf(tenantId, chat.id)).toBeNull();
 
-    await harness.builderChats.deleteTestProjectsOf(tenantId, chat.id);
-    const second = await seedTestProject(chat.id, agentId);
+    const testProjectId = await seedTestProject(chat.id, agentId);
 
-    expect(await kindOf(first)).toBeUndefined();
-    expect(await kindOf(second)).toBe('test');
-    expect((await harness.builderChats.openFor(creator, { agentId })).testProject?.id).toBe(second);
+    expect(await harness.builderChats.testProjectOf(tenantId, chat.id)).toEqual({ id: testProjectId });
+    expect(await harness.builderChats.testProjectOf(tenantId, testProjectId)).toBeNull();
+    expect((await harness.builderChats.openFor(creator, { agentId })).testProject?.id).toBe(testProjectId);
   });
 });
 

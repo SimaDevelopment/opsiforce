@@ -13,6 +13,7 @@ import {
   skillVersions,
   skills,
 } from '../../db/schema';
+import type { ProjectKind } from '../project/project.types';
 
 export interface DeliveryTarget {
   projectEnvironmentId: string;
@@ -22,6 +23,7 @@ export interface DeliveryTarget {
   agentName: string;
   agentOrigin: string;
   importedAgent: string | null;
+  kind: ProjectKind | null;
 }
 
 export interface PinnedSkill {
@@ -48,6 +50,7 @@ export class DeliveryRepository {
         agentName: agents.name,
         agentOrigin: agents.origin,
         importedAgent: projects.importedAgent,
+        kind: projects.kind,
       })
       .from(projectEnvironments)
       .innerJoin(projects, eq(projects.id, projectEnvironments.projectId))
@@ -117,6 +120,12 @@ export class DeliveryRepository {
           set: { skillVersionId: skill.skillVersionId, contentHash: skill.contentHash, deliveredAt: new Date() },
         });
     }
+  }
+
+  async forgetDeliveries(projectEnvironmentId: string): Promise<void> {
+    await db
+      .delete(projectSkillDeliveries)
+      .where(eq(projectSkillDeliveries.projectEnvironmentId, projectEnvironmentId));
   }
 
   async delivered(projectEnvironmentId: string): Promise<DeliveredSkill[]> {

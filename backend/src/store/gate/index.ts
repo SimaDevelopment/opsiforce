@@ -1,6 +1,7 @@
 export { packSkill, unpackSkill, SkillArchiveError } from './archive';
 export { computeFlags } from './flags';
-export { hashSkillTree } from './hash';
+export { compareSkillPaths, hashSkillTree, SkillTreeHasher } from './hash';
+export { scanKeyLike, type KeyLikeHit } from './key-like';
 export { validateSkillTree } from './validate';
 export {
   ALLOWED_FRONTMATTER_KEYS,

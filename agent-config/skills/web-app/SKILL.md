@@ -7,24 +7,9 @@ description: Use when building or changing an App on the platform's web-app star
 
 `/workspace/app` is the platform's web-app starter: a Vite + React + Tailwind + shadcn/ui frontend, a NestJS backend on SQLite, one `startup.sh` that satisfies the App contract, and a process supervisor. Everything below is true because of that starter. The `platform` skill owns what is true of every App — the contract, the durable workspace, the databases — and nothing here repeats it.
 
-## Lay the starter first
+## The starter is already there
 
-App Builder's Projects arrive with the starter already in `/workspace/app`. Any other Agent's Project arrives with an empty `app/`, and the starter ships in the image, so the first thing to do is check and lay it:
-
-```bash
-cd /workspace/app
-[ -z "$(ls -A | grep -vxE 'data|opsiforce\.env(\.backup)?\.json')" ] && tar -C /opt/agents/app-builder/template/app --exclude=./data -cf - . | tar -xf -
-[ -e startup.sh ] && chmod +x startup.sh
-```
-
-Run that before anything else on a first build — nothing below is true until it has. The starter is laid only into an `app/` that holds nothing but what the platform puts in every workspace: `data/` and the App's configuration file — and never over `data/`, which is the App's own; the backend creates its database there on its first start. Anything else there is someone's work, and a copy over it would replace their files and their database. So:
-
-- **`app/` holds other files but no `startup.sh`** — never lay the starter. When the rest is the starter's (`frontend/` and `backend/` are there), copy back the one file: `cp -a /opt/agents/app-builder/template/app/startup.sh .`. When it is anything else, stop and tell the user what you found before changing it.
-- **`startup.sh` exists but is not executable** — the `chmod` repairs it; it is never a reason to copy.
-
-Loading this skill again later, or receiving a newer version of it, is not a reason to lay the starter again. Once it is in place, the supervisor starts the dev servers within a few seconds of `yarn install` finishing (`startup.sh` waits for `.pnp.cjs`).
-
-If your own instructions describe an architecture — a different database, an extra service, a domain layout — apply it right after laying the starter, before the first feature, so every Project of your Agent starts from the same shape. From then on the rest of this skill applies as written, except where your instructions changed it.
+`app/` holds the starter — `startup.sh`, `frontend/` and `backend/`. If it does not, stop and tell the user what you found instead of building.
 
 ## What the starter fixes and what you change
 
@@ -40,7 +25,7 @@ When instructions disagree, the order is: the `platform` skill, then your own in
 
 ## The dev servers are already running
 
-The container entrypoint launched them through `startup.sh` — before you arrived on App Builder, and a few seconds after your first `yarn install` on any other Agent.
+The container entrypoint runs them through `startup.sh` as soon as dependencies are installed (it waits for `.pnp.cjs`), so on a fresh Project they come up a few seconds after your first `yarn install`.
 
 - **Frontend** (Vite): `http://localhost:3000` — hot-reloads on file save
 - **Backend** (NestJS): `http://localhost:3100` — auto-restarts on file change
@@ -98,7 +83,7 @@ Then `appConfig("STRIPE_API_KEY")` — never `.env`, never `process.env` for the
 6. **Go live: write `app/app.meta.json`** as soon as the first feature is built and step 5 passes, per the `platform` skill's go-live rules; feature testing in step 7 runs with the App already live.
    - The tab title is read from that file at runtime — never hardcode the App's name in `index.html`.
    - **Create the favicon at the same moment:** overwrite `frontend/public/favicon.svg` with a flat SVG on the brand colour that shows what the App does — a few basic shapes, or the Lucide icon you chose for the UI. No clear glyph: the App name's initial as a letter mark. No image generation for a favicon unless asked.
-7. **Walk the real user flow in the browser before saying a feature is done** (§Browser). Go-live already happened, so a problem found here is fixed forward with the App up.
+7. **Walk the real user flow in the browser before saying a feature is done** (the `platform` skill's browser walk). Go-live already happened, so a problem found here is fixed forward with the App up.
 
 ## Frontend to backend
 
@@ -186,11 +171,5 @@ Each of these is a separate skill. Load it when the App needs it **and you carry
 After any round of edits, and again before telling the user a feature is done: `cd /workspace/app && yarn check` first, then confirm the dev servers booted — no crash or error lines in the last couple of minutes, and `curl http://localhost:3100/api/health` answers 200. The crash and error queries are in the `platform` skill (§Verify the App booted).
 
 Right after `yarn add`, **wait for the frontend to restart** before checking: `app-frontend` restarts once (one stop/`started` pair and a fresh `VITE ... ready` line). That single restart is the dependency reload. Only a *repeating* restart loop (`restart_count` climbing) or an error that outlives the reload means something is wrong.
-
-Fix what you find before opening the browser — a blank or white page there is almost always a crashed dev server, which the logs catch and guessing at the UI does not — and before calling the task done.
-
-## Browser
-
-When you carry `agent-browser`, use it to confirm every feature works before saying it is done: open the page, run the user flow, check the result. When the user reports something broken, use it to see what they see.
 
 Check `app_requests` only when you changed frontend-to-backend communication (a new endpoint, a changed request or response shape).

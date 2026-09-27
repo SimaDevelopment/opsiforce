@@ -24,12 +24,19 @@ export interface PlatformStoragePendingDeletion {
   error: boolean;
 }
 
+export interface PlatformStorageTemplates {
+  bytes: number;
+  count: number;
+  error: boolean;
+}
+
 export interface PlatformStorageTenant {
   id: string;
   name: string;
   totalBytes: number;
   error: boolean;
   pendingDeletion: PlatformStoragePendingDeletion;
+  templates: PlatformStorageTemplates;
   projects: PlatformStorageProject[];
 }
 
@@ -48,6 +55,7 @@ export interface PlatformStorageBuckets {
   pool: PlatformStorageBucket;
   tombstoned: PlatformStorageBucket;
   orphaned: PlatformStorageOrphanedBucket;
+  templates: PlatformStorageTemplates;
   exports: PlatformStorageBucket;
   imports: PlatformStorageBucket;
 }

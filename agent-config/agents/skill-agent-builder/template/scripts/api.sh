@@ -8,11 +8,12 @@
 #   sh scripts/api.sh runtime /api/proxy/<envId> POST /api/session/<ses>/prompt '{"text":"hello"}'
 #   sh scripts/api.sh status GET /me                      # print the HTTP status only
 #
-# `call` talks to the platform API at $OPSIFORCE_API_URL; `runtime` talks to a test Project's opencode
+# `call` talks to the platform API at $OPSIFORCE_API_URL; `runtime` talks to a Test Project's opencode
 # runtime through the runtime proxy at $OPSIFORCE_RUNTIME_PROXY_URL, whose baseUrl a Connection
 # reports. The two are different Services, so the runtime origin is its own variable. Both send
 # $OPSIFORCE_API_KEY, which is this pod's platform-api key: it acts as the human who created this
-# chat and reaches only Projects this pod created.
+# chat and reaches only Projects this pod created. $API_MAX_TIME, when set, bounds each request in
+# seconds.
 set -eu
 
 : "${OPSIFORCE_API_URL:?OPSIFORCE_API_URL is not set — this pod holds no platform-api key}"
@@ -28,15 +29,16 @@ request() {
   url=$1
   method=$2
   body=${3-}
+  set -- ${API_MAX_TIME:+--max-time "$API_MAX_TIME"}
   if [ -n "$body" ]; then
     case "$body" in
-      @*) curl -sS -X "$method" "$url" -H "Authorization: Bearer $OPSIFORCE_API_KEY" \
+      @*) curl -sS "$@" -X "$method" "$url" -H "Authorization: Bearer $OPSIFORCE_API_KEY" \
             -H 'Content-Type: application/json' --data-binary "$body" ;;
-      *) curl -sS -X "$method" "$url" -H "Authorization: Bearer $OPSIFORCE_API_KEY" \
+      *) curl -sS "$@" -X "$method" "$url" -H "Authorization: Bearer $OPSIFORCE_API_KEY" \
             -H 'Content-Type: application/json' --data-raw "$body" ;;
     esac
   else
-    curl -sS -X "$method" "$url" -H "Authorization: Bearer $OPSIFORCE_API_KEY"
+    curl -sS "$@" -X "$method" "$url" -H "Authorization: Bearer $OPSIFORCE_API_KEY"
   fi
 }
 

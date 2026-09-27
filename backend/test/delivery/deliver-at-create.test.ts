@@ -5,8 +5,17 @@ import 'reflect-metadata';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { agentProfileSkills, agentProfiles, projectSkillDeliveries, projects, skills } from '../../db/schema';
-import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
+import {
+  agentProfileSkills,
+  agentProfiles,
+  agentSettings,
+  environments,
+  projectSkillDeliveries,
+  projects,
+  skills,
+} from '../../db/schema';
+import { DEFAULT_AGENT_NAME, type AgentCaller } from '../../src/agent/agent.types';
+import { TEST_PROJECT_KIND } from '../../src/project/project.types';
 import type { SkillCaller } from '../../src/store/skill.service';
 import {
   defaultEnvironmentId,
@@ -67,6 +76,36 @@ async function workspaceFile(projectId: string, ...segments: string[]): Promise<
 async function createProject(agentId: string): Promise<string> {
   const project = await harness.projects.create({ agentId }, tenantId, { createdBy: userId });
   return project.id;
+}
+
+async function createTestProject(agentId: string): Promise<string> {
+  const project = await harness.projects.create({ agentId }, tenantId, { createdBy: userId, kind: TEST_PROJECT_KIND });
+  return project.id;
+}
+
+async function productionEnvironmentId(): Promise<string> {
+  const [row] = await db
+    .select({ id: environments.id })
+    .from(environments)
+    .where(
+      and(eq(environments.tenantId, tenantId), eq(environments.isDefault, false), eq(environments.isProtected, true))
+    );
+  return row.id;
+}
+
+async function deliveredSkillNames(projectId: string): Promise<string[]> {
+  const rows = await db
+    .select({ name: projectSkillDeliveries.skillName })
+    .from(projectSkillDeliveries)
+    .where(eq(projectSkillDeliveries.projectEnvironmentId, projectId));
+  return rows.map((row) => row.name);
+}
+
+async function writeProfile(agentId: string, environmentId: string, promptBody: string): Promise<void> {
+  await db
+    .insert(agentProfiles)
+    .values({ id: randomUUID(), agentId, environmentId, promptBody, model: 'openai/gpt-5.6-sol' })
+    .onConflictDoUpdate({ target: [agentProfiles.agentId, agentProfiles.environmentId], set: { promptBody } });
 }
 
 describe('a Project created from a Custom Agent', () => {
@@ -141,11 +180,89 @@ describe('a Project created from a Built-in Agent', () => {
     });
   });
 
+  it('delivers an Organization pin on a shared Skill the package leaves out', async () => {
+    const agentId = await ensureBuiltInAgent('makara-app-builder');
+    const environmentId = await defaultEnvironmentId(tenantId);
+    await db
+      .insert(agentProfiles)
+      .values({ id: randomUUID(), agentId, environmentId })
+      .onConflictDoNothing({ target: [agentProfiles.agentId, agentProfiles.environmentId] });
+    const webApp = await ensureBuiltInSkill('web-app');
+    await pin(agentId, environmentId, webApp);
+
+    const projectId = await createProject(agentId);
+
+    const delivered = await db
+      .select({ name: projectSkillDeliveries.skillName })
+      .from(projectSkillDeliveries)
+      .where(eq(projectSkillDeliveries.projectEnvironmentId, projectId));
+    expect(delivered.map((row) => row.name)).toContain('web-app');
+  });
+
   it('runs an imported Project under the slug its export carried', async () => {
     const agentId = await ensureBuiltInAgent(DEFAULT_AGENT_NAME);
     const projectId = await createProject(agentId);
     await db.update(projects).set({ importedAgent: 'acme-support' }).where(eq(projects.id, projectId));
 
     expect(await harness.delivery.runtimeAgentSlugFor(projectId)).toBe('acme-support');
+  });
+});
+
+describe('a Test Project', () => {
+  let agent: SeededAgent;
+  let developmentId: string;
+  let productionId: string;
+
+  beforeAll(async () => {
+    agent = await seedLiveAgent(tenantId, userId);
+    developmentId = await defaultEnvironmentId(tenantId);
+    productionId = await productionEnvironmentId();
+    await writeProfile(agent.id, developmentId, 'Development draft.');
+    await writeProfile(agent.id, productionId, 'Production release.');
+    await pin(agent.id, developmentId, await seedSkill(`draft-${randomUUID().slice(0, 8)}`, '# Draft\n'));
+    await db
+      .update(agentSettings)
+      .set({ defaultEnvironmentId: productionId })
+      .where(eq(agentSettings.agentId, agent.id));
+  });
+
+  it('reads Development while an ordinary Project reads the Default environment', async () => {
+    const ordinaryId = await createProject(agent.id);
+    const testId = await createTestProject(agent.id);
+
+    expect(await workspaceFile(ordinaryId, `.opencode/agents/${agent.name}.md`)).toContain('Production release.');
+    expect(await workspaceFile(testId, `.opencode/agents/${agent.name}.md`)).toContain('Development draft.');
+  });
+
+  it('carries the Skills pinned on Development, not on the Default environment', async () => {
+    const testId = await createTestProject(agent.id);
+    const ordinaryId = await createProject(agent.id);
+
+    expect((await deliveredSkillNames(testId)).some((name) => name.startsWith('draft-'))).toBe(true);
+    expect(await deliveredSkillNames(ordinaryId)).toEqual([]);
+  });
+});
+
+describe('a new Custom Agent with no Production Profile', () => {
+  let agentId: string;
+  let agentName: string;
+
+  beforeAll(async () => {
+    await ensureBuiltInSkill('platform');
+    const author: AgentCaller = { tenantId, userId, canManageAgents: true };
+    const created = await harness.agents.create(author, { displayName: `Fresh ${randomUUID().slice(0, 8)}` });
+    agentId = created.id;
+    agentName = created.name;
+    await db.update(agentProfiles).set({ promptBody: 'Freshly saved.' }).where(eq(agentProfiles.agentId, agentId));
+  });
+
+  it('creates its Test Project from Development', async () => {
+    const testId = await createTestProject(agentId);
+
+    expect(await workspaceFile(testId, `.opencode/agents/${agentName}.md`)).toContain('Freshly saved.');
+  });
+
+  it('refuses an ordinary Project until its first Publish', async () => {
+    await expect(createProject(agentId)).rejects.toThrow(/not found/);
   });
 });

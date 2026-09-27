@@ -36,5 +36,5 @@ kind: operations
 - `grep -rl '0060' docs/ --include='*.md'` names exactly one page's frontmatter, and the same for every ADR of this effort; no term appears in two pages' `terms`.
 - `GET /api/v1/skills?filter=built_in` returns the image's Skills, `platform` among them, on the deployed environment — not `{"items":[]}`.
 - From inside a Builder chat's pod, `sh /workspace/scripts/api.sh call GET /me` answers with the chat's creator, `source: gateway-key` and the chat's `builderSubject`. Backend health does not cover this: the pod reaches a different Service.
-- A Builder chat and its test Project are absent from `GET /api/v1/projects`, from the sidebar and from every workspace list, while `GET /projects/{id}` answers for whoever may see the chat's Skill or Agent.
+- A Builder chat and its Test Project are absent from `GET /api/v1/projects`, from the sidebar and from every workspace list, while `GET /projects/{id}` answers for whoever may see the chat's Skill or Agent.
 - Adding a Skill to a Built-in Agent in the Store reaches a running Project's pod within seconds, with the pod's UID and restart count unchanged.

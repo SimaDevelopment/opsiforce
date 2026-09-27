@@ -13,6 +13,7 @@ import {
   AgentSkillPathSchema,
   CreateAgentSchema,
   SetAgentSkillSchema,
+  TemplateSaveSchema,
   UpdateAgentProfileSchema,
   UpdateAgentSchema,
   type AgentDetailDto,
@@ -23,6 +24,7 @@ import {
   type AgentSkillPath,
   type CreateAgent,
   type SetAgentSkill,
+  type TemplateSaveDto,
   type UpdateAgent,
   type UpdateAgentProfile,
 } from './agents.schema';
@@ -113,6 +115,29 @@ export class AgentsController {
     @Body({ schema: UpdateAgentProfileSchema }) body: UpdateAgentProfile
   ): Promise<AgentDetailDto> {
     return this.agents.updateProfile(caller, path.id, body);
+  }
+
+  @Put(':id/template')
+  @AllowsGatewayCaller()
+  @ApiOperation({
+    summary: 'Save the Development Template',
+    description:
+      "Makes the Agent's Development Template an exact copy of the `template/` folder at the root of the calling Builder chat's workspace. There is no body: the folder is the input. A file deleted from `template/` leaves the Template, and a missing or empty `template/` removes it (`hash: null`). Saving the same files again gives the same `hash`. There is no size cap.\n\nOnly the Agent's own Builder chat may call it. A person, another chat and a Test Project are refused.\n\nThe save refuses symlinks, `app/opsiforce.env.json`, `app/app.meta.json` and `.env*` files other than `*.example` with 422, one `errors[]` item per path (`file`, `detail`), and saves nothing. It leaves out, and lists under `skipped`, what a Project must not start with: `AGENTS.md` at any depth, a root `opencode.json`/`opencode.jsonc`, `.claude/` and `.agents/`, platform folders (`.opencode/`, `.opsiforce/`, `.xdg/`, `.git/`), installed dependencies and package-manager state, any `data/`, `.cache/`, `.config/`, `.bun/`, `user_uploaded_files/`, `generated_files/`, and whatever the Template's own `.gitignore` files exclude. Key-like strings are listed under `warnings` and saved anyway. File modes are kept. When `template/` changes while it is being copied, the answer is 409 and nothing is saved.\n\n**Use it for** the save step of the authoring loop, after checking `template/` works. Read the new hash back per Environment on `GET /agents/{id}`.",
+  })
+  @PublicResponse(200, TemplateSaveSchema)
+  @PublicApiErrors(
+    'permission-denied',
+    'not-found',
+    'not-publishable',
+    'forbidden',
+    'template-refused',
+    'template-changed'
+  )
+  saveTemplate(
+    @Caller() caller: Caller,
+    @Param({ schema: AgentPathSchema }) path: AgentPath
+  ): Promise<TemplateSaveDto> {
+    return this.agents.saveTemplate(caller, path.id);
   }
 
   @Get(':id/skills')

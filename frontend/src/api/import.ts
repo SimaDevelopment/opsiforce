@@ -75,17 +75,39 @@ export class ImportUploadError extends Error implements ImportUploadFailure {
 const CHUNK_BACKOFF_MS = [1000, 3000, 5000, 10000, 15000, 20000];
 const MAX_CHUNK_ATTEMPTS = CHUNK_BACKOFF_MS.length + 1;
 
-export interface ImportUploadRun extends FinalizeImportParams {
+export interface ImportChunksRun {
   file: File;
+  uploadId: string;
   chunkSize: number;
   startIndex: number;
   signal: AbortSignal;
   onProgress: (bytesSent: number) => void;
   onChunkConfirmed: (nextIndex: number) => void;
+}
+
+export interface ImportUploadRun extends FinalizeImportParams, ImportChunksRun {
   onFinalizing: () => void;
 }
 
 export async function runImportUpload(run: ImportUploadRun): Promise<StartImportResult> {
+  await uploadImportChunks(run);
+
+  run.onFinalizing();
+  try {
+    return await finalizeProjectImport({
+      uploadId: run.uploadId,
+      workspaceId: run.workspaceId,
+      folderId: run.folderId,
+      title: run.title,
+    });
+  } catch (err) {
+    throw finalizeFailure(
+      err instanceof ApiError ? err : new ApiError(0, err instanceof Error ? err.message : 'The import failed.')
+    );
+  }
+}
+
+export async function uploadImportChunks(run: ImportChunksRun): Promise<void> {
   const total = run.file.size;
   const chunkCount = Math.ceil(total / run.chunkSize);
   let sentBytes = Math.min(run.startIndex * run.chunkSize, total);
@@ -106,20 +128,6 @@ export async function runImportUpload(run: ImportUploadRun): Promise<StartImport
     sentBytes = base + chunk.size;
     run.onProgress(sentBytes);
     run.onChunkConfirmed(index + 1);
-  }
-
-  run.onFinalizing();
-  try {
-    return await finalizeProjectImport({
-      uploadId: run.uploadId,
-      workspaceId: run.workspaceId,
-      folderId: run.folderId,
-      title: run.title,
-    });
-  } catch (err) {
-    throw finalizeFailure(
-      err instanceof ApiError ? err : new ApiError(0, err instanceof Error ? err.message : 'The import failed.')
-    );
   }
 }
 

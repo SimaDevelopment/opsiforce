@@ -1,9 +1,15 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { composeSkills, planCompose, sharedSkillsForPackage } from "./compose-skills.mjs"
+import {
+  CUSTOM_PACKAGE_SHARED_SKILLS,
+  PACKAGE_SHARED_SKILL_EXCLUSIONS,
+  composeSkills,
+  planCompose,
+  sharedSkillsForPackage,
+} from "./compose-skills.mjs"
 
 const shared = ["agent-browser", "dates", "llm-api", "platform", "sqlite", "web-app"]
 
@@ -16,8 +22,18 @@ describe("sharedSkillsForPackage", () => {
     assert.deepEqual(sharedSkillsForPackage("makara-app-builder", shared), ["agent-browser", "llm-api", "platform", "sqlite"])
   })
 
+  it("gives the Skill & Agent Builder only platform, web-app and agent-browser from the shared pool", () => {
+    assert.deepEqual(sharedSkillsForPackage("skill-agent-builder", shared), ["agent-browser", "platform", "web-app"])
+  })
+
   it("gives the custom package the platform skill and nothing else", () => {
     assert.deepEqual(sharedSkillsForPackage("custom", shared), ["platform"])
+  })
+
+  it("reads its rules from package-skills.json, the file the backend's Store and delivery read too", async () => {
+    const rules = JSON.parse(await readFile(new URL("../package-skills.json", import.meta.url), "utf8"))
+    assert.deepEqual(PACKAGE_SHARED_SKILL_EXCLUSIONS, rules.sharedSkillExclusions)
+    assert.deepEqual(CUSTOM_PACKAGE_SHARED_SKILLS, rules.customPackageSharedSkills)
   })
 })
 

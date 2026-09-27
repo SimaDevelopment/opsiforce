@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -10,6 +11,7 @@ import {
   planSkills,
   provisionWorkspace,
   reconcileContent,
+  withPlatformIgnores,
 } from "./agent-workspace-migrate.mjs"
 
 const IMAGE_CONFIG = {
@@ -489,4 +491,121 @@ test("a custom package skips a colliding skill it does not own and never adopts 
   assert.equal(await readFile(path.join(context.skillsDir, "charts", "SKILL.md"), "utf8"), "# snapshot wins\n")
   assert.equal(await readFile(path.join(context.skillsDir, "acme", "SKILL.md"), "utf8"), "# acme\n")
   assert.deepEqual((await readLedger(context)).ownedSkills, [])
+})
+
+function git(workspace, ...args) {
+  return execFileSync("git", args, { cwd: workspace, encoding: "utf8" })
+}
+
+function commitSubjects(workspace) {
+  return git(workspace, "log", "--format=%s").trim().split("\n")
+}
+
+function committedPaths(workspace) {
+  return git(workspace, "ls-files").trim().split("\n").filter(Boolean).sort()
+}
+
+const PLATFORM_LINES = [
+  ".config/",
+  ".cache/",
+  ".bun/",
+  ".opencode/",
+  ".opsiforce/",
+  ".xdg/",
+  "node_modules/",
+  "data/",
+  "**/.yarn/cache",
+  "**/.yarn/unplugged",
+  "**/.yarn/build-state.yml",
+  "**/.yarn/install-state.gz",
+  "**/.yarn/sdks",
+  "**/.pnp.*",
+]
+
+async function layCustomTemplate(workspace, files) {
+  for (const [relative, contents] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(workspace, relative)), { recursive: true })
+    await writeFile(path.join(workspace, relative), contents)
+  }
+}
+
+test("a custom Project whose Template was laid commits it as Initial template", async (t) => {
+  const roots = await makeRoots({ packages: ["custom"], skills: { custom: [] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  await layCustomTemplate(roots.workspace, { "README.md": "# Acme\n", "reference/brand.md": "brand\n" })
+  const context = contextFor(roots, "custom")
+  await provisionWorkspace(context, summaryFor(context))
+
+  assert.deepEqual(commitSubjects(roots.workspace), ["Initial template"])
+  assert.deepEqual(committedPaths(roots.workspace), [".gitignore", "README.md", "reference/brand.md"])
+  assert.deepEqual(await readdir(path.join(roots.workspace, "app")), [])
+})
+
+test("a custom Project with nothing but platform folders commits Initial workspace", async (t) => {
+  const roots = await makeRoots({ packages: ["custom"], skills: { custom: [] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  await mkdir(path.join(roots.workspace, ".xdg", "code-server"), { recursive: true })
+  const context = contextFor(roots, "custom")
+  await provisionWorkspace(context, summaryFor(context))
+
+  assert.deepEqual(commitSubjects(roots.workspace), ["Initial workspace"])
+  assert.deepEqual(committedPaths(roots.workspace), [".gitignore"])
+})
+
+test("a Template that ships app/ keeps it and no package template is laid over it", async (t) => {
+  const roots = await makeRoots({ packages: ["custom"], skills: { custom: [] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  await layCustomTemplate(roots.workspace, { "app/startup.sh": "#!/bin/sh\necho acme\n" })
+  const context = contextFor(roots, "custom")
+  await provisionWorkspace(context, summaryFor(context))
+
+  assert.equal(await readFile(path.join(roots.workspace, "app", "startup.sh"), "utf8"), "#!/bin/sh\necho acme\n")
+  assert.deepEqual(commitSubjects(roots.workspace), ["Initial template"])
+})
+
+test("a Template's root .gitignore keeps its lines and gains the missing platform ones under # platform", async (t) => {
+  const roots = await makeRoots({ packages: ["custom"], skills: { custom: [] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  await layCustomTemplate(roots.workspace, {
+    ".gitignore": "dist/\nnode_modules/\n",
+    "README.md": "# Acme\n",
+    "dist/bundle.js": "built\n",
+    "data/app.db": "rows\n",
+  })
+  const context = contextFor(roots, "custom")
+  await provisionWorkspace(context, summaryFor(context))
+
+  const gitignore = await readFile(path.join(roots.workspace, ".gitignore"), "utf8")
+  const missing = PLATFORM_LINES.filter((line) => line !== "node_modules/")
+  assert.equal(gitignore, `dist/\nnode_modules/\n# platform\n${missing.join("\n")}\n`)
+  assert.deepEqual(committedPaths(roots.workspace), [".gitignore", "README.md"])
+})
+
+test("appending the platform lines again adds nothing", () => {
+  const once = withPlatformIgnores("dist/")
+  assert.equal(once, `dist/\n# platform\n${PLATFORM_LINES.join("\n")}\n`)
+  assert.equal(withPlatformIgnores(once), once)
+  const complete = `${PLATFORM_LINES.join("\n")}\n`
+  assert.equal(withPlatformIgnores(complete), complete)
+})
+
+test("a platform line the image adds later lands under the existing marker, once", () => {
+  const older = `dist/\n# platform\n${PLATFORM_LINES.slice(1).join("\n")}\n`
+  const next = withPlatformIgnores(older)
+  assert.equal(next, `${older}${PLATFORM_LINES[0]}\n`)
+  assert.equal(withPlatformIgnores(next), next)
+})
+
+test("a Built-in lay is unchanged: the package template, the platform .gitignore and Initial template", async (t) => {
+  const roots = await makeRoots()
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  const context = contextFor(roots, "app-builder")
+  await provisionWorkspace(context, summaryFor(context))
+
+  assert.equal(
+    await readFile(path.join(roots.workspace, ".gitignore"), "utf8"),
+    `${PLATFORM_LINES.join("\n")}\n`
+  )
+  assert.deepEqual(commitSubjects(roots.workspace), ["Initial template"])
+  assert.deepEqual(committedPaths(roots.workspace), [".gitignore", "app/startup.sh"])
 })

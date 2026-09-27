@@ -2,15 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { agents, folders, workspaces } from '../../../db/schema';
-import { liveAgentsWhere } from '../../agent/agent-visibility';
+import { projectCreatableAgentsWhere } from '../../agent/agent-visibility';
+import type { ProjectKind } from '../../project/project.types';
 
 @Injectable()
 export class ProjectPlacementRepository {
-  async agentIsLive(agentId: string, tenantId: string, userId: string): Promise<boolean> {
+  async agentIsLive(agentId: string, tenantId: string, userId: string, kind: ProjectKind | null): Promise<boolean> {
     const [row] = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.id, agentId), liveAgentsWhere(tenantId, userId)))
+      .where(and(eq(agents.id, agentId), projectCreatableAgentsWhere(tenantId, userId, kind)))
       .limit(1);
     return row !== undefined;
   }

@@ -13,6 +13,7 @@ import {
   STAGING_DIR,
   type LedgerFile,
 } from './delivery.types';
+import { WORKSPACE_GITIGNORE, withPlatformIgnores } from './platform-ignores';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -53,6 +54,13 @@ export class WorkspaceWriter {
 
   async removeSkill(directory: string, name: string): Promise<void> {
     await rm(path.join(this.root(directory), SKILLS_DIR, name), { recursive: true, force: true });
+  }
+
+  async keepPlatformIgnores(directory: string): Promise<void> {
+    const file = path.join(this.root(directory), WORKSPACE_GITIGNORE);
+    const current = await readFile(file, 'utf8');
+    const merged = withPlatformIgnores(current);
+    if (merged !== current) await writeTextAtomic(file, merged);
   }
 
   async listSkillNames(directory: string): Promise<string[]> {

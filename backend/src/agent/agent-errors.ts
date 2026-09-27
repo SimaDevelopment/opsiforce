@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 
 export type ModelPart = 'provider' | 'model' | 'variant';
 
@@ -38,5 +38,26 @@ export function environmentInUse(agents: { id: string; displayName: string }[]):
     code: 'environment_in_use',
     message: 'The environment is still referenced by an agent',
     agents,
+  });
+}
+
+export function developmentNotDefault(): BadRequestException {
+  return new BadRequestException({
+    code: 'development_not_default',
+    message: 'Development holds unpublished work, so new projects cannot start from it. Pick another environment.',
+  });
+}
+
+export function notDuplicable(label: string): BadRequestException {
+  return new BadRequestException({
+    code: 'not_duplicable',
+    message: `${label} authors Skills and Agents only inside a Builder chat, so it can't be duplicated`,
+  });
+}
+
+export function notExportable(label: string): BadRequestException {
+  return new BadRequestException({
+    code: 'not_exportable',
+    message: `${label} is a Built-in Agent, so it can't be exported; duplicate it and export the copy`,
   });
 }

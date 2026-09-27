@@ -89,27 +89,36 @@ export class BuilderChatService {
     const project = await this.projects.create(
       { title: `Builder: ${subject.displayName ?? subject.name}`, agentId },
       caller.tenantId,
-      { createdBy: caller.userId, kind: CHAT_KIND_OF[subject.type] }
+      {
+        createdBy: caller.userId,
+        kind: CHAT_KIND_OF[subject.type],
+        builderSubjectAgentId: subject.type === 'agent' ? subject.id : null,
+      }
     );
     if (await this.repository.claim(target, project.id)) {
       return this.summarize(await this.requireChatRow(caller.tenantId, project.id), subject);
     }
 
-    await this.projects.remove(project.id, caller.tenantId);
+    await this.projects.discardHalfCreatedProject(project.id);
     const winner = await this.existingChat(caller.tenantId, await this.requireEditableSubject(caller, target));
     if (!winner) throw new ConflictException('The Builder chat could not be opened; try again');
     return this.summarize(winner, subject);
   }
 
-  /** ADR-0063's one-live-per-chat rule, applied by the public API before the successor is made. */
-  async deleteTestProjectsOf(tenantId: string, chatId: string): Promise<void> {
-    for (const row of await this.repository.testProjectsOf(chatId)) {
-      await this.projects.remove(row.id, tenantId);
-    }
+  /** The chat's one Test Project; null when `chatId` is not a Builder chat or has none yet. */
+  async testProjectOf(tenantId: string, chatId: string): Promise<{ id: string } | null> {
+    const chat = await this.repository.findChat(tenantId, chatId);
+    if (!chat) return null;
+    const [test] = await this.repository.testProjectsOf(chat.id);
+    return test ? { id: test.id } : null;
   }
 
   async findChatRow(tenantId: string, chatId: string): Promise<ChatRow | null> {
     return this.repository.findChat(tenantId, chatId);
+  }
+
+  async subjectRowOf(chatId: string): Promise<SubjectRow | null> {
+    return this.repository.subjectOf(chatId);
   }
 
   async subjectOfChat(tenantId: string, userId: string, chatId: string): Promise<BuilderSubject | null> {

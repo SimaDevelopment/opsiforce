@@ -30,6 +30,10 @@ export const ApiErrorSchema = z
       .describe('Warnings that did not block the request, recorded alongside it'),
     organizations: z.array(OrganizationRefSchema).optional(),
     permission: z.string().optional(),
+    testProjectId: z
+      .string()
+      .optional()
+      .describe("With `test-project-exists`: the id of the chat's one Test Project, to refresh instead of creating"),
   })
   .meta({ id: 'ApiError' });
 

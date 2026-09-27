@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [App, App Details]
-adrs: [0010, 0016, 0039]
+adrs: [0010, 0016]
 ---
 
 # App
@@ -11,10 +11,10 @@ adrs: [0010, 0016, 0039]
 ## How it works
 
 - Every [ProjectEnvironment](../../CONTEXT.md) runs its own [App](../../CONTEXT.md) with its own [App Details](../../CONTEXT.md), so one [Project](../../CONTEXT.md) groups several Apps ([ADR-0016](../adr/0016-app-details-are-per-environment.md)); the `project_app` row is keyed by environment and each environment writes only its own row.
-- Nothing designates one App to stand for the Project: the catalog pin is retired ([ADR-0039](../adr/0039-project-app-pin-retired.md)) and each App is reached directly at its environment's URL ([Environments](environments.md)).
+- Nothing designates one App to stand for the Project: each App is reached directly at its environment's URL ([Environments](environments.md)).
 - The App's source of identity is `app.meta.json` at the project root, holding name and description only; the platform reads that file directly ([App Readiness](app-readiness.md)), and the agent template additionally serves it at `/api/app-meta` for its own tab title.
 - At [Go-live](../../CONTEXT.md) the pod pushes the App's state to the backend, which upserts that environment's row and notifies the open workspace over SSE so the app pane appears ([App Readiness](app-readiness.md)).
-- Humans re-curate name and description against the [Active environment](../../CONTEXT.md): the backend rewrites that environment's `app.meta.json` atomically and mirrors the values into its row, both or neither, then publishes an SSE event.
+- Humans re-curate name and description against the [Active environment](../../CONTEXT.md): the backend rewrites that environment's `app/app.meta.json` atomically, then mirrors the values into its row and publishes an SSE event; an environment with no detected App is refused.
 - The rule is latest writer wins: the agent may rewrite the file later, and is instructed to carry an existing name forward verbatim unless asked to rename.
 - The App reads its own identity at runtime: the template frontend queries `/api/app-meta` at startup and sets the tab title, and the favicon is a neutral placeholder the agent overwrites at Go-live ([ADR-0010](../adr/0010-app-identity-read-at-runtime.md)).
 - Gated by `can_edit_app_details` ([Permissions](../organization/permissions.md)).

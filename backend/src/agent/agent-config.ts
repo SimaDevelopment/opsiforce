@@ -68,6 +68,12 @@ export function registryDefaultModel(registry: AgentRegistry = readMergedAgentRe
   };
 }
 
+/** The registry default as a profile stores it, with no variant as null. */
+export function defaultProfileModel(): { model: string; variant: string | null } {
+  const fallback = registryDefaultModel();
+  return { model: fallback.model, variant: fallback.variant ?? null };
+}
+
 export function agentDeclaresPlatformApi(slug: string): boolean {
   return readMergedAgentRegistry().agents[slug]?.platformApi === true;
 }

@@ -30,6 +30,6 @@ import { WorkspaceWriter } from './workspace-writer';
     SkillDeliveryService,
     WorkspaceWriter,
   ],
-  exports: [DeliveryService, SkillDeliveryRepository, SkillDeliveryService, WorkspaceWriter],
+  exports: [DeliveryService, PodReloadClient, SkillDeliveryRepository, SkillDeliveryService, WorkspaceWriter],
 })
 export class DeliveryModule {}

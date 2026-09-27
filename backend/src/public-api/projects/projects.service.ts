@@ -49,8 +49,9 @@ export class PublicProjectsService {
 
   async create(caller: Caller, body: CreateProject): Promise<ProjectDto> {
     const chat = body.kind === undefined ? null : await this.requireCallingBuilderChat(caller);
+    if (chat) await this.requireChatMayTest(chat, body.agentId);
     const placement = await this.placement.resolve(caller, body);
-    if (chat) await this.builderChats.deleteTestProjectsOf(caller.organization.id, chat.id);
+    if (chat) await this.refuseSecondTestProject(caller, chat.id);
 
     const created = await this.projects.create(
       { title: body.title, description: body.description, timezone: body.timezone, agentId: body.agentId },
@@ -63,10 +64,44 @@ export class PublicProjectsService {
       }
     );
 
+    if (chat) await this.keepOnlyFirstTestProject(caller, chat.id, created.id);
+
     const row = await this.repository.findById(created.id);
     if (!row) throw new InternalServerErrorException(`Project ${created.id} vanished right after creation`);
     const [dto] = await this.toDtos([row]);
     return dto;
+  }
+
+  async updateTest(caller: Caller, projectId: string): Promise<void> {
+    await this.requireOwnedTestProject(caller, projectId);
+    await this.projects.updateTestProject(projectId);
+  }
+
+  async resetTest(caller: Caller, projectId: string): Promise<void> {
+    const project = await this.requireOwnedTestProject(caller, projectId);
+    if (project.disabled) throw Errors.environmentDisabled();
+    await this.projects.resetTestProject(projectId);
+  }
+
+  private async requireOwnedTestProject(caller: Caller, projectId: string): Promise<ProjectRow> {
+    const project = await this.requireVisible(caller, projectId);
+    const chatId = chatProjectIdOf(caller);
+    if (project.kind !== TEST_PROJECT_KIND || chatId === null || project.createdByProjectId !== chatId) {
+      throw Errors.notTestProjectOwner();
+    }
+    return project;
+  }
+
+  private async refuseSecondTestProject(caller: Caller, chatId: string): Promise<void> {
+    const existing = await this.builderChats.testProjectOf(caller.organization.id, chatId);
+    if (existing) throw Errors.testProjectExists(existing.id);
+  }
+
+  private async keepOnlyFirstTestProject(caller: Caller, chatId: string, createdId: string): Promise<void> {
+    const first = await this.builderChats.testProjectOf(caller.organization.id, chatId);
+    if (!first || first.id === createdId) return;
+    await this.projects.discardHalfCreatedProject(createdId);
+    throw Errors.testProjectExists(first.id);
   }
 
   async connect(
@@ -114,6 +149,20 @@ export class PublicProjectsService {
       ]);
     }
     return chat;
+  }
+
+  /** An Agent chat tests only its own subject; a Skill chat may test its Skill on any Agent. */
+  private async requireChatMayTest(chat: ChatRow, agentId: string): Promise<void> {
+    if (chat.kind !== 'agent_builder_chat') return;
+    const subject = await this.builderChats.subjectRowOf(chat.id);
+    if (subject?.type === 'agent' && subject.id === agentId) return;
+    throw Errors.invalidReference([
+      {
+        detail: "An Agent chat's test Project runs only on the chat's own Agent",
+        pointer: '#/agentId',
+        in: 'body',
+      },
+    ]);
   }
 
   async restart(caller: Caller, projectId: string): Promise<void> {

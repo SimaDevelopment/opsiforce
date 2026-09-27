@@ -1,7 +1,9 @@
 # Every gate rule
 
 These are the findings `scripts/validate-skill.mjs`, `POST /skills`, `POST /skills/{id}/versions` and
-`POST /skills/validate` answer. Each finding carries `rule`, `message`, `file` and `line`; the `rule` id is stable and safe to branch on.
+`POST /skills/validate` answer. The local script answers every one when it runs with `--name`, except
+two that need the Organization's names: `name_reserved` and 409 `name-unavailable` come only from the
+API. Each finding carries `rule`, `message`, `file` and `line`; the `rule` id is stable and safe to branch on.
 
 ## Limits
 

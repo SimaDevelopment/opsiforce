@@ -5,6 +5,7 @@ import {
   usePlatformStorage,
   type PlatformStorageBuckets,
   type PlatformStorageProject,
+  type PlatformStorageTemplates,
   type PlatformStorageTenant,
   type PlatformStorageView,
 } from '~/api/platform-storage';
@@ -27,6 +28,7 @@ import {
   Clock,
   Database,
   Download,
+  Files,
   FolderKanban,
   Inbox,
   Layers,
@@ -58,6 +60,10 @@ function tenantColor(index: number): string {
   return TENANT_SEGMENT_COLORS[index % TENANT_SEGMENT_COLORS.length];
 }
 
+function agentCount(count: number): string {
+  return `${count} ${count === 1 ? 'agent' : 'agents'}`;
+}
+
 function formatSnapshotClock(iso: string): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '—';
@@ -87,6 +93,13 @@ function bucketRows(buckets: PlatformStorageBuckets): BucketRow[] {
       error: buckets.orphaned.error,
       detail: `${buckets.orphaned.count} ${buckets.orphaned.count === 1 ? 'directory' : 'directories'}`,
       icon: Layers,
+    },
+    {
+      label: 'Agent Templates (no organization)',
+      bytes: buckets.templates.bytes,
+      error: buckets.templates.error,
+      detail: agentCount(buckets.templates.count),
+      icon: Files,
     },
     { label: 'Exports', bytes: buckets.exports.bytes, error: buckets.exports.error, icon: Download },
     { label: 'Imports', bytes: buckets.imports.bytes, error: buckets.imports.error, icon: Upload },
@@ -307,6 +320,11 @@ function RollupTable(props: { snapshot: PlatformStorageView }) {
                   onToggle={() => tenants.toggle(tenant.id)}
                 />
                 <Show when={tenants.has(tenant.id)}>
+                  <TemplatesRow
+                    templates={tenant.templates}
+                    shareBaseBytes={shareBaseBytes()}
+                    maxBytes={largestTenantBytes()}
+                  />
                   <For each={tenant.projects}>
                     {(project) => (
                       <>
@@ -615,6 +633,33 @@ function ProjectRow(props: {
         <SizeBar bytes={props.project.totalBytes} max={props.maxBytes} />
       </TableCell>
     </TableRow>
+  );
+}
+
+function TemplatesRow(props: { templates: PlatformStorageTemplates; shareBaseBytes: number; maxBytes: number }) {
+  return (
+    <Show when={props.templates.count > 0 || props.templates.error}>
+      <TableRow class="hover:bg-transparent">
+        <TableCell>
+          <div class="flex items-center gap-2 pl-6">
+            <span class="w-3.5 shrink-0" />
+            <Files class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+            <span class="text-sm truncate">Agent Templates</span>
+            <span class="text-xs text-muted-foreground shrink-0">· {agentCount(props.templates.count)}</span>
+            <Show when={props.templates.error}>
+              <MeasurementError label="Some Template folders could not be measured; this total is incomplete." />
+            </Show>
+          </div>
+        </TableCell>
+        <TableCell class="text-right text-sm tabular-nums">{formatBytes(props.templates.bytes)}</TableCell>
+        <TableCell class="text-right text-xs tabular-nums text-muted-foreground">
+          {formatShare(props.templates.bytes, props.shareBaseBytes)}
+        </TableCell>
+        <TableCell>
+          <SizeBar bytes={props.templates.bytes} max={props.maxBytes} />
+        </TableCell>
+      </TableRow>
+    </Show>
   );
 }
 

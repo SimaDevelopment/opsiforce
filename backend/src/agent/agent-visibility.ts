@@ -1,7 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
 import { and, eq, getTableColumns, inArray, isNull, not, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
-import { agentProfiles, agentSettings, agents, tenantDisabledAgents } from '../../db/schema';
+import { agentProfiles, agentSettings, agents, environments, tenantDisabledAgents } from '../../db/schema';
+import { TEST_PROJECT_KIND, type ProjectKind } from '../project/project.types';
 import { readMergedAgentRegistry } from './agent-config';
 
 export const BUILDER_AGENT_SLUG = 'skill-agent-builder';
@@ -68,23 +69,56 @@ export function startableBuiltInAgentsWhere(tenantId: string): SQL | undefined {
   );
 }
 
+export function canDuplicateAgent(agent: AgentRow): boolean {
+  return agent.origin === 'custom' || agent.name !== BUILDER_AGENT_SLUG;
+}
+
 export function canDisableAgent(agent: AgentRow, userId: string): boolean {
   return agent.origin === 'custom' ? canEditAgent(agent, userId) : agent.name !== BUILDER_AGENT_SLUG;
 }
 
 export function liveAgentsWhere(tenantId: string, userId: string | null): SQL | undefined {
+  return startableAgentsWhere(tenantId, userId, customAgentHasDefaultProfile());
+}
+
+/** A Test Project runs on Development, so a Custom Agent needs only a Development Profile (ADR-0063). */
+export function testableAgentsWhere(tenantId: string, userId: string | null): SQL | undefined {
+  return startableAgentsWhere(tenantId, userId, customAgentHasDevelopmentProfile());
+}
+
+export function projectCreatableAgentsWhere(
+  tenantId: string,
+  userId: string | null,
+  kind: ProjectKind | null
+): SQL | undefined {
+  return kind === TEST_PROJECT_KIND ? testableAgentsWhere(tenantId, userId) : liveAgentsWhere(tenantId, userId);
+}
+
+function startableAgentsWhere(tenantId: string, userId: string | null, customProfile: SQL): SQL | undefined {
   const slugs = liveBuiltInSlugs();
   const builtIn = and(eq(agents.origin, 'built_in'), slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`);
-  const custom = and(
-    eq(agents.origin, 'custom'),
-    sql`exists (
+  const custom = and(eq(agents.origin, 'custom'), customProfile);
+  return and(visibleAgentsWhere(tenantId, userId ?? ''), or(builtIn, custom));
+}
+
+function customAgentHasDefaultProfile(): SQL {
+  return sql`exists (
     select 1
     from ${agentSettings}
     inner join ${agentProfiles}
       on ${agentProfiles.agentId} = ${agentSettings.agentId}
      and ${agentProfiles.environmentId} = ${agentSettings.defaultEnvironmentId}
     where ${agentSettings.agentId} = ${agents.id}
-  )`
-  );
-  return and(visibleAgentsWhere(tenantId, userId ?? ''), or(builtIn, custom));
+  )`;
+}
+
+function customAgentHasDevelopmentProfile(): SQL {
+  return sql`exists (
+    select 1
+    from ${agentProfiles}
+    inner join ${environments}
+      on ${environments.id} = ${agentProfiles.environmentId}
+     and ${environments.isDefault}
+    where ${agentProfiles.agentId} = ${agents.id}
+  )`;
 }

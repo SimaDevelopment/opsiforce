@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 /**
- * Turn a skill directory into the two shapes the platform accepts:
+ * Turn a skill directory into the bodies the platform accepts:
  *
  *   node pack-skill.mjs --json scratch/<name> --name <name>   the body POST /skills wants
  *   node pack-skill.mjs --json scratch/<name>                  the body POST /skills/<id>/versions wants
- *   node pack-skill.mjs --skill scratch/<name> out             a `.skill` archive (a zip) for the user
  *
- * `--json` is the one the authoring loop uses; `--skill` exists so an author can download a copy.
- * Neither validates — run validate-skill.mjs first.
+ * It does not validate — run validate-skill.mjs first.
  *
- * The zip is written by hand because the platform's own packer needs `archiver`, which this pod has
+ * `--skill` writes its zip by hand because the platform's own packer needs `archiver`, which this pod has
  * no node_modules for; the round-trip through the platform's unpacker is a test.
  */
 import { deflateRawSync } from "node:zlib"
@@ -136,7 +134,7 @@ function main(argv) {
   const directory = positional[0]
   if (!directory) {
     console.error(
-      "usage: pack-skill.mjs [--json|--skill] <skill-directory> [output-directory] [--name <name>] [--display-name <name>]"
+      "usage: pack-skill.mjs --json <skill-directory> [--name <name>] [--display-name <name>]"
     )
     return 2
   }

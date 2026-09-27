@@ -29,6 +29,8 @@ import { ExternalServiceProvisioningService } from '../external-services';
 import { agentDeclaresPlatformApi, type AgentModelSelection } from '../agent/agent-config';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
 import { DeliveryService } from '../delivery/delivery.service';
+import type { DeliveryPlan } from '../delivery/delivery.types';
+import { PodReloadClient } from '../delivery/pod-reload.client';
 import {
   PROJECT_POOL_QUEUE,
   PROJECT_POOL_TEARDOWN_QUEUE,
@@ -97,7 +99,8 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly configService: ConfigService,
     private readonly agentReconciler: AgentReconcilerService,
-    private readonly deliveryService: DeliveryService
+    private readonly deliveryService: DeliveryService,
+    private readonly podReload: PodReloadClient
   ) {
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
@@ -189,7 +192,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     }
 
     const delivered = await this.deliveryService.deliverAtCreate(reserved.id).then(
-      () => true,
+      (plan) => this.announceToLivePod(plan, livePodIp),
       (err: Error) => {
         this.logger.warn(`Claim ${reserved.id} could not receive its agent files: ${err.message}`);
         return false;
@@ -311,6 +314,25 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       if (target === 0) continue;
       const current = await this.countPoolSlots(agentId);
       if (current < target) await this.enqueueReplenish(agentId);
+    }
+  }
+
+  /** The slot's opencode is already running, and a write from another node raises no file event in its pod. */
+  private async announceToLivePod(plan: DeliveryPlan, podIp: string): Promise<boolean> {
+    if (plan.skills.length === 0) return true;
+    try {
+      await this.podReload.notify(plan.projectEnvironmentId, podIp, ['skills']);
+      await this.podReload.confirmSkills(
+        podIp,
+        plan.skills.map((skill) => skill.name),
+        []
+      );
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        `Claim ${plan.projectEnvironmentId} did not serve its delivered skills: ${(err as Error).message}`
+      );
+      return false;
     }
   }
 

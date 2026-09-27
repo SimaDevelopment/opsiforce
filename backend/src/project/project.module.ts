@@ -91,7 +91,14 @@ import { ExternalServicesModule } from '../external-services';
     ProxyService,
     AppService,
   ],
-  exports: [ProjectService, ProjectAuthService, ProjectFilesService, ProjectImportService, AppReadinessModule],
+  exports: [
+    ProjectService,
+    ProjectAuthService,
+    ProjectFilesService,
+    ProjectImportService,
+    ProjectImportUploadService,
+    AppReadinessModule,
+  ],
 })
 export class ProjectModule implements OnApplicationBootstrap {
   constructor(@InjectQueue(PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE) private readonly importUploadCleanupQueue: Queue) {}

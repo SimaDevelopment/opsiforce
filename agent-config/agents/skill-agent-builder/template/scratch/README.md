@@ -4,16 +4,19 @@ Your drafting space. Nothing here is published, read by the platform, or seen by
 send it through the API.
 
 - One directory per Skill you are drafting, named exactly as the Skill's `name`:
-  `scratch/release-notes/SKILL.md`, `scratch/release-notes/references/tone.md`.
-- One file per Agent prompt you are drafting: `scratch/release-notes-writer.prompt.md`.
-- `scratch/<agent>.expectations.md` — the Agent's test expectations; `agent-authoring` says how to
-  keep them.
-- `scratch/shots/` — screenshots you take of a child's App during a test run, so you can read them.
+  `scratch/<skill>/SKILL.md`, `scratch/<skill>/references/<topic>.md`.
+- `scratch/prompt.md` — the Agent prompt you are drafting.
+- `scratch/expectations.md` — the Agent's test prompts, expectations and `## Fixes` log;
+  `agent-authoring`'s test loop (§The contract) says how to keep them, and
+  `scripts/check-expectations.mjs` checks their shape.
+- `scratch/shots/` — screenshots you take during a test run, and the child's own, copied in by
+  `scripts/evidence.sh`.
+- `scratch/test-project.json` — the chat's Test Project and its Connection, kept by `scripts/tp.sh`.
 
 The loop:
 
 ```sh
-node scripts/validate-skill.mjs scratch/release-notes --name release-notes   # ERRORS and LINTS, offline
-node scripts/pack-skill.mjs --json scratch/release-notes > scratch/body.json
+node scripts/validate-skill.mjs "scratch/$NAME" --name "$NAME"   # ERRORS and LINTS, offline
+node scripts/pack-skill.mjs --json "scratch/$NAME" > scratch/body.json
 sh   scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json      # publish a Version
 ```

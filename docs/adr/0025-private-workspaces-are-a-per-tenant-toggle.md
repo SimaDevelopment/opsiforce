@@ -1,7 +1,5 @@
 # Private workspaces are a per-tenant toggle that hides, not deletes
 
-Status: accepted — implemented
-
 Some tenants don't want the private-workspace concept at all: every user automatically owning an invisible "Personal" workspace fragments their project inventory and doesn't fit organizations where all work is supposed to be shared. The feature is now controlled per tenant by `tenant_settings.private_workspace_enabled` (default `true`, so every existing tenant keeps the behaviour it has), read by `GET /tenants/config` and flipped via `PATCH /tenants/config` under `can_manage_workspaces` from `/settings/workspaces`.
 
 The load-bearing decision is what "off" means for the private workspaces that already exist — migration `0023` backfilled one per (user, tenant), so every tenant has them. **Off means hidden, not deleted.** `ensurePrivateWorkspace` no-ops, workspace listings and `findOne` exclude `type = 'private'`, and project listings exclude projects sitting in a private workspace (via a correlated `NOT EXISTS` against `tenant_settings`, so the check needs no extra round trip). No rows are touched. Flipping the flag back restores every workspace and project exactly as it was, and users who first authenticated while the flag was off are caught up by the same self-healing `ensurePrivateWorkspace` call on their next request.

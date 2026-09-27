@@ -2,8 +2,10 @@ import { For, Show, createMemo, createSignal } from 'solid-js';
 import { Link, useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import {
+  downloadAgentExport,
   useAgent,
   useAgentDelivery,
+  useAgentExportPreview,
   useDeleteAgent,
   useDuplicateAgent,
   useSetAgentDisabled,
@@ -45,6 +47,7 @@ import {
   SectionTitle,
   VisibilityBadge,
 } from '~/components/store/store-list';
+import { ENTRY_SLUG_MAX_LENGTH, EntryNameField, isNameUnavailable } from '~/components/store/entry-name-field';
 import { InlineEdit } from '~/components/store/inline-edit';
 import { OpenBuilderButton } from '~/components/store/open-builder-button';
 import {
@@ -55,6 +58,7 @@ import {
   ChevronRight,
   CirclePlay,
   Copy,
+  Download,
   Files,
   Globe,
   Plus,
@@ -62,6 +66,7 @@ import {
   Trash2,
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
+import { slugify } from '~/lib/app-url';
 import { cn } from '~/lib/cn';
 import { driftText, isPublished } from './agent-drift';
 import { DevelopmentPanel, ReadOnlyPanel } from './agent-profile-panel';
@@ -322,6 +327,7 @@ function AgentHeader(props: {
 
 function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopment: boolean }) {
   const [duplicating, setDuplicating] = createSignal(false);
+  const [exporting, setExporting] = createSignal(false);
   const [widening, setWidening] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
   const setDisabled = useSetAgentDisabled(() => props.agent.id);
@@ -358,9 +364,16 @@ function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopmen
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
-        <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
-          Duplicate
-        </ActionsMenuItem>
+        <Show when={props.agent.duplicable}>
+          <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
+            Duplicate
+          </ActionsMenuItem>
+        </Show>
+        <Show when={props.agent.origin === 'custom'}>
+          <ActionsMenuItem icon={Download} onSelect={() => setExporting(true)}>
+            Export
+          </ActionsMenuItem>
+        </Show>
         <Show when={props.agent.origin === 'custom' && props.agent.visibility === 'private'}>
           <ActionsMenuItem icon={Globe} onSelect={() => setWidening(true)}>
             Make public
@@ -389,6 +402,9 @@ function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopmen
       </ActionsMenu>
 
       <DuplicateAgentDialog agent={props.agent} open={duplicating()} onOpenChange={setDuplicating} />
+      <Show when={exporting()}>
+        <ExportAgentDialog agent={props.agent} open onOpenChange={setExporting} />
+      </Show>
 
       <ConfirmDialog
         open={widening()}
@@ -491,19 +507,29 @@ function DeleteAgentDialog(props: {
 function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const duplicate = useDuplicateAgent(() => props.agent.id);
-  const [displayName, setDisplayName] = createSignal(`${props.agent.displayName ?? props.agent.name} copy`);
+  const sourceName = () => props.agent.displayName ?? props.agent.name;
+  const [displayName, setDisplayName] = createSignal(`${sourceName()} copy`);
   const [error, setError] = createSignal<string | null>(null);
+  const [unavailableSlug, setUnavailableSlug] = createSignal<string | null>(null);
 
-  const save = async () => {
-    const name = displayName().trim();
-    if (!name) return;
+  const slug = () => slugify(displayName().trim(), ENTRY_SLUG_MAX_LENGTH.agent);
+  const unavailable = () => unavailableSlug() === slug();
+  const canSubmit = () => slug().length > 0 && !unavailable() && !duplicate.isPending;
+
+  const save = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (!canSubmit()) return;
     setError(null);
     try {
-      const copy = await duplicate.mutateAsync(name);
+      const copy = await duplicate.mutateAsync(displayName().trim());
       props.onOpenChange(false);
       toast.success(`Created ${copy.displayName ?? copy.name}`);
       void navigate({ to: '/store/agents/$id', params: { id: copy.id } });
     } catch (caught) {
+      if (isNameUnavailable(caught)) {
+        setUnavailableSlug(slug());
+        return;
+      }
       setError(refusal(caught, 'The agent could not be duplicated.'));
     }
   };
@@ -511,40 +537,124 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent>
+        <form onSubmit={(event) => void save(event)}>
+          <DialogHeader>
+            <DialogTitle>Duplicate {sourceName()}</DialogTitle>
+            <DialogDescription>
+              The private copy gets this agent's description, Development prompt, model, skills and Template, but not
+              its Builder chat or test project.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="mt-4">
+            <EntryNameField
+              id="duplicate-agent-name"
+              label="Name"
+              value={displayName()}
+              slug={slug()}
+              unavailable={unavailable()}
+              onInput={(value) => {
+                setDisplayName(value);
+                setError(null);
+              }}
+            />
+            <Show when={error()}>
+              <p class="mt-2 text-xs text-destructive" role="alert">
+                {error()}
+              </p>
+            </Show>
+          </div>
+          <DialogFooter class="mt-4 gap-2 sm:items-center sm:justify-between">
+            <p class="text-xs text-muted-foreground">New projects can pick it after its first publish.</p>
+            <div class="flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => props.onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={!canSubmit()} loading={duplicate.isPending}>
+                Duplicate
+              </Button>
+            </div>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const preview = useAgentExportPreview(
+    () => props.agent.id,
+    () => props.open
+  );
+  const name = () => props.agent.displayName ?? props.agent.name;
+  const hits = () => {
+    const data = preview.data;
+    if (!data) return [];
+    return [
+      ...data.template.map((hit) => ({ where: `Template: ${hit.path}`, reason: hit.reason })),
+      ...data.skills.flatMap((skill) =>
+        skill.hits.map((hit) => ({ where: `Skill ${skill.name}: ${hit.path}`, reason: hit.reason }))
+      ),
+    ];
+  };
+
+  const download = () => {
+    downloadAgentExport(props.agent.id, props.agent.name);
+    props.onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Duplicate {props.agent.displayName ?? props.agent.name}</DialogTitle>
+          <DialogTitle>Export {name()}</DialogTitle>
           <DialogDescription>
-            The copy starts private, with this agent's Development definition and its pinned skills.
+            The file carries this agent's Development prompt, model, skills and Template, to import into another
+            organization or deployment. Its Builder chat and test project stay here.
           </DialogDescription>
         </DialogHeader>
         <div class="mt-4">
-          <label for="duplicate-agent-name" class="mb-1 block text-xs text-muted-foreground">
-            Display name
-          </label>
-          <input
-            id="duplicate-agent-name"
-            name="displayName"
-            type="text"
-            autocomplete="off"
-            value={displayName()}
-            onInput={(event) => {
-              setDisplayName(event.currentTarget.value);
-              setError(null);
-            }}
-            class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          />
-          <Show when={error()}>
-            <p class="mt-2 text-xs text-destructive" role="alert">
-              {error()}
-            </p>
+          <Show
+            when={!preview.isPending}
+            fallback={
+              <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                <Spinner size="sm" /> Checking for key-like strings…
+              </div>
+            }
+          >
+            <Show
+              when={!preview.error}
+              fallback={
+                <p class="text-xs text-destructive" role="alert">
+                  {refusal(preview.error, 'The agent could not be checked for export.')}
+                </p>
+              }
+            >
+              <Show when={hits().length > 0}>
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <div class="flex gap-2 font-medium">
+                    <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>These look like keys or secrets. Check them before you share the file.</span>
+                  </div>
+                  <ul class="mt-2 space-y-1 pl-5">
+                    <For each={hits()}>
+                      {(hit) => (
+                        <li>
+                          <span class="font-mono">{hit.where}</span> — {hit.reason}
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </div>
+              </Show>
+            </Show>
           </Show>
         </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => props.onOpenChange(false)}>
+        <DialogFooter class="mt-4">
+          <Button type="button" variant="outline" size="sm" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" disabled={!displayName().trim() || duplicate.isPending} onClick={() => void save()}>
-            Duplicate
+          <Button size="sm" disabled={preview.isPending || Boolean(preview.error)} onClick={download}>
+            Download
           </Button>
         </DialogFooter>
       </DialogContent>

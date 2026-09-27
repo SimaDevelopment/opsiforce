@@ -1,7 +1,5 @@
 # Request-log body capture streams and tees a bounded prefix; verbosity is a separate per-project policy
 
-Status: accepted
-
 The app-mode runtime proxy captures request/response bodies for its per-project log by **streaming the response to the client while tee-ing only the first N bytes** into the log (a bounded `capturingReader`), and truncates **at capture time**, not at write time. Body capture is gated by a per-Project **logging level** — Off / Metadata / Full — and **Full is the default**, so existing projects are unchanged. We removed the prior branch that ran `io.ReadAll` on any `text/*` or unknown-length response purely to populate the log.
 
 We chose this because the original design buffered whole bodies in memory *solely for logging*. Since `text/event-stream` reports no `Content-Length`, LLM streams were buffered to completion before the client saw a byte — breaking streaming and stacking full in-memory copies under concurrency (the "hundreds of requests in parallel" backup into Bifrost). Tee-ing a bounded prefix fixes the *mechanism*: memory per request is bounded by the byte limit regardless of body size, and streaming is preserved at every level. That **decouples the incident (a buffering bug) from verbosity (a policy knob)** — which is why Full can remain the default (it is now safe) while Metadata/Off exist for projects that want less.

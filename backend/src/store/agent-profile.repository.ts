@@ -35,6 +35,24 @@ export async function developmentEnvironmentId(tenantId: string): Promise<string
   return development.id;
 }
 
+export class NoProductionEnvironment extends Error {
+  constructor(tenantId: string) {
+    super(`Organization ${tenantId} has no Production environment`);
+  }
+}
+
+export async function productionEnvironmentId(tenantId: string): Promise<string> {
+  const [production] = await db
+    .select({ id: environments.id })
+    .from(environments)
+    .where(
+      and(eq(environments.tenantId, tenantId), eq(environments.isProtected, true), eq(environments.isDefault, false))
+    )
+    .limit(1);
+  if (!production) throw new NoProductionEnvironment(tenantId);
+  return production.id;
+}
+
 export async function builtInProfileFor(agentId: string, tenantId: string): Promise<AgentProfileRow> {
   const development = { id: await developmentEnvironmentId(tenantId) };
 

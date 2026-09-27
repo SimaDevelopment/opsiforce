@@ -1,7 +1,5 @@
 # A tenant switch is handled by reacting to the tenant value, not by the setter
 
-Status: accepted — implemented
-
 Switching tenant must leave every tenant-scoped view behind: cancel and reset the query cache, then navigate to `/`. That work now lives in a **single root-level effect on the tenant value** (`createTenantChangeHandler`, called once from `routes/__root.tsx`), not in the `setTenant` setter and not in the tenant selector's `onSelect`.
 
 The current tenant is one `localStorage` key (`tenant`) read by two kinds of consumer: reactive signals (`createTenantState`, one instance per call site, kept in sync by real and synthetic `storage` events — see `lib/persisted-signal.ts`) and direct `localStorage.getItem('tenant')` reads at request time (`api/client.ts`, and the SSE URL builders in `api/projects.ts` and `api/agent-status.ts`). A switch therefore arrives at a given tab through one of **two** paths: the local `setTenant` call, or a cross-tab `storage` event. Hanging the cleanup off the setter covers only the first, which is what produced the bug this ADR fixes: with two tabs open, switching tenant in tab B left tab A on `/projects/$projectId` of the *old* tenant, still streaming that project's status (the `EventSource` URL had `?tenant=<old>` baked in and its effect does not track the tenant), still talking to its pod, and still rendering its preview iframe — while the sidebar, refetched on window focus with the new tenant header, showed the new tenant's projects. Reacting to the value collapses both paths into one.

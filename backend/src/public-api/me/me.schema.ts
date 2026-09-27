@@ -17,13 +17,19 @@ export const MeSchema = z
       .strictObject({
         type: z.enum(['agent', 'skill']),
         id: z.string(),
-        name: z.string().describe('The slug: the Agent\'s, or the `name` every Version of the Skill must carry'),
+        name: z.string().describe("The slug: the Agent's, or the `name` every Version of the Skill must carry"),
         displayName: z.string().nullable(),
         disabled: z.boolean(),
       })
       .nullable()
       .describe(
         'For the gateway key of a Skill & Agent Builder chat: the one Skill or Agent that chat authors. Null for every other caller.'
+      ),
+    builderTestProject: z
+      .strictObject({ id: z.string() })
+      .nullable()
+      .describe(
+        'For the gateway key of a Skill & Agent Builder chat that has created its Test Project: that Project. Null for every other caller, and for a chat that has none yet.'
       ),
   })
   .meta({ id: 'Me' });

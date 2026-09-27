@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
+import type { DbExecutor } from '../common/locks';
 import {
   agentProfiles,
   agentProfileSkills,
@@ -33,6 +34,12 @@ const SKILL_CATALOG_COLUMNS: CatalogColumns = {
 
 export type SkillVersionRow = typeof skillVersions.$inferSelect;
 export type SkillVersionFileRow = typeof skillVersionFiles.$inferSelect;
+
+export interface BuiltInSkillVersion {
+  name: string;
+  skillId: string;
+  skillVersionId: string;
+}
 
 export interface SkillListRow {
   skill: SkillRow;
@@ -171,6 +178,25 @@ export class SkillRepository {
     return row;
   }
 
+  /** The current Version of each named Built-in Skill this deployment ships; a name it doesn't ship is left out. */
+  async builtInLatestVersions(names: string[]): Promise<BuiltInSkillVersion[]> {
+    if (names.length === 0) return [];
+    const rows = await db
+      .select({ name: skills.name, skillId: skills.id, skillVersionId: skills.latestVersionId })
+      .from(skills)
+      .where(and(isNull(skills.tenantId), inArray(skills.name, names), isNotNull(skills.latestVersionId)));
+    return rows.flatMap((row) => (row.skillVersionId ? [{ ...row, skillVersionId: row.skillVersionId }] : []));
+  }
+
+  async versionWithHash(skillId: string, contentHash: string): Promise<string | null> {
+    const [row] = await db
+      .select({ id: skillVersions.id })
+      .from(skillVersions)
+      .where(and(eq(skillVersions.skillId, skillId), eq(skillVersions.contentHash, contentHash)))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   agentsUsing(skillId: string): Promise<{ id: string; displayName: string }[]> {
     return db
       .selectDistinct({ id: agents.id, displayName: sql<string>`coalesce(${agents.displayName}, ${agents.name})` })
@@ -260,21 +286,24 @@ export class SkillRepository {
     return skillId;
   }
 
-  async createSkillWithFirstVersion(input: {
-    tenantId: string;
-    userId: string;
-    name: string;
-    displayName: string | null;
-    description: string | null;
-    tree: SkillTree;
-    contentHash: string;
-    flags: typeof skillVersions.$inferInsert.flags;
-    lints: string[];
-    createdVia: string;
-    sourceRef: string | null;
-  }): Promise<{ skillId: string; version: number }> {
+  async createSkillWithFirstVersion(
+    input: {
+      tenantId: string;
+      userId: string;
+      name: string;
+      displayName: string | null;
+      description: string | null;
+      tree: SkillTree;
+      contentHash: string;
+      flags: typeof skillVersions.$inferInsert.flags;
+      lints: string[];
+      createdVia: string;
+      sourceRef: string | null;
+    },
+    executor: DbExecutor = db
+  ): Promise<{ skillId: string } & MintedVersion> {
     const skillId = crypto.randomUUID();
-    await db.transaction(async (tx) => {
+    const firstVersionId = await executor.transaction(async (tx) => {
       await tx.insert(skills).values({
         id: skillId,
         tenantId: input.tenantId,
@@ -298,22 +327,26 @@ export class SkillRepository {
         tree: input.tree,
       });
       await tx.update(skills).set({ latestVersionId: versionId, updatedAt: new Date() }).where(eq(skills.id, skillId));
+      return versionId;
     });
-    return { skillId, version: 1 };
+    return { skillId, versionId: firstVersionId, version: 1 };
   }
 
-  async mintNextVersion(input: {
-    skillId: string;
-    userId: string;
-    description: string | null;
-    tree: SkillTree;
-    contentHash: string;
-    flags: typeof skillVersions.$inferInsert.flags;
-    lints: string[];
-    createdVia: string;
-    sourceRef: string | null;
-  }): Promise<MintedVersion> {
-    return db.transaction(async (tx) => {
+  async mintNextVersion(
+    input: {
+      skillId: string;
+      userId: string;
+      description: string | null;
+      tree: SkillTree;
+      contentHash: string;
+      flags: typeof skillVersions.$inferInsert.flags;
+      lints: string[];
+      createdVia: string;
+      sourceRef: string | null;
+    },
+    executor: DbExecutor = db
+  ): Promise<MintedVersion> {
+    return executor.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${MINT_LOCK_NAMESPACE}${input.skillId}`}))`);
 
       const [{ highest }] = await tx

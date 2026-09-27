@@ -9,6 +9,7 @@ import { db } from '../../db';
 import { agents, projectAgentUpdates, projectEnvironments, projects } from '../../db/schema';
 import { CUSTOM_AGENT_PACKAGE, type SkillDeliveryOutcome } from '../delivery/delivery.types';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
+import { PodReloadClient, type NotifyTarget } from '../delivery/pod-reload.client';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { ProjectStatus } from '../project/project.types';
@@ -62,7 +63,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     private readonly k8sService: AgentUpdateK8sService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly skillDeliveries: SkillDeliveryService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly podReload: PodReloadClient
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -220,9 +222,11 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
       const succeeded = result.succeeded && summary.status !== 'failed';
 
       if (succeeded) await this.reconcileSkillsInline(env, agent.origin, updateId);
-      await this.recordOutcome(updateId, summary, result.succeeded);
+      const reached = succeeded ? await this.announceToRunningPod(env, summary) : true;
+      const outcome = reached ? summary : { ...summary, requiresPodRecreate: true };
+      await this.recordOutcome(updateId, outcome, result.succeeded);
 
-      if (this.needsDeferredReload(env, summary)) {
+      if (this.needsDeferredReload(env, outcome)) {
         const reload = await this.agentUpdateService.applyPendingReload(updateId);
         if (reload.status === 'pending') await this.agentUpdateService.enqueueReload(updateId, 1);
       }
@@ -293,6 +297,28 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
           ...(keepTargetVersion === undefined ? [] : [ne(projectAgentUpdates.targetVersion, keepTargetVersion)])
         )
       );
+  }
+
+  /** The Job writes from another node, which raises no file event in a running pod; unreached, the pod is recreated once idle. */
+  private async announceToRunningPod(
+    env: ProjectEnvironmentContext,
+    summary: AgentWorkspaceMigrationSummary
+  ): Promise<boolean> {
+    if (!env.podIp || summary.requiresPodRecreate) return true;
+    const { written, removed } = summary.ownedSkills;
+    const skillsChanged = written.length > 0 || removed.length > 0;
+    const targets: NotifyTarget[] = ['agents'];
+    if (summary.configChanged) targets.push('config');
+    if (skillsChanged) targets.push('skills');
+    if (!(await this.podReload.notify(env.id, env.podIp, targets))) return false;
+    if (!skillsChanged) return true;
+    try {
+      await this.podReload.confirmSkills(env.podIp, written, removed);
+      return true;
+    } catch (err) {
+      this.logger.warn(`Environment ${env.id} did not serve the Job's skills: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   private async reconcileSkillsInline(
