@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, rm } from 'node:fs/promises';
+import { chmod, mkdir, rm, statfs } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { HttpException, Injectable } from '@nestjs/common';
+import type yauzl from 'yauzl';
 import { ConfigService } from '@nestjs/config';
 import { hashSkillTree, SkillArchiveError, unpackSkill, type SkillTree } from '../store/gate';
 import { MAX_TREE_BYTES } from '../store/gate/skill-tree';
@@ -15,7 +16,7 @@ import { importsRootPath } from '../project/project-import.types';
 import { EXECUTABLE_FILE_MODE } from '../common/fs';
 import type { DbExecutor } from '../common/locks';
 import {
-  entriesOf,
+  collectEntries,
   entryMode,
   isSymlinkMode,
   openZip,
@@ -49,6 +50,7 @@ import type { AgentCaller } from './agent.types';
 
 const TEMPLATE_PREFIX = `${AGENT_EXPORT_TEMPLATE_DIR}/`;
 const SKILLS_PREFIX = `${AGENT_EXPORT_SKILLS_DIR}/`;
+const FREE_SPACE_RESERVE_BYTES = 512 * 1024 * 1024;
 
 interface ArchiveContents {
   templateDir: string;
@@ -129,7 +131,9 @@ export class AgentImportService {
     await this.resolveName(caller, plan);
     resolveModel(plan);
     for (const skill of manifest.skills) await this.resolveSkill(caller, skill, contents.skillPacks, plan);
-    await this.resolveTemplate(manifest, contents.templateDir, plan);
+    if (!contents.problems.some((problem) => problem.kind === 'template')) {
+      await this.resolveTemplate(manifest, contents.templateDir, plan);
+    }
     return plan;
   }
 
@@ -345,6 +349,9 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
   const { agent, profile, skills: carried, template } = manifest;
   const wellFormed =
     typeof agent?.slug === 'string' &&
+    isOptionalString(agent.displayName) &&
+    isOptionalString(agent.description) &&
+    (agent.platformApi === undefined || typeof agent.platformApi === 'boolean') &&
     typeof profile?.promptBody === 'string' &&
     typeof profile.model === 'string' &&
     (profile.variant === null || typeof profile.variant === 'string') &&
@@ -360,6 +367,18 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
   return manifest as AgentExportManifest;
 }
 
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
+async function fitsOnVolume(root: string, entries: yauzl.Entry[]): Promise<boolean> {
+  const declared = entries
+    .filter((entry) => entry.fileName.startsWith(TEMPLATE_PREFIX))
+    .reduce((total, entry) => total + entry.uncompressedSize, 0);
+  const volume = await statfs(root);
+  return declared <= volume.bavail * volume.bsize - FREE_SPACE_RESERVE_BYTES;
+}
+
 async function extractArchive(archivePath: string, templateDir: string): Promise<ArchiveContents> {
   const contents: ArchiveContents = { templateDir, skillPacks: new Map(), problems: [] };
   const root = resolve(templateDir);
@@ -367,7 +386,15 @@ async function extractArchive(archivePath: string, templateDir: string): Promise
 
   const zip = await openZip(archivePath);
   try {
-    for await (const entry of entriesOf(zip)) {
+    const entries = await collectEntries(zip);
+    const templateFits = await fitsOnVolume(root, entries);
+    if (!templateFits) {
+      contents.problems.push({
+        kind: 'template',
+        message: "The Template unpacks to more than this deployment's storage has room for",
+      });
+    }
+    for (const entry of entries) {
       if (entry.fileName.endsWith('/')) continue;
 
       if (entry.fileName.startsWith(SKILLS_PREFIX) && entry.fileName.endsWith('.zip')) {
@@ -380,7 +407,7 @@ async function extractArchive(archivePath: string, templateDir: string): Promise
         continue;
       }
 
-      if (!entry.fileName.startsWith(TEMPLATE_PREFIX)) continue;
+      if (!templateFits || !entry.fileName.startsWith(TEMPLATE_PREFIX)) continue;
       const relative = entry.fileName.slice(TEMPLATE_PREFIX.length);
       const target = resolve(root, relative);
       const mode = entryMode(entry);

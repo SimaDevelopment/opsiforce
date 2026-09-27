@@ -29,6 +29,17 @@ import { createDomainTestingModule, type DomainTestHarness } from '../support/do
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
 import { manifest, validDescription } from './support/skill-fixtures';
 
+const volume = vi.hoisted(() => ({ freeBytes: null as number | null }));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const statfs = (async (...args: Parameters<typeof actual.statfs>) => {
+    const stats = await actual.statfs(...args);
+    return volume.freeBytes === null ? stats : { ...stats, bavail: volume.freeBytes / Number(stats.bsize) };
+  }) as typeof actual.statfs;
+  return { ...actual, statfs, default: { ...actual, statfs } };
+});
+
 const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? '';
 
 let harness: DomainTestHarness;
@@ -56,6 +67,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  volume.freeBytes = null;
 });
 
 afterAll(async () => {
@@ -486,6 +498,30 @@ describe('refusing an import', () => {
       path: 'AGENTS.md',
       message: expect.stringContaining('template/AGENTS.md'),
     });
+  });
+
+  it('refuses a manifest whose Agent fields have the wrong types as not an Agent export', async () => {
+    const source = await sourceAgent();
+    const archive = await rewrite(await exportOf(source.agent.id), (written) => {
+      (written.agent as unknown as { displayName: number }).displayName = 1;
+    });
+
+    const { status, body } = await refusal(runImport(archive));
+
+    expect(status).toBe(400);
+    expect(body.code).toBe('not_an_agent_export');
+  });
+
+  it('refuses a Template that would not fit in the free storage, writing none of it', async () => {
+    const source = await sourceAgent();
+    volume.freeBytes = 1024 * 1024;
+
+    const { status, body } = await refusal(runImport(await exportOf(source.agent.id), uniqueName('Too big')));
+
+    expect(status).toBe(422);
+    expect(body.problems).toEqual([
+      expect.objectContaining({ kind: 'template', message: expect.stringContaining('room') }),
+    ]);
   });
 
   it('refuses a newer export format, but not an older one', async () => {
