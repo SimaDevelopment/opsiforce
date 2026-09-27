@@ -197,6 +197,12 @@ export class AgentImportService {
       return void refuse(`\`${skill.name}\` doesn't pass the Skill gate: ${gate.errors[0].message}`);
     }
     const normalized = gate.normalizedTree;
+    const contentHash = hashSkillTree(normalized);
+    if (contentHash !== skill.contentHash) {
+      return void refuse(
+        `\`${skill.name}\`'s Skill pack doesn't match the hash in manifest.json, so the file was changed after export; export it again`
+      );
+    }
 
     const existing = await this.skillRepository.findByName(caller.tenantId, skill.name);
     if (!existing) {
@@ -210,7 +216,7 @@ export class AgentImportService {
       return void refuse(`A Skill named \`${skill.name}\` already exists here and you can't edit it`);
     }
 
-    const matching = await this.skillRepository.versionWithHash(existing.id, hashSkillTree(normalized));
+    const matching = await this.skillRepository.versionWithHash(existing.id, contentHash);
     if (matching) {
       plan.pins.push({ skillId: existing.id, skillVersionId: matching });
       return;

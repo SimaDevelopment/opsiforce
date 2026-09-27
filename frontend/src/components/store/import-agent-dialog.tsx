@@ -88,18 +88,24 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
     setPhase('uploading');
     setBytesSent(0);
     const session = await createImportUploadSession(chosen.size);
-    uploaded = { file: chosen, uploadId: session.uploadId };
     upload = new AbortController();
-    await uploadImportChunks({
-      file: chosen,
-      uploadId: session.uploadId,
-      chunkSize: session.chunkSize,
-      startIndex: 0,
-      signal: upload.signal,
-      onProgress: setBytesSent,
-      onChunkConfirmed: () => {},
-    });
+    try {
+      await uploadImportChunks({
+        file: chosen,
+        uploadId: session.uploadId,
+        chunkSize: session.chunkSize,
+        startIndex: 0,
+        signal: upload.signal,
+        onProgress: setBytesSent,
+        onChunkConfirmed: () => {},
+      });
+    } catch (caught) {
+      upload = null;
+      cancelImportUploadSession(session.uploadId);
+      throw caught;
+    }
     upload = null;
+    uploaded = { file: chosen, uploadId: session.uploadId };
     return session.uploadId;
   };
 

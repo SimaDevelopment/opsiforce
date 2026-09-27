@@ -374,9 +374,12 @@ describe('refusing an import', () => {
       [disabledName, await packFor(disabledName)],
       ['dates', await packFor('dates')],
     ]);
+    const hashed = await Promise.all(
+      [...packs].map(async ([name, pack]) => ({ name, contentHash: hashSkillTree(await unpackSkill(pack)) }))
+    );
     const archive = await rewrite(await exportOf(source.agent.id), (written, tree) => {
-      for (const name of packs.keys()) {
-        written.skills.push({ name, origin: 'custom', contentHash: 'x', file: `skills/${name}.zip` });
+      for (const { name, contentHash } of hashed) {
+        written.skills.push({ name, origin: 'custom', contentHash, file: `skills/${name}.zip` });
       }
       written.skills.push({ name: missingBuiltIn, origin: 'built_in', contentHash: 'x' });
       return [
@@ -439,6 +442,25 @@ describe('refusing an import', () => {
     expect(body.problems).toEqual([
       expect.objectContaining({ kind: 'template', message: expect.stringContaining('hash') }),
     ]);
+  });
+
+  it('refuses a Custom Skill pack whose content no longer matches its hash', async () => {
+    const source = await sourceAgent();
+    const tampered = await packSkill([
+      { path: 'SKILL.md', content: Buffer.from(skillBody(source.skillName, '# Swapped by hand\n')), executable: false },
+    ]);
+    const archive = await rewrite(await exportOf(source.agent.id), (_written, tree) =>
+      tree.map((file) => (file.path === `skills/${source.skillName}.zip` ? { ...file, content: tampered } : file))
+    );
+
+    const { status, body } = await refusal(runImport(archive, uniqueName('Tampered')));
+
+    expect(status).toBe(422);
+    expect(body.code).toBe('import_refused');
+    expect(body.problems).toEqual([
+      expect.objectContaining({ kind: 'skill', name: source.skillName, message: expect.stringContaining('hash') }),
+    ]);
+    expect(await tenantSkill(target.tenantId, source.skillName)).toBeUndefined();
   });
 
   it('refuses a hand-added .env, and keeps a hand-added AGENTS.md out of the Template with a note', async () => {
