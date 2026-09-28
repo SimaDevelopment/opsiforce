@@ -82,12 +82,16 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
     void navigate({ to: '/store/agents/$id', params: { id: agent.id } });
   };
 
-  const uploadOnce = async (chosen: File): Promise<string> => {
+  const uploadOnce = async (chosen: File, current: number): Promise<string | null> => {
     if (uploaded?.file === chosen) return uploaded.uploadId;
     discardUpload();
     setPhase('uploading');
     setBytesSent(0);
     const session = await createImportUploadSession(chosen.size);
+    if (current !== attempt) {
+      cancelImportUploadSession(session.uploadId);
+      return null;
+    }
     upload = new AbortController();
     try {
       await uploadImportChunks({
@@ -105,6 +109,10 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
       throw caught;
     }
     upload = null;
+    if (current !== attempt) {
+      cancelImportUploadSession(session.uploadId);
+      return null;
+    }
     uploaded = { file: chosen, uploadId: session.uploadId };
     return session.uploadId;
   };
@@ -134,7 +142,8 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
     setProblems([]);
     const current = ++attempt;
     try {
-      const uploadId = await uploadOnce(chosen);
+      const uploadId = await uploadOnce(chosen, current);
+      if (uploadId === null) return;
       setPhase('importing');
       const result = await importAgent.mutateAsync({ uploadId, displayName: trimmed() || null });
       uploaded = null;
