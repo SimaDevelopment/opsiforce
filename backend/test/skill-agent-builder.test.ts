@@ -455,7 +455,7 @@ describe('the agent-authoring skill', () => {
       /goes in a folder of its own, such as `examples\/`; a save leaves out\s+any folder named `data\/`/
     );
     expect(platformSkill).toMatch(
-      /Work with no App follows the same rule: a script that needs something the image lacks ensures it into `\/workspace` before it runs/
+      /Work with no App follows the same rules\.\*\* Without `startup.sh` nothing runs again after a restart, so a script that needs something the image lacks ensures it into `\/workspace` before it runs/
     );
   });
 

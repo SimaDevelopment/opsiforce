@@ -80,6 +80,11 @@ describe('the platform skill', () => {
     expect(platformSkill).toContain('websearch');
   });
 
+  it('makes a first-time setup atomic and runs a root-refusing service as its own user', () => {
+    expect(platformSkill).toMatch(/rename it into place once setup succeeds/);
+    expect(platformSkill).toMatch(/refuses to run as root.*`startup\.sh` creates it idempotently/s);
+  });
+
   it('owns the observability schemas and queries that left the sqlite skill', () => {
     const sqliteSkill = readFileSync(join(agentConfig, 'skills', 'sqlite', 'SKILL.md'), 'utf8');
 
@@ -133,7 +138,6 @@ describe('the app port', () => {
   });
 });
 
-
 describe('the platform-api credential in the pod', () => {
   const platformApi = {
     platformApiKey: 'gw-platform',
@@ -170,7 +174,9 @@ describe('the platform-api credential in the pod', () => {
 
   it('is absent when the key and base URL exist but no runtime proxy origin does', () => {
     const halfConfigured = environmentOf(
-      buildPodSpec(baseOptions({ platformApiKey: 'gw-platform', platformApiUrl: 'http://opsiforce-backend:3001/api/v1' }))
+      buildPodSpec(
+        baseOptions({ platformApiKey: 'gw-platform', platformApiUrl: 'http://opsiforce-backend:3001/api/v1' })
+      )
     );
 
     expect(halfConfigured.has('OPSIFORCE_API_KEY')).toBe(false);
