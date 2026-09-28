@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../db';
 import { projectSettings } from '../db/schema';
 import { DefaultsService } from '../src/defaults/defaults.service';
@@ -45,6 +45,28 @@ async function withPlatformProjectLimit(value: number | null, run: () => Promise
   } finally {
     await limits.setPlatformLimit('projects', previous);
   }
+}
+
+function defaultAgent(tenantId: string): Promise<string> {
+  return harness.agents.getDefaultAgentId(tenantId);
+}
+
+function importParams(tenantId: string, agentId: string) {
+  return {
+    tenantId,
+    workspaceId: null,
+    folderId: null,
+    title: 'Imported',
+    timezone: 'UTC',
+    agentId,
+    importedAgent: null,
+    description: null,
+    settings: null,
+    resources: null,
+    appDetails: null,
+    schedules: [],
+    createdBy: null,
+  };
 }
 
 async function appTimeoutIdleOf(projectId: string): Promise<number | undefined> {
@@ -149,6 +171,24 @@ describe('project limit', () => {
     await expect(harness.projects.enable(first, tenantId)).resolves.toMatchObject({ disabled: false });
   });
 
+  it('gives the slot back when provisioning fails after the row is written', async () => {
+    const tenantId = await newTenant(2);
+    const [source] = await createProjects(tenantId, 1);
+    const provisioning = vi.spyOn(harness.fakes.externalServices, 'provisionEnvironment');
+
+    provisioning.mockRejectedValueOnce(new Error('provisioning down'));
+    await expect(harness.projects.create({}, tenantId)).rejects.toThrow('provisioning down');
+    provisioning.mockRejectedValueOnce(new Error('provisioning down'));
+    await expect(harness.projects.duplicate(source, tenantId, undefined, null)).rejects.toThrow('provisioning down');
+    provisioning.mockRejectedValueOnce(new Error('provisioning down'));
+    await expect(
+      harness.projects.createImportedProject(importParams(tenantId, await defaultAgent(tenantId)))
+    ).rejects.toThrow('provisioning down');
+
+    expect(await projectUsage(tenantId)).toEqual({ key: 'projects', limit: 2, used: 1 });
+    provisioning.mockRestore();
+  });
+
   it('frees a slot when a project is deleted', async () => {
     const tenantId = await newTenant(1);
     const [only] = await createProjects(tenantId, 1);
@@ -171,21 +211,7 @@ describe('project limit', () => {
     await createProjects(tenantId, 1);
 
     await expect(
-      harness.projects.createImportedProject({
-        tenantId,
-        workspaceId: null,
-        folderId: null,
-        title: 'Imported',
-        timezone: 'UTC',
-        agentId: await harness.agents.getDefaultAgentId(tenantId),
-        importedAgent: null,
-        description: null,
-        settings: null,
-        resources: null,
-        appDetails: null,
-        schedules: [],
-        createdBy: null,
-      })
+      harness.projects.createImportedProject(importParams(tenantId, await defaultAgent(tenantId)))
     ).rejects.toBeInstanceOf(LimitReachedException);
   });
 

@@ -556,9 +556,11 @@ export class ProjectService implements OnApplicationBootstrap {
       });
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+    });
     try {
       await this.deliveryService.deliverAtCreate(id, { builderSubjectAgentId });
     } catch (err) {
@@ -695,13 +697,15 @@ export class ProjectService implements OnApplicationBootstrap {
       });
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
-    await this.enqueueDuplicateJob({
-      duplicateJobId,
-      sourceProjectId: source.id,
-      targetProjectId: id,
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
+      await this.enqueueDuplicateJob({
+        duplicateJobId,
+        sourceProjectId: source.id,
+        targetProjectId: id,
+      });
     });
     await this.projectEventsService.publish(id);
 
@@ -816,9 +820,11 @@ export class ProjectService implements OnApplicationBootstrap {
       }
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, agentId, null);
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, agentId, null);
+    });
 
     return this.findOne(id, tenantId);
   }
@@ -2135,6 +2141,15 @@ export class ProjectService implements OnApplicationBootstrap {
         .where(eq(projectTransferJobs.id, job.id));
       await this.projectEventsService.publish(job.projectId).catch(() => undefined);
       await this.discardHalfCreatedProject(job.projectId);
+    }
+  }
+
+  private async discardOnFailure(projectId: string, provision: () => Promise<void>): Promise<void> {
+    try {
+      await provision();
+    } catch (err) {
+      await this.discardHalfCreatedProject(projectId);
+      throw err;
     }
   }
 

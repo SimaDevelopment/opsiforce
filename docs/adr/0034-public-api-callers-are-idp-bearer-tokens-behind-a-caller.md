@@ -16,6 +16,7 @@ The tenant and permission guards raise `TenantAccessDeniedException` and `Missin
 
 - **Platform-issued API tokens.** Not built: storage, scopes and revocation are a full effort, and bearer auth covers the consumers there are.
 - **Organization in the contract.** Rejected: a new `X-Organization` header, or `organization` fields and error types next to `x-tenant-name`, would be a second wire vocabulary for the one thing the UI already sends as tenant; the contract is wire vocabulary for technical readers, not user-facing copy.
+- **Keeping `organization` names as deprecated aliases, or moving the rename to a v2.** Rejected: v1 had few callers when the contract moved to tenant, so one breaking rename in place cost less than carrying two vocabularies or a second version; it is the one exception to v1's additive rule ([ADR-0035](0035-public-api-module-with-uri-versioning-and-additive-compat.md)).
 - **Opting the public routes out of the global guards.** Rejected: duplicates tenant resolution for no gain; the public guard only tightens.
 - **Naming the object `Principal`.** Rejected: framework jargon; `Caller` says what it is and covers every source.
 - **No entry permission.** Rejected: adding one later breaks every token holder; starting with it and granting it to admins costs nothing.
