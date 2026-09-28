@@ -14,14 +14,14 @@ import { ProbeModule } from './support/probe-api';
 import {
   addMember,
   clearProjectCreator,
-  createOrganization,
+  createTenant,
   createProject,
   platformApiKeyFor,
-  removeMemberFromOrganization,
+  removeMemberFromTenant,
   serviceKeyFor,
   setMemberPermissions,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 import { proxyHeaders } from '../support/proxy-identity';
 
@@ -33,14 +33,14 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
   let gatewayKeys: GatewayKeyService;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let creator: MemberFixture;
   let agentId: string;
   let callerProjectId: string;
   let callerKey: string;
 
   async function createPlatformApiAgent(): Promise<string> {
-    const agent = await seedLiveAgent(organization.tenantId, creator.userId);
+    const agent = await seedLiveAgent(tenant.tenantId, creator.userId);
     await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, agent.id));
     return agent.id;
   }
@@ -50,12 +50,12 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     app = harness.app;
     gatewayKeys = app.get(GatewayKeyService);
 
-    organization = await createOrganization(app);
-    creator = await addMember(app, organization, [Perms.deleteProject]);
+    tenant = await createTenant(app);
+    creator = await addMember(app, tenant, [Perms.deleteProject]);
     agentId = await createPlatformApiAgent();
 
-    callerProjectId = await createProject(app, organization, { agentId, createdBy: creator.userId });
-    callerKey = await platformApiKeyFor(app, organization, callerProjectId);
+    callerProjectId = await createProject(app, tenant, { agentId, createdBy: creator.userId });
+    callerKey = await platformApiKeyFor(app, tenant, callerProjectId);
   });
 
   afterAll(async () => {
@@ -63,7 +63,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
   });
 
   beforeEach(async () => {
-    await setMemberPermissions(organization, creator, [Perms.deleteProject]);
+    await setMemberPermissions(tenant, creator, [Perms.deleteProject]);
   });
 
   describe('resolving the caller', () => {
@@ -74,7 +74,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
       expect(res.json()).toMatchObject({
         id: creator.userId,
         source: 'gateway-key',
-        organization: { id: organization.tenantId, name: organization.name },
+        tenant: { id: tenant.tenantId, name: tenant.name },
       });
     });
 
@@ -86,13 +86,13 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('carries the creator permissions as they stand now, not as they stood at minting', async () => {
-      const target = await createProject(app, organization, {
+      const target = await createProject(app, tenant, {
         agentId,
         createdBy: creator.userId,
         createdByProjectId: callerProjectId,
       });
 
-      await setMemberPermissions(organization, creator, []);
+      await setMemberPermissions(tenant, creator, []);
 
       const refused = await app.inject({
         method: 'DELETE',
@@ -102,7 +102,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
       expect(refused.statusCode).toBe(403);
       expect(refused.json()).toMatchObject({ permission: Perms.deleteProject });
 
-      await setMemberPermissions(organization, creator, [Perms.deleteProject]);
+      await setMemberPermissions(tenant, creator, [Perms.deleteProject]);
       const allowed = await app.inject({
         method: 'DELETE',
         url: `/api/v1/projects/${target}`,
@@ -115,14 +115,14 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
       const first = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(callerKey) });
       expect(first.json().permissions).toContain(Perms.deleteProject);
 
-      await setMemberPermissions(organization, creator, [Perms.exportProject]);
+      await setMemberPermissions(tenant, creator, [Perms.exportProject]);
 
       const second = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(callerKey) });
       expect(second.json().permissions).toEqual([Perms.exportProject]);
     });
 
     it('refuses a service gateway key', async () => {
-      const serviceKey = await serviceKeyFor(app, organization, await ordinaryProject());
+      const serviceKey = await serviceKeyFor(app, tenant, await ordinaryProject());
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(serviceKey) });
 
@@ -131,8 +131,8 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('refuses a key whose Project records no creator', async () => {
-      const orphan = await createProject(app, organization, { agentId, createdBy: creator.userId });
-      const key = await platformApiKeyFor(app, organization, orphan);
+      const orphan = await createProject(app, tenant, { agentId, createdBy: creator.userId });
+      const key = await platformApiKeyFor(app, tenant, orphan);
       await clearProjectCreator(orphan);
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(key) });
@@ -141,22 +141,22 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('refuses a creator who no longer belongs to the key Organization', async () => {
-      const leaver = await addMember(app, organization);
-      const theirProject = await createProject(app, organization, { agentId, createdBy: leaver.userId });
-      const key = await platformApiKeyFor(app, organization, theirProject);
+      const leaver = await addMember(app, tenant);
+      const theirProject = await createProject(app, tenant, { agentId, createdBy: leaver.userId });
+      const key = await platformApiKeyFor(app, tenant, theirProject);
 
       expect((await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(key) })).statusCode).toBe(200);
 
-      await removeMemberFromOrganization(leaver);
+      await removeMemberFromTenant(leaver);
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(key) });
       expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:organization-forbidden' });
+      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:tenant-forbidden' });
     });
 
     it('refuses a key that carries no Organization, as an unclaimed pool slot does', async () => {
-      const unclaimed = await createProject(app, organization, { agentId, createdBy: creator.userId });
-      const key = await platformApiKeyFor(app, organization, unclaimed);
+      const unclaimed = await createProject(app, tenant, { agentId, createdBy: creator.userId });
+      const key = await platformApiKeyFor(app, tenant, unclaimed);
       await db.update(projectGatewayKeys).set({ tenantId: null }).where(eq(projectGatewayKeys.token, key));
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(key) });
@@ -175,7 +175,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('serves all seven opening routes and refuses none of them', async () => {
-      const own = await createProject(app, organization, {
+      const own = await createProject(app, tenant, {
         agentId,
         createdBy: creator.userId,
         createdByProjectId: callerProjectId,
@@ -207,7 +207,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('ignores x-tenant-name and acts in the Organization its key carries', async () => {
-      const elsewhere = await createOrganization(app);
+      const elsewhere = await createTenant(app);
 
       const res = await app.inject({
         method: 'GET',
@@ -216,7 +216,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.json().organization).toEqual({ id: organization.tenantId, name: organization.name });
+      expect(res.json().tenant).toEqual({ id: tenant.tenantId, name: tenant.name });
     });
   });
 
@@ -234,7 +234,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('lists only the Projects it created', async () => {
-      const own = await createProject(app, organization, {
+      const own = await createProject(app, tenant, {
         agentId,
         createdBy: creator.userId,
         createdByProjectId: callerProjectId,
@@ -270,7 +270,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     });
 
     it('reads a Project it created', async () => {
-      const own = await createProject(app, organization, {
+      const own = await createProject(app, tenant, {
         agentId,
         createdBy: creator.userId,
         createdByProjectId: callerProjectId,
@@ -285,13 +285,13 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
 
   describe('how deep the chain may go', () => {
     it('stops minting a platform-api key once a Project would sit at the cap', async () => {
-      const root = await createProject(app, organization, { agentId, createdBy: creator.userId });
-      const child = await createProject(app, organization, {
+      const root = await createProject(app, tenant, { agentId, createdBy: creator.userId });
+      const child = await createProject(app, tenant, {
         agentId,
         createdBy: creator.userId,
         createdByProjectId: root,
       });
-      const grandchild = await createProject(app, organization, {
+      const grandchild = await createProject(app, tenant, {
         agentId,
         createdBy: creator.userId,
         createdByProjectId: child,
@@ -355,7 +355,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
     it('stays quiet for a human caller, who has no Project to wake', async () => {
       const human = proxyHeaders({
         userId: creator.keycloakId,
-        organizations: [organization.name],
+        tenants: [tenant.name],
         permissions: [Perms.usePublicApi],
       });
       const res = await app.inject({
@@ -371,7 +371,7 @@ describe('a pod calling the public API with its platform-api gateway key', () =>
   });
 
   async function ordinaryProject(): Promise<string> {
-    const plain = await seedLiveAgent(organization.tenantId, creator.userId);
-    return createProject(app, organization, { agentId: plain.id, createdBy: creator.userId });
+    const plain = await seedLiveAgent(tenant.tenantId, creator.userId);
+    return createProject(app, tenant, { agentId: plain.id, createdBy: creator.userId });
   }
 });

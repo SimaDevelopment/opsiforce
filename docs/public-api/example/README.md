@@ -30,7 +30,7 @@ OPSIFORCE_TOKEN="$(your-idp-token-command)" \
 npm start
 ```
 
-Optional: `OPSIFORCE_ORGANIZATION` when the caller belongs to more than one Organization, `OPSIFORCE_PROJECT` to reuse a Project instead of creating one, `OPSIFORCE_PROMPT` to change what is asked.
+Optional: `OPSIFORCE_TENANT` when the caller belongs to more than one Organization, `OPSIFORCE_PROJECT` to reuse a Project instead of creating one, `OPSIFORCE_PROMPT` to change what is asked.
 
 Node 22.6 or newer (the scripts run TypeScript directly with `--experimental-strip-types`).
 

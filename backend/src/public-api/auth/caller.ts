@@ -2,7 +2,7 @@ import { createParamDecorator, ExecutionContext, InternalServerErrorException } 
 import type { FastifyRequest } from 'fastify';
 import type { TenantContext } from '../../tenant/tenant.decorator';
 import type { IdentityKind } from '../../identity/forwarded-identity.service';
-import type { OrganizationRef } from '../errors/error.schema';
+import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
 
 export type CallerSource = 'idp-bearer' | 'gateway-key';
@@ -19,8 +19,8 @@ export interface Caller {
     displayName: string;
     kind: CallerUserKind;
   };
-  organization: OrganizationRef;
-  organizations: OrganizationRef[];
+  tenant: TenantRef;
+  tenants: TenantRef[];
   permissions: ReadonlySet<string>;
 }
 

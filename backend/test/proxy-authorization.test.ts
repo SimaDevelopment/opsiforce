@@ -19,7 +19,7 @@ import { startFakePod, type FakePod } from './support/fake-pod';
 import {
   addMember,
   addServiceAccount,
-  createOrganization,
+  createTenant,
   createProject,
   createSharedWorkspace,
   platformApiKeyFor,
@@ -29,7 +29,7 @@ import {
   setChatSubjectVisibility,
   stampProjectKind,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
   type ProjectFixtureOptions,
 } from './support/project-fixtures';
 import { proxyHeaders } from './support/proxy-identity';
@@ -85,10 +85,10 @@ function ensure(environmentId: string, headers: Record<string, string>, surface 
 }
 
 async function runningProjectIn(
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   options: ProjectFixtureOptions = {}
 ): Promise<string> {
-  const projectId = await createProject(app, organization, options);
+  const projectId = await createProject(app, tenant, options);
   const podName = pods.assignedPodName(projectId);
   await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
   pods.markPodReady(podName, '127.0.0.1');
@@ -98,9 +98,9 @@ async function runningProjectIn(
 
 describe('authorizing a runtime through the proxy ensure call', () => {
   it('lets a member of the organization reach a public project', async () => {
-    const organization = await createOrganization(app);
-    const member = await addMember(app, organization);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const member = await addMember(app, tenant);
+    const projectId = await runningProjectIn(tenant);
 
     const res = await ensure(projectId, member.headers);
 
@@ -109,11 +109,11 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('hides a project in a workspace the caller is not a member of', async () => {
-    const organization = await createOrganization(app);
-    const owner = await addMember(app, organization);
-    const outsider = await addMember(app, organization);
-    const workspaceId = await createSharedWorkspace(app, organization, owner);
-    const projectId = await runningProjectIn(organization, { workspaceId });
+    const tenant = await createTenant(app);
+    const owner = await addMember(app, tenant);
+    const outsider = await addMember(app, tenant);
+    const workspaceId = await createSharedWorkspace(app, tenant, owner);
+    const projectId = await runningProjectIn(tenant, { workspaceId });
 
     expect((await ensure(projectId, owner.headers)).statusCode).toBe(201);
 
@@ -122,28 +122,28 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('hides a private workspace project from another member of the same organization', async () => {
-    const organization = await createOrganization(app);
-    const owner = await addMember(app, organization);
-    const other = await addMember(app, organization);
-    const workspaceId = await privateWorkspaceIdOf(app, organization, owner);
-    const projectId = await runningProjectIn(organization, { workspaceId });
+    const tenant = await createTenant(app);
+    const owner = await addMember(app, tenant);
+    const other = await addMember(app, tenant);
+    const workspaceId = await privateWorkspaceIdOf(app, tenant, owner);
+    const projectId = await runningProjectIn(tenant, { workspaceId });
 
     expect((await ensure(projectId, owner.headers)).statusCode).toBe(201);
     expect((await ensure(projectId, other.headers)).statusCode).toBe(404);
   });
 
   it('keeps organizations isolated', async () => {
-    const organization = await createOrganization(app);
-    const elsewhere = await createOrganization(app);
+    const tenant = await createTenant(app);
+    const elsewhere = await createTenant(app);
     const stranger = await addMember(app, elsewhere);
-    const projectId = await runningProjectIn(organization);
+    const projectId = await runningProjectIn(tenant);
 
     expect((await ensure(projectId, stranger.headers)).statusCode).toBe(404);
   });
 
   it('refuses a request that carries no forwarded identity', async () => {
-    const organization = await createOrganization(app);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const projectId = await runningProjectIn(tenant);
 
     const res = await app.inject({
       method: 'POST',
@@ -156,9 +156,9 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('still requires the control token', async () => {
-    const organization = await createOrganization(app);
-    const member = await addMember(app, organization);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const member = await addMember(app, tenant);
+    const projectId = await runningProjectIn(tenant);
 
     const res = await app.inject({
       method: 'POST',
@@ -171,11 +171,11 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('lets a pod reach the runtime of a Project it created', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const callerProjectId = await runningProjectIn(organization, { createdBy: creator.userId });
-    const key = await platformApiKeyFor(app, organization, callerProjectId);
-    const childId = await runningProjectIn(organization, {
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const callerProjectId = await runningProjectIn(tenant, { createdBy: creator.userId });
+    const key = await platformApiKeyFor(app, tenant, callerProjectId);
+    const childId = await runningProjectIn(tenant, {
       createdBy: creator.userId,
       createdByProjectId: callerProjectId,
     });
@@ -187,11 +187,11 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('refuses a pod the runtime of a sibling Project it did not create', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const callerProjectId = await runningProjectIn(organization, { createdBy: creator.userId });
-    const key = await platformApiKeyFor(app, organization, callerProjectId);
-    const siblingId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const callerProjectId = await runningProjectIn(tenant, { createdBy: creator.userId });
+    const key = await platformApiKeyFor(app, tenant, callerProjectId);
+    const siblingId = await runningProjectIn(tenant, { createdBy: creator.userId });
 
     const res = await ensure(siblingId, { authorization: `Bearer ${key}` });
 
@@ -199,11 +199,11 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('refuses a pod holding only a service gateway key', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const callerProjectId = await runningProjectIn(organization, { createdBy: creator.userId });
-    const serviceKey = await serviceKeyFor(app, organization, callerProjectId);
-    const childId = await runningProjectIn(organization, {
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const callerProjectId = await runningProjectIn(tenant, { createdBy: creator.userId });
+    const serviceKey = await serviceKeyFor(app, tenant, callerProjectId);
+    const childId = await runningProjectIn(tenant, {
       createdBy: creator.userId,
       createdByProjectId: callerProjectId,
     });
@@ -214,10 +214,10 @@ describe('authorizing a runtime through the proxy ensure call', () => {
   });
 
   it('does not need the caller to have visited the platform API first', async () => {
-    const organization = await createOrganization(app);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const projectId = await runningProjectIn(tenant);
     const keycloakId = randomUUID();
-    const headers = proxyHeaders({ userId: keycloakId, organizations: [organization.name] });
+    const headers = proxyHeaders({ userId: keycloakId, tenants: [tenant.name] });
 
     expect((await ensure(projectId, headers)).statusCode).toBe(201);
 
@@ -228,18 +228,18 @@ describe('authorizing a runtime through the proxy ensure call', () => {
 
 describe('identity side effects of reaching a runtime', () => {
   it('creates no personal workspace for a service account', async () => {
-    const organization = await createOrganization(app);
-    const serviceAccount = addServiceAccount(organization);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const serviceAccount = addServiceAccount(tenant);
+    const projectId = await runningProjectIn(tenant);
 
     expect((await ensure(projectId, serviceAccount.headers)).statusCode).toBe(201);
     expect(await privateWorkspaceCountOf(serviceAccount.keycloakId)).toBe(0);
   });
 
   it('keeps a known profile when the edge omits a field', async () => {
-    const organization = await createOrganization(app);
-    const member = await addMember(app, organization);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const member = await addMember(app, tenant);
+    const projectId = await runningProjectIn(tenant);
 
     await ensure(projectId, member.headers);
     const withEmail = await profileOf(member);
@@ -248,7 +248,7 @@ describe('identity side effects of reaching a runtime', () => {
       userId: member.keycloakId,
       username: withEmail.displayName ?? undefined,
       email: null,
-      organizations: [organization.name],
+      tenants: [tenant.name],
     });
     expect((await ensure(projectId, withoutEmail)).statusCode).toBe(201);
 
@@ -256,9 +256,9 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('preserves the display name when username and email are absent', async () => {
-    const organization = await createOrganization(app);
-    const member = await addMember(app, organization);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const member = await addMember(app, tenant);
+    const projectId = await runningProjectIn(tenant);
     await ensure(projectId, member.headers);
     const original = await profileOf(member);
     const headers = { ...member.headers };
@@ -269,12 +269,12 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('runs the same path for the fixed identity a static deployment injects', async () => {
-    const organization = await createOrganization(app);
-    const projectId = await runningProjectIn(organization);
+    const tenant = await createTenant(app);
+    const projectId = await runningProjectIn(tenant);
     const staticIdentity = proxyHeaders({
       userId: 'static-user',
       username: 'static',
-      organizations: [organization.name],
+      tenants: [tenant.name],
     });
 
     expect((await ensure(projectId, staticIdentity)).statusCode).toBe(201);
@@ -282,10 +282,10 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('lets the creator of a private Builder chat reach every gated surface and refuses a colleague', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const colleague = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const colleague = await addMember(app, tenant);
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'skill_builder_chat');
 
     for (const surface of GATED_SURFACES) {
@@ -295,10 +295,10 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('admits any member to the Builder chat of a public Skill on every gated surface', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const colleague = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const colleague = await addMember(app, tenant);
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'agent_builder_chat');
     await setChatSubjectVisibility(chatId, 'public');
 
@@ -308,11 +308,11 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('still refuses a member of another organization the chat of a public Skill', async () => {
-    const organization = await createOrganization(app);
-    const elsewhere = await createOrganization(app);
-    const creator = await addMember(app, organization);
+    const tenant = await createTenant(app);
+    const elsewhere = await createTenant(app);
+    const creator = await addMember(app, tenant);
     const stranger = await addMember(app, elsewhere);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'skill_builder_chat');
     await setChatSubjectVisibility(chatId, 'public');
 
@@ -320,12 +320,12 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('lets the creator reach a test Project on every gated surface and refuses a colleague', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const colleague = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const colleague = await addMember(app, tenant);
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'agent_builder_chat');
-    const testProjectId = await runningProjectIn(organization, {
+    const testProjectId = await runningProjectIn(tenant, {
       createdBy: creator.userId,
       createdByProjectId: chatId,
     });
@@ -338,12 +338,12 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('carries a public subject down to the test Project its chat is running', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const colleague = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const colleague = await addMember(app, tenant);
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'agent_builder_chat');
-    const testProjectId = await runningProjectIn(organization, {
+    const testProjectId = await runningProjectIn(tenant, {
       createdBy: creator.userId,
       createdByProjectId: chatId,
     });
@@ -356,11 +356,11 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('gates an ordinary Project a colleague cannot see on every gated surface', async () => {
-    const organization = await createOrganization(app);
-    const owner = await addMember(app, organization);
-    const outsider = await addMember(app, organization);
-    const workspaceId = await createSharedWorkspace(app, organization, owner);
-    const projectId = await runningProjectIn(organization, { workspaceId });
+    const tenant = await createTenant(app);
+    const owner = await addMember(app, tenant);
+    const outsider = await addMember(app, tenant);
+    const workspaceId = await createSharedWorkspace(app, tenant, owner);
+    const projectId = await runningProjectIn(tenant, { workspaceId });
 
     for (const surface of GATED_SURFACES) {
       expect((await ensure(projectId, owner.headers, surface)).statusCode).toBe(201);
@@ -369,9 +369,9 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('leaves the app surface open to a caller with no identity at all', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'skill_builder_chat');
 
     const res = await app.inject({
@@ -385,12 +385,12 @@ describe('identity side effects of reaching a runtime', () => {
   });
 
   it('lets the chat pod reach the test Project it created', async () => {
-    const organization = await createOrganization(app);
-    const creator = await addMember(app, organization);
-    const chatId = await runningProjectIn(organization, { createdBy: creator.userId });
+    const tenant = await createTenant(app);
+    const creator = await addMember(app, tenant);
+    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
     await stampProjectKind(chatId, 'agent_builder_chat');
-    const key = await platformApiKeyFor(app, organization, chatId);
-    const testProjectId = await runningProjectIn(organization, {
+    const key = await platformApiKeyFor(app, tenant, chatId);
+    const testProjectId = await runningProjectIn(tenant, {
       createdBy: creator.userId,
       createdByProjectId: chatId,
     });

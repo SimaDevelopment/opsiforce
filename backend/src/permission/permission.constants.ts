@@ -30,6 +30,7 @@ export const Perms = {
   manageExternalServices: 'can_manage_external_services',
   viewPlatformStorage: 'can_view_platform_storage',
   managePlatformStorage: 'can_manage_platform_storage',
+  managePlatformLimits: 'can_manage_platform_limits',
   usePublicApi: 'can_use_public_api',
   manageSkills: 'can_manage_skills',
   manageAgents: 'can_manage_agents',

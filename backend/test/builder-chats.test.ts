@@ -36,9 +36,9 @@ import { DomainTestModule } from './support/domain-module';
 import { createUserRow } from './support/org-fixtures';
 import {
   addMember,
-  createOrganization,
+  createTenant,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from './support/project-fixtures';
 
 @Module({
@@ -352,7 +352,7 @@ describe('the Builder Agent is not in the picker', () => {
 
 describe('the Builder routes over HTTP', () => {
   let app: NestFastifyApplication;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let skillHolder: MemberFixture;
   let agentHolder: MemberFixture;
   let plainMember: MemberFixture;
@@ -365,7 +365,7 @@ describe('the Builder routes over HTTP', () => {
     const id = randomUUID();
     await db.insert(skills).values({
       id,
-      tenantId: organization.tenantId,
+      tenantId: tenant.tenantId,
       origin: 'custom',
       name: `skill-${id.slice(0, 8)}`,
       visibility: 'private',
@@ -390,10 +390,10 @@ describe('the Builder routes over HTTP', () => {
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
-    organization = await createOrganization(app);
-    skillHolder = await addMember(app, organization, [Perms.manageSkills]);
-    agentHolder = await addMember(app, organization, [Perms.manageAgents]);
-    plainMember = await addMember(app, organization, []);
+    tenant = await createTenant(app);
+    skillHolder = await addMember(app, tenant, [Perms.manageSkills]);
+    agentHolder = await addMember(app, tenant, [Perms.manageAgents]);
+    plainMember = await addMember(app, tenant, []);
   });
 
   afterAll(async () => {

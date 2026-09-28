@@ -19,7 +19,7 @@ adrs: [0041]
 ### Boot and claim
 
 - On boot the pool deletes any pod still labelled `opsiforce.io/pool=warm`. At boot and every 60 seconds an integrity job recovers rows stuck in `claiming`, checks that every pending slot's pod is present and healthy, recycles slots whose baked agent version or model is stale, and replenishes each agent to its target.
-- A claim reserves a `pending` row with `FOR UPDATE SKIP LOCKED`, flips it to `claiming`, checks its pod is ready, patches the Bifrost team's budgets to the tenant defaults and its customer, delivers the Agent's files ([Dynamic Delivery](../agent-system/dynamic-delivery.md)), writes the tenant onto the key rows, flips to `active`, returns the Project, and replenishes asynchronously.
+- A claim first checks the Organization's Projects [Limit](../../CONTEXT.md) in the same transaction ([Limit](../organization/limit.md)), then reserves a `pending` row with `FOR UPDATE SKIP LOCKED`, flips it to `claiming`, checks its pod is ready, patches the Bifrost team's budgets to the tenant defaults and its customer, delivers the Agent's files ([Dynamic Delivery](../agent-system/dynamic-delivery.md)), writes the tenant onto the key rows, flips to `active`, returns the Project, and replenishes asynchronously.
 - A slot whose pod is missing, terminating, in `ImagePullBackOff` or still not ready after a 90-second grace period is recycled: pod deleted, Bifrost resources revoked, workspace removed, row deleted, fresh slot created.
 - The agent update sweep skips unclaimed slots because its migration job would mount the workspace the live pool pod is using ([Agent Updates](../agent-system/agent-updates.md)); claimed Projects migrate normally.
 
@@ -37,6 +37,7 @@ Project statuses a slot passes through.
 
 - When the backend crashes mid-claim, the integrity job finds rows in `claiming` older than 30 seconds and retries the Bifrost patches, then delivers and finishes the claim, destroying the slot when a patch or the delivery fails.
 - When the pool for the requested agent is empty, its reserved slot has no ready pod, a Bifrost patch fails three times in a row, or delivery or finalizing fails, creation falls through to the direct path with no user-visible error.
+- When the Organization is at its Projects Limit, the claim reserves nothing and the create is refused instead of falling through.
 - When `poolSize` is lowered, existing slots are claimed naturally and no new ones are created.
 
 ## Code

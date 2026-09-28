@@ -39,6 +39,7 @@ auth:
       - can_view_external_services_usage
       - can_view_platform_storage
       - can_manage_platform_storage
+      - can_manage_platform_limits
       - can_use_public_api
       - can_manage_skills
       - can_manage_agents

@@ -3,7 +3,7 @@ import { ERROR_SLUGS, errorTypeUri } from './error-types';
 
 export const ERROR_MEDIA_TYPE = 'application/problem+json';
 
-export const OrganizationRefSchema = z.object({ id: z.string(), name: z.string() }).meta({ id: 'OrganizationRef' });
+export const TenantRefSchema = z.object({ id: z.string(), name: z.string() }).meta({ id: 'TenantRef' });
 
 export const ValidationErrorItemSchema = z
   .object({
@@ -28,7 +28,7 @@ export const ApiErrorSchema = z
       .array(ValidationErrorItemSchema)
       .optional()
       .describe('Warnings that did not block the request, recorded alongside it'),
-    organizations: z.array(OrganizationRefSchema).optional(),
+    tenants: z.array(TenantRefSchema).optional(),
     permission: z.string().optional(),
     testProjectId: z
       .string()
@@ -38,5 +38,5 @@ export const ApiErrorSchema = z
   .meta({ id: 'ApiError' });
 
 export type ApiError = z.infer<typeof ApiErrorSchema>;
-export type OrganizationRef = z.infer<typeof OrganizationRefSchema>;
+export type TenantRef = z.infer<typeof TenantRefSchema>;
 export type ValidationErrorItem = z.infer<typeof ValidationErrorItemSchema>;

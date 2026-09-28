@@ -9,7 +9,7 @@ terms: [Settings]
 
 ## How it works
 
-- [Settings](../../CONTEXT.md) is one page at `/settings` where a member configures the Organization chosen in the selector, with a left rail grouping sections by area: Access (Workspaces, Users), Configuration (Environments, Integrations, Defaults) and Billing.
+- [Settings](../../CONTEXT.md) is one page at `/settings` where a member configures the Organization chosen in the selector, with a left rail grouping sections by area: Access (Workspaces, Users), Configuration (Environments, Integrations, Defaults, Limits) and Billing. Limits is the one section that ignores the selector, because it sets every Organization's values at once ([Limit](limit.md)).
 - Each section is its own route, so refresh and deep links keep the active tab, and each renders through a shared section header.
 - Gating is centralised in the layout route: the rail shows only sections the member may manage, `/settings` and any forbidden tab redirect to the first permitted one, and a member with none is sent home while the avatar dropdown hides the entry.
 - The backend gates the matching endpoints, so a hidden section is also a refused call ([Permissions](permissions.md)).

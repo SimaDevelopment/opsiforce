@@ -68,7 +68,7 @@ export class AgentsController {
   @ApiOperation({
     summary: 'Get an Agent',
     description:
-      'One Agent with its settings and one entry per Environment of the Organization. Every entry carries `environmentId`; `skills: null` marks an Environment this Agent has no profile at, which is how you tell "never published there" from "published with no Skills".\n\nA Built-in Agent reports `imageOwned: true` with `promptBody`, `model` and `variant` null — its behaviour comes from the agent image — but its Skills are the Organization\'s and are listed.\n\n**Use it for** reading the Development profile before editing it, and for `updateAvailable` on each pinned Skill.',
+      'One Agent with its settings and one entry per Environment of the tenant. Every entry carries `environmentId`; `skills: null` marks an Environment this Agent has no profile at, which is how you tell "never published there" from "published with no Skills".\n\nA Built-in Agent reports `imageOwned: true` with `promptBody`, `model` and `variant` null — its behaviour comes from the agent image — but its Skills are the tenant\'s and are listed.\n\n**Use it for** reading the Development profile before editing it, and for `updateAvailable` on each pinned Skill.',
   })
   @PublicResponse(200, AgentDetailSchema)
   @PublicApiErrors('not-found')

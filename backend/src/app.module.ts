@@ -38,6 +38,7 @@ import { ProjectExportModule } from './export/project-export.module';
 import { AdminModule } from './admin/admin.module';
 import { ExternalServicesModule } from './external-services';
 import { StorageModule } from './storage/storage.module';
+import { LimitModule } from './limit/limit.module';
 import { PublicApiModule } from './public-api/public-api.module';
 
 function parseRedisUrl(url: string) {
@@ -97,6 +98,7 @@ function parseRedisUrl(url: string) {
     AdminModule,
     ExternalServicesModule,
     StorageModule,
+    LimitModule,
     PublicApiModule,
   ],
   controllers: [HealthController],

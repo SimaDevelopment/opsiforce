@@ -731,7 +731,7 @@ async function seedProject(agentId: string, kind: 'test' | null): Promise<string
 }
 
 describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
-  async function freshOrganization(): Promise<AgentCaller> {
+  async function freshTenant(): Promise<AgentCaller> {
     const id = await createTenantRow();
     await harness.environments.ensureDefaultForTenant(id);
     return { tenantId: id, userId: await createUserRow(), canManageAgents: true };
@@ -739,8 +739,8 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
 
   it('takes it out of that Organization only, and back on enable', async () => {
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const here = await freshOrganization();
-    const elsewhere = await freshOrganization();
+    const here = await freshTenant();
+    const elsewhere = await freshTenant();
 
     const disabled = await service.setDisabled(here, makara, true);
 
@@ -755,7 +755,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
 
   it('closes it to new projects there, and resolves an import by its name to nothing', async () => {
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const caller = await freshOrganization();
+    const caller = await freshTenant();
     await service.setDisabled(caller, makara, true);
 
     await expect(service.assertLiveForProjectCreate(makara, caller.tenantId, caller.userId)).rejects.toThrow();
@@ -767,7 +767,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
     await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
     const appBuilder = await ensureBuiltInAgent('app-builder');
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const caller = await freshOrganization();
+    const caller = await freshTenant();
 
     await service.setDisabled(caller, makara, true);
 
@@ -780,7 +780,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
   it('lets only one of two concurrent disables of the last two built-in agents through', async () => {
     const appBuilder = await ensureBuiltInAgent('app-builder');
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const caller = await freshOrganization();
+    const caller = await freshTenant();
 
     const outcomes = await Promise.allSettled([
       service.setDisabled(caller, appBuilder, true),
@@ -794,7 +794,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
   it('starts a project that names no agent on the first built-in agent still enabled', async () => {
     const appBuilder = await ensureBuiltInAgent('app-builder');
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const caller = await freshOrganization();
+    const caller = await freshTenant();
 
     expect(await service.getDefaultAgentId(caller.tenantId)).toBe(appBuilder);
 
@@ -807,7 +807,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
   it('never disables the Skill & Agent Builder, says so up front, and asks for can_manage_agents', async () => {
     const builder = await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const caller = await freshOrganization();
+    const caller = await freshTenant();
 
     expect((await service.findOne(caller, builder)).disableable).toBe(false);
     expect((await service.findOne(caller, makara)).disableable).toBe(true);
@@ -819,7 +819,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
 
   it('lists it under the disabled filter and nowhere else', async () => {
     const makara = await ensureBuiltInAgent('makara-app-builder');
-    const caller = await freshOrganization();
+    const caller = await freshTenant();
     await service.setDisabled(caller, makara, true);
 
     expect((await service.listStore(caller, 'disabled')).map((agent) => agent.id)).toContain(makara);

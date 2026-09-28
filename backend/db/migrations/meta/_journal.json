@@ -512,6 +512,13 @@
       "when": 1790183030405,
       "tag": "0072_tenant-disabled-agents-and-skills",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790600000000,
+      "tag": "0073_tenant-limits",
+      "breakpoints": true
     }
   ]
 }

@@ -33,15 +33,15 @@ let service: AgentService;
 let cleanup: WorkspaceCleanupProcessor;
 let snapshots: PlatformStorageSnapshotService;
 
-interface Organization {
+interface Tenant {
   author: AgentCaller;
   developmentId: string;
   productionId: string;
 }
 
-let org: Organization;
+let org: Tenant;
 
-async function organization(): Promise<Organization> {
+async function newTenant(): Promise<Tenant> {
   const tenantId = await createTenantRow();
   await harness.environments.ensureDefaultForTenant(tenantId);
   const [production] = await db
@@ -63,7 +63,7 @@ beforeAll(async () => {
   cleanup = new WorkspaceCleanupProcessor(config, new AgentTemplateStore(config));
   snapshots = new PlatformStorageSnapshotService(config, new HostPathDirectoryUsageStrategy(config));
   await ensureBuiltInSkill('platform');
-  org = await organization();
+  org = await newTenant();
 });
 
 async function runDailyCleanup(): Promise<void> {
@@ -83,7 +83,7 @@ interface Authoring {
   linkAt: (environmentId: string) => Promise<string | null>;
 }
 
-async function authoring(owner: Organization = org): Promise<Authoring> {
+async function authoring(owner: Tenant = org): Promise<Authoring> {
   const { author } = owner;
   const agent = await service.create(author, { displayName: `Publish ${randomUUID().slice(0, 8)}` });
   const { chatId, templateDir } = await seedBuilderChat(author.tenantId, agent.id, author.userId);
@@ -358,7 +358,7 @@ describe('sweeping agent-templates/', () => {
 
 describe('the templates storage bucket', () => {
   it('attributes each Agent folder to its Organization and counts a shared version once', async () => {
-    const owner = await organization();
+    const owner = await newTenant();
     const content = 'x'.repeat(1000);
     const draft = await authoring(owner);
     await draft.write('brand.pdf', content);

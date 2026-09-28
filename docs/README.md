@@ -62,6 +62,7 @@
 - [Workspaces](organization/workspaces.md) — grouping Projects, membership-based visibility and moves
 - [Folder](organization/folder.md) — a single-level label for Projects inside a Workspace
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
+- [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
 - [Integrations](organization/integrations.md) — mapping an Organization to its managed identity provider tenant
 
 **Frontend** (`frontend/`)

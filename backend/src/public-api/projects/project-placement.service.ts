@@ -36,7 +36,7 @@ export class ProjectPlacementService {
 
   async resolve(caller: Caller, body: CreateProject): Promise<ProjectPlacement> {
     const access: WorkspaceAccess = {
-      tenantId: caller.organization.id,
+      tenantId: caller.tenant.id,
       userId: caller.user.platformId,
       canManageWorkspaces: caller.permissions.has(Perms.manageWorkspaces),
     };

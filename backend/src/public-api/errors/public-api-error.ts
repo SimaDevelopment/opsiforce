@@ -8,10 +8,12 @@ import {
   retryAfterSecondsOf,
   type ErrorSlug,
 } from './error-types';
-import type { OrganizationRef, ApiError, ValidationErrorItem } from './error.schema';
+import type { TenantRef, ApiError, ValidationErrorItem } from './error.schema';
+import { LIMITS } from '../../limit/limit-registry';
+import type { LimitKey } from '../../limit/limit.types';
 
 type ErrorExtensions = Partial<
-  Pick<ApiError, 'detail' | 'errors' | 'lints' | 'organizations' | 'permission' | 'testProjectId'>
+  Pick<ApiError, 'detail' | 'errors' | 'lints' | 'tenants' | 'permission' | 'testProjectId'>
 >;
 
 export class PublicApiError extends HttpException {
@@ -40,13 +42,13 @@ export const Errors = {
     new PublicApiError('validation-error', { detail: 'One or more request fields are invalid', errors }),
   invalidReference: (errors: ValidationErrorItem[]) =>
     new PublicApiError('invalid-reference', { detail: 'One or more referenced resources do not exist', errors }),
-  organizationRequired: (organizations: OrganizationRef[]) =>
-    new PublicApiError('organization-required', {
-      detail: 'You belong to several organizations; pick one with the x-tenant-name header',
-      organizations,
+  tenantRequired: (tenants: TenantRef[]) =>
+    new PublicApiError('tenant-required', {
+      detail: 'You belong to several tenants; pick one with the x-tenant-name header',
+      tenants,
     }),
   unauthenticated: () => new PublicApiError('unauthenticated', { detail: 'Send a bearer token issued by the IdP' }),
-  organizationForbidden: () => new PublicApiError('organization-forbidden'),
+  tenantForbidden: () => new PublicApiError('tenant-forbidden'),
   permissionDenied: (permission: string) =>
     new PublicApiError('permission-denied', { detail: `Missing permission: ${permission}`, permission }),
   routeClosedToAgentCaller: () =>
@@ -84,6 +86,10 @@ export const Errors = {
   notTestProjectOwner: () =>
     new PublicApiError('permission-denied', {
       detail: 'Only the Builder chat that created this Test Project may refresh it',
+    }),
+  limitReached: (key: LimitKey, limit: number) =>
+    new PublicApiError('limit-reached', {
+      detail: `This tenant has reached its limit of ${limit} ${LIMITS[key].noun}.`,
     }),
   unexpected: () => new PublicApiError('unexpected'),
   fromForeignStatus: (status: number, detail: string) =>

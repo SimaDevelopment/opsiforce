@@ -12,12 +12,12 @@ import { startFakePod, type FakePod } from '../support/fake-pod';
 import type { FakePodService } from '../support/infra-fakes';
 import {
   addMember,
-  createOrganization,
+  createTenant,
   createProject,
   createSharedWorkspace,
   disableProject,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
 
@@ -27,7 +27,7 @@ describe('connecting to an environment', () => {
   let app: NestFastifyApplication;
   let pods: FakePodService;
   let environments: ProjectEnvironmentService;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let member: MemberFixture;
 
   beforeAll(async () => {
@@ -40,8 +40,8 @@ describe('connecting to an environment', () => {
     app = harness.app;
     pods = app.get<PodService, FakePodService>(PodService);
     environments = app.get(ProjectEnvironmentService);
-    organization = await createOrganization(app);
-    member = await addMember(app, organization);
+    tenant = await createTenant(app);
+    member = await addMember(app, tenant);
   });
 
   afterAll(async () => {
@@ -56,7 +56,7 @@ describe('connecting to an environment', () => {
   });
 
   async function runningProject(options: { workspaceId?: string | null } = {}): Promise<string> {
-    const projectId = await createProject(app, organization, options);
+    const projectId = await createProject(app, tenant, options);
     const podName = pods.assignedPodName(projectId);
     await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
     pods.markPodReady(podName, '127.0.0.1');
@@ -147,8 +147,8 @@ describe('connecting to an environment', () => {
     });
 
     it('answers not found for a Project the caller cannot see', async () => {
-      const owner = await addMember(app, organization);
-      const workspaceId = await createSharedWorkspace(app, organization, owner);
+      const owner = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, owner);
       const projectId = await runningProject({ workspaceId });
       const podCalls = pod.requests.length;
 

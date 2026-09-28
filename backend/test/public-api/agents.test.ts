@@ -8,7 +8,7 @@ import { Perms } from '../../src/permission/permission.constants';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import { defaultEnvironmentId, seedLiveAgent } from '../support/agent-fixtures';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
-import { organizationName, proxyHeaders } from '../support/proxy-identity';
+import { tenantName, proxyHeaders } from '../support/proxy-identity';
 
 const FUTURE_BASE_MS = Date.UTC(2100, 0, 1);
 let nextSlot = 0;
@@ -38,13 +38,13 @@ describe('GET /api/v1/agents', () => {
   let headers: Record<string, string>;
 
   beforeAll(async () => {
-    const organization = organizationName();
-    tenantId = await createTenantRow(organization);
+    const tenant = tenantName();
+    tenantId = await createTenantRow(tenant);
     userId = await createUserRow();
     harness = await createPublicApiTestApp();
     app = harness.app;
     await harness.app.get(EnvironmentService).ensureDefaultForTenant(tenantId);
-    headers = proxyHeaders({ organizations: [organization] });
+    headers = proxyHeaders({ tenants: [tenant] });
   });
 
   afterAll(async () => {
@@ -172,7 +172,7 @@ describe('GET /api/v1/agents', () => {
   });
 
   it('needs the public API entry permission', async () => {
-    const denied = proxyHeaders({ organizations: [organizationName()], permissions: [] });
+    const denied = proxyHeaders({ tenants: [tenantName()], permissions: [] });
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/agents', headers: denied });
 

@@ -70,7 +70,7 @@ export class PublicSkillsService {
 
 function scopeOf(caller: Caller): SkillCaller {
   return {
-    tenantId: caller.organization.id,
+    tenantId: caller.tenant.id,
     userId: caller.user.platformId,
     canManageSkills: caller.permissions.has(Perms.manageSkills),
   };

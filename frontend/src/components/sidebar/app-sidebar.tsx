@@ -5,6 +5,7 @@ import { useAgents } from '~/api/agents';
 import { usePermissions } from '~/api/permissions';
 import { useCurrentUser } from '~/api/user';
 import { useCreateDefaultProject } from '~/api/default-project-target';
+import { limitRefusalMessage } from '~/api/limits';
 import { Permission } from '~/constants/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
@@ -75,8 +76,8 @@ export function AppSidebar() {
         params: { projectId: project.id },
         search: { prompt: undefined, promptId: undefined },
       });
-    } catch {
-      toast.error('Failed to create project');
+    } catch (err) {
+      toast.error(limitRefusalMessage(err, 'Failed to create project'));
     }
   };
 
