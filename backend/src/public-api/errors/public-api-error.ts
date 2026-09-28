@@ -10,7 +10,9 @@ import {
 } from './error-types';
 import type { OrganizationRef, ApiError, ValidationErrorItem } from './error.schema';
 
-type ErrorExtensions = Partial<Pick<ApiError, 'detail' | 'errors' | 'lints' | 'organizations' | 'permission'>>;
+type ErrorExtensions = Partial<
+  Pick<ApiError, 'detail' | 'errors' | 'lints' | 'organizations' | 'permission' | 'testProjectId'>
+>;
 
 export class PublicApiError extends HttpException {
   constructor(
@@ -71,6 +73,18 @@ export const Errors = {
   duplicateSkillName: (detail: string) => new PublicApiError('duplicate-skill-name', { detail }),
   modelUnknown: (detail: string) => new PublicApiError('model-unknown', { detail }),
   notPublishable: (detail: string) => new PublicApiError('not-publishable', { detail }),
+  templateRefused: (detail: string, errors: ValidationErrorItem[]) =>
+    new PublicApiError('template-refused', { detail, errors }),
+  templateChanged: (detail: string) => new PublicApiError('template-changed', { detail }),
+  testProjectExists: (testProjectId: string) =>
+    new PublicApiError('test-project-exists', {
+      detail: 'This Builder chat already has its one Test Project; Update or Reset it instead of creating another',
+      testProjectId,
+    }),
+  notTestProjectOwner: () =>
+    new PublicApiError('permission-denied', {
+      detail: 'Only the Builder chat that created this Test Project may refresh it',
+    }),
   unexpected: () => new PublicApiError('unexpected'),
   fromForeignStatus: (status: number, detail: string) =>
     new PublicApiError(fallbackSlugForStatus(status), { detail }, {}, hasFallbackSlug(status) ? undefined : status),

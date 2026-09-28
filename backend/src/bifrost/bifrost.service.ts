@@ -419,6 +419,32 @@ export class BifrostService {
     this.logger.log(`Updated budget for ${keyType} key of project ${projectId}: $${maxBudget}/${budgetDuration}`);
   }
 
+  /** Clears the spend recorded against the Project's team and active keys, keeping every limit as it is. */
+  async resetProjectSpend(projectId: string): Promise<void> {
+    if (!this.isEnabled()) return;
+    const [project] = await db
+      .select({ teamId: projects.bifrostProjectId })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const keys = await db
+      .select({ bifrostKeyId: projectVirtualKeys.bifrostKeyId })
+      .from(projectVirtualKeys)
+      .where(and(eq(projectVirtualKeys.projectId, projectId), eq(projectVirtualKeys.status, 'active')));
+
+    await Promise.all([
+      ...(project?.teamId ? [this.resetUsage(`/api/governance/teams/${project.teamId}`, 'team')] : []),
+      ...keys.map((key) => this.resetUsage(`/api/governance/virtual-keys/${key.bifrostKeyId}`, 'virtual_key')),
+    ]);
+    this.logger.log(`Reset the Bifrost spend of project ${projectId}`);
+  }
+
+  private async resetUsage(path: string, field: 'team' | 'virtual_key'): Promise<void> {
+    const data = await this.request<Record<typeof field, { budgets?: BifrostBudget[] }>>('GET', path);
+    const budgets = (data[field].budgets ?? []).map(({ max_limit, reset_duration }) => ({ max_limit, reset_duration }));
+    if (budgets.length === 0) return;
+    await this.request('PUT', path, { budgets, reset_budget_usage: true });
+  }
+
   async revokeProjectKeys(projectId: string): Promise<void> {
     const activeKeys = await db
       .select()

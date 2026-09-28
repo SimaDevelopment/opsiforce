@@ -45,6 +45,7 @@ export const AgentMapper = {
       variant: profile.variant,
       updatedAt: profile.updatedAt === null ? null : profile.updatedAt.toISOString(),
       skills: profile.skills === null ? null : profile.skills.map(toSkillDto),
+      template: profile.template === null ? null : { hash: profile.template.hash, damaged: profile.template.damaged },
     })),
     projectCount: agent.projectCount,
   }),

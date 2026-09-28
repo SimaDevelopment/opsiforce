@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { constants } from "node:fs"
+import { readFileSync } from "node:fs"
 import { access, cp, mkdir, readdir, rename, rm } from "node:fs/promises"
 import path from "node:path"
 
+const packageSkills = JSON.parse(readFileSync(new URL("../package-skills.json", import.meta.url), "utf8"))
+
 export const CUSTOM_PACKAGE = "custom"
-export const CUSTOM_PACKAGE_SHARED_SKILLS = ["platform"]
-export const PACKAGE_SHARED_SKILL_EXCLUSIONS = { "makara-app-builder": ["web-app", "dates"] }
+export const CUSTOM_PACKAGE_SHARED_SKILLS = packageSkills.customPackageSharedSkills
+export const PACKAGE_SHARED_SKILL_EXCLUSIONS = packageSkills.sharedSkillExclusions
 
 export function sharedSkillsForPackage(packageName, sharedNames) {
   if (packageName === CUSTOM_PACKAGE) return sharedNames.filter((name) => CUSTOM_PACKAGE_SHARED_SKILLS.includes(name))

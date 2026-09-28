@@ -1,4 +1,4 @@
-import type { AgentProfile, AgentProfileSkill } from '~/api/agents';
+import type { AgentProfile, AgentProfileSkill, TemplateComparison } from '~/api/agents';
 
 export interface RepinnedSkill {
   skill: AgentProfileSkill;
@@ -13,6 +13,8 @@ export interface ProfileDiff {
   removed: AgentProfileSkill[];
   repinned: RepinnedSkill[];
   skillsChanged: boolean;
+  template: TemplateComparison;
+  templateChanged: boolean;
   empty: boolean;
 }
 
@@ -39,6 +41,8 @@ export function profileDiff(development: AgentProfile, target: AgentProfile | un
   const promptChanged = (development.promptBody ?? '') !== (target?.promptBody ?? '');
   const modelChanged = development.model !== (target?.model ?? null) || development.variant !== (target?.variant ?? null);
   const skillsChanged = added.length + removed.length + repinned.length > 0;
+  const template = compareTemplates(development.template?.hash ?? null, target?.template?.hash ?? null);
+  const templateChanged = template !== 'same' && template !== 'none';
 
   return {
     promptChanged,
@@ -47,8 +51,16 @@ export function profileDiff(development: AgentProfile, target: AgentProfile | un
     removed,
     repinned,
     skillsChanged,
-    empty: !promptChanged && !modelChanged && !skillsChanged,
+    template,
+    templateChanged,
+    empty: !promptChanged && !modelChanged && !skillsChanged && !templateChanged,
   };
+}
+
+function compareTemplates(development: string | null, target: string | null): TemplateComparison {
+  if (development === null) return target === null ? 'none' : 'removed';
+  if (target === null) return 'added';
+  return development === target ? 'same' : 'changed';
 }
 
 /** The Publishing strip's one line per target. */
@@ -57,8 +69,11 @@ export function driftText(development: AgentProfile | undefined, target: AgentPr
   if (!isPublished(development)) return 'Development holds no definition';
   const diff = profileDiff(development, target);
   if (diff.empty) return 'Same as Development';
-  const parts = [diff.promptChanged && 'prompt', diff.modelChanged && 'model', diff.skillsChanged && 'skills'].filter(
-    (part): part is string => typeof part === 'string'
-  );
+  const parts = [
+    diff.promptChanged && 'prompt',
+    diff.modelChanged && 'model',
+    diff.skillsChanged && 'skills',
+    diff.templateChanged && 'template',
+  ].filter((part): part is string => typeof part === 'string');
   return `Development differs: ${parts.join(', ')}`;
 }

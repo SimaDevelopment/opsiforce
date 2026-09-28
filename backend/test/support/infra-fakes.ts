@@ -40,6 +40,11 @@ export class FakePodService extends RecordingFake {
     this.pods.delete(podName);
   }
 
+  async deletePodAndWait(podName: string): Promise<void> {
+    this.record('deletePodAndWait', { podName });
+    this.pods.delete(podName);
+  }
+
   async getPod(podName: string): Promise<V1Pod | null> {
     this.record('getPod', { podName });
     return this.pods.get(podName) ?? null;
@@ -137,6 +142,10 @@ export class FakeBifrostService extends RecordingFake {
   async getEnvironmentPodOptions(environmentId: string): Promise<null> {
     this.record('getEnvironmentPodOptions', { environmentId });
     return null;
+  }
+
+  async resetProjectSpend(projectId: string): Promise<void> {
+    this.record('resetProjectSpend', { projectId });
   }
 
   async revokeProjectKeys(projectId: string): Promise<void> {

@@ -9,7 +9,7 @@ Browser automation tool for testing your app and debugging UI issues. Chrome/Chr
 
 ## Discovering commands
 
-Don't guess at commands — ask the CLI. It serves version-matched docs so instructions never go stale:
+Ask the CLI; it serves docs that match the installed version:
 
 ```bash
 agent-browser skills list                 # every skill available on the installed version
@@ -19,7 +19,7 @@ agent-browser --help                      # top-level help
 agent-browser <command> --help            # help for a specific command
 ```
 
-Run `agent-browser skills get core --full` before your first interaction in a session — it has the canonical commands for navigating, snapshotting, clicking, filling, waiting, network inspection, and evaluating JS in the page.
+Run `agent-browser skills get core` before your first interaction in a session: workflows, common patterns, troubleshooting. Reach for `agent-browser <command> --help`, or `skills get core --full`, when a command you need is not in it.
 
 ## Debugging workflow
 

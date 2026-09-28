@@ -1,11 +1,24 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { toast } from 'solid-sonner';
-import { usePublishAgent, useUpdateAgentSettings, type AgentDetail, type AgentProfile } from '~/api/agents';
+import {
+  usePublishAgent,
+  useUpdateAgentSettings,
+  type AgentDetail,
+  type AgentProfile,
+  type TemplateComparison,
+} from '~/api/agents';
 import { ApiError } from '~/api/client';
 import type { Environment } from '~/api/environments';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { EnvironmentBadge } from '~/components/environment-badge';
 import { FOCUS_RING } from '~/components/store/store-list';
@@ -25,6 +38,13 @@ function DiffLine(props: { label: string; changed: boolean; children: unknown })
     </div>
   );
 }
+
+const TEMPLATE_LABELS: Record<Exclude<TemplateComparison, 'none'>, string> = {
+  same: 'Same',
+  changed: 'Changed',
+  added: 'Added',
+  removed: 'Removed',
+};
 
 function modelLabel(profile: AgentProfile): string {
   return profile.variant ? `${profile.model} · ${profile.variant}` : (profile.model ?? '—');
@@ -137,6 +157,10 @@ export function PublishAgentDialog(props: {
             {(shown) => {
               const development = () => shown().development;
               const changes = () => shown().changes;
+              const shownTemplate = () => {
+                const template = changes().template;
+                return template === 'none' ? undefined : template;
+              };
               return (
                 <div class="space-y-3">
                   <div class="overflow-hidden rounded-lg border border-border">
@@ -190,6 +214,13 @@ export function PublishAgentDialog(props: {
                           </span>
                         </Show>
                       </DiffLine>
+                      <Show when={shownTemplate()}>
+                        {(template) => (
+                          <DiffLine label="Template" changed={changes().templateChanged}>
+                            {TEMPLATE_LABELS[template()]}
+                          </DiffLine>
+                        )}
+                      </Show>
                     </div>
                   </div>
 
@@ -216,7 +247,12 @@ export function PublishAgentDialog(props: {
             </p>
           </Show>
 
-          <NewProjectsSetting agent={props.agent} environments={props.environments} profileFor={props.profileFor} />
+          <NewProjectsSetting
+            agent={props.agent}
+            environments={props.environments}
+            choices={props.targets}
+            profileFor={props.profileFor}
+          />
         </div>
 
         <DialogFooter>
@@ -238,6 +274,7 @@ export function PublishAgentDialog(props: {
 function NewProjectsSetting(props: {
   agent: AgentDetail;
   environments: Environment[];
+  choices: Environment[];
   profileFor: (environmentId: string) => AgentProfile | undefined;
 }) {
   const updateSettings = useUpdateAgentSettings(() => props.agent.id);
@@ -267,7 +304,7 @@ function NewProjectsSetting(props: {
         </div>
         <div class="w-full sm:w-44">
           <Select
-            options={props.environments}
+            options={props.choices}
             optionValue="id"
             optionTextValue="name"
             value={chosen()}

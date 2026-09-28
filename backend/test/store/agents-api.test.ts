@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import 'reflect-metadata';
 import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, assert, beforeAll, describe, expect, it } from 'vitest';
@@ -15,11 +18,13 @@ import {
 } from '../../db/schema';
 import { AgentController } from '../../src/agent/agent.controller';
 import { BUILDER_AGENT_SLUG, liveBuiltInSlugs } from '../../src/agent/agent-visibility';
+import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
 import { Perms } from '../../src/permission/permission.constants';
 import { RELAXED_PERMISSION_KEY } from '../../src/permission/permission.guard';
 import type { AgentCaller } from '../../src/agent/agent.types';
 import type { AgentService } from '../../src/agent/agent.service';
 import type { SkillCaller, SkillService } from '../../src/store/skill.service';
+import { agentConfigRoot, packageSkillNames } from '../../src/store/skill-tree';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import { defaultEnvironmentId, ensureBuiltInAgent, ensureBuiltInSkill, seedLiveAgent } from '../support/agent-fixtures';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
@@ -108,7 +113,7 @@ describe('the AgentController permission surface', () => {
 });
 
 describe('creating a custom agent', () => {
-  it('derives a slug and lays down settings, a Development profile and the platform skill', async () => {
+  it('derives a slug, defaults new projects to Production and lays down a Development profile with the platform skill', async () => {
     const created = await service.create(author, { displayName: 'My Research Agent', description: ' helper ' });
 
     expect(created).toMatchObject({
@@ -119,11 +124,11 @@ describe('creating a custom agent', () => {
       visibility: 'private',
       disabled: false,
       imageOwned: false,
-      live: true,
+      live: false,
       createdBy: author.userId,
       projectCount: 0,
     });
-    expect(created.settings).toEqual({ defaultEnvironmentId: developmentId, platformApi: false });
+    expect(created.settings).toEqual({ defaultEnvironmentId: productionId, platformApi: false });
 
     const development = created.profiles.find((profile) => profile.environmentId === developmentId);
     expect(development).toMatchObject({ promptBody: '', model: 'openai/gpt-5.6-sol', variant: 'high' });
@@ -285,6 +290,63 @@ describe('agent skills', () => {
   });
 });
 
+function agentConfigDirectories(...segments: string[]): string[] {
+  const directory = join(agentConfigRoot(), ...segments);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+}
+
+describe('the Skills a Built-in Agent ships', () => {
+  const composer = import(pathToFileURL(join(agentConfigRoot(), 'scripts', 'compose-skills.mjs')).href) as Promise<{
+    sharedSkillsForPackage: (packageName: string, sharedNames: string[]) => string[];
+    planCompose: (sharedNames: string[], overrideNames: string[]) => { name: string }[];
+  }>;
+
+  async function shippedNames(packageName: string): Promise<string[]> {
+    const detail = await service.findOne(author, await ensureBuiltInAgent(packageName));
+    return detail.shippedSkills.map((skill) => skill.name);
+  }
+
+  it('leaves web-app and dates out of Makara, which carries its own', async () => {
+    const makara = await shippedNames('makara-app-builder');
+
+    expect(makara).not.toContain('web-app');
+    expect(makara).not.toContain('dates');
+    expect(makara).toContain('makara-dates');
+    expect(makara).toContain('platform');
+  });
+
+  it('keeps the whole shared pool on App Builder', async () => {
+    const appBuilder = await shippedNames('app-builder');
+
+    expect(appBuilder).toContain('web-app');
+    expect(appBuilder).toContain('dates');
+    expect(appBuilder).toContain('ui');
+  });
+
+  it('matches what the image composer lays into every package', async () => {
+    const { planCompose, sharedSkillsForPackage } = await composer;
+    const packages = [
+      ...agentConfigDirectories('agents'),
+      ...agentConfigDirectories('private', 'agents'),
+      CUSTOM_AGENT_PACKAGE,
+    ];
+
+    for (const packageName of new Set(packages)) {
+      const own = [
+        ...agentConfigDirectories('agents', packageName, 'skills'),
+        ...agentConfigDirectories('private', 'agents', packageName, 'skills'),
+      ];
+      const composed = planCompose(sharedSkillsForPackage(packageName, agentConfigDirectories('skills')), own).map(
+        (skill) => skill.name
+      );
+      expect([...packageSkillNames(packageName)].toSorted(), packageName).toEqual(composed.toSorted());
+    }
+  });
+});
+
 describe('publishing an agent to another environment', () => {
   it('copies rows rather than a blob and reports the diff', async () => {
     const agent = await service.create(author, { displayName: agentName() });
@@ -334,6 +396,7 @@ describe('publishing an agent to another environment', () => {
       prompt: 'same',
       model: null,
       skills: { added: [], removed: [], repinned: [] },
+      template: 'none',
     });
 
     const [untouched] = await db.select().from(agentProfiles).where(eq(agentProfiles.id, target.id));
@@ -447,7 +510,7 @@ describe('the store agent list filters', () => {
 
     const row = (await service.listStore(author)).find((entry) => entry.id === agent.id);
 
-    expect(row?.defaultEnvironmentId).toBe(developmentId);
+    expect(row?.defaultEnvironmentId).toBe(productionId);
     expect(row?.profileEnvironmentIds.toSorted()).toEqual([developmentId, productionId].toSorted());
   });
 });
@@ -469,15 +532,6 @@ describe('agent lifecycle', () => {
     expect(copy).toMatchObject({ visibility: 'private', origin: 'custom' });
     expect(development).toMatchObject({ promptBody: 'Copy me.', variant: 'low' });
     expect(development?.skills?.map((row) => row.name).toSorted()).toEqual(['platform', extra.name].toSorted());
-  });
-
-  it('starts a duplicate of a built-in agent from an empty prompt and the registry model', async () => {
-    const builtIn = await ensureBuiltInAgent('app-builder');
-
-    const copy = await service.duplicate(author, builtIn, { displayName: agentName() });
-
-    const development = copy.profiles.find((profile) => profile.environmentId === developmentId);
-    expect(development).toMatchObject({ promptBody: '', model: 'openai/gpt-5.6-sol', variant: 'high' });
   });
 
   it('deletes a never-published agent outright and hands its test projects over for removal', async () => {
@@ -531,6 +585,27 @@ describe('agent lifecycle', () => {
       'NotFoundException'
     );
   });
+
+  it('refuses Development as the default environment and still takes any other', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+    const staging = await harness.environments.create(tenantId, { name: `Staging ${randomUUID().slice(0, 6)}` });
+
+    expect(await code(service.updateSettings(author, agent.id, { defaultEnvironmentId: developmentId }))).toBe(
+      'development_not_default'
+    );
+    expect((await service.findOne(author, agent.id)).settings.defaultEnvironmentId).toBe(productionId);
+
+    const moved = await service.updateSettings(author, agent.id, { defaultEnvironmentId: staging.id });
+    expect(moved.settings.defaultEnvironmentId).toBe(staging.id);
+  });
+
+  it('leaves an existing agent on a Development default as it is', async () => {
+    const agent = await seedLiveAgent(tenantId, author.userId);
+
+    const kept = await service.updateSettings(author, agent.id, { platformApi: true });
+
+    expect(kept).toMatchObject({ live: true, settings: { defaultEnvironmentId: developmentId, platformApi: true } });
+  });
 });
 
 describe('deleting an environment an agent holds', () => {
@@ -581,6 +656,7 @@ describe('identity and visibility', () => {
 
   it('withdraws a disabled agent from the picker and enables it again', async () => {
     const agent = await service.create(author, { displayName: agentName() });
+    await service.publish(author, agent.id, { environmentId: productionId });
     const offered = async () => new Set((await service.findAll(author)).map((row) => row.id));
 
     expect((await offered()).has(agent.id)).toBe(true);

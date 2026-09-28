@@ -176,7 +176,7 @@ export class ProxyController {
     }
   }
 
-  /** The third predicate beside tenant membership and project visibility (ADR-0065). */
+  /** The third predicate beside tenant membership and project visibility (ADR-0064). */
   private async assertKindStampedVisibility(tenantId: string, projectId: string, userId: string): Promise<void> {
     if ((await this.provenance.findKind(projectId)) === null) return;
     if (await isHiddenProjectReachable(tenantId, userId, projectId)) return;

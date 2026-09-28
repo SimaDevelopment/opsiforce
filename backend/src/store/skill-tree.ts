@@ -1,6 +1,7 @@
 import { lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { PLATFORM_SKILL_NAME } from '../agent/agent.types';
+import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
 import { computeFlags, hashSkillTree, SKILL_MANIFEST_PATH, type SkillFlags, type SkillTree } from './gate';
 import { parseFrontmatter } from './gate/frontmatter';
 import { decodeText } from './gate/skill-tree';
@@ -38,14 +39,22 @@ function subdirectories(dir: string): string[] {
   }
 }
 
+interface PackageSkillsFile {
+  customPackageSharedSkills: string[];
+  sharedSkillExclusions: Record<string, string[]>;
+}
+
+/** The set `agent-config/scripts/compose-skills.mjs` lays into the package in the agent image. */
 export function packageSkillNames(packageName: string, root: string = agentConfigRoot()): Set<string> {
-  const directories = [
-    join(root, 'skills'),
-    join(root, 'private', 'skills'),
-    join(root, 'agents', packageName, 'skills'),
-    join(root, 'private', 'agents', packageName, 'skills'),
-  ];
-  return new Set(directories.flatMap((directory) => subdirectories(directory)));
+  const rules = JSON.parse(readFileSync(join(root, 'package-skills.json'), 'utf8')) as PackageSkillsFile;
+  const shared = subdirectories(join(root, 'skills'));
+  const excluded = rules.sharedSkillExclusions[packageName] ?? [];
+  const sharedShipped =
+    packageName === CUSTOM_AGENT_PACKAGE
+      ? shared.filter((name) => rules.customPackageSharedSkills.includes(name))
+      : shared.filter((name) => !excluded.includes(name));
+  const own = [join(root, 'agents', packageName, 'skills'), join(root, 'private', 'agents', packageName, 'skills')];
+  return new Set([...sharedShipped, ...own.flatMap((directory) => subdirectories(directory))]);
 }
 
 export function assertBuiltInSkillsShipped(root: string = agentConfigRoot()): void {

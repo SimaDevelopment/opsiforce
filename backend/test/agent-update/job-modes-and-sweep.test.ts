@@ -11,7 +11,7 @@ import type { Job } from 'bullmq';
 import { and, desc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { agentProfiles, agents, environments, projectAgentUpdates } from '../../db/schema';
+import { agentProfiles, agents, environments, projectAgentUpdates, projectEnvironments } from '../../db/schema';
 import { AgentUpdateProcessor } from '../../src/agent-update/agent-update.processor';
 import type { AgentUpdateJobOptions, AgentUpdateRunResult } from '../../src/agent-update/agent-update.k8s.service';
 import { reapStaleRunningAgentUpdates } from '../../src/agent-update/agent-update.reaper';
@@ -23,6 +23,7 @@ import {
 } from '../../src/agent-update/agent-update.types';
 import { DEFAULT_AGENT_NAME, type AgentCaller } from '../../src/agent/agent.types';
 import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
+import type { NotifyTarget } from '../../src/delivery/pod-reload.client';
 import { ProjectStatus } from '../../src/project/project.types';
 import type { SkillCaller } from '../../src/store/skill.service';
 import { defaultEnvironmentId, ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
@@ -70,6 +71,15 @@ let harness: DomainTestHarness;
 let queue: FakeQueue;
 let runner: ScriptJobRunner;
 let processor: AgentUpdateProcessor;
+const podReload = {
+  reachable: true,
+  notified: [] as Array<{ projectEnvironmentId: string; targets: NotifyTarget[] }>,
+  async notify(projectEnvironmentId: string, _podIp: string, targets: NotifyTarget[]): Promise<boolean> {
+    this.notified.push({ projectEnvironmentId, targets });
+    return this.reachable;
+  },
+  async confirmSkills(): Promise<void> {},
+};
 let tenantId: string;
 let userId: string;
 let agent: AgentCaller;
@@ -120,7 +130,8 @@ function rebuildProcessor(): void {
     runner as never,
     harness.projectEnvironments,
     harness.skillDeliveries,
-    withImageVersion as never
+    withImageVersion as never,
+    podReload as never
   );
 }
 
@@ -533,5 +544,44 @@ describe('the environment critical section', () => {
 
     await db.delete(projectAgentUpdates).where(eq(projectAgentUpdates.id, holder));
     await harness.agents.removeSkill(agent, builtInAgentId, skill.id);
+  });
+});
+
+describe('a Job on an environment whose pod is running', () => {
+  let project: { id: string };
+
+  beforeAll(async () => {
+    project = await harness.projects.create({ agentId: builtInAgentId }, tenantId, { createdBy: userId });
+    await sweep();
+    await db.update(projectEnvironments).set({ podIp: '127.0.0.1' }).where(eq(projectEnvironments.id, project.id));
+  });
+
+  afterAll(async () => {
+    await db.update(projectEnvironments).set({ podIp: null }).where(eq(projectEnvironments.id, project.id));
+    podReload.reachable = true;
+  });
+
+  it('tells the pod what the Job rewrote, because a write from another node raises no file event there', async () => {
+    podReload.notified = [];
+    await layImage('5.0.0', '# platform v9\n');
+    await sweep();
+
+    const call = podReload.notified.find((entry) => entry.projectEnvironmentId === project.id);
+    expect(call?.targets).toEqual(expect.arrayContaining(['agents', 'skills']));
+    expect(await latestRow(project.id)).toMatchObject({
+      requiresPodRecreate: false,
+      status: AgentUpdateStatus.Applied,
+    });
+  });
+
+  it('recreates the pod once idle when it cannot be told', async () => {
+    podReload.reachable = false;
+    await layImage('5.1.0', '# platform v10\n');
+    await sweep();
+
+    expect(await latestRow(project.id)).toMatchObject({
+      requiresPodRecreate: true,
+      status: AgentUpdateStatus.ReloadPending,
+    });
   });
 });

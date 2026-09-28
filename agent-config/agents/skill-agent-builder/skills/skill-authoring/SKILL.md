@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: How to author a Skill for the Opsiforce Store — when one is warranted at all, what the SKILL.md frontmatter must carry, why the description is the only trigger, what belongs in references instead of the body, and the offline-validate then publish then read-back loop against the platform API. Load it before drafting, validating or publishing any Skill.
+description: Skill authoring — whether one is warranted, the frontmatter and its triggering description, the body and references split, and the validate, publish, read-back loop. Load it before drafting, validating or publishing a Skill.
 ---
 
 # Authoring a Skill
@@ -13,6 +13,9 @@ carries the rest at no standing cost.
 
 ## Is a Skill warranted?
 
+In an Agent chat this decides whether to create one; in a Skill chat, name the catch-all you found and
+carry on unless the author stops you.
+
 Yes, when the guidance is **reusable** (it will apply in chats nobody has had yet), **non-obvious**
 (the model gets it wrong or inconsistent without it), and **stable** (it is not this week's one-off).
 A house API's auth dance, a library's version-specific idiom, a reporting format with real rules.
@@ -22,7 +25,7 @@ No, when it is:
 - a **one-off instruction** — say it in the chat, or put it in the Agent's prompt;
 - something the model already does well — a skill that restates common knowledge only adds a trigger
   that misfires;
-- **anything the `platform` skill covers** — every agent already has it. Never copy a line of it;
+- **anything the `platform` skill covers** — every agent already carries it;
 - already in the **built-in catalogue** — check first (below).
 
 Offer the author the honest answer, including "this does not need a Skill".
@@ -69,8 +72,6 @@ sh /workspace/scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json
 sh /workspace/scripts/api.sh call GET "/skills/$ID/versions/$N/files"
 ```
 
-`POST /skills/validate` runs the same check server-side; prefer the local script, which costs nothing.
-
 **Every submission is a whole tree.** A Version is minted from the files you send, and nothing is
 merged with the Version before it. To change one line, send every file again with that line changed —
 fetch the current files first if you did not write them.
@@ -79,8 +80,7 @@ fetch the current files first if you did not write them.
 
 The gate answers two lists, and they mean different things:
 
-- **ERRORS** — the write is refused. Fix every one; do not argue with them or ask the author to
-  approve a workaround.
+- **ERRORS** — the write is refused. Fix every one yourself, before you publish.
 - **LINTS** — advice that never blocks: a body over 500 lines, a description under 20 words, a
   `references/` link that resolves nowhere, `allowed-tools` (platform-owned, and silently stripped).
   Fix them anyway unless the author has a reason, because each one names a real way the skill will
@@ -95,6 +95,10 @@ The gate answers two lists, and they mean different things:
 the trigger** — write it as *when to use this*, in the user's words. The **body** is the decision
 layer; long tables, API surfaces, variants and edge cases go in `references/<topic>.md`.
 
+Files the author uploads arrive in `/workspace/user_uploaded_files/`. Extract what the agent needs
+into `references/<topic>.md`; a file the child must open as it is (a PDF, a font, a sheet) belongs in
+an Agent's Template.
+
 A Skill frames work: decisions, contracts, conventions, libraries and short examples —
 never an implementation for the agent to copy into what it builds. `scripts/` holds tools the agent
 runs, not code an App ships. For a stack Skill an Agent carries, `agent-authoring` has the frame.
@@ -106,5 +110,5 @@ shapes.
 ## Reporting to the author
 
 Name the Skill, its Version, and its visibility in plain language: a new Skill is **private to you**
-until someone makes it public from the Store. Say what it does and what you fixed on the way. Never
-paste the whole tree back at them.
+until someone makes it public from the Store. Say what it does and what you fixed on the way. Give
+the tree as a one-line summary and its path.

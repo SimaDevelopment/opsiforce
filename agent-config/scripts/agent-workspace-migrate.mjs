@@ -5,7 +5,7 @@ import { access, chmod, cp, mkdir, readFile, readdir, rename, rm, writeFile } fr
 import path from "node:path"
 import { execFile } from "node:child_process"
 
-const GITIGNORE = [
+const PLATFORM_IGNORES = [
   ".config/",
   ".cache/",
   ".bun/",
@@ -20,8 +20,10 @@ const GITIGNORE = [
   "**/.yarn/install-state.gz",
   "**/.yarn/sdks",
   "**/.pnp.*",
-  "",
-].join("\n")
+]
+const GITIGNORE = [...PLATFORM_IGNORES, ""].join("\n")
+const PLATFORM_IGNORES_MARKER = "# platform"
+const PLATFORM_ENTRIES = new Set([".git", ".opencode", ".opsiforce", ".xdg", ".config", ".cache", ".bun"])
 
 export function createContext(env = process.env) {
   const agentName = env.AGENT_NAME || "app-builder"
@@ -277,16 +279,39 @@ function runGit(context, args) {
   })
 }
 
-async function initRepository(context, laidTemplate) {
-  if (await exists(path.join(context.workspace, ".git"))) return
-  if (!(await exists(path.join(context.workspace, ".gitignore")))) {
-    await writeTextAtomic(path.join(context.workspace, ".gitignore"), GITIGNORE)
+async function holdsTemplateEntries(context) {
+  const entries = await readdir(context.workspace).catch(() => [])
+  return entries.some((name) => !PLATFORM_ENTRIES.has(name))
+}
+
+export function withPlatformIgnores(gitignore) {
+  const present = new Set(gitignore.split("\n").map((line) => line.trim()))
+  const missing = PLATFORM_IGNORES.filter((line) => !present.has(line))
+  if (missing.length === 0) return gitignore
+  const lines = present.has(PLATFORM_IGNORES_MARKER) ? missing : [PLATFORM_IGNORES_MARKER, ...missing]
+  const separated = gitignore.length === 0 || gitignore.endsWith("\n") ? gitignore : `${gitignore}\n`
+  return `${separated}${lines.join("\n")}\n`
+}
+
+async function ensurePlatformIgnores(context) {
+  const gitignorePath = path.join(context.workspace, ".gitignore")
+  const current = await readFile(gitignorePath, "utf8").catch(() => null)
+  if (current === null) {
+    await writeTextAtomic(gitignorePath, GITIGNORE)
+    return
   }
+  const next = withPlatformIgnores(current)
+  if (next !== current) await writeTextAtomic(gitignorePath, next)
+}
+
+async function initRepository(context, holdsTemplate) {
+  if (await exists(path.join(context.workspace, ".git"))) return
+  await ensurePlatformIgnores(context)
   await runGit(context, ["init"])
   await runGit(context, ["config", "user.email", "agent@opsiforce.com"])
   await runGit(context, ["config", "user.name", "OpsiForce"])
   await runGit(context, ["add", "-A"])
-  await runGit(context, ["commit", "--allow-empty", "-m", laidTemplate ? "Initial template" : "Initial workspace"])
+  await runGit(context, ["commit", "--allow-empty", "-m", holdsTemplate ? "Initial template" : "Initial workspace"])
 }
 
 function recordConflict(summary, migrationId, target, reason) {
@@ -463,8 +488,9 @@ export async function provisionWorkspace(context, summary) {
   await clearStaging(context)
   const { ownedSkills, registryEntry } = await applyContent(context, summary, [])
   const laidTemplate = await layTemplate(context)
+  const holdsTemplate = await holdsTemplateEntries(context)
   if (!laidTemplate) await mkdir(context.appDir, { recursive: true })
-  await initRepository(context, laidTemplate)
+  await initRepository(context, holdsTemplate)
   const imageVersion = await loadImageVersion(context)
   summary.targetVersion = await resolveContentVersion(context, registryEntry, imageVersion)
   await writeLedger(context, {

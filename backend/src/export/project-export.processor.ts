@@ -18,6 +18,7 @@ import { ProjectFilesService, type ProjectFileEntry } from '../project/project-f
 import { ProjectExportService } from './project-export.service';
 import {
   EXPORT_FORMAT_VERSION,
+  PROJECT_EXPORT_KIND,
   PROJECT_EXPORT_QUEUE,
   ProjectExportJobData,
   ProjectExportStatus,
@@ -103,6 +104,7 @@ export class ProjectExportProcessor extends WorkerHost {
 
       const schedules = await this.projectService.getSchedulesForExport(projectId);
       const manifest: ExportManifest = {
+        kind: PROJECT_EXPORT_KIND,
         title: project.title,
         description: project.description,
         agentName: agent?.slug ?? null,

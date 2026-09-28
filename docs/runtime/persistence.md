@@ -25,7 +25,7 @@ adrs: [0042]
 ### Cleanup
 
 - Deleting a [Project](../../CONTEXT.md) or environment writes a tombstone row per environment before the live rows go, so a directory is never untracked.
-- A daily job removes workspaces whose tombstone is older than seven days and sweeps the `projects/` root for directories with neither a live row nor a tombstone.
+- A daily job removes workspaces whose tombstone is older than seven days and sweeps the `projects/` root for directories with neither a live row nor a tombstone; the same run sweeps `agent-templates/` ([Template](../agent-system/template.md)).
 - Operators holding `can_manage_platform_storage` can run the same job for one [Organization](../../CONTEXT.md) with the retention window ignored from the [Storage](storage.md) page.
 
 ## Edge cases

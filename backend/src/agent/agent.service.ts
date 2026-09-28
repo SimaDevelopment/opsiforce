@@ -9,14 +9,12 @@ import { MissingPermissionException } from '../permission/missing-permission.exc
 import { Perms } from '../permission/permission.constants';
 import { and, asc, eq, isNull, not, or, sql } from 'drizzle-orm';
 import { db } from '../../db';
-import {
-  agentProfileSkills,
-  agentProfiles,
-  agentSettings,
-  agents,
-  environments,
-  skills,
-} from '../../db/schema';
+import { agentSettings, agents, environments, projectEnvironments } from '../../db/schema';
+import { join } from 'node:path';
+import { ConfigService } from '@nestjs/config';
+import { AgentTemplateStore } from '../agent-template/agent-template.store';
+import { lockAgentTemplate } from '../common/locks';
+import type { TemplateSaveResult } from '../agent-template/agent-template.types';
 import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
 import { SkillDeliveryRepository } from '../delivery/skill-delivery.repository';
 import { packageSkillNames } from '../store/skill-tree';
@@ -28,9 +26,12 @@ import {
   type CatalogColumns,
   type CatalogListFilter,
 } from '../store/catalog-filters';
-import { nameUnavailable, notDisableable, visibilityIncoherent } from '../store/store-errors';
-import { agentDeclaresPlatformApi, readMergedAgentRegistry, registryDefaultModel } from './agent-config';
-import { agentInUse, lastBuiltInAgent, notPublishable } from './agent-errors';
+import { notDisableable, visibilityIncoherent } from '../store/store-errors';
+import { agentDeclaresPlatformApi, defaultProfileModel } from './agent-config';
+import { agentInUse, developmentNotDefault, lastBuiltInAgent, notDuplicable, notPublishable } from './agent-errors';
+import { pinsFromReferences } from './agent-bundle';
+import { AgentBundleReader } from './agent-bundle.reader';
+import { AgentBundleWriter } from './agent-bundle.writer';
 import { isChatKind, type ProjectKind } from '../project/project.types';
 import { assertModelSelection } from './agent-models';
 import { AgentProfileService, assertAgentCarriesNoPrivateSkill } from './agent-profile.service';
@@ -40,14 +41,15 @@ import {
   assertAgentVisibleToUser,
   BUILDER_AGENT_SLUG,
   canDisableAgent,
+  canDuplicateAgent,
   canEditAgent,
   liveAgentsWhere,
+  projectCreatableAgentsWhere,
   startableBuiltInAgentsWhere,
   visibleAgentsWhere,
 } from './agent-visibility';
 import {
   DEFAULT_AGENT_NAME,
-  PLATFORM_SKILL_NAME,
   type AgentCaller,
   type AgentDeliveryEnvironment,
   type AgentDeliveryResponse,
@@ -69,8 +71,6 @@ import {
   type UpdateAgentSettingsDto,
 } from './agent.types';
 
-const SLUG_MAX_LENGTH = 60;
-
 const AGENT_CATALOG_COLUMNS: CatalogColumns = {
   tenantId: agents.tenantId,
   name: agents.name,
@@ -81,23 +81,16 @@ const AGENT_CATALOG_COLUMNS: CatalogColumns = {
   createdBy: agents.createdBy,
 };
 
-export function slugifyAgentName(displayName: string): string {
-  return displayName
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX_LENGTH)
-    .replace(/-+$/, '');
-}
-
 @Injectable()
 export class AgentService {
   constructor(
     private readonly repository: AgentRepository,
     private readonly profiles: AgentProfileService,
-    private readonly skillDeliveries: SkillDeliveryRepository
+    private readonly skillDeliveries: SkillDeliveryRepository,
+    private readonly templates: AgentTemplateStore,
+    private readonly bundleReader: AgentBundleReader,
+    private readonly bundles: AgentBundleWriter,
+    private readonly configService: ConfigService
   ) {}
 
   async findAll(caller: AgentCaller): Promise<AgentResponse[]> {
@@ -128,7 +121,13 @@ export class AgentService {
     ]);
 
     return rows.map((row) =>
-      toSummary(row, caller.userId, live.has(row.id), profileEnvironments.get(row.id) ?? [], defaults.get(row.id) ?? null)
+      toSummary(
+        row,
+        caller.userId,
+        live.has(row.id),
+        profileEnvironments.get(row.id) ?? [],
+        defaults.get(row.id) ?? null
+      )
     );
   }
 
@@ -148,52 +147,30 @@ export class AgentService {
       ),
       settings,
       profiles,
-      shippedSkills: agent.origin === 'built_in' ? await this.repository.shippedSkills(packageSkillNames(agent.name)) : [],
+      shippedSkills:
+        agent.origin === 'built_in' ? await this.repository.shippedSkills(packageSkillNames(agent.name)) : [],
       projectCount: await this.repository.projectCount(agent.id, caller.tenantId),
     };
   }
 
   async create(caller: AgentCaller, dto: CreateAgentDto): Promise<AgentDetail> {
-    const displayName = (dto.displayName ?? '').trim();
-    if (!displayName) throw new BadRequestException({ code: 'bad_request', message: 'displayName is required' });
+    const { displayName } = await this.bundles.availableName(caller.tenantId, dto.displayName ?? '');
 
-    const name = slugifyAgentName(displayName);
-    if (!name) throw new BadRequestException({ code: 'bad_request', message: 'displayName has no letters or digits' });
-    if (name in readMergedAgentRegistry().agents) throw nameUnavailable(name);
-    if (await this.repository.nameTaken(caller.tenantId, name)) throw nameUnavailable(name);
-
-    const fallback = registryDefaultModel();
+    const fallback = defaultProfileModel();
     const model = dto.model?.trim() || fallback.model;
-    const variant = dto.variant === undefined ? (fallback.variant ?? null) : dto.variant?.trim() || null;
+    const variant = dto.variant === undefined ? fallback.variant : dto.variant?.trim() || null;
     assertModelSelection(model, variant);
 
-    const environmentId = await developmentEnvironmentId(caller.tenantId);
-    const platform = await platformSkill();
-    const agentId = crypto.randomUUID();
-
-    await db.transaction(async (tx) => {
-      await tx.insert(agents).values({
-        id: agentId,
-        tenantId: caller.tenantId,
-        name,
-        displayName,
-        description: dto.description?.trim() || null,
-        origin: 'custom',
-        visibility: 'private',
-        createdBy: caller.userId,
-        poolSize: 0,
-      });
-      await tx.insert(agentSettings).values({ agentId, defaultEnvironmentId: environmentId, platformApi: false });
-
-      const profileId = crypto.randomUUID();
-      await tx.insert(agentProfiles).values({ id: profileId, agentId, environmentId, promptBody: '', model, variant });
-      if (platform) {
-        await tx
-          .insert(agentProfileSkills)
-          .values({ profileId, skillId: platform.id, skillVersionId: platform.latestVersionId });
-      }
+    const agentId = await this.bundles.write(caller, {
+      displayName,
+      bundle: {
+        identity: { displayName, description: dto.description ?? null, platformApi: false },
+        profile: { promptBody: '', model, variant },
+        skills: [],
+        template: null,
+      },
+      pins: [],
     });
-
     return this.findOne(caller, agentId);
   }
 
@@ -223,11 +200,12 @@ export class AgentService {
     const patch: Partial<typeof agentSettings.$inferInsert> = {};
     if (dto.defaultEnvironmentId !== undefined) {
       const [environment] = await db
-        .select({ id: environments.id })
+        .select({ id: environments.id, isDevelopment: environments.isDefault })
         .from(environments)
         .where(and(eq(environments.id, dto.defaultEnvironmentId ?? ''), eq(environments.tenantId, caller.tenantId)))
         .limit(1);
       if (!environment) throw new NotFoundException(`Environment ${dto.defaultEnvironmentId} not found`);
+      if (environment.isDevelopment) throw developmentNotDefault();
       patch.defaultEnvironmentId = environment.id;
     }
     if ('platformApi' in dto) patch.platformApi = dto.platformApi === true;
@@ -258,41 +236,16 @@ export class AgentService {
 
   async duplicate(caller: AgentCaller, agentId: string, dto: DuplicateAgentDto): Promise<AgentDetail> {
     const source = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
-    const sourceProfile = await this.profiles.targetProfile(source, caller.tenantId);
-    const fallback = registryDefaultModel();
+    if (!canDuplicateAgent(source)) throw notDuplicable(source.displayName ?? source.name);
+    const { displayName } = await this.bundles.availableName(caller.tenantId, dto.displayName ?? '');
 
-    const created = await this.create(caller, {
-      displayName: dto.displayName,
-      description: source.description,
-      ...(source.origin === 'built_in'
-        ? { model: fallback.model, variant: fallback.variant ?? null }
-        : { model: sourceProfile.model ?? fallback.model, variant: sourceProfile.variant }),
+    const bundle = await this.bundleReader.read(source, caller.tenantId);
+    const copyId = await this.bundles.write(caller, {
+      displayName,
+      bundle,
+      pins: pinsFromReferences(bundle.skills),
     });
-
-    const target = await this.profiles.targetProfile(
-      await assertAgentVisibleToUser(caller.tenantId, caller.userId, created.id),
-      caller.tenantId
-    );
-    await db.transaction(async (tx) => {
-      if (source.origin === 'custom') {
-        await tx
-          .update(agentProfiles)
-          .set({ promptBody: sourceProfile.promptBody ?? '', updatedAt: new Date() })
-          .where(eq(agentProfiles.id, target.id));
-      }
-      const carried = await tx
-        .select({ skillId: agentProfileSkills.skillId, skillVersionId: agentProfileSkills.skillVersionId })
-        .from(agentProfileSkills)
-        .where(eq(agentProfileSkills.profileId, sourceProfile.id));
-      for (const row of carried) {
-        await tx
-          .insert(agentProfileSkills)
-          .values({ profileId: target.id, skillId: row.skillId, skillVersionId: row.skillVersionId })
-          .onConflictDoNothing({ target: [agentProfileSkills.profileId, agentProfileSkills.skillId] });
-      }
-    });
-
-    return this.findOne(caller, created.id);
+    return this.findOne(caller, copyId);
   }
 
   async setDisabled(caller: AgentCaller, agentId: string, disabled: boolean): Promise<AgentDetail> {
@@ -325,13 +278,42 @@ export class AgentService {
 
     const testProjects = await this.repository.testProjectIds(agent.id, caller.tenantId);
     await removeProjects(agent.builderChatId ? [...testProjects, agent.builderChatId] : testProjects);
-    await db.delete(agents).where(eq(agents.id, agent.id));
+    await db.transaction(async (tx) => {
+      await lockAgentTemplate(tx, agent.id);
+      await tx.delete(agents).where(eq(agents.id, agent.id));
+    });
+    await this.templates.removeAgent(agent.id);
   }
 
   async updateProfile(caller: AgentCaller, agentId: string, dto: UpdateAgentProfileDto): Promise<AgentDetail> {
     const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
     await this.profiles.updateProfile(agent, caller, dto);
     return this.findOne(caller, agentId);
+  }
+
+  async saveTemplate(caller: AgentCaller, agentId: string, chatProjectId: string | null): Promise<TemplateSaveResult> {
+    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    if (agent.origin === 'built_in') throw notPublishable(`Agent \`${agent.name}\` is owned by the agent image`);
+    if (!chatProjectId || agent.builderChatId !== chatProjectId) {
+      throw new ForbiddenException({
+        code: 'not_builder_chat',
+        message: `Only the Builder chat of \`${agent.name}\` may save its Template`,
+      });
+    }
+
+    const [chatWorkspace] = await db
+      .select({ directory: projectEnvironments.directory })
+      .from(projectEnvironments)
+      .where(and(eq(projectEnvironments.projectId, chatProjectId), eq(projectEnvironments.isDefault, true)))
+      .limit(1);
+    if (!chatWorkspace) throw new NotFoundException(`Builder chat ${chatProjectId} has no workspace`);
+
+    const sourceDir = join(
+      this.configService.getOrThrow<string>('storageMountPath'),
+      chatWorkspace.directory,
+      'template'
+    );
+    return this.templates.save(agent.id, await developmentEnvironmentId(caller.tenantId), sourceDir);
   }
 
   async listSkills(caller: AgentCaller, agentId: string): Promise<AgentProfileSkillResponse[]> {
@@ -403,8 +385,8 @@ export class AgentService {
     kind: ProjectKind | null = null
   ): Promise<void> {
     if (isChatKind(kind) && (await this.isBuilderAgent(agentId))) return;
-    const live = await this.repository.liveIds(liveAgentsWhere(tenantId, userId));
-    if (!live.has(agentId)) throw new UnprocessableEntityException(`Agent ${agentId} not found`);
+    const creatable = await this.repository.liveIds(projectCreatableAgentsWhere(tenantId, userId, kind));
+    if (!creatable.has(agentId)) throw new UnprocessableEntityException(`Agent ${agentId} not found`);
   }
 
   async findBuilderAgentId(): Promise<string | null> {
@@ -506,6 +488,8 @@ export class AgentService {
   private async readProfiles(agent: AgentRow, tenantId: string): Promise<AgentProfileResponse[]> {
     const rows = await this.repository.profiles(agent.id, tenantId);
     const skillsByProfile = await this.repository.skillsOf(rows.map((row) => row.id));
+    const templates = await this.templates.hashes(agent.id);
+    const templateAt = (environmentId: string) => templates.get(environmentId) ?? null;
 
     if (agent.origin === 'built_in') {
       return rows.map((row) => ({
@@ -515,6 +499,7 @@ export class AgentService {
         variant: null,
         updatedAt: row.updatedAt,
         skills: skillsByProfile.get(row.id) ?? [],
+        template: templateAt(row.environmentId),
       }));
     }
 
@@ -522,7 +507,15 @@ export class AgentService {
     return (await this.repository.environmentIds(tenantId)).map((environmentId) => {
       const row = byEnvironment.get(environmentId);
       if (!row) {
-        return { environmentId, promptBody: null, model: null, variant: null, updatedAt: null, skills: null };
+        return {
+          environmentId,
+          promptBody: null,
+          model: null,
+          variant: null,
+          updatedAt: null,
+          skills: null,
+          template: templateAt(environmentId),
+        };
       }
       return {
         environmentId,
@@ -531,19 +524,10 @@ export class AgentService {
         variant: row.variant,
         updatedAt: row.updatedAt,
         skills: skillsByProfile.get(row.id) ?? [],
+        template: templateAt(environmentId),
       };
     });
   }
-}
-
-async function platformSkill(): Promise<{ id: string; latestVersionId: string } | null> {
-  const [row] = await db
-    .select({ id: skills.id, latestVersionId: skills.latestVersionId })
-    .from(skills)
-    .where(and(eq(skills.name, PLATFORM_SKILL_NAME), isNull(skills.tenantId)))
-    .orderBy(asc(skills.name))
-    .limit(1);
-  return row?.latestVersionId ? { id: row.id, latestVersionId: row.latestVersionId } : null;
 }
 
 function toResponse(row: AgentRow): AgentResponse {
@@ -563,6 +547,7 @@ function toSummary(
     visibility: row.visibility,
     disabled: row.disabled,
     disableable: canDisableAgent(row, userId),
+    duplicable: canDuplicateAgent(row),
     createdBy: row.createdBy,
     imageOwned: row.origin === 'built_in',
     builderChatId: row.builderChatId,

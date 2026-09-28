@@ -39,3 +39,5 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0008 (agent model owned by agent-config) — but worth reopening because…_
+
+In this repo an ADR is rewritten in place when its decision changes and deleted when it goes away; never add `superseded by`, `deprecated` or an amendment note (`docs/CONVENTIONS.md` §7). This overrides the `domain-modeling` skill's status list.

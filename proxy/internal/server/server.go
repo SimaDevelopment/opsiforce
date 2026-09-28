@@ -229,7 +229,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 // isPromptSend reports whether a proxied agent request is a user Prompt send.
-// Only a POST to opencode's /session/{id}/prompt(_async) qualifies; event-stream
+// Only a POST to opencode's /api/session/{id}/prompt qualifies; event-stream
 // connects, message fetches, session creation, aborts, pings, uploads, and every
 // other surface are excluded.
 func isPromptSend(method string, upstreamPath string) bool {

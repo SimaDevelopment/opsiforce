@@ -78,19 +78,19 @@ _Avoid_: Deploy, Release, Promote, Redeploy; conflating with Publish (Skill) or 
 
 **Duplicate**:
 Creating a new Project in the same tenant and workspace from an existing one, preserving its working state in full — App source and history, the agent conversation, the App's databases, Environment Variables, settings, Resources, and App Details. The duplicate is independent: it gets its own keys, and its Schedules arrive **paused** so no automation fires twice. Only the Development ProjectEnvironment is duplicated — published environments are re-created by publishing from the duplicate.
-_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source only, never working state)
+_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source only, never working state); Duplicate (Agent) (the Agent sense)
 
 **Export**:
 Producing a Project export from a Project's Development working state, to carry it to a *different* Opsiforce deployment. The cross-deployment sibling of Duplicate — same bundle and carry-rules — but the destination is another instance reached through a file rather than a local copy. Only the Development ProjectEnvironment is exported.
-_Avoid_: Share; Download (the chat file-download is a different feature); conflating with Publish (which moves App source between Environments within one deployment) or Duplicate (same-deployment copy)
+_Avoid_: Share; Download (the chat file-download is a different feature); conflating with Publish (which moves App source between Environments within one deployment) or Duplicate (same-deployment copy); Export (Agent) (the Agent sense)
 
 **Import**:
 Creating a new, independent Project on this deployment from a Project export — the consume side of Export. The result behaves like a freshly duplicated Project: its own keys, Schedules paused.
-_Avoid_: Restore (implies returning to the deployment it left); Upload (the transport, not the act)
+_Avoid_: Restore (implies returning to the deployment it left); Upload (the transport, not the act); Import (Agent) (the Agent sense)
 
 **Project export**:
 The opaque, versioned file an Export produces and an Import consumes — a sealed copy of a Project's Development working state, meaningful only when imported back into an Opsiforce deployment, never read or edited on its own.
-_Avoid_: Workflow (colloquial — maps to no entity; the exported unit is a Project); Workspace export (Workspace is the Org-level project grouping, a different thing); Blueprint, Template, Package (non-canonical)
+_Avoid_: Workflow (colloquial — maps to no entity; the exported unit is a Project); Workspace export (Workspace is the Org-level project grouping, a different thing); Blueprint, Package (non-canonical); Template (the files a new Project starts from, a different thing)
 
 **Active environment**:
 The one ProjectEnvironment the project workspace is currently showing — chat, code, DB, and the app pane all follow it. Chosen by clicking an environment in the Environments panel, or via **View environment** after a Publish completes; defaults to Development. Viewing changes nothing about the environment itself — it only re-points the workspace.
@@ -105,7 +105,7 @@ Recreating a ProjectEnvironment's pod from scratch — the row-level Restart act
 _Avoid_: Reboot; conflating with App restart
 
 **Disable (Project)**:
-Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a test Project, whose pods stop, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
+Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a Test Project, whose pods stop, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
 _Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
 
 **App Auth**:
@@ -131,15 +131,19 @@ The LLM an Agent runs on, named directly as a provider/model pair together with 
 _Avoid_: Model Preset (retired 2026-09-17 — Agents name the model directly); Default model (it is **not** a configurable default — Defaults covers timeouts and budgets only)
 
 **Custom Agent**:
-An Agent authored in the platform rather than shipped in the image, owned by one Organization and carrying a Visibility. It consists of what its author writes — identity, plus one Agent Profile per Environment holding instructions, the Agent Model and its Skills — and nothing else: a Custom Agent has no starter template and no workspace migrations, so its Projects open on an empty workspace and the agent starts from a template before it builds — it lays the platform's web-app template through `web-app`, or creates the skeleton a scaffold Skill the Skill & Agent Builder constructed describes — as the Architecture section of its instructions directs, which also states what the Agent changes about that template so every Project of it starts from one shape. It becomes pickable for new Projects only once it has an Agent Profile in its Default environment (Agent).
+An Agent authored in the platform rather than shipped in the image, owned by one Organization and carrying a Visibility. It consists of what its author writes — identity, plus per Environment one Agent Profile (instructions, the Agent Model and its Skills) and at most one Template — and nothing else: it has no workspace migrations. A new Project is laid from the Template of the Agent's Default environment (Agent), or opens on an empty workspace when there is none. It becomes pickable for new Projects only once it has an Agent Profile in its Default environment (Agent).
 _Avoid_: Dynamic agent, User agent, Tenant agent (non-canonical); Global agent (retired — Custom Agents never span Organizations); Base Agent, chassis (retired 2026-09-17 — a Custom Agent rides the platform's shared runtime, not a chosen Built-in Agent)
 
 **Built-in Agent**:
-An Agent shipped in the platform's agent image and registered in agent-config — identity, instructions, skills, starter template, workspace migrations and Agent Model all come from code, and changing any of them is a platform rollout that reaches existing Projects through Agent Updates. The registry is the source of which Built-in Agents exist and which are current. The sibling of Custom Agent, the only kind with a template and migrations, and the only kind whose Skills reach Projects that already exist.
+An Agent shipped in the platform's agent image and registered in agent-config — identity, instructions, skills, Template, workspace migrations and Agent Model all come from code, and changing any of them is a platform rollout that reaches existing Projects through Agent Updates. The registry is the source of which Built-in Agents exist and which are current. The sibling of Custom Agent, the only kind with workspace migrations, and the only kind whose Skills reach Projects that already exist.
 _Avoid_: Baked Agent (retired term, renamed 2026-08-28); System agent, Platform agent (non-canonical)
 
+**Template**:
+The files copied into the root of a new Project's workspace before its Agent first runs: an app starter, reference documents, or anything else the Agent's Projects start from. A Built-in Agent's Template ships in the agent image. A Custom Agent has at most one per Environment: the Skill & Agent Builder writes it in Development, and Publish (Agent) carries it to another Environment beside the Agent Profile. An Agent may have none. A Project keeps the files it was created with, so a later change reaches only new Projects.
+_Avoid_: Starter (App Builder's Template is one app starter, not the concept); Scaffold, Scaffold Skill (retired — a Template is the files themselves, not a Skill describing them); Seed, Boilerplate (non-canonical)
+
 **Agent Profile**:
-An Agent's definition in one scope. A Custom Agent has exactly one Profile per Environment — its instructions, its Agent Model, and its Skills — where the Development one is what its author edits and every other one is a copy placed there by a Publish (Agent). A Built-in Agent has exactly one Profile per Organization, holding only its Skills, since its instructions and Agent Model come from the image; it is parked at the Development Environment but its Skills apply on every Environment. Profiles carry no versions and no history — editing overwrites the Development Profile, and publishing overwrites the target's.
+An Agent's definition in one scope. A Custom Agent has exactly one Profile per Environment — its instructions, its Agent Model, and its Skills — where the Development one is what its author edits and every other one is a copy placed there by a Publish (Agent). A Built-in Agent has exactly one Profile per Organization, holding only its Skills, since its instructions and Agent Model come from the image; it is parked at the Development Environment but its Skills apply on every Environment. Profiles carry no versions and no history — editing overwrites the Development Profile, and publishing overwrites the target's. A Custom Agent's Template belongs to the same Environment as its Profile and moves with it: it is edited in Development, and Publish (Agent) carries both.
 _Avoid_: Version, Release, Publication, Snapshot (retired — a Profile is an Environment's current state, not a point in a history); Draft (the Development Profile *is* the draft)
 
 **Publish (Agent)**:
@@ -147,23 +151,35 @@ Copying a Custom Agent's Development Profile onto another Environment's Profile,
 _Avoid_: Deploy, Release, Promote (reserved against the environment vocabulary); conflating with Publish, which moves an App's source between Environments
 
 **Default environment (Agent)**:
-The Environment a Custom Agent's new Projects are created from — one per Agent, set by a holder of `can_manage_agents`. Until the Agent has an Agent Profile there, the Agent is not offered in the picker at all. Choosing Development is the fast-iteration mode: each new Project picks up whatever Development holds at that moment.
+The Environment a Custom Agent's new Projects are created from — their Agent Profile and Template both — one per Agent, set by a holder of `can_manage_agents`. It is never Development: a new Custom Agent defaults to Production, so it reaches the picker only after its first Publish (Agent). Until the Agent has an Agent Profile there, the Agent is not offered in the picker at all.
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
 
 **Disable (Agent)**:
-An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Built-in Agent enabled, and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
+An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Built-in Agent enabled, and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
 _Avoid_: Delete (the permanent sibling); Archive, Deactivate (non-canonical)
 
-**Duplicate (Custom Agent)**:
-Forking any Agent a member can see — a public Custom Agent, a Built-in Agent, or their own private one — into a new private Custom Agent they own, carrying its identity, instructions, Agent Model and Skills into the new Agent's Development Profile. The way to base a new Agent on one that already works, and the only way back from a Visibility already made public.
-_Avoid_: Copy, Clone, Fork (non-canonical); Base Agent (retired); Lineage (nothing records what a Duplicate was copied from)
+**Duplicate (Agent)**:
+Creating a new private Custom Agent from any Agent a member can see — a public Custom Agent, their own private one, or a Built-in Agent other than the Skill & Agent Builder — carrying its Development definition: description, instructions, Agent Model, Skills and Template. From a Built-in Agent these come from the image. The copy is named before it is created, its Default environment (Agent) is Production, so it reaches the picker after its first Publish (Agent). Neither the Builder chat nor the Test Project travels: the copy starts with a fresh chat, and nothing records what it was copied from. The way to base a new Agent on one that already works, and the only way back from a Visibility already made public.
+_Avoid_: Duplicate (Custom Agent) (renamed 2026-09-25 — the source may be a Built-in Agent); Copy, Clone, Fork (non-canonical); Agent bundle (a code name, not user-facing copy); Base Agent (retired); Lineage (nothing records what a Duplicate was copied from)
+
+**Export (Agent)**:
+Producing an Agent export from a Custom Agent's Development definition — description, instructions, Agent Model, Skills and Template — to carry it to another Organization or another Opsiforce deployment. The cross-boundary sibling of Duplicate (Agent), carrying the same parts: neither the Builder chat nor the Test Project travels. A Built-in Agent is never exported, since every deployment already has it; duplicate it first and export the copy.
+_Avoid_: Share, Download (the transport, not the act); Publish (Agent) (moves a Profile between Environments of one Agent); conflating with Export (the Project sense)
+
+**Import (Agent)**:
+Creating a new private Custom Agent from an Agent export, named before it is created. It is always a new Agent: a name already taken is refused, and nothing records where the Agent came from. Skills are matched by name — a Built-in Skill to this deployment's Version with the same content, or its current one; a Custom Skill to a Version with the same content, a new Version of one the importer can edit, or a new Skill of theirs. Its Default environment (Agent) is Production, so it reaches the picker after its first Publish (Agent), and its first Builder chat opens on its Template.
+_Avoid_: Update, Sync (an import never changes an existing Agent); Restore; Upload (the transport)
+
+**Agent export**:
+The file an Export (Agent) produces and an Import (Agent) consumes — a sealed copy of one Custom Agent's Development definition, meaningful only when imported into an Opsiforce deployment. The sibling of Project export; one is never imported as the other.
+_Avoid_: Agent bundle (a code name); Agent package (collides with a Built-in Agent's package in the image); Template (the files a new Project starts from, which an Agent export carries)
 
 **Platform Skill**:
-The built-in skill named `platform`, shipped in the agent image and laid into every workspace, carrying the facts every Agent needs about running here — the App contract, that the pod is disposable and the workspace durable, where uploads and generated files live, the gateway and its environment variables, the two read-only databases and how to query them, what must never be installed — so an Agent's own prompt never restates them. Agent Updates refresh it in every existing Project of every Agent kind; its name is reserved, and it cannot be removed from an Agent's Skills.
+The built-in skill named `platform`, shipped in the agent image and laid into every workspace, carrying the facts every Agent needs about running here — the App contract, that the pod is disposable and the workspace durable, where uploads and generated files live, the gateway and its environment variables, the two read-only databases and how to query them, what must never be installed — so an Agent's own prompt never restates them. Agent Updates refresh it in every existing Project of a Built-in Agent; a Custom Agent's Projects keep the Version pinned in its Agent Profile, written once at create. Its name is reserved, and it cannot be removed from an Agent's Skills.
 _Avoid_: Harness (not a term — the thing is a skill); Base prompt, System preamble (nothing is prepended to an Agent's prompt; the prompt is the author's body alone)
 
 **App contract**:
-The three things the platform needs from an App to run it in any stack: an executable `/workspace/app/startup.sh` the pod runs, restarts and re-runs in a published Environment; a server answering on `$APP_PORT`; and `app/app.meta.json` naming the App. Any HTTP answer on the port is serving, and serving plus the file present is live. The starter template satisfies it out of the box; a Custom Agent's App satisfies it by laying a template that does, or by writing the files.
+The three things the platform needs from an App to run it in any stack: an executable `/workspace/app/startup.sh` the pod runs, restarts and re-runs in a published Environment; a server answering on `$APP_PORT`; and `app/app.meta.json` naming the App. Any HTTP answer on the port is serving, and serving plus the file present is live. App Builder's Template satisfies it out of the box; any other App satisfies it through its own Agent's Template or by writing the files.
 _Avoid_: Start command (startup.sh already is one); Health check route (no route is required); Manifest (the meta file holds a name and description only)
 
 **Agent Status**:
@@ -263,20 +279,28 @@ How what an Agent carries reaches a Project's workspace. A Project's files are l
 _Avoid_: Sync, Push, Install (mechanism words); Update (collides with Agent Updates, the image-version pipeline)
 
 **Skill & Agent Builder**:
-The Built-in Agent that authors Skills and Custom Agents through conversation. Reached from a Skill's or a Custom Agent's page in the Store rather than the project workspace, and shipped in every distribution. It interviews, drafts in conversation, publishes on its author's word, and tests a Custom Agent it wrote by conversing with it in a test Project rather than trusting its own transcript; everything it writes is judged as the permissions of the user who opened the Builder chat, and its pod may create and edit but never delete, rename, disable or make anything public.
+The Built-in Agent that authors Skills and Custom Agents through conversation. Reached from a Skill's or a Custom Agent's page in the Store rather than the project workspace, and shipped in every distribution. It interviews, drafts in conversation, publishes on its author's word, and tests a Custom Agent it wrote by conversing with it in a Test Project rather than trusting its own transcript; everything it writes is judged as the permissions of the user who opened the Builder chat, and its pod may create, edit, duplicate a Skill and change a display name or description, but never delete, disable or make anything public.
 _Avoid_: Builder alone in user-facing copy (ambiguous beside app-builder); Studio, Workshop, Creator, Copilot (non-canonical); conflating with app-builder (the Agent that builds Apps)
 
 **Builder chat**:
-The one authoring conversation that belongs to a Skill or a Custom Agent — its **subject** — with the Skill & Agent Builder. A subject has at most one: New skill and New agent name the entry and open its chat, and the entry's page opens the same chat again later. Whoever may see the subject, with the permission matching it, may open and prompt its chat, so it widens when the subject is made public. It is where unfinished work lives: nothing half-written is stored anywhere else. From the chat the Builder publishes the Skill's Versions, or writes the Agent's Development Agent Profile, its Skills and its description, and runs a test Project; Publish (Agent) to another Environment, renaming, making anything public, Disable and Delete stay on the subject's page. The pod reads its subject from the platform API. Carried by a kind-stamped Project — plumbing that never appears in workspaces or the project list — deleted to start the conversation over, and deleted with its subject.
+The one authoring conversation that belongs to a Skill or a Custom Agent — its **subject** — with the Skill & Agent Builder. A subject has at most one: New skill and New agent name the entry and open its chat, and the entry's page opens the same chat again later. Whoever may see the subject, with the permission matching it, may open and prompt its chat, so it widens when the subject is made public. It is where unfinished work lives: nothing half-written is stored anywhere else. From the chat the Builder publishes the Skill's Versions, or writes the Agent's Development Agent Profile, its Skills, its display name and description, saves its Development Template, and runs a Test Project; Publish (Agent) to another Environment, making anything public, Disable and Delete stay on the subject's page. The pod reads its subject from the platform API. Carried by a kind-stamped Project — plumbing that never appears in workspaces or the project list. It is never deleted on its own: it lives exactly as long as its subject, since its workspace holds the draft of the Agent's Template. A new chat starts with its subject's saved Template as that draft.
 _Avoid_: Builder Project (retired — a Builder chat is not a workspace artifact); Builder session (collides with the runtime's session); chat visibility (retired — who opens a chat follows its subject); chat list (there is none — a chat is reached from its subject)
 
 **chat kind**:
-The facet a Builder chat is stamped with when it is made — Skill or Agent, following its subject — choosing which authoring skill opens the conversation. The same column marks a test Project, and its absence is what makes a Project an ordinary one that lists show.
+The facet a Builder chat is stamped with when it is made — Skill or Agent, following its subject — choosing which authoring skill opens the conversation. The same column marks a Test Project, and its absence is what makes a Project an ordinary one that lists show.
 _Avoid_: Project type, Project kind unqualified (the column is internal — users see Skill chat / Agent chat); Mode
 
-**test Project**:
-A throwaway Project the Skill & Agent Builder creates on a Custom Agent it authored, from that Agent's Development Agent Profile, to converse with the child and verify its claims inside the child's pod. One live per Builder chat — starting a new test deletes the previous one, and deleting the chat deletes it — hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it beside the chat as an ordinary Project. Single-use: Dynamic Delivery freezes the definition at creation, so testing an edit needs a new one.
-_Avoid_: Sandbox, Eval, Preview project (non-canonical); Draft project (there is no draft — the Development Profile is what runs)
+**Test Project**:
+A Project the Skill & Agent Builder creates on the Custom Agent its chat is about, from that Agent's Development Agent Profile and Template, to converse with the child, judge the record of the checks it ran and check the rest itself. One per Builder chat, created once and then refreshed in place by an Update or a Reset (Test Project). Hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it beside the chat as an ordinary Project; it goes when the chat's subject goes.
+_Avoid_: test project in lowercase, Builder's Test Project (the qualifier is redundant: every Test Project belongs to a Builder chat); Sandbox, Eval, Preview project (non-canonical); Draft project (there is no draft — the Development Profile is what runs)
+
+**Update (Test Project)**:
+Overlaying a Test Project's workspace with its Agent's newly saved Development Template, committed as one change, so the child keeps its conversation and sees the fix. Deletes nothing.
+_Avoid_: Update available (the Skill-pin sense); Agent Updates (the platform rollout)
+
+**Reset (Test Project)**:
+Wiping a Test Project's workspace and laying it again as at create, with a new session and a fresh budget, for a run that starts from nothing.
+_Avoid_: Recreate, Restart (a pod restart keeps the workspace)
 
 ### Schedules
 

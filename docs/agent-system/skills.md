@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [Skill, Built-in Skill, Custom Skill, Visibility, Skill Version, Publish (Skill), Agent Skills, Update available, Skill Store, Disable (Skill), Delete (Skill), Duplicate (Skill)]
-adrs: [0051, 0059, 0070]
+adrs: [0051, 0070]
 ---
 
 # Skill
@@ -12,10 +12,11 @@ adrs: [0051, 0059, 0070]
 
 ### The catalog
 
-- A [Skill](../../CONTEXT.md) is a directory with a `SKILL.md` and optional supporting files, stored as rows rather than on disk: `skills` holds identity, `skill_versions` an immutable content snapshot, and `skill_version_files` one row per file with its bytes, size, binary flag and executable bit. A [Built-in Skill](../../CONTEXT.md) is the global row (`tenant_id IS NULL`, `origin = 'built_in'`) the boot reconciler mints from the agent image; a [Custom Skill](../../CONTEXT.md) belongs to one Organization ([ADR-0051](../adr/0051-skill-catalog-append-only-store-tables.md)).
-- Content exists **only** as a published [Skill Version](../../CONTEXT.md): there is no draft row and no save short of publishing, and a Version once written is never edited ([ADR-0059](../adr/0059-skills-exist-only-as-published-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)). Version numbers are per Skill and unique, and a Version is minted only when the tree hash differs from the newest one, so republishing identical content is a no-op. A Skill named in the Store holds no Version until the Builder publishes its first, and until then it cannot be pinned ([ADR-0071](../adr/0071-a-builder-chat-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)).
+- A [Skill](../../CONTEXT.md) is a directory with a `SKILL.md` and optional supporting files, stored as rows rather than on disk: `skills` holds identity, `skill_versions` an immutable content snapshot, and `skill_version_files` one row per file with its bytes, size, binary flag and executable bit. A [Built-in Skill](../../CONTEXT.md) is the global row (`tenant_id IS NULL`, `origin = 'built_in'`) the boot reconciler mints from the agent image; a [Custom Skill](../../CONTEXT.md) belongs to one Organization ([ADR-0051](../adr/0051-skills-are-stored-as-immutable-per-file-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)).
+- Content exists **only** as a published [Skill Version](../../CONTEXT.md): there is no draft row and no save short of publishing, and a Version once written is never edited ([ADR-0051](../adr/0051-skills-are-stored-as-immutable-per-file-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)). Version numbers are per Skill and unique, and a Version is minted only when the tree hash differs from the newest one, so republishing identical content is a no-op. A Skill named in the Store holds no Version until the Builder publishes its first, and until then it cannot be pinned ([ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)).
 - [Visibility](../../CONTEXT.md) is a column on the Skill, not on a Version: **private** means listed and editable only for its creator, **public** hands it to the whole Organization. Making it public is irreversible; [Duplicate (Skill)](../../CONTEXT.md) into a fresh private Skill is the way back ([ADR-0057](../adr/0057-authored-skills-and-agents-are-private-or-public-within-one-organization.md)).
 - The [Skill Store](../../CONTEXT.md) list is one predicate over those columns — Built-in Skills, the Organization's public Custom ones, and the caller's own private ones — narrowed by a `filter` of `all`, `mine` (created by the caller), `built_in`, `custom`, `private` or `disabled` and a `q` search, both carried in the URL.
+- A new image reaches Built-in Skills at the next backend boot: the reconciler hashes each composed skill directory, mints the next Version when the hash is new, and moves the Skill's latest pointer to it. Nothing moves a pin. A Custom Agent pinned to an older Version — `platform` and `web-app` included — keeps it and shows **Update available** until someone upgrades that one Skill on that one Agent, and the upgrade reaches only Projects created after it, since a Custom Agent's Project keeps the files it was created with. A new Custom Agent pins `platform` at its latest Version, so it starts current. A Built-in Agent's package Skills reach its Projects from the image through [Agent Updates](agent-updates.md), not through a pin.
 - A Built-in Skill whose name leaves the image keeps its rows and is reported as unavailable rather than deleted, so an Agent that already pinned it keeps working.
 
 ### Publishing and the gate
@@ -29,14 +30,14 @@ adrs: [0051, 0059, 0070]
 
 ### On an Agent
 
-- [Agent Skills](../../CONTEXT.md) hang off an [Agent Profile](../../CONTEXT.md) as `agent_profile_skills` rows, each a foreign key to one immutable `skill_version_id`, so a pin never moves on its own. **[Update available](../../CONTEXT.md)** is the comparison of that pin against the Skill's newest Version, shown as a badge; upgrading is a deliberate act on one Agent's one Skill ([ADR-0059](../adr/0059-skills-exist-only-as-published-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)).
+- [Agent Skills](../../CONTEXT.md) hang off an [Agent Profile](../../CONTEXT.md) as `agent_profile_skills` rows, each a foreign key to one immutable `skill_version_id`, so a pin never moves on its own. **[Update available](../../CONTEXT.md)** is the comparison of that pin against the Skill's newest Version, shown as a badge; upgrading is a deliberate act on one Agent's one Skill ([ADR-0051](../adr/0051-skills-are-stored-as-immutable-per-file-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)).
 - A public or Built-in Agent may not carry a private Skill: the rule is enforced when a Skill is added, when an Agent's Visibility is widened, and at Publish (Agent).
 - What reaching a workspace means, and when, is [Dynamic Delivery](dynamic-delivery.md).
 
 ### Retiring
 
-- [Disable (Skill)](../../CONTEXT.md) records a row in `tenant_disabled_skills`: the Skill — Custom or Built-in — leaves that Organization's Store list and can be added to nothing new there, while every Agent carrying it keeps its pinned Version. Enable reverses it from the Disabled filter ([ADR-0070](../adr/0070-skills-and-agents-are-disabled-like-projects-not-archived.md), [ADR-0072](../adr/0072-disabling-is-an-organizations-choice-recorded-beside-the-agent-or-skill.md)).
-- The `platform` Skill is never disabled, since every new Agent pins it.
+- [Disable (Skill)](../../CONTEXT.md) records a row in `tenant_disabled_skills`: the Skill — Custom or Built-in — leaves that Organization's Store list and can be added to nothing new there, while every Agent carrying it keeps its pinned Version. Enable reverses it from the Disabled filter ([ADR-0070](../adr/0070-skills-and-agents-are-disabled-per-organization-like-projects.md)).
+- The `platform` Skill is never disabled, since every new Custom Agent pins it.
 - [Delete (Skill)](../../CONTEXT.md) is permanent and refused while any Agent carries the Skill, naming those Agents as links; the UI offers **Disable instead** rather than failing.
 
 ## States

@@ -38,6 +38,7 @@ export interface ProjectCreationContext {
   createdBy?: string | null;
   createdByProjectId?: string | null;
   kind?: ProjectKind | null;
+  builderSubjectAgentId?: string | null;
 }
 
 export interface CreateProjectDto {

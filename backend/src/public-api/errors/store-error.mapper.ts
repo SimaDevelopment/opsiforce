@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import type { TemplateRefusal } from '../../agent-template/template-source';
 import type { GateFinding } from '../../store/gate';
 import { Errors, PublicApiError } from './public-api-error';
 import type { ValidationErrorItem } from './error.schema';
@@ -10,6 +11,7 @@ const PROBLEM_BY_CODE: Record<string, (message: string) => PublicApiError> = {
   duplicate_skill_name: Errors.duplicateSkillName,
   model_unknown: Errors.modelUnknown,
   not_publishable: Errors.notPublishable,
+  template_changed: Errors.templateChanged,
 };
 
 interface CodedBody {
@@ -17,6 +19,7 @@ interface CodedBody {
   message?: unknown;
   errors?: unknown;
   lints?: unknown;
+  refusals?: unknown;
 }
 
 function bodyOf(exception: HttpException): CodedBody {
@@ -43,6 +46,17 @@ function toItems(value: unknown): ValidationErrorItem[] {
   });
 }
 
+function toRefusalItems(value: unknown): ValidationErrorItem[] {
+  if (!Array.isArray(value)) return [];
+  return (value as TemplateRefusal[]).map((refusal) => ({
+    detail: refusal.reason,
+    pointer: '#/template',
+    in: 'body',
+    rule: refusal.rule,
+    file: refusal.path,
+  }));
+}
+
 function toPublicApiError(error: unknown): PublicApiError | null {
   if (!(error instanceof HttpException)) return null;
 
@@ -55,6 +69,10 @@ function toPublicApiError(error: unknown): PublicApiError | null {
       toItems(body.errors),
       toItems(body.lints)
     );
+  }
+
+  if (body.code === 'template_refused') {
+    return Errors.templateRefused(messageOf(body, 'The Template holds refused paths'), toRefusalItems(body.refusals));
   }
 
   const build = PROBLEM_BY_CODE[body.code];

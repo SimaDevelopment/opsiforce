@@ -6,6 +6,7 @@ import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
 import { EnvironmentBadge } from '~/components/environment-badge';
 import { CreateEntryDialog } from '~/components/store/create-entry-dialog';
+import { ImportAgentDialog } from '~/components/store/import-agent-dialog';
 import { SettingsSection } from '~/components/settings/settings-section';
 import {
   DefaultEnvironmentMark,
@@ -19,13 +20,14 @@ import {
   SearchInput,
   VisibilityBadge,
 } from '~/components/store/store-list';
-import { Bot, ChevronRight, Plus } from '~/components/icons';
+import { Bot, ChevronRight, Plus, Upload } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { createSearchDraft, filterOptions, type StoreListProps } from './store-filters';
 
 export function AgentsListPage(props: StoreListProps) {
   const { hasPermission } = usePermissions();
   const canManage = () => hasPermission(Permission.manageAgents);
+  const canImport = () => canManage() && hasPermission(Permission.manageSkills);
   const search = createSearchDraft(
     () => props.query,
     (query) => props.onQuery(query)
@@ -37,6 +39,7 @@ export function AgentsListPage(props: StoreListProps) {
   );
   const environments = useEnvironments();
   const [createOpen, setCreateOpen] = createSignal(false);
+  const [importOpen, setImportOpen] = createSignal(false);
   const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
 
   const byId = createMemo(() => new Map((environments.data ?? []).map((environment) => [environment.id, environment])));
@@ -49,10 +52,18 @@ export function AgentsListPage(props: StoreListProps) {
       width="wide"
       action={
         <Show when={canManage()}>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus class="h-4 w-4" aria-hidden="true" />
-            New agent
-          </Button>
+          <div class="flex gap-2">
+            <Show when={canImport()}>
+              <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload class="h-4 w-4" aria-hidden="true" />
+                Import agent
+              </Button>
+            </Show>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus class="h-4 w-4" aria-hidden="true" />
+              New agent
+            </Button>
+          </div>
         </Show>
       }
     >
@@ -86,6 +97,7 @@ export function AgentsListPage(props: StoreListProps) {
       </Show>
 
       <CreateEntryDialog type="agent" open={createOpen()} onOpenChange={setCreateOpen} />
+      <ImportAgentDialog open={importOpen()} onOpenChange={setImportOpen} />
     </SettingsSection>
   );
 }

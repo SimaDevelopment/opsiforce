@@ -166,6 +166,11 @@ export class PodService {
     }
   }
 
+  async deletePodAndWait(podName: string): Promise<void> {
+    await this.deletePod(podName);
+    await this.waitForPodDeletion(podName);
+  }
+
   async deletePodIfMatches(podName: string, resourceVersion: string): Promise<boolean> {
     const body: k8s.V1DeleteOptions = {
       preconditions: { resourceVersion },

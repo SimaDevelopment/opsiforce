@@ -14,7 +14,8 @@ adrs: [0028]
 
 - [Storage](../../CONTEXT.md) measures one leaf, the [ProjectEnvironment](../../CONTEXT.md) directory, and rolls it up into [Project](../../CONTEXT.md) and [Organization](../../CONTEXT.md) totals.
 - Each Organization also carries [Pending deletion](../../CONTEXT.md): its tombstoned directories still inside the retention window ([Persistence](persistence.md)), counted as one bytes-plus-count aggregate inside the Organization's total.
-- [Unattributed storage](../../CONTEXT.md) buckets sit at the volume root: pool slots, tenant-less tombstones, orphaned directories, and the export and import staging areas.
+- Each Organization also carries its Agents' [Templates](../../CONTEXT.md): every `agent-templates/<agentId>/` folder is measured whole and attributed through `agents.tenant_id`, so a version several Environments link to is counted once, and the bytes-plus-Agent-count aggregate sits inside the Organization's total ([Template](../agent-system/template.md)).
+- [Unattributed storage](../../CONTEXT.md) buckets sit at the volume root: pool slots, tenant-less tombstones, orphaned directories, Template folders with no Organization (an Agent row already gone, awaiting the sweep), and the export and import staging areas.
 - The snapshot reconciles: unaccounted is the claim's used bytes minus everything attributed, signed on the wire because a negative residual means the filesystem's recursive statistics lag recent writes.
 
 ### Measurement
@@ -26,7 +27,7 @@ adrs: [0028]
 ### The page
 
 - A segmented capacity bar leads: one band per Organization, one grey band for the unattributed buckets, amber for unaccounted, the rest free; beneath it one expandable ledger drills Organization to Project to ProjectEnvironment with size, share and a proportional bar.
-- Pending deletion shows as an outline badge on the Organization row; orphaned directories show a count beside their bytes; unaccounted closes the table as a footer row.
+- Pending deletion shows as an outline badge on the Organization row; an Organization's Templates show as an Agent Templates row above its Projects; orphaned directories show a count beside their bytes; unaccounted closes the table as a footer row.
 - Gated by `can_view_platform_storage`, a [Platform-scope permission](../../CONTEXT.md) that ignores the Organization selector ([ADR-0027](../adr/0027-platform-scope-routes-opt-out-of-tenant-resolution.md), [Permissions](../organization/permissions.md)); `can_manage_platform_storage` adds a Clean up now control that runs the cleanup job for one Organization with the retention window ignored.
 
 ## Edge cases

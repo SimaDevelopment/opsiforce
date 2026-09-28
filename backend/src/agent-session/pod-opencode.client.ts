@@ -106,7 +106,7 @@ export class PodOpencodeClient {
 
   /**
    * `GET /api/skill` — the ids opencode currently serves. A skill's id is its directory name under
-   * `.opencode/skills/`, so this is what a delivery confirms itself against (ADR-0060 §11).
+   * `.opencode/skills/`, so this is what a delivery confirms itself against (ADR-0060).
    */
   async skillIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
     const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/skill', options);

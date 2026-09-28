@@ -1,20 +1,20 @@
 # Publish via git: a production environment is a checkout of the dev repo
 
-Status: accepted
+The agent workspace is a git repository whose `.gitignore` separates app source (tracked) from runtime state (ignored: `data/` with the SQLite databases, `node_modules`, `**/.yarn/cache`, `**/.pnp.*`, `.opencode/`). **Publishing commits Development's working tree and makes each published `ProjectEnvironment` a `git clone --local` of the Development directory, `reset --hard` to that commit; the deployed SHA is recorded on the environment row.** A later publish fetches and resets in place, and rebuilds the target's `.git` from Development when its repository is unhealthy.
 
-The agent workspace is already a git repository whose `.gitignore` separates app source (tracked) from runtime state (`data/` — the SQLite DBs, `node_modules`, `**/.yarn/cache`, `**/.pnp.*` — ignored). Publishing commits dev's working tree and makes each production `ProjectEnvironment` a `git clone --local` of the dev directory, `reset --hard` to the chosen commit; the deployed commit SHA is recorded on the env row.
-
-We chose this over full re-copy or rsync because the `.gitignore` *is* already the deploy boundary, `reset --hard` is incremental and deletion-correct, git-ignored runtime state (the production database, installed deps) is preserved across redeploys **by construction**, and rollback is `reset --hard <prevSHA>`.
+The `.gitignore` is already the deploy boundary, `reset --hard` is incremental and deletion-correct, ignored runtime state (the production database, installed dependencies) survives redeploys by construction, and rollback is `reset --hard <previous SHA>`.
 
 ## Considered options
 
-- **Full re-copy each publish** — simple, but slow on large apps, must hand-handle deleted files and explicitly preserve prod's DB/node_modules, and gives no rollback or history.
-- **rsync-style incremental** — incremental, but no history/rollback and introduces a second ignore file to keep in sync with `.gitignore`.
+- **Full re-copy each publish.** Rejected: slow on large apps, must hand-handle deleted files and explicitly preserve production's database and dependencies, and gives no rollback or history.
+- **rsync-style incremental.** Rejected: no history or rollback, and a second ignore file to keep in step with `.gitignore`.
 
 ## Consequences
 
-- The publish worker needs the `git` binary; it auto-commits dev's working tree on publish (the repo is platform-managed and invisible to users — commit on `main`, tag per deploy).
-- `dist/` should be git-ignored so production builds fresh rather than shipping stale dev artifacts.
-- Deploy is **in-place, restart-only-on-success**: `reset --hard` + `yarn install` + build + migrate happen before any restart, so a failed deploy never touches the running production app; on success the app process is restarted (a few-seconds blip). Migrations are therefore **forward-only** (a git rollback of code does not roll back schema).
-- **Rollback restores more than code.** A re-publish also mutates two things git does not track: the env file (`app/opsiforce.env.json`, which is git-ignored) and the environment's schedule set. The env file is snapshotted before it is overwritten and written back if the deploy fails — `reset --hard` cannot restore it. Schedules are applied **after** the health gate, not before: the target's set is reconciled (upsert the desired, remove only the now-stale) once the app is confirmed ready, so a failed publish never mutates the live schedule set, and a reconcile that fails on an already-healthy deploy is logged without failing the publish. (Cleaning up the cloned directory, gateway key, and env row orphaned by a failed **first** publish is a separate, still-open concern.)
-- Zero-downtime (blue-green) and keeping production warm against idle-suspension are explicit later refinements, not in the first version.
+- The publish worker needs the `git` binary and auto-commits Development's working tree on every publish (the repository is platform-managed and invisible to users).
+- `dist/` is git-ignored so production builds fresh rather than shipping Development's artifacts.
+- **A deploy recreates the pod.** After the reset and the env-file write, the publish deletes and recreates the target's pod, waits for it to be ready, then waits for the App to serve; the production branch of `startup.sh` installs and builds. The running App is down from the recreate until the new one serves.
+- **A failed redeploy rolls back by the same path:** `reset --hard` to the previous SHA, restore the env file, and recreate the pod again. Migrations are **forward-only**: a git rollback of code does not roll back schema.
+- **Rollback restores more than code.** A publish also changes two things git does not track: the env file (`app/opsiforce.env.json`, git-ignored) and the environment's schedule set. The env file is backed up before it is overwritten and written back if the deploy fails. Schedules are reconciled **after** the App serves (upsert the desired, remove only the stale), so a failed publish never touches the live schedule set, and a reconcile that fails after a healthy deploy is logged without failing the publish.
+- A failed **first** publish marks the environment failed and leaves its cloned directory, gateway key and row in place.
+- Zero-downtime (blue-green) deploys are not built.

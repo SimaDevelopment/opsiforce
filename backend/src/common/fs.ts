@@ -2,6 +2,13 @@ import crypto from 'crypto';
 import path from 'node:path';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 
+export const EXECUTABLE_FILE_MODE = 0o755;
+export const REGULAR_FILE_MODE = 0o644;
+
+export function fileMode(executable: boolean): number {
+  return executable ? EXECUTABLE_FILE_MODE : REGULAR_FILE_MODE;
+}
+
 export async function writeTextAtomic(filePath: string, contents: string | Buffer, mode?: number): Promise<void> {
   const dir = path.dirname(filePath);
   await mkdir(dir, { recursive: true });

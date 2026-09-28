@@ -150,7 +150,7 @@ export const CreateProjectSchema = z
       .literal(TEST_PROJECT_KIND)
       .optional()
       .describe(
-        'Only an Agent Caller running a Builder chat may send this, and only as "test": it makes a throwaway Project that stays out of every Project list and replaces the chat\'s previous one'
+        'Only an Agent Caller running a Builder chat may send this, and only as "test": it makes the chat\'s one Test Project, which stays out of every Project list and lives as long as the chat. A second one answers 409 test-project-exists with its testProjectId; refresh that one with Update or Reset instead. It reads the Agent\'s Development, and an Agent chat may name only its own Agent'
       ),
   })
   .meta({

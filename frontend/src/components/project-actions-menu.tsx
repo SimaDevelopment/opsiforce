@@ -263,7 +263,7 @@ export function ProjectActionsMenu(props: {
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         </Show>
-        <Show when={canDelete()}>
+        <Show when={canDelete() && kindKnown() && !isBuilderChat()}>
           <DropdownMenuSeparator />
           <ActionsMenuItem icon={Trash2} destructive onSelect={() => setConfirmAction('delete')}>
             Delete

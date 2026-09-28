@@ -101,7 +101,6 @@ function BuilderStrip(props: { chat: BuilderChat; onChanged: () => void; onGone:
   const testProjectId = () => props.chat.testProject?.id;
   const [renamingTestProject, setRenamingTestProject] = createSignal(false);
   const [revealTestProject, setRevealTestProject] = createSignal(0);
-  const noun = () => props.chat.subject.type;
 
   return (
     <PaneStrip
@@ -115,7 +114,6 @@ function BuilderStrip(props: { chat: BuilderChat; onChanged: () => void; onGone:
           onGone={props.onGone}
           onStatusEvent={props.onChanged}
           headerLabel={<span class="shrink-0 text-sm font-medium">Builder</span>}
-          deleteDescription={`The conversation, its workspace and any test project are deleted. The ${noun()} itself stays as it is, and opening the Builder again starts a new conversation.`}
           footer={<ComposerNote chat={props.chat} />}
         />
       }

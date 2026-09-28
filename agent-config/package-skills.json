@@ -1,0 +1,25 @@
+{
+  "customPackageSharedSkills": ["platform"],
+  "sharedSkillExclusions": {
+    "makara-app-builder": ["web-app", "dates"],
+    "skill-agent-builder": [
+      "animations",
+      "data-export",
+      "data-fetching",
+      "dates",
+      "dnd-kit",
+      "document-generation",
+      "incoming-email",
+      "llm-api",
+      "nestjs-api",
+      "react-dropzone",
+      "schedules",
+      "send-email",
+      "sqlite",
+      "state-management",
+      "virtual-list",
+      "websockets",
+      "whatsapp"
+    ]
+  }
+}

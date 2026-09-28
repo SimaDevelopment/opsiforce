@@ -59,7 +59,7 @@ and `detail`.
 | Status | Problem | Meaning |
 |---|---|---|
 | 422 | `validation-failed` | the gate refused; `errors[]` and `lints[]` carry `rule`, `file`, `line` — the same findings the local script prints |
-| 409 | `name-unavailable` | the name is taken in this Organization, or the image ships it |
+| 409 | `name-unavailable` | the name is taken in this Organization, or the image ships it: choose a name that adds the Agent's slug, and tell the author the name you used. The same holds for a Duplicate's `name` |
 | 404 | `not-found` | no such Skill, or it is not visible to you |
 | 403 | `forbidden` | a Skill you may see but not write — Duplicate it and change the copy |
 | 400 | `validation-error` | the request body itself is malformed, before any gate ran |

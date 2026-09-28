@@ -22,12 +22,22 @@ const platformSkill = readFileSync(join(agentConfig, 'skills', 'platform', 'SKIL
 const skillAuthoring = readFileSync(join(packageRoot, 'skills', 'skill-authoring', 'SKILL.md'), 'utf8');
 const agentAuthoring = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'SKILL.md'), 'utf8');
 const testLoop = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'test-loop.md'), 'utf8');
+const testProjectScript = readFileSync(join(packageRoot, 'template', 'scripts', 'tp.sh'), 'utf8');
+const turnScript = readFileSync(join(packageRoot, 'template', 'scripts', 'turn.sh'), 'utf8');
+const scratchReadme = readFileSync(join(packageRoot, 'template', 'scratch', 'README.md'), 'utf8');
 const stackSkill = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'stack-skill.md'), 'utf8');
-const webAppSkill = readFileSync(join(agentConfig, 'skills', 'web-app', 'SKILL.md'), 'utf8');
-const gateRules = readFileSync(
-  join(packageRoot, 'skills', 'skill-authoring', 'references', 'gate-rules.md'),
+const templateReference = readFileSync(
+  join(packageRoot, 'skills', 'agent-authoring', 'references', 'template.md'),
   'utf8'
 );
+const webAppSkill = readFileSync(join(agentConfig, 'skills', 'web-app', 'SKILL.md'), 'utf8');
+const gateRules = readFileSync(join(packageRoot, 'skills', 'skill-authoring', 'references', 'gate-rules.md'), 'utf8');
+const agentBrowserSkill = readFileSync(join(agentConfig, 'skills', 'agent-browser', 'SKILL.md'), 'utf8');
+const bodyTemplate = readFileSync(
+  join(packageRoot, 'skills', 'agent-authoring', 'references', 'body-template.md'),
+  'utf8'
+);
+const skillApi = readFileSync(join(packageRoot, 'skills', 'skill-authoring', 'references', 'api.md'), 'utf8');
 
 const temporaryDirectories: string[] = [];
 
@@ -54,7 +64,10 @@ function node(script: string, args: string[]): { stdout: string; status: number 
   }
 }
 
-function validateOffline(directory: string, name?: string): { valid: boolean; errors: GateFinding[]; lints: GateFinding[] } {
+function validateOffline(
+  directory: string,
+  name?: string
+): { valid: boolean; errors: GateFinding[]; lints: GateFinding[] } {
   const { stdout } = node(validator, [directory, '--json', ...(name === undefined ? [] : ['--name', name])]);
   return JSON.parse(stdout);
 }
@@ -133,6 +146,15 @@ describe('the package', () => {
     expect(composed).toContain('agent-authoring');
   });
 
+  it('carries only the shared skills its own work uses: platform, web-app for starter pinning, agent-browser for tests', () => {
+    const shared = packageSkillNames('app-builder', agentConfig);
+    const own = new Set(['skill-authoring', 'agent-authoring']);
+
+    expect([...composed].filter((name) => !own.has(name)).toSorted()).toEqual(['agent-browser', 'platform', 'web-app']);
+    expect(shared.size).toBeGreaterThan(composed.size);
+    expect(persona).toContain('/skills?filter=built_in');
+  });
+
   it('carries the authoring skills as its own overrides, not in the shared pool every agent gets', () => {
     const shared = packageSkillNames('app-builder', agentConfig);
 
@@ -147,6 +169,12 @@ describe('the package', () => {
     expect(template).toContain('scripts/validate-skill.mjs');
     expect(template).toContain('scripts/pack-skill.mjs');
     expect(template).toContain('scripts/api.sh');
+    expect(template).toContain('scripts/check-template.sh');
+    expect(template).toContain('scripts/evidence.sh');
+    expect(template).toContain('scripts/turn.sh');
+    expect(template).toContain('scripts/template-snapshot.sh');
+    expect(template).toContain('scripts/tp.sh');
+    expect(template).toContain('scripts/check-expectations.mjs');
     expect(template.filter((path) => path.startsWith('app/'))).toEqual([]);
     expect(template).not.toContain('startup.sh');
   });
@@ -174,7 +202,9 @@ describe('the offline validator', () => {
 
     expect(recorded.length).toBeGreaterThan(0);
     for (const [, name, hash] of recorded) {
-      const live = createHash('sha256').update(readFileSync(join(gateDir, name))).digest('hex');
+      const live = createHash('sha256')
+        .update(readFileSync(join(gateDir, name)))
+        .digest('hex');
 
       expect({ name, hash }).toEqual({ name, hash: live });
     }
@@ -188,7 +218,8 @@ describe('the offline validator', () => {
       { 'SKILL.md': '---\nname: Bad_Name\nwhat: no\n---\n\nbody\n' },
       { 'SKILL.md': '---\nname: short\ndescription: Too short.\n---\n\n`references/missing.md`\n' },
       {
-        'SKILL.md': '---\nname: leaky\ndescription: Use this when the tree carries a credential it must not, twenty words long so the description lint stays quiet.\nallowed-tools: bash\n---\n\nAKIAIOSFODNN7EXAMPLE\n',
+        'SKILL.md':
+          '---\nname: leaky\ndescription: Use this when the tree carries a credential it must not, twenty words long so the description lint stays quiet.\nallowed-tools: bash\n---\n\nAKIAIOSFODNN7EXAMPLE\n',
       },
     ];
 
@@ -295,7 +326,7 @@ describe('the persona', () => {
   it('reads the one subject its chat authors from the API, not from the workspace (ADR-0071)', () => {
     expect(persona).toContain('builderSubject');
     expect(persona).not.toContain('builder-subject.json');
-    expect(persona).toMatch(/[Dd]o not announce\s+the reads/);
+    expect(persona).toMatch(/start your first message with the answer/);
     expect(persona).toMatch(/Never `POST \/agents` for it/);
   });
 
@@ -309,6 +340,24 @@ describe('the persona', () => {
     for (const refusal of ['public', 'disable', 'delete', 'Store']) {
       expect(persona.toLowerCase()).toContain(refusal.toLowerCase());
     }
+  });
+
+  it('validates a Skill tree under the name it will carry, and says which rules only the API answers', () => {
+    expect(persona).toContain('node scripts/validate-skill.mjs scratch/<name> --name <name>');
+    expect(gateRules).toMatch(/`name_reserved` and 409 `name-unavailable` come only from the\s+API/);
+  });
+
+  it('tries a Skill in the chat of an Agent that carries it, never from its own chat', () => {
+    expect(persona).toMatch(
+      /A Skill chat publishes and reads back; a Skill\s+is tried in the chat of an Agent that carries it, once that Agent re-pins the new Version/
+    );
+  });
+
+  it('says what a disabled subject still allows', () => {
+    expect(persona).toMatch(
+      /When `disabled` is true, the Organization has taken it out of use: say so in your first sentence/
+    );
+    expect(persona).toMatch(/a disabled Skill takes no new Version and a disabled Agent gets\s+no Test Project/);
   });
 
   it('tells the model this project has no App to build', () => {
@@ -335,6 +384,15 @@ describe('the skill-authoring skill', () => {
     expect(skillAuthoring).toMatch(/read back/i);
   });
 
+  it('scopes the warranted check by chat kind, routes uploads, and names a fallback for a taken name', () => {
+    expect(skillAuthoring).toMatch(
+      /In an Agent chat this decides whether to create one; in a Skill chat, name the catch-all you found/
+    );
+    expect(skillAuthoring).toMatch(/Files the author uploads arrive in `\/workspace\/user_uploaded_files\/`/);
+    expect(skillAuthoring).not.toMatch(/POST \/skills\/validate/);
+    expect(skillApi).toMatch(/choose a name that adds the Agent's slug, and tell the author the name you used/);
+  });
+
   it('points only at reference files that exist', () => {
     const tree = new Set(readSkillTree(join(packageRoot, 'skills', 'skill-authoring')).map((file) => file.path));
 
@@ -345,7 +403,65 @@ describe('the skill-authoring skill', () => {
 describe('the agent-authoring skill', () => {
   it("carries ADR-0061's two rules", () => {
     expect(agentAuthoring).toMatch(/[Nn]ever restate anything the `platform` skill covers/);
-    expect(agentAuthoring).toContain('Load the `platform` skill before serving anything');
+    expect(agentAuthoring).toMatch(
+      /Load the `platform` skill before\s+you build, serve or deliver anything, and check your work the way it and `## Done looks like` say/
+    );
+    expect(agentAuthoring).not.toMatch(/no base persona/);
+  });
+
+  it('puts a rule every piece of work obeys in the body, and the rest of the know-how in a Skill', () => {
+    expect(agentAuthoring).toMatch(/A rule every piece of work must obey[\s\S]*goes in the\s+body's `## Domain rules`/);
+    expect(bodyTemplate).toMatch(
+      /when to ask: what the Agent decides on its own, and which missing facts it asks for, in one question/
+    );
+  });
+
+  it('gives changing an existing Agent one home, which says existing Projects keep what they have', () => {
+    const changing = agentAuthoring.split('## Changing an existing Agent')[1] ?? '';
+
+    expect(changing).toMatch(/read its Development profile, its pinned Skills and\s+`template\/` first/);
+    expect(changing).toMatch(/existing ones keep what they have/);
+    expect(changing).toContain('§When `template/`');
+    expect(agentAuthoring.split('## Changing an existing Agent')[0]).not.toMatch(
+      /when this chat edits an existing Agent/
+    );
+  });
+
+  it("keeps an author's edit to template/ by default, and asks one question only on a contradiction or a failed check", () => {
+    const section = templateReference.split('## When `template/` changed without you')[1]?.split('## ')[0] ?? '';
+
+    expect(templateReference).toContain('sh scripts/template-snapshot.sh save');
+    expect(section).toContain('sh scripts/template-snapshot.sh diff');
+    expect(section).toMatch(/\*\*By default, keep it\.\*\*/);
+    expect(section).toMatch(
+      /\*\*The check fails on it\*\* — put the saved file back with\s+`sh scripts\/template-snapshot\.sh restore/
+    );
+    expect(section).toMatch(/\*\*It contradicts a requirement the brief states\*\*/);
+    expect(section).toMatch(/The one question lists each such edit[\s\S]*\*keep\*, \*complete\* or\s+\*revert\*/);
+  });
+
+  it('checks the production branch only when startup.sh or what it builds changes', () => {
+    expect(templateReference).toMatch(
+      /When the change touches `startup.sh` or what its production branch builds, run it once more with\s+`--production`/
+    );
+    expect(templateReference).toContain('sh scripts/check-template.sh --production');
+  });
+
+  it('has the Template ensure whatever it needs beyond the image, App or not', () => {
+    expect(templateReference).toMatch(
+      /Your pod runs the child's image, so what the check finds installed, the child has too/
+    );
+    expect(templateReference).toMatch(
+      /goes in a folder of its own, such as `examples\/`; a save leaves out\s+any folder named `data\/`/
+    );
+    expect(platformSkill).toMatch(
+      /Work with no App follows the same rules\.\*\* Without `startup.sh` nothing runs again after a restart, so a script that needs something the image lacks ensures it into `\/workspace` before it runs/
+    );
+  });
+
+  it('points at stack Skills the Builder can read through the API', () => {
+    expect(stackSkill).toContain('GET /skills/{id}');
+    expect(stackSkill).not.toContain('`ui`');
   });
 
   it('writes the prompt guidance the ADR pins: body only, the model pair, which skills to add', () => {
@@ -354,41 +470,76 @@ describe('the agent-authoring skill', () => {
     expect(agentAuthoring).toMatch(/starts with `platform` and nothing else/);
   });
 
-  it("carries ADR-0063's test contract", () => {
-    expect(agentAuthoring).toMatch(/without being asked/);
-    expect(agentAuthoring).toMatch(/Announce first, with the spend/);
-    expect(agentAuthoring).toMatch(/machine-checkable/);
-    expect(agentAuthoring).toMatch(/judgement/);
-    expect(agentAuthoring).toMatch(/never re-test an unchanged/);
+  it("points at the test loop, which carries ADR-0063's test contract", () => {
+    expect(agentAuthoring).toContain('`references/test-loop.md`');
+    expect(testLoop).toMatch(/without being asked/);
+    expect(testLoop).toMatch(/Announce first, with the spend/);
+    expect(testLoop).toMatch(/machine-checkable/);
+    expect(testLoop).toMatch(/judgement/);
+    expect(testLoop).toMatch(/Never refresh for an unchanged definition/);
+    expect(testLoop).toMatch(/restart the child's pod/);
     expect(agentAuthoring).toContain('$APP_PORT');
     expect(agentAuthoring).toContain('startup.sh');
     expect(agentAuthoring).toContain('app.meta.json');
     expect(agentAuthoring).toMatch(/observability database/);
   });
 
-  it('gives every building Agent a template to lay first and an Architecture in its body (ADR-0068)', () => {
-    expect(agentAuthoring).toMatch(/Every Agent that builds starts from a template/);
-    expect(agentAuthoring).toMatch(/lays a \*\*template\*\*\s+into that empty `app\/` before it builds anything/);
-    expect(agentAuthoring).toContain('Load the `web-app` skill before touching the app');
-    expect(agentAuthoring).toMatch(/The architecture lives in the body/);
-    expect(agentAuthoring).toMatch(/scaffold Skill/);
-    expect(agentAuthoring).toMatch(/Runtime dependencies are ensured by `startup.sh`, never by hand/);
-    expect(agentAuthoring).toMatch(/Restart the child's pod/);
+  it('loads agent-browser core, not the full reference, before the first interaction', () => {
+    expect(agentBrowserSkill).toContain('Run `agent-browser skills get core` before your first interaction');
+    expect(agentBrowserSkill).not.toMatch(/Run `agent-browser skills get core --full`/);
+    expect(testLoop).toMatch(
+      /These commands are all this loop needs; load `agent-browser` only for one they do not cover/
+    );
+  });
+
+  it('places each thing by one rule, snapshots the starter into template/ and keeps Architecture rules in the body (ADR-0073)', () => {
+    expect(agentAuthoring).toMatch(/## The Template/);
+    for (const place of [
+      '**Template** — files the Project owns',
+      '**Skill** — know-how',
+      '**Body** — who the Agent is',
+    ]) {
+      expect(agentAuthoring).toContain(place);
+    }
+    expect(agentAuthoring).toMatch(/the Agent has no Template/);
+    expect(agentAuthoring).toMatch(/the author is not asked/);
+    expect(agentAuthoring).toMatch(/Architecture rules live in the body/);
+    expect(agentAuthoring).toMatch(/three to six rules/);
+    expect(agentAuthoring).toMatch(/rules to keep, never changes to apply/);
+    expect(agentAuthoring).not.toMatch(/scaffold/i);
+    expect(stackSkill).not.toMatch(/scaffold|check-skeleton/i);
+    expect(templateReference).toContain('cp -a /opt/agents/app-builder/template/app template/app');
+    expect(templateReference).toContain('PUT "/agents/$A/template"');
+    expect(templateReference).toContain('`template-refused`');
+    expect(templateReference).toContain('`template-changed`');
+    expect(templateReference).toContain('template: { hash }');
+    expect(templateReference).toMatch(/Only when the author asks/);
+    expect(persona).toMatch(/`template\/` already holds its saved Template/);
+    expect(persona).toMatch(/Read what is\s+there before you write/);
     expect(webAppSkill).toMatch(/What the starter fixes and what you change/);
-    expect(webAppSkill).toContain("ls -A | grep -vxE 'data|opsiforce");
+    expect(webAppSkill).toMatch(/## The starter is already there/);
+    expect(webAppSkill).toMatch(/If it does not, stop and tell the user what you found instead of building/);
+    expect(webAppSkill).not.toContain('/opt/agents/app-builder/template/app');
     expect(webAppSkill).not.toMatch(/\[ -e \/workspace\/app\/startup\.sh \] \|\| cp/);
   });
 
   it('has authored Skills frame the work and never ship an implementation to copy', () => {
-    expect(agentAuthoring).toMatch(/Skills frame the work; the child writes it/);
-    for (const section of ['Structure', 'Stack and libraries', 'Contracts', 'Style guide', 'Runtime', 'Anti-patterns', 'Definition of done']) {
+    expect(agentAuthoring).toMatch(/Skills describe; the Template ships/);
+    for (const section of [
+      'Stack and libraries',
+      'Contracts',
+      'Style guide',
+      'Runtime',
+      'Anti-patterns',
+      'Definition of done',
+    ]) {
       expect(stackSkill).toContain(`**${section}**`);
     }
     expect(stackSkill).toMatch(/What it never holds — an implementation/);
     expect(stackSkill).toMatch(/How often the checks run/);
     expect(stackSkill).toMatch(/No version pins/);
-    expect(stackSkill).toContain("grep -vxE 'data|opsiforce");
-    for (const text of [agentAuthoring, stackSkill, testLoop]) {
+    expect(stackSkill).toMatch(/belongs in the Template or nowhere/);
+    for (const text of [agentAuthoring, stackSkill, testLoop, templateReference]) {
       expect(text).not.toMatch(/cp -a \/workspace\/\.opencode\/skills/);
       expect(text).not.toMatch(/md5sum/);
     }
@@ -396,7 +547,15 @@ describe('the agent-authoring skill', () => {
   });
 
   it('keeps the shared guidance free of any one service', () => {
-    for (const [name, text] of Object.entries({ platformSkill, webAppSkill, agentAuthoring, stackSkill, testLoop, persona })) {
+    for (const [name, text] of Object.entries({
+      platformSkill,
+      webAppSkill,
+      agentAuthoring,
+      stackSkill,
+      testLoop,
+      templateReference,
+      persona,
+    })) {
       expect(text, `${name} names a specific service`).not.toMatch(/postgres|mysql|redis|mongo/i);
     }
   });
@@ -420,12 +579,12 @@ describe('the agent-authoring skill', () => {
   });
 
   it('states all four fidelity gaps', () => {
-    const gaps = agentAuthoring.split('four fidelity gaps')[1] ?? '';
+    const gaps = testLoop.split('four fidelity gaps')[1] ?? '';
 
     expect(gaps).toMatch(/always cold/);
     expect(gaps).toMatch(/spend lands on this Organization/);
     expect(gaps).toMatch(/[Ee]xternal services/);
-    expect(gaps).toMatch(/as of its creation moment/);
+    expect(gaps).toMatch(/as of its last refresh/);
   });
 
   it('points only at reference files that exist', () => {
@@ -468,27 +627,95 @@ function normalizeRoute(path: string): string {
 
 /** Every platform-API call the reference tells the Builder to make, as `METHOD path`. */
 function platformCallsIn(markdown: string): string[] {
-  const calls = [...markdown.matchAll(/api\.sh (?:call|status) (GET|POST|PUT|DELETE|PATCH) ["']?([^\s"']+)/g)];
+  const calls = [...markdown.matchAll(/\bapi(?:\.sh)? (?:call|status) (GET|POST|PUT|DELETE|PATCH) ["']?([^\s"')]+)/g)];
   return calls.map(([, method, path]) => `${method} ${normalizeRoute(path)}`);
 }
 
 describe('the test loop reference', () => {
+  it('decides update or reset by one rule, on the word touched, and is the only place that states it', () => {
+    const refresh = testLoop.split('## 5.')[1]?.split('## 6.')[0] ?? '';
+
+    expect(refresh).toMatch(
+      /\*\*touched\*\* or built on what the change alters, or the change is in the body or a Skill/
+    );
+    expect(refresh).toMatch(/→ \*\*reset\*\*\. Otherwise → \*\*update\*\*/);
+    expect(refresh).toContain('sh scripts/tp.sh touched');
+    expect(refresh).toContain('sh scripts/tp.sh update');
+    expect(refresh).toContain('sh scripts/tp.sh reset');
+    for (const [name, text] of Object.entries({ persona, agentAuthoring, skillAuthoring })) {
+      expect(text, `${name} restates the refresh rule`).not.toMatch(/\*\*update\*\* when|\*\*reset\*\* when/);
+    }
+  });
+
+  it('logs fixes as an explicit round-end step and ends the report on criteria it can check', () => {
+    expect(testLoop).toMatch(/1\. \*\*Log the fixes\.\*\*/);
+    expect(testLoop).toContain(
+      '`- R<n> · <failed expectation> · <template|body|skill> · <the record that showed it, in words> · <what you change> · <update|reset>`'
+    );
+    const report = testLoop.split('## 6. Report')[1] ?? '';
+
+    expect(report).toMatch(/\*\*The report is done when:\*\*/);
+    expect(report).toContain('`node scripts/check-expectations.mjs` exits 0');
+    expect(report).toMatch(
+      /every expectation line is either `pass` or `fail` with one source, or `not checked` with its why/
+    );
+    expect(report).toMatch(/`## Fixes` has one entry per fixing round/);
+    expect(report).toMatch(/every Form the child raised is listed with its answer/);
+    expect(persona).toContain('`test-loop.md` §6');
+  });
+
+  it('keeps the prompts in the expectations file and resumes a round after an update', () => {
+    expect(testLoop).toMatch(/\*\*`## Prompts`\*\* — one line per prompt, sent word for word every round/);
+    expect(testLoop).toMatch(/After a reset, from the first prompt/);
+    expect(testLoop).toMatch(/After an update the workspace still\s+holds what the prompts built/);
+  });
+
+  it('marks each verdict line with one source, and not checked as its own line shape', () => {
+    const report = testLoop.split('## 6. Report')[1] ?? '';
+
+    expect(report).toContain("- <expectation> — <pass | fail> (<mine | the child's record: …>) —");
+    expect(report).toContain('- <expectation> — not checked — <why>');
+    expect(report).not.toMatch(/not checked \| |<mark>/);
+  });
+
+  it('uses fixed scratch names now that a chat has one subject', () => {
+    for (const [name, text] of Object.entries({ testLoop, scratchReadme })) {
+      expect(text, `${name} still names a per-Agent scratch file`).not.toMatch(/<agent>\./);
+    }
+    expect(testLoop).toContain('scratch/expectations.md');
+    expect(scratchReadme).toContain('scratch/prompt.md');
+  });
+
+  it('covers a disabled Test Project, a failed environment, secrets and outside writes', () => {
+    expect(testLoop).toMatch(/\*\*`disabled:`\*\*[\s\S]*Test\s+run pane's menu[\s\S]*\*saved\*, not \*tested\*/);
+    expect(testProjectScript).toMatch(/Test run pane's menu/);
+    expect(testLoop).toMatch(/`up` retries it once through a restart/);
+    expect(testLoop).toMatch(/Test Project's Environment settings/);
+    expect(testLoop).toMatch(/never its value/);
+    expect(testLoop).toMatch(/targets something the author owns and named in the brief/);
+    expect(testLoop).toMatch(/use the result once the way the brief's user would/);
+  });
+
   it('drives only routes this pod is actually allowed to call', () => {
     const open = gatewayOpenRoutes();
-    const driven = platformCallsIn(testLoop);
+    const driven = [...platformCallsIn(testLoop), ...platformCallsIn(testProjectScript)];
 
     expect(open.size).toBeGreaterThan(5);
-    expect(driven.length).toBeGreaterThan(3);
+    expect(platformCallsIn(testProjectScript).length).toBeGreaterThan(8);
     for (const call of new Set(driven)) {
-      expect([...open], `test-loop.md drives ${call}, which is not open to a gateway caller`).toContain(call);
+      expect([...open], `the test loop drives ${call}, which is not open to a gateway caller`).toContain(call);
     }
   });
 
   it('is matched by the authoring references, which drive the Skill and Agent routes', () => {
     const open = gatewayOpenRoutes();
-    const skillApi = readFileSync(join(packageRoot, 'skills', 'skill-authoring', 'references', 'api.md'), 'utf8');
     const agentApi = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'agent-api.md'), 'utf8');
-    const driven = [...platformCallsIn(skillApi), ...platformCallsIn(agentApi), ...platformCallsIn(skillAuthoring)];
+    const driven = [
+      ...platformCallsIn(skillApi),
+      ...platformCallsIn(agentApi),
+      ...platformCallsIn(skillAuthoring),
+      ...platformCallsIn(templateReference),
+    ];
 
     expect(driven.length).toBeGreaterThan(8);
     for (const call of new Set(driven)) {
@@ -496,31 +723,78 @@ describe('the test loop reference', () => {
     }
   });
 
-  it('creates the test Project the way the API accepts it', () => {
-    expect(testLoop).toContain('"kind":"test"');
-    expect(testLoop).toContain('POST /projects');
-    expect(testLoop).toMatch(/environments\[0\]\.status/);
-    expect(testLoop).toMatch(/wait_active\(\) \{[\s\S]*seq 1[\s\S]*"failed"[\s\S]*return 1/);
-    expect(testLoop).not.toMatch(/until \[.*environments\[0\]\.status.*\]; do sleep/);
+  it('creates the Test Project the way the API accepts it, and waits with a ceiling', () => {
+    expect(testLoop).toContain('sh scripts/tp.sh up');
+    expect(testProjectScript).toContain('kind: "test"');
+    expect(testProjectScript).toContain('api call POST /projects');
+    expect(testProjectScript).toMatch(/environments\[0\]\.status/);
+    expect(testProjectScript).toMatch(/wait_active\(\) \{[\s\S]*"\$attempts"[\s\S]*failed[\s\S]*return 1/);
   });
 
   it('prompts and reads through the runtime, and shells for verification', () => {
-    expect(testLoop).toContain('/api/session/$SES/prompt');
-    expect(testLoop).toContain('/api/session/$SES/wait');
-    expect(testLoop).toContain('/api/session/$SES/message');
-    expect(testLoop).toContain('POST /api/shell');
-    expect(testLoop).toContain('/restart');
+    expect(testLoop).toContain("sh scripts/tp.sh prompt '");
+    expect(testProjectScript).toContain('/api/session/$session/prompt');
+    expect(testProjectScript).toContain('exec sh "$here/turn.sh"');
+    expect(testProjectScript).not.toMatch(/\/wait"/);
+    expect(testProjectScript).toContain('POST /api/shell');
+    expect(testProjectScript).toContain('timeout: 60000');
+    expect(testProjectScript).toContain('/api/shell/$shell/output');
+    expect(testLoop).toContain('sh scripts/tp.sh restart');
     expect(testLoop).toContain('`timeout` set to `1200000`');
     expect(testLoop).toMatch(/genuine stall only/);
-    expect(testLoop).toMatch(/Idle is not finished/);
-    expect(testLoop).toContain('"finish":"error"');
-    expect(agentAuthoring).toMatch(/A long turn is\s+not a stuck one/);
-    expect(testLoop).toContain('/api/shell/$id/output');
+    expect(testLoop).toMatch(/Wait only through `tp\.sh`/);
+    expect(testLoop).toMatch(/\*\*Exit 5, a broken turn\*\*/);
+    expect(turnScript).toContain('idle finish=$finish');
+    expect(testLoop).toMatch(/A long turn is\s+not a stuck one/);
   });
 
-  it('names the resume rule and the supersede-on-create the backend performs', () => {
-    expect(testLoop).toMatch(/scratch\/test-project\.json/);
-    expect(testLoop).toMatch(/hides `kind`-stamped Projects from `GET \/projects`/);
-    expect(testLoop).toMatch(/deletes this chat's previous test Project/);
+  it('answers a Form the child opens from the brief and the expectations, and records it', () => {
+    expect(testLoop).toContain('sh scripts/tp.sh answer \'{"<field key>":');
+    expect(testProjectScript).toContain('"/api/session/$session/form"');
+    expect(testProjectScript).toContain('"/api/session/$session/form/$form/reply"');
+    expect(testLoop).toMatch(/The answer comes from the author's intent/);
+    expect(testLoop).toMatch(/its position\s+and a "\(Recommended\)" label carry none/);
+    expect(testLoop).toMatch(/Always answer a Form, never cancel it/);
+    expect(testLoop).toMatch(/Note every Form in the round's report/);
+    expect(testLoop).toContain('`question (open)`');
+  });
+
+  it('keeps one Test Project per chat, recovered from /me or the 409, and refreshed in place', () => {
+    expect(testProjectScript).toContain('state=scratch/test-project.json');
+    expect(testLoop).toMatch(/no Project list shows it/);
+    expect(testProjectScript).toContain('.builderTestProject.id');
+    expect(testProjectScript).toContain('.testProjectId');
+    expect(testProjectScript).toContain('api call POST "/projects/$project/test/update"');
+    expect(testProjectScript).toContain('api call POST "/projects/$project/test/reset"');
+    expect(testProjectScript).not.toMatch(/DELETE/);
+    expect(testLoop).not.toMatch(/supersede/i);
+  });
+
+  it('reads the child record through evidence.sh and grades the gaps itself', () => {
+    expect(testLoop).toContain('sh scripts/tp.sh evidence');
+    expect(testProjectScript).toContain('exec sh "$here/evidence.sh"');
+    expect(testLoop).toMatch(/\*\*covered\*\*/);
+    expect(testLoop).toMatch(/\*\*gap\*\*/);
+    expect(testLoop).toMatch(/\*\*mine\*\* \(checked myself\) or \*\*the child's record\*\*/);
+    expect(testLoop).toMatch(/passed after a Template update/);
+    expect(testLoop).not.toMatch(/report each check you made/);
+    expect(testLoop).not.toMatch(/set viewport 375/);
+    expect(templateReference).toContain('sh scripts/check-template.sh');
+    expect(templateReference).toMatch(/nothing to boot/);
+  });
+});
+
+describe('the Builder instruction word budget', () => {
+  const wordBudget: Record<string, number> = {
+    'agent.md': 1450,
+    'skills/agent-authoring/SKILL.md': 1600,
+    'skills/agent-authoring/references/test-loop.md': 3750,
+    'skills/agent-authoring/references/template.md': 1200,
+    'skills/skill-authoring/SKILL.md': 1100,
+  };
+
+  it.each(Object.entries(wordBudget))('keeps %s within %i words', (file, budget) => {
+    const words = readFileSync(join(packageRoot, file), 'utf8').split(/\s+/).filter(Boolean).length;
+    expect(words).toBeLessThanOrEqual(budget);
   });
 });

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import type { AgentCaller } from '../../agent/agent.types';
 import { Perms } from '../../permission/permission.constants';
-import { assertPermission, type Caller } from '../auth/caller';
+import { assertPermission, chatProjectIdOf, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { AgentMapper } from './agents.mapper';
 import { PublicAgentsRepository } from './agents.repository';
@@ -13,6 +13,7 @@ import type {
   AgentSkillListDto,
   CreateAgent,
   SetAgentSkill,
+  TemplateSaveDto,
   UpdateAgent,
   UpdateAgentProfile,
 } from './agents.schema';
@@ -52,6 +53,11 @@ export class PublicAgentsService {
   async updateProfile(caller: Caller, agentId: string, body: UpdateAgentProfile): Promise<AgentDetailDto> {
     const scope = await this.scopeAfterVisibleRead(caller, agentId);
     return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.updateProfile(scope, agentId, body)));
+  }
+
+  async saveTemplate(caller: Caller, agentId: string): Promise<TemplateSaveDto> {
+    const scope = await this.scopeAfterVisibleRead(caller, agentId);
+    return mappingStoreErrors(() => this.agents.saveTemplate(scope, agentId, chatProjectIdOf(caller)));
   }
 
   async setSkill(caller: Caller, agentId: string, skillId: string, body: SetAgentSkill): Promise<AgentSkillListDto> {

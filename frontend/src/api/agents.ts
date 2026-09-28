@@ -1,7 +1,7 @@
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
-import { api, type Agent } from './client';
+import { api, currentTenant, type Agent } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
-import type { SkillFlags } from './skills';
+import { skillKeys, type SkillFlags } from './skills';
 import type { StoreFilter } from './store';
 
 export const agentKeys = {
@@ -10,6 +10,7 @@ export const agentKeys = {
   store: (filter: StoreFilter, query: string) => [...agentKeys.all, 'store', filter, query] as const,
   detail: (id: string) => [...agentKeys.all, 'detail', id] as const,
   delivery: (id: string) => [...agentKeys.all, 'delivery', id] as const,
+  exportPreview: (id: string) => [...agentKeys.all, 'export-preview', id] as const,
   models: () => [...agentKeys.all, 'models'] as const,
 };
 
@@ -18,6 +19,7 @@ export interface StoreAgent extends Agent {
   visibility: string;
   disabled: boolean;
   disableable: boolean;
+  duplicable: boolean;
   createdBy: string | null;
   imageOwned: boolean;
   builderChatId: string | null;
@@ -41,6 +43,11 @@ export interface AgentProfileSkill {
   flags: SkillFlags;
 }
 
+export interface AgentProfileTemplate {
+  hash: string;
+  damaged: boolean;
+}
+
 export interface AgentProfile {
   environmentId: string;
   promptBody: string | null;
@@ -48,6 +55,7 @@ export interface AgentProfile {
   variant: string | null;
   updatedAt: string | null;
   skills: AgentProfileSkill[] | null;
+  template: AgentProfileTemplate | null;
 }
 
 export interface ShippedSkill {
@@ -95,10 +103,13 @@ export interface UpdateAgentProfileDto {
   variant: string | null;
 }
 
+export type TemplateComparison = 'same' | 'changed' | 'added' | 'removed' | 'none';
+
 export interface PublishApplied {
   prompt: 'changed' | 'same';
   model: { from: string | null; to: string | null } | null;
   skills: { added: string[]; removed: string[]; repinned: string[] };
+  template: TemplateComparison;
 }
 
 export function useAgents() {
@@ -172,6 +183,38 @@ export function useAgentDelivery(id: () => string, enabled: () => boolean) {
   }));
 }
 
+export interface KeyLikeHit {
+  path: string;
+  reason: string;
+}
+
+export interface AgentExportPreview {
+  template: KeyLikeHit[];
+  skills: { name: string; hits: KeyLikeHit[] }[];
+}
+
+export function useAgentExportPreview(id: () => string, enabled: () => boolean) {
+  return createAppQuery(() => ({
+    queryKey: agentKeys.exportPreview(id()),
+    queryFn: () => api.get<AgentExportPreview>(`/agents/${id()}/export/preview`),
+    enabled: enabled(),
+    staleTime: 0,
+    reconcile: false as const,
+  }));
+}
+
+export function downloadAgentExport(agentId: string, slug: string): void {
+  const tenant = currentTenant();
+  const query = tenant ? `?${new URLSearchParams({ tenant }).toString()}` : '';
+  const link = document.createElement('a');
+  link.href = `/api/agents/${agentId}/export${query}`;
+  link.download = `${slug}-agent-export.zip`;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 export function useAgentModels() {
   return createAppQuery(() => ({
     queryKey: agentKeys.models(),
@@ -181,7 +224,10 @@ export function useAgentModels() {
 }
 
 /** Every write below refetches the detail query, which is what redraws badges, drift and the strip. */
-function useAgentMutation<TVariables, TResult>(id: () => string, run: (agentId: string, input: TVariables) => Promise<TResult>) {
+function useAgentMutation<TVariables, TResult>(
+  id: () => string,
+  run: (agentId: string, input: TVariables) => Promise<TResult>
+) {
   const qc = useQueryClient();
   return createMutation(() => ({
     mutationFn: (input: TVariables) => run(id(), input),
@@ -241,6 +287,39 @@ export function useDuplicateAgent(id: () => string) {
   return useAgentMutation(id, (agentId, displayName: string) =>
     api.post<AgentDetail>(`/agents/${agentId}/duplicate`, { displayName })
   );
+}
+
+export interface AgentImportNote {
+  kind: 'model' | 'skill' | 'template';
+  name?: string;
+  path?: string;
+  message: string;
+}
+
+export interface AgentImportProblem {
+  kind: 'name' | 'skill' | 'template';
+  name?: string;
+  path?: string;
+  message: string;
+}
+
+export interface AgentImportResult {
+  agent: AgentDetail;
+  notes: AgentImportNote[];
+}
+
+export function useImportAgent() {
+  const qc = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: (input: { uploadId: string; displayName: string | null }) =>
+      api.post<AgentImportResult>('/agents/import', input),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: agentKeys.all }),
+        qc.invalidateQueries({ queryKey: skillKeys.all }),
+      ]);
+    },
+  }));
 }
 
 export function useDeleteAgent(id: () => string) {

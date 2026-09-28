@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { db } from '../../db';
+import type { DbExecutor } from '../common/locks';
 import { hashSkillTree, validateSkillTree, type GateResult, type SkillTree } from './gate';
 import { parseFrontmatter } from './gate/frontmatter';
 import { decodeText, SKILL_MANIFEST_PATH } from './gate/skill-tree';
@@ -23,6 +25,7 @@ export interface CreateInput extends PublishInput {
 
 export interface PublishResult {
   skillId: string;
+  versionId: string;
   version: number;
 }
 
@@ -43,24 +46,26 @@ export class SkillPublishService {
     }
   }
 
-  async create(input: CreateInput): Promise<PublishResult> {
+  async create(input: CreateInput, executor: DbExecutor = db): Promise<PublishResult> {
     await this.assertNameAvailable(input.tenantId, input.name);
     const gate = this.gateOrThrow(input.tree, input.name);
 
-    const { skillId, version } = await this.repository.createSkillWithFirstVersion({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      name: input.name,
-      displayName: input.displayName ?? null,
-      description: manifestDescription(gate.normalizedTree),
-      tree: gate.normalizedTree,
-      contentHash: hashSkillTree(gate.normalizedTree),
-      flags: gate.flags,
-      lints: gate.lints.map((lint) => lint.rule),
-      createdVia: input.createdVia,
-      sourceRef: input.sourceRef ?? null,
-    });
-    return { skillId, version };
+    return this.repository.createSkillWithFirstVersion(
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        name: input.name,
+        displayName: input.displayName ?? null,
+        description: manifestDescription(gate.normalizedTree),
+        tree: gate.normalizedTree,
+        contentHash: hashSkillTree(gate.normalizedTree),
+        flags: gate.flags,
+        lints: gate.lints.map((lint) => lint.rule),
+        createdVia: input.createdVia,
+        sourceRef: input.sourceRef ?? null,
+      },
+      executor
+    );
   }
 
   async createUnpublished(input: {
@@ -77,21 +82,24 @@ export class SkillPublishService {
     return this.repository.createSkillWithoutVersion(input);
   }
 
-  async addVersion(skill: SkillRow, input: PublishInput): Promise<PublishResult> {
+  async addVersion(skill: SkillRow, input: PublishInput, executor: DbExecutor = db): Promise<PublishResult> {
     const gate = this.gateOrThrow(input.tree, skill.name);
 
-    const { version } = await this.repository.mintNextVersion({
-      skillId: skill.id,
-      userId: input.userId,
-      description: manifestDescription(gate.normalizedTree),
-      tree: gate.normalizedTree,
-      contentHash: hashSkillTree(gate.normalizedTree),
-      flags: gate.flags,
-      lints: gate.lints.map((lint) => lint.rule),
-      createdVia: input.createdVia,
-      sourceRef: input.sourceRef ?? null,
-    });
-    return { skillId: skill.id, version };
+    const { versionId, version } = await this.repository.mintNextVersion(
+      {
+        skillId: skill.id,
+        userId: input.userId,
+        description: manifestDescription(gate.normalizedTree),
+        tree: gate.normalizedTree,
+        contentHash: hashSkillTree(gate.normalizedTree),
+        flags: gate.flags,
+        lints: gate.lints.map((lint) => lint.rule),
+        createdVia: input.createdVia,
+        sourceRef: input.sourceRef ?? null,
+      },
+      executor
+    );
+    return { skillId: skill.id, versionId, version };
   }
 
   private gateOrThrow(tree: SkillTree, expectedName: string): GateResult {

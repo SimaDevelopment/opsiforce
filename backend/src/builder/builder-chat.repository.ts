@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../db';
 import { agents, projectEnvironments, projects, skills } from '../../db/schema';
 import { CHAT_KINDS, TEST_PROJECT_KIND, type ChatKind, type ProjectStatus } from '../project/project.types';
@@ -64,7 +64,7 @@ export class BuilderChatRepository {
     return claimed.length > 0;
   }
 
-  /** A list, not a row: ADR-0063 holds one live per chat, and leftovers must still be reachable. */
+  /** Oldest first, so two racing creates agree on which one is the chat's Test Project. */
   async testProjectsOf(chatId: string): Promise<TestProjectRow[]> {
     return db
       .select({
@@ -76,6 +76,6 @@ export class BuilderChatRepository {
       .from(projects)
       .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
       .where(and(eq(projects.kind, TEST_PROJECT_KIND), eq(projects.createdByProjectId, chatId)))
-      .orderBy(desc(projects.createdAt)) as Promise<TestProjectRow[]>;
+      .orderBy(asc(projects.createdAt), asc(projects.id)) as Promise<TestProjectRow[]>;
   }
 }

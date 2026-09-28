@@ -5,16 +5,22 @@ import { useCreateAgent } from '~/api/agents';
 import { useCreateSkill } from '~/api/skills';
 import { builderPath, type BuilderSubjectType } from '~/api/builder';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
 import { slugify } from '~/lib/app-url';
-
-const SLUG_MAX_LENGTH = { agent: 60, skill: 64 } as const;
+import { ENTRY_SLUG_MAX_LENGTH, EntryNameField, isNameUnavailable } from './entry-name-field';
 
 const COPY = {
   agent: {
     title: 'New agent',
     description:
-      'Name it, then tell the Builder what it should do. The Builder writes its prompt, picks its skills and tries it in a test project. It starts private, in Development.',
+      'Name it, then tell the Builder what it should do. The Builder writes its prompt, picks its skills and tries it in a test project. It starts private, and new projects can pick it after its first publish.',
     placeholder: 'e.g. Release Notes Writer…',
   },
   skill: {
@@ -35,15 +41,18 @@ export function CreateEntryDialog(props: {
   const createSkill = useCreateSkill();
   const [name, setName] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
+  const [unavailableSlug, setUnavailableSlug] = createSignal<string | null>(null);
 
   const trimmed = () => name().trim();
-  const slug = () => slugify(trimmed(), SLUG_MAX_LENGTH[props.type]);
+  const slug = () => slugify(trimmed(), ENTRY_SLUG_MAX_LENGTH[props.type]);
   const pending = () => createAgent.isPending || createSkill.isPending;
-  const canSubmit = () => slug().length > 0 && !pending();
+  const unavailable = () => unavailableSlug() === slug();
+  const canSubmit = () => slug().length > 0 && !unavailable() && !pending();
 
   const close = () => {
     setName('');
     setError(null);
+    setUnavailableSlug(null);
     props.onOpenChange(false);
   };
 
@@ -61,6 +70,10 @@ export function CreateEntryDialog(props: {
       close();
       void navigate({ to: builderPath({ type: props.type, id }) });
     } catch (caught) {
+      if (isNameUnavailable(caught)) {
+        setUnavailableSlug(slug());
+        return;
+      }
       setError(caught instanceof ApiError ? caught.message : `The ${props.type} could not be created.`);
     }
   };
@@ -75,41 +88,18 @@ export function CreateEntryDialog(props: {
           </DialogHeader>
 
           <div class="mt-4">
-            <label for={`new-${props.type}-name`} class="mb-1 block text-xs font-medium text-muted-foreground">
-              Name
-            </label>
-            <input
+            <EntryNameField
               id={`new-${props.type}-name`}
-              name="name"
-              type="text"
-              autocomplete="off"
-              maxLength={80}
+              label="Name"
               value={name()}
-              onInput={(event) => {
-                setName(event.currentTarget.value);
+              slug={slug()}
+              unavailable={unavailable()}
+              placeholder={COPY[props.type].placeholder}
+              onInput={(value) => {
+                setName(value);
                 setError(null);
               }}
-              class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              placeholder={COPY[props.type].placeholder}
-              aria-describedby={`new-${props.type}-slug`}
-              autofocus
             />
-            <p id={`new-${props.type}-slug`} class="mt-1.5 min-h-4 text-xs text-muted-foreground" aria-live="polite">
-              <Show
-                when={slug()}
-                fallback={
-                  <Show when={trimmed()}>
-                    <span class="text-destructive">Use at least one letter or digit.</span>
-                  </Show>
-                }
-              >
-                {(value) => (
-                  <>
-                    Slug <span class="font-mono text-foreground">{value()}</span> — fixed once created.
-                  </>
-                )}
-              </Show>
-            </p>
             <Show when={error()}>
               <p class="mt-2 text-xs text-destructive" role="alert">
                 {error()}

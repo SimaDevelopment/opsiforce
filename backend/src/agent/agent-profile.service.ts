@@ -11,6 +11,10 @@ import {
 import { visibilityIncoherent } from '../store/store-errors';
 import { assertSkillVisibleToUser, type SkillRow } from '../store/skill-visibility';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
+import { templateDamaged } from '../agent-template/agent-template.errors';
+import { AgentTemplateStore } from '../agent-template/agent-template.store';
+import { compareTemplates } from '../agent-template/agent-template.types';
+import { lockAgentTemplate } from '../common/locks';
 import { canEditAgent } from './agent-visibility';
 import { duplicateSkillName, notPublishable } from './agent-errors';
 import { assertModelSelection } from './agent-models';
@@ -42,7 +46,8 @@ interface CarriedRow {
 export class AgentProfileService {
   constructor(
     private readonly repository: AgentRepository,
-    private readonly skillDeliveries: SkillDeliveryService
+    private readonly skillDeliveries: SkillDeliveryService,
+    private readonly templates: AgentTemplateStore
   ) {}
 
   async targetProfile(agent: AgentRow, tenantId: string): Promise<AgentProfileRow> {
@@ -148,6 +153,11 @@ export class AgentProfileService {
     assertAgentCarriesNoPrivateSkill(agent, await this.repository.privateSkillNames(source.id));
 
     return db.transaction(async (tx) => {
+      await lockAgentTemplate(tx, agent.id);
+      const templates = await this.templates.hashes(agent.id);
+      const sourceTemplate = templates.get(source.environmentId) ?? null;
+      if (sourceTemplate?.damaged) throw templateDamaged();
+
       const [existing] = await tx
         .select()
         .from(agentProfiles)
@@ -157,7 +167,10 @@ export class AgentProfileService {
       const before = existing ? await carriedRows(tx, existing.id) : [];
       const after = await carriedRows(tx, source.id);
 
-      const applied = diff(existing, source, before, after);
+      const applied = {
+        ...diff(existing, source, before, after),
+        template: compareTemplates(sourceTemplate?.hash ?? null, templates.get(target.id)?.hash ?? null),
+      };
       if (existing && isNoOp(applied)) return { applied };
 
       const profileId = existing?.id ?? crypto.randomUUID();
@@ -189,6 +202,7 @@ export class AgentProfileService {
           .values(after.map((row) => ({ profileId, skillId: row.skillId, skillVersionId: row.skillVersionId })));
       }
 
+      await this.templates.publishLink(tx, agent.id, source.environmentId, target.id);
       return { applied };
     });
   }
@@ -232,6 +246,7 @@ function isNoOp(applied: PublishAgentResponse['applied']): boolean {
   return (
     applied.prompt === 'same' &&
     applied.model === null &&
+    (applied.template === 'same' || applied.template === 'none') &&
     added.length === 0 &&
     removed.length === 0 &&
     repinned.length === 0
@@ -243,7 +258,7 @@ function diff(
   source: AgentProfileRow,
   before: CarriedRow[],
   after: CarriedRow[]
-): PublishAgentResponse['applied'] {
+): Omit<PublishAgentResponse['applied'], 'template'> {
   const wasPinned = new Map(before.map((row) => [row.skillId, row]));
   const nowPinned = new Map(after.map((row) => [row.skillId, row]));
 
