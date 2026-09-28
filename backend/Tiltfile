@@ -141,11 +141,18 @@ k8s_resource(workload='proxy-db', new_name='runtime-proxies-db', labels=['cluste
 # ───────────────────────── Opsiforce Proxy (Traefik routing + oauth2-proxy) ─────────────────────────
 # Depends on the runtime-proxies Services existing so nginx's startup-time DNS
 # resolution doesn't fail. Uses prod nginx image (no source to live-reload).
+proxy_values = ['../helm/opsiforce-proxy/values.local.yaml']
+proxy_auth_values = os.getenv('PROXY_AUTH_VALUES')
+if proxy_auth_values:
+    if not os.path.exists(proxy_auth_values):
+        fail('PROXY_AUTH_VALUES points at a missing file: %s' % proxy_auth_values)
+    proxy_values.append(proxy_auth_values)
+
 k8s_yaml(helm(
     '../helm/opsiforce-proxy',
     name='opsiforce-proxy',
     namespace='local',
-    values=['../helm/opsiforce-proxy/values.local.yaml'],
+    values=proxy_values,
 ))
 
 k8s_resource(
