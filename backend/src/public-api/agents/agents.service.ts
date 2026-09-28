@@ -26,7 +26,7 @@ export class PublicAgentsService {
   ) {}
 
   async list(caller: Caller, query: AgentListQuery): Promise<AgentPageDto> {
-    const scope = { tenantId: caller.organization.id, userId: caller.user.platformId };
+    const scope = { tenantId: caller.tenant.id, userId: caller.user.platformId };
     const { rows, nextCursor } = await this.repository.page(scope, query);
     return { items: rows.map(AgentMapper.toDto), nextCursor };
   }
@@ -82,7 +82,7 @@ export class PublicAgentsService {
 
 function scopeOf(caller: Caller): AgentCaller {
   return {
-    tenantId: caller.organization.id,
+    tenantId: caller.tenant.id,
     userId: caller.user.platformId,
     canManageAgents: caller.permissions.has(Perms.manageAgents),
   };

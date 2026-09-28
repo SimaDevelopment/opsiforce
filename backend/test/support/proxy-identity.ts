@@ -10,12 +10,12 @@ export interface ProxyIdentity {
   userId?: string;
   username?: string;
   email?: string | null;
-  organizations?: string[];
+  tenants?: string[];
   permissions?: string[];
-  organization?: string;
+  tenant?: string;
 }
 
-export function organizationName(label = 'org'): string {
+export function tenantName(label = 'org'): string {
   return `${label}-${randomUUID().slice(0, 8)}`;
 }
 
@@ -28,13 +28,13 @@ export function proxyHeaders(identity: ProxyIdentity = {}): Record<string, strin
     userId = randomUUID(),
     username = `user-${userId.slice(0, 8)}`,
     email = `${username}@example.test`,
-    organizations = [],
+    tenants = [],
     permissions = [Perms.usePublicApi],
-    organization,
+    tenant,
   } = identity;
 
   const groups = [
-    ...organizations.map((name) => `${OPSIFORCE_TENANT_GROUP_PREFIX}${name}`),
+    ...tenants.map((name) => `${OPSIFORCE_TENANT_GROUP_PREFIX}${name}`),
     ...permissions.map((permission) => `${PERMISSION_GROUP_PREFIX}${permission}`),
   ];
 
@@ -43,6 +43,6 @@ export function proxyHeaders(identity: ProxyIdentity = {}): Record<string, strin
     'x-forwarded-preferred-username': username,
     ...(email === null ? {} : { 'x-forwarded-email': email }),
     'x-forwarded-groups': groups.join(','),
-    ...(organization === undefined ? {} : { [TENANT_NAME_HEADER]: organization }),
+    ...(tenant === undefined ? {} : { [TENANT_NAME_HEADER]: tenant }),
   };
 }

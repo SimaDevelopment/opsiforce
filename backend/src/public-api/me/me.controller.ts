@@ -17,16 +17,16 @@ export class MeController {
   @ApiOperation({
     summary: 'Get the current user',
     description:
-      "Who the token belongs to, where it can act, and what it may do. The id is the platform user id used everywhere else in this API, not the subject of your token. Organizations lists every Organization you belong to; organization is the one this call used. Permissions are the can_* names you hold, sorted.\n\n**Use it for** three things: proving a freshly minted token works, discovering which Organization to send as x-tenant-name when you belong to several, and hiding actions the caller cannot perform — check for can_delete_project before offering a delete rather than letting it fail with a 403.\n\nA Builder chat's pod also reads `builderSubject` here, the Skill or Agent it was opened on, and `builderTestProject`, its one Test Project once it has created it.",
+      "Who the token belongs to, where it can act, and what it may do. The id is the platform user id used everywhere else in this API, not the subject of your token. `tenants` lists every tenant you belong to; `tenant` is the one this call used. Permissions are the can_* names you hold, sorted.\n\n**Use it for** three things: proving a freshly minted token works, discovering which tenant to send as x-tenant-name when you belong to several, and hiding actions the caller cannot perform — check for can_delete_project before offering a delete rather than letting it fail with a 403.\n\nA Builder chat's pod also reads `builderSubject` here, the Skill or Agent it was opened on, and `builderTestProject`, its one Test Project once it has created it.",
   })
   @PublicResponse(200, MeSchema)
-  @PublicApiErrors('unauthenticated', 'organization-required', 'organization-forbidden', 'permission-denied')
+  @PublicApiErrors('unauthenticated', 'tenant-required', 'tenant-forbidden', 'permission-denied')
   async get(@Caller() caller: Caller): Promise<MeDto> {
     const chatId = chatProjectIdOf(caller);
     if (chatId === null) return MeMapper.toDto(caller, null, null);
     const [subject, testProject] = await Promise.all([
-      this.builderChats.subjectOfChat(caller.organization.id, caller.user.platformId, chatId),
-      this.builderChats.testProjectOf(caller.organization.id, chatId),
+      this.builderChats.subjectOfChat(caller.tenant.id, caller.user.platformId, chatId),
+      this.builderChats.testProjectOf(caller.tenant.id, chatId),
     ]);
     return MeMapper.toDto(caller, subject, testProject);
   }

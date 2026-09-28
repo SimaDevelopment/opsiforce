@@ -56,8 +56,8 @@ beforeAll(async () => {
   exports = harness.agentExports;
   importer = harness.agentImports;
 
-  author = await organization();
-  target = await organization();
+  author = await newTenant();
+  target = await newTenant();
   targetDevelopmentId = await defaultEnvironmentId(target.tenantId);
 
   await ensureBuiltInSkill('platform');
@@ -75,7 +75,7 @@ afterAll(async () => {
   await harness.close();
 });
 
-async function organization(): Promise<AgentCaller> {
+async function newTenant(): Promise<AgentCaller> {
   const tenantId = await createTenantRow();
   const userId = await createUserRow();
   await harness.environments.ensureDefaultForTenant(tenantId);

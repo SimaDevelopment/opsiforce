@@ -47,6 +47,7 @@ export { default as Calendar } from 'lucide-solid/icons/calendar';
 export { default as Play } from 'lucide-solid/icons/play';
 export { default as Cpu } from 'lucide-solid/icons/cpu';
 export { default as SlidersHorizontal } from 'lucide-solid/icons/sliders-horizontal';
+export { default as Gauge } from 'lucide-solid/icons/gauge';
 export { default as GripVertical } from 'lucide-solid/icons/grip-vertical';
 export { default as Users } from 'lucide-solid/icons/users';
 export { default as Info } from 'lucide-solid/icons/info';

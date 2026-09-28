@@ -34,7 +34,7 @@ export class ProjectsController {
   @ApiOperation({
     summary: 'List Projects',
     description:
-      'Every Project you can see in the selected Organization. Public Projects are visible to all members; a workspace Project only to that workspace. Disabled ones appear with disabled true. Newest first; page with the opaque cursor.\n\n**Use it for** a dashboard or a "which Project?" picker, and for reconciling a local list on a schedule — page with cursor until nextCursor is null. Filter with agentId to find everything running one Agent, for instance before retiring it.',
+      'Every Project you can see in the selected tenant. Public Projects are visible to all members; a workspace Project only to that workspace. Disabled ones appear with disabled true. Newest first; page with the opaque cursor.\n\n**Use it for** a dashboard or a "which Project?" picker, and for reconciling a local list on a schedule — page with cursor until nextCursor is null. Filter with agentId to find everything running one Agent, for instance before retiring it.',
   })
   @PublicResponse(200, ProjectPageSchema)
   @PublicApiErrors('validation-error')
@@ -50,7 +50,7 @@ export class ProjectsController {
   @ApiOperation({
     summary: 'Create a Project',
     description:
-      'Answers at once, normally with the Development environment still starting; poll the Project until it reports active. Omit workspaceId and the Project lands where the app would put it: a member gets their Personal workspace, a service account the Organization-wide Public area. An Organization with private workspaces turned off puts every omitted placement in Public.\n\n**Use it for** giving a piece of work its own Agent: one Project per support ticket, per customer, per chat thread. The usual sequence is List Agents to pick an agentId, Create a Project, poll Get a Project until the Development environment is active, then Send a Prompt. You can skip the polling — a Prompt wakes a cold environment by itself — so poll only when you want to show progress.',
+      'Answers at once, normally with the Development environment still starting; poll the Project until it reports active. Omit workspaceId and the Project lands where the app would put it: a member gets their Personal workspace, a service account the tenant-wide Public area. A tenant with private workspaces turned off puts every omitted placement in Public.\n\n**Use it for** giving a piece of work its own Agent: one Project per support ticket, per customer, per chat thread. The usual sequence is List Agents to pick an agentId, Create a Project, poll Get a Project until the Development environment is active, then Send a Prompt. You can skip the polling — a Prompt wakes a cold environment by itself — so poll only when you want to show progress.',
   })
   @ApiBody({
     required: true,
@@ -83,7 +83,7 @@ export class ProjectsController {
     },
   })
   @PublicResponse(201, ProjectSchema)
-  @PublicApiErrors('validation-error', 'invalid-reference', 'test-project-exists')
+  @PublicApiErrors('validation-error', 'invalid-reference', 'test-project-exists', 'limit-reached')
   create(@Caller() caller: Caller, @Body({ schema: CreateProjectSchema }) body: CreateProject): Promise<ProjectDto> {
     return this.projects.create(caller, body);
   }
@@ -93,7 +93,7 @@ export class ProjectsController {
   @ApiOperation({
     summary: 'Get a Project',
     description:
-      'One Project by id. A Project in another Organization, in a workspace you are not in, or that never existed all answer 404 alike, so the API never confirms a hidden Project is there.\n\n**Use it for** polling a freshly created Project until environments[0].status is active, and for a cheap status refresh afterwards: agentStatus tells you whether the Agent is busy and lastPromptAt when it last worked, without touching the pod.',
+      'One Project by id. A Project in another tenant, in a workspace you are not in, or that never existed all answer 404 alike, so the API never confirms a hidden Project is there.\n\n**Use it for** polling a freshly created Project until environments[0].status is active, and for a cheap status refresh afterwards: agentStatus tells you whether the Agent is busy and lastPromptAt when it last worked, without touching the pod.',
   })
   @PublicResponse(200, ProjectSchema)
   @PublicApiErrors('project-not-found')

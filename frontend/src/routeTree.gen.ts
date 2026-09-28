@@ -19,6 +19,7 @@ import { Route as StoreIndexRouteImport } from './routes/store/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsWorkspacesRouteImport } from './routes/settings/workspaces'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
+import { Route as SettingsLimitsRouteImport } from './routes/settings/limits'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings/integrations'
 import { Route as SettingsEnvironmentsRouteImport } from './routes/settings/environments'
 import { Route as SettingsDefaultsRouteImport } from './routes/settings/defaults'
@@ -83,6 +84,11 @@ const SettingsWorkspacesRoute = SettingsWorkspacesRouteImport.update({
 const SettingsUsersRoute = SettingsUsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+const SettingsLimitsRoute = SettingsLimitsRouteImport.update({
+  id: '/limits',
+  path: '/limits',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
@@ -177,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
@@ -202,6 +209,7 @@ export interface FileRoutesByTo {
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings': typeof SettingsIndexRoute
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
+  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/settings/defaults'
     | '/settings/environments'
     | '/settings/integrations'
+    | '/settings/limits'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
@@ -284,6 +294,7 @@ export interface FileRouteTypes {
     | '/settings/defaults'
     | '/settings/environments'
     | '/settings/integrations'
+    | '/settings/limits'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings'
@@ -311,6 +322,7 @@ export interface FileRouteTypes {
     | '/settings/defaults'
     | '/settings/environments'
     | '/settings/integrations'
+    | '/settings/limits'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
@@ -405,6 +417,13 @@ declare module '@tanstack/solid-router' {
       path: '/users'
       fullPath: '/settings/users'
       preLoaderRoute: typeof SettingsUsersRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
+    '/settings/limits': {
+      id: '/settings/limits'
+      path: '/limits'
+      fullPath: '/settings/limits'
+      preLoaderRoute: typeof SettingsLimitsRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     '/settings/integrations': {
@@ -538,6 +557,7 @@ interface SettingsRouteRouteChildren {
   SettingsDefaultsRoute: typeof SettingsDefaultsRoute
   SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
+  SettingsLimitsRoute: typeof SettingsLimitsRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsWorkspacesRoute: typeof SettingsWorkspacesRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -548,6 +568,7 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsDefaultsRoute: SettingsDefaultsRoute,
   SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
+  SettingsLimitsRoute: SettingsLimitsRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   SettingsWorkspacesRoute: SettingsWorkspacesRoute,
   SettingsIndexRoute: SettingsIndexRoute,

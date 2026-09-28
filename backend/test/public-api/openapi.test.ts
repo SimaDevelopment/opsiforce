@@ -144,7 +144,7 @@ describe('public api openapi document', () => {
         'Environment',
         'Me',
         'OpencodeDescriptor',
-        'OrganizationRef',
+        'TenantRef',
         'ApiError',
         'Project',
         'ProjectPage',
@@ -169,8 +169,8 @@ describe('public api openapi document', () => {
       'email',
       'displayName',
       'source',
-      'organization',
-      'organizations',
+      'tenant',
+      'tenants',
       'permissions',
       'builderSubject',
       'builderTestProject',
@@ -200,7 +200,7 @@ describe('public api openapi document', () => {
 
     expect(
       create.responses?.['409'].content?.['application/problem+json'].schema?.allOf?.[1].properties?.type?.enum
-    ).toEqual([errorTypeUri('test-project-exists')]);
+    ).toEqual([errorTypeUri('test-project-exists'), errorTypeUri('limit-reached')]);
     const schemas = document.components?.schemas as Record<string, NamedSchema> | undefined;
     expect(Object.keys(schemas?.ApiError.properties ?? {})).toContain('testProjectId');
 

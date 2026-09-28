@@ -45,7 +45,7 @@ export const AgentTemplateSchema = z
 
 export const AgentProfileSchema = z
   .strictObject({
-    environmentId: z.string().describe('Every Environment of the Organization appears, profile or not'),
+    environmentId: z.string().describe('Every Environment of the tenant appears, profile or not'),
     promptBody: z.string().nullable(),
     model: z.string().nullable(),
     variant: z.string().nullable().describe('Reasoning effort, when the model offers one'),

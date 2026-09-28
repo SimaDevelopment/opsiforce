@@ -6,10 +6,10 @@ import { Perms } from '../../src/permission/permission.constants';
 import { defaultEnvironmentId, seedBuilderChat, seedLiveAgent, seedWorkspaceProject } from '../support/agent-fixtures';
 import {
   addMember,
-  createOrganization,
+  createTenant,
   platformApiKeyFor,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 
@@ -37,7 +37,7 @@ interface ProfileBody {
 describe('PUT /agents/:id/template', () => {
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let creator: MemberFixture;
   let agentId: string;
   let chatId: string;
@@ -56,14 +56,14 @@ describe('PUT /agents/:id/template', () => {
   beforeAll(async () => {
     harness = await createPublicApiTestApp();
     app = harness.app;
-    organization = await createOrganization(app);
-    creator = await addMember(app, organization, [Perms.usePublicApi, Perms.manageAgents]);
+    tenant = await createTenant(app);
+    creator = await addMember(app, tenant, [Perms.usePublicApi, Perms.manageAgents]);
 
-    agentId = (await seedLiveAgent(organization.tenantId, creator.userId)).id;
-    const chat = await seedBuilderChat(organization.tenantId, agentId, creator.userId);
+    agentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
+    const chat = await seedBuilderChat(tenant.tenantId, agentId, creator.userId);
     chatId = chat.chatId;
     templateDir = chat.templateDir;
-    chatKey = await platformApiKeyFor(app, organization, chatId);
+    chatKey = await platformApiKeyFor(app, tenant, chatId);
   });
 
   beforeEach(async () => {
@@ -89,7 +89,7 @@ describe('PUT /agents/:id/template', () => {
     });
 
     const detail = await app.inject({ method: 'GET', url: `/api/v1/agents/${agentId}`, headers: bearer(chatKey) });
-    const developmentId = await defaultEnvironmentId(organization.tenantId);
+    const developmentId = await defaultEnvironmentId(tenant.tenantId);
     const profiles = detail.json<{ profiles: ProfileBody[] }>().profiles;
     expect(profiles.find((profile) => profile.environmentId === developmentId)?.template).toEqual({
       hash: body.hash,
@@ -134,9 +134,9 @@ describe('PUT /agents/:id/template', () => {
 
   it('refuses a person, another chat and a Test Project', async () => {
     await write('README.md');
-    const otherAgentId = (await seedLiveAgent(organization.tenantId, creator.userId)).id;
-    const otherChat = await seedBuilderChat(organization.tenantId, otherAgentId, creator.userId);
-    const testProjectId = await seedWorkspaceProject(organization.tenantId, {
+    const otherAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
+    const otherChat = await seedBuilderChat(tenant.tenantId, otherAgentId, creator.userId);
+    const testProjectId = await seedWorkspaceProject(tenant.tenantId, {
       agentId,
       createdBy: creator.userId,
       kind: 'test',
@@ -145,8 +145,8 @@ describe('PUT /agents/:id/template', () => {
 
     const callers = [
       creator.headers,
-      bearer(await platformApiKeyFor(app, organization, otherChat.chatId)),
-      bearer(await platformApiKeyFor(app, organization, testProjectId)),
+      bearer(await platformApiKeyFor(app, tenant, otherChat.chatId)),
+      bearer(await platformApiKeyFor(app, tenant, testProjectId)),
     ];
     for (const headers of callers) {
       const res = await save(headers);

@@ -18,12 +18,12 @@ import { ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import {
   addMember,
-  createOrganization,
+  createTenant,
   createProject,
   platformApiKeyFor,
   stampProjectKind,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 
 function bearer(token: string): Record<string, string> {
@@ -60,7 +60,7 @@ async function writeTree(root: string, files: Record<string, string>): Promise<v
 describe('a Builder chat pod creating a test Project', () => {
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let creator: MemberFixture;
   let colleague: MemberFixture;
   let childAgentId: string;
@@ -75,7 +75,7 @@ describe('a Builder chat pod creating a test Project', () => {
       .from(environments)
       .where(
         and(
-          eq(environments.tenantId, organization.tenantId),
+          eq(environments.tenantId, tenant.tenantId),
           eq(environments.isDefault, false),
           eq(environments.isProtected, true)
         )
@@ -87,19 +87,19 @@ describe('a Builder chat pod creating a test Project', () => {
   }
 
   async function skillChatKey(): Promise<string> {
-    const skillChatId = await createProject(app, organization, { agentId: chatAgentId, createdBy: creator.userId });
+    const skillChatId = await createProject(app, tenant, { agentId: chatAgentId, createdBy: creator.userId });
     await stampProjectKind(skillChatId, 'skill_builder_chat');
     const skillId = randomUUID();
     await db.insert(skills).values({
       id: skillId,
-      tenantId: organization.tenantId,
+      tenantId: tenant.tenantId,
       origin: 'custom',
       name: `subject-${skillId.slice(0, 8)}`,
       visibility: 'private',
       createdBy: creator.userId,
       builderChatId: skillChatId,
     });
-    return platformApiKeyFor(app, organization, skillChatId);
+    return platformApiKeyFor(app, tenant, skillChatId);
   }
 
   async function createTestProject(title: string) {
@@ -120,25 +120,25 @@ describe('a Builder chat pod creating a test Project', () => {
     harness = await createPublicApiTestApp();
     app = harness.app;
 
-    organization = await createOrganization(app);
-    creator = await addMember(app, organization, [Perms.usePublicApi, Perms.deleteProject, Perms.manageAgents]);
-    colleague = await addMember(app, organization, [Perms.usePublicApi]);
+    tenant = await createTenant(app);
+    creator = await addMember(app, tenant, [Perms.usePublicApi, Perms.deleteProject, Perms.manageAgents]);
+    colleague = await addMember(app, tenant, [Perms.usePublicApi]);
 
-    const chatAgent = await seedLiveAgent(organization.tenantId, creator.userId);
+    const chatAgent = await seedLiveAgent(tenant.tenantId, creator.userId);
     await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, chatAgent.id));
-    childAgentId = (await seedLiveAgent(organization.tenantId, creator.userId, { visibility: 'private' })).id;
-    otherAgentId = (await seedLiveAgent(organization.tenantId, creator.userId)).id;
+    childAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId, { visibility: 'private' })).id;
+    otherAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
     chatAgentId = chatAgent.id;
 
-    chatId = await createProject(app, organization, { agentId: chatAgent.id, createdBy: creator.userId });
+    chatId = await createProject(app, tenant, { agentId: chatAgent.id, createdBy: creator.userId });
     await stampProjectKind(chatId, 'agent_builder_chat');
     await db.update(agents).set({ builderChatId: chatId }).where(eq(agents.id, childAgentId));
     await defaultToProduction(childAgentId);
-    chatKey = await platformApiKeyFor(app, organization, chatId);
+    chatKey = await platformApiKeyFor(app, tenant, chatId);
   });
 
   afterEach(async () => {
-    for (const id of await testProjectIdsOfChat()) await app.get(ProjectService).remove(id, organization.tenantId);
+    for (const id of await testProjectIdsOfChat()) await app.get(ProjectService).remove(id, tenant.tenantId);
   });
 
   afterAll(async () => {
@@ -170,7 +170,7 @@ describe('a Builder chat pod creating a test Project', () => {
 
     expect((await me(bearer(chatKey))).json()).toMatchObject({ builderTestProject: { id } });
     expect((await me(creator.headers)).json()).toMatchObject({ builderTestProject: null });
-    const testKey = await platformApiKeyFor(app, organization, id);
+    const testKey = await platformApiKeyFor(app, tenant, id);
     expect((await me(bearer(testKey))).json()).toMatchObject({ builderTestProject: null });
   });
 
@@ -253,8 +253,8 @@ describe('a Builder chat pod creating a test Project', () => {
   });
 
   it('refuses kind from a pod whose own Project is not a Builder chat', async () => {
-    const ordinaryId = await createProject(app, organization, { createdBy: creator.userId });
-    const ordinaryKey = await platformApiKeyFor(app, organization, ordinaryId);
+    const ordinaryId = await createProject(app, tenant, { createdBy: creator.userId });
+    const ordinaryKey = await platformApiKeyFor(app, tenant, ordinaryId);
 
     const res = await app.inject({
       method: 'POST',
@@ -393,7 +393,7 @@ describe('a Builder chat pod creating a test Project', () => {
     });
 
     it('refuses both refreshes to everyone but the chat that created the Test Project', async () => {
-      const testKey = await platformApiKeyFor(app, organization, testId);
+      const testKey = await platformApiKeyFor(app, tenant, testId);
       const otherChatKey = await skillChatKey();
       const ordinary = await app.inject({
         method: 'POST',

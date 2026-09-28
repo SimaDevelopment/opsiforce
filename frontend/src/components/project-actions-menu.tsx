@@ -4,6 +4,7 @@ import { toast } from 'solid-sonner';
 import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
 import { api, type Project } from '~/api/client';
+import { limitRefusalMessage } from '~/api/limits';
 import { startProjectExport, type ExportJob } from '~/api/export';
 import { startProjectDuplicate } from '~/api/duplicate';
 import { useJobDock } from '~/components/project/jobs/job-dock-context';
@@ -138,7 +139,7 @@ export function ProjectActionsMenu(props: {
       qc.invalidateQueries({ queryKey: ['projects'] });
       jobDock.trackDuplicate({ projectId: p.id, title: p.title?.trim() || projectTitle() });
     },
-    onError: () => toast.error('Failed to duplicate project'),
+    onError: (err) => toast.error(limitRefusalMessage(err, 'Failed to duplicate project')),
   }));
 
   const exportProject = createMutation(() => ({
@@ -157,6 +158,7 @@ export function ProjectActionsMenu(props: {
   const enableProject = createMutation(() => ({
     mutationFn: () => api.post<Project>(`/projects/${props.projectId}/enable`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+    onError: (err) => toast.error(limitRefusalMessage(err, 'Failed to enable project')),
   }));
 
   const restartProject = createMutation(() => ({

@@ -19,6 +19,7 @@ import {
 } from '../../db/schema';
 import { resolvePreset } from '../pod/pod-classes';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
+import { assertRoomForProject } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
 import { BifrostService } from '../bifrost/bifrost.service';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
@@ -340,6 +341,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(claim.tenantId);
 
     return db.transaction(async (tx) => {
+      await assertRoomForProject(tx, claim.tenantId, claim.kind);
       const reserved = await tx
         .select({
           id: projects.id,

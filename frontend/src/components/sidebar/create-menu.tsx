@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from 'solid-js';
 import { type Agent } from '~/api/client';
+import { useReachedLimit } from '~/api/limits';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -24,6 +25,7 @@ export function CreateMenu(props: {
   onOpenImport?: () => void;
 }) {
   const canCreateProject = () => props.canCreateProject ?? true;
+  const reachedLimit = useReachedLimit('projects');
   const hasSecondary = () => !!props.canCreateWorkspace || !!props.onOpenCreateFolder || !!props.canImport;
 
   return (
@@ -32,6 +34,13 @@ export function CreateMenu(props: {
       <DropdownMenuContent class="w-72">
         <Show when={canCreateProject()}>
           <MenuDividerLabel class="mb-1 mt-1">Select an agent to build a project</MenuDividerLabel>
+          <Show when={reachedLimit()}>
+            {(limit) => (
+              <div class="px-2 py-1.5 text-xs text-muted-foreground">
+                This organization has reached its limit of {limit()} projects.
+              </div>
+            )}
+          </Show>
           <Show
             when={(props.agents ?? []).length > 0}
             fallback={<div class="px-2 py-1.5 text-xs italic text-muted-foreground">No agents available</div>}
@@ -43,7 +52,7 @@ export function CreateMenu(props: {
                     icon={<Bot class="w-4 h-4" />}
                     title={agent.displayName ?? agent.name}
                     description={agent.description ?? 'Start a new project with this agent.'}
-                    disabled={props.disabled}
+                    disabled={props.disabled || reachedLimit() !== null}
                     onSelect={() => props.onCreateProject(agent.id)}
                   />
                 )}
@@ -78,6 +87,7 @@ export function CreateMenu(props: {
             icon={<Package class="w-3.5 h-3.5" />}
             title="Import project"
             description="Stand up a project from an export file."
+            disabled={reachedLimit() !== null}
             onSelect={() => props.onOpenImport?.()}
           />
         </Show>

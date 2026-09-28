@@ -46,6 +46,7 @@ import { restoreEnvJsonBackup } from '../common/env-file';
 import { writeJsonAtomic } from '../common/fs';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { DefaultsService } from '../defaults/defaults.service';
+import type { TimeoutDefaults } from '../defaults/defaults.types';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ScheduleService } from '../schedule/schedule.service';
 import { AgentService } from '../agent/agent.service';
@@ -68,6 +69,7 @@ import {
   ProjectResponse,
   ProjectCreationContext,
   ProjectEnvironmentSummary,
+  ProjectKind,
   ProjectStatus,
   ProjectState,
   ProjectAuthResponse,
@@ -161,6 +163,8 @@ import { ProjectEventsService } from './project-events.service';
 import { AppService } from './app.service';
 import { AppReadinessService } from './app-readiness.service';
 import { AgentStatusService } from './agent-status.service';
+import { assertRoomForProject } from './project-limit';
+import { LimitReachedException } from '../limit/limit-reached.exception';
 import {
   ACTIVE_DUPLICATE_STATUSES,
   PROJECT_DUPLICATE_QUEUE,
@@ -456,7 +460,7 @@ export class ProjectService implements OnApplicationBootstrap {
     } = context;
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
-    const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    const timeouts = await this.creationTimeouts(tenantId, kind);
 
     const claimedId = await this.projectPoolService
       .claimPending(agentId, {
@@ -473,6 +477,7 @@ export class ProjectService implements OnApplicationBootstrap {
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
+        if (err instanceof LimitReachedException) throw err;
         this.logger.warn(`Pool claim failed; falling back to slow path: ${(err as Error).message}`);
         return null;
       });
@@ -493,6 +498,12 @@ export class ProjectService implements OnApplicationBootstrap {
     });
   }
 
+  private async creationTimeouts(tenantId: string, kind: ProjectKind | null): Promise<TimeoutDefaults> {
+    const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    if (kind !== TEST_PROJECT_KIND) return timeouts;
+    return { ...timeouts, defaultAppTimeoutIdle: timeouts.defaultTimeoutIdle };
+  }
+
   private async createDirect(
     dto: CreateProjectDto | undefined,
     tenantId: string,
@@ -507,6 +518,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
 
     await db.transaction(async (tx) => {
+      await assertRoomForProject(tx, tenantId, kind);
       await tx.insert(projects).values({
         id,
         tenantId,
@@ -544,9 +556,11 @@ export class ProjectService implements OnApplicationBootstrap {
       });
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+    });
     try {
       await this.deliveryService.deliverAtCreate(id, { builderSubjectAgentId });
     } catch (err) {
@@ -604,6 +618,7 @@ export class ProjectService implements OnApplicationBootstrap {
     await db.transaction(async (tx) => {
       await lockProjectGit(tx, source.id);
       await this.assertNoActiveGitOperation(source.id, tx);
+      await assertRoomForProject(tx, tenantId);
 
       await tx.insert(projects).values({
         id,
@@ -682,13 +697,15 @@ export class ProjectService implements OnApplicationBootstrap {
       });
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
-    await this.enqueueDuplicateJob({
-      duplicateJobId,
-      sourceProjectId: source.id,
-      targetProjectId: id,
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
+      await this.enqueueDuplicateJob({
+        duplicateJobId,
+        sourceProjectId: source.id,
+        targetProjectId: id,
+      });
     });
     await this.projectEventsService.publish(id);
 
@@ -734,6 +751,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const podResources = this.resolveImportedResources(resources);
 
     await db.transaction(async (tx) => {
+      await assertRoomForProject(tx, tenantId);
       await tx.insert(projects).values({
         id,
         tenantId,
@@ -802,9 +820,11 @@ export class ProjectService implements OnApplicationBootstrap {
       }
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKeys(id, id, tenantId, agentId, null);
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, agentId, null);
+    });
 
     return this.findOne(id, tenantId);
   }
@@ -1331,7 +1351,10 @@ export class ProjectService implements OnApplicationBootstrap {
 
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
-    await db.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+    await db.transaction(async (tx) => {
+      await assertRoomForProject(tx, tenantId, project.kind);
+      await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+    });
     await Promise.all(
       envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting, podIp: null }))
     );
@@ -2118,6 +2141,15 @@ export class ProjectService implements OnApplicationBootstrap {
         .where(eq(projectTransferJobs.id, job.id));
       await this.projectEventsService.publish(job.projectId).catch(() => undefined);
       await this.discardHalfCreatedProject(job.projectId);
+    }
+  }
+
+  private async discardOnFailure(projectId: string, provision: () => Promise<void>): Promise<void> {
+    try {
+      await provision();
+    } catch (err) {
+      await this.discardHalfCreatedProject(projectId);
+      throw err;
     }
   }
 

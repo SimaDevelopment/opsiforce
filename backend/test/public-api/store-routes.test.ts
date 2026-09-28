@@ -13,14 +13,14 @@ import { ensureBuiltInAgent, ensureBuiltInSkill, seedLiveAgent } from '../suppor
 import { createTenantRow } from '../support/org-fixtures';
 import {
   addMember,
-  createOrganization,
+  createTenant,
   createProject,
   platformApiKeyFor,
   stampProjectKind,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
-import { organizationName, proxyHeaders } from '../support/proxy-identity';
+import { tenantName, proxyHeaders } from '../support/proxy-identity';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 
 /** The internal Store surface, mounted so a gateway caller can be shown to miss it. */
@@ -48,20 +48,20 @@ function tree(name: string, body = '# Body\n'): { path: string; content: string 
 describe('the Store routes of /api/v1', () => {
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
-  let organization: string;
+  let tenant: string;
   let tenantId: string;
   let author: Record<string, string>;
   let bystander: Record<string, string>;
 
   beforeAll(async () => {
-    organization = organizationName();
-    tenantId = await createTenantRow(organization);
+    tenant = tenantName();
+    tenantId = await createTenantRow(tenant);
     harness = await createPublicApiTestApp({}, [InternalStoreModule]);
     app = harness.app;
     await app.get(EnvironmentService).ensureDefaultForTenant(tenantId);
 
-    author = proxyHeaders({ organizations: [organization], permissions: AUTHORING });
-    bystander = proxyHeaders({ organizations: [organization], permissions: [Perms.usePublicApi] });
+    author = proxyHeaders({ tenants: [tenant], permissions: AUTHORING });
+    bystander = proxyHeaders({ tenants: [tenant], permissions: [Perms.usePublicApi] });
   });
 
   afterAll(async () => {
@@ -214,7 +214,7 @@ describe('the Store routes of /api/v1', () => {
 
     it('answers 404 for a Skill the caller cannot see, before weighing the permission', async () => {
       const mine = await createSkill(author);
-      const stranger = proxyHeaders({ organizations: [organization], permissions: AUTHORING });
+      const stranger = proxyHeaders({ tenants: [tenant], permissions: AUTHORING });
 
       const res = await app.inject({
         method: 'POST',
@@ -401,13 +401,13 @@ function pinnedSkill(detail: { profiles: { skills: { skillId: string }[] | null 
 describe('the Store routes seen by an Agent Caller', () => {
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let creator: MemberFixture;
   let chatProjectId: string;
   let chatKey: string;
 
   async function platformApiAgent(): Promise<string> {
-    const agent = await seedLiveAgent(organization.tenantId, creator.userId);
+    const agent = await seedLiveAgent(tenant.tenantId, creator.userId);
     await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, agent.id));
     return agent.id;
   }
@@ -416,13 +416,13 @@ describe('the Store routes seen by an Agent Caller', () => {
     harness = await createPublicApiTestApp({}, [InternalStoreModule]);
     app = harness.app;
 
-    organization = await createOrganization(app);
-    creator = await addMember(app, organization, AUTHORING);
+    tenant = await createTenant(app);
+    creator = await addMember(app, tenant, AUTHORING);
     const agentId = await platformApiAgent();
 
-    chatProjectId = await createProject(app, organization, { agentId, createdBy: creator.userId });
+    chatProjectId = await createProject(app, tenant, { agentId, createdBy: creator.userId });
     await stampProjectKind(chatProjectId, 'agent_builder_chat');
-    chatKey = await platformApiKeyFor(app, organization, chatProjectId);
+    chatKey = await platformApiKeyFor(app, tenant, chatProjectId);
   });
 
   afterAll(async () => {
@@ -482,7 +482,7 @@ describe('the Store routes seen by an Agent Caller', () => {
   });
 
   it('reads the Agent its chat authors off /me, then describes and renames it', async () => {
-    const subject = await seedLiveAgent(organization.tenantId, creator.userId, { visibility: 'private' });
+    const subject = await seedLiveAgent(tenant.tenantId, creator.userId, { visibility: 'private' });
     await db.update(agents).set({ builderChatId: chatProjectId }).where(eq(agents.id, subject.id));
 
     const me = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(chatKey) });

@@ -34,6 +34,8 @@ export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "te
 
 export type GatewayKeyPurposeValue = "service" | "platform-api"
 
+export type LimitKeyValue = "projects"
+
 export const projectStatusEnum = pgEnum("project_status", [
   "starting",
   "active",
@@ -750,6 +752,36 @@ export const tenantBudgetDefaults = pgTable("tenant_budget_defaults", {
   defaultBackendBudgetDuration: text("default_backend_budget_duration").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
+
+export const globalLimits = pgTable(
+  "global_limits",
+  {
+    limitKey: text("limit_key").$type<LimitKeyValue>().primaryKey(),
+    value: integer("value"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects')`),
+    check("global_limits_value_check", sql`${table.value} >= 0`),
+  ],
+)
+
+export const tenantLimits = pgTable(
+  "tenant_limits",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    limitKey: text("limit_key").$type<LimitKeyValue>().notNull(),
+    value: integer("value"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.tenantId, table.limitKey] }),
+    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects')`),
+    check("tenant_limits_value_check", sql`${table.value} >= 0`),
+  ],
+)
 
 export const agentSettings = pgTable("agent_settings", {
   agentId: text("agent_id")

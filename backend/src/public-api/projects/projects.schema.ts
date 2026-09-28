@@ -81,7 +81,7 @@ export const ProjectSchema = z
     title: z.string().nullable(),
     description: z.string().nullable(),
     agent: ResourceRefSchema,
-    workspace: WorkspaceRefSchema.nullable().describe('null when the Project is in the Organization-wide Public area'),
+    workspace: WorkspaceRefSchema.nullable().describe('null when the Project is in the tenant-wide Public area'),
     folder: ResourceRefSchema.nullable(),
     disabled: z.boolean(),
     createdBy: z

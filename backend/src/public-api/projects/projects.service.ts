@@ -17,7 +17,7 @@ import type { ConnectionDto, CreateProject, ProjectDto, ProjectListQuery, Projec
 
 function scopeOf(caller: Caller): ProjectScope {
   return {
-    tenantId: caller.organization.id,
+    tenantId: caller.tenant.id,
     userId: caller.user.platformId,
     ...(caller.projectId === undefined ? {} : { createdByProjectId: caller.projectId }),
   };
@@ -55,7 +55,7 @@ export class PublicProjectsService {
 
     const created = await this.projects.create(
       { title: body.title, description: body.description, timezone: body.timezone, agentId: body.agentId },
-      caller.organization.id,
+      caller.tenant.id,
       {
         // ADR-0064 keeps a test Project out of every workspace, so placement applies only to ordinary ones.
         ...(chat ? { kind: TEST_PROJECT_KIND } : { workspaceId: placement.workspaceId, folderId: placement.folderId }),
@@ -93,12 +93,12 @@ export class PublicProjectsService {
   }
 
   private async refuseSecondTestProject(caller: Caller, chatId: string): Promise<void> {
-    const existing = await this.builderChats.testProjectOf(caller.organization.id, chatId);
+    const existing = await this.builderChats.testProjectOf(caller.tenant.id, chatId);
     if (existing) throw Errors.testProjectExists(existing.id);
   }
 
   private async keepOnlyFirstTestProject(caller: Caller, chatId: string, createdId: string): Promise<void> {
-    const first = await this.builderChats.testProjectOf(caller.organization.id, chatId);
+    const first = await this.builderChats.testProjectOf(caller.tenant.id, chatId);
     if (!first || first.id === createdId) return;
     await this.projects.discardHalfCreatedProject(createdId);
     throw Errors.testProjectExists(first.id);
@@ -138,7 +138,7 @@ export class PublicProjectsService {
   /** Only an Agent Caller whose own Project is a Builder chat may stamp `kind`, and only as `test`. */
   private async requireCallingBuilderChat(caller: Caller): Promise<ChatRow> {
     const chatId = chatProjectIdOf(caller);
-    const chat = chatId === null ? null : await this.builderChats.findChatRow(caller.organization.id, chatId);
+    const chat = chatId === null ? null : await this.builderChats.findChatRow(caller.tenant.id, chatId);
     if (!chat || !isChatKind(chat.kind)) {
       throw Errors.invalidReference([
         {
@@ -169,13 +169,13 @@ export class PublicProjectsService {
     const project = await this.requireVisible(caller, projectId);
     if (!caller.permissions.has(Perms.restartProject)) throw Errors.permissionDenied(Perms.restartProject);
     if (project.disabled) throw Errors.environmentDisabled();
-    await this.projects.restart(projectId, caller.organization.id);
+    await this.projects.restart(projectId, caller.tenant.id);
   }
 
   async delete(caller: Caller, projectId: string): Promise<void> {
     await this.requireVisible(caller, projectId);
     if (!caller.permissions.has(Perms.deleteProject)) throw Errors.permissionDenied(Perms.deleteProject);
-    await this.projects.remove(projectId, caller.organization.id);
+    await this.projects.remove(projectId, caller.tenant.id);
   }
 
   private async toDtos(rows: ProjectRow[]): Promise<ProjectDto[]> {

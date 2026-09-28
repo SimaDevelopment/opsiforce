@@ -8,14 +8,14 @@ import {
   addMember,
   addNamedEnvironment,
   createFolder,
-  createOrganization,
+  createTenant,
   createProject,
   createSharedWorkspace,
   disablePrivateWorkspaces,
   disableProject,
   privateWorkspaceIdOf,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 import { seedLiveAgent } from '../support/agent-fixtures';
 
@@ -70,16 +70,16 @@ describe('projects read routes', () => {
   });
 
   describe('the envelope and its cursor', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let member: MemberFixture;
     let created: string[];
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      member = await addMember(app, organization);
+      tenant = await createTenant(app);
+      member = await addMember(app, tenant);
       created = [];
       for (let index = 0; index < 4; index += 1) {
-        created.push(await createProject(app, organization, { title: `Project ${index}` }));
+        created.push(await createProject(app, tenant, { title: `Project ${index}` }));
       }
     });
 
@@ -99,7 +99,7 @@ describe('projects read routes', () => {
       expect(ids(items)).toEqual([created[3], created[2]]);
       expect(nextCursor).toEqual(expect.any(String));
 
-      await createProject(app, organization, { title: 'Newer' });
+      await createProject(app, tenant, { title: 'Newer' });
 
       const second = await app.inject({
         method: 'GET',
@@ -121,18 +121,18 @@ describe('projects read routes', () => {
   });
 
   describe('the Project it renders', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let member: MemberFixture;
     let workspaceId: string;
     let folder: { id: string; name: string };
     let projectId: string;
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      member = await addMember(app, organization);
-      workspaceId = await createSharedWorkspace(app, organization, member);
-      folder = await createFolder(app, organization, member, workspaceId);
-      projectId = await createProject(app, organization, { title: 'Rendered', workspaceId, folderId: folder.id });
+      tenant = await createTenant(app);
+      member = await addMember(app, tenant);
+      workspaceId = await createSharedWorkspace(app, tenant, member);
+      folder = await createFolder(app, tenant, member, workspaceId);
+      projectId = await createProject(app, tenant, { title: 'Rendered', workspaceId, folderId: folder.id });
     });
 
     it('carries exactly the documented fields', async () => {
@@ -165,7 +165,7 @@ describe('projects read routes', () => {
     });
 
     it('reports null workspace for a Public Project', async () => {
-      const publicProjectId = await createProject(app, organization, { title: 'Public' });
+      const publicProjectId = await createProject(app, tenant, { title: 'Public' });
 
       const res = await app.inject({
         method: 'GET',
@@ -177,8 +177,8 @@ describe('projects read routes', () => {
     });
 
     it('lists every environment, Development first', async () => {
-      const staging = await addNamedEnvironment(app, organization, projectId, `Staging-${randomUUID().slice(0, 6)}`);
-      const preview = await addNamedEnvironment(app, organization, projectId, `Preview-${randomUUID().slice(0, 6)}`);
+      const staging = await addNamedEnvironment(app, tenant, projectId, `Staging-${randomUUID().slice(0, 6)}`);
+      const preview = await addNamedEnvironment(app, tenant, projectId, `Preview-${randomUUID().slice(0, 6)}`);
 
       const res = await app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}`, headers: member.headers });
 
@@ -192,7 +192,7 @@ describe('projects read routes', () => {
     });
 
     it('reports a disabled Project and its environments as disabled', async () => {
-      const disabledId = await createProject(app, organization, { title: 'Retired' });
+      const disabledId = await createProject(app, tenant, { title: 'Retired' });
       await disableProject(disabledId);
 
       const res = await app.inject({ method: 'GET', url: `/api/v1/projects/${disabledId}`, headers: member.headers });
@@ -204,7 +204,7 @@ describe('projects read routes', () => {
     });
 
     it('includes disabled Projects in the list', async () => {
-      const disabledId = await createProject(app, organization, { title: 'Also retired' });
+      const disabledId = await createProject(app, tenant, { title: 'Also retired' });
       await disableProject(disabledId);
 
       const items = await listProjects(member);
@@ -214,7 +214,7 @@ describe('projects read routes', () => {
   });
 
   describe('what the caller may see', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let owner: MemberFixture;
     let outsider: MemberFixture;
     let publicProjectId: string;
@@ -222,14 +222,14 @@ describe('projects read routes', () => {
     let personalProjectId: string;
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      owner = await addMember(app, organization);
-      outsider = await addMember(app, organization);
-      publicProjectId = await createProject(app, organization, { title: 'Everyone' });
-      const workspaceId = await createSharedWorkspace(app, organization, owner);
-      sharedProjectId = await createProject(app, organization, { title: 'Team', workspaceId });
-      const privateWorkspaceId = await privateWorkspaceIdOf(app, organization, owner);
-      personalProjectId = await createProject(app, organization, { title: 'Mine', workspaceId: privateWorkspaceId });
+      tenant = await createTenant(app);
+      owner = await addMember(app, tenant);
+      outsider = await addMember(app, tenant);
+      publicProjectId = await createProject(app, tenant, { title: 'Everyone' });
+      const workspaceId = await createSharedWorkspace(app, tenant, owner);
+      sharedProjectId = await createProject(app, tenant, { title: 'Team', workspaceId });
+      const privateWorkspaceId = await privateWorkspaceIdOf(app, tenant, owner);
+      personalProjectId = await createProject(app, tenant, { title: 'Mine', workspaceId: privateWorkspaceId });
     });
 
     it('shows Public Projects to every member', async () => {
@@ -264,7 +264,7 @@ describe('projects read routes', () => {
     });
 
     it('answers 404 for a Project in another Organization', async () => {
-      const other = await createOrganization(app);
+      const other = await createTenant(app);
       const foreignProjectId = await createProject(app, other, { title: 'Foreign' });
 
       const res = await app.inject({
@@ -278,7 +278,7 @@ describe('projects read routes', () => {
     });
 
     it('hides personal Projects once the Organization turns private workspaces off', async () => {
-      const closing = await createOrganization(app);
+      const closing = await createTenant(app);
       const member = await addMember(app, closing);
       const privateWorkspaceId = await privateWorkspaceIdOf(app, closing, member);
       const hiddenId = await createProject(app, closing, { title: 'Hidden', workspaceId: privateWorkspaceId });
@@ -293,7 +293,7 @@ describe('projects read routes', () => {
   });
 
   describe('filters', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let member: MemberFixture;
     let workspaceId: string;
     let inWorkspaceId: string;
@@ -302,13 +302,13 @@ describe('projects read routes', () => {
     let otherAgentId: string;
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      member = await addMember(app, organization);
-      workspaceId = await createSharedWorkspace(app, organization, member);
-      inWorkspaceId = await createProject(app, organization, { title: 'Scoped', workspaceId });
-      publicProjectId = await createProject(app, organization, { title: 'Unscoped' });
-      otherAgentId = (await seedLiveAgent(organization.tenantId, member.userId)).id;
-      otherAgentProjectId = await createProject(app, organization, { title: 'Agented', agentId: otherAgentId });
+      tenant = await createTenant(app);
+      member = await addMember(app, tenant);
+      workspaceId = await createSharedWorkspace(app, tenant, member);
+      inWorkspaceId = await createProject(app, tenant, { title: 'Scoped', workspaceId });
+      publicProjectId = await createProject(app, tenant, { title: 'Unscoped' });
+      otherAgentId = (await seedLiveAgent(tenant.tenantId, member.userId)).id;
+      otherAgentProjectId = await createProject(app, tenant, { title: 'Agented', agentId: otherAgentId });
     });
 
     it('scopes the list to one workspace', async () => {
@@ -323,7 +323,7 @@ describe('projects read routes', () => {
     });
 
     it('answers an empty page for a workspace the caller cannot see', async () => {
-      const outsider = await addMember(app, organization);
+      const outsider = await addMember(app, tenant);
 
       expect(await listProjects(outsider, `?workspaceId=${workspaceId}`)).toEqual([]);
     });

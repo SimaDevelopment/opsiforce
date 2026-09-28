@@ -7,7 +7,7 @@ AI coding-assistant platform: users converse with an agent inside a Kubernetes p
 ### Organization
 
 **Organization**:
-The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the API — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
+The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the code and the public API contract — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
 _Avoid_: Tenant (internal name only — never user-facing); Account (collides with the user's login); Workspace (a grouping *within* an Organization, not the Organization itself)
 
 **Workspace**:
@@ -25,6 +25,10 @@ _Avoid_: Unassigned (retired label); Default workspace, Shared (a shared Workspa
 **Folder**:
 A named, single-level grouping of Projects within a Workspace — an organizational label, not ownership: deleting a Folder releases its Projects to the Workspace; an empty Folder is fine. A Project sits either directly in its Workspace or in exactly one of its Folders, and a Folder's name is unique within its Workspace. Folders exist in shared Workspaces and the private Personal Workspace, never in Public. Moving a Folder to another Workspace carries its Projects and follows the same rules as moving the Projects themselves.
 _Avoid_: Group (vague — collides with UI grouping); Directory (filesystem connotation); Subfolder, nested folders (out of scope — one level only)
+
+**Limit**:
+The most of one kind of thing an Organization may hold at once. An Organization follows the platform's value for a Limit unless it has its own, either may be none, and only the platform sets them.
+_Avoid_: Quota, Cap, Plan limit (non-canonical); Default (a Limit is enforced on every create, not copied into new entities)
 
 ### Projects & Environments
 

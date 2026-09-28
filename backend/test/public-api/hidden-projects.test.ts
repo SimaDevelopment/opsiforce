@@ -15,13 +15,13 @@ import { WorkspaceService } from '../../src/workspace/workspace.service';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import {
   addMember,
-  createOrganization,
+  createTenant,
   createProject,
   createSharedWorkspace,
   setChatSubjectVisibility,
   stampProjectKind,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 
 interface ProjectBody {
@@ -45,7 +45,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
   let projectService: ProjectService;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let creator: MemberFixture;
   let otherMember: MemberFixture;
   let workspaceId: string;
@@ -57,15 +57,15 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     app = harness.app;
     projectService = app.get(ProjectService);
 
-    organization = await createOrganization(app);
-    creator = await addMember(app, organization);
-    otherMember = await addMember(app, organization);
-    workspaceId = await createSharedWorkspace(app, organization, creator);
-    await app.get(WorkspaceService).addMember(workspaceId, otherMember.userId, organization.tenantId);
+    tenant = await createTenant(app);
+    creator = await addMember(app, tenant);
+    otherMember = await addMember(app, tenant);
+    workspaceId = await createSharedWorkspace(app, tenant, creator);
+    await app.get(WorkspaceService).addMember(workspaceId, otherMember.userId, tenant.tenantId);
 
-    ordinaryId = await createProject(app, organization, { workspaceId, createdBy: creator.userId });
+    ordinaryId = await createProject(app, tenant, { workspaceId, createdBy: creator.userId });
     for (const kind of PROJECT_KINDS) {
-      const id = await createProject(app, organization, { workspaceId, createdBy: creator.userId });
+      const id = await createProject(app, tenant, { workspaceId, createdBy: creator.userId });
       await stampProjectKind(id, kind);
       hiddenIds.set(kind, id);
     }
@@ -77,19 +77,19 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
 
   it('leaves them out of findAllForUser', async () => {
     const rows = await projectService.findAllForUser({
-      tenantId: organization.tenantId,
+      tenantId: tenant.tenantId,
       userId: otherMember.userId,
     });
     expect(idsOf(rows)).toEqual([ordinaryId]);
   });
 
   it('leaves them out of findAll', async () => {
-    const rows = await projectService.findAll(organization.tenantId);
+    const rows = await projectService.findAll(tenant.tenantId);
     expect(idsOf(rows)).toEqual([ordinaryId]);
   });
 
   it('leaves them out of findAllInWorkspace', async () => {
-    const rows = await projectService.findAllInWorkspace(organization.tenantId, workspaceId);
+    const rows = await projectService.findAllInWorkspace(tenant.tenantId, workspaceId);
     expect(idsOf(rows)).toEqual([ordinaryId]);
   });
 
@@ -118,7 +118,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
   it('hands the chat of a public Skill and the test Project under it to another member, and still lists neither', async () => {
     const chatId = hiddenIds.get('agent_builder_chat');
     if (chatId === undefined) throw new Error('no chat-kind Project');
-    const testId = await createProject(app, organization, {
+    const testId = await createProject(app, tenant, {
       workspaceId,
       createdBy: creator.userId,
       createdByProjectId: chatId,
@@ -146,7 +146,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
   it('hands the internal by-id reads of a shared chat to another member', async () => {
     const chatId = hiddenIds.get('skill_builder_chat');
     if (chatId === undefined) throw new Error('no chat-kind Project');
-    const forOther = { projectId: chatId, tenantId: organization.tenantId, userId: otherMember.userId };
+    const forOther = { projectId: chatId, tenantId: tenant.tenantId, userId: otherMember.userId };
 
     await expect(projectService.findOneForUser(forOther)).rejects.toBeInstanceOf(NotFoundException);
     await expect(projectService.getState(forOther)).rejects.toBeInstanceOf(NotFoundException);
@@ -162,7 +162,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
   it('leaves them out of the workspace and folder counts', async () => {
     const workspaces = await app
       .get(WorkspaceService)
-      .findAll({ userId: otherMember.userId, tenantId: organization.tenantId });
+      .findAll({ userId: otherMember.userId, tenantId: tenant.tenantId });
     const workspace = workspaces.find((row) => row.id === workspaceId);
 
     expect(workspace?.projectCount).toBe(1);
@@ -176,7 +176,7 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
       app.get(WorkspaceService).assignProject({
         workspaceId: null,
         projectId: hidden,
-        tenantId: organization.tenantId,
+        tenantId: tenant.tenantId,
         userId: otherMember.userId,
         canManageWorkspaces: true,
         canMoveProjectsBetweenWorkspaces: true,
@@ -191,14 +191,14 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
     await expect(
       projectService.findOneForUser({
         projectId: hidden,
-        tenantId: organization.tenantId,
+        tenantId: tenant.tenantId,
         userId: otherMember.userId,
       })
     ).rejects.toThrow(`Project ${hidden} not found`);
 
     const seen = await projectService.findOneForUser({
       projectId: hidden,
-      tenantId: organization.tenantId,
+      tenantId: tenant.tenantId,
       userId: creator.userId,
     });
     expect(seen.kind).toBe('test');
@@ -211,20 +211,20 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
 
     const state = await projectService.getState({
       projectId: chatId,
-      tenantId: organization.tenantId,
+      tenantId: tenant.tenantId,
       userId: creator.userId,
     });
     expect(state.id).toBe(chatId);
 
     await expect(
-      projectService.getState({ projectId: chatId, tenantId: organization.tenantId, userId: otherMember.userId })
+      projectService.getState({ projectId: chatId, tenantId: tenant.tenantId, userId: otherMember.userId })
     ).rejects.toThrow(`Project ${chatId} not found`);
   });
 
   it('reaches the chats only through the Builder repository', async () => {
     const repository = app.get(BuilderChatRepository);
     const found = await Promise.all(
-      [...hiddenIds.values()].map((id) => repository.findChat(organization.tenantId, id))
+      [...hiddenIds.values()].map((id) => repository.findChat(tenant.tenantId, id))
     );
 
     expect(found.flatMap((row) => (row ? [row.id] : [])).toSorted(compareIds)).toEqual(
@@ -257,15 +257,15 @@ describe('gateway keys know their purpose', () => {
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
   let keys: GatewayKeyService;
-  let organization: OrganizationFixture;
+  let tenant: TenantFixture;
   let projectId: string;
 
   beforeAll(async () => {
     harness = await createPublicApiTestApp();
     app = harness.app;
     keys = app.get(GatewayKeyService);
-    organization = await createOrganization(app);
-    projectId = await createProject(app, organization);
+    tenant = await createTenant(app);
+    projectId = await createProject(app, tenant);
   });
 
   afterAll(async () => {
@@ -276,7 +276,7 @@ describe('gateway keys know their purpose', () => {
     const service = await keys.getEnvironmentToken(projectId);
     if (service === null) throw new Error('the Project has no service key');
 
-    const platform = await keys.createKey(projectId, projectId, organization.tenantId, 'platform-api');
+    const platform = await keys.createKey(projectId, projectId, tenant.tenantId, 'platform-api');
     expect(platform).not.toBe(service);
 
     expect(await keys.validateToken(service, 'service')).toMatchObject({ projectId });
@@ -286,7 +286,7 @@ describe('gateway keys know their purpose', () => {
   });
 
   it('refuses a platform-api key at the gateway guard', async () => {
-    const platform = await keys.createKey(projectId, projectId, organization.tenantId, 'platform-api');
+    const platform = await keys.createKey(projectId, projectId, tenant.tenantId, 'platform-api');
     const service = await keys.getEnvironmentToken(projectId);
     if (service === null) throw new Error('the Project has no service key');
     const guard = new GatewayAuthGuard(keys);

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { OrganizationRefSchema } from '../errors/error.schema';
+import { TenantRefSchema } from '../errors/error.schema';
 
 export const MeSchema = z
   .strictObject({
@@ -10,8 +10,8 @@ export const MeSchema = z
     source: z
       .enum(['idp-bearer', 'gateway-key'])
       .describe('How this call authenticated: an IdP bearer token, or the gateway key of a pod acting for this user'),
-    organization: OrganizationRefSchema,
-    organizations: z.array(OrganizationRefSchema),
+    tenant: TenantRefSchema,
+    tenants: z.array(TenantRefSchema),
     permissions: z.array(z.string()),
     builderSubject: z
       .strictObject({

@@ -41,7 +41,7 @@ export class SkillsController {
   @ApiOperation({
     summary: 'List Skills',
     description:
-      'Every Skill you can see: the Built-in ones the agent image ships, the public ones of your Organization, and your own private ones. Filter with `filter` and search with `q`; `filter=disabled` needs `can_manage_skills`.\n\n**Use it for** finding a Skill to put on an Agent, or checking whether a name is taken before authoring one. The answer is the whole set — an Organization holds tens of Skills, not thousands, so this list does not paginate.',
+      'Every Skill you can see: the Built-in ones the agent image ships, the public ones of your tenant, and your own private ones. Filter with `filter` and search with `q`; `filter=disabled` needs `can_manage_skills`.\n\n**Use it for** finding a Skill to put on an Agent, or checking whether a name is taken before authoring one. The answer is the whole set — a tenant holds tens of Skills, not thousands, so this list does not paginate.',
   })
   @PublicResponse(200, SkillListSchema)
   @PublicApiErrors('validation-error', 'permission-denied')
@@ -83,7 +83,7 @@ export class SkillsController {
   @ApiOperation({
     summary: 'Get a Skill',
     description:
-      "One Skill by id, with its latest Version, its flags and how many Agents carry it. A Skill you cannot see answers 404.\n\n**Use it for** reading `latestVersion.version` before pinning it on an Agent, and for `flags` — `hasExecutables` is what a reviewer wants to see before handing a Skill to an Organization's Agents.",
+      "One Skill by id, with its latest Version, its flags and how many Agents carry it. A Skill you cannot see answers 404.\n\n**Use it for** reading `latestVersion.version` before pinning it on an Agent, and for `flags` — `hasExecutables` is what a reviewer wants to see before handing a Skill to a tenant's Agents.",
   })
   @PublicResponse(200, SkillSchema)
   @PublicApiErrors('not-found')

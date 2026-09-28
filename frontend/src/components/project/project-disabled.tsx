@@ -1,5 +1,7 @@
 import { Show } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
+import { toast } from 'solid-sonner';
+import { limitRefusalMessage } from '~/api/limits';
 import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
 import { api, type Project } from '~/api/client';
@@ -15,6 +17,7 @@ export function ProjectDisabled(props: { projectId: string }) {
   const enableProject = createMutation(() => ({
     mutationFn: () => api.post<Project>(`/projects/${props.projectId}/enable`),
     onSuccess: () => qc.invalidateQueries({ queryKey: projectKeys.all }),
+    onError: (err) => toast.error(limitRefusalMessage(err, 'Failed to enable project')),
   }));
 
   return (

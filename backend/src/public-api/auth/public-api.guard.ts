@@ -6,14 +6,14 @@ import { Perms } from '../../permission/permission.constants';
 import { parsePermissions } from '../../permission/permission.utils';
 import { IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from '../../tenant/tenant.decorator';
 import { TenantService } from '../../tenant/tenant.service';
-import type { OrganizationRef } from '../errors/error.schema';
+import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
 import { ALLOWS_GATEWAY_CALLER_KEY } from './allows-gateway-caller.decorator';
 import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
 import type { Caller, CallerRequest } from './caller';
 import { gatewayBearerOf } from './gateway-bearer';
 
-function toRef({ tenantId, tenantName }: TenantContext): OrganizationRef {
+function toRef({ tenantId, tenantName }: TenantContext): TenantRef {
   return { id: tenantId, name: tenantName };
 }
 
@@ -51,9 +51,9 @@ export class PublicApiGuard implements CanActivate {
     const permissions = new Set(parsePermissions(forwarded.groups));
     if (!permissions.has(Perms.usePublicApi)) throw Errors.permissionDenied(Perms.usePublicApi);
 
-    const organizations = await this.resolveOrganizations(forwarded.groups, tenantContext);
-    if (organizations.length > 1 && !request.headers[TENANT_NAME_HEADER]) {
-      throw Errors.organizationRequired(organizations);
+    const tenants = await this.resolveTenants(forwarded.groups, tenantContext);
+    if (tenants.length > 1 && !request.headers[TENANT_NAME_HEADER]) {
+      throw Errors.tenantRequired(tenants);
     }
 
     const identity = await this.identities.resolve(forwarded, tenantContext.tenantId);
@@ -68,8 +68,8 @@ export class PublicApiGuard implements CanActivate {
         displayName: identity.displayName,
         kind: identity.kind,
       },
-      organization: toRef(tenantContext),
-      organizations,
+      tenant: toRef(tenantContext),
+      tenants,
       permissions,
     };
   }
@@ -84,15 +84,15 @@ export class PublicApiGuard implements CanActivate {
     const identity = await this.identities.resolveByPlatformId(creatorId);
     if (!identity) throw Errors.unauthenticated();
 
-    const tenant = await this.tenantService.getTenantById(key.tenantId);
-    if (!tenant) throw Errors.unauthenticated();
-    if (!this.tenantService.resolveAccessibleTenantNames(identity.groups).includes(tenant.name)) {
-      throw Errors.organizationForbidden();
+    const tenantRow = await this.tenantService.getTenantById(key.tenantId);
+    if (!tenantRow) throw Errors.unauthenticated();
+    if (!this.tenantService.resolveAccessibleTenantNames(identity.groups).includes(tenantRow.name)) {
+      throw Errors.tenantForbidden();
     }
 
     this.assertRouteOpenToGatewayCaller(context);
 
-    const organization: OrganizationRef = { id: tenant.id, name: tenant.name };
+    const tenant: TenantRef = { id: tenantRow.id, name: tenantRow.name };
     return {
       source: 'gateway-key',
       projectId: key.projectId,
@@ -104,8 +104,8 @@ export class PublicApiGuard implements CanActivate {
         displayName: identity.displayName,
         kind: identity.kind,
       },
-      organization,
-      organizations: [organization],
+      tenant,
+      tenants: [tenant],
       permissions: new Set(parsePermissions(identity.groups)),
     };
   }
@@ -118,7 +118,7 @@ export class PublicApiGuard implements CanActivate {
     if (!allowed) throw Errors.routeClosedToAgentCaller();
   }
 
-  private async resolveOrganizations(groups: string, tenantContext: TenantContext): Promise<OrganizationRef[]> {
+  private async resolveTenants(groups: string, tenantContext: TenantContext): Promise<TenantRef[]> {
     const names = this.tenantService.resolveAccessibleTenantNames(groups);
     if (names.length === 1) return [toRef(tenantContext)];
     const tenants = await this.tenantService.getOrCreateTenants(names);

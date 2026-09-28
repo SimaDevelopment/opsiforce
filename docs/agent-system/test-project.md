@@ -14,6 +14,8 @@ adrs: [0063]
 
 - A [Test Project](../../CONTEXT.md) is the one Project the Builder creates on the [Custom Agent](../../CONTEXT.md) it authored, from that Agent's Development [Agent Profile](../../CONTEXT.md) and Development [Template](../../CONTEXT.md) — whatever its Default environment (Agent) is, and even before the Agent has any Production Profile — so the child runs the definition the chat just saved and starts from the files it just saved, laid into the workspace root and committed as "Initial template" ([ADR-0063](../adr/0063-the-builder-tests-a-child-agent-by-conversing-with-it-in-one-throwaway-project.md)).
 - `kind: "test"` on create is accepted **only** from a Builder chat's own pod; anywhere else it is refused. An Agent chat's Test Project runs only on the chat's own subject Agent; a Skill chat may name any Agent it can see and gets that Agent's Development. Each chat has exactly one: it is created once, a second create answers 409 `test-project-exists` with the existing `testProjectId` and deletes nothing, and `GET /me` names it as `builderTestProject`, so the side pane and the preview URL survive the whole loop.
+- A Test Project is created with its app idle timeout set to the agent idle timeout, so opening its App in the preview does not keep the pod up for the App's longer window.
+- Neither a Test Project nor its chat counts toward the Organization's [Limit](../../CONTEXT.md) on Projects ([Limit](../organization/limit.md)).
 
 ### Checking a round
 

@@ -23,6 +23,7 @@ export async function startTestPostgres(workerCount: number): Promise<TestPostgr
 
   const url = container.getConnectionUri();
   await applyMigrations(url);
+  await liftGlobalLimits(url);
   await cloneTemplateForWorkers(url, workerCount);
 
   return {
@@ -37,6 +38,15 @@ async function applyMigrations(url: string): Promise<void> {
   const client = postgres(url, { max: 1, onnotice: () => {} });
   try {
     await migrate(drizzle(client), { migrationsFolder: MIGRATIONS_FOLDER, migrationsSchema: 'public' });
+  } finally {
+    await client.end();
+  }
+}
+
+async function liftGlobalLimits(url: string): Promise<void> {
+  const client = postgres(url, { max: 1, onnotice: () => {} });
+  try {
+    await client`UPDATE global_limits SET value = NULL`;
   } finally {
     await client.end();
   }

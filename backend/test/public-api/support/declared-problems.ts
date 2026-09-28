@@ -13,8 +13,8 @@ const SCAFFOLDING_PREFIX = `${PUBLIC_API_PREFIX}/${PROBE_PATH}/`;
 const AMBIENT_SLUGS = new Set<ErrorSlug>([
   'validation-error',
   'unauthenticated',
-  'organization-required',
-  'organization-forbidden',
+  'tenant-required',
+  'tenant-forbidden',
   'permission-denied',
   'route-not-found',
   'unexpected',

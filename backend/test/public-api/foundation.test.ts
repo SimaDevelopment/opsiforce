@@ -2,9 +2,9 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ProbeModule } from './support/probe-api';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
-import { organizationName, proxyHeaders } from '../support/proxy-identity';
+import { tenantName, proxyHeaders } from '../support/proxy-identity';
 
-const identity = proxyHeaders({ organizations: [organizationName('foundation')] });
+const identity = proxyHeaders({ tenants: [tenantName('foundation')] });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe('public api foundation', () => {
