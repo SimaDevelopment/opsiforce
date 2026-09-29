@@ -6,6 +6,7 @@ import { useAgents } from '~/api/agents';
 import { usePermissions } from '~/api/permissions';
 import { useCurrentUser } from '~/api/user';
 import { useCreateDefaultProject } from '~/api/default-project-target';
+import { limitRefusalMessage } from '~/api/limits';
 import { Permission } from '~/constants/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
@@ -34,7 +35,18 @@ import { ProjectSidebar } from './project-sidebar';
 import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
-import { Calendar, ChevronsUpDown, FolderKanban, LogOut, Plus, Search, Server, Settings, X } from '~/components/icons';
+import {
+  Calendar,
+  ChevronsUpDown,
+  FolderKanban,
+  LogOut,
+  Plus,
+  Search,
+  Server,
+  Settings,
+  Store,
+  X,
+} from '~/components/icons';
 
 export function AppSidebar() {
   const navigate = useNavigate();
@@ -65,8 +77,8 @@ export function AppSidebar() {
         params: { projectId: project.id },
         search: { prompt: undefined, promptId: undefined },
       });
-    } catch {
-      toast.error('Failed to create project');
+    } catch (err) {
+      toast.error(limitRefusalMessage(err, 'Failed to create project'));
     }
   };
 
@@ -224,6 +236,10 @@ export function AppSidebar() {
                   <p class="text-sm font-medium truncate">{userName()}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => navigate({ to: '/store' })}>
+                  <Store class="w-4 h-4 text-muted-foreground" />
+                  Skill & Agent Store
+                </DropdownMenuItem>
                 <Show when={canOpenSettings()}>
                   <DropdownMenuItem onSelect={() => navigate({ to: '/settings' })}>
                     <Settings class="w-4 h-4 text-muted-foreground" />

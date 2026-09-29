@@ -1,11 +1,9 @@
 ---
 name: data-fetching
-description: Data fetching and server state for the frontend — TanStack Query v5, plus raw HTTP (fetch, axios, FormData uploads) for external APIs called from the backend. Load this whenever you need to make any API request, call /api, mutate server state, upload a file, or call a third-party API. This is the standard data layer — never use raw fetch directly in components.
+description: Data fetching and server state for the frontend with TanStack Query v5 — queries, mutations, query keys, cache invalidation, pagination and error handling — plus calling third-party HTTP APIs from the backend. Use whenever the App makes an API request, calls /api, mutates server state, or talks to an external API.
 ---
 
 # Data Fetching
-
-The frontend talks to the backend via `/api/...` (Vite proxies these to NestJS). `QueryClientProvider` is already wired in `main.tsx`, so `useQuery`/`useMutation` work out of the box.
 
 **v5 changes from v4:** `isLoading` → `isPending`, `cacheTime` → `gcTime`, `keepPreviousData` is now `placeholderData: keepPreviousData`, callbacks (`onSuccess`/`onError`) removed from `useQuery` (still on `useMutation`).
 
@@ -17,7 +15,7 @@ The frontend talks to the backend via `/api/...` (Vite proxies these to NestJS).
 | Read many items in parallel (dynamic count) | `useQueries` |
 | Paginated/infinite list | `useInfiniteQuery` |
 | Create / update / delete from a component | `useMutation` |
-| File upload | `useMutation` with `FormData` body |
+| File upload | the `react-dropzone` skill (base64 JSON body — the backend has no multipart parser) |
 | Call an external API (with API key) | `fetch`/`axios` from a NestJS service — never the frontend |
 
 ## useQuery
@@ -223,23 +221,9 @@ await api.post("/items", { title: "New" })
 
 Axios supports the same `signal` for cancellation: `api.get("/items", { signal })`.
 
-## File upload — FormData
-
-```tsx
-const upload = useMutation({
-  mutationFn: (file: File) => {
-    const form = new FormData()
-    form.append("file", file)
-    return fetch("/api/uploads", { method: "POST", body: form }).then(r => r.json())
-    // Do NOT set Content-Type — the browser adds the multipart boundary automatically.
-  },
-  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["uploads"] }),
-})
-```
-
 ## Calling external APIs — go through the backend
 
-External API calls must originate from the **backend**, never the frontend. Frontend code is public, so any secret in the bundle is exposed. Read the API key from `opsiforce.env.json` via your `appConfig` helper (see agent.md → App configuration & secrets), not from `process.env`.
+External API calls must originate from the **backend**, never the frontend. Frontend code is public, so any secret in the bundle is exposed. Read the API key with the `appConfig` helper (`web-app` §App configuration).
 
 ```typescript
 // backend/src/weather/weather.service.ts

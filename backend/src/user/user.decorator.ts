@@ -1,12 +1,13 @@
 import { createParamDecorator, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
-import { getEmailHeader, getUserIdHeader, getUsernameHeader } from '../permission/permission.utils';
+import { getEmailHeader, getGroupsHeader, getUserIdHeader, getUsernameHeader } from '../permission/permission.utils';
 
 export interface UserContext {
   userId: string;
   username: string;
   email: string | null;
   displayName: string | null;
+  groups: string;
 }
 
 export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionContext): UserContext => {
@@ -21,5 +22,6 @@ export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionC
     username,
     email: getEmailHeader(request),
     displayName: username,
+    groups: getGroupsHeader(request),
   };
 });

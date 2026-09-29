@@ -25,6 +25,9 @@ import { UserModule } from './user/user.module';
 import { DefaultsModule } from './defaults/defaults.module';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { AgentModule } from './agent/agent.module';
+import { StoreModule } from './store/store.module';
+import { BuilderModule } from './builder/builder.module';
+import { DeliveryModule } from './delivery/delivery.module';
 import { AgentUpdateModule } from './agent-update/agent-update.module';
 import { PRIVATE_MODULES } from './private-loader';
 import { ProjectPoolModule } from './pool/project-pool.module';
@@ -35,6 +38,7 @@ import { ProjectExportModule } from './export/project-export.module';
 import { AdminModule } from './admin/admin.module';
 import { ExternalServicesModule } from './external-services';
 import { StorageModule } from './storage/storage.module';
+import { LimitModule } from './limit/limit.module';
 import { PublicApiModule } from './public-api/public-api.module';
 
 function parseRedisUrl(url: string) {
@@ -71,6 +75,9 @@ function parseRedisUrl(url: string) {
     AgentStatusModule,
     WorkspaceModule,
     AgentModule,
+    StoreModule,
+    BuilderModule,
+    DeliveryModule,
     TimeoutModule,
     ProxyModule,
     FilesModule,
@@ -91,6 +98,7 @@ function parseRedisUrl(url: string) {
     AdminModule,
     ExternalServicesModule,
     StorageModule,
+    LimitModule,
     PublicApiModule,
   ],
   controllers: [HealthController],

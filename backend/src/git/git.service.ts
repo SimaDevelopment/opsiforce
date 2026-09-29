@@ -29,6 +29,35 @@ export class GitService {
     return this.currentSha(dir);
   }
 
+  /** Commits only `paths`, leaving whatever else the working tree or index holds untouched. */
+  async commitPaths(dir: string, paths: string[], message: string): Promise<string> {
+    const tracked = await this.withoutIgnored(dir, paths);
+    if (tracked.length > 0) {
+      await this.git(dir, ['add', '--', ...tracked]);
+      const staged = await this.git(dir, ['diff', '--cached', '--name-only', '--', ...tracked]);
+      if (staged.length > 0) {
+        await this.git(dir, [...COMMITTER, 'commit', '--no-verify', '-m', message, '--only', '--', ...tracked]);
+      }
+    }
+    return this.currentSha(dir);
+  }
+
+  private async withoutIgnored(dir: string, paths: string[]): Promise<string[]> {
+    if (paths.length === 0) return [];
+    const ignored = await run('git', [...BASE_CONFIG, 'check-ignore', '--', ...paths], {
+      cwd: dir,
+      maxBuffer: 32 * 1024 * 1024,
+    }).then(
+      ({ stdout }) => stdout,
+      (err: { code?: number; stdout?: string }) => {
+        if (err.code === 1) return '';
+        throw err;
+      }
+    );
+    const skipped = new Set(ignored.split('\n').filter((line) => line.length > 0));
+    return paths.filter((file) => !skipped.has(file));
+  }
+
   async cloneLocal(srcDir: string, destDir: string): Promise<void> {
     await run('git', [...BASE_CONFIG, 'clone', '--local', srcDir, destDir], { maxBuffer: 32 * 1024 * 1024 });
   }

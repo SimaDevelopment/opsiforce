@@ -10,7 +10,7 @@ Issues and PRDs for the opsiforce package live as markdown files in `.scratch/` 
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 
-`.scratch/` is gitignored, so these files are working notes — they do not appear in `git status` or travel between worktrees. Copy them by hand if you switch checkouts.
+`.scratch/` is **tracked in this package** — a `!/.scratch/` + `!/.scratch/**` pair in `.gitignore` overrides the ignore rules elsewhere. Specs and tickets appear in `git status`, travel into worktrees, and are committed alongside the code they describe: commit a ticked checklist with the work it describes. Every other package keeps `.scratch/` ignored, so copy by hand there. If an implementation session sees this negation as an "unrelated" diff, it must leave it alone — it is shared infrastructure, not scope creep.
 
 ## When a skill says "publish to the issue tracker"
 

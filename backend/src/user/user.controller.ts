@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UnauthorizedException }
 import { FastifyRequest } from 'fastify';
 import { RequirePermission } from '../permission/permission.guard';
 import { Perms } from '../permission/permission.constants';
+import { getGroupsHeader } from '../permission/permission.utils';
 import { CurrentTenant, Public, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from './user.decorator';
 import {
@@ -39,7 +40,8 @@ export class UserController {
     }
     const email = req.headers['x-forwarded-email'] as string | undefined;
     const displayName = req.headers['x-forwarded-preferred-username'] as string | undefined;
-    return this.userService.getOrCreateUser({ keycloakId, email, displayName }, tenant.tenantId);
+    const groups = getGroupsHeader(req);
+    return this.userService.getOrCreateUser({ keycloakId, email, displayName, groups }, tenant.tenantId);
   }
 
   @Get('me')
@@ -78,6 +80,7 @@ export class UserController {
         keycloakId: user.userId,
         email: user.email ?? undefined,
         displayName: user.displayName ?? undefined,
+        groups: user.groups,
       },
       tenantId
     );

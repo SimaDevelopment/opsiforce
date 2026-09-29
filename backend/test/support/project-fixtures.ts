@@ -2,17 +2,20 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
-import { agents, projects, tenantSettings, users, workspaces } from '../../db/schema';
+import { projects, skills, tenantSettings, users, workspaces } from '../../db/schema';
+import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
+import { ensureBuiltInAgent } from './agent-fixtures';
 import { EnvironmentService } from '../../src/environment/environment.service';
+import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectService } from '../../src/project/project.service';
-import { ProjectStatus } from '../../src/project/project.types';
+import { ProjectStatus, type ProjectKind } from '../../src/project/project.types';
 import { TenantService } from '../../src/tenant/tenant.service';
 import { UserService } from '../../src/user/user.service';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
-import { organizationName, proxyHeaders, serviceAccountUsername } from './proxy-identity';
+import { tenantName, proxyHeaders, serviceAccountUsername } from './proxy-identity';
 
-export interface OrganizationFixture {
+export interface TenantFixture {
   name: string;
   tenantId: string;
 }
@@ -28,33 +31,47 @@ export interface ProjectFixtureOptions {
   workspaceId?: string | null;
   folderId?: string | null;
   agentId?: string;
+  createdBy?: string | null;
+  createdByProjectId?: string | null;
 }
 
-export async function createOrganization(app: INestApplication): Promise<OrganizationFixture> {
-  const name = organizationName();
+export async function createTenant(app: INestApplication): Promise<TenantFixture> {
+  const name = tenantName();
   const tenant = await app.get(TenantService).getOrCreateTenant(name);
   return { name, tenantId: tenant.id };
 }
 
-export async function disablePrivateWorkspaces(organization: OrganizationFixture): Promise<void> {
+export async function disablePrivateWorkspaces(tenant: TenantFixture): Promise<void> {
   await db
     .update(tenantSettings)
     .set({ privateWorkspaceEnabled: false })
-    .where(eq(tenantSettings.tenantId, organization.tenantId));
+    .where(eq(tenantSettings.tenantId, tenant.tenantId));
 }
 
 export async function addMember(
   app: INestApplication,
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   permissions?: string[]
 ): Promise<MemberFixture> {
   const keycloakId = randomUUID();
-  const user = await app.get(UserService).getOrCreateUser({ keycloakId }, organization.tenantId);
-  return {
-    keycloakId,
-    userId: user.id,
-    headers: proxyHeaders({ userId: keycloakId, organizations: [organization.name], permissions }),
-  };
+  const headers = proxyHeaders({ userId: keycloakId, tenants: [tenant.name], permissions });
+  const user = await app
+    .get(UserService)
+    .getOrCreateUser({ keycloakId, groups: headers['x-forwarded-groups'] }, tenant.tenantId);
+  return { keycloakId, userId: user.id, headers };
+}
+
+export async function removeMemberFromTenant(member: MemberFixture): Promise<void> {
+  await db.update(users).set({ groups: '' }).where(eq(users.id, member.userId));
+}
+
+export async function setMemberPermissions(
+  tenant: TenantFixture,
+  member: MemberFixture,
+  permissions: string[]
+): Promise<void> {
+  const headers = proxyHeaders({ userId: member.keycloakId, tenants: [tenant.name], permissions });
+  await db.update(users).set({ groups: headers['x-forwarded-groups'] }).where(eq(users.id, member.userId));
 }
 
 export interface ServiceAccountFixture {
@@ -63,20 +80,18 @@ export interface ServiceAccountFixture {
   headers: Record<string, string>;
 }
 
-export function addServiceAccount(organization: OrganizationFixture, permissions?: string[]): ServiceAccountFixture {
+export function addServiceAccount(tenant: TenantFixture, permissions?: string[]): ServiceAccountFixture {
   const keycloakId = randomUUID();
   const username = serviceAccountUsername();
   return {
     keycloakId,
     username,
-    headers: proxyHeaders({ userId: keycloakId, username, organizations: [organization.name], permissions }),
+    headers: proxyHeaders({ userId: keycloakId, username, tenants: [tenant.name], permissions }),
   };
 }
 
 export async function createAgent(): Promise<string> {
-  const id = randomUUID();
-  await db.insert(agents).values({ id, name: `agent-${id.slice(0, 8)}` });
-  return id;
+  return ensureBuiltInAgent(DEFAULT_AGENT_NAME);
 }
 
 export interface ProjectPlacementRow {
@@ -110,23 +125,23 @@ export async function privateWorkspaceCountOf(keycloakId: string): Promise<numbe
 
 export async function createSharedWorkspace(
   app: INestApplication,
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   owner: MemberFixture
 ): Promise<string> {
   const workspace = await app
     .get(WorkspaceService)
-    .create({ name: `ws-${randomUUID().slice(0, 8)}` }, organization.tenantId, owner.userId);
+    .create({ name: `ws-${randomUUID().slice(0, 8)}` }, tenant.tenantId, owner.userId);
   return workspace.id;
 }
 
 export async function privateWorkspaceIdOf(
   app: INestApplication,
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   member: MemberFixture
 ): Promise<string> {
   const workspaceService = app.get(WorkspaceService);
-  await workspaceService.ensurePrivateWorkspace(member.userId, organization.tenantId);
-  const owned = await workspaceService.findAll({ userId: member.userId, tenantId: organization.tenantId });
+  await workspaceService.ensurePrivateWorkspace(member.userId, tenant.tenantId);
+  const owned = await workspaceService.findAll({ userId: member.userId, tenantId: tenant.tenantId });
   const privateWorkspace = owned.find((workspace) => workspace.type === 'private');
   if (!privateWorkspace) throw new Error(`No private workspace for user ${member.userId}`);
   return privateWorkspace.id;
@@ -134,14 +149,14 @@ export async function privateWorkspaceIdOf(
 
 export async function createFolder(
   app: INestApplication,
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   member: MemberFixture,
   workspaceId: string
 ): Promise<{ id: string; name: string }> {
   const name = `folder-${randomUUID().slice(0, 8)}`;
   const folder = await app.get(WorkspaceService).createFolder({
     workspaceId,
-    tenantId: organization.tenantId,
+    tenantId: tenant.tenantId,
     userId: member.userId,
     canManageWorkspaces: true,
     dto: { name },
@@ -151,18 +166,68 @@ export async function createFolder(
 
 export async function createProject(
   app: INestApplication,
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   options: ProjectFixtureOptions = {}
 ): Promise<string> {
   const project = await app
     .get(ProjectService)
     .create(
       { title: options.title ?? `project-${randomUUID().slice(0, 8)}`, agentId: options.agentId },
-      organization.tenantId,
-      options.workspaceId ?? null,
-      options.folderId ?? null
+      tenant.tenantId,
+      {
+        workspaceId: options.workspaceId,
+        folderId: options.folderId,
+        createdBy: options.createdBy,
+        createdByProjectId: options.createdByProjectId,
+      }
     );
   return project.id;
+}
+
+export function platformApiKeyFor(
+  app: INestApplication,
+  tenant: TenantFixture,
+  projectId: string
+): Promise<string> {
+  return app.get(GatewayKeyService).createKey(projectId, projectId, tenant.tenantId, 'platform-api');
+}
+
+export function serviceKeyFor(
+  app: INestApplication,
+  tenant: TenantFixture,
+  projectId: string
+): Promise<string> {
+  return app.get(GatewayKeyService).createKey(projectId, projectId, tenant.tenantId);
+}
+
+export async function clearProjectCreator(projectId: string): Promise<void> {
+  await db.update(projects).set({ createdBy: null }).where(eq(projects.id, projectId));
+}
+
+export async function stampProjectKind(projectId: string, kind: ProjectKind): Promise<void> {
+  await db.update(projects).set({ kind }).where(eq(projects.id, projectId));
+}
+
+export async function setChatSubjectVisibility(chatId: string, visibility: 'private' | 'public'): Promise<void> {
+  const [existing] = await db.select({ id: skills.id }).from(skills).where(eq(skills.builderChatId, chatId));
+  if (existing) {
+    await db.update(skills).set({ visibility }).where(eq(skills.id, existing.id));
+    return;
+  }
+  const [chat] = await db
+    .select({ tenantId: projects.tenantId, createdBy: projects.createdBy })
+    .from(projects)
+    .where(eq(projects.id, chatId));
+  const id = randomUUID();
+  await db.insert(skills).values({
+    id,
+    tenantId: chat.tenantId,
+    origin: 'custom',
+    name: `subject-${id.slice(0, 8)}`,
+    visibility,
+    createdBy: chat.createdBy,
+    builderChatId: chatId,
+  });
 }
 
 export async function disableProject(projectId: string): Promise<void> {
@@ -171,13 +236,13 @@ export async function disableProject(projectId: string): Promise<void> {
 
 export async function addNamedEnvironment(
   app: INestApplication,
-  organization: OrganizationFixture,
+  tenant: TenantFixture,
   projectId: string,
   name: string
 ): Promise<string> {
   const environment = await app
     .get(EnvironmentService)
-    .create(organization.tenantId, { name, slug: name.toLowerCase() });
+    .create(tenant.tenantId, { name, slug: name.toLowerCase() });
   const projectEnvironmentId = randomUUID();
   await app.get(ProjectEnvironmentService).create({
     id: projectEnvironmentId,

@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from 'solid-js';
 import { type Agent } from '~/api/client';
+import { useReachedLimit } from '~/api/limits';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -8,6 +9,7 @@ import {
 } from '~/components/ui/dropdown-menu';
 import { Boxes, Bot, FolderPlus, Package } from '~/components/icons';
 import { FOLDER_DESCRIPTION } from '~/components/folder-dialog';
+import { ScrollShadow } from '~/components/ui/scroll-shadow';
 import { cn } from '~/lib/cn';
 
 export function CreateMenu(props: {
@@ -23,6 +25,7 @@ export function CreateMenu(props: {
   onOpenImport?: () => void;
 }) {
   const canCreateProject = () => props.canCreateProject ?? true;
+  const reachedLimit = useReachedLimit('projects');
   const hasSecondary = () => !!props.canCreateWorkspace || !!props.onOpenCreateFolder || !!props.canImport;
 
   return (
@@ -31,21 +34,30 @@ export function CreateMenu(props: {
       <DropdownMenuContent class="w-72">
         <Show when={canCreateProject()}>
           <MenuDividerLabel class="mb-1 mt-1">Select an agent to build a project</MenuDividerLabel>
+          <Show when={reachedLimit()}>
+            {(limit) => (
+              <div class="px-2 py-1.5 text-xs text-muted-foreground">
+                This organization has reached its limit of {limit()} projects.
+              </div>
+            )}
+          </Show>
           <Show
             when={(props.agents ?? []).length > 0}
             fallback={<div class="px-2 py-1.5 text-xs italic text-muted-foreground">No agents available</div>}
           >
-            <For each={props.agents}>
-              {(agent) => (
-                <RichMenuItem
-                  icon={<Bot class="w-4 h-4" />}
-                  title={agent.displayName ?? agent.name}
-                  description={agent.description ?? 'Start a new project with this agent.'}
-                  disabled={props.disabled}
-                  onSelect={() => props.onCreateProject(agent.id)}
-                />
-              )}
-            </For>
+            <ScrollShadow class="max-h-[min(22rem,50vh)]" label="Agents">
+              <For each={props.agents}>
+                {(agent) => (
+                  <RichMenuItem
+                    icon={<Bot class="w-4 h-4" />}
+                    title={agent.displayName ?? agent.name}
+                    description={agent.description ?? 'Start a new project with this agent.'}
+                    disabled={props.disabled || reachedLimit() !== null}
+                    onSelect={() => props.onCreateProject(agent.id)}
+                  />
+                )}
+              </For>
+            </ScrollShadow>
           </Show>
           <Show when={hasSecondary()}>
             <MenuDividerLabel>OR</MenuDividerLabel>
@@ -75,6 +87,7 @@ export function CreateMenu(props: {
             icon={<Package class="w-3.5 h-3.5" />}
             title="Import project"
             description="Stand up a project from an export file."
+            disabled={reachedLimit() !== null}
             onSelect={() => props.onOpenImport?.()}
           />
         </Show>
@@ -112,7 +125,7 @@ function RichMenuItem(props: {
         <span class={cn('font-medium leading-none text-foreground', props.compact ? 'text-xs' : 'text-sm')}>
           {props.title}
         </span>
-        <span class="text-xs leading-snug text-muted-foreground">{props.description}</span>
+        <span class="line-clamp-2 text-xs leading-snug text-muted-foreground">{props.description}</span>
       </span>
     </DropdownMenuItem>
   );

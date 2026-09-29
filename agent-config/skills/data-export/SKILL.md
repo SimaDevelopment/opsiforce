@@ -1,6 +1,6 @@
 ---
 name: data-export
-description: Export data as CSV, JSON, or printable views. Use when the user wants to download data, export to Excel/CSV, generate reports, or create print-friendly pages. No extra packages needed.
+description: Export App data from the browser as CSV or JSON downloads, clipboard copies, or print-friendly views. Use when the user wants a download or export button, to copy data, or a printable page. Word, Excel, PowerPoint and PDF deliverables are `document-generation`.
 ---
 
 # Data Export — CSV, JSON, Print

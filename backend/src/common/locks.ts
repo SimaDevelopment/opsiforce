@@ -1,10 +1,13 @@
 import { sql } from 'drizzle-orm';
 import type { DrizzleDB } from '../../db';
+import type { LimitKey } from '../limit/limit.types';
 
 export type DbExecutor = DrizzleDB | Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 const PROJECT_GIT_NAMESPACE = 'opsiforce:project-git';
 const ENVIRONMENT_SESSION_NAMESPACE = 'opsiforce:environment-session';
+const AGENT_TEMPLATE_NAMESPACE = 'opsiforce:agent-template';
+const TENANT_LIMIT_NAMESPACE = 'opsiforce:tenant-limit';
 const LOCK_NOT_AVAILABLE = '55P03';
 
 export class LockNotAvailable extends Error {
@@ -16,6 +19,25 @@ export class LockNotAvailable extends Error {
 
 export async function lockProjectGit(executor: DbExecutor, projectId: string): Promise<void> {
   await executor.execute(sql`select pg_advisory_xact_lock(hashtext(${PROJECT_GIT_NAMESPACE}), hashtext(${projectId}))`);
+}
+
+export async function lockAgentTemplate(executor: DbExecutor, agentId: string): Promise<void> {
+  await executor.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${AGENT_TEMPLATE_NAMESPACE}), hashtext(${agentId}))`
+  );
+}
+
+export async function tryLockAgentTemplate(executor: DbExecutor, agentId: string): Promise<boolean> {
+  const [row] = await executor.execute<{ locked: boolean }>(
+    sql`select pg_try_advisory_xact_lock(hashtext(${AGENT_TEMPLATE_NAMESPACE}), hashtext(${agentId})) as locked`
+  );
+  return row?.locked === true;
+}
+
+export async function lockTenantLimit(executor: DbExecutor, tenantId: string, limitKey: LimitKey): Promise<void> {
+  await executor.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`${TENANT_LIMIT_NAMESPACE}:${limitKey}`}), hashtext(${tenantId}))`
+  );
 }
 
 export async function lockEnvironmentSession(

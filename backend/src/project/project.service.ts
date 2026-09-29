@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   Logger,
   Inject,
   forwardRef,
@@ -11,12 +12,12 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { V1Pod } from '@kubernetes/client-node';
-import { eq, and, desc, asc, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { eq, and, desc, asc, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Queue } from 'bullmq';
 import crypto from 'crypto';
 import path from 'path';
-import { rm } from 'node:fs/promises';
+import { lstat, mkdir, rm } from 'node:fs/promises';
 import { db } from '../../db';
 import {
   projectSettings,
@@ -33,7 +34,7 @@ import {
   projectDuplicateJobs,
   projectTransferJobs,
 } from '../../db/schema';
-import { visibleProjectsFilter } from './project-visibility';
+import { accessibleProjectsFilter, isHiddenProjectReachable, visibleProjectsFilter } from './project-visibility';
 import { PodService, PodStartupFailedError } from '../pod/pod.service';
 import { PodCacheService } from '../pod/pod.cache.service';
 import { ProxyService } from '../proxy/proxy.service';
@@ -45,6 +46,7 @@ import { restoreEnvJsonBackup } from '../common/env-file';
 import { writeJsonAtomic } from '../common/fs';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { DefaultsService } from '../defaults/defaults.service';
+import type { TimeoutDefaults } from '../defaults/defaults.types';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ScheduleService } from '../schedule/schedule.service';
 import { AgentService } from '../agent/agent.service';
@@ -65,7 +67,9 @@ import {
   UpdateProjectDto,
   DuplicateProjectDto,
   ProjectResponse,
+  ProjectCreationContext,
   ProjectEnvironmentSummary,
+  ProjectKind,
   ProjectStatus,
   ProjectState,
   ProjectAuthResponse,
@@ -76,8 +80,11 @@ import {
   ProjectLoggingResponse,
   RequestLogMode,
   REQUEST_LOG_BODY_LIMIT_MAX,
+  TEST_PROJECT_KIND,
+  isChatKind,
   availableAuthModes,
 } from './project.types';
+import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
 import {
   buildPodClassCatalog,
   clampCustom,
@@ -99,6 +106,7 @@ const STARTUP_RETRY_BASE_MS = 5 * 1000;
 const STARTUP_RETRY_MAX_MS = 5 * 60 * 1000;
 const DUPLICATE_APP_READY_TIMEOUT_MS = 5 * 60 * 1000;
 const APP_SERVING_PROBE_TIMEOUT_MS = 3 * 1000;
+const TEMPLATE_UPDATE_COMMIT_MESSAGE = 'Template update';
 
 interface AppMetaPatch {
   name?: string;
@@ -155,6 +163,8 @@ import { ProjectEventsService } from './project-events.service';
 import { AppService } from './app.service';
 import { AppReadinessService } from './app-readiness.service';
 import { AgentStatusService } from './agent-status.service';
+import { assertRoomForProject } from './project-limit';
+import { LimitReachedException } from '../limit/limit-reached.exception';
 import {
   ACTIVE_DUPLICATE_STATUSES,
   PROJECT_DUPLICATE_QUEUE,
@@ -164,6 +174,7 @@ import {
 } from './project-duplicate.types';
 import { ACTIVE_IMPORT_STATUSES, ProjectImportStatus } from './project-import.types';
 import { ACTIVE_PUBLISH_STATUSES } from '../publish/publish.types';
+import { DeliveryService } from '../delivery/delivery.service';
 
 export type ProjectActivityKind = 'agent' | 'app';
 
@@ -194,6 +205,10 @@ const projectSelectFields = {
   description: projects.description,
   disabled: projects.disabled,
   bifrostProjectId: projects.bifrostProjectId,
+  createdBy: projects.createdBy,
+  createdByProjectId: projects.createdByProjectId,
+  kind: projects.kind,
+  importedAgent: projects.importedAgent,
   directory: projectEnvironments.directory,
   status: effectiveStatus.as('status'),
   podIp: projectEnvironments.podIp,
@@ -252,6 +267,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly proxyService: ProxyService,
+    private readonly deliveryService: DeliveryService,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
     private readonly duplicateQueue: Queue<ProjectDuplicateJobData>
   ) {}
@@ -432,11 +448,19 @@ export class ProjectService implements OnApplicationBootstrap {
   async create(
     dto: CreateProjectDto | undefined,
     tenantId: string,
-    workspaceId: string | null = null,
-    folderId: string | null = null
+    context: ProjectCreationContext = {}
   ): Promise<ProjectResponse> {
-    const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId());
-    const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    const {
+      workspaceId = null,
+      folderId = null,
+      createdBy = null,
+      createdByProjectId = null,
+      kind = null,
+      builderSubjectAgentId = null,
+    } = context;
+    const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
+    if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
+    const timeouts = await this.creationTimeouts(tenantId, kind);
 
     const claimedId = await this.projectPoolService
       .claimPending(agentId, {
@@ -445,11 +469,15 @@ export class ProjectService implements OnApplicationBootstrap {
         folderId,
         title: dto?.title ?? null,
         description: dto?.description ?? null,
+        createdBy,
+        createdByProjectId,
+        kind,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
+        if (err instanceof LimitReachedException) throw err;
         this.logger.warn(`Pool claim failed; falling back to slow path: ${(err as Error).message}`);
         return null;
       });
@@ -460,23 +488,37 @@ export class ProjectService implements OnApplicationBootstrap {
       return project;
     }
 
-    return this.createDirect(dto, tenantId, workspaceId, folderId, agentId, timeouts);
+    return this.createDirect(dto, tenantId, agentId, timeouts, {
+      workspaceId,
+      folderId,
+      createdBy,
+      createdByProjectId,
+      kind,
+      builderSubjectAgentId,
+    });
+  }
+
+  private async creationTimeouts(tenantId: string, kind: ProjectKind | null): Promise<TimeoutDefaults> {
+    const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    if (kind !== TEST_PROJECT_KIND) return timeouts;
+    return { ...timeouts, defaultAppTimeoutIdle: timeouts.defaultTimeoutIdle };
   }
 
   private async createDirect(
     dto: CreateProjectDto | undefined,
     tenantId: string,
-    workspaceId: string | null,
-    folderId: string | null,
     agentId: string,
-    timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number }
+    timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
+    context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
+    const { workspaceId, folderId, createdBy, createdByProjectId, kind, builderSubjectAgentId } = context;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
 
     await db.transaction(async (tx) => {
+      await assertRoomForProject(tx, tenantId, kind);
       await tx.insert(projects).values({
         id,
         tenantId,
@@ -485,6 +527,9 @@ export class ProjectService implements OnApplicationBootstrap {
         agentId,
         title: dto?.title ?? null,
         description: dto?.description ?? null,
+        createdBy,
+        createdByProjectId,
+        kind,
       });
 
       await tx.insert(projectSettings).values({
@@ -511,16 +556,51 @@ export class ProjectService implements OnApplicationBootstrap {
       });
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKey(id, id, tenantId);
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+    });
+    try {
+      await this.deliveryService.deliverAtCreate(id, { builderSubjectAgentId });
+    } catch (err) {
+      await this.discardHalfCreatedProject(id);
+      throw new InternalServerErrorException(`Could not deliver the agent's files: ${(err as Error).message}`);
+    }
     this.spawnStartupWorker(id);
 
     return this.findOne(id, tenantId);
   }
 
-  async duplicate(sourceId: string, tenantId: string, dto?: DuplicateProjectDto): Promise<ProjectResponse> {
+  async duplicate(
+    sourceId: string,
+    tenantId: string,
+    dto: DuplicateProjectDto | undefined,
+    createdBy: string | null
+  ): Promise<ProjectResponse> {
+    const [source] = await db
+      .select({ kind: projects.kind })
+      .from(projects)
+      .where(and(eq(projects.id, sourceId), eq(projects.tenantId, tenantId)));
+    if (source?.kind) {
+      throw new BadRequestException({
+        code: 'not_duplicable',
+        message: isChatKind(source.kind)
+          ? 'A Builder chat belongs to its skill or agent and cannot be duplicated'
+          : 'A test Project belongs to its Builder chat and cannot be duplicated',
+      });
+    }
+    return this.duplicateOne(sourceId, tenantId, dto, createdBy);
+  }
+
+  private async duplicateOne(
+    sourceId: string,
+    tenantId: string,
+    dto: DuplicateProjectDto | undefined,
+    createdBy: string | null
+  ): Promise<ProjectResponse> {
     const source = await this.findOne(sourceId, tenantId);
+    const parentProjectId = source.createdByProjectId;
     await this.assertNoActiveGitOperation(source.id);
 
     const id = crypto.randomUUID();
@@ -538,14 +618,18 @@ export class ProjectService implements OnApplicationBootstrap {
     await db.transaction(async (tx) => {
       await lockProjectGit(tx, source.id);
       await this.assertNoActiveGitOperation(source.id, tx);
+      await assertRoomForProject(tx, tenantId);
 
       await tx.insert(projects).values({
         id,
         tenantId,
         workspaceId: source.workspaceId,
         agentId: source.agentId,
+        kind: source.kind,
         title,
         description: source.description,
+        createdBy,
+        createdByProjectId: parentProjectId,
       });
 
       await tx.insert(projectSettings).values({
@@ -613,13 +697,15 @@ export class ProjectService implements OnApplicationBootstrap {
       });
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKey(id, id, tenantId);
-    await this.enqueueDuplicateJob({
-      duplicateJobId,
-      sourceProjectId: source.id,
-      targetProjectId: id,
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
+      await this.enqueueDuplicateJob({
+        duplicateJobId,
+        sourceProjectId: source.id,
+        targetProjectId: id,
+      });
     });
     await this.projectEventsService.publish(id);
 
@@ -633,11 +719,13 @@ export class ProjectService implements OnApplicationBootstrap {
     title: string | null;
     timezone: string;
     agentId: string;
+    importedAgent: string | null;
     description: string | null;
     settings: ExportManifestSettings | null;
     resources: ExportManifestResources | null;
     appDetails: ExportManifestAppDetails | null;
     schedules: ExportManifestSchedule[];
+    createdBy: string | null;
   }): Promise<ProjectResponse> {
     const {
       tenantId,
@@ -646,11 +734,13 @@ export class ProjectService implements OnApplicationBootstrap {
       title,
       timezone,
       agentId,
+      importedAgent,
       description,
       settings,
       resources,
       appDetails,
       schedules,
+      createdBy,
     } = params;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
@@ -661,14 +751,17 @@ export class ProjectService implements OnApplicationBootstrap {
     const podResources = this.resolveImportedResources(resources);
 
     await db.transaction(async (tx) => {
+      await assertRoomForProject(tx, tenantId);
       await tx.insert(projects).values({
         id,
         tenantId,
         workspaceId,
         folderId,
         agentId,
+        importedAgent,
         title,
         description,
+        createdBy,
       });
 
       await tx.insert(projectSettings).values({
@@ -727,9 +820,11 @@ export class ProjectService implements OnApplicationBootstrap {
       }
     });
 
-    await this.externalServiceProvisioning.provisionEnvironment(id);
-    await this.createBifrostResources(id, tenantId);
-    await this.createGatewayKey(id, id, tenantId);
+    await this.discardOnFailure(id, async () => {
+      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.createBifrostResources(id, tenantId);
+      await this.createGatewayKeys(id, id, tenantId, agentId, null);
+    });
 
     return this.findOne(id, tenantId);
   }
@@ -810,15 +905,16 @@ export class ProjectService implements OnApplicationBootstrap {
     return rows;
   }
 
+  /** Every Project this user may watch: the ordinary visible set plus the hidden ones they created. */
   async findVisibleProjectIds(params: { tenantId: string; userId: string }): Promise<string[]> {
     const { tenantId, userId } = params;
-    const visible = visibleProjectsFilter(tenantId, userId);
+    const accessible = accessibleProjectsFilter(tenantId, userId);
 
     const rows = await db
       .select({ id: projects.id })
       .from(projects)
-      .leftJoin(workspaceMembers, visible.workspaceMemberJoin)
-      .where(visible.where);
+      .leftJoin(workspaceMembers, accessible.workspaceMemberJoin)
+      .where(accessible.where);
     return rows.map((row) => row.id);
   }
 
@@ -834,7 +930,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .innerJoin(projectSettings, eq(projectSettings.projectId, projects.id))
       .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
       .leftJoin(projectApps, eq(projectApps.projectEnvironmentId, projects.id))
-      .where(and(eq(projects.tenantId, tenantId), scope))
+      .where(and(eq(projects.tenantId, tenantId), isNull(projects.kind), scope))
       .orderBy(...projectOrderBy()) as Promise<ProjectResponse[]>;
   }
 
@@ -851,9 +947,17 @@ export class ProjectService implements OnApplicationBootstrap {
     return project;
   }
 
+  async findOneUnlessHidden(id: string, tenantId: string, userId: string): Promise<ProjectResponse> {
+    const project = await this.findOne(id, tenantId);
+    if (project.kind !== null && !(await isHiddenProjectReachable(tenantId, userId, id))) {
+      throw new NotFoundException(`Project ${id} not found`);
+    }
+    return project;
+  }
+
   async findOneForUser(params: { projectId: string; tenantId: string; userId: string }): Promise<ProjectResponse> {
     const { projectId, tenantId, userId } = params;
-    const project = await this.findOne(projectId, tenantId);
+    const project = await this.findOneUnlessHidden(projectId, tenantId, userId);
     await this.assertProjectVisibleToUser(project.id, project.workspaceId, userId);
     return project;
   }
@@ -904,12 +1008,17 @@ export class ProjectService implements OnApplicationBootstrap {
         disabled: projects.disabled,
         workspaceId: projects.workspaceId,
         title: projects.title,
+        kind: projects.kind,
+        createdBy: projects.createdBy,
       })
       .from(projects)
       .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
       .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)));
 
     if (!row) throw new NotFoundException(`Project ${projectId} not found`);
+    if (row.kind !== null && !(await isHiddenProjectReachable(tenantId, userId, projectId))) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
 
     await this.assertProjectVisibleToUser(row.id, row.workspaceId, userId);
 
@@ -1148,8 +1257,12 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.getAuth(projectId, env.id, tenantId);
   }
 
+  /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
   async remove(id: string, tenantId: string): Promise<void> {
     await this.findOne(id, tenantId);
+    for (const child of await this.testProjectsCreatedBy(id, tenantId)) {
+      await this.remove(child.id, tenantId);
+    }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
     await db
@@ -1183,6 +1296,20 @@ export class ProjectService implements OnApplicationBootstrap {
     }
 
     await db.delete(projects).where(eq(projects.id, id));
+  }
+
+  private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string; title: string | null }[]> {
+    return db
+      .select({ id: projects.id, title: projects.title })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.tenantId, tenantId),
+          eq(projects.createdByProjectId, projectId),
+          eq(projects.kind, TEST_PROJECT_KIND)
+        )
+      )
+      .orderBy(desc(projects.createdAt));
   }
 
   async disable(id: string, tenantId: string): Promise<ProjectResponse> {
@@ -1224,7 +1351,10 @@ export class ProjectService implements OnApplicationBootstrap {
 
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
-    await db.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+    await db.transaction(async (tx) => {
+      await assertRoomForProject(tx, tenantId, project.kind);
+      await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+    });
     await Promise.all(
       envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting, podIp: null }))
     );
@@ -1247,6 +1377,42 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
     return this.findOne(id, tenantId);
+  }
+
+  /** Update (Test Project): overlay Development's Template and commit it, leaving the pod and the chat running. */
+  async updateTestProject(id: string): Promise<void> {
+    const env = await this.projectEnvironmentService.findById(id);
+    const written = await this.deliveryService.overlayTemplate(env.id);
+    const workspace = this.workspacePath(env.directory);
+    if (written.length === 0 || !(await isGitWorkspace(workspace))) return;
+    await db.transaction(async (tx) => {
+      await lockProjectGit(tx, id);
+      await this.gitService.commitPaths(workspace, written, TEMPLATE_UPDATE_COMMIT_MESSAGE);
+    });
+  }
+
+  /** Reset (Test Project): the same Project laid again from scratch, with a new session and a fresh budget. */
+  async resetTestProject(id: string): Promise<void> {
+    const env = await this.projectEnvironmentService.findById(id);
+    this.agentStatusService.clear(env.projectId, env.id);
+    this.appReadiness.markDown(env.id);
+    await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
+    await this.podService.deletePodAndWait(this.podService.assignedPodName(env.id));
+
+    const workspace = this.workspacePath(env.directory);
+    await rm(workspace, { recursive: true, force: true });
+    await mkdir(workspace, { recursive: true });
+    await this.deliveryService.redeliverIntoWipedWorkspace(env.id);
+    await this.projectEnvironmentService.patch(env.id, { sessionId: null });
+    await this.bifrostService.resetProjectSpend(env.projectId);
+
+    await this.requestEnvironmentStartup(await this.projectEnvironmentService.findById(env.id), {
+      deleteExistingPod: false,
+    });
+  }
+
+  private workspacePath(directory: string): string {
+    return path.join(this.configService.getOrThrow<string>('storageMountPath'), directory);
   }
 
   async removeEnvironment(projectId: string, environmentId: string, tenantId: string): Promise<void> {
@@ -1306,7 +1472,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .where(eq(projectApps.projectEnvironmentId, targetEnv.id));
     if (!appRow) {
       throw new BadRequestException(
-        'APP_NOT_DETECTED: this environment has no detectable app yet. Make sure its web server is running and serves /api/app-meta before editing app details.'
+        'APP_NOT_DETECTED: this environment has no detectable app yet. Make sure app/startup.sh serves on $APP_PORT and app/app.meta.json exists before editing app details.'
       );
     }
 
@@ -1677,12 +1843,40 @@ export class ProjectService implements OnApplicationBootstrap {
     }
   }
 
-  private async createGatewayKey(projectId: string, environmentId: string, tenantId: string): Promise<void> {
+  private async createGatewayKeys(
+    projectId: string,
+    environmentId: string,
+    tenantId: string,
+    agentId: string,
+    createdByProjectId: string | null
+  ): Promise<void> {
     try {
       await this.gatewayKeyService.createKey(projectId, environmentId, tenantId);
+      if (await this.mintsPlatformApiKey(agentId, createdByProjectId)) {
+        await this.gatewayKeyService.createKey(projectId, environmentId, tenantId, 'platform-api');
+      }
     } catch (err) {
-      this.logger.warn(`Failed to create gateway key for environment ${environmentId}: ${(err as Error).message}`);
+      this.logger.warn(`Failed to create gateway keys for environment ${environmentId}: ${(err as Error).message}`);
     }
+  }
+
+  private async mintsPlatformApiKey(agentId: string, createdByProjectId: string | null): Promise<boolean> {
+    if (!(await this.agentService.callsPlatformApi(agentId))) return false;
+    return (await this.childChainDepth(createdByProjectId)) < MAX_PROJECT_CHAIN_DEPTH;
+  }
+
+  private async childChainDepth(createdByProjectId: string | null): Promise<number> {
+    let parentId = createdByProjectId;
+    let depth = 0;
+    while (parentId !== null && depth < MAX_PROJECT_CHAIN_DEPTH) {
+      depth += 1;
+      const [row] = await db
+        .select({ parentId: projects.createdByProjectId })
+        .from(projects)
+        .where(eq(projects.id, parentId));
+      parentId = row?.parentId ?? null;
+    }
+    return depth;
   }
 
   private async enqueueDuplicateJob(data: ProjectDuplicateJobData): Promise<void> {
@@ -1912,7 +2106,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
       if (settled.length > 0) {
         await this.projectEventsService.publish(projectId).catch(() => undefined);
-        if (!appReady) await this.cleanupFailedImport(projectId);
+        if (!appReady) await this.discardHalfCreatedProject(projectId);
       }
     })().catch((err) => {
       this.logger.warn(`Failed to finish import for project ${projectId}: ${(err as Error).message}`);
@@ -1946,11 +2140,21 @@ export class ProjectService implements OnApplicationBootstrap {
         })
         .where(eq(projectTransferJobs.id, job.id));
       await this.projectEventsService.publish(job.projectId).catch(() => undefined);
-      await this.cleanupFailedImport(job.projectId);
+      await this.discardHalfCreatedProject(job.projectId);
     }
   }
 
-  async cleanupFailedImport(projectId: string): Promise<void> {
+  private async discardOnFailure(projectId: string, provision: () => Promise<void>): Promise<void> {
+    try {
+      await provision();
+    } catch (err) {
+      await this.discardHalfCreatedProject(projectId);
+      throw err;
+    }
+  }
+
+  /** Unwinds a Project whose creation or Import failed: its rows, its keys and its directory. */
+  async discardHalfCreatedProject(projectId: string): Promise<void> {
     const project = await this.findOneById(projectId).catch(() => null);
     if (!project || !project.tenantId) return;
 
@@ -1970,10 +2174,10 @@ export class ProjectService implements OnApplicationBootstrap {
   private async probeAppServing(envId: string): Promise<boolean> {
     try {
       const upstream = await this.proxyService.resolveAppUpstreamByEnvironmentId(envId);
-      const res = await fetch(`${upstream}/api/app-meta`, {
+      await fetch(`${upstream}/`, {
         signal: AbortSignal.timeout(APP_SERVING_PROBE_TIMEOUT_MS),
       });
-      return res.ok;
+      return true;
     } catch {
       return false;
     }
@@ -2128,10 +2332,11 @@ export class ProjectService implements OnApplicationBootstrap {
       throw new Error(`Cannot start pool environment ${env.id} without a tenant`);
     }
 
-    const [bifrostOptions, gatewayApiKey, agentName, podResources] = await Promise.all([
+    const [bifrostOptions, gatewayApiKey, platformApiKey, agentName, podResources] = await Promise.all([
       this.bifrostService.getEnvironmentPodOptions(env.id),
       this.gatewayKeyService.getEnvironmentToken(env.id),
-      this.agentService.resolveName(env.agentId),
+      this.gatewayKeyService.getEnvironmentToken(env.id, 'platform-api'),
+      this.agentService.resolvePackageName(env.agentId),
       this.podResourcesForProject(env.projectId),
     ]);
 
@@ -2141,11 +2346,24 @@ export class ProjectService implements OnApplicationBootstrap {
       );
     }
 
+    const platformApiUrl = this.configService.get<string>('platformApiUrl', '');
+    const runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
+
+    if (platformApiKey && !(platformApiUrl && runtimeProxyUrl)) {
+      throw new Error(
+        `Environment ${env.id} holds a platform-api key but OPSIFORCE_API_URL or OPSIFORCE_RUNTIME_PROXY_URL is unset; ` +
+          'refusing to start a pod that cannot reach the platform API'
+      );
+    }
+
     const tenantOptions = {
       ...bifrostOptions,
       agentName,
       gatewayApiKey: gatewayApiKey ?? undefined,
       gatewayUrl: this.configService.get<string>('gatewayUrl', ''),
+      platformApiKey: platformApiKey ?? undefined,
+      platformApiUrl,
+      runtimeProxyUrl,
       externalServicesUrl: this.configService.get<string>('externalServicesUrl', ''),
       opsiforceEnv: env.isDefault ? undefined : 'production',
       environmentSlug: env.environmentSlug,
@@ -2245,5 +2463,14 @@ export class ProjectService implements OnApplicationBootstrap {
     void this.touchEnvironmentActivity(envId, activity).catch((err) => {
       this.logger.warn(`Failed to touch ${activity} activity for environment ${envId}: ${err.message}`);
     });
+  }
+}
+
+async function isGitWorkspace(workspace: string): Promise<boolean> {
+  try {
+    await lstat(path.join(workspace, '.git'));
+    return true;
+  } catch {
+    return false;
   }
 }

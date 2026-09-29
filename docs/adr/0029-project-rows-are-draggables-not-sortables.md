@@ -1,7 +1,5 @@
 # Sidebar project rows are plain draggables, not sortables
 
-Status: accepted
-
 Project rows in the sidebar were registered as dnd-kit **sortables** (`useSortable`), the same primitive that carries workspace rows. Workspaces genuinely sort — their order is a persisted user preference — but projects never did: the sidebar orders them by `last_prompt_at` ([ADR-0021](0021-sidebar-orders-by-last-prompt.md)), there is no per-project position anywhere in the schema, and the drop handler only ever read the *group* a project landed in, never its index. The sortable registration bought an insertion preview for an ordering the next refetch would throw away. We now register project rows with `useDraggable`; the only drop targets for a project are the workspace/Public drop zone and a folder zone — never another project row.
 
 The reason this matters beyond tidiness is that dnd-kit's `OptimisticSortingPlugin` engages whenever **both** the drag source and the hovered target are sortables. On every `dragover` it re-parents the row's DOM node and assigns `sortable.group`/`sortable.index` to the hovered group, and it restores them in exactly one situation — a *canceled* drag. An app that declines the drop does not cancel it, so the mutated group survives the drop; and because the underlying data never changed, the Solid effect inside `useSortable` that syncs `group` back from props never re-runs, its dependency being unchanged. The row's sortable stays enrolled in a group the project isn't in, permanently.

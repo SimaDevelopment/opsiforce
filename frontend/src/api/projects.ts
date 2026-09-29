@@ -17,7 +17,13 @@ interface ProjectStatusErrorPayload {
   message?: string;
 }
 
-export function useProjectStatus(projectId: () => string, options?: { enabled?: () => boolean }) {
+export function useProjectStatus(
+  projectId: () => string,
+  options?: {
+    enabled?: () => boolean;
+    onEvent?: () => void;
+  }
+) {
   const qc = useQueryClient();
   const [data, setData] = createSignal<ProjectState>();
   const [error, setError] = createSignal<unknown>();
@@ -48,6 +54,7 @@ export function useProjectStatus(projectId: () => string, options?: { enabled?: 
       } catch (err) {
         setError(err);
       }
+      options?.onEvent?.();
     };
 
     events.addEventListener('error', (event) => {
@@ -100,6 +107,14 @@ export function useProjects(options?: { enabled?: () => boolean }) {
   return createAppQuery(() => ({
     queryKey: projectKeys.list(),
     queryFn: () => api.get<Project[]>('/projects'),
+    enabled: options?.enabled ? options.enabled() : true,
+  }));
+}
+
+export function useProject(projectId: () => string, options?: { enabled?: () => boolean }) {
+  return createAppQuery(() => ({
+    queryKey: projectKeys.detail(projectId()),
+    queryFn: () => api.get<Project>(`/projects/${projectId()}`),
     enabled: options?.enabled ? options.enabled() : true,
   }));
 }

@@ -19,7 +19,7 @@ const (
 	termPollEvery = 100 * time.Millisecond
 )
 
-var appGuardNames = []string{"app-backend", "app-frontend"}
+const appRootGuard = "webapp"
 
 func main() {
 	go runOpencodeAuthProxy()
@@ -41,24 +41,30 @@ func main() {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("POST /restart-app", func(w http.ResponseWriter, r *http.Request) {
-		provided := r.Header.Get(tokenHeader)
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-
+	mux.HandleFunc("POST /notify-config-change", authorized(token, handleNotifyConfigChange))
+	mux.HandleFunc("POST /restart-app", authorized(token, func(w http.ResponseWriter, _ *http.Request) {
 		killed := restartAppProcesses()
 		log.Printf("restart-app: killed %d processes", killed)
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]int{"killed": killed}); err != nil {
 			log.Printf("restart-app: failed to write response: %v", err)
 		}
-	})
+	}))
 
 	log.Printf("agent-control listening on :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatalf("agent-control server failed: %v", err)
+	}
+}
+
+func authorized(token string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provided := r.Header.Get(tokenHeader)
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		handler(w, r)
 	}
 }
 
@@ -69,29 +75,7 @@ type proc struct {
 }
 
 func restartAppProcesses() int {
-	procs := listProcs()
-	children := map[int][]int{}
-	for _, p := range procs {
-		children[p.ppid] = append(children[p.ppid], p.pid)
-	}
-
-	targets := map[int]bool{}
-	for _, p := range procs {
-		if !isAppGuard(p.args) {
-			continue
-		}
-		queue := append([]int{}, children[p.pid]...)
-		for len(queue) > 0 {
-			pid := queue[0]
-			queue = queue[1:]
-			child, ok := procs[pid]
-			if !ok || isLogWriter(child.args) {
-				continue
-			}
-			targets[pid] = true
-			queue = append(queue, children[pid]...)
-		}
-	}
+	targets := appRestartTargets(listProcs())
 
 	for pid := range targets {
 		_ = syscall.Kill(pid, syscall.SIGTERM)
@@ -112,19 +96,54 @@ func restartAppProcesses() int {
 	return len(targets)
 }
 
-func isAppGuard(args []string) bool {
-	for i := 0; i < len(args)-1; i++ {
-		base := args[i][strings.LastIndex(args[i], "/")+1:]
-		if base != "guard" {
-			continue
-		}
-		for _, name := range appGuardNames {
-			if args[i+1] == name {
-				return true
+func appRestartTargets(procs map[int]*proc) map[int]bool {
+	children := map[int][]int{}
+	for _, p := range procs {
+		children[p.ppid] = append(children[p.ppid], p.pid)
+	}
+
+	targets := map[int]bool{}
+	var supervisedBy func(pid int)
+	supervisedBy = func(pid int) {
+		for _, childPid := range children[pid] {
+			child, ok := procs[childPid]
+			if !ok || isLogWriter(child.args) {
+				continue
 			}
+			targets[childPid] = true
+			supervisedBy(childPid)
 		}
 	}
-	return false
+	var nestedGuardsUnder func(pid int)
+	nestedGuardsUnder = func(pid int) {
+		for _, childPid := range children[pid] {
+			child, ok := procs[childPid]
+			if !ok {
+				continue
+			}
+			if guardName(child.args) != "" {
+				supervisedBy(childPid)
+				continue
+			}
+			nestedGuardsUnder(childPid)
+		}
+	}
+
+	for _, p := range procs {
+		if guardName(p.args) == appRootGuard {
+			nestedGuardsUnder(p.pid)
+		}
+	}
+	return targets
+}
+
+func guardName(args []string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i][strings.LastIndex(args[i], "/")+1:] == "guard" {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func isLogWriter(args []string) bool {

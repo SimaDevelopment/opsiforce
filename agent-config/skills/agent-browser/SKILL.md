@@ -9,7 +9,7 @@ Browser automation tool for testing your app and debugging UI issues. Chrome/Chr
 
 ## Discovering commands
 
-Don't guess at commands — ask the CLI. It serves version-matched docs so instructions never go stale:
+Ask the CLI; it serves docs that match the installed version:
 
 ```bash
 agent-browser skills list                 # every skill available on the installed version
@@ -19,15 +19,12 @@ agent-browser --help                      # top-level help
 agent-browser <command> --help            # help for a specific command
 ```
 
-Run `agent-browser skills get core --full` before your first interaction in a session — it has the canonical commands for navigating, snapshotting, clicking, filling, waiting, network inspection, and evaluating JS in the page.
+Run `agent-browser skills get core` before your first interaction in a session: workflows, common patterns, troubleshooting. Reach for `agent-browser <command> --help`, or `skills get core --full`, when a command you need is not in it.
 
 ## Debugging workflow
 
-**Before opening the browser**, verify the dev servers are running (run `cd /workspace/app && yarn check`, then check for recent crashes/errors — the queries are in the `sqlite` skill, §Platform observability DB). A blank page is almost always a crashed process, not a UI bug.
+Verify the App booted before opening the browser (`platform` §Verify the App booted). Then pair what the browser shows with the platform database:
 
-When investigating UI issues, pair browser output with those platform-DB queries:
-
-1. Open the app at `http://localhost:3000` — see what the user sees
+1. Open the app at `http://localhost:$APP_PORT` — see what the user sees
 2. Take a snapshot to inspect the DOM
-3. Query `app_requests` for failed API calls (4xx/5xx + response body)
-4. Query `process_logs` / `process_events` for dev-server errors or crashes
+3. Check the failed requests and process errors behind it (`platform` §Investigate failed requests and crashes)

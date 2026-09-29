@@ -23,11 +23,11 @@ A rejected alternative on a page ("rather than", "instead of") is ADR material: 
 
 **Terms on pages.** Spell every canonical term as `CONTEXT.md` spells it. Link the first use on a page to `CONTEXT.md` (whole file, no anchors); a gist of about a dozen words may ride in the same sentence, never a second definition. Each term has at most one **home page**, which owns its mechanics (how it is created, changed, constrained, what it looks like); a term may be glossary-only. Other pages state what their own flow needs and link the home page. `CONTEXT.md` links no pages and cites no code.
 
-**Terms in ADRs.** A new ADR uses glossary terms verbatim and defines none; a decision that introduces a concept adds the `CONTEXT.md` entry in the same commit. When an old ADR body and `CONTEXT.md` disagree, `CONTEXT.md` is authoritative and the ADR is a dated record; fix by ADR status, never by editing the body.
+**Terms in ADRs.** A new ADR uses glossary terms verbatim and defines none; a decision that introduces a concept adds the `CONTEXT.md` entry in the same commit. When an ADR and `CONTEXT.md` disagree, one of them is false about today; fix it in the same commit (section 7).
 
 **Shipped only.** Pages are present tense and describe shipped behaviour: no status banners, planned behaviour, "implemented" markers, or history ("used to be", "previously labelled"). Unshipped designs are `proposed` ADRs or a PRD outside the knowledge base.
 
-**ADR bodies never link pages and are never edited.** Page frontmatter carries the ADR-to-page mapping. Pre-existing ADRs that link pages keep those links, repaired on a page move (section 6).
+**ADR bodies never link pages.** Page frontmatter carries the ADR-to-page mapping. An older ADR that links a page drops the link when it is next rewritten; until then the link is repaired on a page move (section 6).
 
 The rule covers every file under `docs/`, operations pages included.
 
@@ -129,7 +129,7 @@ Every `explanation` page has a `## Code` section, never empty, before Related. B
 3. Vendored code (`frontend/opencode/`) is cited as its directory only, marked "vendored, never edited".
 4. Order follows How it works. At most 6 bullets; more means the page splits or the module boundary is wrong.
 
-ADR bodies may cite code the same way; a path in an accepted ADR is historically correct rather than stale, and the home page's `## Code` is the live pointer.
+ADR bodies may cite a directory or file the same way, never a line; a moved path is repaired like a moved page, and the home page's `## Code` is the live pointer.
 
 ## 6. Freshness
 
@@ -139,26 +139,29 @@ The knowledge base is true when no sentence on a page is false about the shipped
 
 **Added behaviour** gets a bullet on the existing area page; a new page only when How it works would pass 16 bullets, with a hub row and a frontmatter block. A new concept gets a `CONTEXT.md` entry first. A decision that passes the ADR test gets an ADR and a link from the bullet.
 
-**Changed behaviour** rewrites the bullet. When the change reverses an ADR, write a new ADR and set `status: superseded by ADR-NNNN` on the old one; the bullet links the new ADR.
+**Changed behaviour** rewrites the bullet. When the change reverses an ADR, the same commit rewrites that ADR in place (section 7); the bullet keeps its link.
 
-**Removed behaviour** is a sweep: delete the bullets, or the page with its hub row when nothing is left; delete the `CONTEXT.md` entry; set `status: deprecated` on every ADR whose decision no longer holds. Write a short retirement ADR only when the removal itself passes the ADR test. The retired name lives on in that ADR's title and on the `_Avoid_` line of the replacement term when one exists. No tombstones in `CONTEXT.md`.
+**Removed behaviour** is a sweep: delete the bullets, or the page with its hub row when nothing is left; delete the `CONTEXT.md` entry; delete every ADR whose decision no longer holds, and rewrite any that still partly holds (section 7). Write a present-tense ADR for the removal only when the removal itself passes the ADR test. The retired name lives on in that ADR's title and on the `_Avoid_` line of the replacement term when one exists. No tombstones in `CONTEXT.md`.
 
 **Moved code.** Moving or renaming a directory or file cited in any `## Code` updates that bullet in the same commit; `grep -rF '<old path>' docs/` returns nothing before the commit.
 
-**Moved page.** Moving or renaming a page repairs every link to it in the same commit, hub, pages and ADR bodies alike, with the same grep. A path repair is the only edit an ADR body ever receives; the sentence around the link is not touched.
+**Moved page.** Moving or renaming a page repairs every link to it in the same commit, hub, pages and ADR bodies alike, with the same grep.
 
 **Hub.** A new, retired or retitled page edits its hub row by hand. Nothing here runs in CI.
 
 ## 7. ADRs
 
-Format, numbering and the three-test filter ("the ADR test": hard to reverse, surprising without context, a real trade-off) are the `domain-modeling` skill's `ADR-FORMAT.md`; `/grilling` and `/domain-modeling` are how ADRs get written. Two additions: a removed feature gets a short retirement ADR under the same test, and a retirement ADR names in its own sentences every earlier ADR whose consequences it retires, because frozen bodies and shipped-only pages leave no other route from the stale text to the correction.
+Format, numbering and the three-test filter ("the ADR test": hard to reverse, surprising without context, a real trade-off) are the `domain-modeling` skill's `ADR-FORMAT.md`; `/grilling` and `/domain-modeling` are how ADRs get written.
 
-**Status** is the skill's optional frontmatter key, `status: proposed | accepted | deprecated | superseded by ADR-NNNN`, the only mutable thing in an ADR:
+**An ADR states its decision as it holds today.**
 
-1. No block means `accepted`. Every ADR with any other status carries the block; adding it deletes any prose `Status:` line. Parsers read frontmatter, else accepted.
-2. No parentheticals, dates or notes in the value. Git holds dates.
-3. **Supersession test.** `superseded by` only when a later ADR answers the **same question** with a different answer. A later ADR that retires a consequence, replaces a detail, or builds on an earlier one leaves its status untouched. There is no "amended by".
-4. A decision that changes an earlier one is a new ADR, never an edit.
-5. Superseded and deprecated ADRs appear in no page's `adrs`. An accepted ADR in no page's `adrs` is a coverage gap.
+1. When a decision changes, the commit that changes it rewrites the ADR answering that question, in place and under the same number. When a decision goes away, that commit deletes its ADR. No ADR narrates what came before. Git keeps the history.
+2. A removal that passes the ADR test is written as a present-tense decision ("Apps are not pinned"), never as a retirement notice.
+3. Considered options lists alternatives never adopted, with the reason. A design that was adopted and later dropped is not listed.
+4. Status is the frontmatter `status: proposed`, or nothing, which means accepted. An accepted ADR describes what the code does. A proposed ADR describes a decision not built yet and names the accepted clauses it will replace. The commit that ships it rewrites those clauses and deletes the status block, or merges the ADR into the one answering the same question and deletes it. There is no `superseded`, `deprecated`, "amended", date or note.
+5. One question, one ADR. A merged ADR keeps the number of its most-cited source. A deleted number is never reused.
+6. A page's `adrs:` lists only accepted ADRs. An accepted ADR that appears on no page is a coverage gap.
+7. Cite an ADR by number, never by section (`§N`), and name the rule in words.
+8. ADRs never link into `.scratch/`.
 
 **Finding ADRs.** There is no table. `ls docs/adr/` lists every decision by number and title; `grep -rl 'NNNN' docs/ --include='*.md'` on page frontmatter finds the home page. `docs/adr/README.md` holds a preamble only: the format, the status rule, the two greps.

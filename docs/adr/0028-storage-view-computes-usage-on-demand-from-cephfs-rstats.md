@@ -1,7 +1,5 @@
 # Storage view computes usage on demand from CephFS rstats — no usage table
 
-Status: accepted
-
 The Admin **Storage** view shows per-directory disk usage on the shared CephFS claim, rolled up Tenant → Project → ProjectEnvironment. The reflexive design is a periodic scan job writing rows into a Postgres table (the shape `external_service_usage` uses). We do the opposite: the backend computes the whole snapshot **at request time** — one `ceph.dir.rbytes` xattr read per directory of interest plus one quota-aware `statfs()` for claim totals — behind an in-process memo with a ~30 s TTL. No table, no scan job, no durable cache.
 
 ## Why no table

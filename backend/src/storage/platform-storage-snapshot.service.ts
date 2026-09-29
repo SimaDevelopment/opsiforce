@@ -1,10 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { readdir, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { db } from '../../db';
-import { deletedProjectEnvironments, environments, projectEnvironments, projects, tenants } from '../../db/schema';
+import {
+  agents,
+  deletedProjectEnvironments,
+  environments,
+  projectEnvironments,
+  projects,
+  tenants,
+} from '../../db/schema';
+import { AGENT_TEMPLATES_ROOT } from '../agent-template/agent-template.store';
 import { DIRECTORY_USAGE_STRATEGY, type DirectoryUsageStrategy } from './directory-usage.strategy';
 import type {
   DirectoryUsage,
@@ -13,6 +21,7 @@ import type {
   PlatformStorageEnvironmentView,
   PlatformStoragePendingDeletionView,
   PlatformStorageProjectView,
+  PlatformStorageTemplatesView,
   PlatformStorageTenantView,
   PlatformStorageView,
 } from './platform-storage.types';
@@ -35,6 +44,16 @@ interface LiveEnvironmentRow {
 interface TombstoneRow {
   tenantId: string | null;
   directory: string;
+}
+
+interface TemplateFolder {
+  directory: string;
+  tenantId: string | null;
+}
+
+interface TemplateScan {
+  folders: TemplateFolder[];
+  error: boolean;
 }
 
 interface OrphanScan {
@@ -71,23 +90,28 @@ export class PlatformStorageSnapshotService {
       this.loadTenantNames(),
     ]);
 
-    const orphanScan = await this.findOrphanedDirectories(liveEnvironments, tombstones);
+    const [orphanScan, templateScan] = await Promise.all([
+      this.findOrphanedDirectories(liveEnvironments, tombstones),
+      this.findTemplateFolders(),
+    ]);
     const usage = await this.directoryUsage.measure([
       ...liveEnvironments.map((row) => row.directory),
       ...tombstones.map((row) => row.directory),
       ...orphanScan.directories,
+      ...templateScan.folders.map((folder) => folder.directory),
       EXPORTS_ROOT,
       IMPORTS_ROOT,
     ]);
 
-    const tenantViews = this.buildTenants(liveEnvironments, tombstones, tenantNames, usage);
-    const buckets = this.buildBuckets(liveEnvironments, tombstones, orphanScan, usage);
+    const tenantViews = this.buildTenants(liveEnvironments, tombstones, templateScan, tenantNames, usage);
+    const buckets = this.buildBuckets(liveEnvironments, tombstones, orphanScan, templateScan, usage);
 
     const attributedBytes =
       tenantViews.reduce((total, tenant) => total + tenant.totalBytes, 0) +
       buckets.pool.bytes +
       buckets.tombstoned.bytes +
       buckets.orphaned.bytes +
+      buckets.templates.bytes +
       buckets.exports.bytes +
       buckets.imports.bytes;
 
@@ -100,7 +124,7 @@ export class PlatformStorageSnapshotService {
       tenants: tenantViews,
       buckets,
       unaccountedBytes: claim.usedBytes - attributedBytes,
-      incomplete: orphanScan.error || [...usage.values()].some((entry) => entry.error),
+      incomplete: orphanScan.error || templateScan.error || [...usage.values()].some((entry) => entry.error),
     };
   }
 
@@ -164,6 +188,32 @@ export class PlatformStorageSnapshotService {
     return new Map(rows.map((row) => [row.id, row.displayName]));
   }
 
+  private async findTemplateFolders(): Promise<TemplateScan> {
+    const entries = await readdir(path.join(this.storageMountPath, AGENT_TEMPLATES_ROOT), {
+      withFileTypes: true,
+    }).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return [];
+      this.logger.warn(`Failed to scan ${AGENT_TEMPLATES_ROOT}: ${err.message}`);
+      return null;
+    });
+    if (entries === null) return { folders: [], error: true };
+
+    const agentIds = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    if (agentIds.length === 0) return { folders: [], error: false };
+    const owners = new Map(
+      (
+        await db.select({ id: agents.id, tenantId: agents.tenantId }).from(agents).where(inArray(agents.id, agentIds))
+      ).map((row) => [row.id, row.tenantId])
+    );
+    return {
+      folders: agentIds.map((agentId) => ({
+        directory: path.posix.join(AGENT_TEMPLATES_ROOT, agentId),
+        tenantId: owners.get(agentId) ?? null,
+      })),
+      error: false,
+    };
+  }
+
   private async findOrphanedDirectories(
     liveEnvironments: LiveEnvironmentRow[],
     tombstones: TombstoneRow[]
@@ -216,6 +266,7 @@ export class PlatformStorageSnapshotService {
   private buildTenants(
     liveEnvironments: LiveEnvironmentRow[],
     tombstones: TombstoneRow[],
+    templateScan: TemplateScan,
     tenantNames: Map<string, string>,
     usage: Map<string, DirectoryUsage>
   ): PlatformStorageTenantView[] {
@@ -249,7 +300,20 @@ export class PlatformStorageSnapshotService {
       pendingDeletionByTenant.set(row.tenantId, aggregate);
     }
 
-    const tenantIds = new Set<string>([...environmentsByTenantProject.keys(), ...pendingDeletionByTenant.keys()]);
+    const templatesByTenant = new Map<string, PlatformStorageTemplatesView>();
+    for (const folder of templateScan.folders) {
+      if (folder.tenantId === null) continue;
+      templatesByTenant.set(
+        folder.tenantId,
+        addTemplateFolder(templatesByTenant.get(folder.tenantId) ?? emptyTemplates(), usage, folder)
+      );
+    }
+
+    const tenantIds = new Set<string>([
+      ...environmentsByTenantProject.keys(),
+      ...pendingDeletionByTenant.keys(),
+      ...templatesByTenant.keys(),
+    ]);
 
     return [...tenantIds]
       .map((tenantId) => {
@@ -267,13 +331,18 @@ export class PlatformStorageSnapshotService {
           }))
           .toSorted(compareProjects);
         const pendingDeletion = pendingDeletionByTenant.get(tenantId) ?? emptyPendingDeletion();
+        const templates = templatesByTenant.get(tenantId) ?? emptyTemplates();
 
         return {
           id: tenantId,
           name: tenantNames.get(tenantId) ?? tenantId,
-          totalBytes: projectViews.reduce((total, project) => total + project.totalBytes, 0) + pendingDeletion.bytes,
-          error: projectViews.some((project) => project.error) || pendingDeletion.error,
+          totalBytes:
+            projectViews.reduce((total, project) => total + project.totalBytes, 0) +
+            pendingDeletion.bytes +
+            templates.bytes,
+          error: projectViews.some((project) => project.error) || pendingDeletion.error || templates.error,
           pendingDeletion,
+          templates,
           projects: projectViews,
         };
       })
@@ -284,6 +353,7 @@ export class PlatformStorageSnapshotService {
     liveEnvironments: LiveEnvironmentRow[],
     tombstones: TombstoneRow[],
     orphanScan: OrphanScan,
+    templateScan: TemplateScan,
     usage: Map<string, DirectoryUsage>
   ): PlatformStorageBucketsView {
     const sum = (directories: string[]): PlatformStorageBucketView =>
@@ -296,6 +366,9 @@ export class PlatformStorageSnapshotService {
       );
 
     const orphaned = sum(orphanScan.directories);
+    const unownedTemplates = templateScan.folders
+      .filter((folder) => folder.tenantId === null)
+      .reduce((aggregate, folder) => addTemplateFolder(aggregate, usage, folder), emptyTemplates());
 
     return {
       pool: sum(liveEnvironments.filter((row) => row.tenantId === null).map((row) => row.directory)),
@@ -305,6 +378,7 @@ export class PlatformStorageSnapshotService {
         error: orphaned.error || orphanScan.error,
         count: orphanScan.directories.length,
       },
+      templates: { ...unownedTemplates, error: unownedTemplates.error || templateScan.error },
       exports: sum([EXPORTS_ROOT]),
       imports: sum([IMPORTS_ROOT]),
     };
@@ -317,6 +391,23 @@ function bytesOf(usage: Map<string, DirectoryUsage>, directory: string): Directo
 
 function emptyPendingDeletion(): PlatformStoragePendingDeletionView {
   return { bytes: 0, count: 0, error: false };
+}
+
+function emptyTemplates(): PlatformStorageTemplatesView {
+  return { bytes: 0, count: 0, error: false };
+}
+
+function addTemplateFolder(
+  aggregate: PlatformStorageTemplatesView,
+  usage: Map<string, DirectoryUsage>,
+  folder: TemplateFolder
+): PlatformStorageTemplatesView {
+  const measured = bytesOf(usage, folder.directory);
+  return {
+    bytes: aggregate.bytes + (measured.bytes ?? 0),
+    count: aggregate.count + 1,
+    error: aggregate.error || measured.error,
+  };
 }
 
 function environmentLabel(environmentName: string | null, isDefault: boolean): string {

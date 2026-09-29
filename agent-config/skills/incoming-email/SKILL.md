@@ -9,7 +9,7 @@ Every ProjectEnvironment can have its own random receiving address (e.g. `k3p9x2
 
 Storage does not depend on the app: mail lands in SQLite even while the pod is stopped, the handler is unimplemented, or the app is broken. Nothing is lost; the app catches up by reading rows it has not processed.
 
-**Inbound only.** The platform cannot *send* email — see the `send-email` skill for the outbound story and its in-app alternatives.
+**Inbound only** — for anything outbound, see `send-email`.
 
 ## The address — always fetch it, never hard-code it
 
@@ -61,7 +61,7 @@ The contract:
 
 ## Reading stored emails
 
-`/workspace/data/external-services.db` — **the platform backend is the only writer.** Open it read-only from app code and from the shell; never create tables, write, or point a migration at it. (See the `sqlite` skill for the full schema and the wider read-only-platform-database rules; the app's own data still lives in `app.db`.)
+`/workspace/data/external-services.db` is read-only and its tables appear with the first message — the `platform` skill (§Inbound messages). The app's own data still lives in `app.db`.
 
 All services share **one `messages` table and one `attachments` table**, so every query needs `service = 'incoming-email'`. For email:
 
@@ -85,8 +85,6 @@ The email `payload` JSON holds: `from_header` (the raw `From:` header), `subject
 | `message_id` | FK to `messages.id` |
 | `filename`, `content_type`, `size_bytes` | select these without `content` to list attachments cheaply |
 | `content` | the raw bytes (`BLOB`) |
-
-The tables are created lazily the first time any message arrives for the environment. Before that the file is a valid but **empty** database — a query for `messages` fails with "no such table", which means "nothing has arrived yet", not a broken setup.
 
 ```typescript
 import { DatabaseSync } from "node:sqlite"

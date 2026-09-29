@@ -21,3 +21,5 @@ agent-config/private/agents/**/template/**/yarn.lock
 .DS_Store
 .idea
 .vscode
+
+**/.claude

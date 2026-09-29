@@ -1,11 +1,11 @@
 ---
 name: state-management
-description: Client-side state management with Zustand v5 — global stores, selectors, useShallow, persist (localStorage), devtools, immer middleware, slices pattern. Use for shared UI state across components — filters, selections, sidebar/modal state, shopping cart, undo history, drag state, multi-step wizard state, anything read or written by more than one component. Do NOT use for server data (use data-fetching) or URL-synced state (use useSearchParams from react-router). Load whenever a component needs state that isn't local to it.
+description: Client-side state management with Zustand — global stores, selectors, useShallow, middleware (persist, devtools, immer) and the slices pattern. Use for shared UI state across components — filters, selections, sidebar/modal state, shopping cart, undo history, drag state, multi-step wizard state, anything read or written by more than one component. Do NOT use for server data (use data-fetching) or URL-synced state (use useSearchParams from react-router). Load whenever a component needs state that isn't local to it.
 ---
 
 # State Management
 
-Zustand v5 for client-side shared state. Already installed in the template (no `npm install` needed).
+Zustand for client-side shared state, written against major v5. Already installed in the template (no `yarn add` needed).
 
 **Why Zustand:** zero boilerplate, no providers, ~1 KB, first-class TypeScript, selectors prevent unnecessary re-renders. For this template's app-builder workloads it's the right default; reach for `data-fetching` for server data and `useSearchParams` for URL-synced filters.
 
@@ -48,7 +48,7 @@ const useStore = create<CounterStore>()((set) => ({
 }))
 ```
 
-**Persistent store (survives page reloads via localStorage):**
+**Persistent store — UI preferences only** (theme, collapsed panels, last tab). App data lives in the database through the backend (`web-app`), never in `persist`:
 
 ```ts
 import { persist, createJSONStorage } from "zustand/middleware"
@@ -116,8 +116,6 @@ import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 ```
 
-Confirm `package.json` has `"zustand": "^5.0.10"` or later.
-
 ### Issue #3: Infinite render loop
 
 **Error:** `Maximum update depth exceeded.` Browser freezes.
@@ -181,26 +179,24 @@ const useStore = create<BearSlice & FishSlice>()((...a) => ({
 }))
 ```
 
-### Issue #5: Persist middleware race condition (fixed v5.0.10+)
-
-In Zustand ≤ v5.0.9, concurrent rehydration during persist initialization could leave the store in an inconsistent state. **Fixed in v5.0.10** — no code changes needed, just stay on a current version. If you see flaky persisted state, check the installed version first.
-
 ## Middleware
 
-**Persist (localStorage):**
+**Persist (UI preferences only):**
 
 ```ts
 import { persist, createJSONStorage } from "zustand/middleware"
 
-const useStore = create<MyStore>()(
+const useUiPrefs = create<UiPrefs>()(
   persist(
     (set) => ({
-      data: [],
-      addItem: (item) => set((state) => ({ data: [...state.data, item] })),
+      sidebarCollapsed: false,
+      lastTab: "overview",
+      menuOpen: false,
+      setLastTab: (lastTab) => set({ lastTab }),
     }),
     {
-      name: "my-storage",
-      partialize: (state) => ({ data: state.data }),  // persist only `data`
+      name: "ui-prefs",
+      partialize: (state) => ({ sidebarCollapsed: state.sidebarCollapsed, lastTab: state.lastTab }),
       storage: createJSONStorage(() => localStorage),
     },
   ),
@@ -226,8 +222,6 @@ const useStore = create<CounterStore>()(
 ```
 
 The third argument to `set` (`"increment"`) becomes the action label in DevTools.
-
-**v4→v5 import note:** in v4 you imported `devtools` from `'zustand/middleware/devtools'`; in v5 the path is `'zustand/middleware'`. Update if you see "Module not found: Can't resolve 'zustand/middleware/devtools'".
 
 **Combining middlewares (order matters — outer wraps inner):**
 
@@ -337,9 +331,7 @@ const useKanbanStore = create<KanbanStore>()(
 )
 ```
 
-`immer` is built in to Zustand v5 — no extra install. Keep the `()()` pattern: `create<T>()(immer(...))`.
-
-**v5.0.3→v5.0.4 note:** if immer stops working after upgrading, confirm the import path is `zustand/middleware/immer` (not a deeper path).
+`zustand/middleware/immer` needs the `immer` package: `yarn add immer` first. Keep the `()()` pattern: `create<T>()(immer(...))`.
 
 ## When to use what
 

@@ -19,6 +19,9 @@ export class Deadline {
     });
     try {
       return await Promise.race([work(), cancelled]);
+    } catch (error) {
+      if (isAbort(error)) throw onSpent();
+      throw error;
     } finally {
       signal.removeEventListener('abort', abort);
     }
@@ -44,4 +47,8 @@ export class Deadline {
     const timeout = AbortSignal.timeout(Math.max(1, this.remainingMs));
     return this.cancellation ? AbortSignal.any([timeout, this.cancellation]) : timeout;
   }
+}
+
+function isAbort(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
 }

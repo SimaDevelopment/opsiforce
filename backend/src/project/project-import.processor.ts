@@ -50,7 +50,7 @@ export class ProjectImportProcessor extends WorkerHost {
       await rm(archivePath, { force: true }).catch(() => {});
       const message = err instanceof Error ? err.message : String(err);
       await this.importService.markFailed(importJobId, projectId, userFacingImportError(message));
-      await this.projectService.cleanupFailedImport(projectId);
+      await this.projectService.discardHalfCreatedProject(projectId);
       this.logger.warn(`Failed to import project ${projectId}: ${message}`);
     }
   }
@@ -60,5 +60,5 @@ function userFacingImportError(message: string): string {
   if (/unsafe|not a valid project export|malformed/i.test(message)) {
     return 'The uploaded file is not a valid project export.';
   }
-  return 'Import failed unexpectedly. Please try again, or contact support if it persists.';
+  return 'Import failed unexpectedly. Please try again.';
 }

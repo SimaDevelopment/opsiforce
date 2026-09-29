@@ -12,6 +12,9 @@ export interface TenantPodOptions {
   bifrostProxyUrl?: string;
   gatewayApiKey?: string;
   gatewayUrl?: string;
+  platformApiKey?: string;
+  platformApiUrl?: string;
+  runtimeProxyUrl?: string;
   externalServicesUrl?: string;
   agentName?: string;
   opsiforceEnv?: string;
@@ -161,6 +164,11 @@ export class PodService {
       if (this.isNotFound(err)) return;
       throw err;
     }
+  }
+
+  async deletePodAndWait(podName: string): Promise<void> {
+    await this.deletePod(podName);
+    await this.waitForPodDeletion(podName);
   }
 
   async deletePodIfMatches(podName: string, resourceVersion: string): Promise<boolean> {

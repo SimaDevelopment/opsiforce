@@ -27,6 +27,14 @@
 
 **Agent system** (`agent-system/`)
 - [Agent](agent-system/agent.md) — the profile, how it reaches a workspace, the model and the model catalog
+- [Custom Agents](agent-system/custom-agents.md) — the Agents an Organization authors, one Profile per Environment, publishing and retiring
+- [Template](agent-system/template.md) — the files a Custom Agent's new Projects start with, how they are saved, published and laid
+- [Agent Copies](agent-system/agent-copies.md) — Duplicate, Export and Import of an Agent into a new Custom Agent
+- [Skill](agent-system/skills.md) — the catalog, the publish gate, Versions and what an Agent pins
+- [Dynamic Delivery](agent-system/dynamic-delivery.md) — who writes which file in a workspace, and when a change reaches one
+- [Platform Skill](agent-system/platform-skill.md) — the shared skill carrying the App contract every Agent runs under
+- [Skill & Agent Builder](agent-system/skill-agent-builder.md) — authoring by conversation, one chat per Skill or Agent
+- [Test Project](agent-system/test-project.md) — the one Project a Builder chat tests its subject in, and its Update and Reset
 - [Agent Updates](agent-system/agent-updates.md) — bringing existing workspaces in line with a newer profile
 - [Agent Status](agent-system/agent-status.md) — the Working/Idle signal behind the sidebar spinner
 - [Document Generation](agent-system/document-generation.md) — the baked docx, pptx, xlsx and pdf stack and the Generated files convention
@@ -54,6 +62,7 @@
 - [Workspaces](organization/workspaces.md) — grouping Projects, membership-based visibility and moves
 - [Folder](organization/folder.md) — a single-level label for Projects inside a Workspace
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
+- [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
 - [Integrations](organization/integrations.md) — mapping an Organization to its managed identity provider tenant
 
 **Frontend** (`frontend/`)
@@ -72,6 +81,7 @@
 - [Deploy to Azure (AKS)](operations/deploy-azure.md) — the platform contract for self-hosting on Azure
 - [Air-Gapped Single-Node Deployment](operations/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
+- [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps
 - [Add an external service](operations/add-an-external-service.md) — one definition, one barrel line, one skill
 - [Onboard a WhatsApp number](operations/onboard-a-whatsapp-number.md) — provider channel, registration, allowlisting

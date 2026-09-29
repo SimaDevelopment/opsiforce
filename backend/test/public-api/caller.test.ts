@@ -7,7 +7,7 @@ import { users, workspaces } from '../../db/schema';
 import { Perms } from '../../src/permission/permission.constants';
 import type { ApiError } from '../../src/public-api/errors/error.schema';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
-import { organizationName, proxyHeaders, serviceAccountUsername } from '../support/proxy-identity';
+import { tenantName, proxyHeaders, serviceAccountUsername } from '../support/proxy-identity';
 
 const SEVERAL_PERMISSIONS = [Perms.usePublicApi, Perms.deleteProject, Perms.manageWorkspaces];
 
@@ -38,8 +38,8 @@ describe('public api caller and GET /me', () => {
 
   describe('identity', () => {
     it('answers a single-organization caller without an organization header', async () => {
-      const organization = organizationName();
-      const headers = proxyHeaders({ organizations: [organization] });
+      const tenant = tenantName();
+      const headers = proxyHeaders({ tenants: [tenant] });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
@@ -48,17 +48,17 @@ describe('public api caller and GET /me', () => {
       expect(body).toMatchObject({
         username: headers['x-forwarded-preferred-username'],
         email: headers['x-forwarded-email'],
-        organization: { name: organization },
-        organizations: [{ name: organization }],
+        tenant: { name: tenant },
+        tenants: [{ name: tenant }],
         permissions: [Perms.usePublicApi],
       });
-      expect(body.organization.id).toEqual(expect.any(String));
-      expect(body.organizations).toHaveLength(1);
+      expect(body.tenant.id).toEqual(expect.any(String));
+      expect(body.tenants).toHaveLength(1);
     });
 
     it('reports the platform user id, not the token subject', async () => {
       const userId = randomUUID();
-      const headers = proxyHeaders({ userId, organizations: [organizationName()] });
+      const headers = proxyHeaders({ userId, tenants: [tenantName()] });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
@@ -70,7 +70,7 @@ describe('public api caller and GET /me', () => {
 
     it('sorts the raw permission names', async () => {
       const headers = proxyHeaders({
-        organizations: [organizationName()],
+        tenants: [tenantName()],
         permissions: SEVERAL_PERMISSIONS,
       });
 
@@ -81,7 +81,7 @@ describe('public api caller and GET /me', () => {
 
     it('creates the user row on the first call', async () => {
       const userId = randomUUID();
-      const headers = proxyHeaders({ userId, organizations: [organizationName()] });
+      const headers = proxyHeaders({ userId, tenants: [tenantName()] });
 
       const before = await db.select({ id: users.id }).from(users).where(eq(users.keycloakId, userId));
       expect(before).toHaveLength(0);
@@ -95,66 +95,66 @@ describe('public api caller and GET /me', () => {
 
   describe('organization selection', () => {
     it('asks a multi-organization caller to name one, listing them by id and name', async () => {
-      const first = organizationName('first');
-      const second = organizationName('second');
-      const headers = proxyHeaders({ organizations: [first, second] });
+      const first = tenantName('first');
+      const second = tenantName('second');
+      const headers = proxyHeaders({ tenants: [first, second] });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
       expect(res.statusCode).toBe(400);
       expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
       const body = res.json();
-      expect(body).toMatchObject({ type: 'urn:opsiforce:error:organization-required', status: 400 });
-      expect(body.organizations).toEqual([
+      expect(body).toMatchObject({ type: 'urn:opsiforce:error:tenant-required', status: 400 });
+      expect(body.tenants).toEqual([
         { id: expect.any(String), name: first },
         { id: expect.any(String), name: second },
       ]);
     });
 
     it('acts in the organization the header names', async () => {
-      const first = organizationName('first');
-      const second = organizationName('second');
-      const headers = proxyHeaders({ organizations: [first, second], organization: second });
+      const first = tenantName('first');
+      const second = tenantName('second');
+      const headers = proxyHeaders({ tenants: [first, second], tenant: second });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.organization).toMatchObject({ name: second });
-      expect(body.organizations.map((org: { name: string }) => org.name)).toEqual([first, second]);
+      expect(body.tenant).toMatchObject({ name: second });
+      expect(body.tenants.map((org: { name: string }) => org.name)).toEqual([first, second]);
     });
 
     it('answers one indistinguishable 403 for a foreign and for an unknown organization', async () => {
-      const member = organizationName('member');
-      const foreign = organizationName('foreign');
+      const member = tenantName('member');
+      const foreign = tenantName('foreign');
       await app.inject({
         method: 'GET',
         url: '/api/v1/me',
-        headers: proxyHeaders({ organizations: [foreign] }),
+        headers: proxyHeaders({ tenants: [foreign] }),
       });
 
       const toForeign = await app.inject({
         method: 'GET',
         url: '/api/v1/me',
-        headers: proxyHeaders({ organizations: [member], organization: foreign }),
+        headers: proxyHeaders({ tenants: [member], tenant: foreign }),
       });
       const toUnknown = await app.inject({
         method: 'GET',
         url: '/api/v1/me',
-        headers: proxyHeaders({ organizations: [member], organization: organizationName('nowhere') }),
+        headers: proxyHeaders({ tenants: [member], tenant: tenantName('nowhere') }),
       });
 
       expect(toForeign.statusCode).toBe(403);
       expect(toUnknown.statusCode).toBe(403);
       expect(withoutInstance(toForeign.json<ApiError>())).toEqual(withoutInstance(toUnknown.json<ApiError>()));
-      expect(toForeign.json()).toMatchObject({ type: 'urn:opsiforce:error:organization-forbidden', status: 403 });
+      expect(toForeign.json()).toMatchObject({ type: 'urn:opsiforce:error:tenant-forbidden', status: 403 });
     });
   });
 
   describe('entry permission', () => {
     it('rejects a member without can_use_public_api and names the permission', async () => {
       const headers = proxyHeaders({
-        organizations: [organizationName()],
+        tenants: [tenantName()],
         permissions: [Perms.manageWorkspaces],
       });
 
@@ -170,14 +170,14 @@ describe('public api caller and GET /me', () => {
 
     it('does not leak the organization list to a caller without the entry permission', async () => {
       const headers = proxyHeaders({
-        organizations: [organizationName('first'), organizationName('second')],
+        tenants: [tenantName('first'), tenantName('second')],
         permissions: [],
       });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
       expect(res.statusCode).toBe(403);
-      expect(res.json().organizations).toBeUndefined();
+      expect(res.json().tenants).toBeUndefined();
     });
   });
 
@@ -209,7 +209,7 @@ describe('public api caller and GET /me', () => {
         userId,
         username: serviceAccountUsername('telegram'),
         email: null,
-        organizations: [organizationName()],
+        tenants: [tenantName()],
       });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
@@ -221,7 +221,7 @@ describe('public api caller and GET /me', () => {
 
     it('still creates a Personal workspace for a human caller', async () => {
       const userId = randomUUID();
-      const headers = proxyHeaders({ userId, organizations: [organizationName()] });
+      const headers = proxyHeaders({ userId, tenants: [tenantName()] });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
@@ -237,7 +237,7 @@ describe('public api caller and GET /me', () => {
         const staticApp = staticHarness.app;
         const headers = {
           ...proxyHeaders({
-            organizations: [organizationName('local')],
+            tenants: [tenantName('local')],
             permissions: SEVERAL_PERMISSIONS,
           }),
           authorization: 'Bearer not-a-real-token',

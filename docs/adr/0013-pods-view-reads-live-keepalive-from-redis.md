@@ -1,7 +1,5 @@
 # Pods view reads keep-alive live from Redis, never from k8s or a new durable store
 
-Status: accepted
-
 The per-Organization **Pods** operational view shows, for each running ProjectEnvironment pod, when it was last kept alive and by which Keep-alive activity (agent vs app). That data is split across three stores: Kubernetes knows which pods exist and their identity/health; Redis holds keep-alive (two TTL keys per env whose *value* is the last-touch time and whose TTL is the countdown to expiry); Postgres holds names and the timeout policy. We make Kubernetes the source of truth for the **row set** — enumerate `app=opsiforce-agent` pods from the informer cache, intersected with the Organization's projects — and read keep-alive **live from Redis** as a join at request time. We deliberately do not persist keep-alive anywhere new, and in particular do not write it into pod labels or annotations.
 
 ## Why not annotate the pod

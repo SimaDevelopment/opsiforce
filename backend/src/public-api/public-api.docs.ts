@@ -16,8 +16,8 @@ export const DOCS_PATH = '/api/v1/docs';
 
 const API_DESCRIPTION = [
   "Programmatic access to Opsiforce: who you are, the Agent registry, your Projects, and a connection to a Project's Agent runtime. Everything documented here is the platform's own surface. The conversation itself is not: you reach it natively, at the runtime's own API.",
-  "**Authentication.** Send the bearer token your deployment's identity provider issues when you sign in. If you belong to more than one Organization, name it with the `x-tenant-name` header; with one membership it is implied.",
-  '**Model.** An Organization owns Projects. Each Project runs environments, and each environment runs an opencode runtime. Every environment reports an `opencode` descriptor — where its runtime is, where its own OpenAPI document is, and the primary Session every surface shares.',
+  "**Authentication.** Send the bearer token your deployment's identity provider issues when you sign in. If you belong to more than one tenant, name it with the `x-tenant-name` header; with one membership it is implied.",
+  '**Model.** A tenant owns Projects. Each Project runs environments, and each environment runs an opencode runtime. Every environment reports an `opencode` descriptor — where its runtime is, where its own OpenAPI document is, and the primary Session every surface shares.',
   '**Talking to the Agent.** Call `POST /projects/{id}/environments/{environmentId}/connect`. It wakes the environment, binds the primary Session and tells you which build answered. Everything after that goes to the runtime at `baseUrl`, in opencode’s own shapes:',
   [
     '```',
@@ -63,7 +63,7 @@ export function buildPublicApiDocument(app: INestApplication): OpenAPIObject {
       name: TENANT_NAME_HEADER,
       in: 'header',
       required: false,
-      description: 'Organization to act in; required only for callers that belong to several organizations',
+      description: 'Tenant to act in; required only for callers that belong to several tenants',
       schema: { type: 'string' },
     })
     .build();

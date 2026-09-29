@@ -1,6 +1,9 @@
 import type { PodClass } from '../pod/pod-classes';
 import type { PodFailureReason } from '../pod/pod.service';
 import type { ProjectStatus } from '../project/project.types';
+import type { AgentUpdateStatus } from '../agent-update/agent-update.types';
+
+type AgentUpdateStatusValue = (typeof AgentUpdateStatus)[keyof typeof AgentUpdateStatus];
 
 export interface KeepAliveActivityView {
   lastTouchMs: number | null;
@@ -35,6 +38,20 @@ export interface PodTimeoutView {
   appIdleMs: number;
 }
 
+export interface PodSkillDeliveryView {
+  converged: boolean;
+  pendingSkills: string[];
+  failedAt: number | null;
+  error: string | null;
+}
+
+export interface PodAgentUpdateView {
+  status: AgentUpdateStatusValue;
+  targetVersion: string;
+  requiresPodRecreate: boolean;
+  error: string | null;
+}
+
 export interface PodDetailView {
   podIp: string | null;
   startedAtMs: number | null;
@@ -54,6 +71,8 @@ export interface PodRowView {
   keepAlive: PodKeepAliveView;
   drift: boolean;
   dbStatus: ProjectStatus;
+  skillDelivery: PodSkillDeliveryView;
+  agentUpdate: PodAgentUpdateView | null;
   detail: PodDetailView;
 }
 

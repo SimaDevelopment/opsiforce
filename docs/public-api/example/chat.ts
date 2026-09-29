@@ -25,7 +25,7 @@ const platform = new Platform({
   origin,
   onRetryAfter: (delay) => { retryDelayMs = delay; },
   token: required('OPSIFORCE_TOKEN'),
-  organization: process.env.OPSIFORCE_ORGANIZATION,
+  tenant: process.env.OPSIFORCE_TENANT,
 });
 const run = new AbortController();
 process.once('SIGINT', () => run.abort(new Error('interrupted by the operator')));
@@ -80,7 +80,7 @@ async function resolveProject(): Promise<Project> {
 
   const agents = await platform.requestWithRetry<{ items: Agent[] }>('/api/v1/agents?limit=1', { signal: run.signal });
   const agent = agents.items[0];
-  if (!agent) throw new Error('No Agent profiles in this Organization');
+  if (!agent) throw new Error('No Agent profiles in this tenant');
 
   return platform.request<Project>('/api/v1/projects', {
     method: 'POST',

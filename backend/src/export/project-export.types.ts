@@ -80,10 +80,23 @@ export interface ExportManifestSchedule {
   headers: Record<string, string> | null;
 }
 
+export interface ExportManifestAgent {
+  slug: string;
+  displayName: string | null;
+  origin: string;
+  package: string;
+}
+
+/** Older archives carry no `kind`; a manifest without one is a Project export. */
+export const PROJECT_EXPORT_KIND = 'project';
+
 export interface ExportManifest {
+  kind?: typeof PROJECT_EXPORT_KIND;
   title: string | null;
   description: string | null;
+  /** @deprecated superseded by `agent`; still written and read so older archives keep importing. */
   agentName: string | null;
+  agent: ExportManifestAgent | null;
   settings: ExportManifestSettings;
   resources: ExportManifestResources;
   appDetails: ExportManifestAppDetails | null;

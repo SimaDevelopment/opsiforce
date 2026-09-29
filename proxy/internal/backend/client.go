@@ -59,11 +59,24 @@ var ForwardedIdentityCacheHeaders = []string{
 	"x-forwarded-groups",
 }
 
+const gatewayBearerPrefix = "Bearer gw-"
+
+func GatewayBearer(headers http.Header) string {
+	value := headers.Get("authorization")
+	if strings.HasPrefix(value, gatewayBearerPrefix) {
+		return value
+	}
+	return ""
+}
+
 func forwardIdentity(out http.Header, in http.Header) {
 	for _, name := range ForwardedIdentityHeaders {
 		if value := in.Get(name); value != "" {
 			out.Set(name, value)
 		}
+	}
+	if value := GatewayBearer(in); value != "" {
+		out.Set("authorization", value)
 	}
 }
 

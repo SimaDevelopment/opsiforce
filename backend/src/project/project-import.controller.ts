@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpException, Param, Post, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { rm } from 'node:fs/promises';
 import { ProjectImportService } from './project-import.service';
@@ -35,33 +35,24 @@ export class ProjectImportController {
     if (!uploadId) throw new BadRequestException('An "uploadId" from a chunked upload session is required');
 
     const session = { tenantId: tenant.tenantId, uploadId };
-    const claimDir = await this.uploadService.claimSession(session);
     const filePath = this.importService.newUploadPath();
     try {
-      await this.uploadService.assembleUpload({ claimDir, destPath: filePath });
-
-      const userId = await this.userService.resolveUserId(user, tenant.tenantId);
-      const canManageWorkspaces = hasPermission(getGroupsHeader(req), Perms.manageWorkspaces);
-      const result = await this.importService.startImport({
-        tenantId: tenant.tenantId,
-        workspaceId: dto?.workspaceId?.trim() || null,
-        folderId: dto?.folderId?.trim() || null,
-        userId,
-        canManageWorkspaces,
-        titleOverride: dto?.title ?? null,
-        timezone: dto?.timezone?.trim() || 'UTC',
-        uploadPath: filePath,
+      return await this.uploadService.consumeUpload(session, filePath, async () => {
+        const userId = await this.userService.resolveUserId(user, tenant.tenantId);
+        const canManageWorkspaces = hasPermission(getGroupsHeader(req), Perms.manageWorkspaces);
+        return this.importService.startImport({
+          tenantId: tenant.tenantId,
+          workspaceId: dto?.workspaceId?.trim() || null,
+          folderId: dto?.folderId?.trim() || null,
+          userId,
+          canManageWorkspaces,
+          titleOverride: dto?.title ?? null,
+          timezone: dto?.timezone?.trim() || 'UTC',
+          uploadPath: filePath,
+        });
       });
-
-      await this.uploadService.deleteClaim(claimDir).catch(() => {});
-      return result;
     } catch (err) {
       await rm(filePath, { force: true }).catch(() => {});
-      if (err instanceof HttpException && err.getStatus() === 400) {
-        await this.uploadService.deleteClaim(claimDir).catch(() => {});
-      } else {
-        await this.uploadService.releaseClaim(session, claimDir);
-      }
       throw err;
     }
   }

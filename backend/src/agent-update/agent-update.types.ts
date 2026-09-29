@@ -1,6 +1,7 @@
 export const AGENT_WORKSPACE_UPDATE_QUEUE = 'agent-workspace-update';
 
 export const AgentUpdateStatus = {
+  Pending: 'pending',
   Running: 'running',
   ReloadPending: 'reload_pending',
   Applied: 'applied',
@@ -8,10 +9,14 @@ export const AgentUpdateStatus = {
   Failed: 'failed',
 } as const;
 
-export interface AgentProjectJobData {
-  projectId: string;
-  agentName: string;
+export type AgentUpdateMode = 'content' | 'full';
+
+export interface AgentEnvironmentJobData {
+  projectEnvironmentId: string;
+  /** The agent image package: the Agent's name for a Built-in Agent, `custom` otherwise. */
+  packageName: string;
   targetVersion: string;
+  mode: AgentUpdateMode;
 }
 
 export interface AgentReloadJobData {
@@ -21,7 +26,7 @@ export interface AgentReloadJobData {
 
 export type AgentSweepJobData = Record<string, never>;
 
-export type AgentUpdateJobData = AgentProjectJobData | AgentReloadJobData | AgentSweepJobData;
+export type AgentUpdateJobData = AgentEnvironmentJobData | AgentReloadJobData | AgentSweepJobData;
 
 export interface AgentUpdateConflict {
   migrationId: string;
@@ -34,6 +39,11 @@ export interface AgentMigrationFailure {
   error: string;
 }
 
+export interface AgentOwnedSkillsResult {
+  written: string[];
+  removed: string[];
+}
+
 export interface AgentWorkspaceMigrationSummary {
   agentName: string;
   targetVersion: string;
@@ -41,6 +51,8 @@ export interface AgentWorkspaceMigrationSummary {
   skippedMigrations: string[];
   failedMigrations: AgentMigrationFailure[];
   conflicts: AgentUpdateConflict[];
+  ownedSkills: AgentOwnedSkillsResult;
+  configChanged: boolean;
   requiresPodRecreate: boolean;
   status: 'applied' | 'conflict' | 'failed';
   error?: string;

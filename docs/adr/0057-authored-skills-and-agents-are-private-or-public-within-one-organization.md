@@ -1,0 +1,34 @@
+# Authored Skills and Custom Agents are private or public within one Organization, and become Organization property when made public
+
+Every Custom Skill and Custom Agent belongs to exactly one Organization. Opsiforce has no roles, only flat `can_*` permission strings ([ADR-0027](0027-platform-scope-routes-opt-out-of-tenant-resolution.md)), so authoring needs a permission answer and a visibility answer that fit that model. Built-in content reaches every Organization through the image and the reconcilers, never through authoring.
+
+**Authoring rides two flat permissions. Visibility is a state of the artifact, not a permission tier, and a public artifact stops being its author's.** Concretely:
+
+- **Two permissions.** `can_manage_skills` and `can_manage_agents` govern every authored row in the caller's current Organization, and both are in the `opsiforce_admin` bundle. "Manage" covers the whole authoring surface: create, save, make public, change an Agent's Skills, duplicate, import, export, disable, enable and delete. An Agent import needs both, because it may create Custom Skills or give them Versions ([ADR-0075](0075-duplicate-and-export-agent-carry-only-development-into-a-new-agent-through-one-writer.md)). Consuming needs no permission: any member browses the Store, reads published content and uses whatever the Agents in their Projects carry.
+- **Private means unlisted, not secret.** A private artifact is hidden from the Store, absent from the pickers and editable only by its creator. Other permission holders and Organization admins cannot see or edit it, and there is no break-glass. It is not confidential: delivery writes a Custom Agent's prompt and Skills into the Project workspace as files, so anyone who can see a Project can read what backs it.
+- **Public means Organization property.** While private, `created_by` is a hard boundary. Once public, any holder of the matching permission may edit, disable, delete or duplicate it. This is the shape of a shared Workspace, which has no owner, and it keeps a public Skill maintainable after its author leaves.
+- **Public never goes back to private.** The API refuses the change, as `WorkspaceService` refuses making a public Project private. The way back is **Duplicate**: any Skill or Agent a member can see, including a Built-in one and their own private one, forks into a new private Custom Skill or Custom Agent they own. The Skill & Agent Builder is the one exception: it authors only inside a Builder chat, so it is never duplicated. Across Organizations, a Skill travels as a `.skill` file and a Custom Agent as an Agent export, which Import turns into a new private Custom Agent ([ADR-0075](0075-duplicate-and-export-agent-carry-only-development-into-a-new-agent-through-one-writer.md)).
+- **The state sits on the parent row.** `visibility` (`private | public`) and `created_by` (FK to `users`, `ON DELETE RESTRICT`) live on `skills` and `agents`, never on a Skill Version or an Agent Profile. `origin` (`built_in | custom`) marks platform content, independently of audience. A CHECK makes every Custom row carry `tenant_id` and `created_by`.
+- **One predicate per kind.** `visibleSkillsWhere` and `visibleAgentsWhere` decide what a caller sees, for lists and single reads alike.
+- **Visibility is coherent downward.** A public or Built-in Agent may carry only public Skills. The API refuses to add a private Skill to one, to make an Agent public while it carries one, and to publish an Agent that carries one.
+- **Disable and Delete.** Disable takes an artifact out of use and is reversible ([ADR-0070](0070-skills-and-agents-are-disabled-per-organization-like-projects.md)). Delete is permanent and refused while the artifact is in use: a Skill while any Agent carries it, naming the Agents; a Custom Agent while any ordinary Project runs on it. A Skill that has a Version, and a Custom Agent published beyond Development, are disabled before they are deleted.
+- **Nothing withdraws a published Version.** A Built-in Skill that leaves the image stops being offered, and its stored Versions stay so Agents that pinned it keep working.
+- **Standalone collapses to instance-admin.** Both strings are in the Helm static-auth list and map through `SSO_GROUP_MAP`; a single-operator install is the whole Organization.
+
+## Considered options
+
+- **Flat authority over private artifacts too**, with `created_by` only as provenance: rejected. It makes "private" a list filter with no meaning, while the Personal Workspace already promises that private means private.
+- **Owner-bound throughout**, where only the creator ever edits: rejected. A public Skill that several Projects depend on must not become unmaintainable because its author moved teams.
+- **An ACL or grant table**: rejected for now. Two states need no grant table, the house has no roles, and adding principals later is additive.
+- **A create-versus-publish permission split**: rejected. It matters only when authors and publishers differ, and one admin-tier grant covers authoring end to end. Adding a narrower tier later is additive; taking authority away after members have authored is not.
+- **Per-Organization permission grants**: rejected. Permissions are user-global by construction ([ADR-0027](0027-platform-scope-routes-opt-out-of-tenant-resolution.md)), and per-tenant grants would fork the machinery under every existing permission.
+- **A nullable `created_by` as the public marker**: rejected. Making something public would erase its provenance, and NULL-as-public has already misfired here: `projects.workspace_id` is `ON DELETE SET NULL`, so deleting a Workspace moves its Projects into Public.
+- **`ON DELETE CASCADE` on `created_by`**: rejected. The wanted rule is "delete a departed member's private artifacts and keep their public ones", which a foreign key cannot express, and cascade would destroy Organization content.
+
+## Consequences
+
+- **A published Skill Version on an existing Custom Agent Project cannot be stopped.** The remedy is recreating the Project. On a Built-in Agent, removing the Skill reaches existing Projects through delivery. The publish-time gate is the only defence against bad content.
+- **A departed member's private artifacts are unreachable.** No one else can see them, and the platform has no departure hook: `users` has no active or deleted column and nothing deletes a user row. The `RESTRICT` foreign key forces any future user-deletion path to decide.
+- A holder of `can_manage_skills` or `can_manage_agents` holds it in every Organization they belong to.
+- Each permission string lives in five places: the Pulumi permission list, a Pulumi group, the backend `Perms`, the frontend constant and the Helm static-auth list.
+- The Skill and Agent controllers take a class-level `@RequirePermission` and relax it per read route, never the reverse, because the global guard lets undecorated routes through.

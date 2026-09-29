@@ -1,5 +1,5 @@
 import { Show } from 'solid-js';
-import type { PodDbStatus, PodStatus } from '~/api/pods';
+import type { PodAgentUpdate, PodDbStatus, PodSkillDelivery, PodStatus } from '~/api/pods';
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
 import { AlertTriangle, RefreshCw } from '~/components/icons';
 import { cn } from '~/lib/cn';
@@ -8,6 +8,8 @@ interface PodStatusCellProps {
   status: PodStatus;
   drift: boolean;
   dbStatus: PodDbStatus;
+  skillDelivery: PodSkillDelivery;
+  agentUpdate: PodAgentUpdate | null;
 }
 
 interface StatusVisual {
@@ -32,6 +34,16 @@ function statusVisual(status: PodStatus): StatusVisual {
   return { dot: 'bg-muted-foreground', label: 'Unknown', bad: false };
 }
 
+function agentUpdateBad(status: PodAgentUpdate['status']): boolean {
+  return status === 'failed' || status === 'conflict';
+}
+
+function agentUpdateLabel(status: PodAgentUpdate['status']): string {
+  if (status === 'running') return 'updating';
+  if (status === 'reload_pending') return 'awaiting restart';
+  return status;
+}
+
 export function PodStatusCell(props: PodStatusCellProps) {
   const visual = () => statusVisual(props.status);
 
@@ -51,6 +63,58 @@ export function PodStatusCell(props: PodStatusCellProps) {
           </TooltipTrigger>
           <TooltipContent>Container restarts</TooltipContent>
         </Tooltip>
+      </Show>
+
+      <Show when={!props.skillDelivery.converged}>
+        <Tooltip>
+          <TooltipTrigger
+            as="span"
+            class={cn(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+              props.skillDelivery.failedAt === null
+                ? 'border border-sky-200 bg-sky-50 text-sky-700'
+                : 'border border-red-200 bg-red-50 text-red-700'
+            )}
+          >
+            <AlertTriangle class="size-3" />
+            Delivery {props.skillDelivery.failedAt === null ? 'pending' : 'failed'}
+          </TooltipTrigger>
+          <TooltipContent>
+            <Show
+              when={props.skillDelivery.error}
+              fallback="The organization's Skills have not landed in this workspace yet."
+            >
+              {(error) => <>Skill delivery failed: {error()}</>}
+            </Show>
+          </TooltipContent>
+        </Tooltip>
+      </Show>
+
+      <Show when={props.agentUpdate}>
+        {(update) => (
+          <Tooltip>
+            <TooltipTrigger
+              as="span"
+              class={cn(
+                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                agentUpdateBad(update().status)
+                  ? 'border border-red-200 bg-red-50 text-red-700'
+                  : 'border border-sky-200 bg-sky-50 text-sky-700'
+              )}
+            >
+              <AlertTriangle class="size-3" />
+              Agent content {agentUpdateLabel(update().status)}
+            </TooltipTrigger>
+            <TooltipContent>
+              <Show
+                when={update().error}
+                fallback={`This workspace is behind the agent image's content (target ${update().targetVersion}).`}
+              >
+                {(error) => <>Agent update failed: {error()}</>}
+              </Show>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </Show>
 
       <Show when={props.drift}>

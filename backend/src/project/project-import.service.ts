@@ -6,17 +6,24 @@ import { and, desc, eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import path from 'node:path';
 import { chmod, mkdir, rename, rm, symlink } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
-import yauzl from 'yauzl';
+import type yauzl from 'yauzl';
 import { db } from '../../db';
 import { folders, projectTransferJobs, workspaceMembers, workspaces } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
+import {
+  collectEntries,
+  entryMode,
+  isSymlinkMode,
+  openZip,
+  readEntry,
+  readNamedEntry,
+  writeEntryToFile,
+} from '../common/zip-reader';
 import { TenantService } from '../tenant/tenant.service';
 import { ProjectService } from './project.service';
 import { ProjectEventsService } from './project-events.service';
-import type { ExportManifest } from '../export/project-export.types';
+import { PROJECT_EXPORT_KIND, type ExportManifest } from '../export/project-export.types';
+import { AGENT_EXPORT_KIND } from '../agent/agent-export';
 import {
   importsRootPath,
   PROJECT_IMPORT_QUEUE,
@@ -27,8 +34,6 @@ import {
 } from './project-import.types';
 
 const WORKSPACE_PREFIX = 'workspace/';
-const SYMLINK_MODE = 0o120000;
-const FILE_TYPE_MASK = 0o170000;
 
 @Injectable()
 export class ProjectImportService {
@@ -76,7 +81,7 @@ export class ProjectImportService {
     const targetFolderId = workspaceId && folderId ? await this.resolveFolder(folderId, workspaceId) : null;
 
     const manifest = await this.readManifest(uploadPath);
-    const { agentId, agentFallbackFrom } = await this.resolveAgent(manifest.agentName);
+    const { agentId, importedAgent, agentFallbackFrom } = await this.resolveAgent(manifest, tenantId);
     const title = titleOverride?.trim() || manifest.title;
 
     const project = await this.projectService.createImportedProject({
@@ -86,11 +91,13 @@ export class ProjectImportService {
       title,
       timezone,
       agentId,
+      importedAgent,
       description: manifest.description ?? null,
       settings: manifest.settings ?? null,
       resources: manifest.resources ?? null,
       appDetails: manifest.appDetails ?? null,
       schedules: manifest.schedules ?? [],
+      createdBy: userId,
     });
 
     const importJobId = crypto.randomUUID();
@@ -114,7 +121,7 @@ export class ProjectImportService {
     } catch (err) {
       await rm(uploadPath, { force: true }).catch(() => {});
       await rm(archivePath, { force: true }).catch(() => {});
-      await this.projectService.cleanupFailedImport(project.id).catch(() => {});
+      await this.projectService.discardHalfCreatedProject(project.id).catch(() => {});
       throw err;
     }
 
@@ -160,14 +167,27 @@ export class ProjectImportService {
     return folder.id;
   }
 
-  private async resolveAgent(agentName: string | null): Promise<{ agentId: string; agentFallbackFrom: string | null }> {
-    if (agentName) {
-      const agentId = await this.agentService.findIdByName(agentName);
-      if (agentId) return { agentId, agentFallbackFrom: null };
-      this.logger.warn(`Imported agent "${agentName}" not found; falling back to the default agent`);
-      return { agentId: await this.agentService.getDefaultAgentId(), agentFallbackFrom: agentName };
-    }
-    return { agentId: await this.agentService.getDefaultAgentId(), agentFallbackFrom: null };
+  private async resolveAgent(
+    manifest: ExportManifest,
+    tenantId: string
+  ): Promise<{ agentId: string; importedAgent: string | null; agentFallbackFrom: string | null }> {
+    const slug = manifest.agent?.slug ?? manifest.agentName;
+    if (!slug)
+      return {
+        agentId: await this.agentService.getDefaultAgentId(tenantId),
+        importedAgent: null,
+        agentFallbackFrom: null,
+      };
+
+    const agentId = await this.agentService.findIdByName(slug, tenantId);
+    if (agentId) return { agentId, importedAgent: null, agentFallbackFrom: null };
+
+    this.logger.warn(`Imported agent "${slug}" not found; linking the default agent and recording the original`);
+    return {
+      agentId: await this.agentService.getDefaultAgentId(tenantId),
+      importedAgent: slug,
+      agentFallbackFrom: manifest.agent?.displayName ?? slug,
+    };
   }
 
   async getLatestJob(projectId: string): Promise<ProjectImportJobResponse | null> {
@@ -222,12 +242,13 @@ export class ProjectImportService {
     let zip: yauzl.ZipFile | null = null;
     try {
       zip = await openZip(archivePath);
-      const buffer = await readEntryBuffer(zip, 'manifest.json');
+      const buffer = await readNamedEntry(zip, 'manifest.json');
       if (!buffer) throw new BadRequestException('The file is not a valid project export (missing manifest).');
       const manifest = JSON.parse(buffer.toString('utf8')) as ExportManifest;
       if (typeof manifest !== 'object' || manifest === null || !manifest.stamp) {
         throw new BadRequestException('The project export manifest is malformed.');
       }
+      assertProjectExportKind(manifest);
       return manifest;
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -264,7 +285,7 @@ export class ProjectImportService {
         if (rel.length === 0) continue;
 
         const target = resolveConfined(root, rel);
-        const mode = (entry.externalFileAttributes >>> 16) & 0xffff;
+        const mode = entryMode(entry);
 
         if (entry.fileName.endsWith('/')) {
           await mkdir(target, { recursive: true });
@@ -273,8 +294,8 @@ export class ProjectImportService {
 
         await mkdir(path.dirname(target), { recursive: true });
 
-        if ((mode & FILE_TYPE_MASK) === SYMLINK_MODE) {
-          const linkBuffer = await readEntryStream(zip, entry);
+        if (isSymlinkMode(mode)) {
+          const linkBuffer = await readEntry(zip, entry);
           const linkTarget = linkBuffer.toString('utf8');
           if (!isConfined(root, path.resolve(path.dirname(target), linkTarget))) {
             throw new BadRequestException('The project export contains an unsafe symlink.');
@@ -302,6 +323,15 @@ export class ProjectImportService {
   }
 }
 
+export function assertProjectExportKind(manifest: { kind?: unknown }): void {
+  if (manifest.kind === undefined || manifest.kind === PROJECT_EXPORT_KIND) return;
+  throw new BadRequestException(
+    manifest.kind === AGENT_EXPORT_KIND
+      ? "This is an Agent export; import it from the Store's Agents tab."
+      : `This is a \`${String(manifest.kind)}\` export, not a project export.`
+  );
+}
+
 function toResponse(row: typeof projectTransferJobs.$inferSelect): ProjectImportJobResponse {
   return {
     id: row.id,
@@ -326,65 +356,4 @@ function resolveConfined(root: string, rel: string): string {
     throw new BadRequestException('The project export contains an unsafe file path.');
   }
   return target;
-}
-
-function openZip(filePath: string): Promise<yauzl.ZipFile> {
-  return new Promise((resolve, reject) => {
-    yauzl.open(filePath, { lazyEntries: true, autoClose: false }, (err, zip) => {
-      if (err || !zip) {
-        reject(err ?? new Error('Failed to open archive'));
-        return;
-      }
-      resolve(zip);
-    });
-  });
-}
-
-function collectEntries(zip: yauzl.ZipFile): Promise<yauzl.Entry[]> {
-  return new Promise((resolve, reject) => {
-    const entries: yauzl.Entry[] = [];
-    zip.on('entry', (entry: yauzl.Entry) => {
-      entries.push(entry);
-      zip.readEntry();
-    });
-    zip.on('end', () => resolve(entries));
-    zip.on('error', reject);
-    zip.readEntry();
-  });
-}
-
-function openEntryStream(zip: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
-  return new Promise((resolve, reject) => {
-    zip.openReadStream(entry, (err, stream) => {
-      if (err || !stream) reject(err ?? new Error('Failed to read archive entry'));
-      else resolve(stream);
-    });
-  });
-}
-
-async function readEntryStream(zip: yauzl.ZipFile, entry: yauzl.Entry): Promise<Buffer> {
-  const stream = await openEntryStream(zip, entry);
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
-}
-
-function readEntryBuffer(zip: yauzl.ZipFile, name: string): Promise<Buffer | null> {
-  return new Promise((resolve, reject) => {
-    zip.on('entry', (entry: yauzl.Entry) => {
-      if (entry.fileName !== name) {
-        zip.readEntry();
-        return;
-      }
-      readEntryStream(zip, entry).then(resolve, reject);
-    });
-    zip.on('end', () => resolve(null));
-    zip.on('error', reject);
-    zip.readEntry();
-  });
-}
-
-async function writeEntryToFile(zip: yauzl.ZipFile, entry: yauzl.Entry, target: string): Promise<void> {
-  const stream = await openEntryStream(zip, entry);
-  await pipeline(stream, createWriteStream(target));
 }

@@ -1,7 +1,5 @@
 # OpenCode v2 auth and path prefix are handled inside the platform, not by its callers
 
-Status: accepted (2026-09-04)
-
 OpenCode v2 enforces HTTP Basic auth on every route, including `/api/health`, the username is fixed to `opencode`, and the server refuses to start without a password. The pod has four unauthenticated callers: kubelet probes, the platform nginx proxy, the backend, and the browser's event stream through the platform proxy. Handing each a credential would spread a secret to four places, put it in browser memory, and change every probe and proxy config.
 
 Instead `opencode2 serve` binds `127.0.0.1` on an internal port, and agent-control, which already runs in the pod with the control token, exposes the historical port as a reverse proxy that injects the `Authorization` header (`proxy/cmd/agent-control/opencode_proxy.go`). The entrypoint derives `OPENCODE_PASSWORD` from `OPSIFORCE_CONTROL_TOKEN`, so no new secret exists. From outside the pod nothing changed: same port, same paths, no credential. The proxy flushes unbuffered because the event stream is SSE.

@@ -10,14 +10,14 @@ import { uploadUrl } from '~/api/files';
 import { formatBytes } from '~/lib/format-bytes';
 import { createFileUpload, toUploadFiles, topLevelEntriesOf } from '~/lib/upload';
 
-export const FileUpload: Component<{ projectId: string; environmentId: string }> = (props) => {
+export const FileUpload: Component<{ projectId: string; environmentId: string; host: () => HTMLElement }> = (props) => {
   let fileInputRef: HTMLInputElement | undefined;
   let folderInputRef: HTMLInputElement | undefined;
 
   const upload = createFileUpload({
     url: () => uploadUrl(props.projectId, props.environmentId),
     onUploaded: (files, result) => {
-      if (result.uploaded > 0) injectUploadSummary(topLevelEntriesOf(files));
+      if (result.uploaded > 0) injectUploadSummary(props.host(), topLevelEntriesOf(files));
     },
   });
 
@@ -100,9 +100,9 @@ export const FileUpload: Component<{ projectId: string; environmentId: string }>
   );
 };
 
-function injectUploadSummary(entries: string[]) {
+function injectUploadSummary(host: HTMLElement, entries: string[]) {
   if (entries.length === 0) return;
-  const editor = document.querySelector<HTMLDivElement>('[data-component="composer-editor"]');
+  const editor = host.querySelector<HTMLDivElement>('[data-component="composer-editor"]');
   if (!editor) return;
   editor.focus();
 

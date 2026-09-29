@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -124,6 +125,24 @@ export class ProjectImportUploadService {
       throw err;
     }
     return claimDir;
+  }
+
+  /** Assembles a claimed session into `destPath` for `use`; a 400 consumes the upload, any other failure keeps it for a retry. */
+  async consumeUpload<T>(ref: UploadSessionRef, destPath: string, use: () => Promise<T>): Promise<T> {
+    const claimDir = await this.claimSession(ref);
+    try {
+      await this.assembleUpload({ claimDir, destPath });
+      const result = await use();
+      await this.deleteClaim(claimDir).catch(() => {});
+      return result;
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === 400) {
+        await this.deleteClaim(claimDir).catch(() => {});
+      } else {
+        await this.releaseClaim(ref, claimDir);
+      }
+      throw err;
+    }
   }
 
   async releaseClaim(ref: UploadSessionRef, claimDir: string): Promise<void> {

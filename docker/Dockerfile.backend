@@ -16,16 +16,6 @@ RUN yarn install
 RUN yarn run build
 RUN yarn run db:generate
 
-FROM node:24.18.0-alpine AS agent-registry
-
-ARG PKG_PREFIX=packages/opsiforce/
-COPY ${PKG_PREFIX}agent-config/ /source/
-RUN mkdir -p /registry \
-    && cp /source/agents.json /source/agent-image-version.json /registry/ \
-    && if [ -f /source/private/agents.json ]; then \
-         mkdir -p /registry/private && cp /source/private/agents.json /registry/private/; \
-       fi
-
 FROM node:24.18.0-alpine AS server
 
 ARG PKG_PREFIX=packages/opsiforce/
@@ -40,8 +30,8 @@ COPY --from=builder /app/packages/opsiforce/backend/dist ./packages/opsiforce/ba
 COPY --from=builder /app/packages/opsiforce/backend/db ./packages/opsiforce/backend/db
 COPY --from=builder /app/packages/opsiforce/backend/package.json ./packages/opsiforce/backend/package.json
 COPY ${PKG_PREFIX}backend/platform-version.json ./packages/opsiforce/backend/platform-version.json
-COPY --from=agent-registry /registry/ ./packages/opsiforce/agent-config/
 COPY ${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json ./packages/opsiforce/frontend/opencode/packages/protocol/openapi.json
+COPY ${PKG_PREFIX}agent-config/ ./packages/opsiforce/agent-config/
 
 WORKDIR /app/packages/opsiforce/backend/
 

@@ -14,9 +14,7 @@ RUN yarn workspaces focus @opsiforce/backend
 
 COPY ${PKG_PREFIX}backend/ ./${PKG_PREFIX}backend/
 COPY ${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json ./${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json
-COPY ${PKG_PREFIX}agent-config/agent-image-version.json ./${PKG_PREFIX}agent-config/agent-image-version.json
-COPY ${PKG_PREFIX}agent-config/agents.json ./${PKG_PREFIX}agent-config/agents.json
-COPY ${PKG_PREFIX}agent-config/priv*/agents.json ./${PKG_PREFIX}agent-config/private/
+COPY ${PKG_PREFIX}agent-config/ ./${PKG_PREFIX}agent-config/
 
 WORKDIR /app/${PKG_PREFIX}backend
 

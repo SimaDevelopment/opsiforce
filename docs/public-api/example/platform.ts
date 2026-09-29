@@ -10,7 +10,7 @@ export interface PlatformOptions {
   readonly origin: string;
   readonly token: string;
   readonly onRetryAfter?: (delayMs: number) => void;
-  readonly organization?: string;
+  readonly tenant?: string;
 }
 
 export class PlatformError extends Error {
@@ -64,7 +64,7 @@ export class Platform {
     this.resolve(input.url);
     const headers = new Headers(input.headers);
     headers.set('authorization', `Bearer ${this.options.token}`);
-    if (this.options.organization) headers.set('x-tenant-name', this.options.organization);
+    if (this.options.tenant) headers.set('x-tenant-name', this.options.tenant);
     const request = new Request(input, { headers, redirect: 'error' });
     const safe = retryReads && (request.method === 'GET' || request.method === 'HEAD');
     for (let attempt = 1; ; attempt += 1) {

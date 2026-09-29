@@ -1,6 +1,6 @@
 ---
 name: animations
-description: Animations and motion design with motion/react. Load whenever animating any UI element — entrance/exit, hover/tap, drag, swipe-to-dismiss, scroll reveal, layout/shared transition (layoutId, LayoutGroup), page change, staggered list, tab indicator, parallax, scroll progress, modal with backdrop, imperative sequencing (useAnimate), motion values + transforms (rotate-on-drag, opacity-on-scroll), or prefers-reduced-motion.
+description: Animations and motion design with motion/react. Load whenever animating any UI element — entrance/exit, hover/tap, drag, swipe-to-dismiss, scroll reveal, layout/shared transition (layoutId, LayoutGroup), page change, staggered list, tab indicator, parallax, scroll progress, imperative sequencing (useAnimate), motion values + transforms (rotate-on-drag, opacity-on-scroll), or prefers-reduced-motion.
 ---
 
 # Animations (motion/react)
@@ -59,44 +59,9 @@ import {
 </motion.div>
 ```
 
-## Modal with backdrop
+## Modals
 
-```tsx
-function Modal({ isOpen, onClose, children }: {
-  isOpen: boolean
-  onClose: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-40"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
-          >
-            <div className="bg-card border rounded-xl p-6 max-w-md w-full shadow-lg">
-              {children}
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
-}
-```
-
-For native dialog semantics (focus trap, ARIA, ESC-to-close) prefer the `Dialog` from the `ui` skill — wrap its open/close transitions with motion only when you need a non-default entrance.
+A modal is the `ui` skill's `Dialog`, which brings the focus trap, ARIA and ESC-to-close. Add motion to its open/close only when you need a non-default entrance.
 
 ## Variants — staggered list
 
@@ -128,13 +93,14 @@ const item = {
 ## Animate list add / remove
 
 ```tsx
-<AnimatePresence>
+<AnimatePresence mode="popLayout">
   {items.map((item) => (
     <motion.div
       key={item.id}
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.2 }}
     >
       {item.title}
@@ -142,6 +108,8 @@ const item = {
   ))}
 </AnimatePresence>
 ```
+
+`layout` slides the remaining items into place with transforms, so no `height` is animated.
 
 ## Shared layout — tab indicator, expanding card
 

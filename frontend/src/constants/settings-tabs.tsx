@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { FolderKanban, Layers, SlidersHorizontal, Wallet } from '~/components/icons';
+import { FolderKanban, Gauge, Layers, SlidersHorizontal, Wallet } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { PRIVATE_TABS } from '~/private-loader';
 
@@ -41,6 +41,14 @@ export const SETTINGS_TABS: SettingsTab[] = [
     group: 'Configuration',
     icon: SlidersHorizontal,
     isPermitted: (has) => has(Permission.managePlatformDefaults) || has(Permission.manageTenantDefaults),
+  },
+  {
+    to: '/settings/limits',
+    label: 'Limits',
+    description: 'How much each organization may hold, set once for the platform and overridden per organization.',
+    group: 'Configuration',
+    icon: Gauge,
+    isPermitted: (has) => has(Permission.managePlatformLimits),
   },
   {
     to: '/settings/billing',

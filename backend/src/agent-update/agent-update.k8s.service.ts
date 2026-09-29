@@ -3,14 +3,20 @@ import { ConfigService } from '@nestjs/config';
 import * as k8s from '@kubernetes/client-node';
 import { loadKubeConfig } from '../common/k8s-client';
 import { resolvePreset, toK8sResources } from '../pod/pod-classes';
+import type { AgentUpdateMode } from './agent-update.types';
+import { AGENT_UPDATE_JOB_COMPLETION_GRACE_MS } from './agent-update.reaper';
 
-const JOB_COMPLETION_GRACE_MS = 60_000;
+
+const UPDATE_ID_LABEL = 'opsiforce.io/agent-update-id';
 
 export interface AgentUpdateJobOptions {
-  projectId: string;
+  updateId: string;
+  projectEnvironmentId: string;
   directory: string;
-  agentName: string;
+  /** The agent image package, which is also the ledger and prompt file name. */
+  packageName: string;
   targetVersion: string;
+  mode: AgentUpdateMode;
 }
 
 export interface AgentUpdateRunResult {
@@ -35,14 +41,14 @@ export class AgentUpdateK8sService {
   }
 
   async run(options: AgentUpdateJobOptions): Promise<AgentUpdateRunResult> {
-    const jobName = this.jobName(options.projectId);
+    const jobName = this.jobName(options.projectEnvironmentId);
     await this.batchApi.createNamespacedJob({
       namespace: this.namespace,
       body: this.buildJob(jobName, options),
     });
 
     try {
-      const succeeded = await this.waitForCompletion(jobName, this.jobTimeoutMs + JOB_COMPLETION_GRACE_MS);
+      const succeeded = await this.waitForCompletion(jobName, this.jobTimeoutMs + AGENT_UPDATE_JOB_COMPLETION_GRACE_MS);
       const logs = await this.readLogs(jobName);
       return { logs, succeeded };
     } finally {
@@ -59,7 +65,8 @@ export class AgentUpdateK8sService {
         namespace: this.namespace,
         labels: {
           app: 'opsiforce-agent-update',
-          'opsiforce.io/project-id': options.projectId,
+          'opsiforce.io/environment-id': options.projectEnvironmentId,
+          [UPDATE_ID_LABEL]: options.updateId,
         },
       },
       spec: {
@@ -70,7 +77,8 @@ export class AgentUpdateK8sService {
           metadata: {
             labels: {
               app: 'opsiforce-agent-update',
-              'opsiforce.io/project-id': options.projectId,
+              'opsiforce.io/environment-id': options.projectEnvironmentId,
+              [UPDATE_ID_LABEL]: options.updateId,
             },
           },
           spec: {
@@ -84,9 +92,9 @@ export class AgentUpdateK8sService {
                 name: 'migrate',
                 image: this.configService.getOrThrow<string>('agentContainerImage'),
                 imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
-                command: ['agent-workspace-migrate'],
+                command: ['agent-workspace-migrate', ...migrateArgs(options.mode)],
                 env: [
-                  { name: 'AGENT_NAME', value: options.agentName },
+                  { name: 'AGENT_NAME', value: options.packageName },
                   { name: 'TARGET_VERSION', value: options.targetVersion },
                   { name: 'WORKSPACE', value: '/workspace' },
                 ],
@@ -168,8 +176,16 @@ export class AgentUpdateK8sService {
       });
   }
 
-  private jobName(projectId: string): string {
-    return `opsiforce-agent-update-${projectId.slice(0, 8)}-${Date.now().toString(36)}`;
+  async isJobRunning(updateId: string): Promise<boolean> {
+    const jobs = await this.batchApi.listNamespacedJob({
+      namespace: this.namespace,
+      labelSelector: `${UPDATE_ID_LABEL}=${updateId}`,
+    });
+    return jobs.items.some((job) => (job.status?.active ?? 0) > 0);
+  }
+
+  private jobName(projectEnvironmentId: string): string {
+    return `opsiforce-agent-update-${projectEnvironmentId.slice(0, 8)}-${Date.now().toString(36)}`;
   }
 
   private imagePullSecrets(): Array<{ name: string }> {
@@ -187,4 +203,8 @@ export class AgentUpdateK8sService {
   private affinity(): k8s.V1Affinity {
     return this.configService.get<k8s.V1Affinity>('agentAffinity', {});
   }
+}
+
+function migrateArgs(mode: AgentUpdateMode): string[] {
+  return mode === 'full' ? ['--reconcile-content', '--migrate'] : ['--reconcile-content'];
 }

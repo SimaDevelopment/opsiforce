@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { LimitService } from '../../src/limit/limit.service';
 import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectStatus } from '../../src/project/project.types';
@@ -13,15 +14,16 @@ import {
   addServiceAccount,
   createAgent,
   createFolder,
-  createOrganization,
+  createTenant,
   createProject,
   createSharedWorkspace,
   disablePrivateWorkspaces,
+  disableProject,
   placementOf,
   privateWorkspaceCountOf,
   privateWorkspaceIdOf,
   type MemberFixture,
-  type OrganizationFixture,
+  type TenantFixture,
 } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
 
@@ -59,6 +61,10 @@ describe('projects write routes', () => {
     return app.inject({ method: 'DELETE', url: `/api/v1/projects/${projectId}`, headers: caller.headers });
   }
 
+  function restart(caller: CallerHeaders, projectId: string): Promise<LightMyRequestResponse> {
+    return app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/restart`, headers: caller.headers });
+  }
+
   async function createdProjectId(caller: CallerHeaders, body: Record<string, string>): Promise<string> {
     const res = await post(caller, { title: 'Placed', agentId, ...body });
     expect(res.statusCode, res.body).toBe(201);
@@ -80,7 +86,7 @@ describe('projects write routes', () => {
     let member: MemberFixture;
 
     beforeAll(async () => {
-      member = await addMember(app, await createOrganization(app));
+      member = await addMember(app, await createTenant(app));
     });
 
     it('refuses a body without a title or an Agent', async () => {
@@ -137,15 +143,32 @@ describe('projects write routes', () => {
     });
   });
 
+  describe('an Organization at its project limit', () => {
+    it('refuses the next Project with limit-reached', async () => {
+      const tenant = await createTenant(app);
+      await new LimitService().setTenantLimit(tenant.tenantId, 'projects', 1);
+      const member = await addMember(app, tenant);
+      await createdProjectId(member, {});
+
+      const res = await post(member, { title: 'Over the limit', agentId });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({
+        type: 'urn:opsiforce:error:limit-reached',
+        detail: 'This tenant has reached its limit of 1 projects.',
+      });
+    });
+  });
+
   describe('references it cannot resolve', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let member: MemberFixture;
     let workspaceId: string;
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      member = await addMember(app, organization);
-      workspaceId = await createSharedWorkspace(app, organization, member);
+      tenant = await createTenant(app);
+      member = await addMember(app, tenant);
+      workspaceId = await createSharedWorkspace(app, tenant, member);
     });
 
     it('answers 422 for an unknown Agent id', async () => {
@@ -160,7 +183,7 @@ describe('projects write routes', () => {
     });
 
     it('answers 422 for a workspace in another Organization', async () => {
-      const other = await createOrganization(app);
+      const other = await createTenant(app);
       const otherMember = await addMember(app, other);
       const foreign = await createSharedWorkspace(app, other, otherMember);
 
@@ -171,7 +194,7 @@ describe('projects write routes', () => {
     });
 
     it('answers 422 for a workspace the caller is not a member of', async () => {
-      const outsider = await addMember(app, organization);
+      const outsider = await addMember(app, tenant);
 
       const res = await post(outsider, { title: 'Not mine', agentId, workspaceId });
 
@@ -180,8 +203,8 @@ describe('projects write routes', () => {
     });
 
     it('answers 422 for a folder that lives in another workspace', async () => {
-      const otherWorkspaceId = await createSharedWorkspace(app, organization, member);
-      const folder = await createFolder(app, organization, member, otherWorkspaceId);
+      const otherWorkspaceId = await createSharedWorkspace(app, tenant, member);
+      const folder = await createFolder(app, tenant, member, otherWorkspaceId);
 
       const res = await post(member, { title: 'Misfiled', agentId, workspaceId, folderId: folder.id });
 
@@ -209,7 +232,7 @@ describe('projects write routes', () => {
     });
 
     it('names the folder too when its workspace is one the caller cannot reach', async () => {
-      const other = await createOrganization(app);
+      const other = await createTenant(app);
       const otherMember = await addMember(app, other);
       const foreign = await createSharedWorkspace(app, other, otherMember);
       const folder = await createFolder(app, other, otherMember, foreign);
@@ -223,19 +246,19 @@ describe('projects write routes', () => {
 
   describe('where a Project lands', () => {
     it('puts a member Project in their Personal workspace while private workspaces are on', async () => {
-      const organization = await createOrganization(app);
-      const member = await addMember(app, organization);
+      const tenant = await createTenant(app);
+      const member = await addMember(app, tenant);
 
       const projectId = await createdProjectId(member, {});
 
       const placement = await placementOf(projectId);
       expect(placement).toMatchObject({ workspaceType: 'private', workspaceOwnerId: member.userId, folderId: null });
-      expect(placement.workspaceId).toBe(await privateWorkspaceIdOf(app, organization, member));
+      expect(placement.workspaceId).toBe(await privateWorkspaceIdOf(app, tenant, member));
     });
 
     it('adds no workspace of its own to a creation it rejects', async () => {
-      const organization = await createOrganization(app);
-      const member = await addMember(app, organization, [Perms.usePublicApi, Perms.manageWorkspaces]);
+      const tenant = await createTenant(app);
+      const member = await addMember(app, tenant, [Perms.usePublicApi, Perms.manageWorkspaces]);
       const before = await privateWorkspaceCountOf(member.keycloakId);
 
       const res = await post(member, { title: 'Rejected', agentId: randomUUID() });
@@ -245,9 +268,9 @@ describe('projects write routes', () => {
     });
 
     it('puts a member Project in Public once the Organization turns private workspaces off', async () => {
-      const organization = await createOrganization(app);
-      await disablePrivateWorkspaces(organization);
-      const member = await addMember(app, organization);
+      const tenant = await createTenant(app);
+      await disablePrivateWorkspaces(tenant);
+      const member = await addMember(app, tenant);
 
       const projectId = await createdProjectId(member, {});
 
@@ -255,8 +278,8 @@ describe('projects write routes', () => {
     });
 
     it('puts a service account Project in Public without can_manage_workspaces, and never gives it a Personal workspace', async () => {
-      const organization = await createOrganization(app);
-      const serviceAccount = addServiceAccount(organization);
+      const tenant = await createTenant(app);
+      const serviceAccount = addServiceAccount(tenant);
 
       const projectId = await createdProjectId(serviceAccount, {});
 
@@ -265,9 +288,9 @@ describe('projects write routes', () => {
     });
 
     it('lets a service account into Public without the permission when private workspaces are off', async () => {
-      const organization = await createOrganization(app);
-      await disablePrivateWorkspaces(organization);
-      const serviceAccount = addServiceAccount(organization);
+      const tenant = await createTenant(app);
+      await disablePrivateWorkspaces(tenant);
+      const serviceAccount = addServiceAccount(tenant);
 
       const projectId = await createdProjectId(serviceAccount, {});
 
@@ -275,9 +298,9 @@ describe('projects write routes', () => {
     });
 
     it('honours an explicit workspace the caller belongs to, without any workspace permission', async () => {
-      const organization = await createOrganization(app);
-      const member = await addMember(app, organization);
-      const workspaceId = await createSharedWorkspace(app, organization, member);
+      const tenant = await createTenant(app);
+      const member = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, member);
 
       const projectId = await createdProjectId(member, { workspaceId });
 
@@ -285,10 +308,10 @@ describe('projects write routes', () => {
     });
 
     it('honours an explicit folder inside that workspace', async () => {
-      const organization = await createOrganization(app);
-      const member = await addMember(app, organization);
-      const workspaceId = await createSharedWorkspace(app, organization, member);
-      const folder = await createFolder(app, organization, member, workspaceId);
+      const tenant = await createTenant(app);
+      const member = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, member);
+      const folder = await createFolder(app, tenant, member, workspaceId);
 
       const projectId = await createdProjectId(member, { workspaceId, folderId: folder.id });
 
@@ -302,9 +325,9 @@ describe('projects write routes', () => {
     });
 
     it('honours a Personal workspace named explicitly', async () => {
-      const organization = await createOrganization(app);
-      const member = await addMember(app, organization);
-      const privateWorkspaceId = await privateWorkspaceIdOf(app, organization, member);
+      const tenant = await createTenant(app);
+      const member = await addMember(app, tenant);
+      const privateWorkspaceId = await privateWorkspaceIdOf(app, tenant, member);
 
       const projectId = await createdProjectId(member, { workspaceId: privateWorkspaceId });
 
@@ -313,14 +336,14 @@ describe('projects write routes', () => {
   });
 
   describe('the answer to a creation', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let member: MemberFixture;
     let body: CreatedProject;
     let projectId: string;
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      member = await addMember(app, organization);
+      tenant = await createTenant(app);
+      member = await addMember(app, tenant);
       const res = await post(member, { title: 'Fresh', agentId, description: 'A new one' });
       expect(res.statusCode).toBe(201);
       body = res.json<CreatedProject>();
@@ -365,17 +388,76 @@ describe('projects write routes', () => {
     });
   });
 
+  describe('restarting a Project', () => {
+    let tenant: TenantFixture;
+    let restarter: MemberFixture;
+
+    beforeAll(async () => {
+      tenant = await createTenant(app);
+      restarter = await addMember(app, tenant, [Perms.usePublicApi, Perms.restartProject]);
+    });
+
+    it('answers 204 and recreates the Development pod on the same workspace', async () => {
+      const projectId = await createProject(app, tenant, { title: 'Restarted' });
+      const podName = pods.assignedPodName(projectId);
+      const deletesBefore = pods.callsTo('deletePod').filter((call) => call.args.podName === podName).length;
+
+      const res = await restart(restarter, projectId);
+
+      expect(res.statusCode, res.body).toBe(204);
+      expect(res.body).toBe('');
+      expect(pods.callsTo('deletePod').filter((call) => call.args.podName === podName).length).toBe(
+        deletesBefore + 1
+      );
+    });
+
+    it('refuses a visible Project to a member without can_restart_project', async () => {
+      const projectId = await createProject(app, tenant, { title: 'Kept running' });
+      const member = await addMember(app, tenant);
+
+      const res = await restart(member, projectId);
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({
+        type: 'urn:opsiforce:error:permission-denied',
+        permission: Perms.restartProject,
+      });
+    });
+
+    it('reports a disabled Project as locked', async () => {
+      const projectId = await createProject(app, tenant, { title: 'Disabled' });
+      await disableProject(projectId);
+
+      const res = await restart(restarter, projectId);
+
+      expect(res.statusCode).toBe(423);
+      expect(res.json().type).toBe('urn:opsiforce:error:environment-disabled');
+    });
+
+    it('answers 404 before the permission for a Project the caller cannot see', async () => {
+      const owner = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, owner);
+      const hiddenId = await createProject(app, tenant, { title: 'Hidden', workspaceId });
+      const outsider = await addMember(app, tenant);
+
+      const res = await restart(outsider, hiddenId);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().type).toBe('urn:opsiforce:error:project-not-found');
+    });
+  });
+
   describe('deleting a Project', () => {
-    let organization: OrganizationFixture;
+    let tenant: TenantFixture;
     let deleter: MemberFixture;
 
     beforeAll(async () => {
-      organization = await createOrganization(app);
-      deleter = await addMember(app, organization, [Perms.usePublicApi, Perms.deleteProject]);
+      tenant = await createTenant(app);
+      deleter = await addMember(app, tenant, [Perms.usePublicApi, Perms.deleteProject]);
     });
 
     it('answers 204 and then 404 on a repeat', async () => {
-      const projectId = await createProject(app, organization, { title: 'Doomed' });
+      const projectId = await createProject(app, tenant, { title: 'Doomed' });
 
       const first = await remove(deleter, projectId);
       expect(first.statusCode).toBe(204);
@@ -398,8 +480,8 @@ describe('projects write routes', () => {
     });
 
     it('refuses a visible Project to a member without can_delete_project', async () => {
-      const projectId = await createProject(app, organization, { title: 'Kept' });
-      const member = await addMember(app, organization);
+      const projectId = await createProject(app, tenant, { title: 'Kept' });
+      const member = await addMember(app, tenant);
 
       const res = await remove(member, projectId);
 
@@ -412,10 +494,10 @@ describe('projects write routes', () => {
     });
 
     it('answers 404 before the permission for a Project the caller cannot see', async () => {
-      const owner = await addMember(app, organization);
-      const workspaceId = await createSharedWorkspace(app, organization, owner);
-      const hiddenId = await createProject(app, organization, { title: 'Hidden', workspaceId });
-      const outsider = await addMember(app, organization);
+      const owner = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, owner);
+      const hiddenId = await createProject(app, tenant, { title: 'Hidden', workspaceId });
+      const outsider = await addMember(app, tenant);
 
       const res = await remove(outsider, hiddenId);
 

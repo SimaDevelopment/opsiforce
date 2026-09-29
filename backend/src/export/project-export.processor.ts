@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectTransferJobs } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
+import { runtimeAgentSlug } from '../delivery/runtime-agent-slug';
 import { GitService } from '../git/git.service';
 import { ProjectService } from '../project/project.service';
 import { ProjectEventsService } from '../project/project-events.service';
@@ -17,10 +18,12 @@ import { ProjectFilesService, type ProjectFileEntry } from '../project/project-f
 import { ProjectExportService } from './project-export.service';
 import {
   EXPORT_FORMAT_VERSION,
+  PROJECT_EXPORT_KIND,
   PROJECT_EXPORT_QUEUE,
   ProjectExportJobData,
   ProjectExportStatus,
   type ExportManifest,
+  type ExportManifestAgent,
 } from './project-export.types';
 
 interface ArchiveEntry {
@@ -73,7 +76,15 @@ export class ProjectExportProcessor extends WorkerHost {
 
     try {
       const project = await this.projectService.findOneById(projectId);
-      const agentName = await this.agentService.resolveName(project.agentId).catch(() => null);
+      const identity = await this.agentService.resolveIdentity(project.agentId).catch(() => null);
+      const agent: ExportManifestAgent | null = identity
+        ? {
+            slug: runtimeAgentSlug({ importedAgent: project.importedAgent, agentName: identity.name }),
+            displayName: identity.displayName,
+            origin: identity.origin,
+            package: identity.package,
+          }
+        : null;
       const sourcePath = path.join(this.storageMountPath, project.directory);
 
       await this.setStatus(exportJobId, projectId, ProjectExportStatus.Committing, { startedAt: new Date() });
@@ -93,9 +104,11 @@ export class ProjectExportProcessor extends WorkerHost {
 
       const schedules = await this.projectService.getSchedulesForExport(projectId);
       const manifest: ExportManifest = {
+        kind: PROJECT_EXPORT_KIND,
         title: project.title,
         description: project.description,
-        agentName,
+        agentName: agent?.slug ?? null,
+        agent,
         settings: {
           timeoutIdle: project.timeoutIdle,
           appTimeoutIdle: project.appTimeoutIdle,
@@ -295,5 +308,5 @@ function userFacingExportError(message: string): string {
   if (/not a git repository|does not exist|ENOENT/i.test(message)) {
     return "Couldn't read the project's Development workspace. Please try again.";
   }
-  return 'Export failed unexpectedly. Please try again, or contact support if it persists.';
+  return 'Export failed unexpectedly. Please try again.';
 }

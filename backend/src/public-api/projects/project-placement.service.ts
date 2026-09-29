@@ -36,7 +36,7 @@ export class ProjectPlacementService {
 
   async resolve(caller: Caller, body: CreateProject): Promise<ProjectPlacement> {
     const access: WorkspaceAccess = {
-      tenantId: caller.organization.id,
+      tenantId: caller.tenant.id,
       userId: caller.user.platformId,
       canManageWorkspaces: caller.permissions.has(Perms.manageWorkspaces),
     };
@@ -45,7 +45,7 @@ export class ProjectPlacementService {
     const named = body.workspaceId;
     const errors: ValidationErrorItem[] = [];
 
-    if (!(await this.repository.agentExists(body.agentId))) {
+    if (!(await this.repository.agentIsLive(body.agentId, access.tenantId, access.userId, body.kind ?? null))) {
       errors.push(unknownReference('agentId', body.agentId));
     }
 

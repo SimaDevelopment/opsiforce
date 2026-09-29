@@ -3,6 +3,7 @@ import { BaseExceptionFilter } from '@nestjs/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { MissingPermissionException } from '../../permission/missing-permission.exception';
 import { getUserIdHeader } from '../../permission/permission.utils';
+import { LimitReachedException } from '../../limit/limit-reached.exception';
 import { TenantAccessDeniedException } from '../../tenant/tenant-access-denied.exception';
 import { ValidationIssuesSignal } from '../validation/validation-issues.signal';
 import { isPublicApiPath } from '../public-api.paths';
@@ -67,9 +68,10 @@ export class ErrorDetailsFilter implements ExceptionFilter {
     if (exception instanceof PublicApiError) return exception;
     if (exception instanceof ValidationIssuesSignal) return Errors.validationError(exception.toErrorItems());
     if (exception instanceof TenantAccessDeniedException) {
-      return getUserIdHeader(request) ? Errors.organizationForbidden() : Errors.unauthenticated();
+      return getUserIdHeader(request) ? Errors.tenantForbidden() : Errors.unauthenticated();
     }
     if (exception instanceof MissingPermissionException) return Errors.permissionDenied(exception.permission);
+    if (exception instanceof LimitReachedException) return Errors.limitReached(exception.key, exception.limit);
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       if (isFastifyError(exception.cause) && JSON_BODY_ERROR_CODES.has(exception.cause.code)) {

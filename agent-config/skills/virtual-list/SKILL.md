@@ -1,11 +1,11 @@
 ---
 name: virtual-list
-description: Render large lists efficiently with @tanstack/react-virtual (pre-installed). Use when displaying 100+ items in a list, table, or grid — virtualizes rendering so only visible items are in the DOM.
+description: Render large lists efficiently with @tanstack/react-virtual. Use when displaying 100+ items in a list, table, or grid — virtualizes rendering so only visible items are in the DOM.
 ---
 
 # TanStack Virtual — Virtualized Lists
 
-`@tanstack/react-virtual` is pre-installed. No need to `yarn add`.
+The starter does not ship it: `yarn add @tanstack/react-virtual` first.
 
 ## Virtual list (most common)
 

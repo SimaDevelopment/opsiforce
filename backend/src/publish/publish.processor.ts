@@ -21,6 +21,8 @@ import { PodStartupFailedError } from '../pod/pod.service';
 import { writeJsonAtomic } from '../common/fs';
 import { clearEnvJsonBackup, writeEnvJsonBackup } from '../common/env-file';
 import { ExternalServicePublishService } from '../external-services';
+import { DeliveryService } from '../delivery/delivery.service';
+import { WorkspaceWriter } from '../delivery/workspace-writer';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
 const APP_READY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -41,7 +43,9 @@ export class PublishProcessor extends WorkerHost {
     private readonly scheduleService: ScheduleService,
     private readonly appReadiness: AppReadinessService,
     private readonly projectEvents: ProjectEventsService,
-    private readonly externalServicePublish: ExternalServicePublishService
+    private readonly externalServicePublish: ExternalServicePublishService,
+    private readonly deliveryService: DeliveryService,
+    private readonly workspaceWriter: WorkspaceWriter
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -91,6 +95,10 @@ export class PublishProcessor extends WorkerHost {
         await this.syncIncremental(devDir, prodDir, sha);
         previousEnvVars = await this.publishService.readEnvFile(prodEnv.directory);
         await writeEnvJsonBackup(this.storageMountPath, prodEnv.directory, previousEnvVars);
+      }
+
+      if (!(await this.workspaceWriter.hasOpencodeDir(prodEnv.directory))) {
+        await this.deliveryService.copyToNewEnvironment(devEnv.id, data.projectEnvironmentId);
       }
 
       await this.writeEnvFile(prodEnv.directory, data.variables, data.isFirstPublish);
@@ -294,9 +302,9 @@ function userFacingPublishError(err: unknown, phase: PublishStatus): string {
       return 'Not enough capacity to start the app right now. Please try again in a few minutes.';
     }
     if (err.reason === 'ImagePullBackOff') {
-      return "The app image couldn't be loaded. Please try again, or contact support if this keeps happening.";
+      return "The app image couldn't be loaded. Please try again in a few minutes.";
     }
-    return 'The app failed to start. Please try again, or contact support if this keeps happening.';
+    return 'The app failed to start. Please try again.';
   }
 
   const message = err instanceof Error ? err.message : String(err);
@@ -313,8 +321,5 @@ function userFacingPublishError(err: unknown, phase: PublishStatus): string {
     return 'This environment is missing its LLM credentials. Please reconfigure it and try again.';
   }
 
-  return (
-    PHASE_FAILURE_MESSAGE[phase] ??
-    'Publishing failed unexpectedly. Please try again, or contact support if it persists.'
-  );
+  return PHASE_FAILURE_MESSAGE[phase] ?? 'Publishing failed unexpectedly. Please try again.';
 }

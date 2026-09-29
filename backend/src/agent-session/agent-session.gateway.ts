@@ -56,10 +56,7 @@ export class AgentSessionGateway {
   ): Promise<EnsureEnvironmentResult> {
     let latest = ensured;
     while (latest.state === 'starting' && !deadline.expired && !deadline.cancelled) {
-      await deadline.run(
-        () => setTimeout(Math.min(this.wakePollMs, deadline.remainingMs), undefined, { signal: deadline.signal() }),
-        starting
-      );
+      await deadline.run(() => setTimeout(Math.min(this.wakePollMs, deadline.remainingMs)), starting);
       latest = await deadline.run(() => this.ensureById(environmentId), starting);
     }
     return latest;
@@ -84,7 +81,7 @@ export class AgentSessionGateway {
     const env = ensured.env;
     if (ensured.state !== 'ready' || !env.isDefault) return ensured;
 
-    const reload = await this.agentUpdateService.applyPendingReloadForProject(env.projectId).catch((error: Error) => {
+    const reload = await this.agentUpdateService.applyPendingReloadForEnvironment(env.id).catch((error: Error) => {
       this.logger.warn(`Failed to apply pending agent reload for project ${env.projectId}: ${error.message}`);
       return null;
     });

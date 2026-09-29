@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
-import { projectAgentUpdates, projectEnvironments } from '../db/schema';
+import { projectAgentUpdates, projectEnvironments, projects } from '../db/schema';
+import { DEFAULT_AGENT_NAME } from '../src/agent/agent.types';
 import { AgentUpdateService } from '../src/agent-update/agent-update.service';
 import { AgentUpdateStatus } from '../src/agent-update/agent-update.types';
 import { AgentStatusService } from '../src/project/agent-status.service';
@@ -149,7 +150,7 @@ describe('connecting to a project environment', () => {
       release = resolve;
     });
     const updates = harness.moduleRef.get(AgentUpdateService);
-    const spy = vi.spyOn(updates, 'applyPendingReloadForProject').mockImplementationOnce(async () => {
+    const spy = vi.spyOn(updates, 'applyPendingReloadForEnvironment').mockImplementationOnce(async () => {
       await pending;
       return null;
     });
@@ -490,6 +491,7 @@ async function insertPendingReload(
   await db.insert(projectAgentUpdates).values({
     id,
     projectId: env.projectId,
+    projectEnvironmentId: env.id,
     agentId: env.agentId,
     targetVersion: '9.9.9',
     status: AgentUpdateStatus.ReloadPending,
@@ -556,10 +558,50 @@ describe('the internal active probes', () => {
     pod.setActive([session.id]);
     await insertPendingReload(env, { requiresPodRecreate: true });
 
-    const outcome = await harness.moduleRef.get(AgentUpdateService).applyPendingReloadForProject(env.projectId);
+    const outcome = await harness.moduleRef.get(AgentUpdateService).applyPendingReloadForEnvironment(env.id);
     pod.setActive([]);
 
     expect(outcome).toMatchObject({ status: 'pending', reloadStatus: 'pending:active-session' });
+  });
+});
+
+describe('the agent the session runs under', () => {
+  it('creates the primary session on the Project’s agent', async () => {
+    const env = await createRunningProject();
+    const before = pod.requestsTo('session.create').length;
+
+    await harness.agentConnections.connect(env);
+
+    const created = pod.requestsTo('session.create').slice(before);
+    expect(created).toHaveLength(1);
+    expect((created[0].body as { agent?: string }).agent).toBe(DEFAULT_AGENT_NAME);
+  });
+
+  it('re-points an adopted session that carries no agent, and leaves a pinned one alone', async () => {
+    const env = await createRunningProject();
+    const orphan = pod.addSession({ agent: null });
+    const switched = callsSince('session.switchAgent');
+
+    await harness.agentConnections.connect(env);
+
+    expect(switched()).toBe(1);
+    expect(await rememberedSessionOf(env.id)).toBe(orphan.id);
+
+    await harness.agentConnections.connect(await environmentOf(env.id));
+    expect(switched()).toBe(1);
+  });
+
+  it('runs an imported Project under the slug its export carried', async () => {
+    const env = await createRunningProject();
+    await db.update(projects).set({ importedAgent: 'acme-support' }).where(eq(projects.id, env.projectId));
+    pod.addSession({ agent: null });
+    const before = pod.requestsTo('session.switchAgent').length;
+
+    await harness.agentConnections.connect(await environmentOf(env.id));
+
+    const switched = pod.requestsTo('session.switchAgent').slice(before);
+    expect(switched).toHaveLength(1);
+    expect(switched[0].body).toEqual({ agent: 'acme-support' });
   });
 });
 
