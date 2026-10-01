@@ -7,10 +7,19 @@ import { tenantSettings, tenants } from '../../db/schema';
 import { BifrostService } from '../bifrost/bifrost.service';
 import { DefaultsService } from '../defaults/defaults.service';
 import { EnvironmentService } from '../environment/environment.service';
+import { PLATFORM_PROVIDER_PREFIX, isReservedTenantName } from '../model-provider/provider-names';
 import type { TenantContext } from './tenant.decorator';
 import type { TenantConfigResponse, UpdateTenantConfigDto } from './tenant.types';
 
 export const OPSIFORCE_TENANT_GROUP_PREFIX = 'role:opsiforce_tenant_name_';
+
+export class ReservedTenantNameException extends BadRequestException {
+  constructor() {
+    super(
+      `An organization can’t be named ${PLATFORM_PROVIDER_PREFIX} or start with ${PLATFORM_PROVIDER_PREFIX}-: the name is reserved for the platform’s own model providers`
+    );
+  }
+}
 
 @Injectable()
 export class TenantService {
@@ -65,6 +74,7 @@ export class TenantService {
       if (existing.bifrostTenantId) return existing;
       return this.ensureBifrostCustomer(existing);
     }
+    if (isReservedTenantName(name)) throw new ReservedTenantNameException();
 
     const created = await db.transaction(async (tx) => {
       const [inserted] = await tx
@@ -90,7 +100,15 @@ export class TenantService {
   }
 
   async getOrCreateTenants(names: string[]) {
-    return Promise.all(names.map((name) => this.getOrCreateTenant(name)));
+    const resolved = await Promise.all(
+      names.map((name) =>
+        this.getOrCreateTenant(name).catch((err: unknown) => {
+          if (err instanceof ReservedTenantNameException) return null;
+          throw err;
+        })
+      )
+    );
+    return resolved.filter((tenant) => tenant !== null);
   }
 
   async getTenantById(id: string) {

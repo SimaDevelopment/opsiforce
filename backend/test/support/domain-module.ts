@@ -49,6 +49,8 @@ import { PROJECT_IMPORT_QUEUE } from '../../src/project/project-import.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../../src/project-environment/environment-variables.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
+import { PROJECT_POOL_QUEUE, PROJECT_POOL_TEARDOWN_QUEUE } from '../../src/pool/project-pool.types';
+import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { PodCacheService } from '../../src/pod/pod.cache.service';
 import { PodService } from '../../src/pod/pod.service';
 import { ProxyService } from '../../src/proxy/proxy.service';
@@ -99,6 +101,7 @@ const REAL_SERVICES = [
   ForwardedIdentityService,
   GatewayKeyService,
   GitService,
+  ModelProvidersService,
   PermissionGuard,
   PodOpencodeClient,
   PodReloadClient,
@@ -136,6 +139,8 @@ const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: getQueueToken(PROJECT_IMPORT_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(AGENT_WORKSPACE_UPDATE_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(SKILL_DELIVERY_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(PROJECT_POOL_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(PROJECT_POOL_TEARDOWN_QUEUE), useClass: FakeQueue },
 ];
 
 export const DOMAIN_TEST_PROVIDERS: Provider[] = [...REAL_SERVICES, ...FAKED_SERVICES];

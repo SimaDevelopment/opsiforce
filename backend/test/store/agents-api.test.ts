@@ -1,3 +1,4 @@
+import { defaultProfileModel } from '../../src/agent/agent-config';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -131,7 +132,7 @@ describe('creating a custom agent', () => {
     expect(created.settings).toEqual({ defaultEnvironmentId: productionId, platformApi: false });
 
     const development = created.profiles.find((profile) => profile.environmentId === developmentId);
-    expect(development).toMatchObject({ promptBody: '', model: 'openai/gpt-5.6-sol', variant: 'high' });
+    expect(development).toMatchObject({ promptBody: '', ...defaultProfileModel() });
     expect(development?.skills?.map((skill) => skill.name)).toEqual(['platform']);
 
     const production = created.profiles.find((profile) => profile.environmentId === productionId);

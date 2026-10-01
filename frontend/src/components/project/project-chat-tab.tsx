@@ -1,8 +1,9 @@
-import { Show, createSignal, onCleanup, onMount, untrack, type Component } from 'solid-js';
+import { Show, createMemo, createSignal, onCleanup, onMount, untrack, type Component } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { BaseRouterProps } from '@solidjs/router';
 import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection } from '@opencode-ai/app';
 import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
+import { BASE_FORMAT_IDS, useReachableBaseFormats } from '~/api/model-providers';
 import { useSyncProjectTitle } from '~/api/projects';
 import { FileUpload } from '~/components/file-upload';
 import { DictationButton } from '~/components/dictation-button';
@@ -53,6 +54,11 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
   const platform = createProxyPlatform(url);
   const router = untrack(() => props.router);
   const onTitle = (title: string) => syncTitle(props.projectId, title, props.currentTitle);
+  const reachableFormats = useReachableBaseFormats();
+  const unreachableProviders = createMemo<ReadonlySet<string>>(() => {
+    const reachable = reachableFormats.data;
+    return new Set(reachable ? BASE_FORMAT_IDS.filter((format) => !reachable.includes(format)) : []);
+  });
 
   let embedHost!: HTMLDivElement;
   const host = () => embedHost;
@@ -102,7 +108,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         <PlatformProvider value={platform}>
           <AppBaseProviders>
             <AppInterface defaultServer={serverKey} servers={[server]} router={router}>
-              <OpencodeOverrides server={server} />
+              <OpencodeOverrides server={server} hiddenProviders={unreachableProviders} />
               <OpenCodeEventBridge server={server} onIdle={() => props.onAgentIdle()} onTitle={onTitle} />
             </AppInterface>
           </AppBaseProviders>

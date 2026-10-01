@@ -1,0 +1,182 @@
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { db } from '../../db';
+import { modelProviders } from '../../db/schema';
+import { catalogModelIdsOf, type ModelCatalog } from '../../src/agent/agent-models';
+import { BifrostService } from '../../src/bifrost/bifrost.service';
+import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
+import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
+import { Perms } from '../../src/permission/permission.constants';
+import { startFakeBifrost, type FakeBifrost, type FakeProviderKey } from '../support/fake-bifrost';
+import { addMember, createTenant, type MemberFixture } from '../support/project-fixtures';
+import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { startFakeVendorApi, type FakeVendorApi } from './support/fake-vendor-api';
+
+const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
+const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
+const NEXT_CATALOG: ModelCatalog = {
+  openai: { models: { 'gpt-7': { experimental: { modes: { fast: {} } } }, 'gpt-6-astra': {} } },
+  anthropic: { models: { 'claude-opus-6': {} } },
+};
+const NEXT_OPENAI_IDS = ['gpt-7', 'gpt-7-fast', 'gpt-6-astra'];
+
+function staleKey(name: string, models: string[]): FakeProviderKey {
+  return { id: `${name}-id`, name, value: { value: 'sk-helm', type: 'plain_text' }, models, weight: 1, enabled: true };
+}
+
+function helmPlaceholder(models: string[]): FakeProviderKey {
+  return {
+    id: 'placeholder',
+    name: 'placeholder',
+    value: { value: '', type: 'plain_text' },
+    models,
+    weight: 1,
+    enabled: true,
+  };
+}
+
+describe('a managed model provider serves the models the catalog lists', () => {
+  let bifrost: FakeBifrost;
+  let vendor: FakeVendorApi;
+  let harness: PublicApiTestApp;
+  let app: NestFastifyApplication;
+  let admin: MemberFixture;
+  let tenantName: string;
+
+  beforeAll(async () => {
+    bifrost = await startFakeBifrost();
+    vendor = await startFakeVendorApi();
+    harness = await createPublicApiTestApp(
+      {
+        ...bifrost.env,
+        MODEL_PROVIDER_OFFICIAL_API_URLS: JSON.stringify({ openai: vendor.baseUrl, anthropic: vendor.baseUrl }),
+      },
+      [ModelProvidersModule],
+      [BifrostService]
+    );
+    app = harness.app;
+    const tenant = await createTenant(app);
+    tenantName = tenant.name;
+    admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+  });
+
+  afterEach(() => {
+    bifrost.becomeReachable();
+    bifrost.setProviders(HELM_PROVIDERS);
+  });
+
+  afterAll(async () => {
+    await harness.close();
+    await bifrost.close();
+    await vendor.close();
+  });
+
+  function reconcile(catalog: ModelCatalog): Promise<void> {
+    return app.get(ModelProviderKeyModelsService).reconcileKeyModels(catalog);
+  }
+
+  function keysOf(bifrostName: string): FakeProviderKey[] {
+    const provider = bifrost.providerNamed(bifrostName);
+    if (!provider) throw new Error(`The fake Bifrost has no provider ${bifrostName}`);
+    return provider.keys;
+  }
+
+  function keyWrites() {
+    return bifrost.writes.filter(
+      (write) => write.method === 'PUT' && /^\/api\/providers\/[^/]+\/keys\//.test(write.path)
+    );
+  }
+
+  async function createCustomProvider(name: string): Promise<string> {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/model-providers',
+      headers: admin.headers,
+      payload: { baseFormat: 'openai', kind: 'official-api-key', name, key: 'sk-live-own' },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const bifrostName = `${tenantName}-${name}`;
+    expect(bifrost.providerNamed(bifrostName)?.keys[0]?.models).toEqual(OPENAI_CATALOG_IDS);
+    return bifrostName;
+  }
+
+  it('rewrites a Custom provider key to the new catalog, keeping the rest of the key, and a second run writes nothing', async () => {
+    const bifrostName = await createCustomProvider('own-key');
+    const [created] = keysOf(bifrostName);
+
+    const before = keyWrites().length;
+    await reconcile(NEXT_CATALOG);
+
+    expect(keyWrites().slice(before)).toHaveLength(1);
+    expect(bifrost.providerNamed(bifrostName)?.keys).toEqual([{ ...created, models: NEXT_OPENAI_IDS }]);
+
+    const afterFirst = keyWrites().length;
+    await reconcile(NEXT_CATALOG);
+    expect(keyWrites().length).toBe(afterFirst);
+  });
+
+  it('leaves the key-less Dock custom-openai-1, the standard openai key and a provider missing from Bifrost alone', async () => {
+    await db
+      .insert(modelProviders)
+      .values([
+        { tenantId: null, bifrostProvider: 'custom-openai-1', enabled: true, weight: 1 },
+        { tenantId: null, bifrostProvider: 'opsiforce-gone', enabled: false, weight: 1 },
+      ])
+      .onConflictDoNothing();
+    const standard = staleKey('openai-helm', ['*']);
+    const dock = helmPlaceholder([...OPENAI_CATALOG_IDS, 'codex-auto-review']);
+    keysOf('openai').push(standard);
+    keysOf('custom-openai-1').push(dock);
+
+    const before = keyWrites().length;
+    await reconcile(NEXT_CATALOG);
+
+    expect(keyWrites().slice(before)).toEqual([]);
+    expect(bifrost.providerNamed('openai')?.keys).toEqual([standard]);
+    expect(bifrost.providerNamed('custom-openai-1')?.keys).toEqual([dock]);
+  });
+
+  it('rewrites a signed-in custom-openai-1’s own key and skips the empty Helm placeholder Bifrost keeps beside it', async () => {
+    await db
+      .insert(modelProviders)
+      .values({ tenantId: null, bifrostProvider: 'custom-openai-1', enabled: true, weight: 1 })
+      .onConflictDoNothing();
+    const signedIn = bifrost.providerNamed('custom-openai-1');
+    if (!signedIn) throw new Error('The fake Bifrost has no custom-openai-1');
+    signedIn.keyLess = false;
+    signedIn.baseUrl = 'http://opsiforce-linked-account-proxy:8455/v1';
+    const own = staleKey('custom-openai-1-key', OPENAI_CATALOG_IDS);
+    const placeholder = helmPlaceholder([...OPENAI_CATALOG_IDS, 'codex-auto-review']);
+    signedIn.keys.push(placeholder, own);
+
+    await reconcile(NEXT_CATALOG);
+
+    expect(bifrost.providerNamed('custom-openai-1')?.keys).toEqual([placeholder, { ...own, models: NEXT_OPENAI_IDS }]);
+  });
+
+  it('keeps matching the other providers when Bifrost refuses one, and catches the refused one up at the next run', async () => {
+    const refused = await createCustomProvider('refused');
+    const matched = await createCustomProvider('matched');
+
+    bifrost.refuseKeyWritesTo(refused);
+    await reconcile(NEXT_CATALOG);
+    bifrost.refuseKeyWritesTo(null);
+
+    expect(bifrost.providerNamed(refused)?.keys[0]?.models).toEqual(OPENAI_CATALOG_IDS);
+    expect(bifrost.providerNamed(matched)?.keys[0]?.models).toEqual(NEXT_OPENAI_IDS);
+    await reconcile(NEXT_CATALOG);
+    expect(bifrost.providerNamed(refused)?.keys[0]?.models).toEqual(NEXT_OPENAI_IDS);
+  });
+
+  it('does not throw while Bifrost is unreachable, and the next run catches up', async () => {
+    const bifrostName = await createCustomProvider('while-down');
+
+    bifrost.becomeUnreachable();
+    await expect(reconcile(NEXT_CATALOG)).resolves.toBeUndefined();
+    bifrost.becomeReachable();
+    expect(bifrost.providerNamed(bifrostName)?.keys[0]?.models).toEqual(OPENAI_CATALOG_IDS);
+
+    await reconcile(NEXT_CATALOG);
+    expect(bifrost.providerNamed(bifrostName)?.keys[0]?.models).toEqual(NEXT_OPENAI_IDS);
+  });
+});

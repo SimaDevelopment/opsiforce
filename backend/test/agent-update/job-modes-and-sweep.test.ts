@@ -152,7 +152,10 @@ async function layImage(version: string, platformSkill: string, nextImageVersion
   );
   await writeFile(path.join(opencodeRoot, 'agent-image-version.json'), JSON.stringify({ version: imageVersion }));
   await mkdir(agentsRoot, { recursive: true });
-  await writeFile(path.join(agentsRoot, 'agents.json'), JSON.stringify({ agents: { [BUILT_IN_PACKAGE]: { version } } }));
+  await writeFile(
+    path.join(agentsRoot, 'agents.json'),
+    JSON.stringify({ agents: { [BUILT_IN_PACKAGE]: { version } } })
+  );
 
   for (const name of [BUILT_IN_PACKAGE, CUSTOM_AGENT_PACKAGE]) {
     await mkdir(path.join(agentsRoot, name, 'skills', 'platform'), { recursive: true });
@@ -197,12 +200,11 @@ async function publishedEnvironmentFor(projectId: string): Promise<string> {
 
 /** Drives the sweep and then every environment job it enqueued, as the worker would. */
 async function sweep(): Promise<AgentEnvironmentJobData[]> {
-  const before = queue.callsTo('addBulk').length;
+  const before = queue.acceptedJobs.length;
   await processor.process({ name: 'sweep', data: {} } as Job);
-  const enqueued = queue
-    .callsTo('addBulk')
+  const enqueued = queue.acceptedJobs
     .slice(before)
-    .flatMap((call) => (call.args.jobs as unknown as Array<{ data: AgentEnvironmentJobData }>).map((job) => job.data));
+    .map((job) => (job as unknown as { data: AgentEnvironmentJobData }).data);
   for (const data of enqueued) {
     await processor.process({ name: 'environment', data } as unknown as Job).catch(() => undefined);
   }
@@ -291,9 +293,7 @@ describe('an agent image bump', () => {
   });
 
   it('leaves a Custom Agent Project’s prompt and pinned skills byte-identical', async () => {
-    expect(await readFile(workspace(customProject.id, `.opencode/agents/${customSlug}.md`), 'utf8')).toBe(
-      customPrompt
-    );
+    expect(await readFile(workspace(customProject.id, `.opencode/agents/${customSlug}.md`), 'utf8')).toBe(customPrompt);
     for (const name of customSkillNames) {
       expect(await readFile(workspace(customProject.id, `.opencode/skills/${name}/SKILL.md`), 'utf8')).toContain(
         '# snapshot'
@@ -324,10 +324,7 @@ describe('an agent image bump', () => {
 describe('a Built-in Agent that declares a model variant', () => {
   beforeAll(async () => {
     await harness.projects.create({ agentId: builtInAgentId }, tenantId, { createdBy: userId });
-    await db
-      .update(agents)
-      .set({ model: 'openai/gpt-5.6-sol', variant: 'high' })
-      .where(eq(agents.id, builtInAgentId));
+    await db.update(agents).set({ model: 'openai/gpt-5.6-sol', variant: 'high' }).where(eq(agents.id, builtInAgentId));
     await layImage('1.5.0', '# platform v2.5\n');
     await writeFile(
       path.join(imageRoot, 'agents', 'agents.json'),
@@ -346,14 +343,37 @@ describe('a Built-in Agent that declares a model variant', () => {
     const [environment] = await db
       .select({ id: projectAgentUpdates.projectEnvironmentId })
       .from(projectAgentUpdates)
-      .where(and(eq(projectAgentUpdates.targetVersion, '1.5.0'), eq(projectAgentUpdates.status, AgentUpdateStatus.Applied)))
+      .where(
+        and(eq(projectAgentUpdates.targetVersion, '1.5.0'), eq(projectAgentUpdates.status, AgentUpdateStatus.Applied))
+      )
       .limit(1);
-    const config = JSON.parse(await readFile(workspace(environment.id as string, '.opencode', 'opencode.json'), 'utf8'));
+    const config = JSON.parse(
+      await readFile(workspace(environment.id as string, '.opencode', 'opencode.json'), 'utf8')
+    );
     expect(config.model).toBe('openai/gpt-5.6-sol#high');
     expect(config.agents[BUILT_IN_PACKAGE].model).toBe('openai/gpt-5.6-sol#high');
   });
 
   it('is at target on the next sweep instead of re-running every Job', async () => {
+    expect(await sweep()).toEqual([]);
+  });
+
+  it('re-runs a workspace stamped at the target whose model the registry has since changed', async () => {
+    await db.update(agents).set({ model: 'openai/gpt-6.1-sol' }).where(eq(agents.id, builtInAgentId));
+    await writeFile(
+      path.join(imageRoot, 'agents', 'agents.json'),
+      JSON.stringify({
+        agents: { [BUILT_IN_PACKAGE]: { version: '1.5.0', model: 'openai/gpt-6.1-sol', variant: 'high' } },
+      })
+    );
+
+    const enqueued = await sweep();
+
+    expect(enqueued.length).toBeGreaterThan(0);
+    const config = JSON.parse(
+      await readFile(workspace(enqueued[0].projectEnvironmentId, '.opencode', 'opencode.json'), 'utf8')
+    );
+    expect(config.model).toBe('openai/gpt-6.1-sol#high');
     expect(await sweep()).toEqual([]);
   });
 });
@@ -431,9 +451,9 @@ describe('an environment the sweep has found behind', () => {
 
     const open = (await rowsFor(project.id)).filter((row) => row.status === AgentUpdateStatus.Pending);
     expect(open).toEqual([]);
-    expect(
-      (await rowsFor(project.id)).find((row) => row.targetVersion === '3.6.0')?.status
-    ).toBe(AgentUpdateStatus.Applied);
+    expect((await rowsFor(project.id)).find((row) => row.targetVersion === '3.6.0')?.status).toBe(
+      AgentUpdateStatus.Applied
+    );
   });
 
   it('takes that row over rather than opening a second one when the Job runs', async () => {
@@ -479,10 +499,7 @@ describe('the bootstrap reaper', () => {
 
     await reapStaleRunningAgentUpdates(15 * 60 * 1000, (updateId) => runner.isJobRunning(updateId));
 
-    const rows = await db
-      .select()
-      .from(projectAgentUpdates)
-      .where(eq(projectAgentUpdates.projectId, project.id));
+    const rows = await db.select().from(projectAgentUpdates).where(eq(projectAgentUpdates.projectId, project.id));
     const kept = rows.find((row) => row.id === surviving);
     const reaped = rows.find((row) => row.id === orphaned);
     expect(kept).toMatchObject({ status: AgentUpdateStatus.Running, error: null });

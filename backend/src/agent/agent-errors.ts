@@ -6,6 +6,15 @@ export function modelUnknown(part: ModelPart, value: string): ConflictException 
   return new ConflictException({ code: 'model_unknown', message: `Unknown ${part} \`${value}\``, part, value });
 }
 
+export function modelUnreachable(model: string): ConflictException {
+  return new ConflictException({
+    code: 'model_unreachable',
+    message: `\`${model}\` is unavailable in your organization: no model provider of its format is on`,
+    part: 'model',
+    value: model,
+  });
+}
+
 export function notPublishable(message: string): ConflictException {
   return new ConflictException({ code: 'not_publishable', message });
 }

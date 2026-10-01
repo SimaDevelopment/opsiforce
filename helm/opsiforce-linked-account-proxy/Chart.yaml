@@ -1,0 +1,6 @@
+apiVersion: v2
+name: opsiforce-linked-account-proxy
+description: Stateless in-cluster proxy that serves Linked-account (ChatGPT) model traffic for Bifrost
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

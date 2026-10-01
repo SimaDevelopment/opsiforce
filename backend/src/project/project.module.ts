@@ -38,6 +38,7 @@ import { EnvironmentModule } from '../environment/environment.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
+import { ModelProvidersModule } from '../model-provider/model-provider.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { ExternalServicesModule } from '../external-services';
     ProjectEnvironmentModule,
     forwardRef(() => AgentSessionModule),
     ExternalServicesModule,
+    forwardRef(() => ModelProvidersModule),
     GitModule,
     AppReadinessModule,
   ],

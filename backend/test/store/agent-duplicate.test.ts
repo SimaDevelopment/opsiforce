@@ -1,3 +1,4 @@
+import { defaultProfileModel } from '../../src/agent/agent-config';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -241,7 +242,7 @@ describe('duplicating a Built-in Agent', () => {
     const profile = development(copy);
     expect(profile.promptBody).toBe(promptBody('app-builder'));
     expect(profile.promptBody?.startsWith('---')).toBe(false);
-    expect(profile).toMatchObject({ model: 'openai/gpt-5.6-sol', variant: 'high' });
+    expect(profile).toMatchObject(defaultProfileModel());
     expect(pinnedNames(copy)).toEqual(expect.arrayContaining(['platform', 'ui', 'web-app', 'makara-ui']));
     expect(profile.skills?.find((skill) => skill.name === 'web-app')?.pinnedVersionId).toBe(webApp.versionId);
     expect(copy).toMatchObject({ origin: 'custom', visibility: 'private', defaultEnvironmentId: productionId });

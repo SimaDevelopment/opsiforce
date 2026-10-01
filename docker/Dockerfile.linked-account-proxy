@@ -1,0 +1,16 @@
+FROM node:24.18.0-alpine
+
+ARG PKG_PREFIX=packages/opsiforce/
+
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+COPY ${PKG_PREFIX}linked-account-proxy/package.json ./package.json
+COPY ${PKG_PREFIX}linked-account-proxy/src ./src
+
+USER node
+
+EXPOSE 8455
+
+ENTRYPOINT ["node", "src/main.ts"]

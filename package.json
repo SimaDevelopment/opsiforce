@@ -6,7 +6,7 @@
   "workspaces": [
     "backend",
     "frontend",
-    "codex-proxy"
+    "linked-account-proxy"
   ],
   "scripts": {
     "dev": "sh scripts/spin-up.sh"

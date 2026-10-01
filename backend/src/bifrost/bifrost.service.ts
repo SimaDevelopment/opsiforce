@@ -9,6 +9,9 @@ import type { BudgetDefaults } from '../defaults/defaults.types';
 import type {
   KeyType,
   BifrostBudget,
+  BifrostProviderConfig,
+  BifrostProviderResponse,
+  BifrostProviderSummary,
   CreateVirtualKeyRequest,
   CreateVirtualKeyResponse,
   DeleteVirtualKeyResponse,
@@ -16,8 +19,44 @@ import type {
   CreateCustomerResponse,
   CreateTeamRequest,
   CreateTeamResponse,
+  CreateBifrostProviderRequest,
+  CreateBifrostProviderKeyRequest,
+  BifrostProviderKeySummary,
+  UpdateBifrostProviderRequest,
 } from './bifrost.types';
-import { BIFROST_PROVIDER_CONFIGS } from './bifrost.providers';
+import { BACKEND_PROVIDER_CONFIGS } from './bifrost.providers';
+
+function providerSummaryOf(provider: BifrostProviderResponse): BifrostProviderSummary {
+  return {
+    name: provider.name,
+    baseProviderType: provider.custom_provider_config?.base_provider_type ?? null,
+    baseUrl: provider.network_config?.base_url || null,
+    status: provider.provider_status ?? null,
+    keyLess: provider.custom_provider_config?.is_key_less === true,
+  };
+}
+
+export class BifrostApiError extends Error {
+  constructor(
+    method: string,
+    path: string,
+    readonly status: number,
+    readonly responseText: string
+  ) {
+    super(`Bifrost API ${method} ${path} failed (${status}): ${responseText}`);
+    this.name = 'BifrostApiError';
+  }
+
+  get bifrostMessage(): string {
+    try {
+      const parsed = JSON.parse(this.responseText) as { error?: { message?: string } | string; message?: string };
+      const message = typeof parsed.error === 'string' ? parsed.error : (parsed.error?.message ?? parsed.message);
+      return message ?? this.responseText;
+    } catch {
+      return this.responseText;
+    }
+  }
+}
 
 @Injectable()
 export class BifrostService {
@@ -71,8 +110,7 @@ export class BifrostService {
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Bifrost API ${method} ${path} failed (${response.status}): ${text}`);
+      throw new BifrostApiError(method, path, response.status, await response.text());
     }
 
     return response.json() as Promise<T>;
@@ -226,6 +264,69 @@ export class BifrostService {
     }
   }
 
+  async listProviders(): Promise<BifrostProviderSummary[]> {
+    const data = await this.request<{ providers?: BifrostProviderResponse[] }>('GET', '/api/providers');
+    return (data.providers ?? []).map(providerSummaryOf);
+  }
+
+  async findProvider(provider: string): Promise<BifrostProviderSummary | null> {
+    try {
+      return providerSummaryOf(
+        await this.request<BifrostProviderResponse>('GET', `/api/providers/${encodeURIComponent(provider)}`)
+      );
+    } catch (err) {
+      if (err instanceof BifrostApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  async updateProvider(provider: string, payload: UpdateBifrostProviderRequest): Promise<void> {
+    await this.request('PUT', `/api/providers/${encodeURIComponent(provider)}`, payload);
+  }
+
+  async listProviderKeys(provider: string): Promise<BifrostProviderKeySummary[]> {
+    const data = await this.request<{ keys?: BifrostProviderKeySummary[] }>(
+      'GET',
+      `/api/providers/${encodeURIComponent(provider)}/keys`
+    );
+    return data.keys ?? [];
+  }
+
+  async replaceProviderKey(
+    provider: string,
+    keyId: string,
+    key: CreateBifrostProviderKeyRequest | BifrostProviderKeySummary
+  ): Promise<void> {
+    await this.request('PUT', `/api/providers/${encodeURIComponent(provider)}/keys/${encodeURIComponent(keyId)}`, key);
+  }
+
+  async createProvider(payload: CreateBifrostProviderRequest): Promise<void> {
+    await this.request('POST', '/api/providers', payload);
+  }
+
+  async addProviderKey(provider: string, key: CreateBifrostProviderKeyRequest): Promise<void> {
+    await this.request('POST', `/api/providers/${encodeURIComponent(provider)}/keys`, key);
+  }
+
+  async hasProvider(provider: string): Promise<boolean> {
+    return (await this.findProvider(provider)) !== null;
+  }
+
+  async deleteProviderConfirmed(provider: string): Promise<void> {
+    try {
+      await this.request('DELETE', `/api/providers/${encodeURIComponent(provider)}`);
+    } catch (err) {
+      if (!(err instanceof BifrostApiError && err.status === 404)) throw err;
+    }
+    if (await this.hasProvider(provider)) {
+      throw new Error(`Bifrost answered the delete of provider ${provider} but still has it`);
+    }
+  }
+
+  async setVirtualKeyProviderConfigs(keyId: string, providerConfigs: BifrostProviderConfig[]): Promise<void> {
+    await this.request('PUT', `/api/governance/virtual-keys/${keyId}`, { provider_configs: providerConfigs });
+  }
+
   async getTeamBudget(teamId: string): Promise<BifrostBudget | null> {
     const data = await this.request<{ team: { budgets?: BifrostBudget[] } }>('GET', `/api/governance/teams/${teamId}`);
     return data.team.budgets?.[0] ?? null;
@@ -256,12 +357,7 @@ export class BifrostService {
     const payload: CreateVirtualKeyRequest = {
       name: `project-${projectId.slice(0, 8)}-${keyType}`,
       description: `Virtual key (${keyType}) for project ${projectId}${tenantId ? ` (tenant: ${tenantId})` : ' (pool)'}`,
-      provider_configs: BIFROST_PROVIDER_CONFIGS[keyType].map(({ provider, weight }) => ({
-        provider,
-        weight,
-        allowed_models: ['*'],
-        key_ids: ['*'],
-      })),
+      provider_configs: keyType === 'backend' ? BACKEND_PROVIDER_CONFIGS : [],
       budgets: [this.budgetFor(budgets, keyType)],
       ...(teamId ? { team_id: teamId } : {}),
     };

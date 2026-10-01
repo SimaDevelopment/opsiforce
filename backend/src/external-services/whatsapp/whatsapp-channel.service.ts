@@ -28,7 +28,7 @@ import type {
   WhatsappWebhookState,
   WhatsappWebhookStatusResponse,
 } from './whatsapp.types';
-import { timingSafeStringEqual } from '../platform/secret-crypto';
+import { timingSafeStringEqual } from '../../common/secret-crypto';
 import { WHATSAPP_SERVICE_NAME, WHATSAPP_WEBHOOK_PATH } from './whatsapp.constants';
 
 const CHANNEL_ID_MAX_LENGTH = 120;

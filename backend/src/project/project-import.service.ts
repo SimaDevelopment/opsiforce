@@ -328,7 +328,7 @@ export function assertProjectExportKind(manifest: { kind?: unknown }): void {
   throw new BadRequestException(
     manifest.kind === AGENT_EXPORT_KIND
       ? "This is an Agent export; import it from the Store's Agents tab."
-      : `This is a \`${String(manifest.kind)}\` export, not a project export.`
+      : `This is a \`${typeof manifest.kind === 'string' ? manifest.kind : JSON.stringify(manifest.kind)}\` export, not a project export.`
   );
 }
 

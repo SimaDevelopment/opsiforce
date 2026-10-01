@@ -39,6 +39,8 @@ import { AdminModule } from './admin/admin.module';
 import { ExternalServicesModule } from './external-services';
 import { StorageModule } from './storage/storage.module';
 import { LimitModule } from './limit/limit.module';
+import { LinkedAccountsModule } from './linked-accounts/linked-accounts.module';
+import { ModelProvidersModule } from './model-provider/model-provider.module';
 import { PublicApiModule } from './public-api/public-api.module';
 
 function parseRedisUrl(url: string) {
@@ -99,6 +101,8 @@ function parseRedisUrl(url: string) {
     ExternalServicesModule,
     StorageModule,
     LimitModule,
+    ModelProvidersModule,
+    LinkedAccountsModule,
     PublicApiModule,
   ],
   controllers: [HealthController],

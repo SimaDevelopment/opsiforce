@@ -34,6 +34,7 @@ config:
   storageMountPath: "/workspace-data"
   storageClaimSize: ""
   proxyControlToken: "opsiforce-local-proxy-token"
+  linkedAccountProxyServiceToken: "opsiforce-local-linked-account-proxy-token"
   agentWorkspaceUpdateOnStartup: "true"
   agentUpdateJobTimeoutMs: "1800000"
   agentNodeSelector: ~

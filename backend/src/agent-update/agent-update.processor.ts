@@ -22,6 +22,7 @@ import {
   type AgentReloadJobData,
   type AgentUpdateJobData,
   type AgentWorkspaceMigrationSummary,
+  type RecordedEnvironmentJobData,
 } from './agent-update.types';
 
 /** A workspace that is still being created has no ledger to compare and no pod to write into. */
@@ -105,8 +106,7 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
       });
     }
 
-    await this.recordPending(behind, rows);
-    await this.agentUpdateService.enqueueEnvironmentUpdates(behind);
+    await this.agentUpdateService.enqueueEnvironmentUpdates(await this.recordPending(behind, rows));
   }
 
   private async sweepRows(): Promise<SweepRow[]> {
@@ -135,19 +135,28 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     return row.agentOrigin === 'built_in' ? row.agentVersion : this.agentImageVersion;
   }
 
-  private async recordPending(behind: AgentEnvironmentJobData[], rows: SweepRow[]): Promise<void> {
-    if (behind.length === 0) return;
+  private async recordPending(
+    behind: AgentEnvironmentJobData[],
+    rows: SweepRow[]
+  ): Promise<RecordedEnvironmentJobData[]> {
+    if (behind.length === 0) return [];
     const agentIdByEnvironment = new Map(rows.map((row) => [row.projectEnvironmentId, row.agentId]));
     const projectIdByEnvironment = await this.projectIdsFor(behind.map((job) => job.projectEnvironmentId));
     const now = new Date();
+    const recorded: RecordedEnvironmentJobData[] = [];
 
     for (const job of behind) {
       const projectId = projectIdByEnvironment.get(job.projectEnvironmentId);
       const agentId = agentIdByEnvironment.get(job.projectEnvironmentId);
       if (!projectId || !agentId) continue;
-      if (await this.hasOpenRow(job.projectEnvironmentId, job.targetVersion)) continue;
+      const openRowId = await this.openRowId(job.projectEnvironmentId, job.targetVersion);
+      if (openRowId) {
+        recorded.push({ ...job, updateId: openRowId });
+        continue;
+      }
+      const updateId = crypto.randomUUID();
       await db.insert(projectAgentUpdates).values({
-        id: crypto.randomUUID(),
+        id: updateId,
         projectId,
         projectEnvironmentId: job.projectEnvironmentId,
         agentId,
@@ -156,7 +165,9 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         status: AgentUpdateStatus.Pending,
         updatedAt: now,
       });
+      recorded.push({ ...job, updateId });
     }
+    return recorded;
   }
 
   private async projectIdsFor(projectEnvironmentIds: string[]): Promise<Map<string, string>> {
@@ -168,7 +179,7 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
   }
 
   /** A row already waiting for, or applying, this target is the same outstanding update. */
-  private async hasOpenRow(projectEnvironmentId: string, targetVersion: string): Promise<boolean> {
+  private async openRowId(projectEnvironmentId: string, targetVersion: string): Promise<string | null> {
     const [row] = await db
       .select({ id: projectAgentUpdates.id })
       .from(projectAgentUpdates)
@@ -180,7 +191,7 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         )
       )
       .limit(1);
-    return row !== undefined;
+    return row?.id ?? null;
   }
 
   private async processReload(data: AgentReloadJobData): Promise<void> {
@@ -363,7 +374,9 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     const modelSelection = this.agentUpdateService.agentModelSelection(packageName);
     if (!modelSelection) return true;
     const config = await this.readWorkspaceOpenCodeConfig(directory);
-    const expected = modelSelection.variant ? `${modelSelection.model}#${modelSelection.variant}` : modelSelection.model;
+    const expected = modelSelection.variant
+      ? `${modelSelection.model}#${modelSelection.variant}`
+      : modelSelection.model;
     return config?.model === expected && config?.agents?.[packageName]?.model === expected;
   }
 

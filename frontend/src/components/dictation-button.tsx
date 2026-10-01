@@ -67,11 +67,9 @@ export function DictationButton(props: { projectId: string; environmentId: strin
   const [graceExpired, setGraceExpired] = createSignal(false);
   const availability = useTranscriptionAvailability();
   const transcriptionAvailable = () => availability.data?.available === true;
+  const transcriptionUnavailable = () => availability.data?.available === false;
   const idleTooltip = () => {
     if (transcriptionAvailable()) return 'Dictate';
-    if (availability.data) {
-      return 'Dictation is unavailable on this deployment. Configuring the OpenAI API-key option for the LLM gateway enables it.';
-    }
     if (availability.isError) return 'Dictation availability could not be determined';
     return 'Checking dictation availability…';
   };
@@ -305,7 +303,7 @@ export function DictationButton(props: { projectId: string; environmentId: strin
   function Controls() {
     return (
       <Switch>
-        <Match when={state() === 'idle'}>
+        <Match when={state() === 'idle' && !transcriptionUnavailable()}>
           <Tooltip>
             <TooltipTrigger
               as="button"

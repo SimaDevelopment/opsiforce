@@ -7,6 +7,71 @@ export interface BifrostProviderConfig {
   key_ids?: string[];
 }
 
+export interface BifrostProviderResponse {
+  name: string;
+  provider_status?: string | null;
+  network_config?: { base_url?: string | null } | null;
+  custom_provider_config?: { base_provider_type?: string | null; is_key_less?: boolean | null } | null;
+}
+
+export interface BifrostProviderSummary {
+  name: string;
+  baseProviderType: string | null;
+  baseUrl: string | null;
+  status: string | null;
+  keyLess: boolean;
+}
+
+export interface BifrostAllowedRequests {
+  list_models: boolean;
+  chat_completion: boolean;
+  chat_completion_stream: boolean;
+  responses: boolean;
+  responses_stream: boolean;
+  count_tokens: boolean;
+}
+
+export interface BifrostNetworkConfig {
+  base_url?: string;
+  allow_private_network?: boolean;
+  default_request_timeout_in_seconds: number;
+  max_retries: number;
+  retry_backoff_initial: number;
+  retry_backoff_max: number;
+  stream_idle_timeout_in_seconds: number;
+}
+
+export type BifrostRequestPathOverrides = Partial<Record<keyof BifrostAllowedRequests, string>>;
+
+export interface CreateBifrostProviderRequest {
+  provider: string;
+  network_config: BifrostNetworkConfig;
+  concurrency_and_buffer_size?: { concurrency: number; buffer_size: number };
+  custom_provider_config?: {
+    base_provider_type: string;
+    is_key_less: boolean;
+    allowed_requests: BifrostAllowedRequests;
+    request_path_overrides?: BifrostRequestPathOverrides;
+  };
+}
+
+export type UpdateBifrostProviderRequest = Omit<CreateBifrostProviderRequest, 'provider'>;
+
+export interface BifrostProviderKeySummary {
+  id: string;
+  name?: string;
+  models?: string[];
+  [field: string]: unknown;
+}
+
+export interface CreateBifrostProviderKeyRequest {
+  name: string;
+  value: { value: string; type: 'plain_text' };
+  models: string[];
+  weight: number;
+  enabled: boolean;
+}
+
 export interface BifrostBudget {
   max_limit: number;
   reset_duration: string;

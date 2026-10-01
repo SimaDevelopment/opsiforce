@@ -14,7 +14,7 @@ import type {
 } from '../platform/external-service-definition';
 import { environmentIdParam } from '../http/dispatch-request';
 import { INCOMING_EMAIL_SERVICE, IncomingEmailAddressService } from './incoming-email-address.service';
-import { timingSafeStringEqual } from '../platform/secret-crypto';
+import { timingSafeStringEqual } from '../../common/secret-crypto';
 
 const ATTACHMENT_FIELD_PREFIX = 'attachment-';
 const SIGNATURE_TOLERANCE_SECONDS = 300;

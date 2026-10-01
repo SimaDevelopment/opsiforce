@@ -71,7 +71,7 @@ postgresql:
     passwordKey: password
 
 bifrost:
-  sourceOfTruth: "config.json"
+  sourceOfTruth: "split"
   encryptionKeySecret:
     name: opsiforce-bifrost-encryption
     key: key
@@ -120,6 +120,7 @@ bifrost:
             - gpt-5.6-sol
             - gpt-5.6-sol-fast
             - gpt-6-astra
+            - gpt-6.1-sol
             - gpt-5.5
             - gpt-5.4
             - gpt-5.4-mini

@@ -12,6 +12,7 @@ import { GatewayModule } from '../gateway/gateway.module';
 import { TimeoutModule } from '../timeout/timeout.module';
 import { EnvironmentModule } from '../environment/environment.module';
 import { ExternalServicesModule } from '../external-services';
+import { ModelProvidersModule } from '../model-provider/model-provider.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ExternalServicesModule } from '../external-services';
     TimeoutModule,
     EnvironmentModule,
     ExternalServicesModule,
+    forwardRef(() => ModelProvidersModule),
   ],
   providers: [ProjectPoolService, ProjectPoolProcessor, ProjectPoolTeardownProcessor],
   exports: [ProjectPoolService],
