@@ -26,7 +26,7 @@ import type { SkillCaller, SkillService } from '../../src/store/skill.service';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import { manifest, validDescription } from './support/skill-fixtures';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
-import { ensureBuiltInSkill } from '../support/agent-fixtures';
+import { ensureBuiltInAgent, ensureBuiltInSkill } from '../support/agent-fixtures';
 
 let harness: DomainTestHarness;
 let service: SkillService;
@@ -430,6 +430,7 @@ describe('the agents carrying a skill', () => {
         id: carrier.agentId,
         name: expect.stringContaining('agent-'),
         displayName: carrier.displayName,
+        shipped: false,
         pinnedVersions: [1],
         outdated: false,
         omittedIn: 0,
@@ -491,6 +492,35 @@ describe('the agents carrying a skill', () => {
     await omittingEnvironment(otherTenantId, carrier.agentId, [name]);
 
     expect((await service.listAgents(author, created.id))[0]).toMatchObject({ omittedIn: 0 });
+  });
+
+  it('names the Built-in Agents whose image ships it, with no pin, and counts them on the list', async () => {
+    const { skillId } = await ensureBuiltInSkill('platform');
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const unregistered = await pinToAgent(tenantId, skillId);
+
+    const rows = await service.listAgents(author, skillId);
+
+    expect(rows.find((row) => row.id === appBuilder)).toMatchObject({
+      shipped: true,
+      pinnedVersions: [],
+      outdated: false,
+    });
+    expect(rows.find((row) => row.id === unregistered.agentId)).toMatchObject({ shipped: false, pinnedVersions: [1] });
+    expect((await service.findOne(author, skillId)).usedByAgentCount).toBe(rows.length);
+  });
+
+  it('shows a Built-in Agent that both ships and pins a skill once, and counts it once', async () => {
+    const { skillId, versionId } = await ensureBuiltInSkill('dates');
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    await pinToAgent(tenantId, skillId, { agentId: appBuilder, versionId });
+
+    const rows = await service.listAgents(author, skillId);
+
+    expect(rows.filter((row) => row.id === appBuilder)).toEqual([
+      expect.objectContaining({ shipped: true, pinnedVersions: [expect.any(Number)], outdated: false }),
+    ]);
+    expect((await service.findOne(author, skillId)).usedByAgentCount).toBe(rows.length);
   });
 
   it('is empty while no agent carries it and refuses a skill the caller cannot see', async () => {

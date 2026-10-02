@@ -10,6 +10,7 @@ import {
 } from '../store/agent-profile.repository';
 import { visibilityIncoherent } from '../store/store-errors';
 import { assertSkillVisibleToUser, type SkillRow } from '../store/skill-visibility';
+import { packageSkillNames } from '../store/skill-tree';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
 import { templateDamaged } from '../agent-template/agent-template.errors';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
@@ -17,7 +18,7 @@ import { compareTemplates } from '../agent-template/agent-template.types';
 import { lockAgentTemplate } from '../common/locks';
 import { canEditAgent } from './agent-visibility';
 import { ModelProvidersService } from '../model-provider/model-provider.service';
-import { duplicateSkillName, modelUnreachable, notPublishable } from './agent-errors';
+import { duplicateSkillName, modelUnreachable, notPublishable, shippedSkillName } from './agent-errors';
 import { assertModelSelection, baseFormatOfModel } from './agent-models';
 import { AgentRepository } from './agent.repository';
 import {
@@ -105,6 +106,9 @@ export class AgentProfileService {
       });
     }
     if (skill.visibility === 'private') assertAgentCarriesNoPrivateSkill(agent, [skill.name]);
+    if (agent.origin === 'built_in' && packageSkillNames(agent.name).has(skill.name)) {
+      throw shippedSkillName(skill.name);
+    }
 
     const profile = await this.targetProfile(agent, caller.tenantId);
     const versionId = await this.resolveVersion(skill, dto.versionId);

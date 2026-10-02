@@ -4,9 +4,16 @@ import { Perms } from '../permission/permission.constants';
 import { CATALOG_LIST_FILTERS } from './catalog-filters';
 import { packSkill, SkillArchiveError, unpackSkill, type SkillTree } from './gate';
 import { isTextFile } from './gate/skill-tree';
+import { readMergedAgentRegistry } from '../agent/agent-config';
 import { imageSkillNames } from './skill-reconciler.service';
+import { packageSkillNames } from './skill-tree';
 import { manifestName, manifestSourceRef, SkillPublishService } from './skill-publish.service';
-import { SkillRepository, type SkillListRow, type SkillVersionRow } from './skill.repository';
+import {
+  SkillRepository,
+  type BuiltInAgentIdentity,
+  type SkillListRow,
+  type SkillVersionRow,
+} from './skill.repository';
 import { assertSkillVisibleToUser, canDisableSkill, canEditSkill, type SkillRow } from './skill-visibility';
 import { nameUnavailable, notDisableable, skillInUse, validationFailed, visibilityIncoherent } from './store-errors';
 import type {
@@ -25,6 +32,10 @@ import type {
   UpdateSkillDto,
   ValidateSkillDto,
 } from './skill.types';
+
+interface SkillShipper extends BuiltInAgentIdentity {
+  ships: Set<string>;
+}
 
 export interface SkillCaller {
   tenantId: string;
@@ -45,34 +56,50 @@ export class SkillService {
 
     const rows = await this.repository.list(caller.tenantId, caller.userId, filter, query);
     const fromImage = imageSkillNames();
-    return rows.map((row) => toSummary(row, fromImage, caller.userId));
+    const shippers = await this.shippers();
+    return rows.map((row) => toSummary(row, fromImage, shippers, caller.userId));
   }
 
   async findOne(caller: SkillCaller, skillId: string): Promise<SkillSummary> {
     await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
     const row = await this.repository.findOne(caller.tenantId, caller.userId, skillId);
     if (!row) throw new NotFoundException(`Skill ${skillId} not found`);
-    return toSummary(row, imageSkillNames(), caller.userId);
+    return toSummary(row, imageSkillNames(), await this.shippers(), caller.userId);
   }
 
   async listAgents(caller: SkillCaller, skillId: string): Promise<SkillAgentUsage[]> {
     const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
     const pins = await this.repository.agentPins(skillId, caller.tenantId, caller.userId);
     const omissions = await this.repository.omissionCountsByAgent(skill.name, caller.tenantId);
+    const shipping = skill.origin === 'built_in' ? shippersOf(await this.shippers(), skill.name) : [];
+    const shippingIds = new Set(shipping.map((agent) => agent.id));
     const byAgent = new Map<string, SkillAgentUsage>();
+
+    for (const agent of shipping) {
+      byAgent.set(agent.id, {
+        id: agent.id,
+        name: agent.name,
+        displayName: agent.displayName,
+        shipped: true,
+        pinnedVersions: [],
+        outdated: false,
+        omittedIn: omissions.get(agent.id) ?? 0,
+      });
+    }
 
     for (const pin of pins) {
       const behind = pin.versionId !== skill.latestVersionId;
       const existing = byAgent.get(pin.id);
       if (existing) {
         existing.pinnedVersions.push(pin.version);
-        existing.outdated ||= behind;
+        existing.outdated ||= behind && !shippingIds.has(pin.id);
         continue;
       }
       byAgent.set(pin.id, {
         id: pin.id,
         name: pin.name,
         displayName: pin.displayName,
+        shipped: false,
         pinnedVersions: [pin.version],
         outdated: behind,
         omittedIn: omissions.get(pin.id) ?? 0,
@@ -80,6 +107,12 @@ export class SkillService {
     }
 
     return [...byAgent.values()].toSorted((left, right) => agentLabel(left).localeCompare(agentLabel(right)));
+  }
+
+  /** Which skills each Built-in Agent's image package ships: they reach its Projects without any pin (ADR-0060). */
+  private async shippers(): Promise<SkillShipper[]> {
+    const registered = await this.repository.builtInAgentsNamed(Object.keys(readMergedAgentRegistry().agents));
+    return registered.map((agent) => ({ ...agent, ships: packageSkillNames(agent.name) }));
   }
 
   async listVersions(caller: SkillCaller, skillId: string): Promise<SkillVersionResponse[]> {
@@ -326,8 +359,13 @@ function renameManifest(tree: SkillTree, name: string): SkillTree {
   });
 }
 
-function toSummary(row: SkillListRow, fromImage: Set<string>, userId: string): SkillSummary {
+function shippersOf(shippers: SkillShipper[], skillName: string): SkillShipper[] {
+  return shippers.filter((agent) => agent.ships.has(skillName));
+}
+
+function toSummary(row: SkillListRow, fromImage: Set<string>, shippers: SkillShipper[], userId: string): SkillSummary {
   const { skill, latestVersion } = row;
+  const shipping = skill.origin === 'built_in' ? shippersOf(shippers, skill.name).map((agent) => agent.id) : [];
   return {
     id: skill.id,
     name: skill.name,
@@ -341,7 +379,7 @@ function toSummary(row: SkillListRow, fromImage: Set<string>, userId: string): S
     createdBy: skill.createdBy,
     createdByName: row.createdByName,
     builderChatId: skill.builderChatId,
-    usedByAgentCount: row.usedByAgentCount,
+    usedByAgentCount: new Set([...row.pinnedAgentIds, ...shipping]).size,
     outdatedAgentCount: row.outdatedAgentCount,
     latestVersion: latestVersion
       ? { version: latestVersion.version, description: latestVersion.description, flags: latestVersion.flags }

@@ -693,10 +693,15 @@ function OnAgents(props: { skillId: string; agents: SkillAgentUsage[]; latest: n
               <RowLink href={agentHref(agent.id, props.skillId)} class="px-3 py-2.5 text-sm">
                 <Bot class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span class="min-w-0 flex-1 truncate">{agent.displayName ?? agent.name}</span>
-                <Show when={split() || !agent.outdated}>
-                  <span class="text-xs tabular-nums text-muted-foreground">
-                    {agent.pinnedVersions.map((version) => `v${version}`).join(' · ')}
-                  </span>
+                <Show
+                  when={!agent.shipped}
+                  fallback={<span class="text-xs tabular-nums text-muted-foreground">v{props.latest}</span>}
+                >
+                  <Show when={split() || !agent.outdated}>
+                    <span class="text-xs tabular-nums text-muted-foreground">
+                      {agent.pinnedVersions.map((version) => `v${version}`).join(' · ')}
+                    </span>
+                  </Show>
                 </Show>
                 <Show when={agent.outdated}>
                   <VersionUpdateBadge from={Math.min(...agent.pinnedVersions)} to={props.latest} />
