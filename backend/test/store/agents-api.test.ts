@@ -257,6 +257,18 @@ describe('agent skills', () => {
     expect(await code(service.removeSkill(author, agent.id, platform?.skillId ?? ''))).toBe('not_editable');
   });
 
+  it("refuses a skill a built-in agent's image already ships, and takes it where the package leaves it out", async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const { skillId } = await ensureBuiltInSkill('dates');
+
+    expect(await code(service.setSkill(author, appBuilder, skillId, {}))).toBe('duplicate_skill_name');
+
+    await service.setSkill(author, makara, skillId, {});
+    expect((await service.listSkills(author, makara)).map((row) => row.name)).toContain('dates');
+    await service.removeSkill(author, makara, skillId);
+  });
+
   it('parks one profile per organization on a built-in agent and refuses publishing it', async () => {
     const builtIn = await ensureBuiltInAgent('app-builder');
     const mine = await createSkill(skillAuthor, skillName());

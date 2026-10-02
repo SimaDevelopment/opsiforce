@@ -63,11 +63,15 @@ export interface SkillSummary {
   updatedAt: Date;
 }
 
-/** One agent carrying the skill, with every version it pins and whether any of them is behind. */
+/**
+ * One agent carrying the skill: shipped by its image package (always the latest Version), pinned through its
+ * Agent Profile with every version it pins and whether any of them is behind, or both.
+ */
 export interface SkillAgentUsage {
   id: string;
   name: string;
   displayName: string | null;
+  shipped: boolean;
   pinnedVersions: number[];
   outdated: boolean;
   omittedIn: number;

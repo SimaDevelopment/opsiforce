@@ -157,12 +157,16 @@ export function AgentSkillList(props: {
 interface Verdict {
   ok: boolean;
   reason?: string;
+  onAgent?: boolean;
 }
 
 export function skillAddable(agent: AgentDetail, carried: AgentProfileSkill[], skill: Skill): Verdict {
+  if (agent.shippedSkills.some((shipped) => shipped.name === skill.name))
+    return { ok: false, reason: 'Ships with this agent', onAgent: true };
   if (skill.disabled) return { ok: false, reason: 'Disabled' };
   if (!skill.latestVersion) return { ok: false, reason: 'No published version' };
-  if (carried.some((pinned) => pinned.skillId === skill.id)) return { ok: false, reason: 'Already on this agent' };
+  if (carried.some((pinned) => pinned.skillId === skill.id))
+    return { ok: false, reason: 'Already on this agent', onAgent: true };
   if (carried.some((pinned) => pinned.name === skill.name))
     return { ok: false, reason: 'Another skill with this name is already on this agent' };
   if (skill.visibility === 'private' && agent.origin === 'built_in')
@@ -246,11 +250,12 @@ export function AddSkillsDialog(props: {
                 {(skill) => {
                   const verdict = () => skillAddable(props.agent, props.carried, skill);
                   const on = () => picked().includes(skill.id);
+                  const checked = () => on() || verdict().onAgent === true;
                   return (
                     <button
                       type="button"
                       role="checkbox"
-                      aria-checked={on()}
+                      aria-checked={checked()}
                       disabled={!verdict().ok}
                       onClick={() => toggle(skill.id)}
                       class={cn(
@@ -263,11 +268,11 @@ export function AddSkillsDialog(props: {
                       <span
                         class={cn(
                           'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                          on() ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'
+                          checked() ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'
                         )}
                         aria-hidden="true"
                       >
-                        <Show when={on()}>
+                        <Show when={checked()}>
                           <Check class="h-3 w-3" />
                         </Show>
                       </span>

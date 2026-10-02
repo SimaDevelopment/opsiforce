@@ -52,6 +52,14 @@ export function duplicateSkillName(name: string): ConflictException {
   });
 }
 
+export function shippedSkillName(name: string): ConflictException {
+  return new ConflictException({
+    code: 'duplicate_skill_name',
+    message: `The agent's image already ships a skill named \`${name}\``,
+    name,
+  });
+}
+
 export function environmentInUse(agents: { id: string; displayName: string }[]): ConflictException {
   return new ConflictException({
     code: 'environment_in_use',

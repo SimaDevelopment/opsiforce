@@ -45,8 +45,14 @@ export interface SkillListRow {
   skill: SkillRow;
   latestVersion: SkillVersionRow | null;
   createdByName: string | null;
-  usedByAgentCount: number;
-  outdatedAgentCount: number;
+  pinnedAgentIds: string[];
+  outdatedAgentIds: string[];
+}
+
+export interface BuiltInAgentIdentity {
+  id: string;
+  name: string;
+  displayName: string | null;
 }
 
 /** One row per (agent, pinned version): the caller groups it by agent. */
@@ -78,8 +84,8 @@ export class SkillRepository {
         skill: skillColumnsIn(tenantId),
         latestVersion: skillVersions,
         createdByName: createdByName(),
-        usedByAgentCount: usedByAgentCount(tenantId, userId),
-        outdatedAgentCount: outdatedAgentCount(tenantId, userId),
+        pinnedAgentIds: pinnedAgentIds(tenantId, userId),
+        outdatedAgentIds: outdatedAgentIds(tenantId, userId),
       })
       .from(skills)
       .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
@@ -97,8 +103,8 @@ export class SkillRepository {
       skill: row.skill,
       latestVersion: row.latestVersion,
       createdByName: row.createdByName,
-      usedByAgentCount: Number(row.usedByAgentCount),
-      outdatedAgentCount: Number(row.outdatedAgentCount),
+      pinnedAgentIds: row.pinnedAgentIds,
+      outdatedAgentIds: row.outdatedAgentIds,
     }));
   }
 
@@ -108,8 +114,8 @@ export class SkillRepository {
         skill: skillColumnsIn(tenantId),
         latestVersion: skillVersions,
         createdByName: createdByName(),
-        usedByAgentCount: usedByAgentCount(tenantId, userId),
-        outdatedAgentCount: outdatedAgentCount(tenantId, userId),
+        pinnedAgentIds: pinnedAgentIds(tenantId, userId),
+        outdatedAgentIds: outdatedAgentIds(tenantId, userId),
       })
       .from(skills)
       .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
@@ -121,8 +127,8 @@ export class SkillRepository {
       skill: row.skill,
       latestVersion: row.latestVersion,
       createdByName: row.createdByName,
-      usedByAgentCount: Number(row.usedByAgentCount),
-      outdatedAgentCount: Number(row.outdatedAgentCount),
+      pinnedAgentIds: row.pinnedAgentIds,
+      outdatedAgentIds: row.outdatedAgentIds,
     };
   }
 
@@ -205,6 +211,14 @@ export class SkillRepository {
       .innerJoin(agents, eq(agents.id, agentProfiles.agentId))
       .where(eq(agentProfileSkills.skillId, skillId))
       .orderBy(asc(sql`coalesce(${agents.displayName}, ${agents.name})`));
+  }
+
+  builtInAgentsNamed(names: string[]): Promise<BuiltInAgentIdentity[]> {
+    if (names.length === 0) return Promise.resolve([]);
+    return db
+      .select({ id: agents.id, name: agents.name, displayName: agents.displayName })
+      .from(agents)
+      .where(and(eq(agents.origin, 'built_in'), isNull(agents.tenantId), inArray(agents.name, names)));
   }
 
   agentPins(skillId: string, tenantId: string, userId: string): Promise<SkillAgentPinRow[]> {
@@ -426,9 +440,9 @@ async function insertVersion(
   return versionId;
 }
 
-function usedByAgentCount(tenantId: string, userId: string): SQL<number> {
-  return sql<number>`(
-    select count(distinct ${agentProfiles.agentId})
+function pinnedAgentIds(tenantId: string, userId: string): SQL<string[]> {
+  return sql<string[]>`(
+    select coalesce(array_agg(distinct ${agentProfiles.agentId}), '{}')
     from ${agentProfileSkills}
     inner join ${agentProfiles} on ${agentProfiles.id} = ${agentProfileSkills.profileId}
     inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}
@@ -437,9 +451,9 @@ function usedByAgentCount(tenantId: string, userId: string): SQL<number> {
   )`;
 }
 
-function outdatedAgentCount(tenantId: string, userId: string): SQL<number> {
-  return sql<number>`(
-    select count(distinct ${agentProfiles.agentId})
+function outdatedAgentIds(tenantId: string, userId: string): SQL<string[]> {
+  return sql<string[]>`(
+    select coalesce(array_agg(distinct ${agentProfiles.agentId}), '{}')
     from ${agentProfileSkills}
     inner join ${agentProfiles} on ${agentProfiles.id} = ${agentProfileSkills.profileId}
     inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}

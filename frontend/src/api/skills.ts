@@ -39,6 +39,8 @@ export interface SkillAgentUsage {
   id: string;
   name: string;
   displayName: string | null;
+  /** The agent's image package ships it, at the latest Version, with no pin. */
+  shipped: boolean;
   /** Every version this agent pins, one per Environment it carries the skill in. */
   pinnedVersions: number[];
   outdated: boolean;
