@@ -390,7 +390,10 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           url: '/api/platform-model-providers/custom-openai-1/linked-account',
           headers: admin.headers,
         });
-        expect(res.statusCode).toBe(500);
+        expect(res.statusCode).toBe(503);
+        expect(res.json<{ message: string }>().message).toBe(
+          'The account is signed in, but the model gateway did not take it yet; sign in again to retry'
+        );
       } finally {
         bifrost.acceptProviderConfigWrites();
       }
@@ -399,6 +402,20 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       const credential = await fetchCredential({ caller_secret: callerSecret() });
       expect(credential.statusCode, credential.body).toBe(200);
       expect(chatgpt.devicePolls).toBe(1);
+    });
+
+    it('rewrites the chat keys again when an account Bifrost already serves through the proxy signs in again', async () => {
+      const admin = await platformAdmin();
+      const projectId = await projectOf(await createTenant(app));
+      await signIn(admin);
+      const keyId = bifrost.chatKeyOf(projectId).id;
+      const writesBefore = bifrost.providerConfigWritesTo(keyId).length;
+      const secret = callerSecret();
+
+      await signIn(admin);
+
+      expect(bifrost.providerConfigWritesTo(keyId).length).toBeGreaterThan(writesBefore);
+      expect(callerSecret()).toBe(secret);
     });
 
     it('is refused without the platform permission', async () => {

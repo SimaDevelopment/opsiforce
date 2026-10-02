@@ -8,6 +8,7 @@ import {
   Logger,
   NotFoundException,
   type OnApplicationBootstrap,
+  ServiceUnavailableException,
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -16,6 +17,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { db } from '../../db';
 import { linkedAccounts, modelProviders } from '../../db/schema';
 import { readModelCatalog } from '../agent/agent-models';
+import { retryBifrostWrite } from '../bifrost/bifrost-retries';
 import type { JsonObject } from '../common/json';
 import { lockPlatformModelProviders, type DbExecutor } from '../common/locks';
 import { timingSafeStringEqual } from '../common/secret-crypto';
@@ -65,6 +67,8 @@ const SIGN_IN_ENDED_MESSAGE = 'This Linked account needs to be signed in again';
 const NOT_REFRESHED_MESSAGE = 'The Linked account could not be refreshed';
 const PASTED_TOKEN_EXPIRED_REASON = 'The pasted access token has expired';
 const NO_USAGE_MESSAGE = 'OpenAI did not return this account’s usage; try again';
+const CHAT_KEYS_NOT_UPDATED_MESSAGE =
+  'The account is signed in, but the model gateway did not take it yet; sign in again to retry';
 
 interface PendingSignIn {
   handle: JsonObject;
@@ -533,7 +537,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
         callerSecret
       );
     }
-    await this.modelProvidersService.lockAndRewriteChatKeysOfTenantsUsing(bifrostProvider);
+    const rewritten = await retryBifrostWrite(this.logger, `Chat key rewrite (provider=${bifrostProvider})`, () =>
+      this.modelProvidersService.lockAndRewriteChatKeysOfTenantsUsing(bifrostProvider)
+    );
+    if (!rewritten) throw new ServiceUnavailableException(CHAT_KEYS_NOT_UPDATED_MESSAGE);
   }
 
   private async pollVendor(adapter: VendorAdapter, pending: PendingSignIn): Promise<SignInPoll> {
