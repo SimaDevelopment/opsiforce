@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BifrostApiError, BifrostService } from '../bifrost/bifrost.service';
-import type { BifrostProviderSummary } from '../bifrost/bifrost.types';
+import type { BifrostProviderSummary, UpdateBifrostProviderRequest } from '../bifrost/bifrost.types';
 import { VENDOR_BASE_FORMAT, isVendorId } from '../linked-accounts/vendors';
 import type { VendorId } from '../linked-accounts/vendor-adapter';
 import {
@@ -221,13 +221,19 @@ export class ModelProviderConnectionsService {
       await this.createLinkedAccount(spec, callerSecret, async () => {});
       return;
     }
+    const previous = await this.bifrostCall(() => this.bifrostService.providerConfig(spec.name));
     await this.updateInBifrost(spec);
-    const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(spec.name));
-    await this.bifrostCall(() =>
-      storedKey?.id
-        ? this.bifrostService.replaceProviderKey(spec.name, storedKey.id, key)
-        : this.bifrostService.addProviderKey(spec.name, key)
-    );
+    try {
+      const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(spec.name));
+      await this.bifrostCall(() =>
+        storedKey?.id
+          ? this.bifrostService.replaceProviderKey(spec.name, storedKey.id, key)
+          : this.bifrostService.addProviderKey(spec.name, key)
+      );
+    } catch (err) {
+      await this.restoreInBifrost(spec.name, previous);
+      throw err;
+    }
   }
 
   connectionEditOf(input: unknown): ConnectionEdit {
@@ -254,7 +260,7 @@ export class ModelProviderConnectionsService {
           : this.bifrostService.addProviderKey(current.name, bifrostProviderKey(next, edit.key))
       );
     } catch (err) {
-      if (moved) await this.restoreInBifrost(current);
+      if (moved) await this.restoreInBifrost(current.name, bifrostProviderUpdatePayload(current));
       throw err;
     }
   }
@@ -304,11 +310,11 @@ export class ModelProviderConnectionsService {
     }
   }
 
-  private async restoreInBifrost(spec: BifrostProviderSpec): Promise<void> {
+  private async restoreInBifrost(bifrostName: string, config: UpdateBifrostProviderRequest): Promise<void> {
     try {
-      await this.bifrostService.updateProvider(spec.name, bifrostProviderUpdatePayload(spec));
+      await this.bifrostService.updateProvider(bifrostName, config);
     } catch (err) {
-      this.logger.error(`Bifrost provider ${spec.name} kept its new base URL: ${(err as Error).message}`);
+      this.logger.error(`Bifrost provider ${bifrostName} kept its new connection: ${(err as Error).message}`);
     }
   }
 

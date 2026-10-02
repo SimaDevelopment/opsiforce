@@ -280,6 +280,12 @@ export class BifrostService {
     }
   }
 
+  async providerConfig(provider: string): Promise<UpdateBifrostProviderRequest> {
+    const { network_config, concurrency_and_buffer_size, custom_provider_config } =
+      await this.request<UpdateBifrostProviderRequest>('GET', `/api/providers/${encodeURIComponent(provider)}`);
+    return { network_config, concurrency_and_buffer_size, custom_provider_config };
+  }
+
   async updateProvider(provider: string, payload: UpdateBifrostProviderRequest): Promise<void> {
     await this.request('PUT', `/api/providers/${encodeURIComponent(provider)}`, payload);
   }

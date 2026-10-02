@@ -355,6 +355,28 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       }
     });
 
+    it('puts custom-openai-1 back on the dock when its key cannot be written at sign-in', async () => {
+      const admin = await platformAdmin();
+      expect((await startSignIn(admin)).statusCode).toBe(200);
+      chatgpt.replyToDevicePolls('approved');
+      bifrost.refuseKeyWritesTo('custom-openai-1');
+
+      try {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/api/platform-model-providers/custom-openai-1/linked-account',
+          headers: admin.headers,
+        });
+
+        expect(res.statusCode).toBe(503);
+        expect(bifrost.providerNamed('custom-openai-1')).toMatchObject({ baseUrl: DOCK_BASE_URL, keyLess: true });
+        expect(bifrost.providerNamed('custom-openai-1')?.keys).toEqual([]);
+      } finally {
+        bifrost.refuseKeyWritesTo(null);
+      }
+      expect((await statusOf(admin)).state).toBe('connected');
+    });
+
     it('is refused without the platform permission', async () => {
       const tenant = await createTenant(app);
       const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
