@@ -87,6 +87,11 @@ interface ServedCredential {
   accountId: string | null;
 }
 
+interface Connection {
+  connected: LinkedAccountRow;
+  afterCommit: () => Promise<void>;
+}
+
 interface OwnedLinkedAccount {
   ownerId: string;
   bifrostProvider: string;
@@ -139,20 +144,25 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   private async repointIfLost(ownerId: string, bifrostProvider: string): Promise<void> {
     if (await this.connections.servesThroughLinkedAccountProxy(bifrostProvider)) return;
-    await db.transaction(async (tx) => {
+    const callerSecret = newCallerSecret();
+    const connected = await db.transaction(async (tx) => {
       const [row] = await tx
         .select()
         .from(linkedAccounts)
         .where(eq(linkedAccounts.modelProviderId, ownerId))
         .for('update');
-      if (!row?.credential) return;
-      const callerSecretHash = await this.pointAtProxy(row, bifrostProvider);
-      await tx.update(linkedAccounts).set({ callerSecretHash }).where(eq(linkedAccounts.modelProviderId, ownerId));
-      await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, bifrostProvider);
-      this.logger.log(
-        `The Linked account of ${bifrostProvider} had lost its sign-in in Bifrost and is repointed at the Linked-account proxy`
-      );
+      if (!row?.credential) return null;
+      await tx
+        .update(linkedAccounts)
+        .set({ callerSecretHash: callerSecretHashOf(callerSecret) })
+        .where(eq(linkedAccounts.modelProviderId, ownerId));
+      return row;
     });
+    if (!connected) return;
+    await this.serveThroughProxy(connected.vendor, bifrostProvider, callerSecret);
+    this.logger.log(
+      `The Linked account of ${bifrostProvider} had lost its sign-in in Bifrost and is repointed at the Linked-account proxy`
+    );
   }
 
   isProxyServiceToken(token: string | undefined): boolean {
@@ -230,7 +240,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       throw new BadGatewayException(check.reason);
     }
 
-    return db.transaction(async (tx) => {
+    const { connected, afterCommit } = await db.transaction(async (tx) => {
       const ownerId = await ownerIdIn(tx);
       await tx
         .insert(linkedAccounts)
@@ -242,9 +252,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
         .where(eq(linkedAccounts.modelProviderId, ownerId))
         .for('update');
       if (!row) throw new Error(`The Linked account of ${bifrostProvider} was not stored`);
-      const connected = await this.connect(tx, key, row, bifrostProvider, { accessToken, refreshToken: null });
-      return this.viewOf(vendor, connected, null);
+      return this.connect(tx, key, row, bifrostProvider, { accessToken, refreshToken: null });
     });
+    await afterCommit();
+    return this.viewOf(vendor, connected, null);
   }
 
   private async disconnect(ownerId: string, bifrostProvider: string, vendor: VendorId): Promise<LinkedAccountView> {
@@ -442,7 +453,8 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     vendor: VendorId
   ): Promise<LinkedAccountView> {
     const key = this.vendors.encryptionKey();
-    return db.transaction(async (tx) => {
+    const afterCommit: Array<() => Promise<void>> = [];
+    const view = await db.transaction(async (tx) => {
       const [row] = await tx
         .select()
         .from(linkedAccounts)
@@ -461,8 +473,9 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
       const poll = await this.pollVendor(this.vendors.adapterOf(row.vendor), pending);
       if (poll.outcome === 'completed') {
-        const connected = await this.connect(tx, key, row, bifrostProvider, poll.credential);
-        return this.viewOf(vendor, connected, null);
+        const connection = await this.connect(tx, key, row, bifrostProvider, poll.credential);
+        afterCommit.push(connection.afterCommit);
+        return this.viewOf(vendor, connection.connected, null);
       }
       if (poll.outcome === 'failed') {
         await this.setPending(tx, row, null);
@@ -473,6 +486,8 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       await this.setPending(tx, row, this.vendors.seal(key, next as unknown as JsonObject));
       return this.viewOf(vendor, row, pendingView(next));
     });
+    for (const step of afterCommit) await step();
+    return view;
   }
 
   private async connect(
@@ -481,14 +496,16 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     row: LinkedAccountRow,
     bifrostProvider: string,
     credential: VendorCredential
-  ): Promise<LinkedAccountRow> {
-    const callerSecretHash = row.credential ? row.callerSecretHash : await this.pointAtProxy(row, bifrostProvider);
+  ): Promise<Connection> {
+    const callerSecret = (await this.connections.servesThroughLinkedAccountProxy(bifrostProvider))
+      ? null
+      : newCallerSecret();
     const connected: LinkedAccountRow = {
       ...row,
       credential: this.vendors.seal(key, { ...credential }),
       statusReason: null,
       pendingSignIn: null,
-      callerSecretHash,
+      callerSecretHash: callerSecret ? callerSecretHashOf(callerSecret) : row.callerSecretHash,
     };
     await tx
       .update(linkedAccounts)
@@ -499,19 +516,24 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
         callerSecretHash: connected.callerSecretHash,
       })
       .where(eq(linkedAccounts.modelProviderId, row.modelProviderId));
-    await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, bifrostProvider);
-    this.logger.log(`The Linked account of ${bifrostProvider} is signed in and served by the Linked-account proxy`);
-    return connected;
+    return {
+      connected,
+      afterCommit: async () => {
+        await this.serveThroughProxy(row.vendor, bifrostProvider, callerSecret);
+        this.logger.log(`The Linked account of ${bifrostProvider} is signed in and served by the Linked-account proxy`);
+      },
+    };
   }
 
-  private async pointAtProxy(row: LinkedAccountRow, bifrostProvider: string): Promise<string> {
-    const callerSecret = newCallerSecret();
-    const format = BASE_FORMATS[VENDOR_BASE_FORMAT[this.vendors.adapterOf(row.vendor).vendor]];
-    await this.connections.pointAtLinkedAccountProxy(
-      this.connections.linkedAccountSpec(bifrostProvider, format),
-      callerSecret
-    );
-    return callerSecretHashOf(callerSecret);
+  private async serveThroughProxy(vendor: string, bifrostProvider: string, callerSecret: string | null): Promise<void> {
+    if (callerSecret) {
+      const format = BASE_FORMATS[VENDOR_BASE_FORMAT[this.vendors.adapterOf(vendor).vendor]];
+      await this.connections.pointAtLinkedAccountProxy(
+        this.connections.linkedAccountSpec(bifrostProvider, format),
+        callerSecret
+      );
+    }
+    await this.modelProvidersService.lockAndRewriteChatKeysOfTenantsUsing(bifrostProvider);
   }
 
   private async pollVendor(adapter: VendorAdapter, pending: PendingSignIn): Promise<SignInPoll> {

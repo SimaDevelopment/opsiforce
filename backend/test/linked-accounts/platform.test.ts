@@ -377,6 +377,30 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       expect((await statusOf(admin)).state).toBe('connected');
     });
 
+    it('stays signed in and served through the proxy when the chat keys cannot be rewritten at its first sign-in', async () => {
+      const admin = await platformAdmin();
+      await projectOf(await createTenant(app));
+      expect((await startSignIn(admin)).statusCode).toBe(200);
+      chatgpt.replyToDevicePolls('approved');
+      bifrost.refuseProviderConfigWrites();
+
+      try {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/api/platform-model-providers/custom-openai-1/linked-account',
+          headers: admin.headers,
+        });
+        expect(res.statusCode).toBe(500);
+      } finally {
+        bifrost.acceptProviderConfigWrites();
+      }
+
+      expect(bifrost.providerNamed('custom-openai-1')?.baseUrl).toBe(PROXY_URL);
+      const credential = await fetchCredential({ caller_secret: callerSecret() });
+      expect(credential.statusCode, credential.body).toBe(200);
+      expect(chatgpt.devicePolls).toBe(1);
+    });
+
     it('is refused without the platform permission', async () => {
       const tenant = await createTenant(app);
       const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);

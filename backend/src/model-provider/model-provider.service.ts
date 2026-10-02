@@ -222,6 +222,12 @@ export class ModelProvidersService {
     }
   }
 
+  async lockAndRewriteChatKeysOfTenantsUsing(bifrostProvider: string): Promise<void> {
+    for (const tenantId of await this.tenantIdsUsing(db, bifrostProvider)) {
+      await this.lockAndRewriteTenantChatKeys(tenantId);
+    }
+  }
+
   async tenantIdsUsing(executor: DbExecutor, bifrostProvider: string): Promise<string[]> {
     if ((await this.platformProviderNames(executor)).has(bifrostProvider)) {
       const everyTenant = await executor.select({ id: tenants.id }).from(tenants).orderBy(asc(tenants.id));
