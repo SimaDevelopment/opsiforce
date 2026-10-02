@@ -10,10 +10,20 @@ export function notPublishable(message: string): ConflictException {
   return new ConflictException({ code: 'not_publishable', message });
 }
 
-export function lastBuiltInAgent(label: string): ConflictException {
+const LAST_AGENT_RULE =
+  "Keep at least one agent enabled — new projects need one to start on. A private agent, or one with nothing published to its default environment, doesn't count.";
+
+export function lastAgent(label: string): ConflictException {
   return new ConflictException({
-    code: 'last_built_in_agent',
-    message: `Keep at least one built-in agent enabled — new projects need one to start on. Enable another before disabling ${label}.`,
+    code: 'last_agent',
+    message: `${LAST_AGENT_RULE} Enable another before disabling ${label}.`,
+  });
+}
+
+export function lastAgentUnpublished(label: string): ConflictException {
+  return new ConflictException({
+    code: 'last_agent',
+    message: `${LAST_AGENT_RULE} Publish ${label} to that environment first, or enable another agent.`,
   });
 }
 

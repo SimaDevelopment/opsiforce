@@ -730,7 +730,7 @@ async function seedProject(agentId: string, kind: 'test' | null): Promise<string
   return id;
 }
 
-describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
+describe('disabling an agent for one Organization (ADR-0070)', () => {
   async function freshTenant(): Promise<AgentCaller> {
     const id = await createTenantRow();
     await harness.environments.ensureDefaultForTenant(id);
@@ -763,7 +763,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
     expect(await service.findIdByName('makara-app-builder', otherTenantId)).toBe(makara);
   });
 
-  it('refuses to disable the last built-in agent an Organization can start a project on, the Builder aside', async () => {
+  it('refuses to disable the last agent an Organization can start a project on, the Builder aside', async () => {
     await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
     const appBuilder = await ensureBuiltInAgent('app-builder');
     const makara = await ensureBuiltInAgent('makara-app-builder');
@@ -771,10 +771,89 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
 
     await service.setDisabled(caller, makara, true);
 
-    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_built_in_agent');
+    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_agent');
 
     await service.setDisabled(caller, makara, false);
     await expect(service.setDisabled(caller, appBuilder, true)).resolves.toMatchObject({ disabled: true });
+  });
+
+  it('lets an Organization disable every built-in agent while a custom agent stays enabled', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+
+    await service.setDisabled(caller, makara, true);
+    await expect(service.setDisabled(caller, appBuilder, true)).resolves.toMatchObject({ disabled: true });
+
+    expect(await code(service.setDisabled(caller, custom.id, true))).toBe('last_agent');
+  });
+
+  it('counts only public custom agents published to their default environment, and says so', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    await seedLiveAgent(caller.tenantId, caller.userId, { visibility: 'private' });
+    await seedLiveAgent(caller.tenantId, caller.userId, { withProfile: false });
+    await seedLiveAgent(caller.tenantId, caller.userId, { disabled: true });
+
+    await service.setDisabled(caller, makara, true);
+
+    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_agent');
+    await expect(service.setDisabled(caller, appBuilder, true)).rejects.toThrow(
+      "A private agent, or one with nothing published to its default environment, doesn't count."
+    );
+  });
+
+  it('refuses to point the last custom agent at an environment it has nothing published to', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+    const staging = await harness.environments.create(caller.tenantId, { name: `Staging ${randomUUID().slice(0, 6)}` });
+    await service.setDisabled(caller, makara, true);
+    await service.setDisabled(caller, appBuilder, true);
+
+    expect(await code(service.updateSettings(caller, custom.id, { defaultEnvironmentId: staging.id }))).toBe(
+      'last_agent'
+    );
+    await expect(service.updateSettings(caller, custom.id, { defaultEnvironmentId: staging.id })).rejects.toThrow(
+      "A private agent, or one with nothing published to its default environment, doesn't count."
+    );
+    expect((await service.findOne(caller, custom.id)).settings.defaultEnvironmentId).toBe(
+      await defaultEnvironmentId(caller.tenantId)
+    );
+    await expect(service.updateSettings(caller, custom.id, { platformApi: true })).resolves.toMatchObject({
+      settings: { platformApi: true },
+    });
+  });
+
+  it('lets only one of two concurrent disables of a built-in and the last custom agent through', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+    await service.setDisabled(caller, makara, true);
+
+    const outcomes = await Promise.allSettled([
+      service.setDisabled(caller, appBuilder, true),
+      service.setDisabled(caller, custom.id, true),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+  });
+
+  it('starts a project that names no agent on a custom agent once every built-in agent is disabled', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    await seedLiveAgent(caller.tenantId, caller.userId, { visibility: 'private' });
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+
+    await service.setDisabled(caller, makara, true);
+    await service.setDisabled(caller, appBuilder, true);
+
+    expect(await service.getDefaultAgentId(caller.tenantId)).toBe(custom.id);
   });
 
   it('lets only one of two concurrent disables of the last two built-in agents through', async () => {
