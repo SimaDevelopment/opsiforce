@@ -159,7 +159,7 @@ The Environment a Custom Agent's new Projects are created from — their Agent P
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
 
 **Disable (Agent)**:
-An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Built-in Agent enabled, and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
+An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Agent enabled that new Projects can start on — a Built-in Agent, or a public Custom Agent published to its Default environment — and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
 _Avoid_: Delete (the permanent sibling); Archive, Deactivate (non-canonical)
 
 **Duplicate (Agent)**:
