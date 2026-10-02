@@ -112,7 +112,7 @@ export class SkillService {
   /** Which skills each Built-in Agent's image package ships: they reach its Projects without any pin (ADR-0060). */
   private async shippers(): Promise<SkillShipper[]> {
     const registered = await this.repository.builtInAgentsNamed(Object.keys(readMergedAgentRegistry().agents));
-    return registered.map((agent) => ({ ...agent, ships: packageSkillNames(agent.name) }));
+    return registered.map((agent) => Object.assign(agent, { ships: packageSkillNames(agent.name) }));
   }
 
   async listVersions(caller: SkillCaller, skillId: string): Promise<SkillVersionResponse[]> {
@@ -380,7 +380,7 @@ function toSummary(row: SkillListRow, fromImage: Set<string>, shippers: SkillShi
     createdByName: row.createdByName,
     builderChatId: skill.builderChatId,
     usedByAgentCount: new Set([...row.pinnedAgentIds, ...shipping]).size,
-    outdatedAgentCount: row.outdatedAgentCount,
+    outdatedAgentCount: row.outdatedAgentIds.filter((agentId) => !shipping.includes(agentId)).length,
     latestVersion: latestVersion
       ? { version: latestVersion.version, description: latestVersion.description, flags: latestVersion.flags }
       : null,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import 'reflect-metadata';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
@@ -510,17 +510,19 @@ describe('the agents carrying a skill', () => {
     expect((await service.findOne(author, skillId)).usedByAgentCount).toBe(rows.length);
   });
 
-  it('shows a Built-in Agent that both ships and pins a skill once, and counts it once', async () => {
-    const { skillId, versionId } = await ensureBuiltInSkill('dates');
+  it('shows a Built-in Agent that both ships and pins a skill once, and never counts that pin as behind', async () => {
+    const { skillId } = await ensureBuiltInSkill('dates');
     const appBuilder = await ensureBuiltInAgent('app-builder');
-    await pinToAgent(tenantId, skillId, { agentId: appBuilder, versionId });
+    await pinToAgent(tenantId, skillId, { agentId: appBuilder, versionId: await nonLatestVersionOf(skillId) });
 
     const rows = await service.listAgents(author, skillId);
+    const summary = await service.findOne(author, skillId);
 
     expect(rows.filter((row) => row.id === appBuilder)).toEqual([
       expect.objectContaining({ shipped: true, pinnedVersions: [expect.any(Number)], outdated: false }),
     ]);
-    expect((await service.findOne(author, skillId)).usedByAgentCount).toBe(rows.length);
+    expect(summary.usedByAgentCount).toBe(rows.length);
+    expect(summary.outdatedAgentCount).toBe(rows.filter((row) => row.outdated).length);
   });
 
   it('is empty while no agent carries it and refuses a skill the caller cannot see', async () => {
@@ -633,6 +635,22 @@ async function pinToAgent(
   });
 
   return { agentId, displayName };
+}
+
+async function nonLatestVersionOf(skillId: string): Promise<string> {
+  const [{ highest }] = await db
+    .select({ highest: sql<number>`max(${skillVersions.version})` })
+    .from(skillVersions)
+    .where(eq(skillVersions.skillId, skillId));
+  const id = randomUUID();
+  await db.insert(skillVersions).values({
+    id,
+    skillId,
+    version: Number(highest) + 1,
+    contentHash: `hash-${id}`,
+    createdVia: 'reconciler',
+  });
+  return id;
 }
 
 async function versionIdFor(skillId: string, version: number): Promise<string> {

@@ -46,7 +46,7 @@ export interface SkillListRow {
   latestVersion: SkillVersionRow | null;
   createdByName: string | null;
   pinnedAgentIds: string[];
-  outdatedAgentCount: number;
+  outdatedAgentIds: string[];
 }
 
 export interface BuiltInAgentIdentity {
@@ -85,7 +85,7 @@ export class SkillRepository {
         latestVersion: skillVersions,
         createdByName: createdByName(),
         pinnedAgentIds: pinnedAgentIds(tenantId, userId),
-        outdatedAgentCount: outdatedAgentCount(tenantId, userId),
+        outdatedAgentIds: outdatedAgentIds(tenantId, userId),
       })
       .from(skills)
       .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
@@ -104,7 +104,7 @@ export class SkillRepository {
       latestVersion: row.latestVersion,
       createdByName: row.createdByName,
       pinnedAgentIds: row.pinnedAgentIds,
-      outdatedAgentCount: Number(row.outdatedAgentCount),
+      outdatedAgentIds: row.outdatedAgentIds,
     }));
   }
 
@@ -115,7 +115,7 @@ export class SkillRepository {
         latestVersion: skillVersions,
         createdByName: createdByName(),
         pinnedAgentIds: pinnedAgentIds(tenantId, userId),
-        outdatedAgentCount: outdatedAgentCount(tenantId, userId),
+        outdatedAgentIds: outdatedAgentIds(tenantId, userId),
       })
       .from(skills)
       .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
@@ -128,7 +128,7 @@ export class SkillRepository {
       latestVersion: row.latestVersion,
       createdByName: row.createdByName,
       pinnedAgentIds: row.pinnedAgentIds,
-      outdatedAgentCount: Number(row.outdatedAgentCount),
+      outdatedAgentIds: row.outdatedAgentIds,
     };
   }
 
@@ -451,9 +451,9 @@ function pinnedAgentIds(tenantId: string, userId: string): SQL<string[]> {
   )`;
 }
 
-function outdatedAgentCount(tenantId: string, userId: string): SQL<number> {
-  return sql<number>`(
-    select count(distinct ${agentProfiles.agentId})
+function outdatedAgentIds(tenantId: string, userId: string): SQL<string[]> {
+  return sql<string[]>`(
+    select coalesce(array_agg(distinct ${agentProfiles.agentId}), '{}')
     from ${agentProfileSkills}
     inner join ${agentProfiles} on ${agentProfiles.id} = ${agentProfileSkills.profileId}
     inner join ${agents} on ${agents.id} = ${agentProfiles.agentId}
