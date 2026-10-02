@@ -19,6 +19,10 @@ export interface AgentEnvironmentJobData {
   mode: AgentUpdateMode;
 }
 
+export interface RecordedEnvironmentJobData extends AgentEnvironmentJobData {
+  updateId: string;
+}
+
 export interface AgentReloadJobData {
   updateId: string;
   attempt: number;

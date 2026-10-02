@@ -6,5 +6,5 @@ export async function run(ctx) {
   }
   ctx.note(`installing workspace dependencies with yarn ${ctx.versions.exact.yarn} (PnP) — generates .pnp.cjs…`);
   ctx.run('yarn', ['install'], { cwd: ctx.paths.packageRoot });
-  ctx.note('workspace dependencies installed (backend, frontend, codex-proxy).');
+  ctx.note('workspace dependencies installed (backend, frontend, linked-account-proxy).');
 }

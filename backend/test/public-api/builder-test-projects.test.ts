@@ -34,7 +34,9 @@ const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? '';
 const IMAGE_MIGRATE_SCRIPT = resolve('../agent-config/scripts/agent-workspace-migrate.mjs');
 
 async function imageWithPlatformIgnores(gitignore: string): Promise<string> {
-  const { withPlatformIgnores } = (await import(IMAGE_MIGRATE_SCRIPT)) as { withPlatformIgnores(text: string): string };
+  const { withPlatformIgnores } = (await import(IMAGE_MIGRATE_SCRIPT)) as {
+    withPlatformIgnores: (text: string) => string;
+  };
   return withPlatformIgnores(gitignore);
 }
 

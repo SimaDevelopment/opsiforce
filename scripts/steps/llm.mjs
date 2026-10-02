@@ -1,41 +1,13 @@
-import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { buildAgentImage } from './images.mjs';
 
 const NAMESPACE = 'local';
 const RELEASE = 'opsiforce-bifrost';
-const CHART = 'bifrost/bifrost';
-const HELM_TIMEOUT = '5m';
 const PROVIDER_KEYS_SECRET = 'opsiforce-bifrost-provider-keys';
 
-const CODEX_PROXY_PORT = 8455;
-const HOST_BRIDGE_BASE_URL = `http://host.minikube.internal:${CODEX_PROXY_PORT}`;
-const OPENAI_BASE_URL = 'https://api.openai.com';
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
-const DEFAULT_MODEL_ID = 'gpt-5.6-sol';
-
-const SUBSCRIPTION_OVERLAY = `bifrost:
-  providers:
-    custom-openai-1:
-      network_config:
-        base_url: "${HOST_BRIDGE_BASE_URL}"
-`;
-
-const KEY_OVERLAY = `bifrost:
-  providers:
-    custom-openai-1:
-      keys:
-        - name: openai-byok
-          value: env.OPENAI_API_KEY
-          weight: 1
-          models: ["*"]
-      network_config:
-        base_url: "${OPENAI_BASE_URL}"
-      custom_provider_config:
-        is_key_less: false
-`;
+const DEFAULT_MODEL_ID = 'gpt-6.1-sol';
 
 function ensureCluster(ctx) {
   const host = ctx.tryCapture('minikube', ['status', '-f', '{{.Host}}']);
@@ -46,20 +18,13 @@ function ensureCluster(ctx) {
   throw new Error('minikube is not running — the LLM step needs a live cluster. Run `yarn dev --reset` then `yarn dev`.');
 }
 
-function ensureGatewayInstalled(ctx) {
-  const status = ctx.tryCapture('helm', ['status', RELEASE, '--namespace', NAMESPACE]);
-  if (status === null) {
-    throw new Error('Bifrost is not installed yet — the gateway step must run first. Re-run `yarn dev`.');
-  }
-}
-
 function printChoiceCopy(ctx) {
   const { bold, dim, cyan } = ctx.c;
   ctx.print(bold('Connect an LLM for the app-builder agent.'));
   ctx.print('');
   ctx.print(`${cyan('1)')} ${bold('ChatGPT / Codex subscription')}  ${dim('(recommended, default)')}`);
   ctx.print(dim('   Drives a ChatGPT subscription you already pay for — no extra API charges.'));
-  ctx.print(dim('   Sign in once in your browser; the token is stored locally and refreshed for you.'));
+  ctx.print(dim('   Sign in once on Settings → Model providers; Opsiforce keeps the sign-in refreshed.'));
   ctx.print(dim('   Rides an unofficial OpenAI endpoint that can change without notice (see ADR-0018).'));
   ctx.print('');
   ctx.print(`${cyan('2)')} ${bold('Your OpenAI API key')}`);
@@ -79,23 +44,6 @@ async function chooseProvider(ctx) {
   const answer = (await ctx.ask('  Choose [1]: ', { defaultValue: '1' })).trim().toLowerCase();
   if (answer === '2' || answer === 'key' || answer === 'openai') return 'key';
   return 'subscription';
-}
-
-function ensureCodexLogin(ctx) {
-  if (ctx.exists(ctx.paths.codexAuth)) {
-    ctx.note('reusing the existing Codex login (~/.opsiforce/codex-auth.json).');
-    return;
-  }
-  if (!process.stdin.isTTY) {
-    throw new Error(
-      'The subscription login needs an interactive terminal. Run `yarn dev` in a terminal, or use the OpenAI key path by setting $OPENAI_API_KEY.'
-    );
-  }
-  ctx.note('starting the ChatGPT/Codex device login — a browser window will open…');
-  ctx.run('yarn', ['workspace', '@opsiforce/codex-proxy', 'run', 'login'], { cwd: ctx.paths.packageRoot });
-  if (!ctx.exists(ctx.paths.codexAuth)) {
-    throw new Error('Codex login did not complete (no token at ~/.opsiforce/codex-auth.json). Re-run `yarn dev`.');
-  }
 }
 
 function askSecret(promptText) {
@@ -151,101 +99,11 @@ async function promptOpenAiKey(ctx) {
   return key;
 }
 
-function setOpenAiProviderKey(ctx, apiKey) {
-  const manifest = JSON.stringify({
-    apiVersion: 'v1',
-    kind: 'Secret',
-    metadata: { name: PROVIDER_KEYS_SECRET, namespace: NAMESPACE },
-    type: 'Opaque',
-    data: {
-      'openai-api-key': Buffer.from(apiKey, 'utf8').toString('base64'),
-      'anthropic-api-key': '',
-    },
-  });
-  ctx.run('kubectl', ['apply', '-f', '-'], { input: manifest, stdio: ['pipe', 'inherit', 'inherit'] });
-}
-
-function writeOverlay(ctx, content) {
-  mkdirSync(ctx.paths.home, { recursive: true });
-  const file = join(ctx.paths.home, 'bifrost.values.llm.yaml');
-  writeFileSync(file, content);
-  return file;
-}
-
-function upgradeGateway(ctx, overlayFile) {
-  ctx.run('helm', [
-    'upgrade',
-    '--install',
-    RELEASE,
-    CHART,
-    '--version',
-    ctx.versions.exact.charts.bifrost,
-    '--namespace',
-    NAMESPACE,
-    '--wait',
-    '--timeout',
-    HELM_TIMEOUT,
-    '--values',
-    join(ctx.paths.packageRoot, 'helm', 'bifrost', 'values.local.yaml'),
-    '--values',
-    overlayFile,
-  ]);
-}
-
-function reloadGateway(ctx) {
-  const restarted = ctx.tryCapture('kubectl', [
-    'rollout',
-    'restart',
-    `deployment/${RELEASE}`,
-    '--namespace',
-    NAMESPACE,
-  ]);
-  if (restarted === null) {
-    ctx.warn('Could not trigger a Bifrost restart; the helm upgrade already waited for readiness.');
-    return;
-  }
-  ctx.tryCapture('kubectl', ['rollout', 'status', `deployment/${RELEASE}`, '--namespace', NAMESPACE, '--timeout=120s']);
-  ctx.note('Bifrost reloaded with the chosen provider upstream.');
-}
-
 function parseModelIds(payload) {
   const data = payload?.data;
   if (!Array.isArray(data)) return null;
   const ids = data.map((entry) => entry?.id).filter((id) => typeof id === 'string');
   return ids.length > 0 ? ids : null;
-}
-
-async function waitForHealth(port, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/healthz`);
-      if (res.ok) return true;
-    } catch {
-      void 0;
-    }
-    await delay(250);
-  }
-  return false;
-}
-
-async function queryProxyModels(ctx) {
-  const child = spawn('node', ['src/main.ts'], {
-    cwd: join(ctx.paths.packageRoot, 'codex-proxy'),
-    env: { ...process.env, CODEX_PROXY_PORT: String(CODEX_PROXY_PORT) },
-    stdio: 'ignore',
-  });
-  child.on('error', () => undefined);
-  try {
-    if (!(await waitForHealth(CODEX_PROXY_PORT, 8000))) return null;
-    const res = await fetch(`http://127.0.0.1:${CODEX_PROXY_PORT}/v1/models`);
-    if (!res.ok) return null;
-    return parseModelIds(await res.json());
-  } catch {
-    return null;
-  } finally {
-    child.kill('SIGTERM');
-  }
 }
 
 async function queryOpenAiModels(apiKey) {
@@ -373,31 +231,72 @@ async function ensureUsableModel(ctx, availableIds) {
   }
 }
 
+function ensureGatewayInstalled(ctx) {
+  const status = ctx.tryCapture('helm', ['status', RELEASE, '--namespace', NAMESPACE]);
+  if (status === null) {
+    throw new Error('Bifrost is not installed yet — the gateway step must run first. Re-run `yarn dev`.');
+  }
+}
+
+function setOpenAiProviderKey(ctx, apiKey) {
+  const patch = JSON.stringify({ data: { 'openai-api-key': Buffer.from(apiKey, 'utf8').toString('base64') } });
+  ctx.run('kubectl', ['patch', 'secret', PROVIDER_KEYS_SECRET, '--namespace', NAMESPACE, '--type', 'merge', '-p', patch]);
+}
+
+function reloadGateway(ctx) {
+  const restarted = ctx.tryCapture('kubectl', [
+    'rollout',
+    'restart',
+    `deployment/${RELEASE}`,
+    '--namespace',
+    NAMESPACE,
+  ]);
+  if (restarted === null) {
+    ctx.warn(
+      `Could not restart Bifrost; run \`kubectl rollout restart deployment/${RELEASE} --namespace ${NAMESPACE}\` so its openai provider picks up the key.`
+    );
+    return;
+  }
+  ctx.tryCapture('kubectl', ['rollout', 'status', `deployment/${RELEASE}`, '--namespace', NAMESPACE, '--timeout=120s']);
+  ctx.note('Bifrost reloaded; its openai provider now carries your key.');
+}
+
+function persistOpenAiKey(ctx, apiKey) {
+  const envFile = join(ctx.paths.packageRoot, '.env');
+  const kept = ctx.exists(envFile)
+    ? readFileSync(envFile, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('OPENAI_API_KEY='))
+    : [];
+  writeFileSync(envFile, `${[...kept, `OPENAI_API_KEY=${apiKey}`].join('\n')}\n`, { mode: 0o600 });
+  chmodSync(envFile, 0o600);
+}
+
 export async function run(ctx) {
   ensureCluster(ctx);
-  ensureGatewayInstalled(ctx);
 
   const provider = await chooseProvider(ctx);
   let apiKey;
 
   if (provider === 'subscription') {
-    ensureCodexLogin(ctx);
-    ctx.note('pointing the gateway provider at the host codex proxy (host.minikube.internal)…');
-    upgradeGateway(ctx, writeOverlay(ctx, SUBSCRIPTION_OVERLAY));
+    ctx.note(
+      'the ChatGPT subscription is signed in on Settings → Model providers and served by the in-cluster linked-account proxy.'
+    );
   } else {
     apiKey = await promptOpenAiKey(ctx);
+    ensureGatewayInstalled(ctx);
     setOpenAiProviderKey(ctx, apiKey);
-    ctx.note('pointing the gateway provider at the OpenAI API with your key…');
-    upgradeGateway(ctx, writeOverlay(ctx, KEY_OVERLAY));
+    persistOpenAiKey(ctx, apiKey);
+    reloadGateway(ctx);
+    ctx.note('saved the key to .env; the backend adopts the built-in openai model provider on its first boot.');
   }
-  reloadGateway(ctx);
   ctx.config.llm = { provider };
 
-  await ensureUsableModel(ctx, provider === 'subscription' ? await queryProxyModels(ctx) : await queryOpenAiModels(apiKey));
+  if (provider === 'key') await ensureUsableModel(ctx, await queryOpenAiModels(apiKey));
 
   ctx.note(
     provider === 'subscription'
-      ? 'LLM ready — agent requests route through Bifrost to your ChatGPT/Codex subscription via the host proxy.'
+      ? 'LLM ready once you sign in ChatGPT on the Built-in model providers card at Settings → Model providers.'
       : 'LLM ready — agent requests route through Bifrost to the OpenAI API with your key.'
   );
 }

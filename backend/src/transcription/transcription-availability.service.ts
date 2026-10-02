@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BifrostService } from '../bifrost/bifrost.service';
-import { AVAILABILITY_CACHE_MS, AVAILABILITY_ERROR_CACHE_MS } from './transcription.constants';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
+import { AVAILABILITY_CACHE_MS, AVAILABILITY_ERROR_CACHE_MS, TRANSCRIPTION_PROVIDER } from './transcription.constants';
 
 interface CachedAvailability {
   available: boolean;
@@ -13,9 +14,17 @@ export class TranscriptionAvailabilityService {
   private cached: CachedAvailability | undefined;
   private pending: Promise<boolean> | undefined;
 
-  constructor(private readonly bifrostService: BifrostService) {}
+  constructor(
+    private readonly bifrostService: BifrostService,
+    private readonly modelProviders: ModelProvidersService
+  ) {}
 
-  async isAvailable(): Promise<boolean> {
+  async isAvailable(tenantId: string): Promise<boolean> {
+    if (!(await this.isPlatformProviderKeyed())) return false;
+    return this.modelProviders.isProviderReachable(tenantId, TRANSCRIPTION_PROVIDER);
+  }
+
+  private async isPlatformProviderKeyed(): Promise<boolean> {
     if (this.cached && this.cached.expiresAt > Date.now()) return this.cached.available;
     this.pending ??= this.refresh();
     return this.pending;

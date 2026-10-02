@@ -1,3 +1,4 @@
+import { defaultProfileModel } from '../../src/agent/agent-config';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -189,6 +190,12 @@ async function runImport(archive: Buffer, displayName: string | null = null, cal
   return importer.import(caller, await archiveFile(archive), displayName);
 }
 
+function byJoinedText(a: (string | null)[], b: (string | null)[]): number {
+  const left = a.join();
+  const right = b.join();
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function development(detail: AgentDetail) {
   const profile = detail.profiles.find((candidate) => candidate.environmentId === targetDevelopmentId);
   if (!profile) throw new Error('expected a Development profile');
@@ -320,7 +327,7 @@ describe('importing an Agent export into another Organization', () => {
     expect(pins.get(same.name)).toBe(same.first);
     expect(pins.get(drifted.name)).toBe(drifted.latest);
     const profile = development(agent);
-    expect(profile).toMatchObject({ model: 'openai/gpt-5.6-sol', variant: 'high' });
+    expect(profile).toMatchObject(defaultProfileModel());
     expect(notes).toEqual(
       expect.arrayContaining([
         { kind: 'model', message: expect.stringContaining('retired/model-zero') },
@@ -411,7 +418,7 @@ describe('refusing an import', () => {
     expect(body.code).toBe('name_unavailable');
     expect(body.nameFromFile).toBe(source.agent.displayName);
     const problems = body.problems as AgentImportProblem[];
-    expect(problems.map((problem) => [problem.kind, problem.name ?? null]).toSorted()).toEqual(
+    expect(problems.map((problem) => [problem.kind, problem.name ?? null]).toSorted(byJoinedText)).toEqual(
       [
         ['name', taken.displayName],
         ['skill', lockedName],
@@ -419,7 +426,7 @@ describe('refusing an import', () => {
         ['skill', 'dates'],
         ['skill', missingBuiltIn],
         ['template', null],
-      ].toSorted()
+      ].toSorted(byJoinedText)
     );
     expect(await agentCount(target.tenantId)).toBe(agentsBefore);
     expect(await db.select({ id: skills.id }).from(skills).where(eq(skills.tenantId, target.tenantId))).toHaveLength(

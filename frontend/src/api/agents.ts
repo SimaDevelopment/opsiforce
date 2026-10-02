@@ -4,6 +4,8 @@ import { createAppQuery } from '~/lib/create-app-query';
 import { skillKeys, type SkillFlags } from './skills';
 import type { StoreFilter } from './store';
 
+const MODEL_CATALOG_STALE_MS = 30_000;
+
 export const agentKeys = {
   all: ['agents'] as const,
   list: () => [...agentKeys.all, 'list'] as const,
@@ -219,7 +221,7 @@ export function useAgentModels() {
   return createAppQuery(() => ({
     queryKey: agentKeys.models(),
     queryFn: () => api.get<CatalogProvider[]>('/agents/models'),
-    staleTime: Infinity,
+    staleTime: MODEL_CATALOG_STALE_MS,
   }));
 }
 

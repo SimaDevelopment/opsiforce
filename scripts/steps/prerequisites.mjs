@@ -231,7 +231,7 @@ export async function run(ctx) {
 
   if (node.status === 'below-floor') {
     throw new Error(
-      `Node ${node.version} is too old — the Quickstart runs TypeScript entrypoints (e.g. codex-proxy/src/main.ts) directly with \`node\`, which needs Node ${ctx.versions.exact.node}. Install or activate it (nvm/fnm, Homebrew, or your package manager) and re-run \`yarn dev\`.`
+      `Node ${node.version} is too old — the Quickstart runs TypeScript entrypoints (e.g. linked-account-proxy/src/main.ts) directly with \`node\`, which needs Node ${ctx.versions.exact.node}. Install or activate it (nvm/fnm, Homebrew, or your package manager) and re-run \`yarn dev\`.`
     );
   }
 

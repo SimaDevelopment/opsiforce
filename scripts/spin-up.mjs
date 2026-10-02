@@ -25,7 +25,6 @@ const VERSIONS_FILE = join(PACKAGE_ROOT, 'versions.json');
 const HOME_DIR = join(homedir(), '.opsiforce');
 const STATE_FILE = join(HOME_DIR, 'state.json');
 const CONFIG_FILE = join(HOME_DIR, 'config.json');
-const CODEX_AUTH_FILE = join(HOME_DIR, 'codex-auth.json');
 const LOGS_DIR = join(HOME_DIR, 'logs');
 const TUNNEL_PID_FILE = join(HOME_DIR, 'tunnel.pid');
 const TILT_PID_FILE = join(HOME_DIR, 'tilt.pid');
@@ -75,8 +74,8 @@ const STEPS = [
   { id: 'install', title: 'Install workspace dependencies', detail: 'yarn install (virgin PnP)' },
   { id: 'images', title: 'Build images into the cluster', detail: 'agent, runtime-proxy, backend' },
   { id: 'database', title: 'Create databases & migrate', detail: 'opsiforce + bifrost databases, drizzle migrate' },
-  { id: 'bifrost', title: 'Install the LLM gateway', detail: 'helm Bifrost + provider secrets' },
-  { id: 'llm', title: 'Connect an LLM', detail: 'Codex subscription device-flow or OpenAI key' },
+  { id: 'bifrost', title: 'Install the LLM gateway', detail: 'helm Bifrost + admin secrets' },
+  { id: 'llm', title: 'Connect an LLM', detail: 'ChatGPT subscription or OpenAI key' },
   { id: 'email', title: 'Local email testing', detail: 'optional mail mock — off by default' },
   { id: 'up', title: 'Bring the stack up', detail: 'tilt up — in-cluster + host processes' },
   { id: 'open', title: 'Open Opsiforce', detail: 'open https://opsiforce.localtest.me' },
@@ -300,7 +299,6 @@ function stepContext(config, versions, prompts, flags) {
     print,
     paths: {
       home: HOME_DIR,
-      codexAuth: CODEX_AUTH_FILE,
       packageRoot: PACKAGE_ROOT,
       logs: LOGS_DIR,
       tunnelPid: TUNNEL_PID_FILE,
@@ -420,7 +418,6 @@ function reset() {
   console.log(`  ${green('✓')} Cleared ${tildePath(HOME_DIR)}`);
   note(`progress:    ${tildePath(STATE_FILE)}`);
   note(`config:      ${tildePath(CONFIG_FILE)}`);
-  note(`codex token: ${tildePath(CODEX_AUTH_FILE)}`);
   note(`logs:        ${tildePath(LOGS_DIR)}`);
   console.log('');
   console.log(`  Next run of ${bold('yarn dev')} starts clean.`);
@@ -438,7 +435,7 @@ function printUsage() {
   console.log('  yarn dev --help          Show this message');
   console.log('');
   console.log('Pinned tool versions live in versions.json; refresh them with scripts/capture-baseline.mjs.');
-  console.log('State and config live under ~/.opsiforce/ (state.json, config.json, codex-auth.json).');
+  console.log('State and config live under ~/.opsiforce/ (state.json, config.json).');
   console.log('Set OPSIFORCE_SPIN_FAIL_AT=<step-id> to simulate a step failure when testing resume.');
 }
 

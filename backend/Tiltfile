@@ -58,6 +58,8 @@ BACKEND_ENV_OVERRIDES = {
     'MAILGUN_RECEIVE_DOMAIN': 'config.mailgunReceiveDomain',
     'MAILGUN_WEBHOOK_SIGNING_KEY': 'config.mailgunWebhookSigningKey',
     'EXTERNAL_SERVICES_WEBHOOK_BASE_URL': 'config.externalServicesWebhookBaseUrl',
+    'OPENAI_API_KEY': 'config.openaiApiKey',
+    'ANTHROPIC_API_KEY': 'config.anthropicApiKey',
 }
 
 local_env = dotenv('../.env')
@@ -138,6 +140,34 @@ k8s_resource(workload='proxy-app', new_name='runtime-proxies-app', labels=['clus
 k8s_resource(workload='proxy-vscode', new_name='runtime-proxies-vscode', labels=['cluster'])
 k8s_resource(workload='proxy-db', new_name='runtime-proxies-db', labels=['cluster'])
 
+# ───────────────────────── Linked-account proxy ─────────────────────────
+# Stateless Node server Bifrost reaches at http://opsiforce-linked-account-proxy:8455/v1 for
+# signed-in ChatGPT accounts; it fetches each account's token from the backend.
+docker_build_with_restart(
+    'opsiforce-linked-account-proxy',
+    context=build_context,
+    dockerfile='../docker/Dockerfile.linked-account-proxy',
+    build_args=build_args,
+    entrypoint=['node', 'src/main.ts'],
+    only=[pkg_prefix + 'linked-account-proxy/package.json', pkg_prefix + 'linked-account-proxy/src'],
+    live_update=[
+        sync('../linked-account-proxy/src', '/app/src'),
+    ],
+)
+
+k8s_yaml(helm(
+    '../helm/opsiforce-linked-account-proxy',
+    name='opsiforce-linked-account-proxy',
+    namespace='local',
+    values=['../helm/opsiforce-linked-account-proxy/values.local.yaml'],
+))
+
+k8s_resource(
+    'opsiforce-linked-account-proxy',
+    resource_deps=['opsiforce-backend'],
+    labels=['cluster'],
+)
+
 # ───────────────────────── Opsiforce Proxy (Traefik routing + oauth2-proxy) ─────────────────────────
 # Depends on the runtime-proxies Services existing so nginx's startup-time DNS
 # resolution doesn't fail. Uses prod nginx image (no source to live-reload).
@@ -202,8 +232,7 @@ spec:
 # ───────────────────────── Host-side processes (local_resource) ─────────────────────────
 # Long-running host processes Tilt manages next to the in-cluster workloads, so the whole
 # stack lives under one UI with per-process logs/status/restart. The cluster reaches these
-# over host.minikube.internal (the frontend via opsiforce-proxy nginx; the codex proxy via
-# Bifrost; the mail mock via the backend).
+# over host.minikube.internal (the frontend via opsiforce-proxy nginx; the mail mock via the backend).
 
 # Frontend dev server (Vite, :8084). opsiforce-proxy proxies the web app here; `/api` is
 # served by the in-cluster backend with the static dev identity, so the UI loads signed in.
@@ -214,24 +243,6 @@ if is_standalone:
         'frontend',
         serve_cmd='yarn workspace @opsiforce/frontend run minikube-dev',
         readiness_probe=probe(period_secs=5, http_get=http_get_action(port=8084, path='/')),
-        labels=['host'],
-    )
-
-# Codex proxy (:8455) only matters on the subscription LLM path; on the OpenAI-key path
-# Bifrost calls api.openai.com directly. The Quickstart records the choice in the config.
-config_path = os.path.join(os.getenv('HOME', ''), '.opsiforce', 'config.json')
-llm_provider = 'subscription'
-if os.path.exists(config_path):
-    cfg = read_json(config_path, default={})
-    llm = cfg.get('llm', {})
-    if type(llm) == 'dict':
-        llm_provider = llm.get('provider', 'subscription')
-
-if llm_provider != 'key':
-    local_resource(
-        'codex-proxy',
-        serve_cmd='CODEX_PROXY_PORT=8455 yarn workspace @opsiforce/codex-proxy run start',
-        readiness_probe=probe(period_secs=5, http_get=http_get_action(port=8455, path='/healthz')),
         labels=['host'],
     )
 
@@ -262,6 +273,7 @@ if is_standalone:
 
 # Optional mail stub that swallows the backend's outbound mail. Off unless the wizard's
 # email-testing step opted in (config.emailTesting); startable from the Tilt UI any time.
+config_path = os.path.join(os.getenv('HOME', ''), '.opsiforce', 'config.json')
 email_testing = False
 if os.path.exists(config_path):
     email_testing = read_json(config_path, default={}).get('emailTesting', False) == True

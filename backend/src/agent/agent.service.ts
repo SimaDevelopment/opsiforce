@@ -167,6 +167,7 @@ export class AgentService {
     const model = dto.model?.trim() || fallback.model;
     const variant = dto.variant === undefined ? fallback.variant : dto.variant?.trim() || null;
     assertModelSelection(model, variant);
+    if (dto.model?.trim()) await this.profiles.assertModelReachable(caller.tenantId, model);
 
     const agentId = await this.bundles.write(caller, {
       displayName,

@@ -1,0 +1,13 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/simadevelopment/opsiforce
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+config:
+  backendUrl: "http://opsiforce-backend-opsiforce-backend-production:3001"
+
+existingSecret: opsiforce-linked-account-proxy-service-token

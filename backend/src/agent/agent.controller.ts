@@ -31,7 +31,8 @@ import type { AgentExportPreview } from './agent-export';
 import { AgentExportService } from './agent-export.service';
 import type { AgentImportResult, ImportAgentDto } from './agent-import';
 import { AgentImportService } from './agent-import.service';
-import { modelCatalogResponse, type ModelCatalogProvider } from './agent-models';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
+import { catalogOfFormats, modelCatalogResponse, type ModelCatalogProvider } from './agent-models';
 import { AgentService } from './agent.service';
 import type {
   AgentCaller,
@@ -60,7 +61,8 @@ export class AgentController {
     private readonly importService: AgentImportService,
     private readonly uploadService: ProjectImportUploadService,
     private readonly userService: UserService,
-    private readonly projectService: ProjectService
+    private readonly projectService: ProjectService,
+    private readonly modelProvidersService: ModelProvidersService
   ) {}
 
   @Get()
@@ -87,8 +89,9 @@ export class AgentController {
 
   @Get('models')
   @RelaxPermission()
-  models(): ModelCatalogProvider[] {
-    return modelCatalogResponse();
+  async models(@CurrentTenant() tenant: TenantContext): Promise<ModelCatalogProvider[]> {
+    const formats = await this.modelProvidersService.reachableBaseFormats(tenant.tenantId);
+    return modelCatalogResponse(catalogOfFormats(formats));
   }
 
   @Get(':id')

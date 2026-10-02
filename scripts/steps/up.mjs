@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -92,21 +92,6 @@ async function waitForReady(ctx, required) {
   return false;
 }
 
-async function refreshBifrostCatalog(ctx) {
-  const marker = join(ctx.paths.home, 'bifrost-catalog-refreshed');
-  if (existsSync(marker)) return;
-  ctx.note('refreshing the LLM gateway so it lists the subscription models…');
-  try {
-    ctx.run('kubectl', ['rollout', 'restart', 'deployment/opsiforce-bifrost', '--namespace', 'local']);
-    ctx.run('kubectl', ['rollout', 'status', 'deployment/opsiforce-bifrost', '--namespace', 'local', '--timeout=120s']);
-    writeFileSync(marker, `${new Date().toISOString()}\n`);
-  } catch (error) {
-    ctx.warn(
-      `Could not refresh the LLM gateway (${error.message}). If the agent reports "no keys found that support model", run: kubectl rollout restart deployment/opsiforce-bifrost --namespace local`
-    );
-  }
-}
-
 export async function run(ctx) {
   ensureCluster(ctx);
   if (!ctx.commandExists('tilt')) {
@@ -141,7 +126,6 @@ export async function run(ctx) {
   }
 
   const required = ['opsiforce-backend', 'opsiforce-proxy', 'frontend'];
-  if (ctx.config.llm?.provider !== 'key') required.push('codex-proxy');
 
   ctx.note('bringing up in-cluster workloads and host processes (first run can take a few minutes)…');
   if (await waitForReady(ctx, required)) {
@@ -150,10 +134,6 @@ export async function run(ctx) {
     const statuses = resourceStatuses(ctx) ?? {};
     const pending = required.filter((name) => statuses[name] !== 'ok').map((name) => `${name} (${statuses[name] ?? 'unknown'})`);
     ctx.warn(`Not healthy yet: ${pending.join(', ')}. Watch them in the Tilt UI and restart any that need it.`);
-  }
-
-  if (ctx.config.llm?.provider !== 'key') {
-    await refreshBifrostCatalog(ctx);
   }
 
   ctx.note(`one UI for every process — logs, status, and per-service restart — at ${TILT_UI_URL} (or http://localhost:10350).`);

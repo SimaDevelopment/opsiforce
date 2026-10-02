@@ -7,6 +7,8 @@ export const Perms = {
   manageTenantBudget: 'can_manage_tenant_budget',
   managePlatformDefaults: 'can_manage_platform_defaults',
   manageTenantDefaults: 'can_manage_tenant_defaults',
+  manageTenantModelProviders: 'can_manage_tenant_model_providers',
+  managePlatformModelProviders: 'can_manage_platform_model_providers',
   viewCodeTab: 'can_view_code_tab',
   viewDbTab: 'can_view_db_tab',
   disableProject: 'can_disable_project',

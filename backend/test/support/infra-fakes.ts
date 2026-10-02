@@ -251,6 +251,9 @@ export class FakeAgentUpdateK8sService extends RecordingFake {
 }
 
 export class FakeQueue extends RecordingFake {
+  readonly acceptedJobs: JsonObject[] = [];
+  private readonly retainedJobIds = new Set<string>();
+
   async add(name: string, data: JsonObject, opts?: JsonObject): Promise<{ id: string }> {
     this.record('add', { name, data, ...(opts ? { opts } : {}) });
     return { id: `fake-job-${this.calls.length}` };
@@ -258,7 +261,21 @@ export class FakeQueue extends RecordingFake {
 
   async addBulk(jobs: JsonObject[]): Promise<{ id: string }[]> {
     this.record('addBulk', { jobs });
+    for (const job of jobs) this.accept(job);
     return jobs.map((_, index) => ({ id: `fake-bulk-job-${index}` }));
+  }
+
+  private accept(job: JsonObject): void {
+    const opts = (job.opts ?? {}) as { jobId?: string; removeOnComplete?: unknown };
+    if (opts.jobId !== undefined) {
+      if (this.retainedJobIds.has(opts.jobId)) return;
+      if (opts.removeOnComplete !== true) this.retainedJobIds.add(opts.jobId);
+    }
+    this.acceptedJobs.push(job);
+  }
+
+  async setGlobalConcurrency(concurrency: number): Promise<void> {
+    this.record('setGlobalConcurrency', { concurrency });
   }
 
   async upsertJobScheduler(name: string): Promise<void> {

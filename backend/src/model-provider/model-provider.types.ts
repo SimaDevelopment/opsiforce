@@ -1,0 +1,88 @@
+import type { VendorId } from '../linked-accounts/vendor-adapter';
+import type { BaseFormatId, ModelProviderKind } from './base-formats';
+
+export type ModelProviderStatus = 'working' | 'failing' | 'not-signed-in' | 'needs-sign-in' | 'missing' | 'unknown';
+
+export interface TenantModelProviderView {
+  name: string;
+  kind?: ModelProviderKind | null;
+  baseUrl?: string;
+  baseFormat: BaseFormatId | null;
+  enabled: boolean;
+  weight: number;
+  status: ModelProviderStatus;
+}
+
+export interface TenantModelProvidersView {
+  bifrostReachable: boolean;
+  baseFormats: BaseFormatId[];
+  providers: TenantModelProviderView[];
+}
+
+export interface ModelProviderSwitch {
+  name: string;
+  enabled: boolean;
+  weight: number;
+}
+
+export interface SaveBaseFormatDto {
+  providers: ModelProviderSwitch[];
+  acknowledgeAffectedAgents?: boolean;
+}
+
+export const MIN_WEIGHT = 0;
+export const MAX_WEIGHT = 100;
+export const STARTING_WEIGHT = 1;
+export const WEIGHT_RULE_MESSAGE = 'At least one enabled provider needs a weight above 0';
+export const BIFROST_UNREACHABLE_MESSAGE = "The model gateway can't be reached, so changes can't be saved";
+
+export const CUSTOM_MODEL_PROVIDER_LIMIT = 10;
+
+export interface ModelProviderConnectionDto {
+  baseFormat: string;
+  kind: string;
+  key: string;
+  baseUrl?: string;
+}
+
+export interface NewModelProviderDto extends ModelProviderConnectionDto {
+  name: string;
+}
+
+export interface EditModelProviderConnectionDto {
+  key: string;
+  baseUrl?: string;
+}
+
+export interface ModelProviderCreationRules {
+  nameMaxLength: number;
+  customProviderLimit: number;
+  customProviderCount: number;
+  kindsByFormat: Record<BaseFormatId, ModelProviderKind[]>;
+}
+
+export interface ConnectionTestPassed {
+  passed: true;
+}
+
+export interface PlatformModelProviderView {
+  name: string;
+  baseFormat: BaseFormatId | null;
+  kind: ModelProviderKind | null;
+  url: string | null;
+  status: ModelProviderStatus;
+  fixed: boolean;
+  notMetered: boolean;
+  linkedAccountVendor?: VendorId;
+}
+
+export interface PlatformModelProvidersView {
+  bifrostReachable: boolean;
+  providers: PlatformModelProviderView[];
+}
+
+export interface PlatformModelProviderCreationRules {
+  namePrefix: string;
+  nameMaxLength: number;
+  kindsByFormat: Record<BaseFormatId, ModelProviderKind[]>;
+}

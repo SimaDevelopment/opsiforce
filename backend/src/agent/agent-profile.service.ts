@@ -16,8 +16,9 @@ import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { compareTemplates } from '../agent-template/agent-template.types';
 import { lockAgentTemplate } from '../common/locks';
 import { canEditAgent } from './agent-visibility';
-import { duplicateSkillName, notPublishable } from './agent-errors';
-import { assertModelSelection } from './agent-models';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
+import { duplicateSkillName, modelUnreachable, notPublishable } from './agent-errors';
+import { assertModelSelection, baseFormatOfModel } from './agent-models';
 import { AgentRepository } from './agent.repository';
 import {
   PLATFORM_SKILL_NAME,
@@ -47,7 +48,8 @@ export class AgentProfileService {
   constructor(
     private readonly repository: AgentRepository,
     private readonly skillDeliveries: SkillDeliveryService,
-    private readonly templates: AgentTemplateStore
+    private readonly templates: AgentTemplateStore,
+    private readonly modelProviders: ModelProvidersService
   ) {}
 
   async targetProfile(agent: AgentRow, tenantId: string): Promise<AgentProfileRow> {
@@ -69,10 +71,18 @@ export class AgentProfileService {
 
     const profile = await this.targetProfile(agent, caller.tenantId);
     await assertDevelopmentProfile(profile);
+    if (dto.model !== profile.model) await this.assertModelReachable(caller.tenantId, dto.model ?? '');
     await db
       .update(agentProfiles)
       .set({ promptBody: dto.promptBody ?? '', model: dto.model, variant, updatedAt: new Date() })
       .where(eq(agentProfiles.id, profile.id));
+  }
+
+  async assertModelReachable(tenantId: string, model: string): Promise<void> {
+    const format = baseFormatOfModel(model);
+    if (!format) return;
+    const reachable = await this.modelProviders.reachableBaseFormats(tenantId);
+    if (!reachable.includes(format)) throw modelUnreachable(model);
   }
 
   async listSkills(agent: AgentRow, caller: AgentCaller): Promise<AgentProfileSkillResponse[]> {

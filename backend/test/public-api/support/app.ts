@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Controller, Get, Module, type ModuleMetadata } from '@nestjs/common';
+import { Controller, Get, Module, type ModuleMetadata, type Type } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -61,12 +61,13 @@ export interface PublicApiTestApp {
 
 export async function createPublicApiTestApp(
   env: Record<string, string> = {},
-  extraModules: NonNullable<ModuleMetadata['imports']> = []
+  extraModules: NonNullable<ModuleMetadata['imports']> = [],
+  realServices: Type[] = []
 ): Promise<PublicApiTestApp> {
   const previous = new Map(Object.keys(env).map((key) => [key, process.env[key]]));
   Object.assign(process.env, env);
 
-  const moduleRef = await Test.createTestingModule({
+  const builder = Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
       DomainTestModule,
@@ -84,8 +85,9 @@ export async function createPublicApiTestApp(
     .overrideModule(ProjectEnvironmentModule)
     .useModule(StubProjectEnvironmentModule)
     .overrideModule(ProjectEventsModule)
-    .useModule(StubProjectEventsModule)
-    .compile();
+    .useModule(StubProjectEventsModule);
+  for (const service of realServices) builder.overrideProvider(service).useClass(service);
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication<NestFastifyApplication>(
     createHttpAdapter({ genReqId: () => randomUUID() })

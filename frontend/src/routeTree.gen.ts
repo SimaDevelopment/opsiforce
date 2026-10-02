@@ -19,6 +19,7 @@ import { Route as StoreIndexRouteImport } from './routes/store/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsWorkspacesRouteImport } from './routes/settings/workspaces'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
+import { Route as SettingsModelProvidersRouteImport } from './routes/settings/model-providers'
 import { Route as SettingsLimitsRouteImport } from './routes/settings/limits'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings/integrations'
 import { Route as SettingsEnvironmentsRouteImport } from './routes/settings/environments'
@@ -84,6 +85,11 @@ const SettingsWorkspacesRoute = SettingsWorkspacesRouteImport.update({
 const SettingsUsersRoute = SettingsUsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+const SettingsModelProvidersRoute = SettingsModelProvidersRouteImport.update({
+  id: '/model-providers',
+  path: '/model-providers',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsLimitsRoute = SettingsLimitsRouteImport.update({
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/limits': typeof SettingsLimitsRoute
+  '/settings/model-providers': typeof SettingsModelProvidersRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/limits': typeof SettingsLimitsRoute
+  '/settings/model-providers': typeof SettingsModelProvidersRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings': typeof SettingsIndexRoute
@@ -239,6 +247,7 @@ export interface FileRoutesById {
   '/settings/environments': typeof SettingsEnvironmentsRoute
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/limits': typeof SettingsLimitsRoute
+  '/settings/model-providers': typeof SettingsModelProvidersRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
@@ -269,6 +278,7 @@ export interface FileRouteTypes {
     | '/settings/environments'
     | '/settings/integrations'
     | '/settings/limits'
+    | '/settings/model-providers'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
@@ -295,6 +305,7 @@ export interface FileRouteTypes {
     | '/settings/environments'
     | '/settings/integrations'
     | '/settings/limits'
+    | '/settings/model-providers'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings'
@@ -323,6 +334,7 @@ export interface FileRouteTypes {
     | '/settings/environments'
     | '/settings/integrations'
     | '/settings/limits'
+    | '/settings/model-providers'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
@@ -417,6 +429,13 @@ declare module '@tanstack/solid-router' {
       path: '/users'
       fullPath: '/settings/users'
       preLoaderRoute: typeof SettingsUsersRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
+    '/settings/model-providers': {
+      id: '/settings/model-providers'
+      path: '/model-providers'
+      fullPath: '/settings/model-providers'
+      preLoaderRoute: typeof SettingsModelProvidersRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     '/settings/limits': {
@@ -558,6 +577,7 @@ interface SettingsRouteRouteChildren {
   SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsLimitsRoute: typeof SettingsLimitsRoute
+  SettingsModelProvidersRoute: typeof SettingsModelProvidersRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsWorkspacesRoute: typeof SettingsWorkspacesRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -569,6 +589,7 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsLimitsRoute: SettingsLimitsRoute,
+  SettingsModelProvidersRoute: SettingsModelProvidersRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   SettingsWorkspacesRoute: SettingsWorkspacesRoute,
   SettingsIndexRoute: SettingsIndexRoute,

@@ -9,7 +9,7 @@ import {
   decryptResourceValue,
   encryptResourceValue,
   parseEncryptionKey,
-} from './secret-crypto';
+} from '../../common/secret-crypto';
 
 export interface ExternalServiceResourceRecord {
   resourceKey: string;

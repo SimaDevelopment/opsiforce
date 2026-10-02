@@ -92,6 +92,7 @@ export const configuration = () => {
     imagePullSecrets: parseJsonEnv<Array<{ name: string }>>(process.env.IMAGE_PULL_SECRETS, []),
     proxyControlToken: process.env.PROXY_CONTROL_TOKEN || 'opsiforce-local-proxy-token',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
     storageMountPath: process.env.STORAGE_MOUNT_PATH || '/workspace-data',
     storageClaimBytes: parseQuantityEnv(process.env.STORAGE_CLAIM_SIZE),
     importChunkSize: parseInt(process.env.IMPORT_CHUNK_SIZE || '8388608', 10),
@@ -100,6 +101,14 @@ export const configuration = () => {
     bifrostPodProxyUrl: process.env.BIFROST_POD_PROXY_URL || process.env.BIFROST_PROXY_URL || '',
     bifrostAdminUsername: process.env.BIFROST_ADMIN_USERNAME || '',
     bifrostAdminPassword: process.env.BIFROST_ADMIN_PASSWORD || '',
+    modelProviderOfficialApiUrls: parseJsonEnv<Record<string, string>>(
+      process.env.MODEL_PROVIDER_OFFICIAL_API_URLS,
+      {}
+    ),
+    linkedAccountProxyUrl: 'http://opsiforce-linked-account-proxy:8455/v1',
+    linkedAccountProxyServiceToken: process.env.LINKED_ACCOUNT_PROXY_SERVICE_TOKEN || '',
+    linkedAccountChatGptIssuer: 'https://auth.openai.com',
+    linkedAccountChatGptUsageUrl: 'https://chatgpt.com/backend-api/wham/usage',
     workspaceCleanupRetentionDays: 7,
     exportRetentionMinutes: parseInt(process.env.EXPORT_RETENTION_MINUTES || '300', 10),
     requestLogRetentionDays: parseInt(process.env.REQUEST_LOG_RETENTION_DAYS || '3', 10),
