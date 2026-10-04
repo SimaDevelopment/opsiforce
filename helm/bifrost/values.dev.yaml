@@ -1,0 +1,21 @@
+# Development only: Helsinki cloud and dedicated workers; existing exclusions retained.
+---
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.kubernetes.io/region
+          operator: In
+          values:
+          - hel1
+        - key: node.kubernetes.io/instance-type
+          operator: NotIn
+          values:
+          - cpx11
+          - cpx21
+          - cpx22
+          - cpx32
+          - ccx13
+          - cx23
+          - cx33
