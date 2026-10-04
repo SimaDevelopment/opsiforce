@@ -39,3 +39,12 @@ affinity:
           - ccx13
           - cx23
           - cx33
+
+# Allow slow cross-region initialization before liveness can restart the process.
+startupProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 36
