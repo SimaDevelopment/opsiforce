@@ -7,7 +7,7 @@ type FieldKey = keyof ProjectAuthOidcConfig;
 type InputType = 'text' | 'password' | 'url';
 
 interface FieldDef {
-  key: Exclude<FieldKey, 'assertClaims'>;
+  key: Exclude<FieldKey, 'assertClaims' | 'forwardAccessToken'>;
   label: string;
   tooltip: string;
   required?: boolean;
@@ -101,6 +101,22 @@ export function OidcForm(props: OidcFormProps) {
           <For each={right}>{renderField}</For>
         </div>
       </form>
+
+      <label class="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={props.value.forwardAccessToken ?? false}
+          disabled={props.disabled}
+          onChange={(e) => props.onChange({ ...props.value, forwardAccessToken: e.currentTarget.checked })}
+        />
+        <span>
+          Forward the signed-in user's access token to this app's backend
+          <span class="block text-xs text-muted-foreground">
+            Allows the app to call APIs with the permissions requested above. Enable only for trusted app code.
+            Authentication bypass paths must be empty.
+          </span>
+        </span>
+      </label>
 
       <Show when={props.callbackUrls?.length}>
         <FieldWithTooltip

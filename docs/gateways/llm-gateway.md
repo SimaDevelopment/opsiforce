@@ -24,6 +24,7 @@ adrs: [0003]
 - The `backend` key routes only to the real OpenAI and Anthropic providers, so the App reaches the real catalogue by role.
 - [Dictation](../projects/dictation.md) rides the `chat` key but pins its model string to the real OpenAI provider ([ADR-0045](../adr/0045-transcription-is-pinned-to-the-real-openai-provider.md)).
 - The custom provider ids in the Helm values and the provider names in each `chat` key's config are the same strings and stay in lock-step; Bifrost's NetworkPolicy allows egress so the in-cluster gateway can reach the host-run proxy.
+- A deployment can override both key types with `BIFROST_UPSTREAM_PROVIDER` and optional `BIFROST_FALLBACK_PROVIDER`. The primary has weight 1 and the fallback weight 0: unqualified model requests select the primary, with Bifrost automatically adding the fallback only for models it supports. Explicit `provider/model` requests bypass weighted selection. Deployment-time provider reconciliation updates existing project keys as well as the defaults for new keys.
 
 ```
 Backend ── Admin API (basic auth) ──▶ Bifrost ◀── LLM calls ── Agent Pod
@@ -42,6 +43,7 @@ Backend ── Admin API (basic auth) ──▶ Bifrost ◀── LLM calls ─�
 - `backend/src/bifrost/` — the Admin API client: customers, teams, virtual keys, budgets, usage; the per-key provider configs.
 - `backend/src/pod/pod.template.ts` — virtual key injection into the pod.
 - `helm/bifrost/` — chart values, the custom provider upstreams, the image pin and the NetworkPolicy.
+- `scripts/sync-bifrost-provider-routing.cjs` — deployment-time reconciliation of project virtual-key provider routing, using the running backend's configuration.
 
 ## Related
 

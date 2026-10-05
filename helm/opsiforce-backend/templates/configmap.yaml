@@ -48,6 +48,9 @@ data:
   {{- if .Values.config.bifrostUpstreamProvider }}
   BIFROST_UPSTREAM_PROVIDER: {{ .Values.config.bifrostUpstreamProvider | quote }}
   {{- end }}
+  {{- if .Values.config.bifrostFallbackProvider }}
+  BIFROST_FALLBACK_PROVIDER: {{ .Values.config.bifrostFallbackProvider | quote }}
+  {{- end }}
   {{- if .Values.config.gatewayUrl }}
   SERVICE_GATEWAY_URL: {{ .Values.config.gatewayUrl | quote }}
   {{- end }}

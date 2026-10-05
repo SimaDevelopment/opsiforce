@@ -192,6 +192,7 @@ export interface ProjectAppMeta {
 export type ProjectAuthMode = 'public' | 'manual' | 'managed';
 
 export interface ProjectAuthOidcConfig {
+  forwardAccessToken?: boolean;
   clientId?: string;
   clientSecret?: string;
   discoveryUrl?: string;

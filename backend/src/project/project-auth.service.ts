@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as k8s from '@kubernetes/client-node';
 import { appCanonicalHost } from '../common/app-host';
@@ -134,7 +135,7 @@ export class ProjectAuthService {
     };
 
     const plugin: TraefikOidcPluginSpec = {
-      LogLevel: 'DEBUG',
+      LogLevel: 'WARN',
       Secret: this.pluginSecret,
       Provider: provider,
       CallbackUri: OIDC_CALLBACK_PATH,
@@ -243,6 +244,7 @@ export class ProjectAuthService {
         clientId: plugin.Provider.ClientId,
         discoveryUrl: plugin.Provider.Url ? `${plugin.Provider.Url}/.well-known/openid-configuration` : undefined,
         scope: plugin.Scopes?.join(' '),
+        forwardAccessToken: plugin.Headers?.some((h) => h.Name === 'X-Opsiforce-Access-Token') ?? false,
       },
       bypassAuthPaths: pathsFromBypassRule(plugin.BypassAuthenticationRule),
     };
@@ -274,9 +276,15 @@ export class ProjectAuthService {
     config: ProjectAuthOidcConfig,
     bypassAuthPaths?: string[]
   ): Promise<void> {
+    if (config.forwardAccessToken !== undefined && typeof config.forwardAccessToken !== 'boolean') {
+      throw new BadRequestException('forwardAccessToken must be a boolean');
+    }
+    if (config.forwardAccessToken && bypassAuthPaths?.some((p) => p.trim())) {
+      throw new BadRequestException('Token forwarding cannot be combined with authentication bypass paths');
+    }
     const effectiveConfig = await this.preserveClientSecret(routingId, config);
     const extras: MiddlewareExtras = {
-      headers: MANUAL_HEADERS,
+      headers: config.forwardAccessToken ? [...MANUAL_HEADERS, ...this.delegationHeaders(routingId)] : MANUAL_HEADERS,
       bypassAuthPaths,
     };
     const mw = this.buildMiddleware(routingId, effectiveConfig, extras);
@@ -329,6 +337,23 @@ export class ProjectAuthService {
     await this.applyClonedSpec(toRoutingId, toSlug, sourceSpec);
   }
 
+  private delegationHeaders(routingId: string) {
+    const key = this.configService.get<string>('proxyControlToken') ?? '';
+    if (key.length < 32 || key === 'opsiforce-local-proxy-token') {
+      throw new BadRequestException(
+        'Token forwarding requires a strong PROXY_CONTROL_TOKEN shared by backend and runtime proxies (at least 32 characters)'
+      );
+    }
+    // This transport credential never reaches generated apps or browsers.
+    const proof = createHmac('sha256', key).update(`app-oauth:${routingId}`).digest('hex');
+    return [
+      { Name: 'X-Opsiforce-Delegation-Proof', Value: proof },
+      { Name: 'X-Opsiforce-Access-Token', Value: '{{ .accessToken }}' },
+      { Name: 'X-Opsiforce-Tenant-Id', Value: '{{ .claims.tid }}' },
+      { Name: 'X-Opsiforce-User-Id', Value: '{{ .claims.oid }}' },
+    ];
+  }
+
   private async applyClonedSpec(
     routingId: string,
     slug: EnvironmentSlug,
@@ -336,6 +361,14 @@ export class ProjectAuthService {
   ): Promise<void> {
     const clonedSpec: TraefikOidcPluginSpec = {
       ...sourceSpec,
+      ...(sourceSpec.Headers?.some((h) => h.Name === 'X-Opsiforce-Access-Token')
+        ? {
+            Headers: [
+              ...sourceSpec.Headers.filter((h) => !h.Name.startsWith('X-Opsiforce-')),
+              ...this.delegationHeaders(routingId),
+            ],
+          }
+        : {}),
       CallbackUri: OIDC_CALLBACK_PATH,
     };
     const mw = {

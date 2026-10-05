@@ -909,11 +909,8 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         model?: string;
         agents?: Record<string, { model?: string } | undefined>;
       };
-      const agentRef = config.agents?.[agentName]?.model ?? '';
-      const [agentModel, agentVariant] = agentRef.split('#');
-      if (config.model !== modelSelection.model || agentModel !== modelSelection.model) return false;
-      if (modelSelection.variant && agentVariant !== modelSelection.variant) return false;
-      return true;
+      const expected = modelSelection.variant ? `${modelSelection.model}#${modelSelection.variant}` : modelSelection.model;
+      return config.model === expected && config.agents?.[agentName]?.model === expected;
     } catch {
       return false;
     }

@@ -63,6 +63,50 @@ bifrost:
     allowDirectKeys: false
     enforceAuthOnInference: true
   providers:
+    custom-openai-1:
+      keys:
+        - name: placeholder
+          value: ""
+          weight: 1
+          models:
+            - gpt-6-astra
+            - gpt-6-sol
+            - gpt-6-luna
+            - gpt-reserve
+            - gpt-5.6-sol
+            - gpt-5.6-terra
+            - gpt-5.6-luna
+            - gpt-5.5
+            - codex-auto-review
+      network_config:
+        base_url: ""
+        default_request_timeout_in_seconds: 1200
+        max_retries: 2
+        retry_backoff_initial_ms: 500
+        retry_backoff_max_ms: 5000
+        stream_idle_timeout_in_seconds: 3600
+      custom_provider_config:
+        is_key_less: true
+        base_provider_type: openai
+        allowed_requests:
+          list_models: true
+          text_completion: true
+          text_completion_stream: true
+          chat_completion: true
+          chat_completion_stream: true
+          responses: false
+          responses_stream: true
+          embedding: false
+          speech: false
+          speech_stream: false
+          transcription: false
+          transcription_stream: false
+          image_generation: false
+          image_generation_stream: false
+          image_edit: false
+          image_edit_stream: false
+          image_variation: false
+          count_tokens: true
     azure:
       keys:
         - name: azure-foundry

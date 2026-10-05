@@ -41,6 +41,7 @@ config:
   bifrostAdminUsername: ""
   bifrostAdminPassword: ""
   bifrostUpstreamProvider: ""
+  bifrostFallbackProvider: ""
   gatewayUrl: ""
   platformApiUrl: ""
   runtimeProxyUrl: ""
