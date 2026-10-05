@@ -19,6 +19,7 @@ export interface PodTemplateOptions {
   appsHostname?: string;
   imagePullPolicy: string;
   resources: K8sResourceRequirements;
+  runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
   tolerations?: Array<Record<string, string>>;
   affinity?: Record<string, unknown>;
@@ -67,6 +68,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       },
     },
     spec: {
+      ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }
         : {}),

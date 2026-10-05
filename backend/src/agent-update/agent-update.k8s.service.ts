@@ -57,6 +57,7 @@ export class AgentUpdateK8sService {
   }
 
   private buildJob(jobName: string, options: AgentUpdateJobOptions): k8s.V1Job {
+    const runtimeClassName = this.configService.get<string>('agentRuntimeClassName');
     return {
       apiVersion: 'batch/v1',
       kind: 'Job',
@@ -83,6 +84,7 @@ export class AgentUpdateK8sService {
           },
           spec: {
             restartPolicy: 'Never',
+            ...(runtimeClassName ? { runtimeClassName } : {}),
             ...(this.imagePullSecrets().length > 0 ? { imagePullSecrets: this.imagePullSecrets() } : {}),
             ...(Object.keys(this.nodeSelector()).length > 0 ? { nodeSelector: this.nodeSelector() } : {}),
             ...(this.tolerations().length > 0 ? { tolerations: this.tolerations() } : {}),
