@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { FolderKanban, Gauge, Layers, SlidersHorizontal, Wallet } from '~/components/icons';
+import { FolderKanban, Gauge, Layers, SlidersHorizontal, Wallet, Waypoints } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { PRIVATE_TABS } from '~/private-loader';
 
@@ -34,6 +34,14 @@ export const SETTINGS_TABS: SettingsTab[] = [
     isPermitted: (has) => has(Permission.manageEnvironments),
   },
   ...PRIVATE_TABS,
+  {
+    to: '/settings/model-providers',
+    label: 'Model providers',
+    description: "Where this organization's model requests go, and how each format splits them.",
+    group: 'Configuration',
+    icon: Waypoints,
+    isPermitted: (has) => has(Permission.manageTenantModelProviders) || has(Permission.managePlatformModelProviders),
+  },
   {
     to: '/settings/defaults',
     label: 'Defaults',

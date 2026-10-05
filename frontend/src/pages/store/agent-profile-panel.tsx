@@ -94,6 +94,7 @@ export function DevelopmentPanel(props: {
   const models = createMemo(() => catalog.data ?? []);
   const flatModels = createMemo(() => models().flatMap((provider) => provider.models));
   const chosenModel = createMemo(() => flatModels().find((entry) => entry.id === model()) ?? null);
+  const unavailableModel = () => !!catalog.data && !!model() && chosenModel() === null;
   const efforts = () => chosenModel()?.efforts ?? [];
 
   const dirty = () =>
@@ -122,7 +123,7 @@ export function DevelopmentPanel(props: {
       await save.mutateAsync({ promptBody: promptDraft(), model: chosen, variant: variant() });
       toast.success('Development saved');
     } catch (caught) {
-      if (caught instanceof ApiError && caught.code === 'model_unknown') {
+      if (caught instanceof ApiError && (caught.code === 'model_unknown' || caught.code === 'model_unreachable')) {
         setModelError({ part: String(caught.details.part ?? 'model'), message: caught.message });
         return;
       }
@@ -166,6 +167,11 @@ export function DevelopmentPanel(props: {
               </SelectTrigger>
               <SelectContent />
             </Select>
+            <Show when={unavailableModel() && !modelError()}>
+              <p class="mt-1 text-xs text-amber-700">
+                <span class="font-mono">{model()}</span> is unavailable in your organization
+              </p>
+            </Show>
             <Show when={modelError()?.part === 'provider' || modelError()?.part === 'model'}>
               <p class="mt-1 text-xs text-destructive" role="alert">
                 {modelError()?.message}

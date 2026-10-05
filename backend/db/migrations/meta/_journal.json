@@ -519,6 +519,20 @@
       "when": 1790600000000,
       "tag": "0073_tenant-limits",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0074_model-providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790800000000,
+      "tag": "0075_linked-accounts",
+      "breakpoints": true
     }
   ]
 }

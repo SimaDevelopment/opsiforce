@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
 import { Perms } from '../permission/permission.constants';
-import { and, asc, eq, isNull, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, not, or, sql } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentSettings, agents, environments, projectEnvironments } from '../../db/schema';
 import { join } from 'node:path';
@@ -28,7 +28,14 @@ import {
 } from '../store/catalog-filters';
 import { notDisableable, visibilityIncoherent } from '../store/store-errors';
 import { agentDeclaresPlatformApi, defaultProfileModel } from './agent-config';
-import { agentInUse, developmentNotDefault, lastBuiltInAgent, notDuplicable, notPublishable } from './agent-errors';
+import {
+  agentInUse,
+  developmentNotDefault,
+  lastAgent,
+  lastAgentUnpublished,
+  notDuplicable,
+  notPublishable,
+} from './agent-errors';
 import { pinsFromReferences } from './agent-bundle';
 import { AgentBundleReader } from './agent-bundle.reader';
 import { AgentBundleWriter } from './agent-bundle.writer';
@@ -45,7 +52,7 @@ import {
   canEditAgent,
   liveAgentsWhere,
   projectCreatableAgentsWhere,
-  startableBuiltInAgentsWhere,
+  tenantStartableAgentsWhere,
   visibleAgentsWhere,
 } from './agent-visibility';
 import {
@@ -160,6 +167,7 @@ export class AgentService {
     const model = dto.model?.trim() || fallback.model;
     const variant = dto.variant === undefined ? fallback.variant : dto.variant?.trim() || null;
     assertModelSelection(model, variant);
+    if (dto.model?.trim()) await this.profiles.assertModelReachable(caller.tenantId, model);
 
     const agentId = await this.bundles.write(caller, {
       displayName,
@@ -210,11 +218,11 @@ export class AgentService {
     }
     if ('platformApi' in dto) patch.platformApi = dto.platformApi === true;
 
-    if (Object.keys(patch).length > 0) {
-      await db
-        .insert(agentSettings)
-        .values({ agentId: agent.id, ...patch })
-        .onConflictDoUpdate({ target: agentSettings.agentId, set: { ...patch, updatedAt: new Date() } });
+    if (
+      Object.keys(patch).length > 0 &&
+      !(await this.repository.writeSettingsUnlessLast(caller.tenantId, agent.id, patch))
+    ) {
+      throw lastAgentUnpublished(agent.displayName ?? agent.name);
     }
     return this.findOne(caller, agentId);
   }
@@ -253,10 +261,8 @@ export class AgentService {
     if (disabled === agent.disabled) return this.findOne(caller, agentId);
     if (!disabled) {
       await this.repository.enableIn(caller.tenantId, agent.id);
-    } else if (agent.origin === 'custom') {
-      await this.repository.disableIn(caller.tenantId, agent.id, caller.userId);
-    } else if (!(await this.repository.disableBuiltInUnlessLast(caller.tenantId, agent.id, caller.userId))) {
-      throw lastBuiltInAgent(agent.displayName ?? agent.name);
+    } else if (!(await this.repository.disableUnlessLast(caller.tenantId, agent.id, caller.userId))) {
+      throw lastAgent(agent.displayName ?? agent.name);
     }
     return this.findOne(caller, agentId);
   }
@@ -459,10 +465,10 @@ export class AgentService {
     const [row] = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(startableBuiltInAgentsWhere(tenantId))
-      .orderBy(sql`${agents.name} = ${DEFAULT_AGENT_NAME} desc`, asc(agents.name))
+      .where(tenantStartableAgentsWhere(tenantId))
+      .orderBy(desc(eq(agents.origin, 'built_in')), desc(eq(agents.name, DEFAULT_AGENT_NAME)), asc(agents.name))
       .limit(1);
-    if (!row) throw new Error(`No built-in agent is enabled for tenant ${tenantId}`);
+    if (!row) throw new Error(`No agent is enabled for tenant ${tenantId}`);
     return row.id;
   }
 

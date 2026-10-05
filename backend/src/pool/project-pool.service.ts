@@ -22,6 +22,8 @@ import { ProjectStatus, type ProjectKind } from '../project/project.types';
 import { assertRoomForProject } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
 import { BifrostService } from '../bifrost/bifrost.service';
+import { retryBifrostWrite } from '../bifrost/bifrost-retries';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { DefaultsService } from '../defaults/defaults.service';
 import { TimeoutService } from '../timeout/timeout.service';
@@ -43,7 +45,6 @@ import {
 const POOL_LEGACY_WARM_SELECTOR = 'app=opsiforce-agent,opsiforce.io/pool=warm';
 const STALE_CLAIMING_MS = 30 * 1000;
 const RECOVERY_INTERVAL_MS = 60 * 1000;
-const PATCH_BACKOFF_MS = [500, 1000, 2000];
 const STALE_PENDING_POD_MS = 90 * 1000;
 const POOL_PROVISION_READY_TIMEOUT_MS = 90 * 1000;
 
@@ -93,6 +94,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     private readonly podService: PodService,
     @Inject(forwardRef(() => BifrostService))
     private readonly bifrostService: BifrostService,
+    private readonly modelProviders: ModelProvidersService,
     private readonly gatewayKeyService: GatewayKeyService,
     private readonly defaultsService: DefaultsService,
     private readonly timeoutService: TimeoutService,
@@ -189,6 +191,14 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         );
         await this.replenishIfEnabled(name, reserved.agentId);
       }
+      return null;
+    }
+
+    if (!(await this.modelProviders.writeProjectChatKey(claim.tenantId, reserved.id))) {
+      this.logger.warn(
+        `Reverting claim ${reserved.id}: its chat key could not take the Organization's model providers`
+      );
+      await this.revertReservation(reserved.id);
       return null;
     }
 
@@ -484,20 +494,9 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     }
 
     const budgets = await this.defaultsService.getTenantBudgets(tenantId);
-    for (let attempt = 0; attempt < PATCH_BACKOFF_MS.length; attempt++) {
-      try {
-        await this.bifrostService.updateProjectResourceBudgets(projectId, teamId, budgets);
-        return true;
-      } catch (err) {
-        const delay = PATCH_BACKOFF_MS[attempt];
-        this.logger.warn(
-          `Bifrost budget patch attempt ${attempt + 1} failed (project=${projectId}): ${(err as Error).message}; retrying in ${delay}ms`
-        );
-        if (attempt < PATCH_BACKOFF_MS.length - 1) await sleep(delay);
-      }
-    }
-
-    return false;
+    return retryBifrostWrite(this.logger, `Bifrost budget patch (project=${projectId})`, () =>
+      this.bifrostService.updateProjectResourceBudgets(projectId, teamId, budgets)
+    );
   }
 
   private async patchBifrostTeamWithRetries(teamId: string | null, customerId: string): Promise<TeamPatchResult> {
@@ -507,18 +506,10 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       return 'dirty';
     }
 
-    for (let attempt = 0; attempt < PATCH_BACKOFF_MS.length; attempt++) {
-      try {
-        await this.bifrostService.reassignTeamCustomer(teamId, customerId);
-        return 'patched';
-      } catch (err) {
-        const delay = PATCH_BACKOFF_MS[attempt];
-        this.logger.warn(
-          `Bifrost team patch attempt ${attempt + 1} failed (team=${teamId}): ${(err as Error).message}; retrying in ${delay}ms`
-        );
-        if (attempt < PATCH_BACKOFF_MS.length - 1) await sleep(delay);
-      }
-    }
+    const patched = await retryBifrostWrite(this.logger, `Bifrost team patch (team=${teamId})`, () =>
+      this.bifrostService.reassignTeamCustomer(teamId, customerId)
+    );
+    if (patched) return 'patched';
 
     try {
       const assignedCustomerId = await this.bifrostService.getTeamCustomerId(teamId);
@@ -702,6 +693,10 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         const patched = await this.patchBifrostTeamWithRetries(row.bifrostProjectId, customerId);
         if (patched !== 'patched') {
           await this.destroyAndReplenish(row.id, 'recovery: bifrost patch failed permanently');
+          continue;
+        }
+        if (!(await this.modelProviders.writeProjectChatKey(row.tenantId, row.id))) {
+          await this.destroyAndReplenish(row.id, 'recovery: model provider sync failed permanently');
           continue;
         }
         await this.deliveryService.deliverAtCreate(row.id);
@@ -915,8 +910,4 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       return false;
     }
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

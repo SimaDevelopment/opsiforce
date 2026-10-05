@@ -106,8 +106,14 @@ async function authoring(owner: Tenant = org): Promise<Authoring> {
   };
 }
 
+function byCodeUnit(a: string | null, b: string | null): number {
+  const left = String(a);
+  const right = String(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 async function versionsOf(agentId: string): Promise<string[]> {
-  return (await readdir(join(agentTemplatesDir(agentId), '.versions')).catch(() => [])).toSorted();
+  return (await readdir(join(agentTemplatesDir(agentId), '.versions')).catch(() => [])).toSorted(byCodeUnit);
 }
 
 async function refusalCode(work: Promise<unknown>): Promise<string> {
@@ -152,7 +158,7 @@ describe('publishing a Template (ADR-0073)', () => {
     await draft.publish();
     await draft.write('README.md', 'second\n');
     const second = await draft.save();
-    expect(await versionsOf(draft.agentId)).toEqual([first, second].toSorted());
+    expect(await versionsOf(draft.agentId)).toEqual([first, second].toSorted(byCodeUnit));
 
     const published = await draft.publish();
 
@@ -337,7 +343,7 @@ describe('sweeping agent-templates/', () => {
       await lockAgentTemplate(tx, draft.agentId);
       await runDailyCleanup();
     });
-    expect(await versionsOf(draft.agentId)).toEqual([hash, unlinked].toSorted());
+    expect(await versionsOf(draft.agentId)).toEqual([hash, unlinked].toSorted(byCodeUnit));
 
     await runDailyCleanup();
     expect(await versionsOf(draft.agentId)).toEqual([hash]);

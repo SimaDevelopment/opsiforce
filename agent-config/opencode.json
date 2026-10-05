@@ -48,7 +48,22 @@
             "reasoningEffort": "high"
           }
         },
-        "claude-haiku-4-5": {}
+        "claude-haiku-4-5": {},
+        "claude-opus-5-5": {
+          "settings": {
+            "reasoningEffort": "high"
+          }
+        },
+        "claude-sonnet-5-5": {
+          "settings": {
+            "reasoningEffort": "high"
+          }
+        },
+        "claude-fable-5-1": {
+          "settings": {
+            "reasoningEffort": "high"
+          }
+        }
       },
       "settings": {
         "baseURL": "{env:ANTHROPIC_BASE_URL}"
@@ -160,6 +175,76 @@
               }
             }
           ]
+        },
+        "gpt-6.1-sol": {
+          "limit": {
+            "context": 290400,
+            "output": 32000
+          },
+          "settings": {
+            "reasoningEffort": "high"
+          },
+          "variants": [
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low"
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium"
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high"
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh"
+              }
+            }
+          ]
+        },
+        "gpt-6.1-sol-fast": {
+          "limit": {
+            "context": 290400,
+            "output": 32000
+          },
+          "settings": {
+            "reasoningEffort": "high"
+          },
+          "variants": [
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low"
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium"
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high"
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh"
+              }
+            }
+          ]
         }
       },
       "settings": {
@@ -167,5 +252,5 @@
       }
     }
   },
-  "model": "openai/gpt-5.6-sol"
+  "model": "openai/gpt-6.1-sol"
 }

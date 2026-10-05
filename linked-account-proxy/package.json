@@ -1,0 +1,22 @@
+{
+  "name": "@opsiforce/linked-account-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "vitest run",
+    "lint": "oxlint --type-aware --fix src test",
+    "format": "oxfmt -c ../.oxfmtrc.json src test",
+    "ts": "tsc --noEmit",
+    "check": "yarn lint && yarn ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "oxlint-tsgolint": "^0.23.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}

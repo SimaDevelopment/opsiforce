@@ -23,6 +23,7 @@ import {
   primaryKey,
   check,
   customType,
+  uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core"
 
@@ -983,4 +984,30 @@ export const projectSkillDeliveryState = pgTable("project_skill_delivery_state",
   failedAt: timestamp("failed_at"),
   error: text("error"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const modelProviders = pgTable(
+  "model_providers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    bifrostProvider: text("bifrost_provider").notNull(),
+    enabled: boolean("enabled").notNull(),
+    weight: integer("weight").notNull(),
+  },
+  (table) => [
+    unique("model_providers_tenant_id_bifrost_provider_unique").on(table.tenantId, table.bifrostProvider).nullsNotDistinct(),
+    check("model_providers_weight_check", sql`${table.weight} between 0 and 100`),
+  ],
+)
+
+export const linkedAccounts = pgTable("linked_accounts", {
+  modelProviderId: uuid("model_provider_id")
+    .primaryKey()
+    .references(() => modelProviders.id, { onDelete: "cascade" }),
+  vendor: text("vendor").notNull(),
+  credential: text("credential"),
+  statusReason: text("status_reason"),
+  pendingSignIn: text("pending_sign_in"),
+  callerSecretHash: text("caller_secret_hash").notNull().unique(),
 })

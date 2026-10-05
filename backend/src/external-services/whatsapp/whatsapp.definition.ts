@@ -13,7 +13,7 @@ import type {
   WebhookRequest,
   WebhookVerification,
 } from '../platform/external-service-definition';
-import { timingSafeStringEqual } from '../platform/secret-crypto';
+import { timingSafeStringEqual } from '../../common/secret-crypto';
 import { WhatsappChannelService } from './whatsapp-channel.service';
 import {
   configReferencesChannel,

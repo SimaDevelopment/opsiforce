@@ -41,6 +41,7 @@ import { ProxyService } from '../proxy/proxy.service';
 import { ProjectPoolService } from '../pool/project-pool.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { BifrostService } from '../bifrost/bifrost.service';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
 import { assertIdleTimeoutMs } from '../common/validation';
 import { restoreEnvJsonBackup } from '../common/env-file';
 import { writeJsonAtomic } from '../common/fs';
@@ -252,6 +253,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => BifrostService))
     private readonly bifrostService: BifrostService,
+    private readonly modelProviders: ModelProvidersService,
     private readonly defaultsService: DefaultsService,
     private readonly gatewayKeyService: GatewayKeyService,
     @Inject(forwardRef(() => ScheduleService))
@@ -1840,6 +1842,12 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.bifrostService.createProjectResources({ projectId, tenantId });
     } catch (err) {
       this.logger.warn(`Failed to create Bifrost resources for project ${projectId}: ${(err as Error).message}`);
+      return;
+    }
+    if (!(await this.modelProviders.writeProjectChatKey(tenantId, projectId))) {
+      throw new InternalServerErrorException(
+        "Could not give the Project's chat key the Organization's model providers"
+      );
     }
   }
 

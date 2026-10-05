@@ -40,8 +40,8 @@
 - [Document Generation](agent-system/document-generation.md) — the baked docx, pptx, xlsx and pdf stack and the Generated files convention
 
 **Gateways** (`gateways/`)
-- [LLM Gateway](gateways/llm-gateway.md) — Bifrost, per-Project virtual keys, budgets and provider routing
-- [Codex Proxy](gateways/codex-proxy.md) — the host-run subscription bridge the standalone stack uses
+- [LLM Gateway](gateways/llm-gateway.md) — Bifrost, per-Project virtual keys, budgets and provider routing: providers owned by the UI, fixed weights only on the `backend` key
+- [Linked-account Proxy](gateways/linked-account-proxy.md) — the stateless in-cluster proxy that serves signed-in ChatGPT accounts
 - [Service Gateway](gateways/service-gateway.md) — one per-Project token for non-LLM services and platform pushes
 - [Request Logging](gateways/request-logging.md) — how much of an App's traffic the app-mode proxy records
 
@@ -61,6 +61,10 @@
 - [Permissions](organization/permissions.md) — how permissions flow from the identity provider and what the backend enforces
 - [Workspaces](organization/workspaces.md) — grouping Projects, membership-based visibility and moves
 - [Folder](organization/folder.md) — a single-level label for Projects inside a Workspace
+- [Model provider](organization/model-provider.md) — where an Organization's model requests go, per Base format, and how a save reaches its chat keys
+- [Custom model provider](organization/custom-model-provider.md) — adding, testing, editing, re-entering and deleting an Organization's own providers
+- [Opsiforce model provider](organization/opsiforce-model-provider.md) — the platform providers every Organization gets, global `opsiforce-*` providers and the fresh-install seed
+- [Linked account](organization/linked-account.md) — signing a ChatGPT account in as a Model provider, and what ends a sign-in
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
 - [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
 - [Integrations](organization/integrations.md) — mapping an Organization to its managed identity provider tenant
@@ -80,6 +84,7 @@
 - [Deployment](operations/deployment.md) — ship to a cluster through CI in dependency order
 - [Deploy to Azure (AKS)](operations/deploy-azure.md) — the platform contract for self-hosting on Azure
 - [Air-Gapped Single-Node Deployment](operations/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
+- [Cut over from Helm](operations/cutover-from-helm.md) — move an existing environment's traffic onto Settings → Model providers and `custom-openai-1` off the Codex OAuth Dock, steps 1–6 with their checks
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps

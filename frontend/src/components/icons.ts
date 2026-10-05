@@ -76,3 +76,6 @@ export { default as Archive } from 'lucide-solid/icons/archive';
 export { default as ArchiveRestore } from 'lucide-solid/icons/archive-restore';
 export { default as PanelLeftClose } from 'lucide-solid/icons/panel-left-close';
 export { default as PanelLeftOpen } from 'lucide-solid/icons/panel-left-open';
+export { default as Waypoints } from 'lucide-solid/icons/waypoints';
+export { default as LogIn } from 'lucide-solid/icons/log-in';
+export { default as ClipboardPaste } from 'lucide-solid/icons/clipboard-paste';

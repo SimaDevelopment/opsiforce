@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql, TransactionRollbackError, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
 import {
   agentProfileSkills,
@@ -14,12 +14,14 @@ import {
 } from '../../db/schema';
 import { TEST_PROJECT_KIND } from '../project/project.types';
 import type { AgentProfileRow } from '../store/agent-profile.repository';
-import { agentColumnsIn, startableBuiltInAgentsWhere } from './agent-visibility';
+import { agentColumnsIn, tenantStartableAgentsWhere } from './agent-visibility';
 
-const BUILT_IN_DISABLE_LOCK = 'built-in-agent-disable:';
+const STARTABLE_AGENT_LOCK = 'startable-agent:';
 import type { AgentProfileSkillResponse, AgentRow, AgentSettingsResponse, ShippedSkillResponse } from './agent.types';
 
 export type AgentSettingsRow = typeof agentSettings.$inferSelect;
+
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 @Injectable()
 export class AgentRepository {
@@ -92,27 +94,51 @@ export class AgentRepository {
       .map((name) => byName.get(name) ?? { skillId: null, name, displayName: null, version: null });
   }
 
-  async disableIn(tenantId: string, agentId: string, userId: string): Promise<void> {
-    await db.insert(tenantDisabledAgents).values({ tenantId, agentId, disabledBy: userId }).onConflictDoNothing();
-  }
-
   async enableIn(tenantId: string, agentId: string): Promise<void> {
     await db
       .delete(tenantDisabledAgents)
       .where(and(eq(tenantDisabledAgents.tenantId, tenantId), eq(tenantDisabledAgents.agentId, agentId)));
   }
 
-  async disableBuiltInUnlessLast(tenantId: string, agentId: string, userId: string): Promise<boolean> {
-    return db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${BUILT_IN_DISABLE_LOCK}${tenantId}`}))`);
-      const [row] = await tx
-        .select({ count: sql<number>`count(*)` })
-        .from(agents)
-        .where(and(startableBuiltInAgentsWhere(tenantId), ne(agents.id, agentId)));
-      if (Number(row?.count ?? 0) === 0) return false;
+  async disableUnlessLast(tenantId: string, agentId: string, userId: string): Promise<boolean> {
+    return this.keepingOneStartableAgent(tenantId, async (tx) => {
       await tx.insert(tenantDisabledAgents).values({ tenantId, agentId, disabledBy: userId }).onConflictDoNothing();
-      return true;
     });
+  }
+
+  async writeSettingsUnlessLast(
+    tenantId: string,
+    agentId: string,
+    patch: Partial<typeof agentSettings.$inferInsert>
+  ): Promise<boolean> {
+    return this.keepingOneStartableAgent(tenantId, async (tx) => {
+      await tx
+        .insert(agentSettings)
+        .values({ agentId, ...patch })
+        .onConflictDoUpdate({ target: agentSettings.agentId, set: { ...patch, updatedAt: new Date() } });
+    });
+  }
+
+  private async keepingOneStartableAgent(
+    tenantId: string,
+    write: (tx: Transaction) => Promise<void>
+  ): Promise<boolean> {
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${STARTABLE_AGENT_LOCK}${tenantId}`}))`);
+        await write(tx);
+        const [startable] = await tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(tenantStartableAgentsWhere(tenantId))
+          .limit(1);
+        if (!startable) tx.rollback();
+        return true;
+      });
+    } catch (error) {
+      if (error instanceof TransactionRollbackError) return false;
+      throw error;
+    }
   }
 
   async testProjectIds(agentId: string, tenantId: string): Promise<string[]> {

@@ -30,11 +30,13 @@ config:
   storageMountPath: "/workspace-data"
   storageClaimSize: "300Gi"
   proxyControlToken: ""
+  linkedAccountProxyServiceToken: ""
   agentWorkspaceUpdateOnStartup: "true"
   agentUpdateJobTimeoutMs: "1800000"
   agentNodeSelector: {}
   agentTolerations: []
   openaiApiKey: ""
+  anthropicApiKey: ""
   gotenbergUrl: ""
   bifrostProxyUrl: ""
   bifrostPodProxyUrl: ""

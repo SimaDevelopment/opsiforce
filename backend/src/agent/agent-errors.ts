@@ -6,14 +6,33 @@ export function modelUnknown(part: ModelPart, value: string): ConflictException 
   return new ConflictException({ code: 'model_unknown', message: `Unknown ${part} \`${value}\``, part, value });
 }
 
+export function modelUnreachable(model: string): ConflictException {
+  return new ConflictException({
+    code: 'model_unreachable',
+    message: `\`${model}\` is unavailable in your organization: no model provider of its format is on`,
+    part: 'model',
+    value: model,
+  });
+}
+
 export function notPublishable(message: string): ConflictException {
   return new ConflictException({ code: 'not_publishable', message });
 }
 
-export function lastBuiltInAgent(label: string): ConflictException {
+const LAST_AGENT_RULE =
+  "Keep at least one agent enabled — new projects need one to start on. A private agent, or one with nothing published to its default environment, doesn't count.";
+
+export function lastAgent(label: string): ConflictException {
   return new ConflictException({
-    code: 'last_built_in_agent',
-    message: `Keep at least one built-in agent enabled — new projects need one to start on. Enable another before disabling ${label}.`,
+    code: 'last_agent',
+    message: `${LAST_AGENT_RULE} Enable another before disabling ${label}.`,
+  });
+}
+
+export function lastAgentUnpublished(label: string): ConflictException {
+  return new ConflictException({
+    code: 'last_agent',
+    message: `${LAST_AGENT_RULE} Publish ${label} to that environment first, or enable another agent.`,
   });
 }
 
@@ -29,6 +48,14 @@ export function duplicateSkillName(name: string): ConflictException {
   return new ConflictException({
     code: 'duplicate_skill_name',
     message: `The agent already carries a skill named \`${name}\``,
+    name,
+  });
+}
+
+export function shippedSkillName(name: string): ConflictException {
+  return new ConflictException({
+    code: 'duplicate_skill_name',
+    message: `The agent's image already ships a skill named \`${name}\``,
     name,
   });
 }

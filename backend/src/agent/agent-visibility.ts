@@ -59,14 +59,20 @@ export function liveBuiltInSlugs(): string[] {
   return Object.keys(readMergedAgentRegistry().agents).filter((slug) => slug !== BUILDER_AGENT_SLUG);
 }
 
-export function startableBuiltInAgentsWhere(tenantId: string): SQL | undefined {
+function liveBuiltInAgentsWhere(): SQL | undefined {
   const slugs = liveBuiltInSlugs();
-  return and(
-    eq(agents.origin, 'built_in'),
-    isNull(agents.tenantId),
-    slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`,
-    not(agentDisabledIn(tenantId))
+  return and(eq(agents.origin, 'built_in'), slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`);
+}
+
+export function tenantStartableAgentsWhere(tenantId: string): SQL | undefined {
+  const builtIn = and(liveBuiltInAgentsWhere(), isNull(agents.tenantId));
+  const custom = and(
+    eq(agents.origin, 'custom'),
+    eq(agents.tenantId, tenantId),
+    eq(agents.visibility, 'public'),
+    customAgentHasDefaultProfile()
   );
+  return and(or(builtIn, custom), not(agentDisabledIn(tenantId)));
 }
 
 export function canDuplicateAgent(agent: AgentRow): boolean {
@@ -95,10 +101,8 @@ export function projectCreatableAgentsWhere(
 }
 
 function startableAgentsWhere(tenantId: string, userId: string | null, customProfile: SQL): SQL | undefined {
-  const slugs = liveBuiltInSlugs();
-  const builtIn = and(eq(agents.origin, 'built_in'), slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`);
   const custom = and(eq(agents.origin, 'custom'), customProfile);
-  return and(visibleAgentsWhere(tenantId, userId ?? ''), or(builtIn, custom));
+  return and(visibleAgentsWhere(tenantId, userId ?? ''), or(liveBuiltInAgentsWhere(), custom));
 }
 
 function customAgentHasDefaultProfile(): SQL {

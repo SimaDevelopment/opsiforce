@@ -30,6 +30,41 @@ _Avoid_: Group (vague — collides with UI grouping); Directory (filesystem conn
 The most of one kind of thing an Organization may hold at once. An Organization follows the platform's value for a Limit unless it has its own, either may be none, and only the platform sets them.
 _Avoid_: Quota, Cap, Plan limit (non-canonical); Default (a Limit is enforced on every create, not copied into new entities)
 
+**Model provider**:
+One upstream an Organization's Agents may send model traffic to, switched on or off and weighted within its Base format. Its key, URL and Base format live only in the LLM gateway; the platform keeps the ones new Organizations start with.
+_Avoid_: Provider slot, Organization provider setting
+
+**Opsiforce model provider**:
+A Model provider the platform gives every Organization rather than one the Organization added. The Organization switches and weights it but never sees how it connects. The UI labels it Built-in.
+_Avoid_: Platform provider (the platform's own row that new Organizations start from), Shared provider
+
+**Custom model provider**:
+A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint or a Linked account, and its name and Base format are fixed once it exists.
+_Avoid_: Own provider, BYOK provider
+
+**Official API key**:
+A Custom model provider that reaches the vendor's own API with a key the Organization holds.
+_Avoid_: Direct key, Vendor key
+
+**Compatible endpoint**:
+A Custom model provider that reaches a gateway, proxy or Azure deployment speaking its Base format, at a public `https://` base URL, with a key the Organization holds.
+_Avoid_: Custom URL, Self-hosted provider, OpenAI-compatible provider
+
+**Linked account**:
+A Model provider whose credential is an account signed in at a Vendor rather than a key, served through the Linked-account Proxy. It takes traffic only while it is connected. The platform's `custom-openai-1` is one, shared by every Organization.
+_Avoid_: ChatGPT account, Subscription provider, Codex login
+
+**Vendor**:
+The company whose account a Linked account signs in to, which decides how it signs in, refreshes and forwards requests. ChatGPT is the only one.
+_Avoid_: Provider (a Vendor is not a Model provider)
+
+**Codex OAuth Dock**:
+The hosted service that serves the platform's `custom-openai-1` until a platform admin signs it in. Nothing in an environment calls it after that sign-in.
+_Avoid_: Dock
+
+**Base format**:
+The request format a Model provider speaks, which decides which catalog models it can serve: OpenAI or Anthropic. Weights split traffic only among the Model providers of one Base format.
+
 ### Projects & Environments
 
 **Project**:
@@ -159,7 +194,7 @@ The Environment a Custom Agent's new Projects are created from — their Agent P
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
 
 **Disable (Agent)**:
-An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Built-in Agent enabled, and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
+An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Agent enabled that new Projects can start on — a Built-in Agent, or a public Custom Agent published to its Default environment — and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
 _Avoid_: Delete (the permanent sibling); Archive, Deactivate (non-canonical)
 
 **Duplicate (Agent)**:
