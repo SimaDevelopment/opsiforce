@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPodSpec, type PodTemplateOptions } from '../src/pod/pod.template';
+import { resolvePreset, resolveStoredPodResources, toK8sResources } from '../src/pod/pod-classes';
 
 const options: PodTemplateOptions = {
   podName: 'app-test',
@@ -11,7 +12,7 @@ const options: PodTemplateOptions = {
   storageMountPath: '/workspace-data',
   subPath: 'projects/example',
   imagePullPolicy: 'IfNotPresent',
-  resources: { requests: { cpu: '500m', memory: '2Gi' }, limits: { memory: '4Gi' } },
+  resources: toK8sResources(resolvePreset('small')),
   nodeSelector: { 'topology.kubernetes.io/region': 'hel1' },
 };
 
@@ -46,5 +47,26 @@ describe('privileged Kata agents', () => {
 
   it.each([undefined, '', 'runc', 'unrecognized-runtime'])('rejects privilege outside Kata: %s', (runtimeClassName) => {
     expect(() => buildPodSpec({ ...options, runtimeClassName, privileged: true })).toThrow('Privileged agents require');
+  });
+});
+
+describe('small class CPU reservation', () => {
+  it('requests 100m without capping CPU or changing memory', () => {
+    expect(buildPodSpec(options).spec?.containers[0].resources).toEqual({
+      requests: { cpu: '100m', memory: '2048Mi' }, limits: { memory: '4096Mi' },
+    });
+  });
+
+  it('uses the new preset when recreating a project with saved 500m settings', () => {
+    expect(resolveStoredPodResources({ podClass: 'small', cpuMillicores: 500,
+      memoryRequestMib: 2048, memoryLimitMib: 4096 })).toEqual(resolvePreset('small'));
+  });
+
+  it('preserves custom settings and the larger class reservations', () => {
+    const custom = { podClass: 'custom' as const, cpuMillicores: 500, memoryRequestMib: 2048, memoryLimitMib: 4096 };
+    expect(resolveStoredPodResources(custom)).toEqual(custom);
+    expect(resolvePreset('medium').cpuMillicores).toBe(1000);
+    expect(resolvePreset('large').cpuMillicores).toBe(2000);
+    expect(resolveStoredPodResources()).toEqual(resolvePreset('small'));
   });
 });

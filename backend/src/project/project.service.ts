@@ -91,6 +91,7 @@ import {
   clampCustom,
   isPreset,
   resolvePreset,
+  resolveStoredPodResources,
   toK8sResources,
   type K8sResourceRequirements,
   type PodClass,
@@ -1168,13 +1169,14 @@ export class ProjectService implements OnApplicationBootstrap {
   private async podResourcesForProject(projectId: string): Promise<K8sResourceRequirements> {
     const [row] = await db
       .select({
+        podClass: projectPodSettings.podClass,
         cpuMillicores: projectPodSettings.cpuMillicores,
         memoryRequestMib: projectPodSettings.memoryRequestMib,
         memoryLimitMib: projectPodSettings.memoryLimitMib,
       })
       .from(projectPodSettings)
       .where(eq(projectPodSettings.projectId, projectId));
-    return toK8sResources(row ?? resolvePreset('small'));
+    return toK8sResources(resolveStoredPodResources(row));
   }
 
   async getLogging(id: string, tenantId: string): Promise<ProjectLoggingResponse> {
