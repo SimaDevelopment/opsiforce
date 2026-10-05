@@ -1,4 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
+import { agentSecurityContext } from './agent-security-context';
 import { agentAppPort } from '../agent/agent-config';
 import { appPublicUrl } from '../common/app-host';
 import type { K8sResourceRequirements } from './pod-classes';
@@ -20,6 +21,7 @@ export interface PodTemplateOptions {
   imagePullPolicy: string;
   resources: K8sResourceRequirements;
   runtimeClassName?: string;
+  privileged?: boolean;
   nodeSelector?: Record<string, string>;
   tolerations?: Array<Record<string, string>>;
   affinity?: Record<string, unknown>;
@@ -40,6 +42,7 @@ export interface PodTemplateOptions {
 }
 
 export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
+  const securityContext = agentSecurityContext(options.runtimeClassName, options.privileged);
   const resolvedAgentName = options.agentName || 'app-builder';
   const appPort = agentAppPort(resolvedAgentName);
   const routingId = options.environmentId ?? options.projectId;
@@ -80,6 +83,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       initContainers: [
         {
           name: 'init-config',
+          ...(securityContext ? { securityContext } : {}),
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
           env: [{ name: 'AGENT_NAME', value: resolvedAgentName }],
@@ -97,6 +101,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       containers: [
         {
           name: 'opencode',
+          ...(securityContext ? { securityContext } : {}),
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
           workingDir: '/workspace',
