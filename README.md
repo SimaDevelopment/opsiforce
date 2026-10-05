@@ -131,7 +131,7 @@ The pod can be suspended when idle and recreated later against the same workspac
 Start with these docs when working on the system:
 
 - [Documentation index](docs/README.md) for what Opsiforce is and the complete doc tree.
-- [Domain vocabulary](CONTEXT.md) for canonical product language.
+- [Domain vocabulary](GLOSSARY.md) for canonical product language.
 - [Environments](docs/projects/environments.md) and [Publish](docs/projects/publish.md) for the Project/Environment model, App Auth, publishing and Environment Variables.
 - [Persistence](docs/runtime/persistence.md) for workspace durability and pod replacement.
 - [Request Flows](docs/runtime/request-flows.md) for how browser traffic reaches each pod surface.

@@ -12,15 +12,15 @@ adrs: [0048, 0049]
 
 ### The panel
 
-- [File preview](../../CONTEXT.md) shares the right side panel with the App preview; a centered App | File switcher appears in its header when both exist, and closing the file returns to the App or hides the panel when there is no App.
+- [File preview](../../GLOSSARY.md) shares the right side panel with the App preview; a centered App | File switcher appears in its header when both exist, and closing the file returns to the App or hides the panel when there is no App.
 - The App iframe is never unmounted while a file shows; it is hidden with `display: none`, so the App's in-progress state survives the detour ([App](app.md)).
 - The panel is keyed on each request to show a file, so clicking the same file again after switching back to the App reopens it.
-- A preview is single-file: opening another replaces it, and switching the [Active environment](../../CONTEXT.md) closes it.
+- A preview is single-file: opening another replaces it, and switching the [Active environment](../../GLOSSARY.md) closes it.
 
 ### Two ways in
 
 - A preview opens from a chat link or from the [Files](files.md) tab; both hand the same workspace-relative path to the same panel.
-- Links into [Generated files](../../CONTEXT.md) are promoted to file cards (type badge, link text, download button) by decorating the anchor and appending one download element; a mutation observer re-applies the decoration after each re-render of the embedded OpenCode chat, idempotently ([Document Generation](../agent-system/document-generation.md), [File Downloads](file-downloads.md)).
+- Links into [Generated files](../../GLOSSARY.md) are promoted to file cards (type badge, link text, download button) by decorating the anchor and appending one download element; a mutation observer re-applies the decoration after each re-render of the embedded OpenCode chat, idempotently ([Document Generation](../agent-system/document-generation.md), [File Downloads](file-downloads.md)).
 - Any other `/workspace/...` link gains preview-on-click for supported formats and otherwise downloads as before.
 
 ### What renders
@@ -28,7 +28,7 @@ adrs: [0048, 0049]
 - PDFs render in the browser's viewer, images and SVG through `img`, and text, code and markdown through the chat's markdown pipeline and highlighter; SVG is only ever an image source, never inlined.
 - Text is a candidate by extension only: the first 8 KB are checked for a NUL byte and a binary file falls back to the download card; very large text is truncated with a visible note.
 - HTML renders live with scripts in a frame carrying `sandbox="allow-scripts"` and never `allow-same-origin`; CSV parses into a table and an xlsx workbook into a read-only values grid with a sheet selector, both bounded to the first 500 rows and 200 columns with a footer stating the cut.
-- Word and PowerPoint go through [Document conversion](../../CONTEXT.md): a job endpoint returns an id, the panel polls, and a third endpoint streams the resulting PDF from the in-cluster Gotenberg converter ([ADR-0048](../adr/0048-office-documents-are-converted-in-cluster-by-gotenberg.md)); results are transient and never cached.
+- Word and PowerPoint go through [Document conversion](../../GLOSSARY.md): a job endpoint returns an id, the panel polls, and a third endpoint streams the resulting PDF from the in-cluster Gotenberg converter ([ADR-0048](../adr/0048-office-documents-are-converted-in-cluster-by-gotenberg.md)); results are transient and never cached.
 
 ### The content endpoint
 

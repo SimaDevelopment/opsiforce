@@ -9,7 +9,7 @@ adrs: [0018]
 
 ## How it works
 
-- `linked-account-proxy` is a stateless Deployment in the cluster, one replica by default, that Bifrost reaches at `http://opsiforce-linked-account-proxy:8455/v1` for every [Linked account](../../CONTEXT.md); it is built from Node built-ins only and holds nothing but a token cache ([ADR-0018](../adr/0018-linked-account-traffic-goes-through-a-stateless-in-cluster-proxy.md)).
+- `linked-account-proxy` is a stateless Deployment in the cluster, one replica by default, that Bifrost reaches at `http://opsiforce-linked-account-proxy:8455/v1` for every [Linked account](../../GLOSSARY.md); it is built from Node built-ins only and holds nothing but a token cache ([ADR-0018](../adr/0018-linked-account-traffic-goes-through-a-stateless-in-cluster-proxy.md)).
 - The backend owns every token: the `linked-accounts` module signs the account in, keeps the encrypted credential in `linked_accounts` on the owning Model provider row, and refreshes it on demand under `SELECT … FOR UPDATE`, only within 5 minutes of expiry, saving the rotated tokens.
 - On completion the backend writes a random `lap_…` secret as the provider's Bifrost key, keeps only its hash, points the provider's `base_url` at the proxy's Service URL with `allow_private_network: true`, and resyncs the Organizations that use it ([Linked account](../organization/linked-account.md)). When the provider is missing from Bifrost, or `custom-openai-1` has no platform row yet, the sign-in creates them.
 - For a pasted access token, which has no refresh token, the credential route asks OpenAI's `whoami` again on every read, which gives the proxy the account id, and a token past its `exp` or refused by `whoami` counts as ended.

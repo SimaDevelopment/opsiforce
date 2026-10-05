@@ -8,11 +8,11 @@ kind: explanation
 
 ## How it works
 
-- Every [ProjectEnvironment](../../CONTEXT.md) can have its own address, a random 16-character local part on the deployment's receiving domain; mail to it is verified, stored in the environment's database with attachments inline, metered and announced by the doorbell ([Service template](service-template.md)). Sending mail is a different feature.
+- Every [ProjectEnvironment](../../GLOSSARY.md) can have its own address, a random 16-character local part on the deployment's receiving domain; mail to it is verified, stored in the environment's database with attachments inline, metered and announced by the doorbell ([Service template](service-template.md)). Sending mail is a different feature.
 - An address is a one-to-one mapping held in the service's configuration document, issued eagerly by the provisioning hook the moment the environment row exists.
 - The Agent reaches two environment-scoped endpoints at the `EXTERNAL_SERVICES_URL` base with the [Service Gateway](../gateways/service-gateway.md) token: `GET agent/incoming-email/identity` returns `{address}`, creating it on first call, and `POST agent/incoming-email/regenerate` rotates it.
 - The random local part is the entire access model: no inbox password, no sender allowlist, so the address is unguessable and rotatable; rotation is immediate, the old address bounces and stored mail is untouched.
-- [Development](../../CONTEXT.md) and each published environment have separate addresses; a [Publish](../projects/publish.md) provisions the new environment its own address and never copies one.
+- [Development](../../GLOSSARY.md) and each published environment have separate addresses; a [Publish](../projects/publish.md) provisions the new environment its own address and never copies one.
 - Mailgun holds the receiving domain's MX records, parses the MIME and forwards each message as one POST of the parsed message with attachments as file parts; the platform never parses MIME or fetches anything.
 - The receiving domain is separate from the sending domain and carries one catch-all Route forwarding every recipient to the webhook URL, so a new address works the instant its row exists; the backend is configured with the domain and the account's webhook signing key.
 - Verification is Mailgun's HMAC over two form fields, checked in constant time against the signing key; routing lowercases the `recipient` field and matches it against the configuration documents; deduplication keys on the message id, falling back to the signature token.

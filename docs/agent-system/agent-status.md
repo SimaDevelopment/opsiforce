@@ -6,11 +6,11 @@ adrs: [0020]
 
 # Agent Status
 
-> How does the sidebar know a [Project](../../CONTEXT.md)'s Agent is Working without polling, and what keeps that signal from sticking?
+> How does the sidebar know a [Project](../../GLOSSARY.md)'s Agent is Working without polling, and what keeps that signal from sticking?
 
 ## How it works
 
-- [Agent Status](../../CONTEXT.md) is Working when the Agent is processing a run, provider retries included, and Idle otherwise; it is carried per [ProjectEnvironment](../../CONTEXT.md) and a Project is Working when any of its environments is.
+- [Agent Status](../../GLOSSARY.md) is Working when the Agent is processing a run, provider retries included, and Idle otherwise; it is carried per [ProjectEnvironment](../../GLOSSARY.md) and a Project is Working when any of its environments is.
 - agent-control subscribes to OpenCode's event bus and tracks the set of sessions reported `busy` or `retry` by the native `session.status` event; Working is whether that set is non-empty, which covers sub-agent sessions as naturally as the root one.
 - While the stream is up it pushes one idempotent `{working}` event over the Service Gateway channel only when the level changes; on boot and on every stream reconnect it re-reads OpenCode's active sessions and pushes the snapshot unconditionally, so a stale backend copy is repaired ([ADR-0020](../adr/0020-agent-status-pushed-and-resynced-not-heartbeated.md), [Service Gateway](../gateways/service-gateway.md)).
 - The backend owns the level per environment in memory, keyed by the environment behind the pushing pod's gateway token, so a pod cannot report for another environment.

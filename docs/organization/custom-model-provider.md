@@ -11,9 +11,9 @@ terms: [Custom model provider, Official API key, Compatible endpoint]
 
 ### Adding
 
-- **Add model provider** on a Base format card opens a dialog: Connect with ([Official API key](../../CONTEXT.md), [Compatible endpoint](../../CONTEXT.md), or on the OpenAI card only [Linked account](../../CONTEXT.md)), a name, a base URL for a Compatible endpoint, and a write-only key. Save unlocks only after **Test connection** passes for the current inputs, and `GET /api/model-providers/creation-rules` lists the kinds each format allows, which the backend enforces.
+- **Add model provider** on a Base format card opens a dialog: Connect with ([Official API key](../../GLOSSARY.md), [Compatible endpoint](../../GLOSSARY.md), or on the OpenAI card only [Linked account](../../GLOSSARY.md)), a name, a base URL for a Compatible endpoint, and a write-only key. Save unlocks only after **Test connection** passes for the current inputs, and `GET /api/model-providers/creation-rules` lists the kinds each format allows, which the backend enforces.
 - A Compatible endpoint's base URL is the one the format's own client takes as its base URL: for OpenAI format it usually ends in `/v1` (Azure: `https://<resource>.openai.azure.com/openai/v1/`, with deployments named after model ids), and for Anthropic format it is the root in front of `/v1/messages`. The test calls `<base URL>/models` for OpenAI format and `<base URL>/v1/models` for Anthropic format.
-- The create flow is one sequence for the keyed kinds: validate the name and the limit of 10 [Custom model providers](../../CONTEXT.md), create the Bifrost provider first, call the test URL with the key, add the key, insert the row switched on at weight 1, then rewrite every `chat` key. The Test button runs the same sequence up to the call and then removes the provider.
+- The create flow is one sequence for the keyed kinds: validate the name and the limit of 10 [Custom model providers](../../GLOSSARY.md), create the Bifrost provider first, call the test URL with the key, add the key, insert the row switched on at weight 1, then rewrite every `chat` key. The Test button runs the same sequence up to the call and then removes the provider.
 - A Linked account has no key and no test; its create and sign-in are on the [Linked account](linked-account.md) page.
 - Any failure after the Bifrost create deletes the provider and confirms the delete with a GET, because Bifrost's `DELETE` answers 200 even when it keeps the provider; an unconfirmed delete answers 502.
 - The test never follows a redirect, gives up after 10 seconds and never returns the reply body: 401 or 403 reads "The key was rejected", a 3xx "Enter the final URL", no answer "Can't reach this address", and anything else its HTTP status.
@@ -37,7 +37,7 @@ terms: [Custom model provider, Official API key, Compatible endpoint]
 - A missing Custom row can still be deleted, and Edit connection on it answers 409 pointing to Re-enter key.
 - When Bifrost answers a delete but keeps the provider, the row is restored, the `chat` keys are rewritten back, and the delete answers 502.
 - An admin can add an eleventh Custom model provider only after deleting one; the dialog says so instead of showing the form.
-- Bifrost refuses every key write on a key-less provider, so the key-less `custom-openai-1` at the [Codex OAuth Dock](../../CONTEXT.md) serves only the models its Helm entry lists. Once it is signed in, Bifrost still keeps that entry's empty `placeholder` key beside the `lap_…` key; the boot skips it, and Bifrost never routes to it.
+- Bifrost refuses every key write on a key-less provider, so the key-less `custom-openai-1` at the [Codex OAuth Dock](../../GLOSSARY.md) serves only the models its Helm entry lists. Once it is signed in, Bifrost still keeps that entry's empty `placeholder` key beside the `lap_…` key; the boot skips it, and Bifrost never routes to it.
 
 ## Code
 

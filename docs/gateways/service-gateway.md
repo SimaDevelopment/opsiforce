@@ -5,11 +5,11 @@ adrs: [0044]
 
 # Service Gateway
 
-> How do Apps and Agents reach non-LLM services and platform endpoints with a per-[Project](../../CONTEXT.md) token per purpose and no provider keys?
+> How do Apps and Agents reach non-LLM services and platform endpoints with a per-[Project](../../GLOSSARY.md) token per purpose and no provider keys?
 
 ## How it works
 
-- Each Project holds one gateway token per purpose; the Agent calls the gateway with the `service` one, and the gateway validates the token, resolves the Project, [ProjectEnvironment](../../CONTEXT.md) and tenant, and forwards to the real provider with centrally held credentials ([ADR-0044](../adr/0044-apps-reach-non-llm-services-through-the-backend-owned-service-gateway.md)).
+- Each Project holds one gateway token per purpose; the Agent calls the gateway with the `service` one, and the gateway validates the token, resolves the Project, [ProjectEnvironment](../../GLOSSARY.md) and tenant, and forwards to the real provider with centrally held credentials ([ADR-0044](../adr/0044-apps-reach-non-llm-services-through-the-backend-owned-service-gateway.md)).
 - The second purpose is `platform-api`: a token minted only for a Project whose Agent declares it calls the public API, injected as `OPSIFORCE_API_KEY` beside `OPSIFORCE_API_URL` and `OPSIFORCE_RUNTIME_PROXY_URL`, and presented to `/api/v1` and the runtime proxy ([API Token](../public-api/api-token.md), [ADR-0062](../adr/0062-a-pod-calls-the-platform-api-as-the-human-who-created-its-project-bounded-to-what-it-created.md)). Each purpose validates only against its own rows, so the `service` token can never call the platform API and the `platform-api` token can never dispatch a service.
 - The endpoint is public to the cluster and authenticates on the token alone, because pods call it without the edge's identity headers; the gateway path is meant to be cluster-internal, so a leaked token is useless from the internet.
 - A provider registry keyed by service name means adding a provider is one class plus one line in the module factory; the email provider forces the sender to the configured address, so an Agent cannot spoof senders or manage the provider account.

@@ -12,7 +12,7 @@ adrs: [0050]
 ### Topology
 
 - The edge routes `/api/**` to the NestJS backend and every project surface to one of four stateless Go runtime proxies; the backend is a control plane that never streams project traffic.
-- The agent surface is path-routed under `/api/proxy/:id/*`; the App, VS Code and DB surfaces are subdomain-routed because their servers emit absolute asset paths ([Pod Tools](pod-tools.md)). `:id` is always the [ProjectEnvironment](../../CONTEXT.md) id, which for [Development](../../CONTEXT.md) equals the [Project](../../CONTEXT.md) id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
+- The agent surface is path-routed under `/api/proxy/:id/*`; the App, VS Code and DB surfaces are subdomain-routed because their servers emit absolute asset paths ([Pod Tools](pod-tools.md)). `:id` is always the [ProjectEnvironment](../../GLOSSARY.md) id, which for [Development](../../GLOSSARY.md) equals the [Project](../../GLOSSARY.md) id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
 - Inside the pod, agent-control listens on the control port (4910) for App restarts and status pushes and fronts OpenCode on 4096 ([OpenCode Embed](../frontend/opencode-embed.md)); the App serves on 3000, code-server on 8080 and Datasette on 8081.
 - Hosted deployments put oauth2-proxy at the edge; local development runs the edge in static auth mode with no identity provider and a fixed identity carrying every permission ([ADR-0050](../adr/0050-local-development-runs-on-tilt-with-a-static-identity-and-no-identity-provider.md), [Local orchestration](../operations/local-orchestration.md)).
 
@@ -39,18 +39,18 @@ flowchart LR
 ### The ensure gate
 
 - Every proxy calls the backend's ensure endpoint before forwarding; the gate dispatches on the environment's status and wakes, waits or fails ([Pod Lifecycle](pod-lifecycle.md)).
-- The gate touches one of the environment's two Redis keep-alive keys: App traffic touches the app key, every other surface the agent key ([Keep-alive activity](../../CONTEXT.md)).
+- The gate touches one of the environment's two Redis keep-alive keys: App traffic touches the app key, every other surface the agent key ([Keep-alive activity](../../GLOSSARY.md)).
 - Each proxy counts open WebSocket connections per environment and surface and re-touches that surface's activity through the activity endpoint on a fixed cadence (default one minute), so an open Code tab keeps the pod up.
 - Idle timeouts are validated against a five-minute floor wherever they are written, so several keep-alive touches fit inside the shortest timeout anyone can configure.
 - Each proxy caches a ready decision for about five seconds and a starting decision for about one second, and collapses concurrent ensures for the same environment, surface and auth signature into one backend call.
-- The proxy forwards the edge's identity headers, and the backend gates the Agent surface only, not Code or DB, by [Organization](../../CONTEXT.md) membership, the same Project visibility predicate the Project list uses, and — for a [Builder chat](../../CONTEXT.md) or the Test Project under it — whether its Skill or Agent is visible to the caller: a failed membership or visibility check answers 404, a hidden Builder chat or Test Project 403 ([Connection](../public-api/connection.md), [ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)).
-- The App surface is not gated there at all: its hostname reaches the app proxy without passing the identity proxy, so the headers arriving on it are caller-supplied. It is guarded per environment by [App Auth](../../CONTEXT.md) instead ([Environments](../projects/environments.md)).
+- The proxy forwards the edge's identity headers, and the backend gates the Agent surface only, not Code or DB, by [Organization](../../GLOSSARY.md) membership, the same Project visibility predicate the Project list uses, and — for a [Builder chat](../../GLOSSARY.md) or the Test Project under it — whether its Skill or Agent is visible to the caller: a failed membership or visibility check answers 404, a hidden Builder chat or Test Project 403 ([Connection](../public-api/connection.md), [ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)).
+- The App surface is not gated there at all: its hostname reaches the app proxy without passing the identity proxy, so the headers arriving on it are caller-supplied. It is guarded per environment by [App Auth](../../GLOSSARY.md) instead ([Environments](../projects/environments.md)).
 - When a live request fails mid-stream the proxy reports it to the failure endpoint; the backend re-reads the pod and answers 503 for a gone pod being recreated or 502 for a dead process inside a Ready pod.
 
 ### Per surface
 
 - Chat reaches OpenCode on 4096 through the agent proxy and touches agent activity.
-- The in-product App preview uses a dedicated preview hostname without [App Auth](../../CONTEXT.md); the public App uses `{envId}-{slug}` on the apps domain, where App Auth attaches its middleware ([Environments](../projects/environments.md)). Both touch app activity.
+- The in-product App preview uses a dedicated preview hostname without [App Auth](../../GLOSSARY.md); the public App uses `{envId}-{slug}` on the apps domain, where App Auth attaches its middleware ([Environments](../projects/environments.md)). Both touch app activity.
 - VS Code and the DB viewer reach 8080 and 8081 through their subdomain proxies and touch agent activity; code-server's WebSocket holds the pod while the page is open.
 - Uploading, listing, deleting and reading workspace files are backend filesystem paths on the shared volume that never wake a pod ([Files](../projects/files.md), [File preview](../projects/file-preview.md)).
 - Deleting a Project deletes every environment's pod, clears keep-alive keys, revokes the Bifrost team and tombstones each environment before removing the row ([Persistence](persistence.md)).

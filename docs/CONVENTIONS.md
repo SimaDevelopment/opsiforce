@@ -1,6 +1,6 @@
 # Knowledge base conventions
 
-Three layers: `CONTEXT.md` says what each term is, `docs/adr/` says why a decision was made, pages under `docs/<area>/` say how the system works today. First reader is an agent with git access. The promise is one hop: a "how" or "why" question is answered by one file plus at most one more.
+Three layers: `GLOSSARY.md` says what each term is, `docs/adr/` says why a decision was made, pages under `docs/<area>/` say how the system works today. First reader is an agent with git access. The promise is one hop: a "how" or "why" question is answered by one file plus at most one more.
 
 ## 1. Ownership
 
@@ -8,7 +8,7 @@ A sentence belongs to exactly one layer, decided by the question it answers:
 
 | Question | Layer | File |
 |---|---|---|
-| What is X? What is X not called? | Glossary | `CONTEXT.md` |
+| What is X? What is X not called? | Glossary | `GLOSSARY.md` |
 | Why this, and why not the alternative? | Decision record | `docs/adr/NNNN-*.md` |
 | How does it work today? What happens when? | Page | `docs/<area>/<page>.md` |
 
@@ -21,9 +21,9 @@ A sentence answering two questions is split, one sentence per layer. Nothing is 
 
 A rejected alternative on a page ("rather than", "instead of") is ADR material: link the existing ADR, or write one first when the choice passes the ADR test (section 7), or rewrite the sentence to keep the fact and drop the alternative when it fails. One ADR-less rationale sentence per choice is allowed only when the choice fails the ADR test and names no alternative.
 
-**Terms on pages.** Spell every canonical term as `CONTEXT.md` spells it. Link the first use on a page to `CONTEXT.md` (whole file, no anchors); a gist of about a dozen words may ride in the same sentence, never a second definition. Each term has at most one **home page**, which owns its mechanics (how it is created, changed, constrained, what it looks like); a term may be glossary-only. Other pages state what their own flow needs and link the home page. `CONTEXT.md` links no pages and cites no code.
+**Terms on pages.** Spell every canonical term as `GLOSSARY.md` spells it. Link the first use on a page to `GLOSSARY.md` (whole file, no anchors); a gist of about a dozen words may ride in the same sentence, never a second definition. Each term has at most one **home page**, which owns its mechanics (how it is created, changed, constrained, what it looks like); a term may be glossary-only. Other pages state what their own flow needs and link the home page. `GLOSSARY.md` links no pages and cites no code.
 
-**Terms in ADRs.** A new ADR uses glossary terms verbatim and defines none; a decision that introduces a concept adds the `CONTEXT.md` entry in the same commit. When an ADR and `CONTEXT.md` disagree, one of them is false about today; fix it in the same commit (section 7).
+**Terms in ADRs.** A new ADR uses glossary terms verbatim and defines none; a decision that introduces a concept adds the `GLOSSARY.md` entry in the same commit. When an ADR and `GLOSSARY.md` disagree, one of them is false about today; fix it in the same commit (section 7).
 
 **Shipped only.** Pages are present tense and describe shipped behaviour: no status banners, planned behaviour, "implemented" markers, or history ("used to be", "previously labelled"). Unshipped designs are `proposed` ADRs or a PRD outside the knowledge base.
 
@@ -38,7 +38,7 @@ The rule covers every file under `docs/`, operations pages included.
 3. **One hub.** `docs/README.md` is the only index of pages, hand-written: sections in tree order, Operations last, one row per page with a one-clause gist. No per-area README files, no llms.txt.
 4. **Operations is a folder.** `docs/operations/` holds how-to and runbook pages (section 3, operations shape).
 5. **Explanation and how-to never share a page.** Step lists inside area pages move to their own operations page, linked from the area page. Why-sentences inside operations pages go to ADRs; the operations page keeps one lead paragraph of mechanism with the ADR linked.
-6. **Filename.** The home page of one glossary term is named after that term, kebab-case, as `CONTEXT.md` spells it. Any other page is named after its title noun.
+6. **Filename.** The home page of one glossary term is named after that term, kebab-case, as `GLOSSARY.md` spells it. Any other page is named after its title noun.
 7. **No ADR index.** The filename is the index: number and title. `docs/adr/README.md` is a preamble only (section 7).
 8. **Assets.** One folder per asset under `docs/assets/<name>/` holding `source.*` (edited) and `render.*` (embedded), never one without the other, each referenced by at least one page or the package README.
 9. **`docs/agents/` is not knowledge base.** It holds the mattpocock plugin's skill configuration, committed.
@@ -106,12 +106,12 @@ Frontmatter carries only what cannot be derived from the path, the body, or git.
 | `terms` | omit when empty | flow list, e.g. `[Environment, Environment Slug]` | Terms this page is the **home page** for. Not terms it merely links. |
 | `adrs` | omit when empty | flow list, e.g. `[0001, 0012]` | ADRs this page is the **home page** for: the one page whose behaviour the ADR shapes. Not every ADR linked. |
 
-1. A `terms` entry is spelled byte for byte as its `**Term**:` line in `CONTEXT.md` and exists there.
+1. A `terms` entry is spelled byte for byte as its `**Term**:` line in `GLOSSARY.md` and exists there.
 2. A term or an ADR number appears in at most one page's block, knowledge-base-wide. A term in no block is glossary-only; an ADR in no block has no home page.
 3. `operations` pages carry `kind` only.
 4. An empty key is omitted, never `[]`. An `explanation` page whose block is only `kind` owns nothing: the cut-candidate signal.
 
-Both invariants are one grep each. `CONTEXT.md`, `README.md`, `adr/README.md` and this file carry no block; they are not pages.
+Both invariants are one grep each. `GLOSSARY.md`, `README.md`, `adr/README.md` and this file carry no block; they are not pages.
 
 ## 5. `## Code`
 
@@ -137,11 +137,11 @@ The knowledge base is true when no sentence on a page is false about the shipped
 
 **Before committing, run the false-sentence test.** For every glossary term your diff touches, open its home page (`grep -rlF '<term>' docs/`, or the page whose `## Code` cites the directory you changed). Rewrite every bullet, States row and Edge case the diff made false. Add a bullet for behaviour no bullet covers. Done when nothing on the page is false after the diff.
 
-**Added behaviour** gets a bullet on the existing area page; a new page only when How it works would pass 16 bullets, with a hub row and a frontmatter block. A new concept gets a `CONTEXT.md` entry first. A decision that passes the ADR test gets an ADR and a link from the bullet.
+**Added behaviour** gets a bullet on the existing area page; a new page only when How it works would pass 16 bullets, with a hub row and a frontmatter block. A new concept gets a `GLOSSARY.md` entry first. A decision that passes the ADR test gets an ADR and a link from the bullet.
 
 **Changed behaviour** rewrites the bullet. When the change reverses an ADR, the same commit rewrites that ADR in place (section 7); the bullet keeps its link.
 
-**Removed behaviour** is a sweep: delete the bullets, or the page with its hub row when nothing is left; delete the `CONTEXT.md` entry; delete every ADR whose decision no longer holds, and rewrite any that still partly holds (section 7). Write a present-tense ADR for the removal only when the removal itself passes the ADR test. The retired name lives on in that ADR's title and on the `_Avoid_` line of the replacement term when one exists. No tombstones in `CONTEXT.md`.
+**Removed behaviour** is a sweep: delete the bullets, or the page with its hub row when nothing is left; delete the `GLOSSARY.md` entry; delete every ADR whose decision no longer holds, and rewrite any that still partly holds (section 7). Write a present-tense ADR for the removal only when the removal itself passes the ADR test. The retired name lives on in that ADR's title and on the `_Avoid_` line of the replacement term when one exists. No tombstones in `GLOSSARY.md`.
 
 **Moved code.** Moving or renaming a directory or file cited in any `## Code` updates that bullet in the same commit; `grep -rF '<old path>' docs/` returns nothing before the commit.
 

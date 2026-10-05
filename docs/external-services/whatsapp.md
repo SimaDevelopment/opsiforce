@@ -11,9 +11,9 @@ kind: explanation
 ### Channels and allowlists
 
 - A number connects to the platform as a channel through Whapi, which links the number by QR code; messages from allowlisted chats are verified, stored in the target environment's database with media bytes, metered and announced by the doorbell ([Service template](service-template.md)). Nothing sends or replies.
-- A channel is a platform-global resource row: the provider's channel id, the API token an operator pasted, a server-generated webhook secret and a human label, with no tenant column, so one number shared by two [Organizations](../../CONTEXT.md) is one row.
+- A channel is a platform-global resource row: the provider's channel id, the API token an operator pasted, a server-generated webhook secret and a human label, with no tenant column, so one number shared by two [Organizations](../../GLOSSARY.md) is one row.
 - Resource values are encrypted at rest with AES-256-GCM under a key from the environment; the token is used outbound (enumerating chats, configuring the webhook, fetching media) and the secret is pushed to the provider, echoed back as a header on every delivery, and never shown to an operator again.
-- Each [ProjectEnvironment](../../CONTEXT.md) has one configuration document listing the channels it listens to and the allowlisted chats under each; nothing arrives by default and there is no wildcard. Chat ids carry their kind in the suffix (`@s.whatsapp.net` individual, `@g.us` group).
+- Each [ProjectEnvironment](../../GLOSSARY.md) has one configuration document listing the channels it listens to and the allowlisted chats under each; nothing arrives by default and there is no wildcard. Chat ids carry their kind in the suffix (`@s.whatsapp.net` individual, `@g.us` group).
 - Fan-out is allowed: one chat may appear in several environments' documents, each stored and metered independently.
 - The document cascades away with its environment while the channel survives; Duplication and Import copy nothing; a [Publish](../projects/publish.md) copies the document to the published environment once that version is healthy, as an idempotent upsert.
 
