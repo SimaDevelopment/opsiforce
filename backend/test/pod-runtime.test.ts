@@ -11,7 +11,7 @@ const options: PodTemplateOptions = {
   storageMountPath: '/workspace-data',
   subPath: 'projects/example',
   imagePullPolicy: 'IfNotPresent',
-  resources: { requests: { cpu: '500m', memory: '2Gi' } },
+  resources: { requests: { cpu: '500m', memory: '2Gi' }, limits: { memory: '4Gi' } },
   nodeSelector: { 'topology.kubernetes.io/region': 'hel1' },
 };
 
@@ -27,5 +27,24 @@ describe('generated app runtime', () => {
 
   it.each([undefined, ''])('uses the default runtime when configured as %s', (runtimeClassName) => {
     expect(buildPodSpec({ ...options, runtimeClassName }).spec).not.toHaveProperty('runtimeClassName');
+  });
+});
+
+describe('privileged Kata agents', () => {
+  it('enables privileged mode for both the app and init containers', () => {
+    const pod = buildPodSpec({ ...options, runtimeClassName: 'kata-clh-runtime-rs-opsiforce', privileged: true });
+    expect(pod.spec?.containers[0].securityContext).toEqual({ privileged: true });
+    expect(pod.spec?.initContainers?.[0].securityContext).toEqual({ privileged: true });
+    expect(pod.spec?.volumes?.[0].persistentVolumeClaim?.claimName).toBe('opsiforce-cephfs');
+  });
+
+  it.each([undefined, '', 'kata-clh-runtime-rs-opsiforce'])('keeps privilege off by default for runtime %s', (runtimeClassName) => {
+    const pod = buildPodSpec({ ...options, runtimeClassName });
+    expect(pod.spec?.containers[0].securityContext).toBeUndefined();
+    expect(pod.spec?.initContainers?.[0].securityContext).toBeUndefined();
+  });
+
+  it.each([undefined, '', 'runc', 'unrecognized-runtime'])('rejects privilege outside Kata: %s', (runtimeClassName) => {
+    expect(() => buildPodSpec({ ...options, runtimeClassName, privileged: true })).toThrow('Privileged agents require');
   });
 });

@@ -20,3 +20,12 @@ Existing pods keep their current runtime until recreated. Deploying the backend
 does not restart active apps. Validate a newly created app's startup, CephFS
 workspace access, application routing and workspace updates before recycling
 existing apps. Setting the value back to empty affects newly created pods only.
+
+The regular workflow also sets `config.agentPrivileged=true`, passed as
+`AGENT_PRIVILEGED` to the backend. Generated app containers, their init containers,
+and workspace-update Job containers receive `securityContext.privileged: true`.
+The backend rejects privileged agent creation unless the runtime is exactly
+`kata-clh-runtime-rs-opsiforce`; it never falls back to a privileged default-runtime pod.
+The shared chart defaults this option to false, leaving Azure and local deployments
+unprivileged. Backend and proxy containers are unaffected. Existing app pods need
+recreation to pick up this setting. To disable it, set `config.agentPrivileged=false`.

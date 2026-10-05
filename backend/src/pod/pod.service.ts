@@ -64,6 +64,7 @@ export class PodService {
       controlPort: this.configService.getOrThrow<number>('agentControlPort'),
       imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
       resources: this.smallResources(),
+      privileged: this.configService.get<boolean>('agentPrivileged', false),
       runtimeClassName: this.configService.get<string>('agentRuntimeClassName'),
       nodeSelector: this.configService.get('agentNodeSelector'),
       tolerations: this.configService.get('agentTolerations'),
