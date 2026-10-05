@@ -16,7 +16,7 @@ export interface PodClassBounds {
 export const POD_CLASS_DEFAULT: PodClass = 'small';
 
 const PRESETS: Record<PodPreset, PodResources> = {
-  small: { cpuMillicores: 500, memoryRequestMib: 2048, memoryLimitMib: 4096 },
+  small: { cpuMillicores: 100, memoryRequestMib: 2048, memoryLimitMib: 4096 },
   medium: { cpuMillicores: 1000, memoryRequestMib: 4096, memoryLimitMib: 8192 },
   large: { cpuMillicores: 2000, memoryRequestMib: 8192, memoryLimitMib: 16384 },
 };
@@ -32,6 +32,12 @@ export function isPreset(podClass: PodClass): podClass is PodPreset {
 
 export function resolvePreset(preset: PodPreset): PodResources {
   return PRESETS[preset];
+}
+
+/** Preset projects follow the current catalog; custom projects retain saved values. */
+export function resolveStoredPodResources(settings?: PodResources & { podClass: PodClass }): PodResources {
+  if (!settings) return resolvePreset('small');
+  return isPreset(settings.podClass) ? resolvePreset(settings.podClass) : settings;
 }
 
 function clampValue(value: number, min: number, max: number): number {
