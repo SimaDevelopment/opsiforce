@@ -66,6 +66,10 @@ config:
   managedTenantRolePrefix: ""
   ssoGroupMap: ""
   defaultTenantName: ""
+  # Empty uses the cluster default runtime (Azure and local development).
+  # The regular deployment workflow explicitly selects the Kata RuntimeClass.
+  agentRuntimeClassName: ""
+  agentPrivileged: false
   agentAffinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

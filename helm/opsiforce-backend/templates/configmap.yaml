@@ -22,6 +22,8 @@ data:
   STORAGE_TYPE: {{ .Values.config.storageType | quote }}
   STORAGE_MOUNT_PATH: {{ .Values.config.storageMountPath | default "/workspace-data" | quote }}
   STORAGE_CLAIM_SIZE: {{ .Values.config.storageClaimSize | default "" | quote }}
+  AGENT_PRIVILEGED: {{ .Values.config.agentPrivileged | default false | quote }}
+  AGENT_RUNTIME_CLASS_NAME: {{ .Values.config.agentRuntimeClassName | default "" | quote }}
   AGENT_WORKSPACE_UPDATE_ON_STARTUP: {{ .Values.config.agentWorkspaceUpdateOnStartup | default "true" | quote }}
   AGENT_UPDATE_JOB_TIMEOUT_MS: {{ .Values.config.agentUpdateJobTimeoutMs | default "1800000" | quote }}
   {{- if .Values.config.agentNodeSelector }}

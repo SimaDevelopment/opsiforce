@@ -32,7 +32,7 @@ import { ExternalServiceProvisioningService } from '../external-services';
 import { agentDeclaresPlatformApi, type AgentModelSelection } from '../agent/agent-config';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
 import { DeliveryService } from '../delivery/delivery.service';
-import type { DeliveryPlan } from '../delivery/delivery.types';
+import { modelReference, type DeliveryPlan } from '../delivery/delivery.types';
 import { PodReloadClient } from '../delivery/pod-reload.client';
 import {
   PROJECT_POOL_QUEUE,
@@ -904,7 +904,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         model?: string;
         agents?: Record<string, { model?: string } | undefined>;
       };
-      const expected = modelSelection.variant ? `${modelSelection.model}#${modelSelection.variant}` : modelSelection.model;
+      const expected = modelReference(modelSelection.model, modelSelection.variant ?? null);
       return config.model === expected && config.agents?.[agentName]?.model === expected;
     } catch {
       return false;

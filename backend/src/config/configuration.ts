@@ -86,6 +86,8 @@ export const configuration = () => {
     platformVersion: platformVersion,
     agentImageVersion: agentImageVersion,
     arch: process.arch,
+    agentPrivileged: parseBooleanEnv(process.env.AGENT_PRIVILEGED, false),
+    agentRuntimeClassName: process.env.AGENT_RUNTIME_CLASS_NAME?.trim() || undefined,
     agentNodeSelector: parseJsonEnv<Record<string, string>>(process.env.AGENT_NODE_SELECTOR, {}),
     agentTolerations: parseJsonEnv<Array<Record<string, string>>>(process.env.AGENT_TOLERATIONS, []),
     agentAffinity: parseJsonEnv<Record<string, unknown>>(process.env.AGENT_AFFINITY, {}),
