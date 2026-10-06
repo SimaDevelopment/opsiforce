@@ -1,6 +1,6 @@
 # Opsiforce Documentation
 
-> Opsiforce is a self-hostable platform that embeds an AI coding assistant (powered by [OpenCode](https://github.com/sst/opencode)). A user converses with an agent inside an isolated Kubernetes pod to build an app, then promotes that app from its working environment to production-like ones. Each running unit, a **ProjectEnvironment**, gets its own pod with persistent storage; a **Project** is the shell that groups them. Vocabulary is in [CONTEXT.md](../CONTEXT.md), the *why* behind decisions is in the [ADRs](adr/README.md), and the rules for these pages are in [CONVENTIONS.md](CONVENTIONS.md).
+> Opsiforce is a self-hostable platform that embeds an AI coding assistant (powered by [OpenCode](https://github.com/sst/opencode)). A user converses with an agent inside an isolated Kubernetes pod to build an app, then promotes that app from its working environment to production-like ones. Each running unit, a **ProjectEnvironment**, gets its own pod with persistent storage; a **Project** is the shell that groups them. Vocabulary is in [GLOSSARY.md](../GLOSSARY.md), the *why* behind decisions is in the [ADRs](adr/README.md), and the rules for these pages are in [CONVENTIONS.md](CONVENTIONS.md).
 
 **Runtime** (`runtime/`)
 - [Request Flows](runtime/request-flows.md) — how a request reaches the right pod through the edge, the runtime proxies and the ensure gate

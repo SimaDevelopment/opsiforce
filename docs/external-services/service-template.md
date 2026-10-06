@@ -17,7 +17,7 @@ adrs: [0046, 0047]
 ### Routes and discovery
 
 - Every endpoint lives under `/api/external-services/` and the first segment names the audience: `webhooks/:service` (authenticated by the definition's verify step), `agent/:service/…` (the [Service Gateway](../gateways/service-gateway.md) token, from which the platform resolves the environment) and `admin/:service/…` (an operator session plus `can_manage_external_services`) ([ADR-0046](../adr/0046-external-services-routes-are-audience-first.md)).
-- Two dispatch controllers declare their guard once and hand the remaining path to the definition's route table; an admin route that names an environment is tenant-checked by the dispatcher, one that names none reaches the platform-wide resource registry shared by every [Organization](../../CONTEXT.md).
+- Two dispatch controllers declare their guard once and hand the remaining path to the definition's route table; an admin route that names an environment is tenant-checked by the dispatcher, one that names none reaches the platform-wide resource registry shared by every [Organization](../../GLOSSARY.md).
 - The names `usage`, `webhooks`, `agent`, `admin` and `services` are reserved; the registry refuses at startup to register a definition that takes one.
 - Every definition implements an identity projection mounted at `GET agent/<service>/identity`, always answering 200 with the service's own empty shape and never a secret; mutations such as rotating an address are service-declared routes.
 - Signature verification needs no raw body: requests arrive as parsed form fields or JSON, normalised into one shape (`headers`, `fields`, `files`, `json`) before a definition sees them.
@@ -47,14 +47,14 @@ provider ──POST /api/external-services/webhooks/<service>──▶ verify (s
 
 ### Storage and the doorbell
 
-- Each [ProjectEnvironment](../../CONTEXT.md) has `data/external-services.db` beside its workspace with one `messages` and one `attachments` table shared by every service; the backend is the sole writer, the schema is the platform's ordered migration list applied on first write with the version in `PRAGMA user_version`, and a new environment has an empty file until its first message. Datasette serves it read-only ([Pod Tools](../runtime/pod-tools.md)).
+- Each [ProjectEnvironment](../../GLOSSARY.md) has `data/external-services.db` beside its workspace with one `messages` and one `attachments` table shared by every service; the backend is the sole writer, the schema is the platform's ordered migration list applied on first write with the version in `PRAGMA user_version`, and a new environment has an empty file until its first message. Datasette serves it read-only ([Pod Tools](../runtime/pod-tools.md)).
 - A row carries bookkeeping columns, a promoted set that means the same for every service (who it was routed to, who sent it, the text) and a `payload` JSON column; attachments and media are child rows with bytes inline.
 - Idempotency is a unique index on service plus provider message id with inserts ignoring conflicts.
 - The doorbell is `POST /api/external-services/<service>` on the App with `{ service, rowIds }` and no content, sent straight to the pod inside the cluster with a modest timeout; the agent template ships one catch-all route answering 501, a 2xx stamps `app_delivered_at`, and anything else leaves it null as the "never delivered" marker.
 
 ### Metering and lifecycle
 
-- Every stored message counts one in a monthly bucket per Organization, [Project](../../CONTEXT.md), environment and service; the Organization reference is durable while Project and environment references null out on delete. Admins read it under Admin, Usage, gated by `can_view_external_services_usage` and bound to the authenticated tenant ([Permissions](../organization/permissions.md)).
+- Every stored message counts one in a monthly bucket per Organization, [Project](../../GLOSSARY.md), environment and service; the Organization reference is durable while Project and environment references null out on delete. Admins read it under Admin, Usage, gated by `can_view_external_services_usage` and bound to the authenticated tenant ([Permissions](../organization/permissions.md)).
 - Every seam that creates an environment calls one provisioning hook after the row is committed, and a hook failure never fails the flow; a Publish carries each service's wiring only after the new App version has proven ready; deleting an environment cascades its configuration documents while platform-wide resources and metering buckets survive; Duplication and Import copy nothing inbound.
 
 ## Edge cases

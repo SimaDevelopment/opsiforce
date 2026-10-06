@@ -11,7 +11,7 @@ terms: [Files, User uploads, Generated files]
 
 ### Three sections
 
-- [Files](../../CONTEXT.md) lists the [Active environment](../../CONTEXT.md)'s workspace as three server-curated sections: [Generated files](../../CONTEXT.md), where the Agent saves deliverables ([Document Generation](../agent-system/document-generation.md)); [User uploads](../../CONTEXT.md), where uploads land; and other files, the strays at the workspace root.
+- [Files](../../GLOSSARY.md) lists the [Active environment](../../GLOSSARY.md)'s workspace as three server-curated sections: [Generated files](../../GLOSSARY.md), where the Agent saves deliverables ([Document Generation](../agent-system/document-generation.md)); [User uploads](../../GLOSSARY.md), where uploads land; and other files, the strays at the workspace root.
 - The App's `app/`, the platform's `data/` and `node_modules/`, and every dotfile are filtered server-side; drill-down 404s on them, the policy is re-applied to the resolved path, and symlinks are dropped from listings.
 - Dotfiles are refused on every endpoint, listing, drill-down, content and download alike, and the ban survives symlinks. Hidden roots are a curation rule only: content and download still serve a path under `app/` when asked, because chat links the Agent wrote point there ([File Downloads](file-downloads.md)).
 - Navigation is Drive-shaped: pill tabs per section, folder drill-down with breadcrumbs, a table or card toggle remembered across reloads; Generated files opens first.

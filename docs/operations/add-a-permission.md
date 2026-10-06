@@ -8,7 +8,7 @@ kind: operations
 
 ## Prerequisites
 
-- A name for the permission in the `can_*` form; a `platform_` segment if its view spans all [Organizations](../../CONTEXT.md) ([Permissions](../organization/permissions.md)).
+- A name for the permission in the `can_*` form; a `platform_` segment if its view spans all [Organizations](../../GLOSSARY.md) ([Permissions](../organization/permissions.md)).
 - Access to the Keycloak Pulumi stack.
 
 ## Steps

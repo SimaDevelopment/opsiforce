@@ -15,9 +15,9 @@ kind: explanation
 - A card shows title, current step and a progress bar; the dialog shows the full step list; closing the dialog drops back to a card while the job keeps running.
 - A finished card carries a kind-specific action: Download for export, Open project for import and duplicate, Open app and View environment for publish; a failed card shows the error and a dismiss button.
 - Everything kind-specific lives in a per-kind adapter (phase and step reading, the SSE endpoint, titles, byte progress, terminal actions, queries to invalidate); the host, card and dialog are generic, and a fifth kind is one adapter.
-- Jobs are keyed `kind:id`, publish by environment and the rest by [Project](../../CONTEXT.md), so a publish and an export for one Project sit side by side.
+- Jobs are keyed `kind:id`, publish by environment and the rest by [Project](../../GLOSSARY.md), so a publish and an export for one Project sit side by side.
 - The dock's state is in-memory; a reload clears the cards while the jobs run to completion on the backend.
-- The project page registers two publish callbacks with the dock while mounted, reloading the preview and switching the [Active environment](../../CONTEXT.md) in place, and the adapter falls back to navigation when they are absent.
+- The project page registers two publish callbacks with the dock while mounted, reloading the preview and switching the [Active environment](../../GLOSSARY.md) in place, and the adapter falls back to navigation when they are absent.
 
 ### Import owns its upload
 
