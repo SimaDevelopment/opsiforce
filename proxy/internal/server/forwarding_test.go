@@ -16,8 +16,9 @@ func forwardingFixture(env string) http.Header {
 	h := http.Header{}
 	h.Set(forwardingProofHeader, hex.EncodeToString(mac.Sum(nil)))
 	h.Set(forwardedTokenHeader, "user-token")
-	h.Set("X-Opsiforce-Tenant-Id", "tenant")
-	h.Set("X-Opsiforce-User-Id", "user")
+	h.Set(forwardedUserIDHeader, "user")
+	h.Set(objectIDHeader, "object")
+	h.Set(directoryIDHeader, "tenant")
 	return h
 }
 
@@ -33,7 +34,18 @@ func TestForwardingBoundary(t *testing.T) {
 			t.Fatal("incorrect forwarding")
 		}
 	})
-	for _, scenario := range []string{"missing-proof", "wrong-environment", "duplicate-token", "case-duplicate", "weak-key"} {
+	t.Run("provider without oid and tid forwards only the user id", func(t *testing.T) {
+		h := forwardingFixture("env-a")
+		h.Set(objectIDHeader, "<no value>")
+		h.Set(directoryIDHeader, "")
+		if !acceptForwarding(h, "env-a", key) {
+			t.Fatal("rejected request without oid and tid claims")
+		}
+		if h.Get(forwardedUserIDHeader) != "user" || len(h.Values(objectIDHeader)) != 0 || len(h.Values(directoryIDHeader)) != 0 {
+			t.Fatal("forwarded a missing optional claim")
+		}
+	})
+	for _, scenario := range []string{"missing-proof", "wrong-environment", "duplicate-token", "case-duplicate", "weak-key", "missing-user", "empty-user"} {
 		t.Run(scenario, func(t *testing.T) {
 			h := forwardingFixture("env-a")
 			env := "env-a"
@@ -49,6 +61,10 @@ func TestForwardingBoundary(t *testing.T) {
 				h["x-opsiforce-access-token"] = []string{"attacker"}
 			case "weak-key":
 				testKey = strings.Repeat("k", 31)
+			case "missing-user":
+				h.Set(forwardedUserIDHeader, "<no value>")
+			case "empty-user":
+				h.Set(forwardedUserIDHeader, "")
 			}
 			if acceptForwarding(h, env, testKey) {
 				t.Fatal("accepted forged forwarding proof")

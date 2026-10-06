@@ -349,8 +349,9 @@ export class ProjectAuthService {
     return [
       { Name: 'X-Opsiforce-Forwarding-Proof', Value: proof },
       { Name: 'X-Opsiforce-Access-Token', Value: '{{ .accessToken }}' },
-      { Name: 'X-Opsiforce-Tenant-Id', Value: '{{ .claims.tid }}' },
-      { Name: 'X-Opsiforce-User-Id', Value: '{{ .claims.oid }}' },
+      { Name: 'X-Opsiforce-User-Id', Value: '{{ .claims.sub }}' },
+      { Name: 'X-Opsiforce-Object-Id', Value: '{{ with .claims.oid }}{{ . }}{{ end }}' },
+      { Name: 'X-Opsiforce-Directory-Id', Value: '{{ with .claims.tid }}{{ . }}{{ end }}' },
     ];
   }
 

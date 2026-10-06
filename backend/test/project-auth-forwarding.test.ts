@@ -42,6 +42,11 @@ describe('per-environment forwarded token forwarding', () => {
     await auth.apply('env-a', null, { ...config, forwardAccessToken: true });
     const plugin = spec();
     expect(plugin.Headers).toContainEqual({ Name: 'X-Opsiforce-Access-Token', Value: '{{ .accessToken }}' });
+    expect(plugin.Headers).toContainEqual({ Name: 'X-Opsiforce-User-Id', Value: '{{ .claims.sub }}' });
+    expect(plugin.Headers).toContainEqual({
+      Name: 'X-Opsiforce-Object-Id',
+      Value: '{{ with .claims.oid }}{{ . }}{{ end }}',
+    });
     expect(plugin.Headers).toContainEqual({
       Name: 'X-Opsiforce-Forwarding-Proof',
       Value: createHmac('sha256', key).update('app-auth-forwarding:env-a').digest('hex'),
