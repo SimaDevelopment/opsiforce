@@ -284,7 +284,7 @@ export class ProjectAuthService {
     }
     const effectiveConfig = await this.preserveClientSecret(routingId, config);
     const extras: MiddlewareExtras = {
-      headers: config.forwardAccessToken ? [...MANUAL_HEADERS, ...this.delegationHeaders(routingId)] : MANUAL_HEADERS,
+      headers: config.forwardAccessToken ? [...MANUAL_HEADERS, ...this.forwardingHeaders(routingId)] : MANUAL_HEADERS,
       bypassAuthPaths,
     };
     const mw = this.buildMiddleware(routingId, effectiveConfig, extras);
@@ -337,7 +337,7 @@ export class ProjectAuthService {
     await this.applyClonedSpec(toRoutingId, toSlug, sourceSpec);
   }
 
-  private delegationHeaders(routingId: string) {
+  private forwardingHeaders(routingId: string) {
     const key = this.configService.get<string>('appAuthForwardingSigningKey') ?? '';
     if (key.length < 32) {
       throw new BadRequestException(
@@ -345,9 +345,9 @@ export class ProjectAuthService {
       );
     }
     // This transport credential never reaches generated apps or browsers.
-    const proof = createHmac('sha256', key).update(`app-oauth:${routingId}`).digest('hex');
+    const proof = createHmac('sha256', key).update(`app-auth-forwarding:${routingId}`).digest('hex');
     return [
-      { Name: 'X-Opsiforce-Delegation-Proof', Value: proof },
+      { Name: 'X-Opsiforce-Forwarding-Proof', Value: proof },
       { Name: 'X-Opsiforce-Access-Token', Value: '{{ .accessToken }}' },
       { Name: 'X-Opsiforce-Tenant-Id', Value: '{{ .claims.tid }}' },
       { Name: 'X-Opsiforce-User-Id', Value: '{{ .claims.oid }}' },
@@ -365,7 +365,7 @@ export class ProjectAuthService {
         ? {
             Headers: [
               ...sourceSpec.Headers.filter((h) => !h.Name.startsWith('X-Opsiforce-')),
-              ...this.delegationHeaders(routingId),
+              ...this.forwardingHeaders(routingId),
             ],
           }
         : {}),

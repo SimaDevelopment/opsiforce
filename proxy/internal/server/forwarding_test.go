@@ -9,67 +9,67 @@ import (
 	"testing"
 )
 
-func delegationFixture(env string) http.Header {
+func forwardingFixture(env string) http.Header {
 	key := strings.Repeat("k", 32)
 	mac := hmac.New(sha256.New, []byte(key))
-	mac.Write([]byte("app-oauth:" + env))
+	mac.Write([]byte("app-auth-forwarding:" + env))
 	h := http.Header{}
-	h.Set(delegationProof, hex.EncodeToString(mac.Sum(nil)))
-	h.Set(delegationToken, "user-token")
+	h.Set(forwardingProofHeader, hex.EncodeToString(mac.Sum(nil)))
+	h.Set(forwardedTokenHeader, "user-token")
 	h.Set("X-Opsiforce-Tenant-Id", "tenant")
 	h.Set("X-Opsiforce-User-Id", "user")
 	return h
 }
 
-func TestDelegationBoundary(t *testing.T) {
+func TestForwardingBoundary(t *testing.T) {
 	key := strings.Repeat("k", 32)
 	t.Run("authenticated request keeps only app credentials", func(t *testing.T) {
-		h := delegationFixture("env-a")
+		h := forwardingFixture("env-a")
 		h.Set("X-Opsiforce-Unknown", "untrusted")
-		if !acceptDelegation(h, "env-a", key) {
+		if !acceptForwarding(h, "env-a", key) {
 			t.Fatal("rejected valid transport credential")
 		}
-		if h.Get(delegationToken) != "user-token" || h.Get(delegationProof) != "" || h.Get("X-Opsiforce-Unknown") != "" {
+		if h.Get(forwardedTokenHeader) != "user-token" || h.Get(forwardingProofHeader) != "" || h.Get("X-Opsiforce-Unknown") != "" {
 			t.Fatal("incorrect forwarding")
 		}
 	})
 	for _, scenario := range []string{"missing-proof", "wrong-environment", "duplicate-token", "case-duplicate", "weak-key"} {
 		t.Run(scenario, func(t *testing.T) {
-			h := delegationFixture("env-a")
+			h := forwardingFixture("env-a")
 			env := "env-a"
 			testKey := key
 			switch scenario {
 			case "missing-proof":
-				h.Del(delegationProof)
+				h.Del(forwardingProofHeader)
 			case "wrong-environment":
 				env = "env-b"
 			case "duplicate-token":
-				h.Add(delegationToken, "attacker")
+				h.Add(forwardedTokenHeader, "attacker")
 			case "case-duplicate":
 				h["x-opsiforce-access-token"] = []string{"attacker"}
 			case "weak-key":
 				testKey = strings.Repeat("k", 31)
 			}
-			if acceptDelegation(h, env, testKey) {
-				t.Fatal("accepted forged delegation")
+			if acceptForwarding(h, env, testKey) {
+				t.Fatal("accepted forged forwarding proof")
 			}
 			for name := range h {
-				if strings.HasPrefix(strings.ToLower(name), delegationPrefix) {
-					t.Fatal("delegation header survived rejection")
+				if strings.HasPrefix(strings.ToLower(name), reservedHeaderPrefix) {
+					t.Fatal("reserved header survived rejection")
 				}
 			}
 		})
 	}
 }
 
-func TestDelegationNeverAppearsInLogsOrResponseHeaders(t *testing.T) {
-	h := delegationFixture("env-a")
+func TestForwardingNeverAppearsInLogsOrResponseHeaders(t *testing.T) {
+	h := forwardingFixture("env-a")
 	logged := jsonHeader(h)
-	if strings.Contains(logged, "user-token") || strings.Contains(logged, h.Get(delegationProof)) {
+	if strings.Contains(logged, "user-token") || strings.Contains(logged, h.Get(forwardingProofHeader)) {
 		t.Fatal("credential logged")
 	}
 	for name := range filterResponseHeaders(h, false) {
-		if strings.HasPrefix(strings.ToLower(name), delegationPrefix) {
+		if strings.HasPrefix(strings.ToLower(name), reservedHeaderPrefix) {
 			t.Fatal("response credential leaked")
 		}
 	}
@@ -79,11 +79,11 @@ func TestDelegationNeverAppearsInLogsOrResponseHeaders(t *testing.T) {
 	}
 }
 
-func TestDelegationOrigin(t *testing.T) {
+func TestForwardingOrigin(t *testing.T) {
 	for _, origin := range []string{"", "https://app.example", "https://evil.example", "null"} {
 		r, _ := http.NewRequest("GET", "https://app.example/api/files", nil)
 		r.Header.Set("Origin", origin)
-		if sameOriginDelegation(r) != (origin == "" || origin == "https://app.example") {
+		if sameOriginForwarding(r) != (origin == "" || origin == "https://app.example") {
 			t.Fatal("wrong origin policy", origin)
 		}
 	}

@@ -165,7 +165,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.cfg.Mode != config.ModeApp {
-		stripDelegationHeaders(r.Header)
+		stripReservedHeaders(r.Header)
 	}
 	switch s.cfg.Mode {
 	case config.ModeAgent:
@@ -266,11 +266,11 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	delegated := acceptDelegation(r.Header, projectID, s.cfg.AppAuthForwardingSigningKey)
-	if delegated && !sameOriginDelegation(r) {
+	forwarded := acceptForwarding(r.Header, projectID, s.cfg.AppAuthForwardingSigningKey)
+	if forwarded && !sameOriginForwarding(r) {
 		w.Header().Del("Access-Control-Allow-Origin")
 		w.Header().Del("Access-Control-Allow-Credentials")
-		writeJSONStatus(w, http.StatusForbidden, []byte(`{"error":"Delegated requests must be same-origin"}`))
+		writeJSONStatus(w, http.StatusForbidden, []byte(`{"error":"Forwarded-token requests must be same-origin"}`))
 		return
 	}
 	ensured, err := s.resolveLabeled(r.Context(), projectID, hostLabel, backend.SurfaceApp, r.Header, "")
@@ -302,7 +302,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logCfg := s.logSettings(ensured.Logging)
-	if delegated {
+	if forwarded {
 		logCfg = logConfig{mode: logModeOff}
 	}
 	captureBody := logCfg.captureBody()
@@ -326,7 +326,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeHeaderMap(w.Header(), responseResult.headers)
-	if delegated {
+	if forwarded {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	w.WriteHeader(responseResult.statusCode)
@@ -885,7 +885,7 @@ func stripUserIdentityHeaders(headers http.Header) {
 }
 
 func sanitizeReverseProxyHeaders(headers http.Header, stripFrameHeaders bool) {
-	stripDelegationHeaders(headers)
+	stripReservedHeaders(headers)
 	headers.Del("Transfer-Encoding")
 	if stripFrameHeaders {
 		headers.Del("Content-Length")
@@ -900,7 +900,7 @@ func filterResponseHeaders(source http.Header, stripFrameHeaders bool) http.Head
 
 	for key, values := range source {
 		lower := strings.ToLower(key)
-		if strings.HasPrefix(lower, delegationPrefix) || lower == "transfer-encoding" || lower == "content-length" {
+		if strings.HasPrefix(lower, reservedHeaderPrefix) || lower == "transfer-encoding" || lower == "content-length" {
 			continue
 		}
 		if stripFrameHeaders && (lower == "content-encoding" || lower == "x-frame-options" || lower == "content-security-policy") {
@@ -1076,7 +1076,7 @@ func jsonHeader(headers http.Header) string {
 
 	payload := make(map[string]string, len(headers))
 	for key := range headers {
-		if _, redacted := sensitiveLogHeaders[strings.ToLower(key)]; redacted || strings.HasPrefix(strings.ToLower(key), delegationPrefix) {
+		if _, redacted := sensitiveLogHeaders[strings.ToLower(key)]; redacted || strings.HasPrefix(strings.ToLower(key), reservedHeaderPrefix) {
 			payload[key] = "[redacted]"
 			continue
 		}

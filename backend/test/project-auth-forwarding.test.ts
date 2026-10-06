@@ -31,7 +31,7 @@ function spec() {
 beforeEach(() => {
   vi.resetAllMocks();
 });
-describe('per-environment delegated token forwarding', () => {
+describe('per-environment forwarded token forwarding', () => {
   it('is off by default and preserves ID token validation', async () => {
     await service().apply('env-a', null, config);
     expect(spec().Headers.some((h: { Name: string }) => h.Name.includes('Access-Token'))).toBe(false);
@@ -43,14 +43,14 @@ describe('per-environment delegated token forwarding', () => {
     const plugin = spec();
     expect(plugin.Headers).toContainEqual({ Name: 'X-Opsiforce-Access-Token', Value: '{{ .accessToken }}' });
     expect(plugin.Headers).toContainEqual({
-      Name: 'X-Opsiforce-Delegation-Proof',
-      Value: createHmac('sha256', key).update('app-oauth:env-a').digest('hex'),
+      Name: 'X-Opsiforce-Forwarding-Proof',
+      Value: createHmac('sha256', key).update('app-auth-forwarding:env-a').digest('hex'),
     });
     kube.getNamespacedCustomObject.mockResolvedValue({ spec: { plugin: { 'traefik-oidc-auth': plugin } } });
     const saved = await auth.getConfig('env-a');
     expect(saved.config?.forwardAccessToken).toBe(true);
     expect(saved.config?.clientSecret).toBeUndefined();
-    expect(JSON.stringify(saved)).not.toContain('Delegation-Proof');
+    expect(JSON.stringify(saved)).not.toContain('Forwarding-Proof');
   });
   it('rekeys cloned environments', async () => {
     const auth = service();
@@ -60,8 +60,8 @@ describe('per-environment delegated token forwarding', () => {
     kube.getNamespacedCustomObject.mockResolvedValue({ spec: { plugin: { 'traefik-oidc-auth': original } } });
     await auth.inheritAuth('env-a', 'env-b', null);
     expect(spec().Headers).toContainEqual({
-      Name: 'X-Opsiforce-Delegation-Proof',
-      Value: createHmac('sha256', key).update('app-oauth:env-b').digest('hex'),
+      Name: 'X-Opsiforce-Forwarding-Proof',
+      Value: createHmac('sha256', key).update('app-auth-forwarding:env-b').digest('hex'),
     });
   });
   it('rejects bypass paths and weak transport keys before writing', async () => {
