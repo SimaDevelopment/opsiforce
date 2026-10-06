@@ -6,7 +6,7 @@
 
 ## Agent skills
 
-Per-package config for the `to-prd` / `to-issues` skills. `.scratch/` is gitignored.
+Per-package config for the `to-spec`, `to-tickets` and `implement-spec` skills. `.scratch/` is gitignored.
 
 ### Issue tracker
 
@@ -14,8 +14,12 @@ Issues and PRDs live as local markdown under `.scratch/<feature-slug>/` — no G
 
 ### Triage labels
 
-Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`); `to-prd`/`to-issues` only use `ready-for-agent`. See `docs/agents/triage-labels.md`.
+Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`); `to-spec`/`to-tickets` only use `ready-for-agent`. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context — `CONTEXT.md` + `docs/adr/` at the opsiforce package root. See `docs/agents/domain.md`.
+Single-context — `GLOSSARY.md` + `docs/adr/` at the opsiforce package root. See `docs/agents/domain.md`.
+
+### Worktrees
+
+Before running checks in a git worktree (every `implement-spec` implementer does), read `docs/agents/worktrees.md`: plain `yarn` fails there.

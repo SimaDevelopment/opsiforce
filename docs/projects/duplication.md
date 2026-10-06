@@ -6,18 +6,18 @@ adrs: [0011]
 
 # Duplication
 
-> How is a whole [Project](../../CONTEXT.md), working state included, copied into a new independent Project on the same deployment?
+> How is a whole [Project](../../GLOSSARY.md), working state included, copied into a new independent Project on the same deployment?
 
 ## How it works
 
-- A [Duplicate](../../CONTEXT.md) is a new Project in the same tenant and Workspace, copied from the source's [Development](../../CONTEXT.md) environment only; published environments are re-created by publishing from the copy.
-- Carried: App source and git history, the agent's chat and session state, the App's databases, [Environment Variables](../../CONTEXT.md), the Development [Auth mode](../../CONTEXT.md), project settings (timeouts, [Request Logging](../../CONTEXT.md)), [Resources](../../CONTEXT.md), and [App Details](../../CONTEXT.md).
+- A [Duplicate](../../GLOSSARY.md) is a new Project in the same tenant and Workspace, copied from the source's [Development](../../GLOSSARY.md) environment only; published environments are re-created by publishing from the copy.
+- Carried: App source and git history, the agent's chat and session state, the App's databases, [Environment Variables](../../GLOSSARY.md), the Development [Auth mode](../../GLOSSARY.md), project settings (timeouts, [Request Logging](../../GLOSSARY.md)), [Resources](../../GLOSSARY.md), and [App Details](../../GLOSSARY.md).
 - Made fresh: the Project's LLM keys and service-gateway key; a Duplicate never shares credentials or budget plumbing with its source. Not carried: the source's publish jobs and audit logs.
-- [Schedules](../../CONTEXT.md) are carried paused, so a Duplicate never fires the same automation as its original until someone enables them ([Schedule](schedule.md)).
+- [Schedules](../../GLOSSARY.md) are carried paused, so a Duplicate never fires the same automation as its original until someone enables them ([Schedule](schedule.md)).
 - Duplication runs on the same git mechanism as [Publish](publish.md): commit the source's working tree, make the Duplicate a local clone, detach it from its origin ([ADR-0011](../adr/0011-duplication-reuses-git-publish-path.md)).
 - Runtime state that git ignores, including databases, the session store, the variables file and the installed dependency store, is then copied subtractively: everything ignored, minus a small skip-list of caches the App regenerates.
 - The job reports step progress (snapshot, clone, runtime-state copy, App starting) over its own SSE stream into the [Job Dock](../frontend/job-dock.md); the new Project shows as `starting` and "Open project" appears once its App responds ([App Readiness](app-readiness.md)).
-- A [Builder chat](../../CONTEXT.md) is refused with `not_duplicable`, because a copy would belong to no Skill or Agent ([ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)); the menu offers Duplicate only on ordinary Projects.
+- A [Builder chat](../../GLOSSARY.md) is refused with `not_duplicable`, because a copy would belong to no Skill or Agent ([ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)); the menu offers Duplicate only on ordinary Projects.
 - Gated by `can_duplicate_project` ([Permissions](../organization/permissions.md)); the Duplicate lands in the source's Workspace, so it never widens who can see a Project.
 
 ## Code

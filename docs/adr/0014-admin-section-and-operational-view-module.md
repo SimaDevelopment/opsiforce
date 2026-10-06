@@ -14,5 +14,5 @@ The Pods view is an **aggregator**: it joins the Kubernetes pod informer (owned 
 
 - The avatar dropdown shows **Admin** when the member has any permitted Admin page.
 - Adding an operational view is a new entry in the Admin tab config on the frontend; on the backend it goes in its domain's module, or in `admin` when it aggregates modules that would otherwise form a cycle.
-- The configure-vs-operate split is recorded in [CONTEXT.md](../../CONTEXT.md) under **Admin** and **Settings**; it is the test for where any future page belongs.
+- The configure-vs-operate split is recorded in [GLOSSARY.md](../../GLOSSARY.md) under **Admin** and **Settings**; it is the test for where any future page belongs.
 - This is the same authority model as [ADR-0013](0013-pods-view-reads-live-keepalive-from-redis.md): Admin observes running state; it does not become a new source of truth.

@@ -4,7 +4,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 Because the tracker is local markdown (see `issue-tracker.md`), a "label" is just the string written on the `Status:` line of an issue file — not a GitHub label.
 
-| Role in mattpocock/skills | String in our tracker | Meaning                                  |
+| Role                      | String in our tracker | Meaning                                  |
 | ------------------------- | --------------------- | ---------------------------------------- |
 | `needs-triage`            | `needs-triage`        | Maintainer needs to evaluate this issue  |
 | `needs-info`              | `needs-info`          | Waiting on reporter for more information |
@@ -14,6 +14,6 @@ Because the tracker is local markdown (see `issue-tracker.md`), a "label" is jus
 
 We use the canonical defaults unchanged. When a skill mentions a role (e.g. "apply the AFK-ready triage label"), write the corresponding string on the issue file's `Status:` line.
 
-Note: `to-prd` and `to-issues` produce issues that are already AFK-ready, so they apply only `ready-for-agent`. The other roles are used by `triage` when processing incoming/unevaluated issues.
+Note: `to-spec` and `to-tickets` produce issues that are already AFK-ready, so they apply only `ready-for-agent`. The other roles are used by `triage` when processing incoming/unevaluated issues.
 
 Edit the right-hand column if you ever adopt a different vocabulary.

@@ -10,7 +10,7 @@ adrs: [0015]
 
 ## How it works
 
-- Two facts are tracked per [ProjectEnvironment](../../CONTEXT.md): [Go-live](../../CONTEXT.md), the App first existing and running, and serving, the App's process answering right now.
+- Two facts are tracked per [ProjectEnvironment](../../GLOSSARY.md): [Go-live](../../GLOSSARY.md), the App first existing and running, and serving, the App's process answering right now.
 - The pod reports and the backend listens; nothing polls ([ADR-0015](../adr/0015-app-liveness-pushed-not-polled.md)). agent-control watches `app.meta.json` with inotify, probes `$APP_PORT` at the pod's own loopback, and pushes one idempotent `{serving, live, name, description}` event over the Service Gateway channel whenever that state changes.
 - The probe requires no route: **any** HTTP answer on `$APP_PORT`, at any status, is serving, so an App in any stack satisfies it ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)). `GET /api/app-meta` stays in the App Builder template for its own tab title and is no longer part of the platform path ([ADR-0010](../adr/0010-app-identity-read-at-runtime.md)).
 - `live` means serving **and** `app.meta.json` present; agent-control reads `name` and `description` out of the file it already watches, not out of a response body. The push reuses the pod's gateway token, so the backend resolves the environment from the caller ([Service Gateway](../gateways/service-gateway.md)).

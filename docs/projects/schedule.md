@@ -9,12 +9,12 @@ terms: [Schedule]
 
 ## How it works
 
-- A [Schedule](../../CONTEXT.md) belongs to one [ProjectEnvironment](../../CONTEXT.md) and fires only against that environment's running App; the agent registers it over the Service Gateway, whose token already identifies the calling environment ([Service Gateway](../gateways/service-gateway.md)).
+- A [Schedule](../../GLOSSARY.md) belongs to one [ProjectEnvironment](../../GLOSSARY.md) and fires only against that environment's running App; the agent registers it over the Service Gateway, whose token already identifies the calling environment ([Service Gateway](../gateways/service-gateway.md)).
 - A [Publish](publish.md) copies the Schedules checked in the publish form into the target as independent copies, so a same-named Schedule can exist and fire in several environments; a name is unique only within an environment.
-- Firing happens inside the cluster: the worker resolves the owning environment, wakes a suspended pod through the same path as a user opening the [Project](../../CONTEXT.md), waits for readiness ([App Readiness](app-readiness.md)), calls the App's endpoint and records an execution with status, latency and any error.
+- Firing happens inside the cluster: the worker resolves the owning environment, wakes a suspended pod through the same path as a user opening the [Project](../../GLOSSARY.md), waits for readiness ([App Readiness](app-readiness.md)), calls the App's endpoint and records an execution with status, latency and any error.
 - Schedules fire in the Project's timezone, captured from the user's browser at creation and stamped on each Schedule.
 - Agent-facing endpoints sit under the cluster-internal gateway prefix the edge blocks; human management requires `can_manage_schedules`, enforced at the controller class ([Permissions](../organization/permissions.md)).
-- The tenant-wide Schedules page shows one tab per registry [Environment](../../CONTEXT.md), loading that tab's Schedules across every Project on demand, with edit, toggle, run now, history and delete.
+- The tenant-wide Schedules page shows one tab per registry [Environment](../../GLOSSARY.md), loading that tab's Schedules across every Project on demand, with edit, toggle, run now, history and delete.
 - Opening Schedules from an environment's row in the Environments switcher shows the single project-environment view of the same page, filtered by that ProjectEnvironment, with an "All schedules" link back.
 
 ```
