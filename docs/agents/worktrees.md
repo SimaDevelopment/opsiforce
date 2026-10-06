@@ -7,9 +7,9 @@
 `yarn` fails in a fresh worktree. Never run `yarn install` or create a root `node_modules`; reuse the main checkout's PnP install:
 
 ```sh
-sed -e 's#"\.\./\.\./\.yarn/berry#"../../../../../.yarn/berry#g' \
-    -e 's#"\./\.yarn/__virtual__#"../../../.yarn/__virtual__#g' \
-    -e 's#"\./\.yarn/unplugged#"../../../.yarn/unplugged#g' \
+R=$(node -p "require('path').relative('$W', '$MAIN')")
+sed -e "s#\"\.\./\.\./\.yarn/berry#\"$R/../../.yarn/berry#g" \
+    -e "s#\"\./\.yarn/#\"$R/.yarn/#g" \
     $MAIN/.pnp.cjs > $W/.pnp.cjs
 cp $MAIN/.pnp.loader.mjs $W/.pnp.loader.mjs
 ln -s $MAIN/packages/opsiforce/.scratch $W/packages/opsiforce/.scratch
