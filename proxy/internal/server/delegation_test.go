@@ -48,7 +48,7 @@ func TestDelegationBoundary(t *testing.T) {
 			case "case-duplicate":
 				h["x-opsiforce-access-token"] = []string{"attacker"}
 			case "weak-key":
-				testKey = "opsiforce-local-proxy-token"
+				testKey = strings.Repeat("k", 31)
 			}
 			if acceptDelegation(h, env, testKey) {
 				t.Fatal("accepted forged delegation")

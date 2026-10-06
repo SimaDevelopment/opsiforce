@@ -25,7 +25,7 @@ func stripDelegationHeaders(headers http.Header) {
 func acceptDelegation(headers http.Header, environmentID, key string) bool {
 	names := []string{delegationProof, delegationToken, "X-Opsiforce-Tenant-Id", "X-Opsiforce-User-Id"}
 	values := make(map[string]string)
-	valid := len(key) >= 32 && key != "opsiforce-local-proxy-token"
+	valid := len(key) >= 32
 	for _, name := range names {
 		count := 0
 		for actual, vs := range headers {

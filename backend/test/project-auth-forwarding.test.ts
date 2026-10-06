@@ -21,7 +21,7 @@ function service(secret = key) {
       webappServicePort: 3002,
       oidcPluginSecret: 'cookie-encryption-secret-for-test',
       managedOidcClientId: 'managed',
-      proxyControlToken: secret,
+      appAuthForwardingSigningKey: secret,
     })
   );
 }
@@ -69,8 +69,8 @@ describe('per-environment delegated token forwarding', () => {
       'bypass'
     );
     await expect(
-      service('opsiforce-local-proxy-token').apply('env-a', null, { ...config, forwardAccessToken: true })
-    ).rejects.toThrow('PROXY_CONTROL_TOKEN');
+      service('k'.repeat(31)).apply('env-a', null, { ...config, forwardAccessToken: true })
+    ).rejects.toThrow('APP_AUTH_FORWARDING_SIGNING_KEY');
     expect(kube.createNamespacedCustomObject).not.toHaveBeenCalled();
   });
   it('disabling removes token and proof headers', async () => {

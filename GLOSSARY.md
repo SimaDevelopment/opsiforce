@@ -155,6 +155,10 @@ _Avoid_: Project auth (it is not project-wide — each environment has its own);
 The chosen App Auth setting for one ProjectEnvironment — `public`, `manual`, or `managed` (the stored identifier is `auth_mode`).
 _Avoid_: Auth type, Auth provider
 
+**Token forwarding**:
+An opt-in App Auth setting, available only in manual mode, that passes the signed-in visitor's access token from the owner's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
+_Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
+
 **Resources**:
 The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike).
 _Avoid_: Pod class (the internal identifier — never user-facing); Environment size (collides with Environment); Tier, Machine size, Compute (non-canonical — say Resources)
@@ -418,3 +422,7 @@ _Avoid_: Platform storage (reads as "all storage on the platform", which this is
 **Pods**:
 The view of an Organization's running environment pods — one row per running ProjectEnvironment, grouped by Project — showing each pod's status, age, Resources, configured timeouts, and live Keep-alive activity (when it was last kept alive and by which kind). Read-only; the first page within Admin.
 _Avoid_: Pod class (the Resources identifier — a different thing); Resources (the size policy, not the running instances); Instances (non-canonical)
+
+**Deployment branding**:
+The product name, icon and theme color an Opsiforce deployment shows in place of the Opsiforce defaults, fixed when its frontend is built. It belongs to the deployment, not to an Organization, so every Organization on that deployment sees the same brand.
+_Avoid_: White-label, Theme; Organization branding (there is no per-Organization branding)

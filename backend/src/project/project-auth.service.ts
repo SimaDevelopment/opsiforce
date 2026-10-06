@@ -338,10 +338,10 @@ export class ProjectAuthService {
   }
 
   private delegationHeaders(routingId: string) {
-    const key = this.configService.get<string>('proxyControlToken') ?? '';
-    if (key.length < 32 || key === 'opsiforce-local-proxy-token') {
+    const key = this.configService.get<string>('appAuthForwardingSigningKey') ?? '';
+    if (key.length < 32) {
       throw new BadRequestException(
-        'Token forwarding requires a strong PROXY_CONTROL_TOKEN shared by backend and runtime proxies (at least 32 characters)'
+        'Token forwarding requires an APP_AUTH_FORWARDING_SIGNING_KEY shared by backend and runtime proxies (at least 32 characters)'
       );
     }
     // This transport credential never reaches generated apps or browsers.

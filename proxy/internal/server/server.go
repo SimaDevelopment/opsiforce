@@ -266,7 +266,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	delegated := acceptDelegation(r.Header, projectID, s.cfg.ProxyControlToken)
+	delegated := acceptDelegation(r.Header, projectID, s.cfg.AppAuthForwardingSigningKey)
 	if delegated && !sameOriginDelegation(r) {
 		w.Header().Del("Access-Control-Allow-Origin")
 		w.Header().Del("Access-Control-Allow-Credentials")
