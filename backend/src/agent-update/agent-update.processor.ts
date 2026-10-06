@@ -7,7 +7,7 @@ import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { db } from '../../db';
 import { agents, projectAgentUpdates, projectEnvironments, projects } from '../../db/schema';
-import { CUSTOM_AGENT_PACKAGE, type SkillDeliveryOutcome } from '../delivery/delivery.types';
+import { CUSTOM_AGENT_PACKAGE, modelReference, type SkillDeliveryOutcome } from '../delivery/delivery.types';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
 import { PodReloadClient, type NotifyTarget } from '../delivery/pod-reload.client';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
@@ -374,9 +374,7 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     const modelSelection = this.agentUpdateService.agentModelSelection(packageName);
     if (!modelSelection) return true;
     const config = await this.readWorkspaceOpenCodeConfig(directory);
-    const expected = modelSelection.variant
-      ? `${modelSelection.model}#${modelSelection.variant}`
-      : modelSelection.model;
+    const expected = modelReference(modelSelection.model, modelSelection.variant ?? null);
     return config?.model === expected && config?.agents?.[packageName]?.model === expected;
   }
 
