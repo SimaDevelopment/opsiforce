@@ -181,11 +181,8 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
               port: options.agentPort,
             },
             initialDelaySeconds: 5,
-            // Builds can briefly stall the agent. Opsiforce may recreate unready
-            // pods, so require sustained failures before removing readiness.
-            periodSeconds: 10,
-            timeoutSeconds: 10,
-            failureThreshold: 12,
+            periodSeconds: 5,
+            timeoutSeconds: 5,
           },
           resources: options.resources,
         },
