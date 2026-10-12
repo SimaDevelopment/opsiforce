@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -296,6 +296,30 @@ describe('exporting a custom External Service', () => {
       (await duplicateRoute(admin, await builtInServiceId(FIXTURE_SERVICE), { name: 'X', slug: uniqueSlug('x') }))
         .statusCode
     ).toBe(404);
+  });
+});
+
+describe('committed links in app/', () => {
+  it('are left out of an export and a duplicate, never followed', async () => {
+    const source = await sourceService();
+    const outside = join(storageRoot, `outside-${randomUUID().slice(0, 6)}`);
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, 'environ'), 'BACKEND_SECRET=do-not-copy');
+    await symlink(join(outside, 'environ'), join(source.workspace, 'app', 'notes.md'));
+    await symlink(outside, join(source.workspace, 'app', 'docs'));
+    await git(source.workspace, ['add', 'app/notes.md', 'app/docs']);
+    await git(source.workspace, ['commit', '-q', '-m', 'links']);
+
+    const exported = await exportRoute(admin, source.id);
+    const duplicated = await duplicateRoute(admin, source.id, { name: 'Linked', slug: uniqueSlug('linked') });
+
+    expect(exported.statusCode, exported.body).toBe(200);
+    expect(treeFiles(await unpackSkill(exported.rawPayload), 'app/')).toEqual(encoded(serviceFiles()));
+    expect(duplicated.statusCode, duplicated.body).toBe(201);
+    const copy = duplicated.json<{ service: CreatedCustomService }>().service;
+    const copyApp = join(await developmentDirectory(copy.builderChatId), 'app');
+    expect((await run('find', ['.', '-type', 'l'], { cwd: copyApp })).stdout).toBe('');
+    expect(await seededFiles(copy.builderChatId)).toEqual(encoded(serviceFiles()));
   });
 });
 

@@ -12,6 +12,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../../db';
 import { externalServiceCalls } from '../../../db/schema';
 import { GitService } from '../../git/git.service';
+import { realFileInFolder } from '../registry/service-folder-files';
 
 const WORKSPACE_ROOT = '/workspace/';
 
@@ -50,7 +51,8 @@ export class ServiceTestReports {
 
   async of(serviceId: string, manifestHash: string | null, workspaceDirectory: string): Promise<TestReportView> {
     const workspace = join(this.storageMountPath, workspaceDirectory);
-    const path = join(workspace, workspaceRelativeTestReportPath());
+    const path = await realFileInFolder(workspace, workspaceRelativeTestReportPath());
+    if (path === null) return { state: 'missing' };
     let raw: string;
     let writtenAt: Date;
     try {

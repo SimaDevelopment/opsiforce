@@ -49,7 +49,7 @@ adrs: [0078]
 
 ### Reads for the calling agent
 
-- Three reads ride the same key and always answer for the caller's own ProjectEnvironment: `GET agent/<slug>` (describe: each Operation's kind and switch, the Project configuration with secrets as `{stored: true}` and chosen values labelled from `_labels`, the rendered `info` templates, `complete` and `missing`), `GET agent/<slug>/openapi.json` (OpenAPI 3.1 built from the manifest the Gate enforces, every Operation a `POST` with its bound inputs explained and its problems declared, `ETag` = the manifest hash, `304` on `If-None-Match`) and `GET agent/<slug>/calls?limit=` (that ProjectEnvironment's Calls to the service, newest first, 50 by default, at most 200). None writes a Call, and no service's document is part of the public `/api/v1/docs`.
+- Three reads ride the same key and always answer for the caller's own ProjectEnvironment: `GET agent/<slug>` (describe: each Operation's kind and switch, the Project configuration with secrets as `{stored: true}` and chosen values labelled from `_labels`, the rendered `info` templates, `complete` and `missing`), `GET agent/<slug>/openapi.json` (OpenAPI 3.1 built from the manifest the Gate enforces, every Operation a `POST` with its bound inputs explained and its problems declared, `ETag` = the manifest hash, `304` on `If-None-Match`; the document is cached per service, slug and manifest hash, so a Duplicate or Import sharing the manifest gets its own `servers` URL) and `GET agent/<slug>/calls?limit=` (that ProjectEnvironment's Calls to the service, newest first, 50 by default, at most 200). None writes a Call, and no service's document is part of the public `/api/v1/docs`.
 
 ## Edge cases
 

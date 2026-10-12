@@ -563,7 +563,7 @@ export const externalServiceResource = pgTable(
   (table) => [primaryKey({ columns: [table.service, table.resourceKey] })],
 )
 
-// TODO: remove in the release after External Services v2 ships: v1 table, read only by the one-time importers
+// TODO: remove in the release after External Services v2 ships: v1 table, read only by the one-time importers and the legacy messages decision
 export const externalServiceConfig = pgTable(
   "external_service_config",
   {

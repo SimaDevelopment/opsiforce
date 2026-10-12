@@ -1,9 +1,18 @@
+import type { ConfigService } from '@nestjs/config';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { ServiceManifest } from '@opsiforce/external-service-sdk';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { ServiceConfigurationStore } from '../../src/external-services/configuration/service-configuration.store';
+import type { CallLog } from '../../src/external-services/gate/call-log';
+import type { GateCaller, GateCallers } from '../../src/external-services/gate/gate-caller';
+import { GateSurfaces } from '../../src/external-services/gate/gate-surfaces';
+import type { ProjectConfigurationStore } from '../../src/external-services/configuration/project-configuration.store';
+import type { RegisteredService, ServiceRegistry } from '../../src/external-services/registry/service-registry';
 import { callTokenFor } from '../support/project-fixtures';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
 import { fixtureCrmEvolved } from './support/evolved-built-ins';
 import { forgetPlatformServiceConfiguration } from './support/fixtures';
+import { BOARDS_MANIFEST } from './support/published-services';
 import {
   askGate,
   callOperation,
@@ -277,5 +286,45 @@ describe('openapi.json: the live document of a service', () => {
       expect(res.body).not.toContain('external-services');
       expect(res.body).not.toContain('Fixture CRM');
     });
+  });
+});
+
+describe('openapi.json of services sharing one manifest', () => {
+  const caller = { tenantId: 'tenant-1', projectEnvironmentId: 'environment-1' } as GateCaller;
+
+  function customService(id: string, slug: string): RegisteredService {
+    return {
+      id,
+      slug,
+      origin: 'custom',
+      tenantId: caller.tenantId,
+      manifest: BOARDS_MANIFEST as unknown as ServiceManifest,
+      manifestHash: 'a'.repeat(64),
+      icon: null,
+      serviceSkill: null,
+      runtime: null,
+      home: null,
+    };
+  }
+
+  it("gives each service a document naming its own slug, though they share the manifest's hash", async () => {
+    const services = [customService('service-1', 'boards'), customService('service-2', 'boards-copy')];
+    const surfaces = new GateSurfaces(
+      { resolve: async () => caller } as unknown as GateCallers,
+      {
+        forEnvironment: async (_tenantId: string, _environmentId: string, slug: string) =>
+          services.find((service) => service.slug === slug),
+      } as unknown as ServiceRegistry,
+      { read: async () => ({ values: {}, missing: [] }) } as unknown as ServiceConfigurationStore,
+      {} as ProjectConfigurationStore,
+      {} as CallLog,
+      {} as ConfigService
+    );
+
+    const first = await surfaces.openApi({ caller }, 'boards', undefined);
+    const copy = await surfaces.openApi({ caller }, 'boards-copy', undefined);
+
+    expect((first.body as ServiceDocument).servers).toEqual([{ url: '/api/external-services/agent/boards' }]);
+    expect((copy.body as ServiceDocument).servers).toEqual([{ url: '/api/external-services/agent/boards-copy' }]);
   });
 });

@@ -18,6 +18,7 @@ import {
   RECEIVING_EMAIL,
   sendMail,
   storedBeforeV2,
+  storeV1Address,
 } from './support/incoming-email';
 
 const DOORBELL_PATH = `/api/external-services/${EMAIL_SERVICE}`;
@@ -136,6 +137,23 @@ describe('incoming email in an environment whose App was built on the messages t
     const { messages } = await legacyRows(storageRoot, project.projectEnvironmentId);
     expect(fakeApp.received.map((delivery) => delivery.body.rowIds)).toEqual([messages.map((row) => row.id)]);
     expect(messages.map((row) => row.id)).toContain(waitingRowId);
+  });
+
+  it('writes a messages row and rings with its id for an environment wired in v1 whose mailbox was still empty', async () => {
+    const { project, localPart } = await receivingEnvironment();
+    await storeV1Address(project.projectEnvironmentId, `${localPart}@${RECEIVING_DOMAIN}`);
+
+    await sendMail(app, { to: `${localPart}@${RECEIVING_DOMAIN}`, messageId: '<first@customer.example>' });
+    await ringDoorbells(app);
+
+    const { events } = await environmentDatabase(storageRoot, project.projectEnvironmentId);
+    const { messages } = await legacyRows(storageRoot, project.projectEnvironmentId);
+    expect(messages).toEqual([
+      expect.objectContaining({ service: EMAIL_SERVICE, provider_message_id: '<first@customer.example>' }),
+    ]);
+    expect(fakeApp.received.map((delivery) => delivery.body)).toEqual([
+      { service: EMAIL_SERVICE, rowIds: [messages[0]?.id], eventIds: events.map((event) => event.id) },
+    ]);
   });
 
   it('keeps rowIds out of the ring and the messages table empty for an environment built after the upgrade', async () => {

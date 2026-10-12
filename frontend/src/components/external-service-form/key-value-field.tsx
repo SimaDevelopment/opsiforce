@@ -61,6 +61,7 @@ export function KeyValueField(props: {
       </Index>
       <Show when={!props.disabled}>
         <Button
+          type="button"
           variant="outline"
           size="sm"
           class="h-7 w-full border-dashed text-xs"

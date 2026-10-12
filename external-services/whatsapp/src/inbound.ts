@@ -66,12 +66,36 @@ function mediaOf(message: RawObject, type: string): FoundMedia | undefined {
   });
 }
 
+function joined(chunks: Uint8Array[], length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 async function boundedBytes(response: Response): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > maxMediaBytes) throw new Error(`declares ${declared} bytes`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > maxMediaBytes) throw new Error(`is over ${maxMediaBytes} bytes`);
-  return bytes;
+  if (Number.isFinite(declared) && declared > maxMediaBytes) {
+    response.body?.cancel().catch(() => undefined);
+    throw new Error(`declares ${declared} bytes`);
+  }
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return joined(chunks, received);
+    received += value.byteLength;
+    if (received > maxMediaBytes) {
+      reader.cancel().catch(() => undefined);
+      throw new Error(`is over ${maxMediaBytes} bytes`);
+    }
+    chunks.push(value);
+  }
 }
 
 async function fetchedMedia(

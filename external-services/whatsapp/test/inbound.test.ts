@@ -198,4 +198,38 @@ describe('whatsapp inbound', () => {
       ]
     );
   });
+
+  it('stops reading media that streams past the size limit without declaring its length', async () => {
+    const limit = 32 * 1024 * 1024;
+    const chunk = new Uint8Array(1024 * 1024);
+    let streamed = 0;
+    const endless = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            streamed += chunk.byteLength;
+            controller.enqueue(chunk);
+          },
+        })
+      );
+    const video = {
+      ...textMessage,
+      id: 'wamid.video-1',
+      type: 'video',
+      text: undefined,
+      video: { id: 'media-endless', mime_type: 'video/mp4' },
+    };
+    const service = whatsapp();
+    service.upstream.reply(`GET ${apiUrl}/media/media-endless`, endless);
+
+    const startedAt = Date.now();
+    const res = await service.inbound({ headers: signedHeaders(), rawBody: webhook([video]) });
+
+    const [event] = res.body.events;
+    assert.equal(res.status, 200);
+    assert.deepEqual(event?.data.media, { id: 'media-endless', mimeType: 'video/mp4', stored: false });
+    assert.equal(event?.files, undefined);
+    assert.ok(streamed <= limit + 8 * chunk.byteLength, `read ${streamed} bytes`);
+    assert.ok(Date.now() - startedAt < 10_000, 'stopped before the media budget ran out');
+  });
 });

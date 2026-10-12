@@ -1,4 +1,7 @@
-import type { EventToStore, LegacyMessage, LegacyMessageOf } from '../inbound/external-service-store';
+import { and, eq, inArray } from 'drizzle-orm';
+import { db } from '../../../db';
+import { externalServiceConfig } from '../../../db/schema';
+import type { EventToStore, LegacyMessage, LegacyMessageOf, LegacyMessages } from '../inbound/external-service-store';
 import type { RegisteredService } from '../registry/service-registry';
 
 interface EmailHeader {
@@ -90,6 +93,30 @@ const legacyMessageMappers: Record<string, LegacyMessageOf> = {
   whatsapp: whatsappMessage,
 };
 
-export function legacyMessageOf(service: RegisteredService): LegacyMessageOf | undefined {
+function legacyMessageOf(service: RegisteredService): LegacyMessageOf | undefined {
   return service.origin === 'built_in' ? legacyMessageMappers[service.slug] : undefined;
+}
+
+// TODO: remove in the release after External Services v2 ships: reads the v1 wiring the upgrade left in external_service_config
+async function wiredInV1(projectEnvironmentId: string): Promise<boolean> {
+  const [wiring] = await db
+    .select({ service: externalServiceConfig.service })
+    .from(externalServiceConfig)
+    .where(
+      and(
+        eq(externalServiceConfig.projectEnvironmentId, projectEnvironmentId),
+        inArray(externalServiceConfig.service, Object.keys(legacyMessageMappers))
+      )
+    )
+    .limit(1);
+  return wiring !== undefined;
+}
+
+export async function legacyMessagesFor(
+  service: RegisteredService,
+  projectEnvironmentId: string
+): Promise<LegacyMessages | undefined> {
+  const messageOf = legacyMessageOf(service);
+  if (!messageOf) return undefined;
+  return { messageOf, wiredInV1: await wiredInV1(projectEnvironmentId) };
 }
