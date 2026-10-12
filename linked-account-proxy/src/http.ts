@@ -5,6 +5,7 @@ export type JsonRecord = Record<string, unknown>;
 export interface ErrorBody {
   message: string;
   type: string;
+  code?: string;
 }
 
 export function sendJson(res: ServerResponse, status: number, payload: unknown): void {

@@ -111,6 +111,71 @@ describe('responses', () => {
     );
   });
 
+  it('answers a stream that fails before any output with an HTTP error the gateway can act on', async () => {
+    const refusal = {
+      type: 'invalid_request_error',
+      code: 'invalid_encrypted_content',
+      message: 'The encrypted content for item rs_1 could not be verified.',
+    };
+    proxy.upstream.respondWith(
+      respondWithEventStream([
+        ...CHATGPT_STREAM.slice(0, 1),
+        { event: 'error', data: { type: 'error', error: refusal } },
+      ])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: refusal });
+  });
+
+  it('answers a response.failed rate limit before any output with 429', async () => {
+    proxy.upstream.respondWith(
+      respondWithEventStream([
+        {
+          event: 'response.failed',
+          data: {
+            type: 'response.failed',
+            response: { id: 'resp_1', status: 'failed', error: { code: 'rate_limit_exceeded', message: 'Slow down.' } },
+          },
+        },
+      ])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      error: { type: 'upstream_error', code: 'rate_limit_exceeded', message: 'Slow down.' },
+    });
+  });
+
+  it('answers a server failure before any output with 502', async () => {
+    proxy.upstream.respondWith(
+      respondWithEventStream([{ event: 'error', data: { type: 'error', code: 'server_error', message: 'Try again.' } }])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(502);
+  });
+
+  it('keeps streaming an error that arrives after output has started', async () => {
+    const events = [
+      ...CHATGPT_STREAM.slice(0, 2),
+      { event: 'error', data: { type: 'error', error: { type: 'server_error', message: 'Stream broke.' } } },
+    ];
+    proxy.upstream.respondWith(respondWithEventStream(events));
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(
+      events.map(({ event, data }) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+    );
+  });
+
   it('buffers the stream into the completed response for a caller that does not stream', async () => {
     const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN });
 
