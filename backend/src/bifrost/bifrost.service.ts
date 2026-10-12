@@ -139,15 +139,15 @@ export class BifrostService {
   }
 
   async updateCustomerBudget(customerId: string, budget?: BifrostBudget): Promise<void> {
-    await this.request('PUT', `/api/governance/customers/${customerId}`, budget ? { budget } : {});
+    await this.request('PUT', `/api/governance/customers/${customerId}`, budget ? { budget } : { budgets: [] });
   }
 
   async getCustomerBudget(customerId: string): Promise<BifrostBudget | null> {
-    const data = await this.request<{ customer: { budget?: BifrostBudget } }>(
+    const data = await this.request<{ customer: { budgets?: BifrostBudget[] } }>(
       'GET',
       `/api/governance/customers/${customerId}`
     );
-    return data.customer.budget ?? null;
+    return data.customer.budgets?.[0] ?? null;
   }
 
   async createProjectTeam(projectId: string, budgets: BudgetDefaults, customerId?: string): Promise<string> {
@@ -181,7 +181,7 @@ export class BifrostService {
   }
 
   async updateTeamBudget(teamId: string, budget?: BifrostBudget): Promise<void> {
-    await this.request('PUT', `/api/governance/teams/${teamId}`, budget ? { budgets: [budget] } : {});
+    await this.request('PUT', `/api/governance/teams/${teamId}`, { budgets: budget ? [budget] : [] });
   }
 
   async updateProjectResourceBudgets(projectId: string, teamId: string, budgets: BudgetDefaults): Promise<void> {
@@ -206,7 +206,7 @@ export class BifrostService {
 
   private async updateVirtualKey(keyId: string, teamId: string | null, budget?: BifrostBudget): Promise<void> {
     await this.request('PUT', `/api/governance/virtual-keys/${keyId}`, {
-      ...(budget ? { budgets: [budget] } : {}),
+      budgets: budget ? [budget] : [],
       ...(teamId ? { team_id: teamId } : {}),
     });
   }

@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { sendError, sendJson } from '../http.ts';
-import type { JsonRecord } from '../http.ts';
+import type { ErrorBody, JsonRecord } from '../http.ts';
 import type { CallerCredentials, LinkedAccountCredential } from '../credentials.ts';
 import { CODEX_RESPONSES_URL, ORIGINATOR, USER_AGENT } from './config.ts';
 
@@ -34,30 +34,38 @@ function buildUpstreamHeaders(credential: LinkedAccountCredential): Headers {
   return headers;
 }
 
-async function* iterateServerSentEvents(
-  stream: ReadableStream<Uint8Array>
-): AsyncGenerator<{ event?: string; data?: string }> {
+interface ServerSentEvent {
+  event?: string;
+  data?: string;
+}
+
+const EVENT_SEPARATOR = /\r?\n\r?\n/;
+
+function parseEventBlock(block: string): ServerSentEvent {
+  const event: ServerSentEvent = {};
+  const dataLines: string[] = [];
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith('event:')) event.event = line.slice(6).trim();
+    if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+  }
+  if (dataLines.length > 0) event.data = dataLines.join('\n');
+  return event;
+}
+
+async function* iterateServerSentEvents(stream: ReadableStream<Uint8Array>): AsyncGenerator<ServerSentEvent> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-  const separator = /\r?\n\r?\n/;
   let buffer = '';
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split(separator);
+      const blocks = buffer.split(EVENT_SEPARATOR);
       buffer = blocks.pop() ?? '';
       for (const block of blocks) {
         if (!block.trim()) continue;
-        const event: { event?: string; data?: string } = {};
-        const dataLines: string[] = [];
-        for (const line of block.split(/\r?\n/)) {
-          if (line.startsWith('event:')) event.event = line.slice(6).trim();
-          if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
-        }
-        if (dataLines.length > 0) event.data = dataLines.join('\n');
-        yield event;
+        yield parseEventBlock(block);
       }
     }
     if (buffer.trim()) {
@@ -93,6 +101,118 @@ async function collectCompletedResponseFromSse(stream: ReadableStream<Uint8Array
   throw new Error(
     `No completed response found in the Codex stream.${latestError ? ` Last error: ${JSON.stringify(latestError)}` : ''}`
   );
+}
+
+const SSE_HEADERS = {
+  'content-type': 'text/event-stream; charset=utf-8',
+  'cache-control': 'no-cache, no-transform',
+  connection: 'keep-alive',
+  'x-accel-buffering': 'no',
+};
+
+const PREAMBLE_EVENT_TYPES = new Set(['response.created', 'response.in_progress']);
+const FAILURE_EVENT_TYPES = new Set(['error', 'response.failed']);
+const RATE_LIMIT_SIGNALS = new Set([
+  'rate_limit_exceeded',
+  'rate_limit_error',
+  'too_many_requests',
+  'insufficient_quota',
+  'usage_limit_reached',
+]);
+const SERVER_FAILURE_SIGNALS = new Set(['server_error', 'internal_error', 'overloaded_error', 'service_unavailable']);
+
+interface StreamFailure {
+  status: number;
+  error: ErrorBody;
+}
+
+type StreamOpening = { kind: 'undecided' } | { kind: 'output' } | ({ kind: 'failure' } & StreamFailure);
+
+function parsedData(event: ServerSentEvent): JsonRecord | undefined {
+  if (!event.data) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(event.data);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function errorRecordOf(data: JsonRecord | undefined): JsonRecord {
+  if (isRecord(data?.error)) return data.error;
+  if (isRecord(data?.response) && isRecord(data.response.error)) return data.response.error;
+  return data ?? {};
+}
+
+function statusOfFailure(signals: (string | undefined)[]): number {
+  if (signals.some((signal) => signal !== undefined && RATE_LIMIT_SIGNALS.has(signal))) return 429;
+  if (signals.some((signal) => signal !== undefined && SERVER_FAILURE_SIGNALS.has(signal))) return 502;
+  return 400;
+}
+
+function failureOf(eventType: string, data: JsonRecord | undefined): StreamFailure {
+  const record = errorRecordOf(data);
+  const message = typeof record.message === 'string' ? record.message : 'The Codex stream failed before any output.';
+  const type = typeof record.type === 'string' && record.type !== eventType ? record.type : 'upstream_error';
+  const code = typeof record.code === 'string' ? record.code : undefined;
+  return { status: statusOfFailure([type, code]), error: { message, type, ...(code ? { code } : {}) } };
+}
+
+function openingOf(text: string): StreamOpening {
+  for (const block of text.split(EVENT_SEPARATOR).slice(0, -1)) {
+    const event = parseEventBlock(block);
+    if (event.data === undefined) continue;
+    const data = parsedData(event);
+    const type = event.event ?? (typeof data?.type === 'string' ? data.type : '');
+    if (PREAMBLE_EVENT_TYPES.has(type)) continue;
+    if (FAILURE_EVENT_TYPES.has(type)) return { kind: 'failure', ...failureOf(type, data) };
+    return { kind: 'output' };
+  }
+  return { kind: 'undecided' };
+}
+
+async function streamToCaller(res: ServerResponse, body: ReadableStream<Uint8Array>): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const held: Uint8Array[] = [];
+  let text = '';
+  let opening: StreamOpening = { kind: 'undecided' };
+  try {
+    while (opening.kind === 'undecided') {
+      const { value, done } = await reader.read();
+      if (done) break;
+      held.push(value);
+      text += decoder.decode(value, { stream: true });
+      opening = openingOf(text);
+    }
+  } catch {
+    res.destroy();
+    return;
+  }
+
+  if (opening.kind === 'failure') {
+    await reader.cancel().catch(() => undefined);
+    sendError(res, opening.status, opening.error);
+    return;
+  }
+
+  const rest = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of held) controller.enqueue(chunk);
+    },
+    async pull(controller) {
+      const { value, done } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  res.writeHead(200, SSE_HEADERS);
+  const stream = Readable.fromWeb(rest);
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
 }
 
 function callCodex(credential: LinkedAccountCredential, body: JsonRecord): Promise<Response> {
@@ -153,19 +273,12 @@ export async function forwardToChatGpt(
   }
 
   if (wantsStream) {
-    res.writeHead(upstream.status, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      connection: 'keep-alive',
-      'x-accel-buffering': 'no',
-    });
     if (!upstream.body) {
+      res.writeHead(200, SSE_HEADERS);
       res.end();
       return;
     }
-    const stream = Readable.fromWeb(upstream.body);
-    stream.on('error', () => res.destroy());
-    stream.pipe(res);
+    await streamToCaller(res, upstream.body);
     return;
   }
 
