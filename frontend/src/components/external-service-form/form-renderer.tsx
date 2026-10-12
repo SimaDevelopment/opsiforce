@@ -419,6 +419,7 @@ function ListField(props: { list: ListFieldDefinition; scope: FormValues; path: 
         </Show>
         <Show when={!props.ctx.readOnly()}>
           <Button
+            type="button"
             variant="outline"
             size="sm"
             class="h-7 w-full border-dashed text-xs"

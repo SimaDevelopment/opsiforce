@@ -1,11 +1,12 @@
-import { readFile, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sdkVersion, type ServiceManifest } from '@opsiforce/external-service-sdk';
 import { computeManifestHash } from '@opsiforce/external-service-sdk/server';
-import { manifestFileName, readServiceFolder } from '@opsiforce/external-service-sdk/service-folder';
+import { manifestFileName } from '@opsiforce/external-service-sdk/service-folder';
 import { SERVICE_SKILL_FILE } from './built-in-services';
+import { readConfinedServiceFolder, readFileInFolder } from './service-folder-files';
 
 export const SERVICE_APP_FOLDER = 'app';
 
@@ -41,14 +42,6 @@ async function fileStampOf(path: string): Promise<string> {
     return `${stats.mtimeMs}:${stats.size}`;
   } catch {
     return 'missing';
-  }
-}
-
-async function readOptional(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8');
-  } catch {
-    return null;
   }
 }
 
@@ -97,22 +90,22 @@ export class PublishedServiceFilesReader {
   }
 
   private async readFolder(folder: string): Promise<PublishedServiceFiles> {
-    const { json, check } = await readServiceFolder(folder, { origin: 'custom' });
+    const { json, check } = await readConfinedServiceFolder(folder, { origin: 'custom' });
     if (!check.ok || !check.manifest) {
       const first = check.problems.find((problem) => problem.severity === 'error');
       throw new UnservableServiceFiles(
         first ? `${first.path}: ${first.message}` : `${manifestFileName} does not pass check`
       );
     }
-    const vendored = vendoredSdkVersion(await readOptional(join(folder, PACKAGE_FILE)));
+    const vendored = vendoredSdkVersion(await readFileInFolder(folder, PACKAGE_FILE));
     if (!acceptsSdk(vendored)) {
       throw new UnservableServiceFiles(`SDK ${vendored} is not an SDK ${sdkVersion}.x`);
     }
     return {
       manifest: check.manifest,
       manifestHash: computeManifestHash(json),
-      icon: check.manifest.icon ? await readOptional(join(folder, check.manifest.icon)) : null,
-      serviceSkill: await readOptional(join(folder, SERVICE_SKILL_FILE)),
+      icon: check.manifest.icon ? await readFileInFolder(folder, check.manifest.icon) : null,
+      serviceSkill: await readFileInFolder(folder, SERVICE_SKILL_FILE),
       sdkVersion: vendored,
     };
   }

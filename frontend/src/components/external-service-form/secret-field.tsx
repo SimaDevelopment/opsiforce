@@ -40,7 +40,7 @@ export function SecretField(props: {
             stored · encrypted
           </span>
           <Show when={!props.disabled}>
-            <Button variant="outline" size="sm" class="h-7 text-xs" onClick={() => setReplacing(true)}>
+            <Button type="button" variant="outline" size="sm" class="h-7 text-xs" onClick={() => setReplacing(true)}>
               Replace
             </Button>
           </Show>
@@ -84,7 +84,7 @@ export function SecretField(props: {
           />
         </Show>
         <Show when={wasStored && replacing()}>
-          <Button variant="ghost" size="sm" class="h-8 text-xs" onClick={cancelReplace}>
+          <Button type="button" variant="ghost" size="sm" class="h-8 text-xs" onClick={cancelReplace}>
             Keep stored
           </Button>
         </Show>

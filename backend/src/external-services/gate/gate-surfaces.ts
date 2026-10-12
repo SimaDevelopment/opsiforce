@@ -30,6 +30,8 @@ interface AvailableService {
 
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
 
+const MAX_CACHED_DOCUMENTS = 256;
+
 function json(body: unknown, headers: Record<string, string> = {}): SurfaceAnswer {
   return { status: 200, headers: { 'content-type': JSON_CONTENT_TYPE, ...headers }, body };
 }
@@ -117,10 +119,13 @@ export class GateSurfaces {
   }
 
   private documentOf(service: RegisteredService): ServiceOpenApiDocument {
-    let document = this.documents.get(service.manifestHash);
-    if (!document) {
-      document = serviceOpenApiDocument(service);
-      this.documents.set(service.manifestHash, document);
+    const key = `${service.id}:${service.slug}:${service.manifestHash}`;
+    const document = this.documents.get(key) ?? serviceOpenApiDocument(service);
+    this.documents.delete(key);
+    this.documents.set(key, document);
+    for (const oldest of this.documents.keys()) {
+      if (this.documents.size <= MAX_CACHED_DOCUMENTS) break;
+      this.documents.delete(oldest);
     }
     return document;
   }

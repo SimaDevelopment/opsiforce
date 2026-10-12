@@ -39,6 +39,12 @@ export interface LegacyMessage {
 
 export type LegacyMessageOf = (event: EventToStore) => LegacyMessage;
 
+export interface LegacyMessages {
+  messageOf: LegacyMessageOf;
+  // TODO: remove in the release after External Services v2 ships: an environment wired in v1 is legacy even with an empty mailbox
+  wiredInV1: boolean;
+}
+
 const STORE_MIGRATIONS = [
   `CREATE TABLE messages (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,14 +167,15 @@ export class ExternalServiceStore {
     envDirectory: string,
     service: string,
     events: readonly EventToStore[],
-    legacyMessageOf?: LegacyMessageOf
+    legacy?: LegacyMessages
   ): Promise<number[]> {
     const fileDirectories: string[] = [];
     return withDatabase(envDirectory, { forWriting: true }, async (connection) => {
       await connection.exec('BEGIN IMMEDIATE');
       try {
         await this.applyMigrations(connection);
-        const writesMessages = legacyMessageOf !== undefined && (await isMarkedLegacy(connection));
+        if (legacy?.wiredInV1) await markLegacy(connection);
+        const legacyMessageOf = legacy && (await isMarkedLegacy(connection)) ? legacy.messageOf : null;
         const receivedAt = new Date().toISOString();
         const eventIds: number[] = [];
         for (const event of events) {
@@ -178,7 +185,7 @@ export class ExternalServiceStore {
             continue;
           }
           eventIds.push(eventId);
-          if (writesMessages) await this.insertLegacyMessage(connection, service, legacyMessageOf(event));
+          if (legacyMessageOf) await this.insertLegacyMessage(connection, service, legacyMessageOf(event));
         }
         await connection.exec('COMMIT');
         return eventIds;
@@ -337,6 +344,14 @@ async function hasTable(connection: Database, name: string): Promise<boolean> {
 async function isMarkedLegacy(connection: Database): Promise<boolean> {
   if (!(await hasTable(connection, 'store_marks'))) return false;
   return (await connection.get('SELECT 1 FROM store_marks WHERE name = ?', LEGACY_MESSAGES_MARK)) !== undefined;
+}
+
+// TODO: remove in the release after External Services v2 ships: marks an environment wired in v1 as legacy
+async function markLegacy(connection: Database): Promise<void> {
+  await connection.run(
+    `INSERT OR IGNORE INTO store_marks (name, marked_at) VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    LEGACY_MESSAGES_MARK
+  );
 }
 
 async function insertAttachments(connection: Database, messageId: number, message: LegacyMessage): Promise<void> {

@@ -28,7 +28,7 @@ import {
 } from '../gate/service-answers';
 import { DefaultMovedRefusal, refuse, refuseDisabledService, refuseUnconfiguredService } from '../gate/gate-refusals';
 import { DefaultLaneMoved, ServiceDispatcher } from '../gate/service-dispatcher';
-import { legacyMessageOf } from '../legacy/legacy-messages';
+import { legacyMessagesFor } from '../legacy/legacy-messages';
 import { ExternalServiceStore, type EventToStore } from './external-service-store';
 import type { RegisteredService } from '../registry/service-registry';
 import { ExternalServiceUsageService } from '../usage/external-service-usage.service';
@@ -307,7 +307,12 @@ export class InboundPipeline {
     for (const { receiver, events } of deliveries.values()) {
       const envDirectory = path.join(this.storageMountPath, receiver.directory);
       try {
-        const eventIds = await this.store.storeEvents(envDirectory, service.slug, events, legacyMessageOf(service));
+        const eventIds = await this.store.storeEvents(
+          envDirectory,
+          service.slug,
+          events,
+          await legacyMessagesFor(service, receiver.projectEnvironmentId)
+        );
         stored.push({
           service: service.slug,
           projectEnvironmentId: receiver.projectEnvironmentId,

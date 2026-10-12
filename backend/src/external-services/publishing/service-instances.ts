@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk';
-import { readServiceFolder } from '@opsiforce/external-service-sdk/service-folder';
 import { eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { projectEnvironments } from '../../../db/schema';
 import { SERVICE_APP_FOLDER } from '../registry/published-service-files';
+import { readConfinedServiceFolder } from '../registry/service-folder-files';
 
 export interface ServiceInstance {
   id: string;
@@ -32,6 +32,8 @@ export function serviceAppFolder(storageMountPath: string, directory: string): s
 }
 
 export async function manifestIn(storageMountPath: string, directory: string): Promise<ServiceManifest | null> {
-  const { check } = await readServiceFolder(serviceAppFolder(storageMountPath, directory), { origin: 'custom' });
+  const { check } = await readConfinedServiceFolder(serviceAppFolder(storageMountPath, directory), {
+    origin: 'custom',
+  });
   return check.manifest ?? null;
 }

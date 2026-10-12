@@ -211,6 +211,19 @@ describe('WhatsApp on a deployment upgraded with v1 numbers', () => {
     expect((await environmentDatabase(storageRoot, partlyDeleted)).events).toEqual([]);
   });
 
+  it('writes a messages row for an environment wired in v1 that had received nothing yet', async () => {
+    const messageId = `wamid.${crypto.randomUUID()}`;
+    const res = await sendWhatsapp(app, {
+      channelId: SALES.channelId,
+      secret: SALES.webhookSecret,
+      messages: [{ id: messageId, chatId: ORDERS }],
+    });
+
+    expect(res.statusCode, res.body).toBe(200);
+    const { messages } = await legacyRows(storageRoot, wired);
+    expect(messages.map((message) => message.provider_message_id)).toContain(messageId);
+  });
+
   it('refuses a webhook with another secret and logs the refusal', async () => {
     const res = await sendWhatsapp(app, {
       channelId: SALES.channelId,

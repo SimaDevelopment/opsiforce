@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk';
 import { valueFieldsOf, type ValueField } from '@opsiforce/external-service-sdk/platform';
 import { computeManifestHash } from '@opsiforce/external-service-sdk/server';
-import { readServiceFolder } from '@opsiforce/external-service-sdk/service-folder';
 import { EnvironmentService } from '../../environment/environment.service';
 import { PublishService } from '../../publish/publish.service';
 import type { PublishJobResponse } from '../../publish/publish.types';
@@ -20,6 +19,7 @@ import { ServiceConfigurationStore, type ServiceConfigurationSave } from '../con
 import { CustomServiceRefusal } from '../custom/custom-service-refusal';
 import { CustomServiceRepository, type CustomServiceRow } from '../custom/custom-service.repository';
 import { servableOrNone } from '../registry/custom-service-catalog';
+import { readConfinedServiceFolder } from '../registry/service-folder-files';
 import { ServiceDefaultEnvironments } from './service-default-environments';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
 import { checkReportOf, type CheckReport } from './check-report';
@@ -317,7 +317,7 @@ export class ServicePublishing {
   }
 
   private async checkedFiles(directory: string): Promise<CheckedFiles> {
-    const { json, check } = await readServiceFolder(serviceAppFolder(this.storageMountPath, directory), {
+    const { json, check } = await readConfinedServiceFolder(serviceAppFolder(this.storageMountPath, directory), {
       origin: 'custom',
     });
     return {
