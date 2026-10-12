@@ -8,6 +8,7 @@ import {
   Inject,
   forwardRef,
   OnApplicationBootstrap,
+  Optional,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
@@ -34,7 +35,12 @@ import {
   projectDuplicateJobs,
   projectTransferJobs,
 } from '../../db/schema';
-import { accessibleProjectsFilter, isHiddenProjectReachable, visibleProjectsFilter } from './project-visibility';
+import {
+  accessibleProjectsFilter,
+  hiddenProjectReachOf,
+  isHiddenProjectReachable,
+  visibleProjectsFilter,
+} from './project-visibility';
 import { PodService, PodStartupFailedError } from '../pod/pod.service';
 import { PodCacheService } from '../pod/pod.cache.service';
 import { ProxyService } from '../proxy/proxy.service';
@@ -52,7 +58,7 @@ import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ScheduleService } from '../schedule/schedule.service';
 import { AgentService } from '../agent/agent.service';
 import { EnvironmentService } from '../environment/environment.service';
-import { ExternalServiceProvisioningService } from '../external-services';
+import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
@@ -85,7 +91,6 @@ import {
   isChatKind,
   availableAuthModes,
 } from './project.types';
-import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
 import {
   buildPodClassCatalog,
   clampCustom,
@@ -268,11 +273,11 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly environmentService: EnvironmentService,
     private readonly gitService: GitService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
-    private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly proxyService: ProxyService,
     private readonly deliveryService: DeliveryService,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
-    private readonly duplicateQueue: Queue<ProjectDuplicateJobData>
+    private readonly duplicateQueue: Queue<ProjectDuplicateJobData>,
+    @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
   ) {}
 
   async onApplicationBootstrap() {
@@ -460,6 +465,7 @@ export class ProjectService implements OnApplicationBootstrap {
       createdByProjectId = null,
       kind = null,
       builderSubjectAgentId = null,
+      configureBeforeDelivery = null,
     } = context;
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
@@ -475,6 +481,7 @@ export class ProjectService implements OnApplicationBootstrap {
         createdBy,
         createdByProjectId,
         kind,
+        configureBeforeDelivery,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
         timezone: dto?.timezone || 'UTC',
@@ -498,6 +505,7 @@ export class ProjectService implements OnApplicationBootstrap {
       createdByProjectId,
       kind,
       builderSubjectAgentId,
+      configureBeforeDelivery,
     });
   }
 
@@ -514,7 +522,15 @@ export class ProjectService implements OnApplicationBootstrap {
     timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
     context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
-    const { workspaceId, folderId, createdBy, createdByProjectId, kind, builderSubjectAgentId } = context;
+    const {
+      workspaceId,
+      folderId,
+      createdBy,
+      createdByProjectId,
+      kind,
+      builderSubjectAgentId,
+      configureBeforeDelivery,
+    } = context;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
@@ -560,9 +576,10 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     await this.discardOnFailure(id, async () => {
-      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.lifecycle?.created(id);
+      await configureBeforeDelivery?.(id);
       await this.createBifrostResources(id, tenantId);
-      await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+      await this.createGatewayKey(id, id, tenantId);
     });
     try {
       await this.deliveryService.deliverAtCreate(id, { builderSubjectAgentId });
@@ -570,6 +587,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.discardHalfCreatedProject(id);
       throw new InternalServerErrorException(`Could not deliver the agent's files: ${(err as Error).message}`);
     }
+    await this.lifecycle?.delivered(id);
     this.spawnStartupWorker(id);
 
     return this.findOne(id, tenantId);
@@ -701,9 +719,8 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     await this.discardOnFailure(id, async () => {
-      await this.externalServiceProvisioning.provisionEnvironment(id);
       await this.createBifrostResources(id, tenantId);
-      await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
+      await this.createGatewayKey(id, id, tenantId);
       await this.enqueueDuplicateJob({
         duplicateJobId,
         sourceProjectId: source.id,
@@ -824,9 +841,8 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     await this.discardOnFailure(id, async () => {
-      await this.externalServiceProvisioning.provisionEnvironment(id);
       await this.createBifrostResources(id, tenantId);
-      await this.createGatewayKeys(id, id, tenantId, agentId, null);
+      await this.createGatewayKey(id, id, tenantId);
     });
 
     return this.findOne(id, tenantId);
@@ -911,7 +927,7 @@ export class ProjectService implements OnApplicationBootstrap {
   /** Every Project this user may watch: the ordinary visible set plus the hidden ones they created. */
   async findVisibleProjectIds(params: { tenantId: string; userId: string }): Promise<string[]> {
     const { tenantId, userId } = params;
-    const accessible = accessibleProjectsFilter(tenantId, userId);
+    const accessible = accessibleProjectsFilter(tenantId, userId, await hiddenProjectReachOf(userId));
 
     const rows = await db
       .select({ id: projects.id })
@@ -1268,6 +1284,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.remove(child.id, tenantId);
     }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
+    for (const env of envs) await this.lifecycle?.environmentRemoving(env.id);
 
     await db
       .update(projectEnvironments)
@@ -1299,7 +1316,10 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.projectEnvironmentService.delete(env);
     }
 
-    await db.delete(projects).where(eq(projects.id, id));
+    await db.transaction(async (tx) => {
+      await this.lifecycle?.removing(tx, id);
+      await tx.delete(projects).where(eq(projects.id, id));
+    });
   }
 
   private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string; title: string | null }[]> {
@@ -1342,6 +1362,7 @@ export class ProjectService implements OnApplicationBootstrap {
       this.agentStatusService.clear(id, env.id);
     });
 
+    await this.lifecycle?.disabled(id);
     await this.projectEventsService.publish(id);
 
     return this.findOne(id, tenantId);
@@ -1364,6 +1385,7 @@ export class ProjectService implements OnApplicationBootstrap {
     );
 
     envs.forEach((env) => this.spawnStartupWorker(env.id));
+    await this.lifecycle?.enabled(id);
     await this.projectEventsService.publish(id);
     return this.findOne(id, tenantId);
   }
@@ -1387,6 +1409,7 @@ export class ProjectService implements OnApplicationBootstrap {
   async updateTestProject(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
     const written = await this.deliveryService.overlayTemplate(env.id);
+    await this.lifecycle?.updated(env.id);
     const workspace = this.workspacePath(env.directory);
     if (written.length === 0 || !(await isGitWorkspace(workspace))) return;
     await db.transaction(async (tx) => {
@@ -1398,6 +1421,7 @@ export class ProjectService implements OnApplicationBootstrap {
   /** Reset (Test Project): the same Project laid again from scratch, with a new session and a fresh budget. */
   async resetTestProject(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
+    await this.lifecycle?.resetting(env.id);
     this.agentStatusService.clear(env.projectId, env.id);
     this.appReadiness.markDown(env.id);
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
@@ -1428,6 +1452,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (env.isDefault) {
       throw new BadRequestException('The Development environment cannot be deleted');
     }
+    await this.lifecycle?.environmentRemoving(env.id);
 
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
 
@@ -1526,6 +1551,10 @@ export class ProjectService implements OnApplicationBootstrap {
   async reassignPodById(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
+  }
+
+  async configureCopiedProject(id: string): Promise<void> {
+    await this.lifecycle?.copied(id);
   }
 
   async requestStartupForId(id: string): Promise<void> {
@@ -1681,6 +1710,7 @@ export class ProjectService implements OnApplicationBootstrap {
     );
 
     if (updated) {
+      this.appReadiness.markDown(env.id);
       await this.projectEventsService.publish(env.projectId);
     }
 
@@ -1783,7 +1813,11 @@ export class ProjectService implements OnApplicationBootstrap {
   private async markEnvironmentActive(envId: string, podIp: string, podName: string): Promise<void> {
     const recovery = this.recoveryStartups.delete(envId);
 
-    if (recovery && (await this.timeoutService.isFullyExpired(envId).catch(() => false))) {
+    if (
+      recovery &&
+      (await this.timeoutService.isFullyExpired(envId).catch(() => false)) &&
+      !(await this.lifecycle?.neverSleeps(envId))
+    ) {
       const suspended = await this.projectEnvironmentService.patch(
         envId,
         { status: ProjectStatus.Suspended, podIp: null },
@@ -1853,40 +1887,12 @@ export class ProjectService implements OnApplicationBootstrap {
     }
   }
 
-  private async createGatewayKeys(
-    projectId: string,
-    environmentId: string,
-    tenantId: string,
-    agentId: string,
-    createdByProjectId: string | null
-  ): Promise<void> {
+  private async createGatewayKey(projectId: string, environmentId: string, tenantId: string): Promise<void> {
     try {
       await this.gatewayKeyService.createKey(projectId, environmentId, tenantId);
-      if (await this.mintsPlatformApiKey(agentId, createdByProjectId)) {
-        await this.gatewayKeyService.createKey(projectId, environmentId, tenantId, 'platform-api');
-      }
     } catch (err) {
-      this.logger.warn(`Failed to create gateway keys for environment ${environmentId}: ${(err as Error).message}`);
+      this.logger.warn(`Failed to create the gateway key for environment ${environmentId}: ${(err as Error).message}`);
     }
-  }
-
-  private async mintsPlatformApiKey(agentId: string, createdByProjectId: string | null): Promise<boolean> {
-    if (!(await this.agentService.callsPlatformApi(agentId))) return false;
-    return (await this.childChainDepth(createdByProjectId)) < MAX_PROJECT_CHAIN_DEPTH;
-  }
-
-  private async childChainDepth(createdByProjectId: string | null): Promise<number> {
-    let parentId = createdByProjectId;
-    let depth = 0;
-    while (parentId !== null && depth < MAX_PROJECT_CHAIN_DEPTH) {
-      depth += 1;
-      const [row] = await db
-        .select({ parentId: projects.createdByProjectId })
-        .from(projects)
-        .where(eq(projects.id, parentId));
-      parentId = row?.parentId ?? null;
-    }
-    return depth;
   }
 
   private async enqueueDuplicateJob(data: ProjectDuplicateJobData): Promise<void> {
@@ -2223,6 +2229,7 @@ export class ProjectService implements OnApplicationBootstrap {
       return current;
     }
 
+    this.appReadiness.markDown(env.id);
     if (options.deleteExistingPod) {
       const podName = this.podService.assignedPodName(env.id);
       this.recreateRequests.add(env.id);
@@ -2342,10 +2349,9 @@ export class ProjectService implements OnApplicationBootstrap {
       throw new Error(`Cannot start pool environment ${env.id} without a tenant`);
     }
 
-    const [bifrostOptions, gatewayApiKey, platformApiKey, agentName, podResources] = await Promise.all([
+    const [bifrostOptions, gatewayApiKey, agentName, podResources] = await Promise.all([
       this.bifrostService.getEnvironmentPodOptions(env.id),
       this.gatewayKeyService.getEnvironmentToken(env.id),
-      this.gatewayKeyService.getEnvironmentToken(env.id, 'platform-api'),
       this.agentService.resolvePackageName(env.agentId),
       this.podResourcesForProject(env.projectId),
     ]);
@@ -2356,24 +2362,12 @@ export class ProjectService implements OnApplicationBootstrap {
       );
     }
 
-    const platformApiUrl = this.configService.get<string>('platformApiUrl', '');
-    const runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
-
-    if (platformApiKey && !(platformApiUrl && runtimeProxyUrl)) {
-      throw new Error(
-        `Environment ${env.id} holds a platform-api key but OPSIFORCE_API_URL or OPSIFORCE_RUNTIME_PROXY_URL is unset; ` +
-          'refusing to start a pod that cannot reach the platform API'
-      );
-    }
-
     const tenantOptions = {
       ...bifrostOptions,
       agentName,
       gatewayApiKey: gatewayApiKey ?? undefined,
       gatewayUrl: this.configService.get<string>('gatewayUrl', ''),
-      platformApiKey: platformApiKey ?? undefined,
-      platformApiUrl,
-      runtimeProxyUrl,
+      runtimeProxyUrl: this.configService.get<string>('runtimeProxyUrl', ''),
       externalServicesUrl: this.configService.get<string>('externalServicesUrl', ''),
       opsiforceEnv: env.isDefault ? undefined : 'production',
       environmentSlug: env.environmentSlug,

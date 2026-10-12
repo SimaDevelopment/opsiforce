@@ -283,7 +283,7 @@ describe('a Skill name the workspace’s ledger owns', () => {
 });
 
 describe('a Custom Agent’s Project', () => {
-  it('is never enqueued by a Skill mutation and is skipped if a job reaches it anyway', async () => {
+  it('is never enqueued by a Skill mutation, and a job that reaches it leaves its Store Skills alone', async () => {
     const custom = await seedLiveAgent(tenantId, agent.userId);
     const skill = await seedSkill(`custom-${randomUUID().slice(0, 8)}`, '# frozen\n');
     await harness.agents.setSkill(agent, custom.id, skill.skillId, {});
@@ -294,9 +294,12 @@ describe('a Custom Agent’s Project', () => {
 
     expect(queue.callsTo('add').slice(before)).toEqual([]);
     expect(await harness.skillDeliveries.reconcile(project.id)).toEqual({
-      status: 'skipped',
-      reason: 'custom-agent',
+      status: 'converged',
+      written: [],
+      deleted: [],
+      omitted: [],
     });
+    expect(await installedSkillNames(project.id)).toEqual([skill.name]);
   });
 });
 

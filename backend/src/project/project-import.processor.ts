@@ -41,6 +41,7 @@ export class ProjectImportProcessor extends WorkerHost {
         this.importService.updateProgress(importJobId, projectId, { bytesProcessed, bytesTotal })
       );
 
+      await this.projectService.configureCopiedProject(projectId);
       await this.importService.setStatus(importJobId, projectId, ProjectImportStatus.Starting);
       await this.projectService.requestStartupForId(projectId);
 

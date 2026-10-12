@@ -76,6 +76,7 @@ describe("api.sh", () => {
   let server
   let origin
   const seen = []
+  let reloadsLeft = 0
 
   before(async () => {
     server = createServer((request, response) => {
@@ -90,6 +91,12 @@ describe("api.sh", () => {
           contentType: request.headers["content-type"],
           body: Buffer.concat(chunks).toString("utf8"),
         })
+        if (request.url.endsWith("/reloading") && reloadsLeft > 0) {
+          reloadsLeft -= 1
+          response.writeHead(503, { "content-type": "application/problem+json", "retry-after": "1" })
+          response.end('{"code":"service-reloading"}')
+          return
+        }
         response.writeHead(201, { "content-type": "application/json" })
         response.end('{"id":"p_1"}')
       })
@@ -107,9 +114,9 @@ describe("api.sh", () => {
     const child = spawn("sh", [apiScript, ...args], {
       env: {
         ...process.env,
-        OPSIFORCE_API_URL: `${origin}/api/v1`,
+        EXTERNAL_SERVICES_URL: `${origin}/api/external-services/agent`,
         OPSIFORCE_RUNTIME_PROXY_URL: origin,
-        OPSIFORCE_API_KEY: "gw-test",
+        SERVICE_GATEWAY_API_KEY: "gw-test",
         ...env,
       },
     })
@@ -120,36 +127,46 @@ describe("api.sh", () => {
     return new Promise((resolve) => child.on("close", (status) => resolve({ status, stdout, stderr })))
   }
 
-  test("sends a GET to the platform API with the bearer", async () => {
-    const result = await run(["call", "GET", "/skills?filter=built_in"])
+  test("posts a public-api Operation through the Gate with the service key and an empty input", async () => {
+    const result = await run(["call", "get_me"])
 
     assert.equal(result.status, 0, result.stderr)
     assert.equal(result.stdout, '{"id":"p_1"}')
     const last = seen.at(-1)
-    assert.equal(last.method, "GET")
-    assert.equal(last.url, "/api/v1/skills?filter=built_in")
+    assert.equal(last.method, "POST")
+    assert.equal(last.url, "/api/external-services/agent/public-api/get_me")
     assert.equal(last.authorization, "Bearer gw-test")
+    assert.deepEqual(JSON.parse(last.body), {})
   })
 
-  test("sends an inline JSON body as JSON", async () => {
-    await run(["call", "POST", "/projects", '{"title":"Test","kind":"test"}'])
+  test("sends an inline JSON input as JSON", async () => {
+    await run(["call", "create_project", '{"title":"Test","kind":"test"}'])
 
     const last = seen.at(-1)
-    assert.equal(last.method, "POST")
-    assert.equal(last.url, "/api/v1/projects")
+    assert.equal(last.url, "/api/external-services/agent/public-api/create_project")
     assert.equal(last.contentType, "application/json")
     assert.deepEqual(JSON.parse(last.body), { title: "Test", kind: "test" })
   })
 
-  test("sends a @file body from disk", async () => {
-    await run(["call", "PUT", "/agents/a1/profile", `@${path.join(here, "..", "agent-image-version.json")}`])
+  test("sends a @file input from disk", async () => {
+    await run(["call", "update_agent_profile", `@${path.join(here, "..", "agent-image-version.json")}`])
 
     const last = seen.at(-1)
-    assert.equal(last.method, "PUT")
-    assert.ok(JSON.parse(last.body).version, "the file's contents should be the request body")
+    assert.ok(JSON.parse(last.body).version, "the file's contents should be the input")
   })
 
-  test("resolves a runtime baseUrl against the runtime proxy origin, not the platform API", async () => {
+  test("waits out a 503 that names a Retry-After, then answers", async () => {
+    reloadsLeft = 1
+    const before = seen.length
+
+    const result = await run(["call", "reloading"])
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '{"id":"p_1"}')
+    assert.equal(seen.length - before, 2)
+  })
+
+  test("resolves a runtime baseUrl against the runtime proxy origin with the same key", async () => {
     await run(["runtime", "/api/proxy/env-1", "POST", "/api/session/ses_1/prompt", '{"text":"hi"}'])
 
     const last = seen.at(-1)
@@ -181,18 +198,18 @@ describe("api.sh", () => {
   })
 
   test("prints a status code alone", async () => {
-    assert.equal((await run(["status", "GET", "/me"])).stdout.trim(), "201")
+    assert.equal((await run(["status", "get_project", '{"id":"p_1"}'])).stdout.trim(), "201")
   })
 
-  test("refuses to run in a pod that holds no platform-api key", async () => {
-    const result = await run(["call", "GET", "/me"], { OPSIFORCE_API_KEY: "" })
+  test("refuses to run in a pod that holds no service key", async () => {
+    const result = await run(["call", "get_me"], { SERVICE_GATEWAY_API_KEY: "" })
 
     assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /OPSIFORCE_API_KEY/)
+    assert.match(result.stderr, /SERVICE_GATEWAY_API_KEY/)
   })
 
   test("refuses an unknown command instead of guessing", async () => {
-    const result = await run(["publish", "GET", "/me"])
+    const result = await run(["publish", "get_me"])
 
     assert.equal(result.status, 2)
     assert.match(result.stderr, /unknown command/)
@@ -542,7 +559,11 @@ describe("evidence.sh", () => {
   function evidence(args) {
     return runScript("sh", [evidenceScript, ...args], {
       cwd: workspace,
-      env: { OPSIFORCE_API_URL: `${origin}/api/v1`, OPSIFORCE_RUNTIME_PROXY_URL: origin, OPSIFORCE_API_KEY: "gw-test" },
+      env: {
+        EXTERNAL_SERVICES_URL: `${origin}/api/external-services/agent`,
+        OPSIFORCE_RUNTIME_PROXY_URL: origin,
+        SERVICE_GATEWAY_API_KEY: "gw-test",
+      },
     })
   }
 
@@ -665,9 +686,9 @@ describe("turn.sh", () => {
   })
 
   const env = (extra = {}) => ({
-    OPSIFORCE_API_URL: `${origin}/api/v1`,
+    EXTERNAL_SERVICES_URL: `${origin}/api/external-services/agent`,
     OPSIFORCE_RUNTIME_PROXY_URL: origin,
-    OPSIFORCE_API_KEY: "gw-test",
+    SERVICE_GATEWAY_API_KEY: "gw-test",
     TURN_POLL: "1",
     ...extra,
   })
@@ -811,45 +832,45 @@ describe("tp.sh", () => {
           response.writeHead(status, { "content-type": "application/json" })
           response.end(payload === undefined ? "" : JSON.stringify(payload))
         }
-        const route = `${request.method} ${url.pathname}`
-        if (route === "GET /api/v1/me") {
-          return send(200, {
-            builderSubject: world.subject,
-            builderTestProject: world.testProject ? { id: world.testProject } : null,
-          })
-        }
-        if (route === "POST /api/v1/projects") {
-          if (world.createAnswer) return send(...world.createAnswer)
-          world.exists = true
-          return send(201, { id: "tp-1" })
-        }
-        const project = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)(\/.*)?$/)
-        if (project) {
-          const [, id, rest = ""] = project
-          if (!world.exists || id !== "tp-1") return send(404, { code: "project-not-found" })
-          if (request.method === "GET" && rest === "") {
+        const gate = "/api/external-services/agent/public-api/"
+        if (request.method === "POST" && url.pathname.startsWith(gate)) {
+          const operation = url.pathname.slice(gate.length)
+          const input = body === "" ? {} : JSON.parse(body)
+          if (operation === "get_me") {
+            return send(200, {
+              builderSubject: world.subject,
+              builderTestProject: world.testProject ? { id: world.testProject } : null,
+            })
+          }
+          if (operation === "create_project") {
+            if (world.createAnswer) return send(...world.createAnswer)
+            world.exists = true
+            return send(200, { id: "tp-1" })
+          }
+          if (!world.exists || input.id !== "tp-1") return send(404, { code: "project-not-found" })
+          if (operation === "get_project") {
             const status = world.statuses.length > 1 ? world.statuses.shift() : world.statuses[0]
-            return send(200, { id, disabled: world.disabled, environments: [{ id: "env-1", status }] })
+            return send(200, { id: input.id, disabled: world.disabled, environments: [{ id: "env-1", status }] })
           }
-          if (request.method === "POST" && rest === "/restart") {
+          if (operation === "restart_project") {
             world.statuses = world.afterRestart ?? ["active"]
-            return send(204)
+            return send(200, {})
           }
-          if (request.method === "POST" && rest === "/test/update") return send(204)
-          if (request.method === "POST" && rest === "/test/reset") {
+          if (operation === "update_test_project") return send(200, {})
+          if (operation === "reset_test_project") {
             world.boundSession = null
             world.sessions.shift()
-            return send(204)
+            return send(200, {})
           }
-          if (request.method === "POST" && rest === "/environments/env-1/connect") {
+          if (operation === "connect_project" && input.environmentId === "env-1") {
             if (world.connectRefusals > 0) {
               world.connectRefusals -= 1
-              return send(503, { code: "environment-starting" })
+              return send(502, { code: "environment-starting" })
             }
             world.boundSession ??= world.sessions[0]
             return send(200, { baseUrl: prefix, openapiUrl: `${prefix}/openapi.json`, sessionId: world.boundSession })
           }
-          return send(404, {})
+          return send(404, { code: "unknown-operation" })
         }
         if (!url.pathname.startsWith(prefix)) return send(404, {})
         const runtime = `${request.method} ${url.pathname.slice(prefix.length)}`
@@ -916,16 +937,16 @@ describe("tp.sh", () => {
     runScript(posixShell, [testProjectScript, ...args], {
       cwd: root,
       env: {
-        OPSIFORCE_API_URL: `${origin}/api/v1`,
+        EXTERNAL_SERVICES_URL: `${origin}/api/external-services/agent`,
         OPSIFORCE_RUNTIME_PROXY_URL: origin,
-        OPSIFORCE_API_KEY: "gw-test",
+        SERVICE_GATEWAY_API_KEY: "gw-test",
         TP_POLL: "0",
         TP_ATTEMPTS: "5",
         TURN_POLL: "1",
       },
     })
   const stateOf = (root) => JSON.parse(readFileSync(path.join(root, "scratch", "test-project.json"), "utf8"))
-  const created = () => calls.filter((call) => call.method === "POST" && call.path === "/api/v1/projects")
+  const created = () => calls.filter((call) => call.method === "POST" && call.path.endsWith("/public-api/create_project"))
 
   test("up creates the Test Project once, waits, connects through a 503 and records everything", async () => {
     world = freshWorld()
@@ -976,7 +997,7 @@ describe("tp.sh", () => {
     const recovered = await tp(workspace(), "up")
 
     assert.equal(recovered.status, 0, recovered.stdout + recovered.stderr)
-    assert.equal(calls.filter((call) => call.path.endsWith("/restart")).length, 1)
+    assert.equal(calls.filter((call) => call.path.endsWith("/restart_project")).length, 1)
 
     world = freshWorld({ exists: true, testProject: "tp-1", statuses: ["failed"], afterRestart: ["failed"] })
     const failed = await tp(workspace(), "up")
@@ -1090,7 +1111,7 @@ describe("tp.sh", () => {
 
     assert.equal(updated.status, 0, updated.stdout + updated.stderr)
     assert.match(updated.stdout, /^updated: /m)
-    assert.equal(calls.filter((call) => call.path.endsWith("/connect")).length, 0)
+    assert.equal(calls.filter((call) => call.path.endsWith("/connect_project")).length, 0)
 
     const reset = await tp(root, "reset")
     assert.equal(reset.status, 0, reset.stdout + reset.stderr)

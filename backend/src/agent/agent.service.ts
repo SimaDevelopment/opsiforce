@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
 import { Perms } from '../permission/permission.constants';
-import { and, asc, desc, eq, isNull, not, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, not, or } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentSettings, agents, environments, projectEnvironments } from '../../db/schema';
 import { join } from 'node:path';
@@ -26,8 +26,9 @@ import {
   type CatalogColumns,
   type CatalogListFilter,
 } from '../store/catalog-filters';
-import { notDisableable, visibilityIncoherent } from '../store/store-errors';
-import { agentDeclaresPlatformApi, defaultProfileModel } from './agent-config';
+import { isWithinCallingProject } from '../store/calling-project';
+import { notDisableable, outsideCallingProject, visibilityIncoherent } from '../store/store-errors';
+import { defaultProfileModel } from './agent-config';
 import {
   agentInUse,
   developmentNotDefault,
@@ -36,7 +37,6 @@ import {
   notDuplicable,
   notPublishable,
 } from './agent-errors';
-import { pinsFromReferences } from './agent-bundle';
 import { AgentBundleReader } from './agent-bundle.reader';
 import { AgentBundleWriter } from './agent-bundle.writer';
 import { isChatKind, type ProjectKind } from '../project/project.types';
@@ -47,6 +47,7 @@ import {
   agentDisabledIn,
   assertAgentVisibleToUser,
   BUILDER_AGENT_SLUG,
+  builderAgentSlugOf,
   canDisableAgent,
   canDuplicateAgent,
   canEditAgent,
@@ -61,11 +62,13 @@ import {
   type AgentDeliveryEnvironment,
   type AgentDeliveryResponse,
   type AgentDetail,
+  type AgentDuplicateResult,
   type AgentIdentity,
   type AgentProfileResponse,
   type AgentProfileSkillResponse,
   type AgentResponse,
   type AgentRow,
+  type AgentServiceSettingsView,
   type AgentSummary,
   type CreateAgentDto,
   type DuplicateAgentDto,
@@ -73,6 +76,7 @@ import {
   type PublishAgentResponse,
   type SetAgentSkillDto,
   type SetAgentVisibilityDto,
+  type SetServiceSettingsDto,
   type UpdateAgentDto,
   type UpdateAgentProfileDto,
   type UpdateAgentSettingsDto,
@@ -172,7 +176,7 @@ export class AgentService {
     const agentId = await this.bundles.write(caller, {
       displayName,
       bundle: {
-        identity: { displayName, description: dto.description ?? null, platformApi: false },
+        identity: { displayName, description: dto.description ?? null },
         profile: { promptBody: '', model, variant },
         skills: [],
         template: null,
@@ -216,7 +220,6 @@ export class AgentService {
       if (environment.isDevelopment) throw developmentNotDefault();
       patch.defaultEnvironmentId = environment.id;
     }
-    if ('platformApi' in dto) patch.platformApi = dto.platformApi === true;
 
     if (
       Object.keys(patch).length > 0 &&
@@ -242,18 +245,20 @@ export class AgentService {
     return this.findOne(caller, agentId);
   }
 
-  async duplicate(caller: AgentCaller, agentId: string, dto: DuplicateAgentDto): Promise<AgentDetail> {
+  async duplicate(
+    caller: AgentCaller,
+    agentId: string,
+    dto: DuplicateAgentDto,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<AgentDuplicateResult> {
     const source = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
     if (!canDuplicateAgent(source)) throw notDuplicable(source.displayName ?? source.name);
     const { displayName } = await this.bundles.availableName(caller.tenantId, dto.displayName ?? '');
 
     const bundle = await this.bundleReader.read(source, caller.tenantId);
-    const copyId = await this.bundles.write(caller, {
-      displayName,
-      bundle,
-      pins: pinsFromReferences(bundle.skills),
-    });
-    return this.findOne(caller, copyId);
+    const { pins, notes } = await this.profiles.pinsWithinGrants(caller.tenantId, bundle.skills, grants);
+    const copyId = await this.bundles.write(caller, { displayName, bundle, pins });
+    return { agent: await this.findOne(caller, copyId), notes };
   }
 
   async setDisabled(caller: AgentCaller, agentId: string, disabled: boolean): Promise<AgentDetail> {
@@ -292,7 +297,10 @@ export class AgentService {
   }
 
   async updateProfile(caller: AgentCaller, agentId: string, dto: UpdateAgentProfileDto): Promise<AgentDetail> {
-    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    const agent = assertWithinCallingProject(
+      caller,
+      await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId)
+    );
     await this.profiles.updateProfile(agent, caller, dto);
     return this.findOne(caller, agentId);
   }
@@ -333,13 +341,35 @@ export class AgentService {
     skillId: string,
     dto: SetAgentSkillDto
   ): Promise<AgentProfileSkillResponse[]> {
-    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    const agent = assertWithinCallingProject(
+      caller,
+      await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId)
+    );
     return this.profiles.setSkill(agent, caller, skillId, dto);
   }
 
   async removeSkill(caller: AgentCaller, agentId: string, skillId: string): Promise<AgentProfileSkillResponse[]> {
-    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    const agent = assertWithinCallingProject(
+      caller,
+      await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId)
+    );
     return this.profiles.removeSkill(agent, caller, skillId);
+  }
+
+  async serviceSettings(caller: AgentCaller, agentId: string, skillId: string): Promise<AgentServiceSettingsView> {
+    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    return this.profiles.serviceSettings(agent, caller, skillId);
+  }
+
+  async setServiceSettings(
+    caller: AgentCaller,
+    agentId: string,
+    skillId: string,
+    dto: SetServiceSettingsDto,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<AgentProfileSkillResponse[]> {
+    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    return this.profiles.setServiceSettings(agent, caller, skillId, dto, grants);
   }
 
   async publish(caller: AgentCaller, agentId: string, dto: PublishAgentDto): Promise<PublishAgentResponse> {
@@ -390,21 +420,17 @@ export class AgentService {
     userId: string | null,
     kind: ProjectKind | null = null
   ): Promise<void> {
-    if (isChatKind(kind) && (await this.isBuilderAgent(agentId))) return;
+    if (isChatKind(kind) && (await this.findBuilderAgentId(builderAgentSlugOf(kind))) === agentId) return;
     const creatable = await this.repository.liveIds(projectCreatableAgentsWhere(tenantId, userId, kind));
     if (!creatable.has(agentId)) throw new UnprocessableEntityException(`Agent ${agentId} not found`);
   }
 
-  async findBuilderAgentId(): Promise<string | null> {
+  async findBuilderAgentId(slug: string = BUILDER_AGENT_SLUG): Promise<string | null> {
     const [row] = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.name, BUILDER_AGENT_SLUG), isNull(agents.tenantId)));
+      .where(and(eq(agents.name, slug), isNull(agents.tenantId)));
     return row?.id ?? null;
-  }
-
-  private async isBuilderAgent(agentId: string): Promise<boolean> {
-    return (await this.findBuilderAgentId()) === agentId;
   }
 
   async findById(id: string): Promise<AgentResponse> {
@@ -433,17 +459,6 @@ export class AgentService {
 
   async resolvePackageName(id: string): Promise<string> {
     return (await this.resolveIdentity(id)).package;
-  }
-
-  async callsPlatformApi(agentId: string): Promise<boolean> {
-    const [row] = await db
-      .select({ name: agents.name, origin: agents.origin, platformApi: agentSettings.platformApi })
-      .from(agents)
-      .leftJoin(agentSettings, eq(agentSettings.agentId, agents.id))
-      .where(eq(agents.id, agentId));
-    if (!row) return false;
-
-    return row.origin === 'built_in' ? agentDeclaresPlatformApi(row.name) : row.platformApi === true;
   }
 
   async findIdByName(name: string, tenantId: string): Promise<string | null> {
@@ -488,7 +503,7 @@ export class AgentService {
     if (!canEditAgent(agent, caller.userId)) {
       throw new ForbiddenException({ code: 'not_editable', message: `Agent \`${agent.name}\` cannot be edited` });
     }
-    return agent;
+    return assertWithinCallingProject(caller, agent);
   }
 
   private async readProfiles(agent: AgentRow, tenantId: string): Promise<AgentProfileResponse[]> {
@@ -570,4 +585,9 @@ function parseFilter(raw: string | undefined): CatalogListFilter {
   const filter = CATALOG_LIST_FILTERS.find((candidate) => candidate === raw);
   if (!filter) throw new BadRequestException({ code: 'bad_request', message: `Unknown filter \`${raw}\`` });
   return filter;
+}
+
+function assertWithinCallingProject(caller: AgentCaller, agent: AgentRow): AgentRow {
+  if (!isWithinCallingProject(agent, caller.callingProjectId)) throw outsideCallingProject(`Agent \`${agent.name}\``);
+  return agent;
 }

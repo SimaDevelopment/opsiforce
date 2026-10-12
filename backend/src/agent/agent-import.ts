@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import { Perms } from '../permission/permission.constants';
 import type { AgentDetail } from './agent.types';
 
 export interface ImportAgentDto {
@@ -29,16 +30,16 @@ export interface AgentImportResult {
   notes: AgentImportNote[];
 }
 
-export function notAnAgentExport(message: string): BadRequestException {
-  return new BadRequestException({ code: 'not_an_agent_export', message });
+export function writeOperationsTurnedOff(skillName: string, operations: string[]): AgentImportNote {
+  return {
+    kind: 'skill',
+    name: skillName,
+    message: `Turned ${operations.map((name) => `\`${name}\``).join(', ')} off in the service settings of \`${skillName}\`: turning on a write or destructive Operation needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+  };
 }
 
-export function exportFormatUnsupported(version: number, supported: number): BadRequestException {
-  return new BadRequestException({
-    code: 'export_format_unsupported',
-    message: `The file uses export format ${version}, but this deployment reads up to ${supported}; import it into a newer deployment`,
-    exportFormatVersion: version,
-  });
+export function notAnAgentExport(message: string): BadRequestException {
+  return new BadRequestException({ code: 'not_an_agent_export', message });
 }
 
 /** A name problem answers 409 `name_unavailable` so the dialog can resubmit a new name on the same upload. */

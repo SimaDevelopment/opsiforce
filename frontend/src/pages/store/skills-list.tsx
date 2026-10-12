@@ -13,6 +13,7 @@ import {
   ErrorState,
   FilterChips,
   OriginBadge,
+  ServiceMark,
   RowLink,
   RowList,
   SearchInput,
@@ -125,6 +126,7 @@ function SkillRow(props: { skill: Skill }) {
             {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version().version}</span>}
           </Show>
           <OriginBadge origin={props.skill.origin} />
+          <ServiceMark externalServiceId={props.skill.externalServiceId} available={props.skill.available} />
           <Show when={props.skill.visibility === 'private'}>
             <VisibilityBadge visibility="private" />
           </Show>

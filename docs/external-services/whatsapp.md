@@ -8,50 +8,53 @@ kind: explanation
 
 ## How it works
 
-### Channels and allowlists
+### The service and its numbers
 
-- A number connects to the platform as a channel through Whapi, which links the number by QR code; messages from allowlisted chats are verified, stored in the target environment's database with media bytes, metered and announced by the doorbell ([Service template](service-template.md)). Nothing sends or replies.
-- A channel is a platform-global resource row: the provider's channel id, the API token an operator pasted, a server-generated webhook secret and a human label, with no tenant column, so one number shared by two [Organizations](../../GLOSSARY.md) is one row.
-- Resource values are encrypted at rest with AES-256-GCM under a key from the environment; the token is used outbound (enumerating chats, configuring the webhook, fetching media) and the secret is pushed to the provider, echoed back as a header on every delivery, and never shown to an operator again.
-- Each [ProjectEnvironment](../../GLOSSARY.md) has one configuration document listing the channels it listens to and the allowlisted chats under each; nothing arrives by default and there is no wildcard. Chat ids carry their kind in the suffix (`@s.whatsapp.net` individual, `@g.us` group).
-- Fan-out is allowed: one chat may appear in several environments' documents, each stored and metered independently.
-- The document cascades away with its environment while the channel survives; Duplication and Import copy nothing; a [Publish](../projects/publish.md) copies the document to the published environment once that version is healthy, as an idempotent upsert.
+- WhatsApp is a [Built-in External Service](../../GLOSSARY.md) written on the SDK: the folder `external-services/whatsapp/` holds its `service.json`, `handlers.ts` wiring form calls, the save hook and `inbound` (it has no [Operations](../../GLOSSARY.md), so it only receives), its Service skill `SKILL.md`, `src/` and its tests ([Service manifest](service-manifest.md)): `src/client.ts` calls Whapi, `forms.ts` holds the chat picker, webhook status and QR button, `hooks.ts` registers and removes webhooks, and `inbound.ts` checks the secret, fetches media and maps the Event. Nothing sends or replies.
+- Its [Service configuration](../../GLOSSARY.md), set by the platform operator on its page under Store, External Services, is the Whapi API URL (`apiUrl`, empty means `https://gate.whapi.cloud`) and the `channels` list: one item per number with the Whapi channel id, a label, the channel's API token (sealed) and a webhook secret the platform generates (sealed, shown once with Copy). It is Available with no numbers at all. Each item shows a webhook status line and a "Show QR code" button.
+- Numbers belong to the deployment: every [Organization](../../GLOSSARY.md) can pick any number, and one number picked by two Organizations is one item.
+- Removing a number removes it from every Project configuration that picked it, with a one-time notice there, and its save hook takes this deployment's webhook (its URL, or that number's secret) off that channel at Whapi, keeping every other one; clearing the Service configuration does so for every number, and a refusal there is logged while the save stands.
 
-### Ingest
+### Registering the webhook
 
-- Whapi posts batches mixing individual and group messages and does not sign them; verification compares the secret header in constant time against the secret stored for that channel id.
-- Each message is routed by chat id; a non-allowlisted chat is accepted and dropped.
-- Media arrives as a reference and is fetched before storing, with the channel's token and the payload's temporary link as fallback; it becomes an attachment row and a caption is promoted into the text column.
-- Deduplication keys on the provider's message id.
+- Saving the Service configuration runs its after-save hook, which registers the webhook with Whapi (`GET` then `PATCH /settings`) for every number that is new or whose channel id, token or webhook secret changed, and for all of them when `apiUrl` changed. It keeps webhooks Whapi holds that are not Opsiforce's and replaces Opsiforce's earlier one.
+- The registered URL is always the deployment's public URL (`OPSIFORCE_PUBLIC_URL`) plus `/api/external-services/webhooks/whatsapp`, never the request's `Host` header ([ADR-0080](../adr/0080-built-in-vendor-settings-live-in-service-configuration-and-sealed-secrets-are-bound-to-their-place.md)); the webhook carries the number's secret as the `X-Opsiforce-Webhook-Secret` header.
+- A confirmed Rotate of a number's webhook secret is a save, so it registers the new secret. When Whapi refuses or cannot be reached for a number, the hook still registers the other numbers, the values stay saved and the page says "Saved, but …" with Retry, naming the first number that failed.
+- The webhook status line reads Whapi's settings with the number's token: registered, another secret, another URL, no webhook, or registered without the `messages` event. The QR button asks Whapi for the number's login QR code (`GET /users/login`) and shows it, or says the number is already linked.
 
-### Webhook and management
+### Choosing chats and receiving
 
-- The platform configures the provider's webhook itself: the delivery URL is always the deployment's webhook base (`EXTERNAL_SERVICES_WEBHOOK_BASE_URL`) plus the fixed service path, and every mutation that changes what the provider should hold (registration, token correction, secret rotation) pushes the full configuration, merging with entries that are not its own.
-- Channels are registered under Admin, External services, gated by `can_manage_external_services`; chats are allowlisted per environment from the environment dropdown's External services dialog, which enumerates the channel's chats through the stored token ([Onboard a WhatsApp number](../operations/onboard-a-whatsapp-number.md)).
-- The `whatsapp` skill teaches the Agent to replace the template's 501 stub, read the shared tables with a `service = 'whatsapp'` filter, and see the wiring through `GET agent/whatsapp/identity`.
+- A [ProjectEnvironment](../../GLOSSARY.md)'s [Project configuration](../../GLOSSARY.md) has a `channels` list too: each item picks a number (`channel`, the Service configuration item's id) and its `chats` from a searchable list the service reads from Whapi with that number's token (`listChats`: chats and groups, names as labels). Chat ids carry their kind in the suffix (`@s.whatsapp.net` individual, `@g.us` group). The configurer sets this in the chat bar's WhatsApp dialog, with receiving `message.received` switched on.
+- Whapi posts batches to the one webhook URL. The handler finds the number by the body's `channel_id` and checks the secret header against that number's webhook secret in constant time; a mismatch is `401 invalid-signature`.
+- Each message becomes one `message.received` Event keyed by the WhatsApp message id: `channel` (the item id), `channelId`, `chatId`, `chatName`, `messageId`, `type`, `from`, `fromName`, `fromMe`, `text` (the text or a media caption), `caption`, `sentAt`, `source`, `media` and `message`, the message as Whapi sent it. Media is fetched with the number's token, then from the payload's link, and stored as the Event's file; a webhook's media are fetched together within 20 s, and when both sources fail or the 20 s run out the Event keeps `media.stored: false` and no file.
+- Routing is the generic Event rule over the bounds `channelItem` (`channels[].channel`) and `chat` (`channels[].chats` where `channel` matches): a ProjectEnvironment receives a message only when one of its items picks that number and lists that chat and its receiving is on. One chat may feed several environments.
+- A [Publish](../projects/publish.md) copies the Development Project configuration to the published environment and turns receiving off in Development.
+- The Agent learns the service from its Service skill `service-whatsapp`, which a ProjectEnvironment receives once the service is enabled in its chat bar, or when its Agent carries it.
+
+### Upgrading from v1
+
+- At boot, when no WhatsApp Service configuration is stored yet, the backend imports the v1 numbers: each `external_service_resource` row is opened the v1 way (sealed without a place) and becomes a `channels` item with a new id, its label (the channel id when it had none), its token and the same webhook secret, each sealed at the item's own place. `WHAPI_API_URL` becomes `apiUrl` when it is not the default. Nothing is registered with Whapi again, so the secret Whapi holds keeps working.
+- In the same transaction each environment's v1 chat allowlist becomes its Project configuration: one item per number with its chats, receiving on, the chat names in `_labels`. Numbers that no longer exist are dropped, and so is a configuration left with none. A stored Service configuration is never overwritten, so this runs once; the v1 tables, the importer and `WHAPI_API_URL` go a release later.
+- External Services v2 retired the v1 Built-in Skill `whatsapp`. Once, at boot, every Agent Profile pinning it, on every Environment, pins `service-whatsapp` at its current Version instead, with no [Service settings (Agent)](../../GLOSSARY.md), or just drops the old pin where the profile already carries `service-whatsapp`; a ProjectEnvironment that switched `whatsapp` off has `service-whatsapp` switched off instead. Each Agent swapped gets a Service skill fan-out, so its existing Projects receive `service-whatsapp` and lose `whatsapp`. An Agent import that pins `whatsapp` gets `service-whatsapp` with a note ([Agent copies](../agent-system/agent-copies.md)). The swap goes a release later with the importer.
+- An environment whose `external-services.db` already held `messages` rows is a legacy environment and also gets each message as a v1-shaped `messages` row (`routing_key` = chat id, the v1 `payload` fields, `raw_payload` = Whapi's message) with its media as an inline attachment, and `rowIds` in its ring ([Event](events.md)).
 
 ## Edge cases
 
-- When a chat is not allowlisted for any environment, the platform answers 200 and stores nothing; this is the common cause of "WhatsApp isn't working".
-- When an unknown channel posts or the secret mismatches, the handler answers 406.
-- When both media fetches fail, the attachment row is written with null bytes and the failure logged.
-- When the webhook push fails at registration, the channel stays registered and the badge shows what is missing; rotate re-sends the full configuration and is the repair action.
-- When a rotation cannot reach the provider, it fails and keeps the old secret.
-- When a Publish never comes online, the published environment's existing document is untouched.
+- When no environment listens to a chat, or its receiving is off, the webhook answers 200 and the inbound Call is logged `unmatched`; this is the common cause of "WhatsApp isn't working".
+- When a v1 channel's stored value cannot be opened, the importer logs it and leaves that number out; environments wired only to it lose their wiring.
+- When `WHAPI_API_URL` does not fit the form, the importer logs it and imports the numbers with the default API URL.
 
 ## Code
 
-- `backend/src/external-services/whatsapp/whatsapp.definition.ts` — verification, routing, media fetch, publish carry, identity and the admin route table.
-- `backend/src/external-services/whatsapp/whatsapp-channel.service.ts` — the operator surface and the webhook push.
-- `backend/src/external-services/whatsapp/whapi.client.ts` — provider calls.
-- `externalServiceResource` in `backend/db/schema.ts` — channel credentials.
-- `frontend/src/pages/external-services-admin.tsx` — the Admin registration page.
-- `agent-config/skills/whatsapp/SKILL.md` — the App-side half.
+- `external-services/whatsapp/` — the manifest, `handlers.ts`, `src/` (`client.ts`, `forms.ts`, `hooks.ts`, `inbound.ts`), the Service skill and the tests per module (`yarn workspace @opsiforce/external-services test`).
+- `backend/src/external-services/upgrade/whatsapp-upgrade.ts` — the one-release import of v1 numbers and chat allowlists.
+- `backend/src/external-services/upgrade/retired-skill-swap-upgrade.ts` — the one-release swap of `whatsapp` and `incoming-email` pins for their Service skills.
+- `backend/src/external-services/legacy/legacy-messages.ts` — the `messages` row a legacy environment gets for each message.
 
 ## Related
 
-- [Service template](service-template.md) — the pipeline, storage, doorbell and metering this plugs into.
-- [Incoming Email](incoming-email.md) — the other shipped service, with self-served identity.
+- [Configuration](configuration.md) — the Forms, saves, Rotate and after-save hooks this relies on.
+- [Event](events.md) — the inbound pipeline, the store and the doorbell this plugs into.
+- [Incoming Email](incoming-email.md) — the other inbound built-in.
 - [Onboard a WhatsApp number](../operations/onboard-a-whatsapp-number.md) — the operator steps.
-- [Admin](../organization/admin.md) — the section the registration page lives in.
 - [Permissions](../organization/permissions.md) — the external-services permissions.

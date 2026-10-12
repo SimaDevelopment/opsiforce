@@ -6,7 +6,7 @@ export const Route = createFileRoute('/store')({
   component: StoreLayout,
 });
 
-const BUILDER_PATH = /^\/store\/(agents|skills)\/[^/]+\/builder\/?$/;
+const BUILDER_PATH = /^\/store\/(agents|skills|external-services)\/[^/]+\/builder\/?$/;
 
 function StoreLayout() {
   const navigate = useNavigate();

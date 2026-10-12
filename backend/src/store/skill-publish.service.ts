@@ -4,6 +4,7 @@ import type { DbExecutor } from '../common/locks';
 import { hashSkillTree, validateSkillTree, type GateResult, type SkillTree } from './gate';
 import { parseFrontmatter } from './gate/frontmatter';
 import { decodeText, SKILL_MANIFEST_PATH } from './gate/skill-tree';
+import { isReservedForServiceSkills } from './service-skill-names';
 import { reservedSkillNames } from './skill-reconciler.service';
 import { SkillRepository } from './skill.repository';
 import { manifestDescription } from './skill-tree';
@@ -21,6 +22,7 @@ export interface PublishInput {
 export interface CreateInput extends PublishInput {
   name: string;
   displayName?: string | null;
+  createdByProjectId?: string | null;
 }
 
 export interface PublishResult {
@@ -41,7 +43,11 @@ export class SkillPublishService {
   }
 
   async assertNameAvailable(tenantId: string, name: string): Promise<void> {
-    if (reservedSkillNames().has(name) || (await this.repository.nameTaken(tenantId, name))) {
+    if (
+      reservedSkillNames().has(name) ||
+      isReservedForServiceSkills(name) ||
+      (await this.repository.nameTaken(tenantId, name))
+    ) {
       throw nameUnavailable(name);
     }
   }
@@ -56,6 +62,7 @@ export class SkillPublishService {
         userId: input.userId,
         name: input.name,
         displayName: input.displayName ?? null,
+        createdByProjectId: input.createdByProjectId ?? null,
         description: manifestDescription(gate.normalizedTree),
         tree: gate.normalizedTree,
         contentHash: hashSkillTree(gate.normalizedTree),
@@ -73,6 +80,7 @@ export class SkillPublishService {
     userId: string;
     name: string;
     displayName: string | null;
+    createdByProjectId: string | null;
   }): Promise<string> {
     const invalid = this.runGate(nameOnlyTree(input.name), input.name).errors.find(
       (error) => error.rule === 'name_format' || error.rule === 'name_length'

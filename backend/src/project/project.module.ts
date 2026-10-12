@@ -99,6 +99,7 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     ProjectFilesService,
     ProjectImportService,
     ProjectImportUploadService,
+    ProxyService,
     AppReadinessModule,
   ],
 })

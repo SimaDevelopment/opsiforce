@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Perms } from '../../permission/permission.constants';
 import { SkillService, type SkillCaller } from '../../store/skill.service';
-import { assertPermission, type Caller } from '../auth/caller';
+import { assertPermission, callingProjectOf, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { SkillMapper } from './skills.mapper';
 import type {
@@ -73,5 +73,6 @@ function scopeOf(caller: Caller): SkillCaller {
     tenantId: caller.tenant.id,
     userId: caller.user.platformId,
     canManageSkills: caller.permissions.has(Perms.manageSkills),
+    ...callingProjectOf(caller),
   };
 }

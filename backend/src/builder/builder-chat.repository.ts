@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../db';
-import { agents, projectEnvironments, projects, skills } from '../../db/schema';
+import { agents, externalServices, projectEnvironments, projects, skills } from '../../db/schema';
 import { CHAT_KINDS, TEST_PROJECT_KIND, type ChatKind, type ProjectStatus } from '../project/project.types';
 import type { BuilderSubjectType } from './builder.types';
 
@@ -24,6 +24,18 @@ export interface TestProjectRow {
 export interface SubjectRow {
   type: BuilderSubjectType;
   id: string;
+}
+
+export interface ClaimableSubjectRow extends SubjectRow {
+  type: 'agent' | 'skill';
+}
+
+export interface ExternalServiceSubjectRow {
+  id: string;
+  slug: string;
+  title: string | null;
+  disabled: boolean;
+  builderChatId: string | null;
 }
 
 const chatFields = {
@@ -51,10 +63,32 @@ export class BuilderChatRepository {
     const [agent] = await db.select({ id: agents.id }).from(agents).where(eq(agents.builderChatId, chatId)).limit(1);
     if (agent) return { type: 'agent', id: agent.id };
     const [skill] = await db.select({ id: skills.id }).from(skills).where(eq(skills.builderChatId, chatId)).limit(1);
-    return skill ? { type: 'skill', id: skill.id } : null;
+    if (skill) return { type: 'skill', id: skill.id };
+    const [service] = await db
+      .select({ id: externalServices.id })
+      .from(externalServices)
+      .where(eq(externalServices.builderChatId, chatId))
+      .limit(1);
+    return service ? { type: 'external_service', id: service.id } : null;
   }
 
-  async claim(subject: SubjectRow, chatId: string): Promise<boolean> {
+  async findExternalService(tenantId: string, id: string): Promise<ExternalServiceSubjectRow | null> {
+    const [row] = await db
+      .select({
+        id: externalServices.id,
+        slug: externalServices.slug,
+        title: projects.title,
+        disabled: projects.disabled,
+        builderChatId: externalServices.builderChatId,
+      })
+      .from(externalServices)
+      .innerJoin(projects, eq(projects.id, externalServices.builderChatId))
+      .where(and(eq(externalServices.id, id), eq(externalServices.tenantId, tenantId)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async claim(subject: ClaimableSubjectRow, chatId: string): Promise<boolean> {
     const table = subject.type === 'agent' ? agents : skills;
     const claimed = await db
       .update(table)

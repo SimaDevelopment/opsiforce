@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/solid-router';
 import { ApiError } from '~/api/client';
 import { useCreateAgent } from '~/api/agents';
 import { useCreateSkill } from '~/api/skills';
-import { builderPath, type BuilderSubjectType } from '~/api/builder';
+import { builderPath } from '~/api/builder';
 import { Button } from '~/components/ui/button';
 import {
   Dialog,
@@ -32,7 +32,7 @@ const COPY = {
 } as const;
 
 export function CreateEntryDialog(props: {
-  type: BuilderSubjectType;
+  type: 'agent' | 'skill';
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {

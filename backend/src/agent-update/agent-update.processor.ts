@@ -10,6 +10,7 @@ import { agents, projectAgentUpdates, projectEnvironments, projects } from '../.
 import { CUSTOM_AGENT_PACKAGE, modelReference, type SkillDeliveryOutcome } from '../delivery/delivery.types';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
 import { PodReloadClient, type NotifyTarget } from '../delivery/pod-reload.client';
+import { SkillSwitchRepository } from '../delivery/skill-switch.repository';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { ProjectStatus } from '../project/project.types';
@@ -65,7 +66,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly skillDeliveries: SkillDeliveryService,
     private readonly configService: ConfigService,
-    private readonly podReload: PodReloadClient
+    private readonly podReload: PodReloadClient,
+    private readonly skillSwitches: SkillSwitchRepository
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -228,6 +230,7 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         packageName: data.packageName,
         targetVersion: data.targetVersion,
         mode: data.mode,
+        switchedOffSkills: [...(await this.skillSwitches.switchedOffNames(env.id))].toSorted(),
       });
       const summary = await this.readSummary(env.directory, data.packageName, result.logs);
       const succeeded = result.succeeded && summary.status !== 'failed';

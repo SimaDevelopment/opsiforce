@@ -199,6 +199,60 @@ func TestStartingStateCarriesRetryAfter(t *testing.T) {
 	}
 }
 
+func TestAPodKeyIsCheckedByTheBackendOnEveryRequest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer upstream.Close()
+
+	switchedOn := true
+	ensures := 0
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/ensure") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		ensures++
+		if r.Header.Get("authorization") != "Bearer gw-pod" || !switchedOn {
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"connect_project is switched off"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(backend.EnsureResponse{State: "ready", Upstream: upstream.URL})
+	}))
+	defer control.Close()
+
+	server := New(
+		config.Config{
+			Mode:                config.ModeAgent,
+			ReadyCacheTTL:       time.Minute,
+			NonReadyCacheTTL:    time.Minute,
+			ControlPlaneTimeout: 5 * time.Second,
+		},
+		backend.New(control.URL, "token", 5*time.Second),
+		nil,
+	)
+	podRequest := func() int {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/proxy/%s/api/session", testEnvironmentID), nil)
+		req.Header.Set("authorization", "Bearer gw-pod")
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := podRequest(); code != http.StatusOK {
+		t.Fatalf("switch on: got %d want 200", code)
+	}
+	switchedOn = false
+	if code := podRequest(); code != http.StatusForbidden {
+		t.Fatalf("switch off: got %d want 403, not a cached allow", code)
+	}
+	if ensures != 2 {
+		t.Errorf("ensure calls: got %d want 2, one per pod request", ensures)
+	}
+}
+
 func TestReportedFailureRestartCarriesRetryAfter(t *testing.T) {
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/failure") {

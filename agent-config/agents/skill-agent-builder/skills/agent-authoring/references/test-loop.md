@@ -106,9 +106,9 @@ Two fixing rounds in a row that turn no failing line into a pass is the point to
 ## `scripts/tp.sh`
 
 Every step below is one `sh scripts/tp.sh <command>`, and its state in `scratch/test-project.json`
-carries over to a new shell or a resumed chat. For a call it lacks: `scripts/api.sh call` (the
-platform) and `runtime <baseUrl>` (the Test Project, through the runtime proxy); outside this chat's
-Projects, 404.
+carries over to a new shell or a resumed chat. For a call it lacks: `scripts/api.sh call <operation>`
+(a `public-api` Operation) and `runtime <baseUrl>` (the Test Project, through the runtime proxy); outside
+this chat's Projects, 404.
 
 ## 1. Save first
 

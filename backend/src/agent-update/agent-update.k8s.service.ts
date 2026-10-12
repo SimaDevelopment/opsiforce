@@ -7,7 +7,6 @@ import { resolvePreset, toK8sResources } from '../pod/pod-classes';
 import type { AgentUpdateMode } from './agent-update.types';
 import { AGENT_UPDATE_JOB_COMPLETION_GRACE_MS } from './agent-update.reaper';
 
-
 const UPDATE_ID_LABEL = 'opsiforce.io/agent-update-id';
 
 export interface AgentUpdateJobOptions {
@@ -18,6 +17,7 @@ export interface AgentUpdateJobOptions {
   packageName: string;
   targetVersion: string;
   mode: AgentUpdateMode;
+  switchedOffSkills: string[];
 }
 
 export interface AgentUpdateRunResult {
@@ -61,7 +61,7 @@ export class AgentUpdateK8sService {
     const runtimeClassName = this.configService.get<string>('agentRuntimeClassName');
     const securityContext = agentSecurityContext(
       runtimeClassName,
-      this.configService.get<boolean>('agentPrivileged', false),
+      this.configService.get<boolean>('agentPrivileged', false)
     );
     return {
       apiVersion: 'batch/v1',
@@ -105,6 +105,7 @@ export class AgentUpdateK8sService {
                   { name: 'AGENT_NAME', value: options.packageName },
                   { name: 'TARGET_VERSION', value: options.targetVersion },
                   { name: 'WORKSPACE', value: '/workspace' },
+                  { name: 'SWITCHED_OFF_SKILLS', value: options.switchedOffSkills.join(',') },
                 ],
                 volumeMounts: [
                   {

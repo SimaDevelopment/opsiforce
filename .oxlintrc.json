@@ -24,6 +24,15 @@
     {
       "files": ["**/agent-config/**"],
       "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": [
+        "**/external-service-sdk/test/fixtures/*/handlers.ts",
+        "**/external-services/*/handlers.ts",
+        "**/test/external-services/support/built-ins/*/handlers.ts",
+        "**/test/external-services/support/*-built-ins/*/handlers.ts"
+      ],
+      "rules": { "import/no-default-export": "off" }
     }
   ],
   "ignorePatterns": ["**/dist/**", "**/build/**", "**/coverage/**", "**/*.d.ts"]

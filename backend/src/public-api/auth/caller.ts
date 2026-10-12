@@ -5,7 +5,7 @@ import type { IdentityKind } from '../../identity/forwarded-identity.service';
 import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
 
-export type CallerSource = 'idp-bearer' | 'gateway-key';
+export type CallerSource = 'idp-bearer' | 'call-token';
 export type CallerUserKind = IdentityKind;
 
 export interface Caller {
@@ -37,5 +37,10 @@ export function assertPermission(caller: Caller, permission: string): void {
 }
 
 export function chatProjectIdOf(caller: Caller): string | null {
-  return caller.source === 'gateway-key' ? (caller.projectId ?? null) : null;
+  return caller.source === 'idp-bearer' ? null : (caller.projectId ?? null);
+}
+
+export function callingProjectOf(caller: Caller): { callingProjectId?: string } {
+  const projectId = chatProjectIdOf(caller);
+  return projectId === null ? {} : { callingProjectId: projectId };
 }

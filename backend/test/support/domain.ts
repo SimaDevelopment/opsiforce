@@ -23,11 +23,11 @@ import { TimeoutService } from '../../src/timeout/timeout.service';
 import { UserService } from '../../src/user/user.service';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
-import { ExternalServiceProvisioningService } from '../../src/external-services';
 import { DomainTestModule } from './domain-module';
+import { EveryServiceAvailableModule } from './every-service-available';
+import { PublicApiConfigurationDoubleModule } from './public-api-configuration-double';
 import type {
   FakeBifrostService,
-  FakeExternalServiceProvisioningService,
   FakePodService,
   FakeProjectEventsService,
   FakeProjectPoolService,
@@ -55,7 +55,6 @@ export interface DomainTestHarness {
   workspaces: WorkspaceService;
   fakes: {
     bifrost: FakeBifrostService;
-    externalServices: FakeExternalServiceProvisioningService;
     pods: FakePodService;
     pool: FakeProjectPoolService;
     projectEvents: FakeProjectEventsService;
@@ -67,7 +66,12 @@ export interface DomainTestHarness {
 
 export async function createDomainTestingModule(): Promise<DomainTestHarness> {
   const moduleRef = await Test.createTestingModule({
-    imports: [ConfigModule.forRoot({ isGlobal: true, load: [configuration] }), DomainTestModule],
+    imports: [
+      ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+      DomainTestModule,
+      EveryServiceAvailableModule,
+      PublicApiConfigurationDoubleModule,
+    ],
   }).compile();
 
   return {
@@ -90,10 +94,6 @@ export async function createDomainTestingModule(): Promise<DomainTestHarness> {
     workspaces: moduleRef.get(WorkspaceService),
     fakes: {
       bifrost: moduleRef.get<typeof BifrostService, FakeBifrostService>(BifrostService),
-      externalServices: moduleRef.get<
-        typeof ExternalServiceProvisioningService,
-        FakeExternalServiceProvisioningService
-      >(ExternalServiceProvisioningService),
       pods: moduleRef.get<typeof PodService, FakePodService>(PodService),
       pool: moduleRef.get<typeof ProjectPoolService, FakeProjectPoolService>(ProjectPoolService),
       projectEvents: moduleRef.get<typeof ProjectEventsService, FakeProjectEventsService>(ProjectEventsService),

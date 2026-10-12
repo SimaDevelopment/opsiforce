@@ -33,8 +33,6 @@ export interface PodTemplateOptions {
   bifrostBackendApiKey?: string;
   gatewayApiKey?: string;
   gatewayUrl?: string;
-  platformApiKey?: string;
-  platformApiUrl?: string;
   runtimeProxyUrl?: string;
   externalServicesUrl?: string;
   controlToken?: string;
@@ -166,12 +164,8 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                   },
                 ]
               : []),
-            ...(options.platformApiKey && options.platformApiUrl && options.runtimeProxyUrl
-              ? [
-                  { name: 'OPSIFORCE_API_KEY', value: options.platformApiKey },
-                  { name: 'OPSIFORCE_API_URL', value: options.platformApiUrl },
-                  { name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl },
-                ]
+            ...(options.runtimeProxyUrl
+              ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),
           ],
           volumeMounts,

@@ -1,4 +1,4 @@
-import { Boxes, Cable, ChartColumn, Database } from '~/components/icons';
+import { Boxes, ChartColumn, Database } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { firstPermittedRailTab, railTabForPath, type RailTab } from '~/constants/section-rail';
 
@@ -16,18 +16,10 @@ export const ADMIN_TABS: RailTab[] = [
   {
     to: '/admin/external-services/usage',
     label: 'Usage',
-    description: 'Monthly inbound external-service message counts per organization.',
+    description: 'External Service calls and events: monthly counts and every Call of the Organization.',
     group: 'Operations',
     icon: ChartColumn,
     isPermitted: (has) => has(Permission.viewExternalServicesUsage),
-  },
-  {
-    to: '/admin/external-services',
-    label: 'External services',
-    description: 'Platform-wide external-service resources, such as the registered WhatsApp channels.',
-    group: 'Operations',
-    icon: Cable,
-    isPermitted: (has) => has(Permission.manageExternalServices),
   },
   {
     to: '/admin/storage',

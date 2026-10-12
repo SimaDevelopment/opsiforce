@@ -6,11 +6,14 @@ import { PodOpencodeClient } from '../agent-session/pod-opencode.client';
 import { PodModule } from '../pod/pod.module';
 import { DeliveryRepository } from './delivery.repository';
 import { DeliveryService } from './delivery.service';
+import { EnvironmentSkillsService } from './environment-skills';
 import { SKILL_DELIVERY_QUEUE } from './delivery.types';
 import { PodReloadClient } from './pod-reload.client';
+import { RetiredSkillSweep } from './retired-skill-sweep';
 import { SkillDeliveryProcessor } from './skill-delivery.processor';
 import { SkillDeliveryRepository } from './skill-delivery.repository';
 import { SkillDeliveryService } from './skill-delivery.service';
+import { SkillSwitchRepository } from './skill-switch.repository';
 import { WorkspaceWriter } from './workspace-writer';
 
 @Global()
@@ -23,13 +26,24 @@ import { WorkspaceWriter } from './workspace-writer';
   providers: [
     DeliveryRepository,
     DeliveryService,
+    EnvironmentSkillsService,
     PodOpencodeClient,
     PodReloadClient,
+    RetiredSkillSweep,
     SkillDeliveryProcessor,
     SkillDeliveryRepository,
     SkillDeliveryService,
+    SkillSwitchRepository,
     WorkspaceWriter,
   ],
-  exports: [DeliveryService, PodReloadClient, SkillDeliveryRepository, SkillDeliveryService, WorkspaceWriter],
+  exports: [
+    DeliveryService,
+    EnvironmentSkillsService,
+    PodReloadClient,
+    SkillDeliveryRepository,
+    SkillDeliveryService,
+    SkillSwitchRepository,
+    WorkspaceWriter,
+  ],
 })
 export class DeliveryModule {}

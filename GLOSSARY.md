@@ -144,7 +144,7 @@ Recreating a ProjectEnvironment's pod from scratch — the row-level Restart act
 _Avoid_: Reboot; conflating with App restart
 
 **Disable (Project)**:
-Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a Test Project, whose pods stop, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
+Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a Test Project, whose pods stop, a Custom External Service, whose pods stop and which leaves its Organization's Project forms, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
 _Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
 
 **App Auth**:
@@ -182,7 +182,7 @@ The files copied into the root of a new Project's workspace before its Agent fir
 _Avoid_: Starter (App Builder's Template is one app starter, not the concept); Scaffold, Scaffold Skill (retired — a Template is the files themselves, not a Skill describing them); Seed, Boilerplate (non-canonical)
 
 **Agent Profile**:
-An Agent's definition in one scope. A Custom Agent has exactly one Profile per Environment — its instructions, its Agent Model, and its Skills — where the Development one is what its author edits and every other one is a copy placed there by a Publish (Agent). A Built-in Agent has exactly one Profile per Organization, holding only its Skills, since its instructions and Agent Model come from the image; it is parked at the Development Environment but its Skills apply on every Environment. Profiles carry no versions and no history — editing overwrites the Development Profile, and publishing overwrites the target's. A Custom Agent's Template belongs to the same Environment as its Profile and moves with it: it is edited in Development, and Publish (Agent) carries both.
+An Agent's definition in one scope. A Custom Agent has exactly one Profile per Environment — its instructions, its Agent Model, and its Skills — where the Development one is what its author edits and every other one is a copy placed there by a Publish (Agent). A Built-in Agent has exactly one Profile per Organization, holding only its Skills, since its instructions and Agent Model come from the image; it starts from what the image declares, is parked at the Development Environment, and applies on every Environment. Profiles carry no versions and no history — editing overwrites the Development Profile, and publishing overwrites the target's. A Custom Agent's Template belongs to the same Environment as its Profile and moves with it: it is edited in Development, and Publish (Agent) carries both.
 _Avoid_: Version, Release, Publication, Snapshot (retired — a Profile is an Environment's current state, not a point in a history); Draft (the Development Profile *is* the draft)
 
 **Publish (Agent)**:
@@ -266,11 +266,11 @@ _Avoid_: Export (the Project Export & Import feature — a different thing); Ren
 ### Skills & the Skill Store
 
 **Skill**:
-A named instruction package — a directory with a `SKILL.md` and optional supporting files — that an Agent loads on demand when a task matches its description. Every Skill is either Built-in or Custom; a Custom Skill belongs to exactly one Organization while a Built-in one is the platform's and is offered to all. A Skill becomes active for an Agent only by being added to that Agent's Skills.
+A named instruction package — a directory with a `SKILL.md` and optional supporting files — that an Agent loads on demand when a task matches its description. Every Skill is either Built-in or Custom; a Custom Skill belongs to exactly one Organization while a Built-in one is the platform's and is offered to all. A Skill becomes active for an Agent only by being added to that Agent's Skills; a Service skill also reaches one ProjectEnvironment through its Project configuration.
 _Avoid_: Plugin, Extension, Command (non-canonical); Tool (a different Agent capability concept); Global skill (retired — authored Skills never span Organizations)
 
 **Built-in Skill**:
-A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image simply stops being offered, while its stored content survives so Agents that already pinned it keep working.
+A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image is retired — hidden from the Store, closed to new use and delivered to no workspace any more, even where an Agent still pins it — while its stored content survives, and it comes back if the image ships it again.
 _Avoid_: Platform skill, System skill (non-canonical); Deprecated (retired term — leaving the image is the whole mechanism)
 
 **Custom Skill**:
@@ -290,12 +290,16 @@ Validating a Skill's content and freezing it as the Skill's next Version, which 
 _Avoid_: Release, Promote (reserved against the environment vocabulary); Deploy; Save (there is no save short of publishing)
 
 **Agent Skills**:
-The Skills an Agent carries, each pinned to one Skill Version — added and removed while editing the Agent, and never two with the same name. One mechanism for both Agent kinds: the set hangs off an Agent Profile either way, and only the moment it is read differs. A Built-in Agent's Skills are read at delivery time, so a change reaches the Organization's existing Projects; a Custom Agent's reach only Projects created afterwards. Removing a Skill is the only way it stops applying — retiring it in the Store never silently changes an Agent.
+The Skills an Agent carries, each pinned to one Skill Version (a Service skill always to its newest) — added and removed while editing the Agent, and never two with the same name. One mechanism for both Agent kinds: the set hangs off an Agent Profile either way, and only the moment it is read differs. A Built-in Agent's Skills are read at delivery time, so a change reaches the Organization's existing Projects; a Custom Agent's reach only Projects created afterwards. Removing a Skill is the only way it stops applying to the Agent as a whole — retiring it in the Store never silently changes an Agent; one Project's environment may still Switch it off.
 _Avoid_: Attachment, Attach, Detach (retired 2026-09-17 — the relationship needs no noun of its own); Install (implies a copy); Assignment, Enable
 
 **Update available**:
 The state of a Skill on an Agent whose pinned Skill Version is behind that Skill's newest one. Purely a prompt to a human — nothing upgrades on its own, and upgrading is a deliberate act on one Agent's one Skill.
 _Avoid_: Outdated, Stale (judgemental — a pin behind the newest Version is a valid state); Auto-update (retired — nothing updates itself)
+
+**Switch off (Skill)**:
+Making one Skill unavailable to the agent in one Project's environment, while the Agent keeps carrying it everywhere else. It narrows what the agent knows there and grants or removes no access. Any Skill the environment has can be switched off — a Skill the Agent carries, one its kind ships, a Service skill — except the Platform Skill. Everything starts switched on, a Skill newly added to the Agent arrives switched on, and Publish carries Development's choices to the published environment. Switching back on brings the Version the Agent carries now; a Skill the Agent no longer carries cannot come back once switched off. Takes effect from the agent's next look at its Skills; instructions it already read stay in that conversation.
+_Avoid_: Disable (the Organization-wide Store act, which leaves Agents unchanged); Mute, Hide, Toggle (non-canonical); Remove (taking a Skill off the Agent itself)
 
 **Skill Store**:
 The catalog where members browse their Organization's Skills — Built-in and public Custom ones, plus their own private ones — inspect their contents, and add them to Agents. It is the Skills tab of Store, not a destination of its own.
@@ -314,7 +318,7 @@ Forking any Skill a member can see — a public one, a Built-in one, or their ow
 _Avoid_: Copy, Clone, Fork (non-canonical — Duplicate is the house verb, as for Projects); Import (the `.skill` route, which crosses Organizations)
 
 **Dynamic Delivery**:
-How what an Agent carries reaches a Project's workspace. A Project's files are laid when the Project is created and are never re-laid by a restart. For a Built-in Agent, a change to its Skills reaches every existing Project of the Organization silently — no pod restart, no interruption, running conversations unaffected; the Agent simply has the new state from its next message — and a change to its image content arrives the same way through Agent Updates. A Custom Agent's content is written once, when the Project is created, and never re-derived. Propagation is prompt but not instantaneous, and a Project that has not yet received a change is shown as such, never silently behind.
+How what an Agent carries reaches a Project's workspace. A Project's files are laid when the Project is created and are never re-laid by a restart. For a Built-in Agent, a change to its Skills reaches every existing Project of the Organization silently — no pod restart, no interruption, running conversations unaffected; the Agent simply has the new state from its next message — and a change to its image content arrives the same way through Agent Updates. A Custom Agent's content is written once, when the Project is created, and never re-derived, except that a Skill switched back on arrives at the Version the Agent carries now. Propagation is prompt but not instantaneous, and a Project that has not yet received a change is shown as such, never silently behind.
 _Avoid_: Sync, Push, Install (mechanism words); Update (collides with Agent Updates, the image-version pipeline)
 
 **Skill & Agent Builder**:
@@ -330,16 +334,102 @@ The facet a Builder chat is stamped with when it is made — Skill or Agent, fol
 _Avoid_: Project type, Project kind unqualified (the column is internal — users see Skill chat / Agent chat); Mode
 
 **Test Project**:
-A Project the Skill & Agent Builder creates on the Custom Agent its chat is about, from that Agent's Development Agent Profile and Template, to converse with the child, judge the record of the checks it ran and check the rest itself. One per Builder chat, created once and then refreshed in place by an Update or a Reset (Test Project). Hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it beside the chat as an ordinary Project; it goes when the chat's subject goes.
+A Project a Builder chat creates to try what the chat is building in a context that did not write it. The Skill & Agent Builder creates it on the Custom Agent its chat is about, from that Agent's Development Agent Profile and Template, to converse with the child, judge the record of the checks it ran and check the rest itself. The External Service Builder creates it on a consumer Agent, whose calls to the service reach the service's Development rather than its Default environment, to see whether an agent that only has the service's delivered docs can use it, and whether the service refuses what it must. One per Builder chat, created once and then refreshed in place by an Update or a Reset (Test Project). Hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it beside the chat as an ordinary Project; it goes when the chat's subject goes.
 _Avoid_: test project in lowercase, Builder's Test Project (the qualifier is redundant: every Test Project belongs to a Builder chat); Sandbox, Eval, Preview project (non-canonical); Draft project (there is no draft — the Development Profile is what runs)
 
 **Update (Test Project)**:
-Overlaying a Test Project's workspace with its Agent's newly saved Development Template, committed as one change, so the child keeps its conversation and sees the fix. Deletes nothing.
+Overlaying a Test Project's workspace with its Agent's newly saved Development Template, committed as one change, so the child keeps its conversation and sees the fix. Deletes nothing. For an External Service Builder's Test Project, delivering its Service skill again from the service's Development instead.
 _Avoid_: Update available (the Skill-pin sense); Agent Updates (the platform rollout)
 
 **Reset (Test Project)**:
-Wiping a Test Project's workspace and laying it again as at create, with a new session and a fresh budget, for a run that starts from nothing.
+Wiping a Test Project's workspace and laying it again as at create, with a new session and a fresh budget, for a run that starts from nothing. For an External Service Builder's Test Project it also forgets the Events it received and the state the service's Development kept.
 _Avoid_: Recreate, Restart (a pod restart keeps the workspace)
+
+### External Services
+
+**External Service**:
+The one program that speaks to one outside system (WhatsApp, an inbox, GitHub, the public API) on the platform's behalf, written once against the platform's SDK: it alone uses that system's credentials, which the platform keeps and hands it with each call, its Service manifest declares what may be configured, what an Agent may call and what may arrive, and every call reaches it through the Gate. One shape whoever wrote it.
+_Avoid_: Integration, Connector, Gatekeeper, Plugin; Channel (WhatsApp's word for a number)
+
+**Built-in External Service**:
+An External Service shipped in git and run inside the platform, offered to every Organization and configured once for the whole platform. A Custom External Service becomes one by committing its folder.
+_Avoid_: Platform service, Core service
+
+**Custom External Service**:
+An External Service one Organization authored, run as its own App and live only once published, offered only within that Organization and configured once for that Organization.
+_Avoid_: Tenant service, User service, Private service
+
+**Service manifest**:
+The one file (`service.json`) that declares everything about an External Service the platform needs without running it: its Service form, its Project form, its Operations, the Event types it may receive and what each Operation or Event may reach.
+_Avoid_: Manifest unqualified (an App's `app.meta.json` is not one); Definition, Descriptor, Spec
+
+**Form**:
+The fields an External Service declares in its Service manifest for one level of configuration — a Service form and a Project form — which the platform renders and the right person fills in.
+_Avoid_: Schema (an Operation's input), Fields, Settings; Configurator
+
+**Service configuration**:
+The values filled into an External Service's Service form, one per service and owner: for a Built-in External Service one for the whole platform, set by the platform operator; for a Custom External Service one for its Organization, set by that Organization's admin, plus a second one for its Development that only test calls read, so trying a new version never touches what callers use. WhatsApp's numbers and their tokens are items in it.
+_Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
+
+**Project configuration**:
+The values filled into an External Service's Project form for one ProjectEnvironment — which of the service's things that environment may reach, which Operations it may call and which Event types it receives. Each ProjectEnvironment carries its own, starting with the service's read Operations on and its writes off, or from its Custom Agent's Service settings (Agent); having one gives that environment the service's Service skill, and Publish carries Development's forward.
+_Avoid_: Environment configuration (collides with Environment Variables); Grant, Scope, Settings
+
+**Operation**:
+One named thing an Agent can ask an External Service to do — `list_cards` on Trello, `create_issue` on GitHub, `create_project` on the Public API — declared in the Service manifest with a kind of read, write or destructive, and allowed or denied by each Project configuration. What fills a Form's dropdowns or answers its buttons is never an Operation.
+_Avoid_: Tool (the agent-side thing), Action (one kind only), Capability, Endpoint, Method
+
+**Event**:
+One thing that arrived from an outside system through an External Service — a WhatsApp message, an email, a GitHub issue opened, a Trello card moved — of a type declared in its Service manifest. A ProjectEnvironment receives an Event only if its Project configuration turned that type on and covers what the Event is about; it is then kept for that environment's App, which is told it arrived.
+_Avoid_: Message (one kind only), Webhook (how it travels), Notification, Hook
+
+**Service skill**:
+The skill an External Service carries to teach Agents what it is for and how to reach it: a Skill in the Store marked by its service, written with the service and changed only with it. An Agent carries it like any Skill, always at its newest version; a ProjectEnvironment also receives it once it has a Project configuration for the service, whatever its Agent carries. Either way only while the service is Available, and one Project's environment may Switch it off.
+_Avoid_: Integration skill, Connector skill
+
+**Service settings (Agent)**:
+Which Operations and Event types of one External Service a Custom Agent turns on in every Project created from it, held beside the Service skill it carries and set by whoever manages the Agent. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it; its targets are still picked in the Project, and a later change to the settings reaches no existing Project.
+_Avoid_: Agent defaults, Default configuration, Service profile
+
+**Gate**:
+The one place in the platform every call from a ProjectEnvironment's pod — its Agent or its App — to an External Service passes through: it identifies the calling ProjectEnvironment, refuses any Operation its Project configuration does not allow, or whose input does not fit the Service manifest or reaches past that Project configuration, and records the call.
+_Avoid_: Gateway (collides with Gateway Key and the LLM gateway), Proxy, Gatekeeper (cloudflare-os's word for the service itself)
+
+**Call log**:
+The platform's record of every Call it makes to or receives for an External Service — an Agent's or App's Operation through the Gate, a form's option list, info or button, an after-save hook, an incoming webhook, a doorbell ring to a receiving App — saying who called, what it touched, whether the Gate allowed it and how it ended, never what was sent or returned. Kept for a limited time; Usage outlives it.
+_Avoid_: Audit log, Request log (an App's own traffic, see Request Logging), Activity (collides with Keep-alive activity), Gate log
+
+**Usage (External Service)**:
+The monthly counts per Organization, Project, environment and External Service of Calls to Operations the Gate let through, refused or saw fail, and of Events kept — the summary that remains after the Call log entries it counts are gone.
+_Avoid_: Metering, Billing (nothing is charged)
+
+**External Service Builder**:
+The Built-in Agent an Organization admin chats with to author a Custom External Service. It starts from an empty service, learns from the Built-in External Services as worked examples, stops for the human to approve which Operations the service offers before writing any of them, and never Publishes the service itself — a human does, after reviewing how each Operation is classified and bounded.
+_Avoid_: Builder alone in user-facing copy (ambiguous beside app-builder and the Skill & Agent Builder); Service builder, Integration builder, Connector builder
+
+**Available**:
+An External Service whose Service configuration is complete against its Service form (for a Custom one, the configuration callers use, against its Default environment's form). Only an Available service is offered to Organizations; there is no separate switch.
+_Avoid_: Enabled, Active, Configured, Installed
+
+**Default environment (External Service)**:
+The Environment whose running copy of a Custom External Service every caller reaches — Agents, Apps, form callbacks and incoming webhooks — one per service, set by its first Publish and changed only by a holder of `can_manage_tenant_external_services`. It is never Development: the draft is reached only by tests. The service's stored state and webhook address follow it, so switching it moves the service, not just its code.
+_Avoid_: Default Environment unqualified (the tenant registry's default row is Development); Live environment, Active environment (the workspace's current view)
+
+**Duplicate (External Service)**:
+Creating a new Draft Custom External Service in the same Organization from another one, named and slugged before it is created, carrying only the files its External Service Builder last committed in Development's `app/` folder. It gets its own builder chat; no Service configuration, Project configuration, state, Calls, chat history or Test Project travels. Built-in External Services are never duplicated.
+_Avoid_: Copy, Clone, Fork (non-canonical); Duplicate unqualified (the Project sense)
+
+**Export (External Service)**:
+Producing a Service export from a Custom External Service's last committed `app/` folder in Development, to carry it to another Organization or another Opsiforce deployment. The cross-boundary sibling of Duplicate (External Service), carrying the same files and nothing configured.
+_Avoid_: Download service.json (the manifest alone); Share; conflating with Export (the Project sense) or Export (Agent)
+
+**Import (External Service)**:
+Creating a new Draft Custom External Service with its own builder chat from a Service export, named and slugged before it is created, by default as the file names it. It is always a new service: a slug already taken is refused, and an SDK major this deployment does not serve arrives with a warning, to be upgraded by the builder before its first Publish.
+_Avoid_: Update, Sync (an import never changes an existing service); Restore; Upload (the transport)
+
+**Service export**:
+The file an Export (External Service) produces and an Import (External Service) consumes — one Custom External Service's committed `app/` folder with a stamp naming the platform and SDK versions. The sibling of Project export and Agent export; none is imported as another.
+_Avoid_: Service bundle, Service package; service.json (the Service manifest alone)
 
 ### Schedules
 
@@ -354,11 +444,11 @@ The credential a program — the CLI, an integration, another Agent — presents
 _Avoid_: Client key; API key (non-canonical); Personal access token (canonical only in other products); Tenant header (internal name — never user-facing)
 
 **Gateway Key**:
-The per-ProjectEnvironment `gw-` token a pod holds, carrying a purpose: the `service` key every pod has for Schedules, external services and platform pushes, and a `platform-api` key minted only for Projects whose Agent declares the capability, presented to the public API and the runtime proxy as a bearer. Never a user credential — the platform resolves it to the human who created the Project.
-_Avoid_: API key (collides with API Token); Pod token, Service token unqualified (the purpose is the distinction)
+The per-ProjectEnvironment `gw-` token a pod holds: the one key every pod has for Schedules, External Services, the runtime proxy and platform pushes. It never opens the public API itself: a pod reaches that only through the Public API External Service. Never a user credential — the platform resolves it to the human who created the Project.
+_Avoid_: API key (collides with API Token); Pod token; Platform-api key (retired: a pod has one key)
 
 **Agent Caller**:
-A public-API caller whose credential is a Gateway Key: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and reaches only the routes opened to it — Projects it created itself with full creator authority, Skills and Custom Agents with every verb except Delete, Disable and making public. Its Projects record which Project's pod made them, and the chain stops at depth two. At launch only the Skill & Agent Builder's pods are Agent Callers.
+A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only as the Public API External Service through the Gate: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the Operations its Project configuration allows. It reads what that person can see, but changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it, and a chain of Projects creating Projects stops at depth two.
 _Avoid_: Bot (a service account is an ordinary user); Machine user; Pod identity (the identity is the human's)
 
 **Error**:

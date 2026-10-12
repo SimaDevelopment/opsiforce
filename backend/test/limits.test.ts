@@ -6,6 +6,7 @@ import { projectSettings } from '../db/schema';
 import { DefaultsService } from '../src/defaults/defaults.service';
 import { LimitReachedException } from '../src/limit/limit-reached.exception';
 import { LimitService } from '../src/limit/limit.service';
+import { ModelProvidersService } from '../src/model-provider/model-provider.service';
 import { createDomainTestingModule, type DomainTestHarness } from './support/domain';
 
 let harness: DomainTestHarness;
@@ -174,19 +175,21 @@ describe('project limit', () => {
   it('gives the slot back when provisioning fails after the row is written', async () => {
     const tenantId = await newTenant(2);
     const [source] = await createProjects(tenantId, 1);
-    const provisioning = vi.spyOn(harness.fakes.externalServices, 'provisionEnvironment');
+    const bifrostEnabled = vi.spyOn(harness.fakes.bifrost, 'isEnabled').mockReturnValue(true);
+    const chatKeyWrite = vi
+      .spyOn(harness.moduleRef.get(ModelProvidersService), 'writeProjectChatKey')
+      .mockResolvedValue(false);
+    const provisioningFailure = "Could not give the Project's chat key the Organization's model providers";
 
-    provisioning.mockRejectedValueOnce(new Error('provisioning down'));
-    await expect(harness.projects.create({}, tenantId)).rejects.toThrow('provisioning down');
-    provisioning.mockRejectedValueOnce(new Error('provisioning down'));
-    await expect(harness.projects.duplicate(source, tenantId, undefined, null)).rejects.toThrow('provisioning down');
-    provisioning.mockRejectedValueOnce(new Error('provisioning down'));
+    await expect(harness.projects.create({}, tenantId)).rejects.toThrow(provisioningFailure);
+    await expect(harness.projects.duplicate(source, tenantId, undefined, null)).rejects.toThrow(provisioningFailure);
     await expect(
       harness.projects.createImportedProject(importParams(tenantId, await defaultAgent(tenantId)))
-    ).rejects.toThrow('provisioning down');
+    ).rejects.toThrow(provisioningFailure);
 
     expect(await projectUsage(tenantId)).toEqual({ key: 'projects', limit: 2, used: 1 });
-    provisioning.mockRestore();
+    chatKeyWrite.mockRestore();
+    bifrostEnabled.mockRestore();
   });
 
   it('frees a slot when a project is deleted', async () => {

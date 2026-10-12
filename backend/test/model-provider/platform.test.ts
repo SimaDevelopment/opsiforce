@@ -3,7 +3,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { agentSettings, modelProviders, projectVirtualKeys, tenants } from '../../db/schema';
+import { modelProviders, projectVirtualKeys, tenants } from '../../db/schema';
 import { catalogModelIdsOf } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
@@ -17,7 +17,7 @@ import {
   createAgent,
   createProject,
   createTenant,
-  platformApiKeyFor,
+  serviceKeyFor,
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
@@ -664,9 +664,8 @@ describe('Built-in model providers managed by a platform admin', () => {
     it('refuses an Agent Caller', async () => {
       const { tenant, member: owner } = await member([Perms.managePlatformModelProviders]);
       const agent = await seedLiveAgent(tenant.tenantId, owner.userId);
-      await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, agent.id));
       const callerProjectId = await createProject(app, tenant, { agentId: agent.id, createdBy: owner.userId });
-      const callerKey = await platformApiKeyFor(app, tenant, callerProjectId);
+      const callerKey = await serviceKeyFor(app, tenant, callerProjectId);
 
       const res = await app.inject({
         method: 'GET',

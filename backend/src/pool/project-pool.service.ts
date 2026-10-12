@@ -1,4 +1,12 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
@@ -28,9 +36,9 @@ import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { DefaultsService } from '../defaults/defaults.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { EnvironmentService } from '../environment/environment.service';
-import { ExternalServiceProvisioningService } from '../external-services';
-import { agentDeclaresPlatformApi, type AgentModelSelection } from '../agent/agent-config';
+import type { AgentModelSelection } from '../agent/agent-config';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
+import { PROJECT_LIFECYCLE, type ProjectLifecycle } from '../project/project-lifecycle';
 import { DeliveryService } from '../delivery/delivery.service';
 import { modelReference, type DeliveryPlan } from '../delivery/delivery.types';
 import { PodReloadClient } from '../delivery/pod-reload.client';
@@ -60,6 +68,7 @@ export interface PoolClaim {
   createdBy: string | null;
   createdByProjectId: string | null;
   kind: ProjectKind | null;
+  configureBeforeDelivery: ((projectEnvironmentId: string) => Promise<void>) | null;
 }
 
 interface PendingRow {
@@ -99,11 +108,11 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     private readonly defaultsService: DefaultsService,
     private readonly timeoutService: TimeoutService,
     private readonly environmentService: EnvironmentService,
-    private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly configService: ConfigService,
     private readonly agentReconciler: AgentReconcilerService,
     private readonly deliveryService: DeliveryService,
-    private readonly podReload: PodReloadClient
+    private readonly podReload: PodReloadClient,
+    @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
   ) {
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
@@ -141,7 +150,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   async claimPending(agentId: string, claim: PoolClaim): Promise<string | null> {
     const name = this.agentIdToName.get(agentId);
     if (!name) return null;
-    if (agentDeclaresPlatformApi(name)) return null;
 
     const reserved = await this.reservePending(agentId, claim);
     if (!reserved) return null;
@@ -202,6 +210,21 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       return null;
     }
 
+    await this.lifecycle?.created(reserved.id).catch((err: Error) => {
+      this.logger.warn(`Claim ${reserved.id} could not configure the service it tests: ${err.message}`);
+    });
+    const configured = await (claim.configureBeforeDelivery?.(reserved.id) ?? Promise.resolve()).then(
+      () => true,
+      (err: Error) => {
+        this.logger.warn(`Claim ${reserved.id} could not write its starting Project configuration: ${err.message}`);
+        return false;
+      }
+    );
+    if (!configured) {
+      await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'configuration failed').catch(() => {});
+      await this.replenishIfEnabled(name, reserved.agentId);
+      return null;
+    }
     const delivered = await this.deliveryService.deliverAtCreate(reserved.id).then(
       (plan) => this.announceToLivePod(plan, livePodIp),
       (err: Error) => {
@@ -568,8 +591,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         platformVersion: this.platformVersion,
       });
     });
-
-    await this.externalServiceProvisioning.provisionEnvironment(id);
 
     try {
       if (this.bifrostService.isEnabled()) {

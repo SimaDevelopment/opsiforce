@@ -15,7 +15,11 @@ import { configurePublicApi, createHttpAdapter } from '../../../src/public-api/p
 import { PublicApiModule } from '../../../src/public-api/public-api.module';
 import { TenantGuard } from '../../../src/tenant/tenant.guard';
 import { ERROR_MEDIA_TYPE } from '../../../src/public-api/errors/error.schema';
+import { CallTokens } from '../../../src/gateway/call-tokens';
 import { DomainTestModule } from '../../support/domain-module';
+import { EveryServiceAvailableModule } from '../../support/every-service-available';
+import { PublicApiConfigurationDoubleModule } from '../../support/public-api-configuration-double';
+import { StandingCallTokens } from './standing-call-tokens';
 import { assertProblemsDeclared, observedProblemOf, type ObservedProblem } from './declared-problems';
 
 @Controller('internal')
@@ -71,6 +75,8 @@ export async function createPublicApiTestApp(
     imports: [
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
       DomainTestModule,
+      EveryServiceAvailableModule,
+      PublicApiConfigurationDoubleModule,
       PublicApiModule,
       InternalModule,
       ...extraModules,
@@ -85,7 +91,9 @@ export async function createPublicApiTestApp(
     .overrideModule(ProjectEnvironmentModule)
     .useModule(StubProjectEnvironmentModule)
     .overrideModule(ProjectEventsModule)
-    .useModule(StubProjectEventsModule);
+    .useModule(StubProjectEventsModule)
+    .overrideProvider(CallTokens)
+    .useClass(StandingCallTokens);
   for (const service of realServices) builder.overrideProvider(service).useClass(service);
   const moduleRef = await builder.compile();
 

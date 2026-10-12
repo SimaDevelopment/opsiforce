@@ -127,6 +127,15 @@ export class SkillDeliveryRepository {
     return row !== undefined;
   }
 
+  async environmentsHolding(skillNames: string[]): Promise<string[]> {
+    if (skillNames.length === 0) return [];
+    const rows = await db
+      .selectDistinct({ projectEnvironmentId: projectSkillDeliveries.projectEnvironmentId })
+      .from(projectSkillDeliveries)
+      .where(inArray(projectSkillDeliveries.skillName, skillNames));
+    return rows.map((row) => row.projectEnvironmentId);
+  }
+
   async deleteDelivery(projectEnvironmentId: string, skillName: string): Promise<void> {
     await db
       .delete(projectSkillDeliveries)

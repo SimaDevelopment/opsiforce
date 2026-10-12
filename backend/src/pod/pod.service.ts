@@ -12,8 +12,6 @@ export interface TenantPodOptions {
   bifrostProxyUrl?: string;
   gatewayApiKey?: string;
   gatewayUrl?: string;
-  platformApiKey?: string;
-  platformApiUrl?: string;
   runtimeProxyUrl?: string;
   externalServicesUrl?: string;
   agentName?: string;

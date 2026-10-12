@@ -93,6 +93,7 @@ export class SkillRepository {
       .where(
         and(
           visibleSkillsWhere(tenantId, userId, { includeDisabled: true }),
+          isNull(skills.retiredAt),
           catalogFilterWhere(SKILL_CATALOG_COLUMNS, filter, { userId, disabled: skillDisabledIn(tenantId) }),
           catalogSearchWhere(SKILL_CATALOG_COLUMNS, query)
         )
@@ -175,6 +176,24 @@ export class SkillRepository {
     return row !== undefined;
   }
 
+  async serviceSkillNamed(
+    tenantId: string,
+    name: string
+  ): Promise<{ id: string; externalServiceId: string; latestVersionId: string | null } | undefined> {
+    const [row] = await db
+      .select({ id: skills.id, externalServiceId: skills.externalServiceId, latestVersionId: skills.latestVersionId })
+      .from(skills)
+      .where(
+        and(
+          eq(skills.name, name),
+          isNotNull(skills.externalServiceId),
+          or(eq(skills.tenantId, tenantId), isNull(skills.tenantId))
+        )
+      )
+      .limit(1);
+    return row?.externalServiceId ? { ...row, externalServiceId: row.externalServiceId } : undefined;
+  }
+
   async findByName(tenantId: string, name: string): Promise<SkillRow | undefined> {
     const [row] = await db
       .select(skillColumnsIn(tenantId))
@@ -190,8 +209,23 @@ export class SkillRepository {
     const rows = await db
       .select({ name: skills.name, skillId: skills.id, skillVersionId: skills.latestVersionId })
       .from(skills)
-      .where(and(isNull(skills.tenantId), inArray(skills.name, names), isNotNull(skills.latestVersionId)));
+      .where(
+        and(
+          isNull(skills.tenantId),
+          inArray(skills.name, names),
+          isNotNull(skills.latestVersionId),
+          isNull(skills.retiredAt)
+        )
+      );
     return rows.flatMap((row) => (row.skillVersionId ? [{ ...row, skillVersionId: row.skillVersionId }] : []));
+  }
+
+  async retiredBuiltInNames(): Promise<Set<string>> {
+    const rows = await db
+      .select({ name: skills.name })
+      .from(skills)
+      .where(and(isNull(skills.tenantId), eq(skills.origin, 'built_in'), isNotNull(skills.retiredAt)));
+    return new Set(rows.map((row) => row.name));
   }
 
   async versionWithHash(skillId: string, contentHash: string): Promise<string | null> {
@@ -286,6 +320,7 @@ export class SkillRepository {
     userId: string;
     name: string;
     displayName: string | null;
+    createdByProjectId: string | null;
   }): Promise<string> {
     const skillId = crypto.randomUUID();
     await db.insert(skills).values({
@@ -296,6 +331,7 @@ export class SkillRepository {
       name: input.name,
       displayName: input.displayName,
       createdBy: input.userId,
+      createdByProjectId: input.createdByProjectId,
     });
     return skillId;
   }
@@ -306,6 +342,7 @@ export class SkillRepository {
       userId: string;
       name: string;
       displayName: string | null;
+      createdByProjectId: string | null;
       description: string | null;
       tree: SkillTree;
       contentHash: string;
@@ -327,6 +364,7 @@ export class SkillRepository {
         displayName: input.displayName,
         description: input.description,
         createdBy: input.userId,
+        createdByProjectId: input.createdByProjectId,
       });
       const versionId = await insertVersion(tx, {
         skillId,
@@ -349,7 +387,7 @@ export class SkillRepository {
   async mintNextVersion(
     input: {
       skillId: string;
-      userId: string;
+      userId: string | null;
       description: string | null;
       tree: SkillTree;
       contentHash: string;
@@ -405,7 +443,7 @@ async function insertVersion(
     lints: string[];
     createdVia: string;
     sourceRef: string | null;
-    createdBy: string;
+    createdBy: string | null;
     tree: SkillTree;
   }
 ): Promise<string> {

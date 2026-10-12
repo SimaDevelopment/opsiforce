@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -170,6 +171,18 @@ test("planSkills removes only owned names the image dropped", () => {
   })
   assert.deepEqual(plan.remove, ["charts"])
   assert.deepEqual(plan.write, ["ui"])
+})
+
+test("planSkills leaves a switched-off Skill unwritten, unowned and removed from the workspace", () => {
+  const plan = planSkills({
+    packageSkills: ["ui", "web-app"],
+    presentSkills: ["ui", "web-app"],
+    ownedSkills: ["ui", "web-app"],
+    builtInPackage: true,
+    switchedOffSkills: ["web-app"],
+  })
+  assert.deepEqual(plan.write, ["ui"])
+  assert.deepEqual(plan.remove, ["web-app"])
 })
 
 test("first boot lays every owned file and writes the ledger last", async (t) => {
@@ -561,6 +574,20 @@ test("a Template that ships app/ keeps it and no package template is laid over i
 
   assert.equal(await readFile(path.join(roots.workspace, "app", "startup.sh"), "utf8"), "#!/bin/sh\necho acme\n")
   assert.deepEqual(commitSubjects(roots.workspace), ["Initial template"])
+})
+
+test("a laid app/ with an initial commit message commits under that message and drops the message file", async (t) => {
+  const roots = await makeRoots({ packages: ["custom"], skills: { custom: [] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  await layCustomTemplate(roots.workspace, {
+    "app/service.json": "{}\n",
+    ".opsiforce/initial-commit-message": "Copied from Boards\n",
+  })
+  const context = contextFor(roots, "custom")
+  await provisionWorkspace(context, summaryFor(context))
+
+  assert.deepEqual(commitSubjects(roots.workspace), ["Copied from Boards"])
+  assert.equal(existsSync(path.join(roots.workspace, ".opsiforce", "initial-commit-message")), false)
 })
 
 test("a Template's root .gitignore keeps its lines and gains the missing platform ones under # platform", async (t) => {

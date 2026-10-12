@@ -1,6 +1,6 @@
 import { Body, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
+import { ExternalServiceOperation } from '../auth/external-service-operation.decorator';
 import { Caller } from '../auth/caller';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../public-api.decorator';
 import { PublicSkillsService } from './skills.service';
@@ -37,7 +37,7 @@ export class SkillsController {
   constructor(private readonly skills: PublicSkillsService) {}
 
   @Get()
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('list_skills')
   @ApiOperation({
     summary: 'List Skills',
     description:
@@ -53,7 +53,7 @@ export class SkillsController {
   }
 
   @Post()
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('create_skill')
   @ApiOperation({
     summary: 'Create a Skill',
     description:
@@ -66,7 +66,7 @@ export class SkillsController {
   }
 
   @Post('validate')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('validate_skill', { kind: 'read' })
   @ApiOperation({
     summary: 'Validate a Skill tree',
     description:
@@ -79,7 +79,7 @@ export class SkillsController {
   }
 
   @Get(':id')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('get_skill')
   @ApiOperation({
     summary: 'Get a Skill',
     description:
@@ -92,7 +92,7 @@ export class SkillsController {
   }
 
   @Patch(':id')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('update_skill')
   @ApiOperation({
     summary: 'Rename a Skill',
     description:
@@ -109,7 +109,7 @@ export class SkillsController {
   }
 
   @Get(':id/versions/:version/files')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('get_skill_files')
   @ApiOperation({
     summary: 'Read the files of a Version',
     description:
@@ -125,7 +125,7 @@ export class SkillsController {
   }
 
   @Post(':id/versions')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('create_skill_version')
   @ApiOperation({
     summary: 'Publish a new Version',
     description:
@@ -149,7 +149,7 @@ export class SkillsController {
   }
 
   @Post(':id/duplicate')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('duplicate_skill')
   @ApiOperation({
     summary: 'Duplicate a Skill',
     description:

@@ -10,7 +10,7 @@ import { projectPublishJobs, projectSchedules } from '../../db/schema';
 import { GitService } from '../git/git.service';
 import { PublishService } from './publish.service';
 import { ProjectEventsService } from '../project/project-events.service';
-import { PROJECT_PUBLISH_QUEUE, PublishJobData, PublishStatus } from './publish.types';
+import { PROJECT_PUBLISH_QUEUE, PublishJobData, PublishReportLine, PublishStatus } from './publish.types';
 import { ProjectService } from '../project/project.service';
 import { ProjectAuthService } from '../project/project-auth.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
@@ -20,8 +20,9 @@ import { AppReadinessService } from '../project/app-readiness.service';
 import { PodStartupFailedError } from '../pod/pod.service';
 import { writeJsonAtomic } from '../common/fs';
 import { clearEnvJsonBackup, writeEnvJsonBackup } from '../common/env-file';
-import { ExternalServicePublishService } from '../external-services';
+import { ProjectConfigurationCarry, ServiceDefaultEnvironments } from '../external-services';
 import { DeliveryService } from '../delivery/delivery.service';
+import { EnvironmentSkillsService } from '../delivery/environment-skills';
 import { WorkspaceWriter } from '../delivery/workspace-writer';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
@@ -43,9 +44,11 @@ export class PublishProcessor extends WorkerHost {
     private readonly scheduleService: ScheduleService,
     private readonly appReadiness: AppReadinessService,
     private readonly projectEvents: ProjectEventsService,
-    private readonly externalServicePublish: ExternalServicePublishService,
+    private readonly projectConfigurationCarry: ProjectConfigurationCarry,
+    private readonly serviceDefaults: ServiceDefaultEnvironments,
     private readonly deliveryService: DeliveryService,
-    private readonly workspaceWriter: WorkspaceWriter
+    private readonly workspaceWriter: WorkspaceWriter,
+    private readonly environmentSkills: EnvironmentSkillsService
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -125,7 +128,11 @@ export class PublishProcessor extends WorkerHost {
         throw new Error('Production app did not become ready within the deploy window');
       }
 
-      await this.externalServicePublish.carryInboundWiring(devEnv.id, data.projectEnvironmentId);
+      const report: PublishReportLine[] = [
+        ...(await this.projectConfigurationCarry.carry(devEnv.id, data.projectEnvironmentId)),
+        ...(await this.environmentSkills.carry(devEnv.id, data.projectEnvironmentId)),
+      ];
+      await this.setStatus(data.publishJobId, PublishStatus.Migrating, { report });
 
       try {
         await this.reconcileSchedules(data.projectId, data.projectEnvironmentId, data.tenantId, data.scheduleIds);
@@ -136,6 +143,11 @@ export class PublishProcessor extends WorkerHost {
       }
 
       await this.projectService.finishPublishDeploy(data.projectEnvironmentId, podIp, sha);
+      await this.serviceDefaults.publishedTo(data.projectId, data.projectEnvironmentId).catch((defaultErr) => {
+        this.logger.error(
+          `Setting the External Service Default environment after publishing ${data.projectEnvironmentId} failed: ${(defaultErr as Error).message}`
+        );
+      });
       await clearEnvJsonBackup(this.storageMountPath, prodEnv.directory).catch(() => undefined);
       await this.setStatus(data.publishJobId, PublishStatus.Done, { completedAt: new Date() });
       this.logger.log(
@@ -313,9 +325,6 @@ function userFacingPublishError(err: unknown, phase: PublishStatus): string {
   }
   if (message.includes('did not become ready within the deploy window')) {
     return "The app started but didn't come online in time. Please try again.";
-  }
-  if (message.includes('Carrying external-service wiring failed')) {
-    return 'The app deployed, but copying its external-service wiring failed. Please publish again.';
   }
   if (message.includes('No active LLM virtual keys')) {
     return 'This environment is missing its LLM credentials. Please reconfigure it and try again.';

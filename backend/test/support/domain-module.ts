@@ -24,10 +24,12 @@ import { AGENT_WORKSPACE_UPDATE_QUEUE } from '../../src/agent-update/agent-updat
 import { DefaultsService } from '../../src/defaults/defaults.service';
 import { DeliveryRepository } from '../../src/delivery/delivery.repository';
 import { DeliveryService } from '../../src/delivery/delivery.service';
+import { EnvironmentSkillsService } from '../../src/delivery/environment-skills';
 import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
 import { PodReloadClient } from '../../src/delivery/pod-reload.client';
 import { SkillDeliveryRepository } from '../../src/delivery/skill-delivery.repository';
 import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
+import { SkillSwitchRepository } from '../../src/delivery/skill-switch.repository';
 import { WorkspaceWriter } from '../../src/delivery/workspace-writer';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
@@ -60,11 +62,11 @@ import { TimeoutService } from '../../src/timeout/timeout.service';
 import { UserService } from '../../src/user/user.service';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
-import { ExternalServiceProvisioningService } from '../../src/external-services';
+import { EXTERNAL_SERVICE_DOORBELL_QUEUE } from '../../src/external-services/doorbell/doorbell.types';
 import {
   FakeAgentUpdateK8sService,
   FakeBifrostService,
-  FakeExternalServiceProvisioningService,
+  FakeCoalescingQueue,
   FakePodCacheService,
   FakePodService,
   FakeProjectAuthService,
@@ -97,6 +99,7 @@ const REAL_SERVICES = [
   DeliveryRepository,
   DeliveryService,
   EnvironmentService,
+  EnvironmentSkillsService,
   EnvironmentVariablesService,
   ForwardedIdentityService,
   GatewayKeyService,
@@ -114,6 +117,7 @@ const REAL_SERVICES = [
   ProxyService,
   SkillDeliveryRepository,
   SkillDeliveryService,
+  SkillSwitchRepository,
   SkillPublishService,
   SkillReconcilerService,
   SkillRepository,
@@ -127,7 +131,6 @@ const REAL_SERVICES = [
 const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: AgentUpdateK8sService, useClass: FakeAgentUpdateK8sService },
   { provide: BifrostService, useClass: FakeBifrostService },
-  { provide: ExternalServiceProvisioningService, useClass: FakeExternalServiceProvisioningService },
   { provide: PodCacheService, useClass: FakePodCacheService },
   { provide: PodService, useClass: FakePodService },
   { provide: ProjectAuthService, useClass: FakeProjectAuthService },
@@ -141,6 +144,7 @@ const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: getQueueToken(SKILL_DELIVERY_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(PROJECT_POOL_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(PROJECT_POOL_TEARDOWN_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(EXTERNAL_SERVICE_DOORBELL_QUEUE), useClass: FakeCoalescingQueue },
 ];
 
 export const DOMAIN_TEST_PROVIDERS: Provider[] = [...REAL_SERVICES, ...FAKED_SERVICES];

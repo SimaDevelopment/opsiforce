@@ -17,7 +17,8 @@ adrs: [0051, 0070]
 - [Visibility](../../GLOSSARY.md) is a column on the Skill, not on a Version: **private** means listed and editable only for its creator, **public** hands it to the whole Organization. Making it public is irreversible; [Duplicate (Skill)](../../GLOSSARY.md) into a fresh private Skill is the way back ([ADR-0057](../adr/0057-authored-skills-and-agents-are-private-or-public-within-one-organization.md)).
 - The [Skill Store](../../GLOSSARY.md) list is one predicate over those columns — Built-in Skills, the Organization's public Custom ones, and the caller's own private ones — narrowed by a `filter` of `all`, `mine` (created by the caller), `built_in`, `custom`, `private` or `disabled` and a `q` search, both carried in the URL.
 - A new image reaches Built-in Skills at the next backend boot: the reconciler hashes each composed skill directory, mints the next Version when the hash is new, and moves the Skill's latest pointer to it. Nothing moves a pin. A Custom Agent pinned to an older Version — `platform` and `web-app` included — keeps it and shows **Update available** until someone upgrades that one Skill on that one Agent, and the upgrade reaches only Projects created after it, since a Custom Agent's Project keeps the files it was created with. A new Custom Agent pins `platform` at its latest Version, so it starts current. A Built-in Agent's package Skills reach its Projects from the image through [Agent Updates](agent-updates.md), not through a pin.
-- A Built-in Skill whose name leaves the image keeps its rows and is reported as unavailable rather than deleted, so an Agent that already pinned it keeps working.
+- A Built-in Skill whose name leaves the image is **retired** at the next boot: `skills.retired_at` is stamped, the Skill leaves the Store list and the Add skills picker, adding it to an Agent is refused with `skill_retired`, and no workspace receives it any more ([ADR-0051](../adr/0051-skills-are-stored-as-immutable-per-file-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)). Its rows, Versions and pins stay, and its page still opens, read-only and marked **Retired**, as does a carrying Agent's Skills row. A boot whose image ships the name again clears the mark. Service skills, which their External Service ships, are never retired, and a boot that reads no skill at all retires nothing.
+- Names starting with `service-` belong to [Service skills](../../GLOSSARY.md), Skills marked by their External Service and written only by it: every edit to one is refused, creating or importing another Skill with such a name is refused, and a Store Skill that already had one is renamed `store-<name>` once at boot, its Versions' `SKILL.md` and hashes with it ([ADR-0082](../adr/0082-an-external-services-skill-is-a-skill-marked-by-its-service-given-per-agent-or-per-project-and-reads-its-operations-live.md)).
 
 ### Publishing and the gate
 
@@ -49,7 +50,7 @@ A Skill's place in its Organization's catalog.
 | Private | Listed, pickable and editable for its creator alone; invisible to every other member |
 | Public | Listed for the whole Organization; any permission holder may edit, disable or delete it |
 | Disabled | Out of the Store list and closed to new Agents; existing pins unaffected; reversible |
-| Unavailable | A Built-in Skill whose name left the image — rows kept, offered to nothing new |
+| Retired | A Built-in Skill whose name left the image — rows and pins kept, out of the Store, offered to nothing new, delivered nowhere; cleared when the image ships it again |
 | Deleted | Rows, Versions and its Builder chat gone; only for a Skill no Agent carries that is disabled or never had a Version |
 
 ## Edge cases

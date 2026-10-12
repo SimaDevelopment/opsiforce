@@ -4,7 +4,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { agentSettings, agents, skills } from '../../db/schema';
+import { agents, skills } from '../../db/schema';
 import { AgentController } from '../../src/agent/agent.controller';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { Perms } from '../../src/permission/permission.constants';
@@ -15,7 +15,7 @@ import {
   addMember,
   createTenant,
   createProject,
-  platformApiKeyFor,
+  callTokenFor,
   stampProjectKind,
   type MemberFixture,
   type TenantFixture,
@@ -406,23 +406,17 @@ describe('the Store routes seen by an Agent Caller', () => {
   let chatProjectId: string;
   let chatKey: string;
 
-  async function platformApiAgent(): Promise<string> {
-    const agent = await seedLiveAgent(tenant.tenantId, creator.userId);
-    await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, agent.id));
-    return agent.id;
-  }
-
   beforeAll(async () => {
     harness = await createPublicApiTestApp({}, [InternalStoreModule]);
     app = harness.app;
 
     tenant = await createTenant(app);
     creator = await addMember(app, tenant, AUTHORING);
-    const agentId = await platformApiAgent();
+    const agentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
 
     chatProjectId = await createProject(app, tenant, { agentId, createdBy: creator.userId });
     await stampProjectKind(chatProjectId, 'agent_builder_chat');
-    chatKey = await platformApiKeyFor(app, tenant, chatProjectId);
+    chatKey = callTokenFor(app, tenant, chatProjectId);
   });
 
   afterAll(async () => {

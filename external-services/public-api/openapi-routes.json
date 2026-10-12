@@ -1,0 +1,235 @@
+{
+  "connect_project": {
+    "method": "POST",
+    "path": "/api/v1/projects/{id}/environments/{environmentId}/connect",
+    "pathParams": [
+      "id",
+      "environmentId"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "create_agent": {
+    "method": "POST",
+    "path": "/api/v1/agents",
+    "pathParams": [],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "create_project": {
+    "method": "POST",
+    "path": "/api/v1/projects",
+    "pathParams": [],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "create_skill": {
+    "method": "POST",
+    "path": "/api/v1/skills",
+    "pathParams": [],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "create_skill_version": {
+    "method": "POST",
+    "path": "/api/v1/skills/{id}/versions",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "delete_project": {
+    "method": "DELETE",
+    "path": "/api/v1/projects/{id}",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "duplicate_skill": {
+    "method": "POST",
+    "path": "/api/v1/skills/{id}/duplicate",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "get_agent": {
+    "method": "GET",
+    "path": "/api/v1/agents/{id}",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "get_me": {
+    "method": "GET",
+    "path": "/api/v1/me",
+    "pathParams": [],
+    "queryParams": [],
+    "body": "none"
+  },
+  "get_project": {
+    "method": "GET",
+    "path": "/api/v1/projects/{id}",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "get_skill": {
+    "method": "GET",
+    "path": "/api/v1/skills/{id}",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "get_skill_files": {
+    "method": "GET",
+    "path": "/api/v1/skills/{id}/versions/{version}/files",
+    "pathParams": [
+      "id",
+      "version"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "list_agent_skills": {
+    "method": "GET",
+    "path": "/api/v1/agents/{id}/skills",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "list_agents": {
+    "method": "GET",
+    "path": "/api/v1/agents",
+    "pathParams": [],
+    "queryParams": [
+      "limit",
+      "cursor"
+    ],
+    "body": "none"
+  },
+  "list_projects": {
+    "method": "GET",
+    "path": "/api/v1/projects",
+    "pathParams": [],
+    "queryParams": [
+      "limit",
+      "cursor",
+      "workspaceId",
+      "agentId"
+    ],
+    "body": "none"
+  },
+  "list_skills": {
+    "method": "GET",
+    "path": "/api/v1/skills",
+    "pathParams": [],
+    "queryParams": [
+      "filter",
+      "q"
+    ],
+    "body": "none"
+  },
+  "remove_agent_skill": {
+    "method": "DELETE",
+    "path": "/api/v1/agents/{id}/skills/{skillId}",
+    "pathParams": [
+      "id",
+      "skillId"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "reset_test_project": {
+    "method": "POST",
+    "path": "/api/v1/projects/{id}/test/reset",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "restart_project": {
+    "method": "POST",
+    "path": "/api/v1/projects/{id}/restart",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "save_agent_template": {
+    "method": "PUT",
+    "path": "/api/v1/agents/{id}/template",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "set_agent_skill": {
+    "method": "PUT",
+    "path": "/api/v1/agents/{id}/skills/{skillId}",
+    "pathParams": [
+      "id",
+      "skillId"
+    ],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "update_agent": {
+    "method": "PATCH",
+    "path": "/api/v1/agents/{id}",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "update_agent_profile": {
+    "method": "PUT",
+    "path": "/api/v1/agents/{id}/profile",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "update_skill": {
+    "method": "PATCH",
+    "path": "/api/v1/skills/{id}",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "fields"
+  },
+  "update_test_project": {
+    "method": "POST",
+    "path": "/api/v1/projects/{id}/test/update",
+    "pathParams": [
+      "id"
+    ],
+    "queryParams": [],
+    "body": "none"
+  },
+  "validate_skill": {
+    "method": "POST",
+    "path": "/api/v1/skills/validate",
+    "pathParams": [],
+    "queryParams": [],
+    "body": "fields"
+  }
+}

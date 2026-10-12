@@ -37,7 +37,10 @@ auth:
       - can_manage_tenant_model_providers
       - can_manage_platform_model_providers
       - can_manage_external_integration
-      - can_manage_external_services
+      - can_manage_platform_external_services
+      - can_manage_tenant_external_services
+      - can_configure_project_external_services
+      - can_manage_project_skills
       - can_view_external_services_usage
       - can_view_platform_storage
       - can_manage_platform_storage

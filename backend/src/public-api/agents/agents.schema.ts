@@ -63,7 +63,6 @@ export const AgentProfileSchema = z
 export const AgentSettingsSchema = z
   .strictObject({
     defaultEnvironmentId: z.string().nullable().describe('The profile new Projects of this Agent are created from'),
-    platformApi: z.boolean().describe('Whether this Agent’s pods hold a platform-api key of their own'),
   })
   .meta({ id: 'AgentSettings' });
 

@@ -1,6 +1,6 @@
 ---
 kind: explanation
-terms: [Custom Agent, Built-in Agent, Agent Profile, Publish (Agent), Default environment (Agent), Disable (Agent)]
+terms: [Custom Agent, Built-in Agent, Agent Profile, Publish (Agent), Default environment (Agent), Disable (Agent), Service settings (Agent)]
 adrs: [0054, 0057, 0058]
 ---
 
@@ -38,8 +38,9 @@ A Template is what every new Project starts with, and the App is whatever `start
 
 - An [Agent Profile](../../GLOSSARY.md) is the Agent's definition in one scope. A Custom Agent has exactly one per Environment; **Development is the only editable one**, and every other is a copy placed there by a Publish ([ADR-0058](../adr/0058-a-custom-agent-holds-one-definition-per-environment-and-a-project-keeps-the-files-it-was-created-with.md)). A Built-in Agent has one Profile per Organization holding only its Skills, parked at Development, applying everywhere and created the first time its Skills are read or changed there ([ADR-0051](../adr/0051-skills-are-stored-as-immutable-per-file-versions-and-a-built-in-agents-skills-live-on-a-development-profile.md)).
 - Profiles carry no versions and no history: editing overwrites Development, and [Publish (Agent)](../../GLOSSARY.md) overwrites the target, keeping nothing of what was there. The Agent page lists every Environment beside the open one, with its drift — *Same as Development*, or which of prompt, model, skills and template differ — and the Publish dialog repeats it per target, shows a Template line (*Same*, *Changed*, *Added* or *Removed*, hidden when neither side has a Template) beside Prompt, Model and Skills, disables its confirm when the target is already identical, and holds the [Default environment (Agent)](../../GLOSSARY.md) choice.
-- A [Project](../../GLOSSARY.md) keeps the files it was created with. Editing or republishing an Agent reaches **no** existing Project: the definition is written into the workspace once, at create, and never re-derived ([Dynamic Delivery](dynamic-delivery.md)).
+- A [Project](../../GLOSSARY.md) keeps the files it was created with. Editing or republishing an Agent reaches **no** existing Project: the definition is written into the workspace once, at create, and never re-derived ([Dynamic Delivery](dynamic-delivery.md)). The one exception is the Agent's [Service skills](../../GLOSSARY.md): they reach running Projects live at their newest version, and Publish carries them with the other Skills.
 - The Default environment is the one new Projects are created from, marked **Default** in the Store. A new Custom Agent's is Production, and Development can never be chosen: Settings refuses it and the Publish dialog does not offer it ([ADR-0058](../adr/0058-a-custom-agent-holds-one-definition-per-environment-and-a-project-keeps-the-files-it-was-created-with.md)). Until the Agent holds a Profile there it is not offered in the picker at all — a new Agent reaches it on its first Publish (Agent) — and the Store says so.
+- [Service settings (Agent)](../../GLOSSARY.md) are per Service skill on the Development Profile: the Operations and Event types every new Project of the Agent starts with on, edited from the Skills section (`GET`/`PUT /agents/:id/skills/:skillId/service-settings`, not on the Public API). Turning a write or destructive Operation on needs `can_configure_project_external_services` besides `can_manage_agents`; targets are always picked per Project, and a later change reaches no existing Project ([ADR-0089](../adr/0089-a-custom-agents-service-settings-seed-a-real-project-configuration-in-every-new-project.md)). Publish (Agent) copies them with the Skill pins, and the Publish dialog lists a changed one under Skills.
 - A [Test Project](../../GLOSSARY.md) is the exception: it always reads the Agent's Development Profile, whatever the Default environment is, so the Builder tests what it just saved ([Test Project](test-project.md)).
 - A Custom Agent holds at most one [Template](../../GLOSSARY.md) per Environment, written in Development by its [Builder chat](../../GLOSSARY.md) and carried by Publish (Agent) beside the Profile; how it is stored, saved, laid and cleaned up is on [Template](template.md).
 - The `model` and `variant` pair is validated against the catalog the distribution carries; a model with no reasoning options takes no variant, and anything else is refused as `model-unknown`.
@@ -77,6 +78,8 @@ An Agent's availability for new Projects in one Organization.
 - `backend/src/agent/` — the `agents` rows, the Profile service, the visibility predicate and the Custom Agent routes.
 - `backend/src/store/agent-profile.repository.ts` — the Profile and its pinned Skills, per Environment.
 - `frontend/src/pages/store/agent-page.tsx` — the Agent page: the editable name and description, the Environment list and the Development panel.
+- `frontend/src/components/store/environment-list.tsx` — the Environment list beside the panel, shared with the External Service page.
+- `frontend/src/pages/store/agent-service-settings-dialog.tsx` — the Service settings (Agent) dialog the Skills section opens.
 - `frontend/src/components/store/entry-name-field.tsx` — the name field with its live slug, shared by New agent, New skill, Duplicate and Import.
 - `frontend/src/pages/store/agent-publish-dialog.tsx` — the Publish dialog.
 

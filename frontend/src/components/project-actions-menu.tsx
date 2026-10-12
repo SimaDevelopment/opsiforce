@@ -92,7 +92,8 @@ export function ProjectActionsMenu(props: {
 
   const kind = () => props.project?.kind;
   const kindKnown = () => kind() !== undefined;
-  const isBuilderChat = () => kind() === 'skill_builder_chat' || kind() === 'agent_builder_chat';
+  const isBuilderChat = () =>
+    kind() === 'skill_builder_chat' || kind() === 'agent_builder_chat' || kind() === 'external_service_builder_chat';
   const showMove = () =>
     kind() === null && (moveTargets().length > 0 || (canManageWorkspaces() && props.workspaceId !== null));
   const showDuplicate = () => canDuplicate() && kind() === null;

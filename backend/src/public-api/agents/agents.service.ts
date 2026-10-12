@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import type { AgentCaller } from '../../agent/agent.types';
 import { Perms } from '../../permission/permission.constants';
-import { assertPermission, chatProjectIdOf, type Caller } from '../auth/caller';
+import { assertPermission, callingProjectOf, chatProjectIdOf, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { AgentMapper } from './agents.mapper';
 import { PublicAgentsRepository } from './agents.repository';
@@ -85,5 +85,6 @@ function scopeOf(caller: Caller): AgentCaller {
     tenantId: caller.tenant.id,
     userId: caller.user.platformId,
     canManageAgents: caller.permissions.has(Perms.manageAgents),
+    ...callingProjectOf(caller),
   };
 }

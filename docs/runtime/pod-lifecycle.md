@@ -58,7 +58,7 @@ adrs: [0019]
 
 ### Suspension
 
-- Each environment has two Redis TTL keys, one per kind of [Keep-alive activity](../../GLOSSARY.md): agent activity and app activity. Each kind has its own idle timeout and the pod is suspended only once both have expired.
+- Each environment has two Redis TTL keys, one per kind of [Keep-alive activity](../../GLOSSARY.md): agent activity and app activity. Each kind has its own idle timeout and the pod is suspended only once both have expired. The ProjectEnvironment serving a [Custom External Service](../../GLOSSARY.md) at its Default environment is never suspended for idleness ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
 - Expiry is delivered by Redis keyspace notifications (`notify-keyspace-events Ex`, set in the Redis deployment); the listener suspends with the conditional update, deletes the pod, and is backstopped by a startup sweep for expiries missed while the backend was down.
 
 ## States

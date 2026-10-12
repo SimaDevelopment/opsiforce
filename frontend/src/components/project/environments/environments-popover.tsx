@@ -22,7 +22,6 @@ import { EnvTargetRow } from './env-target-row';
 import { EnvStatusDot } from './env-status-dot';
 import { PublishDialog } from './publish-dialog';
 import { EnvironmentVariablesDialog } from './environment-variables-dialog';
-import { ExternalServicesDialog } from '~/components/external-services/external-services-dialog';
 
 export interface EnvironmentsPopoverProps {
   projectId: string;
@@ -40,7 +39,6 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const canPublish = () => hasPermission(Permission.publishProject);
   const canManageVariables = () => hasPermission(Permission.manageEnvironmentVariables);
   const canSchedules = () => hasPermission(Permission.manageSchedules);
-  const canManageExternalServices = () => hasPermission(Permission.manageExternalServices);
 
   const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);
@@ -69,7 +67,6 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
 
   const [authEnv, setAuthEnv] = createSignal<ProjectEnvironment | null>(null);
   const [variablesEnv, setVariablesEnv] = createSignal<ProjectEnvironment | null>(null);
-  const [externalServicesEnv, setExternalServicesEnv] = createSignal<ProjectEnvironment | null>(null);
   const [publishTarget, setPublishTarget] = createSignal<PublishTarget | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<ProjectEnvironment | null>(null);
   const [pendingRestart, setPendingRestart] = createSignal<ProjectEnvironment | null>(null);
@@ -148,13 +145,11 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     canPublish: canPublish() && target !== null,
     canManageVariables: canManageVariables(),
     canSchedules: canSchedules(),
-    canManageExternalServices: canManageExternalServices(),
     restarting: restartingId() === env.id,
     onAuth: () => setAuthEnv(env),
     onVariables: () => setVariablesEnv(env),
     onPublish: () => setPublishTarget(target),
     onSchedules: () => openSchedules(env),
-    onExternalServices: () => setExternalServicesEnv(env),
     onRestart: () => setPendingRestart(env),
     onDelete: () => setPendingDelete(env),
   });
@@ -248,13 +243,6 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         environment={variablesEnv()}
         onOpenChange={(value) => {
           if (!value) setVariablesEnv(null);
-        }}
-      />
-
-      <ExternalServicesDialog
-        environment={externalServicesEnv()}
-        onOpenChange={(value) => {
-          if (!value) setExternalServicesEnv(null);
         }}
       />
 

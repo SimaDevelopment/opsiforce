@@ -1,0 +1,30 @@
+# An External Service's skill is a Skill marked by its service, given per Agent or per Project, and reads its operations live
+
+Agents learn an External Service from a skill, but a skill that lists operations drifts from the manifest the Gate enforces, a skill baked into the agent image never reaches Custom Agents or Custom External Services, and a skill that stays on an old version keeps teaching inputs a newer manifest refuses. Agent editors already know how to give an Agent a skill, and a Project sometimes needs a service its Agent does not carry.
+
+**Each External Service carries one authored `SKILL.md` in its own folder (concepts, gotchas, inbound). The platform keeps it as a Skill in the Store named `service-<slug>` and marked by its service; an Agent gets it through the Store like any Skill, and a ProjectEnvironment gets it as soon as it has a Project configuration for the service. What the service can do and what is on right now are never in the skill but fetched live from the Gate.** Concretely:
+
+- **Live, behind the pod's Gateway Key:** `GET $EXTERNAL_SERVICES_URL/<service>/openapi.json` (OpenAPI 3.1 built from the manifest the Gate is using, cached by manifest hash) and `GET $EXTERNAL_SERVICES_URL/<service>` (describe: operations `on`/`off`, the Project configuration with labels, `complete`) for the calling environment. Humans read the same document through Scalar on the service's page, behind sign-in, never on the public `/api/v1/docs`.
+- **Written once:** how to call, describe, the `callService` helper for App code, the errors and what to tell the user live in the `platform` skill's "External Services" section; a service skill only points there.
+- **A Skill with one author:** a `skills` row marked by its service (one per service, deleted with it), built-in for a Built-in External Service and the Organization's for a custom one. A new version is laid only when the rendered document changes: at boot for a built-in, for a custom service whenever the files of its Default environment's `app/` change, on a Publish or in place, noticed on the backend's next read of them. The Store, the skill builder and the Public API refuse every edit to it, and the Store refuses any other skill named `service-*`. No Service skill ships in the agent image.
+- **Always the latest version.** An Agent Profile that carries a Service skill follows its newest version, unlike any other Skill, which stays on the Version it pinned: the text describes a live API, and an old version names Operations that may be gone.
+- **Given per Agent or per Project, never as access:** an Agent carries it only when someone adds it on the Agent page, like any Skill — per Environment for a Custom Agent, per Organization for a Built-in Agent; nothing in `agents.json` adds one. A ProjectEnvironment with a Project configuration for a service gets its skill whatever its Agent carries, and may Switch off (Skill) it ([ADR-0085](0085-a-project-environment-switches-skills-off-by-a-stored-choice-and-the-chat-bar-derives-the-rest.md)). The Gate reads only the Project configuration.
+- **A new Project configuration starts from the manifest:** reads on, writes and destructive Operations off. Two exceptions: a Skill & Agent Builder chat is created with `public-api` configured and the writes it needs on, which also brings it the skill ([ADR-0087](0087-the-public-api-is-a-built-in-external-service-and-pods-reach-it-only-through-the-gate.md)); and a Project of a Custom Agent is created with a configuration written from the Agent's Service settings (Agent) ([ADR-0089](0089-a-custom-agents-service-settings-seed-a-real-project-configuration-in-every-new-project.md)).
+- **Live in existing Projects, for every Agent kind.** Adding or removing a Service skill on an Agent, a new version and a service becoming or ceasing to be Available reach Projects that already run that Agent. In a Custom Agent's Project this is an exception to [ADR-0058](0058-a-custom-agent-holds-one-definition-per-environment-and-a-project-keeps-the-files-it-was-created-with.md)'s snapshot at create; its prompt, model and other Skills stay as created.
+- **`x-opsiforce-via: app`** marks App calls in the call log; a missing header is `agent`. The caller sets it, so nothing grants or refuses access on it.
+
+## Considered options
+
+- **A skill generated from the manifest.** Rejected: how an App receives a service's Events (the doorbell, the `events` table, what each field means) is not an Operation and cannot be generated.
+- **An authored skill listing the operations, or a generated `reference.md` / `openapi.json` delivered into the skill folder.** Rejected: the first drifts on every rename; the delivered copies disagree with the Gate until a fan-out reaches every workspace.
+- **A skill per environment listing allowed operations and bounded values.** Rejected: a chat that read it keeps the old text after a save, every save becomes a redelivery, and the agent cannot tell the user which switch to turn on for an operation it has never heard of.
+- **Pinning a Service skill to a Version like any other Skill.** Rejected: a pin outlives the manifest it describes.
+- **Service skills frozen at create in a Custom Agent's Projects, as its other Skills are.** Rejected: the Gate enforces a newly published manifest at once, so frozen text only keeps the agent wrong about it.
+- **A client package for App code.** Rejected: each App freezes its copy; a ten-line `fetch` helper depends only on the HTTP contract we keep stable anyway, with types from `openapi-typescript` when wanted.
+
+## Consequences
+
+- An agent makes one call for `openapi.json` and one for describe before its first call to a service in a chat.
+- The skill-delivery reconciler gains a second source of desired skills that applies to every Agent origin, Custom Agents' existing Projects included.
+- A chat may gain a Service skill mid-conversation; it changes what the agent knows, never what the App does.
+- Deleting a service removes its skill from every Agent that carried it.

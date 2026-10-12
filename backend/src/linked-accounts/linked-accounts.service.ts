@@ -126,8 +126,17 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     this.proxyServiceToken = configService.get<string>('linkedAccountProxyServiceToken', '');
   }
 
-  onApplicationBootstrap(): void {
+  async onApplicationBootstrap(): Promise<void> {
+    await this.resealUnplacedSignIns();
     void this.repointConnectedAccounts().then(() => this.keyModels.reconcileKeyModels(readModelCatalog()));
+  }
+
+  private async resealUnplacedSignIns(): Promise<void> {
+    try {
+      await this.vendors.resealUnplacedSignIns();
+    } catch (err) {
+      this.logger.warn(`Linked-account sign-ins were not re-sealed; retried at next boot: ${(err as Error).message}`);
+    }
   }
 
   async repointConnectedAccounts(): Promise<void> {
@@ -233,7 +242,6 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     pasted: unknown
   ): Promise<LinkedAccountView> {
     this.connections.assertBifrostConfigured();
-    const key = this.vendors.encryptionKey();
     const adapter = this.vendors.adapterOf(vendor);
     const accessToken = typeof pasted === 'string' ? pasted.trim() : '';
     const refusal = adapter.pastedTokenRefusal(accessToken);
@@ -256,7 +264,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
         .where(eq(linkedAccounts.modelProviderId, ownerId))
         .for('update');
       if (!row) throw new Error(`The Linked account of ${bifrostProvider} was not stored`);
-      return this.connect(tx, key, row, bifrostProvider, { accessToken, refreshToken: null });
+      return this.connect(tx, row, bifrostProvider, { accessToken, refreshToken: null });
     });
     await afterCommit();
     return this.viewOf(vendor, connected, null);
@@ -264,7 +272,6 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   private async disconnect(ownerId: string, bifrostProvider: string, vendor: VendorId): Promise<LinkedAccountView> {
     this.connections.assertBifrostConfigured();
-    const key = this.vendors.encryptionKey();
     return db.transaction(async (tx) => {
       const [row] = await tx
         .select()
@@ -275,7 +282,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       if (row.credential) {
         await this.vendors.revokeWithVendor(
           this.vendors.adapterOf(row.vendor),
-          this.vendors.unsealCredential(key, row.credential)
+          this.vendors.openCredential(row.modelProviderId, row.credential)
         );
       }
       const disconnected: LinkedAccountRow = { ...row, credential: null, statusReason: null, pendingSignIn: null };
@@ -296,7 +303,6 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     ownerIdIn: (tx: DbExecutor) => Promise<string>
   ): Promise<StartedSignInView> {
     this.connections.assertBifrostConfigured();
-    const key = this.vendors.encryptionKey();
     const started = await this.startWithVendor(this.vendors.adapterOf(vendor));
     const now = Date.now();
     const pending: PendingSignIn = {
@@ -307,10 +313,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       nextPollAt: now,
       pollIntervalMs: Math.max(started.pollIntervalMs, MIN_POLL_GAP_MS),
     };
-    const sealedPending = this.vendors.seal(key, pending as unknown as JsonObject);
 
     await db.transaction(async (tx) => {
       const ownerId = await ownerIdIn(tx);
+      const sealedPending = this.vendors.sealPendingSignIn(ownerId, pending as unknown as JsonObject);
       await tx
         .insert(linkedAccounts)
         .values({
@@ -334,7 +340,6 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       throw new UnauthorizedException(UNKNOWN_CALLER_MESSAGE);
     }
     const hash = callerSecretHashOf(callerSecret);
-    const key = this.vendors.encryptionKey();
 
     const served = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -345,7 +350,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       if (!row || !timingSafeStringEqual(row.callerSecretHash, hash)) {
         throw new UnauthorizedException(UNKNOWN_CALLER_MESSAGE);
       }
-      return this.servedCredential(tx, key, row, forceRefresh);
+      return this.servedCredential(tx, row, forceRefresh);
     });
     if (!served) throw new ConflictException(SIGN_IN_ENDED_MESSAGE);
     return {
@@ -357,13 +362,12 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
   }
 
   private async usageOf(ownerId: string | null): Promise<LinkedAccountUsageView> {
-    const key = this.vendors.encryptionKey();
     const served = await db.transaction(async (tx) => {
       const [row] = ownerId
         ? await tx.select().from(linkedAccounts).where(eq(linkedAccounts.modelProviderId, ownerId)).for('update')
         : [];
       if (!row) throw new ConflictException(NOT_CONNECTED_MESSAGE);
-      return this.servedCredential(tx, key, row, false);
+      return this.servedCredential(tx, row, false);
     });
     if (!served) throw new ConflictException(SIGN_IN_ENDED_MESSAGE);
     let usage: VendorUsage;
@@ -385,13 +389,12 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   private async servedCredential(
     tx: DbExecutor,
-    key: Buffer,
     row: LinkedAccountRow,
     forceRefresh: boolean
   ): Promise<ServedCredential | null> {
     if (!row.credential) throw new ConflictException(NOT_CONNECTED_MESSAGE);
     const adapter = this.vendors.adapterOf(row.vendor);
-    const current = this.vendors.unsealCredential(key, row.credential);
+    const current = this.vendors.openCredential(row.modelProviderId, row.credential);
     const renewal = await this.renewed(adapter, current, forceRefresh);
     if (renewal.outcome === 'ended') {
       await this.endSignIn(tx, row, renewal.reason);
@@ -400,7 +403,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     if (renewal.credential !== current) {
       await tx
         .update(linkedAccounts)
-        .set({ credential: this.vendors.seal(key, { ...renewal.credential }) })
+        .set({ credential: this.vendors.sealCredential(row.modelProviderId, renewal.credential) })
         .where(eq(linkedAccounts.modelProviderId, row.modelProviderId));
     }
     return { adapter, credential: renewal.credential, accountId: renewal.accountId };
@@ -456,7 +459,6 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     bifrostProvider: string,
     vendor: VendorId
   ): Promise<LinkedAccountView> {
-    const key = this.vendors.encryptionKey();
     const afterCommit: Array<() => Promise<void>> = [];
     const view = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -467,7 +469,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       if (!row) return this.viewOf(vendor, null, null);
       if (!row.pendingSignIn) return this.viewOf(vendor, row, null);
 
-      const pending = this.vendors.unseal(key, row.pendingSignIn) as unknown as PendingSignIn;
+      const pending = this.vendors.openPendingSignIn(
+        row.modelProviderId,
+        row.pendingSignIn
+      ) as unknown as PendingSignIn;
       const now = Date.now();
       if (now >= pending.expiresAt) {
         await this.setPending(tx, row, null);
@@ -477,7 +482,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
       const poll = await this.pollVendor(this.vendors.adapterOf(row.vendor), pending);
       if (poll.outcome === 'completed') {
-        const connection = await this.connect(tx, key, row, bifrostProvider, poll.credential);
+        const connection = await this.connect(tx, row, bifrostProvider, poll.credential);
         afterCommit.push(connection.afterCommit);
         return this.viewOf(vendor, connection.connected, null);
       }
@@ -487,7 +492,11 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       }
       const wait = poll.outcome === 'rate-limited' ? RATE_LIMITED_WAIT_MS : pending.pollIntervalMs;
       const next = { ...pending, nextPollAt: now + wait };
-      await this.setPending(tx, row, this.vendors.seal(key, next as unknown as JsonObject));
+      await this.setPending(
+        tx,
+        row,
+        this.vendors.sealPendingSignIn(row.modelProviderId, next as unknown as JsonObject)
+      );
       return this.viewOf(vendor, row, pendingView(next));
     });
     for (const step of afterCommit) await step();
@@ -496,7 +505,6 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   private async connect(
     tx: DbExecutor,
-    key: Buffer,
     row: LinkedAccountRow,
     bifrostProvider: string,
     credential: VendorCredential
@@ -506,7 +514,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       : newCallerSecret();
     const connected: LinkedAccountRow = {
       ...row,
-      credential: this.vendors.seal(key, { ...credential }),
+      credential: this.vendors.sealCredential(row.modelProviderId, credential),
       statusReason: null,
       pendingSignIn: null,
       callerSecretHash: callerSecret ? callerSecretHashOf(callerSecret) : row.callerSecretHash,
@@ -584,12 +592,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
   }
 
   private viewOf(vendor: VendorId, row: LinkedAccountRow | null, signIn: SignInView | null): LinkedAccountView {
-    const signedInAs =
-      row?.credential && this.vendors.hasEncryptionKey()
-        ? this.vendors
-            .adapterOf(vendor)
-            .describe(this.vendors.unsealCredential(this.vendors.encryptionKey(), row.credential)).signedInAs
-        : null;
+    const signedInAs = row?.credential
+      ? this.vendors.adapterOf(vendor).describe(this.vendors.openCredential(row.modelProviderId, row.credential))
+          .signedInAs
+      : null;
     return {
       vendor,
       state: row?.credential ? 'connected' : row?.statusReason ? 'needs-sign-in' : 'awaiting-sign-in',

@@ -1,8 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { db } from '../../db';
-import { agentSettings } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { Perms } from '../../src/permission/permission.constants';
@@ -13,7 +10,7 @@ import {
   createAgent,
   createProject,
   createTenant,
-  platformApiKeyFor,
+  serviceKeyFor,
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
@@ -282,9 +279,8 @@ describe('the Model providers page', () => {
     it('refuses an Agent Caller, even alongside a permitted human’s headers', async () => {
       const { tenant, admin } = await seededTenant();
       const agent = await seedLiveAgent(tenant.tenantId, admin.userId);
-      await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, agent.id));
       const callerProjectId = await createProject(app, tenant, { agentId: agent.id, createdBy: admin.userId });
-      const callerKey = await platformApiKeyFor(app, tenant, callerProjectId);
+      const callerKey = await serviceKeyFor(app, tenant, callerProjectId);
       const bearer = { authorization: `Bearer ${callerKey}` };
 
       const alone = await app.inject({ method: 'GET', url: '/api/model-providers', headers: bearer });

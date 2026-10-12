@@ -32,6 +32,7 @@
 - [Agent Copies](agent-system/agent-copies.md) — Duplicate, Export and Import of an Agent into a new Custom Agent
 - [Skill](agent-system/skills.md) — the catalog, the publish gate, Versions and what an Agent pins
 - [Dynamic Delivery](agent-system/dynamic-delivery.md) — who writes which file in a workspace, and when a change reaches one
+- [Switch off (Skill)](agent-system/switch-off-skill.md) — one environment hiding a Skill from its agent, and the chat bar's Skills popover
 - [Platform Skill](agent-system/platform-skill.md) — the shared skill carrying the App contract every Agent runs under
 - [Skill & Agent Builder](agent-system/skill-agent-builder.md) — authoring by conversation, one chat per Skill or Agent
 - [Test Project](agent-system/test-project.md) — the one Project a Builder chat tests its subject in, and its Update and Reset
@@ -42,13 +43,21 @@
 **Gateways** (`gateways/`)
 - [LLM Gateway](gateways/llm-gateway.md) — Bifrost, per-Project virtual keys, budgets and provider routing: providers owned by the UI, fixed weights only on the `backend` key
 - [Linked-account Proxy](gateways/linked-account-proxy.md) — the stateless in-cluster proxy that serves signed-in ChatGPT accounts
-- [Service Gateway](gateways/service-gateway.md) — one per-Project token for non-LLM services and platform pushes
+- [Service Gateway](gateways/service-gateway.md) — one per-environment key for External Services, the runtime proxy and platform pushes
 - [Request Logging](gateways/request-logging.md) — how much of an App's traffic the app-mode proxy records
 
 **External services** (`external-services/`)
-- [Service template](external-services/service-template.md) — the audience-first routes, ingest, storage, doorbell and metering every inbound service plugs into
+- [Service manifest](external-services/service-manifest.md) — what an External Service is made of: the folder, `service.json`, the handlers and the SDK
+- [Gate](external-services/gate.md) — the checks in front of every Operation call, what the service receives and what is checked on the way back
+- [Configuration](external-services/configuration.md) — the Service and Project configurations: storage, sealing, Available, saves, Rotate and after-save hooks
+- [Event](external-services/events.md) — webhooks into Events: verification, routing by bounds, the per-environment store and the doorbell
+- [Call log](external-services/call-log.md) — what each call records, retention, Usage and who reads them
+- [Service skill](external-services/service-skill.md) — a service's Skill in the Store, given per Agent or per configured Project, and how it reaches Projects
+- [External Service Builder](external-services/external-service-builder.md) — writing, testing, publishing and retiring a Custom External Service, and its Default environment
+- [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new Draft
+- [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls through the Gate
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment
-- [WhatsApp](external-services/whatsapp.md) — platform-global channels and per-environment chat allowlists
+- [WhatsApp](external-services/whatsapp.md) — numbers in the Service configuration, chats per environment, the v1 import
 
 **Public API** (`public-api/`)
 - [API Token](public-api/api-token.md) — who calls the API, how a program signs in and which Organization it acts in
@@ -87,5 +96,5 @@
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps
-- [Add an external service](operations/add-an-external-service.md) — one definition, one barrel line, one skill
-- [Onboard a WhatsApp number](operations/onboard-a-whatsapp-number.md) — provider channel, registration, allowlisting
+- [Add an external service](operations/add-an-external-service.md) — a folder with a Service manifest, handlers and a Service skill, and one commit
+- [Onboard a WhatsApp number](operations/onboard-a-whatsapp-number.md) — Whapi channel, the number item, QR link, picking chats

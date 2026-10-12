@@ -12,6 +12,15 @@ ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/log-writer ./cmd/agent-log-writer
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/agent-control ./cmd/agent-control
 
+FROM node:24.18.0-slim AS external-service-sdk
+
+WORKDIR /sdk
+COPY external-service-sdk/package.json ./
+RUN npm install --no-audit --no-fund --no-package-lock --no-save \
+    typescript@6.0.3 @types/node@22.19.15 zod@4.5.4 ajv@8.20.0
+COPY external-service-sdk/ ./
+RUN node scripts/pack-sdk.ts /out
+
 FROM node:24.18.0-slim
 
 ARG OPENCODE_CONFIG=agent-config/opencode.json
@@ -62,6 +71,15 @@ RUN cp -a /opt/agent-config-src/agents/. /opt/agents/ \
     && node /opt/agent-config-src/scripts/compose-skills.mjs /opt/agent-config-src/skills /opt/agents \
     && node /opt/agent-config-src/scripts/merge-registry.mjs /opt/agent-config-src/agents.json /opt/agent-config-src/private/agents.json /opt/agents/agents.json \
     && rm -rf /opt/agent-config-src /opt/agents/.gitkeep
+
+COPY --from=external-service-sdk /out/ /opt/opsiforce/external-service-sdk/
+COPY external-services/ /opt/opsiforce/external-services-src/
+RUN mkdir -p /opt/agents/external-service-builder/reference /opt/agents/external-service-builder/template/app/vendor \
+    && find /opt/opsiforce/external-services-src -mindepth 1 -maxdepth 1 -type d \
+       -exec cp -a {} /opt/agents/external-service-builder/reference/ \; \
+    && rm -rf /opt/opsiforce/external-services-src \
+    && cp /opt/opsiforce/external-service-sdk/external-service-sdk-*.tgz /opt/agents/external-service-builder/template/app/vendor/ \
+    && chmod -R a-w /opt/opsiforce/external-service-sdk /opt/agents/external-service-builder/reference
 
 COPY agent-config/scripts/guard.sh /usr/local/bin/guard
 COPY agent-config/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh

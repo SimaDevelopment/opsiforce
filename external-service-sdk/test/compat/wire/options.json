@@ -1,0 +1,35 @@
+{
+  "service": "fixture-crm",
+  "route": "options",
+  "name": "listAccounts",
+  "body": {
+    "context": {
+      "callId": "00000000-0000-4000-8000-000000000001",
+      "caller": {
+        "tenantId": "00000000-0000-4000-8000-000000000002",
+        "projectId": "00000000-0000-4000-8000-000000000003",
+        "environmentId": "00000000-0000-4000-8000-000000000003",
+        "environment": "dev",
+        "via": "form"
+      },
+      "serviceConfiguration": {
+        "baseUrl": "https://crm.example.com",
+        "region": "eu",
+        "apiKey": "crm-key-1",
+        "mailboxes": [
+          {
+            "label": "Support",
+            "token": "support-token",
+            "id": "li_0000000000000004"
+          }
+        ]
+      },
+      "webhookUrl": "https://opsiforce.test/api/external-services/webhooks/fixture-crm"
+    },
+    "form": "projectForm",
+    "values": {
+      "mailbox": "li_0000000000000004"
+    },
+    "query": "glo"
+  }
+}

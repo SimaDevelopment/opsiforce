@@ -17,6 +17,6 @@ The loop:
 
 ```sh
 node scripts/validate-skill.mjs "scratch/$NAME" --name "$NAME"   # ERRORS and LINTS, offline
-node scripts/pack-skill.mjs --json "scratch/$NAME" > scratch/body.json
-sh   scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json      # publish a Version
+node scripts/pack-skill.mjs --json "scratch/$NAME" | jq --arg id "$ID" '. + {id: $id}' > scratch/body.json
+sh   scripts/api.sh call create_skill_version @scratch/body.json             # publish a Version
 ```

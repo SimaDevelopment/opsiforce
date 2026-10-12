@@ -2,7 +2,6 @@ import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from '
 import type { JsonValue } from './json';
 
 const ALGORITHM = 'aes-256-gcm';
-const KEY_BYTES = 32;
 const IV_BYTES = 12;
 
 export type EncryptedResourceValue = {
@@ -12,14 +11,7 @@ export type EncryptedResourceValue = {
   data: string;
 };
 
-export function parseEncryptionKey(hex: string): Buffer {
-  const key = Buffer.from(hex, 'hex');
-  if (key.byteLength !== KEY_BYTES || key.toString('hex') !== hex.toLowerCase()) {
-    throw new Error(`EXTERNAL_SERVICES_ENCRYPTION_KEY must be ${KEY_BYTES * 2} hex characters`);
-  }
-  return key;
-}
-
+// TODO: remove in the release after External Services v2 ships: v1 envelopes; only tests build them (the WhatsApp importer tests and test/linked-accounts/sealing.test.ts), so rewrite those fixtures when the importers go
 export function encryptResourceValue(key: Buffer, value: JsonValue): EncryptedResourceValue {
   const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv(ALGORITHM, key, iv);
@@ -33,6 +25,7 @@ export function encryptResourceValue(key: Buffer, value: JsonValue): EncryptedRe
   };
 }
 
+// TODO: remove in the release after External Services v2 ships: see encryptResourceValue
 export function decryptResourceValue(key: Buffer, envelope: EncryptedResourceValue): JsonValue {
   const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(envelope.iv, 'base64'));
   decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));

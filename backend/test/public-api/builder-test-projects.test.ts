@@ -20,7 +20,7 @@ import {
   addMember,
   createTenant,
   createProject,
-  platformApiKeyFor,
+  callTokenFor,
   stampProjectKind,
   type MemberFixture,
   type TenantFixture,
@@ -101,7 +101,7 @@ describe('a Builder chat pod creating a test Project', () => {
       createdBy: creator.userId,
       builderChatId: skillChatId,
     });
-    return platformApiKeyFor(app, tenant, skillChatId);
+    return callTokenFor(app, tenant, skillChatId);
   }
 
   async function createTestProject(title: string) {
@@ -127,7 +127,6 @@ describe('a Builder chat pod creating a test Project', () => {
     colleague = await addMember(app, tenant, [Perms.usePublicApi]);
 
     const chatAgent = await seedLiveAgent(tenant.tenantId, creator.userId);
-    await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, chatAgent.id));
     childAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId, { visibility: 'private' })).id;
     otherAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
     chatAgentId = chatAgent.id;
@@ -136,7 +135,7 @@ describe('a Builder chat pod creating a test Project', () => {
     await stampProjectKind(chatId, 'agent_builder_chat');
     await db.update(agents).set({ builderChatId: chatId }).where(eq(agents.id, childAgentId));
     await defaultToProduction(childAgentId);
-    chatKey = await platformApiKeyFor(app, tenant, chatId);
+    chatKey = callTokenFor(app, tenant, chatId);
   });
 
   afterEach(async () => {
@@ -172,7 +171,7 @@ describe('a Builder chat pod creating a test Project', () => {
 
     expect((await me(bearer(chatKey))).json()).toMatchObject({ builderTestProject: { id } });
     expect((await me(creator.headers)).json()).toMatchObject({ builderTestProject: null });
-    const testKey = await platformApiKeyFor(app, tenant, id);
+    const testKey = callTokenFor(app, tenant, id);
     expect((await me(bearer(testKey))).json()).toMatchObject({ builderTestProject: null });
   });
 
@@ -256,7 +255,7 @@ describe('a Builder chat pod creating a test Project', () => {
 
   it('refuses kind from a pod whose own Project is not a Builder chat', async () => {
     const ordinaryId = await createProject(app, tenant, { createdBy: creator.userId });
-    const ordinaryKey = await platformApiKeyFor(app, tenant, ordinaryId);
+    const ordinaryKey = callTokenFor(app, tenant, ordinaryId);
 
     const res = await app.inject({
       method: 'POST',
@@ -395,7 +394,7 @@ describe('a Builder chat pod creating a test Project', () => {
     });
 
     it('refuses both refreshes to everyone but the chat that created the Test Project', async () => {
-      const testKey = await platformApiKeyFor(app, tenant, testId);
+      const testKey = callTokenFor(app, tenant, testId);
       const otherChatKey = await skillChatKey();
       const ordinary = await app.inject({
         method: 'POST',

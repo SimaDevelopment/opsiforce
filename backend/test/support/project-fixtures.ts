@@ -6,6 +6,7 @@ import { projects, skills, tenantSettings, users, workspaces } from '../../db/sc
 import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
 import { ensureBuiltInAgent } from './agent-fixtures';
 import { EnvironmentService } from '../../src/environment/environment.service';
+import { CallTokens } from '../../src/gateway/call-tokens';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectService } from '../../src/project/project.service';
@@ -184,19 +185,21 @@ export async function createProject(
   return project.id;
 }
 
-export function platformApiKeyFor(
-  app: INestApplication,
-  tenant: TenantFixture,
-  projectId: string
-): Promise<string> {
-  return app.get(GatewayKeyService).createKey(projectId, projectId, tenant.tenantId, 'platform-api');
+/** The bearer the Gate hands `public-api` for one call of this Project's pod; reusable only under `StandingCallTokens`. */
+export function callTokenFor(app: INestApplication, tenant: TenantFixture, projectId: string): string {
+  return app
+    .get(CallTokens)
+    .issue({
+      service: 'public-api',
+      callId: randomUUID(),
+      operation: 'any',
+      tenantId: tenant.tenantId,
+      projectId,
+      projectEnvironmentId: projectId,
+    }).token;
 }
 
-export function serviceKeyFor(
-  app: INestApplication,
-  tenant: TenantFixture,
-  projectId: string
-): Promise<string> {
+export function serviceKeyFor(app: INestApplication, tenant: TenantFixture, projectId: string): Promise<string> {
   return app.get(GatewayKeyService).createKey(projectId, projectId, tenant.tenantId);
 }
 
@@ -240,9 +243,7 @@ export async function addNamedEnvironment(
   projectId: string,
   name: string
 ): Promise<string> {
-  const environment = await app
-    .get(EnvironmentService)
-    .create(tenant.tenantId, { name, slug: name.toLowerCase() });
+  const environment = await app.get(EnvironmentService).create(tenant.tenantId, { name, slug: name.toLowerCase() });
   const projectEnvironmentId = randomUUID();
   await app.get(ProjectEnvironmentService).create({
     id: projectEnvironmentId,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import path from 'node:path';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { SkillRepository } from '../store/skill.repository';
@@ -16,6 +16,8 @@ import {
 import { TEST_PROJECT_KIND } from '../project/project.types';
 import { WORKSPACE_GITIGNORE } from './platform-ignores';
 import { runtimeAgentSlug } from './runtime-agent-slug';
+import { ServiceSkillSource, type ServiceSkill, type ServiceSkillAudience } from './service-skill-source';
+import { SkillSwitchRepository } from './skill-switch.repository';
 import { WorkspaceWriter } from './workspace-writer';
 
 export class DeliveryTargetMissing extends Error {
@@ -33,7 +35,9 @@ export class DeliveryService {
     private readonly repository: DeliveryRepository,
     private readonly skills: SkillRepository,
     private readonly writer: WorkspaceWriter,
-    private readonly templates: AgentTemplateStore
+    private readonly templates: AgentTemplateStore,
+    private readonly switches: SkillSwitchRepository,
+    @Optional() private readonly serviceSkillSource?: ServiceSkillSource
   ) {}
 
   /** Duplicate carries `.opencode/` as an ignored runtime entry, so only the bookkeeping is left. */
@@ -99,6 +103,19 @@ export class DeliveryService {
     return { target, pinned: profile ? await this.repository.pinnedSkills(profile.id) : [] };
   }
 
+  async serviceSkillsFor(projectEnvironmentId: string): Promise<ServiceSkill[]> {
+    const target = await this.repository.target(projectEnvironmentId);
+    if (!target) throw new DeliveryTargetMissing(projectEnvironmentId);
+    return this.serviceSkills(target, await this.behaviourEnvironmentId(target));
+  }
+
+  async serviceAudienceFor(projectEnvironmentId: string): Promise<ServiceSkillAudience | undefined> {
+    const target = await this.repository.target(projectEnvironmentId);
+    const environmentId = target ? await this.behaviourEnvironmentId(target) : undefined;
+    if (!target?.tenantId || !environmentId) return undefined;
+    return this.audienceOf(target, target.tenantId, environmentId);
+  }
+
   async planFor(projectEnvironmentId: string, options: DeliveryAtCreateOptions = {}): Promise<DeliveryPlan> {
     const target = await this.repository.target(projectEnvironmentId);
     if (!target) throw new DeliveryTargetMissing(projectEnvironmentId);
@@ -107,7 +124,13 @@ export class DeliveryService {
     const environmentId = await this.behaviourEnvironmentId(target);
     const profile = environmentId ? await this.repository.profile(target.agentId, environmentId) : undefined;
     if (target.agentOrigin === 'custom' && !profile) throw new DeliveryTargetMissing(projectEnvironmentId);
-    const pinned = profile ? this.deliverableSkills(target, await this.repository.pinnedSkills(profile.id)) : [];
+    const switchedOff = await this.switches.switchedOffNames(projectEnvironmentId);
+    const pinned = profile
+      ? this.deliverableSkills(target, await this.repository.pinnedSkills(profile.id)).filter(
+          (skill) => !switchedOff.has(skill.name)
+        )
+      : [];
+    const services = (await this.serviceSkills(target, environmentId)).filter((skill) => !switchedOff.has(skill.name));
 
     return {
       projectEnvironmentId,
@@ -118,7 +141,7 @@ export class DeliveryService {
         target.agentOrigin === 'custom' && profile
           ? { slug, model: modelReference(profile.model, profile.variant), promptBody: profile.promptBody ?? '' }
           : null,
-      skills: await this.readTrees(pinned),
+      skills: [...(await this.readTrees(pinned)), ...(await withTrees(services))],
     };
   }
 
@@ -147,6 +170,22 @@ export class DeliveryService {
     this.logger.log(
       `Delivered agent ${plan.runtimeAgentSlug} and ${plan.skills.length} skill(s) to ${plan.projectEnvironmentId}`
     );
+  }
+
+  private async serviceSkills(target: DeliveryTarget, environmentId: string | undefined): Promise<ServiceSkill[]> {
+    if (!this.serviceSkillSource || !target.tenantId || !environmentId) return [];
+    return this.serviceSkillSource.skillsFor(this.audienceOf(target, target.tenantId, environmentId));
+  }
+
+  private audienceOf(target: DeliveryTarget, tenantId: string, environmentId: string): ServiceSkillAudience {
+    return {
+      projectEnvironmentId: target.projectEnvironmentId,
+      agentId: target.agentId,
+      agentName: target.agentName,
+      agentOrigin: target.agentOrigin,
+      tenantId,
+      environmentId,
+    };
   }
 
   /** On a colliding name the snapshot wins for a Custom Agent, the package for a Built-in one (ADR-0060). */
@@ -199,4 +238,15 @@ export class DeliveryService {
       }))
     );
   }
+}
+
+function withTrees(services: ServiceSkill[]): Promise<DeliverySkill[]> {
+  return Promise.all(
+    services.map(async (skill) => ({
+      name: skill.name,
+      skillVersionId: skill.skillVersionId,
+      contentHash: skill.contentHash,
+      tree: await skill.tree(),
+    }))
+  );
 }

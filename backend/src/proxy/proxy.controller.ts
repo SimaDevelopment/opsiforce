@@ -13,6 +13,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { FastifyRequest } from 'fastify';
 import { appCanonicalHost } from '../common/app-host';
+import { OperationSwitches, PUBLIC_API_SERVICE } from '../external-services/configuration/operation-switches';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../identity/forwarded-identity.service';
 import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
@@ -28,6 +29,8 @@ import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
 import { ProxyService } from './proxy.service';
 
 type ProxySurface = 'agent' | 'app' | 'vscode' | 'db';
+
+const CONNECT_PROJECT = 'connect_project';
 
 interface ProxySurfaceBody {
   surface?: ProxySurface;
@@ -62,7 +65,8 @@ export class ProxyController {
     private readonly agentSessionGateway: AgentSessionGateway,
     private readonly identities: ForwardedIdentityService,
     private readonly gatewayKeys: GatewayKeyService,
-    private readonly provenance: ProjectProvenanceRepository
+    private readonly provenance: ProjectProvenanceRepository,
+    private readonly operationSwitches: OperationSwitches
   ) {
     this.proxyControlToken = this.configService.getOrThrow<string>('proxyControlToken');
     this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
@@ -184,9 +188,14 @@ export class ProxyController {
   }
 
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {
-    const key = await this.gatewayKeys.validateToken(token, 'platform-api');
-    if (!key) throw new UnauthorizedException('Unknown gateway key');
+    const key = await this.gatewayKeys.validateToken(token);
+    if (!key?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
     if (key.tenantId !== tenantId) throw new NotFoundException('Project not found');
+    if (!(await this.operationSwitches.isOn(PUBLIC_API_SERVICE, key.projectEnvironmentId, CONNECT_PROJECT))) {
+      throw new ForbiddenException(
+        `${CONNECT_PROJECT} is switched off in the calling Project's ${PUBLIC_API_SERVICE} configuration`
+      );
+    }
 
     const creatorId = await this.provenance.findCreatorId(key.projectId);
     if (!creatorId) throw new UnauthorizedException('The calling Project has no creator');

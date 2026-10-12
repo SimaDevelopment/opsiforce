@@ -30,7 +30,7 @@ adrs: [0009]
 
 ### DB viewer
 
-- Datasette serves three SQLite databases: the App's own database (writable through the write plugin), the platform observability database, and the external-services database written only by the platform backend ([Service template](../external-services/service-template.md)); the latter two are read-only.
+- Datasette serves three SQLite databases: the App's own database (writable through the write plugin), the platform observability database, and the external-services database written only by the platform backend ([Event](../external-services/events.md)); the latter two are read-only.
 - Per-database write permission is declared in `agent-config/datasette-metadata.yml`; the entrypoint seeds the external-services file before launch because Datasette refuses to open an absent file.
 - Gated by `can_view_db_tab`.
 

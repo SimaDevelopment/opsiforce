@@ -6,6 +6,8 @@
   "workspaces": [
     "backend",
     "frontend",
+    "external-service-sdk",
+    "external-services",
     "linked-account-proxy"
   ],
   "scripts": {

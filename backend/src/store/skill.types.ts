@@ -53,9 +53,11 @@ export interface SkillSummary {
   disabled: boolean;
   disableable: boolean;
   available: boolean;
+  retired: boolean;
   createdBy: string | null;
   createdByName: string | null;
   builderChatId: string | null;
+  externalServiceId: string | null;
   usedByAgentCount: number;
   outdatedAgentCount: number;
   latestVersion: SkillVersionSummary | null;
