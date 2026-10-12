@@ -38,7 +38,6 @@ import { canManageExternalService, canSeeExternalServices } from '~/components/e
 import { DeleteServiceDialog, DisableServiceDialog } from '~/components/external-service/service-lifecycle-dialogs';
 import {
   ChangeMark,
-  DraftBadge,
   KindPill,
   NeedsSetupBadge,
   ServiceIcon,
@@ -356,9 +355,6 @@ function ServiceHeader(props: { service: ServicePageModel; editable: OperatorSer
         badges={
           <>
             <OriginBadge origin={props.service.origin} />
-            <Show when={!props.service.published}>
-              <DraftBadge />
-            </Show>
             <Show when={props.service.defaultEnvironment}>
               {(environment) => (
                 <Badge variant="success" class="font-medium">
@@ -562,11 +558,6 @@ function OverviewTab(props: {
             Open Service configuration
           </Button>
         </div>
-      </Show>
-      <Show when={props.service.builderChatId !== null && !props.service.published}>
-        <ReadOnlyNotice>
-          Draft. The External Service Builder is still working on it; nothing calls it until you publish it.
-        </ReadOnlyNotice>
       </Show>
       <Show when={!props.editable && props.service.builderChatId === null}>
         <ReadOnlyNotice>

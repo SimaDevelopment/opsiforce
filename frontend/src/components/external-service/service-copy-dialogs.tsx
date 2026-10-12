@@ -78,7 +78,7 @@ export function DuplicateServiceDialog(props: {
           <DialogHeader>
             <DialogTitle>Duplicate {props.service.displayName}</DialogTitle>
             <DialogDescription>
-              Creates a new Draft service with its own builder chat, starting from this service's code. {COMMITTED_ONLY}
+              Creates a new service with its own builder chat, starting from this service's code. {COMMITTED_ONLY}
             </DialogDescription>
           </DialogHeader>
           <div class="mt-4 flex flex-col gap-4">
@@ -125,7 +125,7 @@ export function ExportServiceDialog(props: {
         <DialogHeader>
           <DialogTitle>Export {props.service.displayName}</DialogTitle>
           <DialogDescription>
-            The file carries this service's code, to import as a new Draft into another Organization or deployment.{' '}
+            The file carries this service's code, to import as a new service into another Organization or deployment.{' '}
             {COMMITTED_ONLY}
           </DialogDescription>
         </DialogHeader>
@@ -335,7 +335,7 @@ export function ImportServiceDialog(props: { open: boolean; onOpenChange: (open:
             {(copy) => (
               <>
                 <DialogHeader>
-                  <DialogTitle>Imported {copy().service.displayName} as a Draft</DialogTitle>
+                  <DialogTitle>Imported {copy().service.displayName}</DialogTitle>
                   <DialogDescription>Its builder has work to do before you can publish it.</DialogDescription>
                 </DialogHeader>
                 <ul class="mt-4 space-y-2 text-xs">
@@ -368,9 +368,9 @@ export function ImportServiceDialog(props: { open: boolean; onOpenChange: (open:
               <DialogHeader>
                 <DialogTitle>Import service</DialogTitle>
                 <DialogDescription>
-                  Creates a new Draft External Service with its own builder chat from a service export file. You fill in
-                  its Service configuration, test it and publish it, as for any Draft. Only the builder's committed work
-                  is in the file.
+                  Creates a new External Service with its own builder chat from a service export file. You fill in its
+                  Service configuration, test it and publish it, as for any new service. Only the builder's committed
+                  work is in the file.
                 </DialogDescription>
               </DialogHeader>
 

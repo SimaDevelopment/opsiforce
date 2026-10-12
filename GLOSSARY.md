@@ -357,7 +357,7 @@ _Avoid_: Platform service, Core service
 
 **Custom External Service**:
 An External Service one Organization authored, run as its own App and live only once published, offered only within that Organization and configured once for that Organization.
-_Avoid_: Tenant service, User service, Private service
+_Avoid_: Tenant service, User service, Private service; Draft (there is no draft state — Development is where the builder works, and a service no Publish has reached is simply not published yet, as for a Custom Agent)
 
 **Service manifest**:
 The one file (`service.json`) that declares everything about an External Service the platform needs without running it: its Service form, its Project form, its Operations, the Event types it may receive and what each Operation or Event may reach.
@@ -416,7 +416,7 @@ The Environment whose running copy of a Custom External Service every caller rea
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development); Live environment, Active environment (the workspace's current view)
 
 **Duplicate (External Service)**:
-Creating a new Draft Custom External Service in the same Organization from another one, named and slugged before it is created, carrying only the files its External Service Builder last committed in Development's `app/` folder. It gets its own builder chat; no Service configuration, Project configuration, state, Calls, chat history or Test Project travels. Built-in External Services are never duplicated.
+Creating a new, unpublished Custom External Service in the same Organization from another one, named and slugged before it is created, carrying only the files its External Service Builder last committed in Development's `app/` folder. It gets its own builder chat; no Service configuration, Project configuration, state, Calls, chat history or Test Project travels. Built-in External Services are never duplicated.
 _Avoid_: Copy, Clone, Fork (non-canonical); Duplicate unqualified (the Project sense)
 
 **Export (External Service)**:
@@ -424,7 +424,7 @@ Producing a Service export from a Custom External Service's last committed `app/
 _Avoid_: Download service.json (the manifest alone); Share; conflating with Export (the Project sense) or Export (Agent)
 
 **Import (External Service)**:
-Creating a new Draft Custom External Service with its own builder chat from a Service export, named and slugged before it is created, by default as the file names it. It is always a new service: a slug already taken is refused, and an SDK major this deployment does not serve arrives with a warning, to be upgraded by the builder before its first Publish.
+Creating a new, unpublished Custom External Service with its own builder chat from a Service export, named and slugged before it is created, by default as the file names it. It is always a new service: a slug already taken is refused, and an SDK major this deployment does not serve arrives with a warning, to be upgraded by the builder before its first Publish.
 _Avoid_: Update, Sync (an import never changes an existing service); Restore; Upload (the transport)
 
 **Service export**:
