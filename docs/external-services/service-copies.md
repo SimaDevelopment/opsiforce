@@ -12,9 +12,9 @@ adrs: [0090]
 
 ### What a copy carries
 
-- A copy is Development's last committed `app/` folder, regular files only (a committed symlink is left out, never followed): the [Custom External Service](../../GLOSSARY.md)'s builder workspace is read at `HEAD`, so work its builder has not committed is left out, and the dialogs say so ([ADR-0090](../adr/0090-a-service-copy-is-always-a-new-draft-made-from-developments-committed-app-folder-and-carries-no-configuration.md)).
+- A copy is Development's last committed `app/` folder, regular files only (a committed symlink is left out, never followed): the [Custom External Service](../../GLOSSARY.md)'s builder workspace is read at `HEAD`, so work its builder has not committed is left out, and the dialogs say so ([ADR-0090](../adr/0090-a-service-copy-is-always-a-new-service-made-from-developments-committed-app-folder-and-carries-no-configuration.md)).
 - Yarn caches, Plug'n'Play files, `node_modules` and macOS `._` and `__MACOSX` entries never travel, even when committed. No [Service configuration](../../GLOSSARY.md), Project configuration, secret, `ctx.state`, Call, chat history, Test Project or test report travels.
-- Every copy is a new Draft with its own builder chat, named and slugged by the admin under the slug rules of New External Service; it never updates an existing service. The admin then fills its Service configuration, tests it and publishes it as any Draft ([External Service Builder](external-service-builder.md)).
+- Every copy is a new, unpublished service with its own builder chat, named and slugged by the admin under the slug rules of New External Service; it never updates an existing service. The admin then fills its Service configuration, tests it and publishes it as any new service ([External Service Builder](external-service-builder.md)).
 - The files are written into the new builder chat's workspace before its pod lays the template, so the pod keeps them and commits them as its first commit. A workspace taken from the pre-warmed pool already holds the template: its tracked `app/` files are removed, the copy is written and committed on top. Either way the copy's commit reads "Copied from <source service name>" (Duplicate) or "Imported from <file name>" (Import).
 
 ### Duplicate and Export
@@ -31,7 +31,7 @@ adrs: [0090]
 - A taken or reserved slug answers `409 slug-taken` with the file's name and slug; the upload is kept, so the dialog resubmits it under a new slug without uploading again.
 - Only entries under `app/` are written, each confined to the new folder; a symlink or a path that leaves it refuses the whole import with `422 import_refused`, and nothing is created.
 - A file without `app/service.json`, of another export kind or with a newer export format version answers 400 (`not_a_service_export`, `export_format_unsupported`); Agent and Project import refuse a Service export the same way.
-- A vendored SDK of a major this deployment does not serve, or a folder failing `check`, still imports as a Draft with a warning that the builder must fix it; Publish's `check` refuses it until then.
+- A vendored SDK of a major this deployment does not serve, or a folder failing `check`, still imports with a warning that the builder must fix it; Publish's `check` refuses it until then.
 
 ## Code
 

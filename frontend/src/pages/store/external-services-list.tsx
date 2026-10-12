@@ -1,6 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import type { SearchSchemaInput } from '@tanstack/solid-router';
-import { builderPath } from '~/api/builder';
 import {
   isCustomServiceSummary,
   useOperatorServices,
@@ -11,7 +10,7 @@ import { usePermissions } from '~/api/permissions';
 import { canManageExternalService, canSeeExternalServices } from '~/components/external-service/service-access';
 import { NewExternalServiceDialog } from '~/components/external-service/new-external-service-dialog';
 import { ImportServiceDialog } from '~/components/external-service/service-copy-dialogs';
-import { DraftBadge, NeedsSetupBadge, ServiceIcon } from '~/components/external-service/service-marks';
+import { NeedsSetupBadge, ServiceIcon } from '~/components/external-service/service-marks';
 import { Pager, createOffsetPages } from '~/components/pager';
 import { SettingsSection } from '~/components/settings/settings-section';
 import {
@@ -54,7 +53,6 @@ const FILTER_OPTIONS: { id: ExternalServiceFilter; label: string; operatorsOnly?
 interface ServiceRow extends ExternalServiceSummary {
   needsSetup: boolean;
   viewOnly: boolean;
-  draft: boolean;
   disabled: boolean;
   hidesBuiltIn: boolean;
   href: string;
@@ -69,13 +67,9 @@ function rowOf(service: ExternalServiceSummary, state: Pick<ServiceRow, 'needsSe
     displayName: service.displayName,
     description: service.description,
     icon: service.icon,
-    draft: custom !== null && !custom.published,
     disabled: custom?.disabled ?? false,
     hidesBuiltIn: custom?.hidesBuiltIn ?? false,
-    href:
-      custom && !custom.published
-        ? builderPath({ type: 'external_service', id: custom.id })
-        : `/store/external-services/${service.id}`,
+    href: `/store/external-services/${service.id}`,
     ...state,
   };
 }
@@ -229,9 +223,6 @@ function ServiceListRow(props: { row: ServiceRow }) {
           <span class="text-sm font-medium">{props.row.displayName}</span>
           <span class="font-mono text-[11px] text-muted-foreground">{props.row.slug}</span>
           <OriginBadge origin={props.row.origin} />
-          <Show when={props.row.draft}>
-            <DraftBadge />
-          </Show>
           <Show when={props.row.disabled}>
             <DisabledBadge />
           </Show>

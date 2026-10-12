@@ -52,14 +52,6 @@ export function usedByLabel(configurations: number): string {
   return configurations === 1 ? 'used by 1 Project configuration' : `used by ${configurations} Project configurations`;
 }
 
-export function DraftBadge() {
-  return (
-    <Badge variant="outline" class="font-medium text-muted-foreground">
-      Draft
-    </Badge>
-  );
-}
-
 export function NeedsSetupBadge() {
   return (
     <Badge variant="warning" class="gap-1 font-medium">

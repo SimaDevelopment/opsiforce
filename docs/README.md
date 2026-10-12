@@ -54,7 +54,7 @@
 - [Call log](external-services/call-log.md) — what each call records, retention, Usage and who reads them
 - [Service skill](external-services/service-skill.md) — a service's Skill in the Store, given per Agent or per configured Project, and how it reaches Projects
 - [External Service Builder](external-services/external-service-builder.md) — writing, testing, publishing and retiring a Custom External Service, and its Default environment
-- [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new Draft
+- [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new service
 - [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls through the Gate
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment
 - [WhatsApp](external-services/whatsapp.md) — numbers in the Service configuration, chats per environment, the v1 import
