@@ -22,6 +22,7 @@ import { ProjectTitleLabel } from '~/components/project/project-header';
 import { DisabledBadge, FOCUS_RING } from '~/components/store/store-list';
 import { ProjectView } from '~/pages/project';
 import { cn } from '~/lib/cn';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 const SUBJECT_ICON = { agent: Bot, skill: Files, external_service: Cable } as const;
 
@@ -38,6 +39,7 @@ function builderLabel(type: BuilderSubjectRef['type']): string {
 export function BuilderPage(props: { subject: BuilderSubjectRef; returnEnv?: string }) {
   const navigate = useNavigate();
   const chat = useBuilderChatFor(() => props.subject);
+  createDocumentTitle(() => chat.data && `${subjectLabel(chat.data.subject)} · ${builderLabel(props.subject.type)}`);
   const refresh = useRefreshBuilderSubject();
   const forget = useForgetBuilderChat();
   const backToSubject = () => navigate({ to: subjectPath(props.subject), search: envSearch(props.returnEnv) });

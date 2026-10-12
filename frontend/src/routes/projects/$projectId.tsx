@@ -1,4 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/solid-router';
+import { useProject } from '~/api/projects';
+import { createDocumentTitle } from '~/lib/create-document-title';
+import { projectTitleOf } from '~/lib/project-title';
 import { ProjectView } from '~/pages/project';
 
 export const Route = createFileRoute('/projects/$projectId')({
@@ -13,6 +16,8 @@ function ProjectPage() {
   const params = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate();
+  const project = useProject(() => params().projectId);
+  createDocumentTitle(() => project.data && projectTitleOf(project.data));
 
   const initialPrompt = () => {
     const { prompt, promptId } = search();

@@ -4,6 +4,7 @@ import { usePermissions } from '~/api/permissions';
 import { Spinner } from '~/components/ui/spinner';
 import { SectionRail } from '~/components/section-rail';
 import { ADMIN_TABS, ADMIN_GROUP_ORDER, firstPermittedAdminTab, adminTabForPath } from '~/constants/admin-tabs';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const Route = createFileRoute('/admin')({
   component: AdminLayout,
@@ -16,6 +17,7 @@ function AdminLayout() {
 
   const permittedTabs = () => ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission));
   const isIndex = () => location().pathname === '/admin' || location().pathname === '/admin/';
+  createDocumentTitle(() => adminTabForPath(location().pathname)?.label ?? 'Admin');
   const currentAllowed = () => {
     const tab = adminTabForPath(location().pathname);
     return !tab || tab.isPermitted(hasPermission);

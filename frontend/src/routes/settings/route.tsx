@@ -9,6 +9,7 @@ import {
   firstPermittedSettingsTab,
   settingsTabForPath,
 } from '~/constants/settings-tabs';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
@@ -25,6 +26,7 @@ function SettingsLayout() {
     const tab = settingsTabForPath(location().pathname);
     return !tab || tab.isPermitted(hasPermission);
   };
+  createDocumentTitle(() => settingsTabForPath(location().pathname)?.label ?? 'Settings');
 
   createEffect(() => {
     if (permissions.isPending) return;

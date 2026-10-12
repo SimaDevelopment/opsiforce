@@ -61,6 +61,7 @@ import {
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
+import { createDocumentTitle } from '~/lib/create-document-title';
 import { formatDate } from '~/lib/format-date';
 
 export const DEFAULT_SKILL_FILE = 'SKILL.md';
@@ -89,6 +90,7 @@ export function SkillPage(props: SkillPageProps) {
   const skillId = () => props.skillId;
 
   const skill = useSkill(skillId);
+  createDocumentTitle(() => skill.data && (skill.data.displayName ?? skill.data.name));
   const versions = useSkillVersions(skillId);
   const agents = useSkillAgents(skillId);
   const fromAgent = useAgent(

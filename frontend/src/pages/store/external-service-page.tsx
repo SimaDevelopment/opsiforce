@@ -80,6 +80,7 @@ import {
 } from '~/components/icons';
 import { Badge } from '~/components/ui/badge';
 import { cn } from '~/lib/cn';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const EXTERNAL_SERVICE_TABS = ['overview', 'configuration', 'calls', 'api'] as const;
 
@@ -198,6 +199,7 @@ export function ExternalServicePage(props: {
     !notFound() &&
     [operatorView, tenantView].some((query) => query.isError && !isNotFound(query.error));
   const allowed = () => permissions.data === undefined || canSeeExternalServices(hasPermission);
+  createDocumentTitle(() => model()?.displayName);
 
   return (
     <div class="h-full overflow-y-auto bg-background">

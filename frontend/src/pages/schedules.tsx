@@ -1,6 +1,7 @@
 import { Show, For, createSignal, createMemo, createEffect } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { createAppQuery } from '~/lib/create-app-query';
+import { createDocumentTitle } from '~/lib/create-document-title';
 import { Link, useNavigate, useSearch } from '@tanstack/solid-router';
 import { scheduleApi, type Schedule, type ScheduleExecution, type UpdateScheduleDto } from '~/api/client';
 import { useEnvironments, useProjectEnvironments } from '~/api/environments';
@@ -42,6 +43,7 @@ function cronToHuman(expr: string): string {
 }
 
 export function SchedulesPage() {
+  createDocumentTitle(() => 'Schedules');
   const qc = useQueryClient();
   const search = useSearch({ from: '/schedules' });
   const navigate = useNavigate();

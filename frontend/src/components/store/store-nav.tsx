@@ -12,12 +12,16 @@ const SECTIONS = [
   { to: '/store/external-services', label: 'External Services', icon: Cable },
 ] as const;
 
+export function storeSectionForPath(pathname: string) {
+  return SECTIONS.find((section) => pathname === section.to || pathname.startsWith(`${section.to}/`));
+}
+
 export function StoreNav() {
   const location = useLocation();
   const { hasPermission } = usePermissions();
   const sections = () =>
     SECTIONS.filter((section) => section.to !== '/store/external-services' || canSeeExternalServices(hasPermission));
-  const isActive = (to: string) => location().pathname === to || location().pathname.startsWith(`${to}/`);
+  const isActive = (to: string) => storeSectionForPath(location().pathname)?.to === to;
 
   return (
     <nav aria-label="Store" class="shrink-0 border-b border-border bg-background">

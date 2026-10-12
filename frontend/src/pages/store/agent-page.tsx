@@ -66,6 +66,7 @@ import {
 import { Permission } from '~/constants/permissions';
 import { slugify } from '~/lib/app-url';
 import { cn } from '~/lib/cn';
+import { createDocumentTitle } from '~/lib/create-document-title';
 import { driftText, isPublished } from './agent-drift';
 import { DevelopmentPanel, ReadOnlyPanel } from './agent-profile-panel';
 import { PublishAgentDialog } from './agent-publish-dialog';
@@ -84,6 +85,7 @@ function refusal(error: unknown, fallback: string): string {
 
 export function AgentPage(props: AgentPageProps) {
   const agent = useAgent(() => props.agentId);
+  createDocumentTitle(() => agent.data && (agent.data.displayName ?? agent.data.name));
   const environments = useEnvironments();
   const { hasPermission } = usePermissions();
   const canManage = () => hasPermission(Permission.manageAgents);
