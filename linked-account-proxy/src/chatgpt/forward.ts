@@ -160,8 +160,8 @@ function failureOf(eventType: string, data: JsonRecord | undefined): StreamFailu
 
 function openingOf(text: string): StreamOpening {
   for (const block of text.split(EVENT_SEPARATOR).slice(0, -1)) {
-    if (!block.trim()) continue;
     const event = parseEventBlock(block);
+    if (event.data === undefined) continue;
     const data = parsedData(event);
     const type = event.event ?? (typeof data?.type === 'string' ? data.type : '');
     if (PREAMBLE_EVENT_TYPES.has(type)) continue;

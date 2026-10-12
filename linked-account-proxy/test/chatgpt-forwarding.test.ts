@@ -130,6 +130,36 @@ describe('responses', () => {
     expect(await res.json()).toEqual({ error: refusal });
   });
 
+  it('looks past keepalive comments and id/retry blocks for an early failure', async () => {
+    const refusal = { type: 'invalid_request_error', code: 'invalid_encrypted_content', message: 'Not verified.' };
+    proxy.upstream.respondWith((res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(': ping\n\n');
+      res.write('retry: 1000\n\n');
+      res.write('id: 1\n\n');
+      res.end(`event: error\ndata: ${JSON.stringify({ type: 'error', error: refusal })}\n\n`);
+    });
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: refusal });
+  });
+
+  it('passes keepalive comments through unchanged once output starts', async () => {
+    const delta = { type: 'response.output_text.delta', delta: 'Hi' };
+    const body = `: ping\n\nevent: response.output_text.delta\ndata: ${JSON.stringify(delta)}\n\n`;
+    proxy.upstream.respondWith((res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(body);
+    });
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(body);
+  });
+
   it('answers a response.failed rate limit before any output with 429', async () => {
     proxy.upstream.respondWith(
       respondWithEventStream([
