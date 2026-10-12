@@ -1,4 +1,3 @@
-import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,7 +11,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../../db';
 import { externalServiceCalls } from '../../../db/schema';
 import { GitService } from '../../git/git.service';
-import { realFileInFolder } from '../registry/service-folder-files';
+import { readStampedFileInFolder } from '../registry/service-folder-files';
 
 const WORKSPACE_ROOT = '/workspace/';
 
@@ -51,15 +50,9 @@ export class ServiceTestReports {
 
   async of(serviceId: string, manifestHash: string | null, workspaceDirectory: string): Promise<TestReportView> {
     const workspace = join(this.storageMountPath, workspaceDirectory);
-    const path = await realFileInFolder(workspace, workspaceRelativeTestReportPath());
-    if (path === null) return { state: 'missing' };
-    let raw: string;
-    let writtenAt: Date;
-    try {
-      [raw, writtenAt] = await Promise.all([readFile(path, 'utf8'), stat(path).then((stats) => stats.mtime)]);
-    } catch {
-      return { state: 'missing' };
-    }
+    const stamped = await readStampedFileInFolder(workspace, workspaceRelativeTestReportPath());
+    if (stamped === null) return { state: 'missing' };
+    const { content: raw, modifiedAt: writtenAt } = stamped;
     let json: unknown;
     try {
       json = JSON.parse(raw);
