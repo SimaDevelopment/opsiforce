@@ -1,35 +1,45 @@
-import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
+import { eq, isNotNull, or } from 'drizzle-orm';
+import { db } from '../../db';
 import { linkedAccounts } from '../../db/schema';
 import type { JsonObject, JsonValue } from '../common/json';
 import type { DbExecutor } from '../common/locks';
-import {
-  asEncryptedResourceValue,
-  decryptResourceValue,
-  encryptResourceValue,
-  parseEncryptionKey,
-} from '../common/secret-crypto';
+import { SecretSealer } from '../sealing/secret-sealer';
 import { ChatGptAdapter } from './chatgpt/chatgpt-adapter';
 import type { VendorAdapter, VendorCredential, VendorId } from './vendor-adapter';
 
-const NO_ENCRYPTION_MESSAGE = 'Linked accounts need EXTERNAL_SERVICES_ENCRYPTION_KEY on this platform';
 const NOT_REVOKED_MESSAGE = 'The sign-in could not be revoked; try again';
+
+type SealedField = 'credential' | 'pendingSignIn';
+
+function storedEnvelope(sealed: string): JsonValue {
+  try {
+    return JSON.parse(sealed) as JsonValue;
+  } catch {
+    return sealed;
+  }
+}
+
+function placeOf(modelProviderId: string, field: SealedField): string {
+  return `linked_accounts|${modelProviderId}|${field}`;
+}
 
 @Injectable()
 export class LinkedAccountVendorsService {
   private readonly logger = new Logger(LinkedAccountVendorsService.name);
   private readonly adapters: Record<VendorId, VendorAdapter>;
-  private readonly encryptionKeyHex: string;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    private readonly sealer: SecretSealer
+  ) {
     this.adapters = {
       chatgpt: new ChatGptAdapter(
         configService.getOrThrow<string>('linkedAccountChatGptIssuer'),
         configService.getOrThrow<string>('linkedAccountChatGptUsageUrl')
       ),
     };
-    this.encryptionKeyHex = configService.get<string>('externalServicesEncryptionKey', '').trim();
   }
 
   async revokeStoredSignIn(tx: DbExecutor, modelProviderId: string): Promise<void> {
@@ -39,10 +49,7 @@ export class LinkedAccountVendorsService {
       .where(eq(linkedAccounts.modelProviderId, modelProviderId))
       .for('update');
     if (row?.credential) {
-      await this.revokeWithVendor(
-        this.adapterOf(row.vendor),
-        this.unsealCredential(this.encryptionKey(), row.credential)
-      );
+      await this.revokeWithVendor(this.adapterOf(row.vendor), this.openCredential(modelProviderId, row.credential));
     }
   }
 
@@ -60,28 +67,67 @@ export class LinkedAccountVendorsService {
     return this.adapters[vendor as VendorId];
   }
 
-  hasEncryptionKey(): boolean {
-    return this.encryptionKeyHex !== '';
+  sealCredential(modelProviderId: string, credential: VendorCredential): string {
+    return JSON.stringify(this.sealer.seal({ ...credential }, placeOf(modelProviderId, 'credential')));
   }
 
-  encryptionKey(): Buffer {
-    if (!this.encryptionKeyHex) throw new ServiceUnavailableException(NO_ENCRYPTION_MESSAGE);
-    return parseEncryptionKey(this.encryptionKeyHex);
-  }
-
-  seal(key: Buffer, value: JsonObject): string {
-    return JSON.stringify(encryptResourceValue(key, value));
-  }
-
-  unseal(key: Buffer, sealed: string): JsonValue {
-    return decryptResourceValue(key, asEncryptedResourceValue(JSON.parse(sealed) as JsonValue));
-  }
-
-  unsealCredential(key: Buffer, sealed: string): VendorCredential {
-    const value = this.unseal(key, sealed) as { accessToken?: unknown; refreshToken?: unknown };
+  openCredential(modelProviderId: string, sealed: string): VendorCredential {
+    const value = this.open(modelProviderId, 'credential', sealed) as {
+      accessToken?: unknown;
+      refreshToken?: unknown;
+    };
     return {
       accessToken: typeof value.accessToken === 'string' ? value.accessToken : '',
       refreshToken: typeof value.refreshToken === 'string' ? value.refreshToken : null,
     };
+  }
+
+  sealPendingSignIn(modelProviderId: string, pending: JsonObject): string {
+    return JSON.stringify(this.sealer.seal(pending, placeOf(modelProviderId, 'pendingSignIn')));
+  }
+
+  openPendingSignIn(modelProviderId: string, sealed: string): JsonValue {
+    return this.open(modelProviderId, 'pendingSignIn', sealed);
+  }
+
+  async resealUnplacedSignIns(): Promise<void> {
+    const rows = await db
+      .select({ modelProviderId: linkedAccounts.modelProviderId })
+      .from(linkedAccounts)
+      .where(or(isNotNull(linkedAccounts.credential), isNotNull(linkedAccounts.pendingSignIn)));
+    for (const { modelProviderId } of rows) await this.resealUnplacedSignIn(modelProviderId);
+  }
+
+  private async resealUnplacedSignIn(modelProviderId: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ credential: linkedAccounts.credential, pendingSignIn: linkedAccounts.pendingSignIn })
+        .from(linkedAccounts)
+        .where(eq(linkedAccounts.modelProviderId, modelProviderId))
+        .for('update');
+      if (!row) return;
+      const credential = this.resealed(modelProviderId, 'credential', row.credential);
+      const pendingSignIn = this.resealed(modelProviderId, 'pendingSignIn', row.pendingSignIn);
+      if (credential === null && pendingSignIn === null) return;
+      await tx
+        .update(linkedAccounts)
+        .set({ ...(credential === null ? {} : { credential }), ...(pendingSignIn === null ? {} : { pendingSignIn }) })
+        .where(eq(linkedAccounts.modelProviderId, modelProviderId));
+      this.logger.log(`The sign-in of Linked account ${modelProviderId} is re-sealed to its place`);
+    });
+  }
+
+  private resealed(modelProviderId: string, field: SealedField, sealed: string | null): string | null {
+    if (!sealed) return null;
+    try {
+      const bound = this.sealer.resealUnplaced(storedEnvelope(sealed), placeOf(modelProviderId, field));
+      return bound ? JSON.stringify(bound) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private open(modelProviderId: string, field: SealedField, sealed: string): JsonValue {
+    return this.sealer.open(storedEnvelope(sealed), placeOf(modelProviderId, field));
   }
 }

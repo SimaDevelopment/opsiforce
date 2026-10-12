@@ -1,6 +1,6 @@
 import { Body, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
+import { ExternalServiceOperation } from '../auth/external-service-operation.decorator';
 import { Caller } from '../auth/caller';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../public-api.decorator';
 import { PublicAgentsService } from './agents.service';
@@ -35,7 +35,7 @@ export class AgentsController {
   constructor(private readonly agents: PublicAgentsService) {}
 
   @Get()
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('list_agents')
   @ApiOperation({
     summary: 'List Agents',
     description:
@@ -51,7 +51,7 @@ export class AgentsController {
   }
 
   @Post()
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('create_agent')
   @ApiOperation({
     summary: 'Create a Custom Agent',
     description:
@@ -64,7 +64,7 @@ export class AgentsController {
   }
 
   @Get(':id')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('get_agent')
   @ApiOperation({
     summary: 'Get an Agent',
     description:
@@ -77,7 +77,7 @@ export class AgentsController {
   }
 
   @Patch(':id')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('update_agent')
   @ApiOperation({
     summary: 'Rename or describe an Agent',
     description:
@@ -94,7 +94,7 @@ export class AgentsController {
   }
 
   @Put(':id/profile')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('update_agent_profile')
   @ApiOperation({
     summary: 'Edit the Development profile',
     description:
@@ -118,7 +118,7 @@ export class AgentsController {
   }
 
   @Put(':id/template')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('save_agent_template')
   @ApiOperation({
     summary: 'Save the Development Template',
     description:
@@ -141,7 +141,7 @@ export class AgentsController {
   }
 
   @Get(':id/skills')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('list_agent_skills')
   @ApiOperation({
     summary: "List an Agent's Skills",
     description:
@@ -154,7 +154,7 @@ export class AgentsController {
   }
 
   @Put(':id/skills/:skillId')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('set_agent_skill')
   @ApiOperation({
     summary: 'Add or re-pin a Skill',
     description:
@@ -178,7 +178,7 @@ export class AgentsController {
   }
 
   @Delete(':id/skills/:skillId')
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('remove_agent_skill', { kind: 'write' })
   @ApiOperation({
     summary: 'Remove a Skill',
     description:

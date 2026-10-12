@@ -6,6 +6,8 @@ import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
 import { BASE_FORMAT_IDS, useReachableBaseFormats } from '~/api/model-providers';
 import { useSyncProjectTitle } from '~/api/projects';
 import { FileUpload } from '~/components/file-upload';
+import { ExternalServicesButton } from './external-services/external-services-button';
+import { SkillsButton } from './skills/skills-button';
 import { DictationButton } from '~/components/dictation-button';
 import { Spinner } from '~/components/ui/spinner';
 import { WorkspaceFileLinks } from './workspace-file-links';
@@ -40,6 +42,8 @@ function OpenCodeEventBridge(props: {
 export interface ProjectChatTabProps {
   projectId: string;
   environmentId: string;
+  environmentName: string;
+  showSkillsAndServices: boolean;
   router: Component<BaseRouterProps>;
   currentTitle: string | null;
   onAgentIdle: () => void;
@@ -121,7 +125,25 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
     <div class="relative flex-1 min-h-0 flex flex-col">
       <div ref={embedHost} class="contents" />
       <DictationButton projectId={props.projectId} environmentId={props.environmentId} host={host} />
-      <FileUpload projectId={props.projectId} environmentId={props.environmentId} host={host} />
+      <FileUpload
+        projectId={props.projectId}
+        environmentId={props.environmentId}
+        host={host}
+        stripItems={
+          <Show when={props.showSkillsAndServices}>
+            <SkillsButton
+              projectId={props.projectId}
+              projectEnvironmentId={props.environmentId}
+              environmentName={props.environmentName}
+            />
+            <ExternalServicesButton
+              projectId={props.projectId}
+              projectEnvironmentId={props.environmentId}
+              environmentName={props.environmentName}
+            />
+          </Show>
+        }
+      />
       <WorkspaceFileLinks
         projectId={props.projectId}
         environmentId={props.environmentId}

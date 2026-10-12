@@ -134,7 +134,7 @@ export interface UpdateProjectPodClassDto {
   memoryLimitMib?: number;
 }
 
-export type ProjectKind = 'skill_builder_chat' | 'agent_builder_chat' | 'test';
+export type ProjectKind = 'skill_builder_chat' | 'agent_builder_chat' | 'external_service_builder_chat' | 'test';
 
 export interface Project {
   id: string;

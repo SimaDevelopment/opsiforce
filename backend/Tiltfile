@@ -20,6 +20,8 @@ backend_only = [
     '.yarnrc.yml',
     '.yarn/releases',
     pkg_prefix + 'backend',
+    pkg_prefix + 'external-service-sdk',
+    pkg_prefix + 'external-services',
     pkg_prefix + 'frontend/opencode/packages/protocol/openapi.json',
     pkg_prefix + 'agent-config',
 ]
@@ -32,12 +34,15 @@ docker_build(
     only=backend_only,
     live_update=[
         fall_back_on('./package.json'),
+        fall_back_on('../external-service-sdk/package.json'),
+        fall_back_on('../external-services'),
         fall_back_on(root_up + 'package.json'),
         fall_back_on(root_up + 'yarn.lock'),
         fall_back_on(root_up + '.yarnrc.yml'),
         fall_back_on(root_up + '.yarn/releases'),
         sync('./src', '/app/' + pkg_prefix + 'backend/src'),
         sync('./db', '/app/' + pkg_prefix + 'backend/db'),
+        sync('../external-service-sdk', '/app/' + pkg_prefix + 'external-service-sdk'),
         sync('../agent-config', '/app/' + pkg_prefix + 'agent-config'),
     ],
 )
@@ -55,9 +60,10 @@ def dotenv(path):
 # Machine-specific values (tunnel host) and real provider secrets live in the
 # gitignored .env, never in the tracked values.local.yaml.
 BACKEND_ENV_OVERRIDES = {
+    # TODO: remove in the release after External Services v2 ships: the two MAILGUN_* overrides feed only the one-time incoming-email import
     'MAILGUN_RECEIVE_DOMAIN': 'config.mailgunReceiveDomain',
     'MAILGUN_WEBHOOK_SIGNING_KEY': 'config.mailgunWebhookSigningKey',
-    'EXTERNAL_SERVICES_WEBHOOK_BASE_URL': 'config.externalServicesWebhookBaseUrl',
+    'OPSIFORCE_PUBLIC_URL': 'config.opsiforcePublicUrl',
     'OPENAI_API_KEY': 'config.openaiApiKey',
     'ANTHROPIC_API_KEY': 'config.anthropicApiKey',
 }

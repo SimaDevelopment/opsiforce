@@ -18,7 +18,7 @@ place that sets it.
 ## Where things live
 
 Tests are grouped by the area they drive, one directory deep — today `public-api/`, `store/`,
-`delivery/`, `agent-update/`, `model-provider/` and `linked-accounts/`, with the tests for other areas
+`delivery/`, `agent-update/`, `model-provider/`, `linked-accounts/` and `external-services/`, with the tests for other areas
 flat at the root until one of them reaches three files. Nothing test-shaped lives under
 `src/`. The rules and the reasoning are [ADR 0037](../../docs/adr/0037-backend-tests-are-grouped-by-area-under-test-never-under-src.md);
 what follows is where to actually put a new file.
@@ -29,7 +29,7 @@ builders and small utilities. There are two of them, and a helper's home is deci
 one area, including transitively — which is why `proxy-identity.ts` lives there even though every
 direct importer is a public-API test: `project-fixtures.ts` imports it, and `agent-session.test.ts`
 imports that. An area's own `support/` (`test/public-api/support/`, `test/model-provider/support/`,
-`test/linked-accounts/support/`) is for the rest. So `../support/…` in an import reaches a
+`test/linked-accounts/support/`, `test/external-services/support/`) is for the rest. So `../support/…` in an import reaches a
 shared helper and `./support/…` an area-local one; a helper in `test/support/` importing one from an
 area is the direction that would be wrong.
 
@@ -45,9 +45,8 @@ module provides.
 
 Faked, because they leave the process: Kubernetes (`PodService`, `PodCacheService`,
 `ProjectAuthService`), Redis (`TimeoutService`, `ProjectEventsService`, the BullMQ queues) and the
-HTTP services (`BifrostService`, `ExternalServiceProvisioningService`, `ScheduleService`,
-`ProjectPoolService`). Every fake records what it was called with:
-`harness.fakes.pods.callsTo('createAssignedPod')`.
+HTTP services (`BifrostService`, `ScheduleService`, `ProjectPoolService`). Every fake records what it
+was called with: `harness.fakes.pods.callsTo('createAssignedPod')`.
 
 Pod startup is gated rather than instant. `FakePodService.waitForReady()` returns a promise that
 settles only when a test calls `markPodReady(podName)` or `failPodStartup(podName, error)`, so a
@@ -56,7 +55,7 @@ freshly created Project stays deterministically in `starting` until the test dec
 Two things to know before writing a test:
 
 - Each worker has its own database, but the files that worker runs share it, so scope fixtures to a
-  fresh tenant rather than assuming empty tables. `organizationName()` and `serviceAccountUsername()`
+  fresh tenant rather than assuming empty tables. `tenantName()` and `serviceAccountUsername()`
   mint UUID-backed names, which stay unique across workers as well as within one.
 - Assert on what _your_ project or session did, not on a cumulative total. Project creation finishes
   after its HTTP response returns, so a previous test's pod can still be provisioning when the next
@@ -78,7 +77,7 @@ There is no bearer token to forge: oauth2-proxy verifies the token and the backe
 the headers it forwards. `proxyHeaders()` in `support/proxy-identity.ts` builds them — user id,
 preferred username, email and the `x-forwarded-groups` roles that carry both Organization
 membership and permissions — and defaults to a single-Organization human caller holding
-`can_use_public_api`. `organizationName()` and `serviceAccountUsername()` mint fresh names, which
+`can_use_public_api`. `tenantName()` and `serviceAccountUsername()` mint fresh names, which
 matters because the run shares one database and an Organization row is created on first sight.
 Static mode needs no special app: it is the same headers with the deployment's fixed permission
 list.

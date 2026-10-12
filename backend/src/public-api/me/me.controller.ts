@@ -1,6 +1,6 @@
 import { Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
+import { ExternalServiceOperation } from '../auth/external-service-operation.decorator';
 import { BuilderChatService } from '../../builder/builder-chat.service';
 import { Caller, chatProjectIdOf } from '../auth/caller';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../public-api.decorator';
@@ -13,7 +13,7 @@ export class MeController {
   constructor(private readonly builderChats: BuilderChatService) {}
 
   @Get()
-  @AllowsGatewayCaller()
+  @ExternalServiceOperation('get_me')
   @ApiOperation({
     summary: 'Get the current user',
     description:

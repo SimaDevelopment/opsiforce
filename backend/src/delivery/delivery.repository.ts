@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../db';
 import {
   agentProfileSkills,
@@ -30,6 +30,7 @@ export interface PinnedSkill {
   name: string;
   skillVersionId: string;
   contentHash: string;
+  description: string | null;
 }
 
 export interface DeliveredSkill {
@@ -103,11 +104,14 @@ export class DeliveryRepository {
         name: skills.name,
         skillVersionId: agentProfileSkills.skillVersionId,
         contentHash: skillVersions.contentHash,
+        description: skillVersions.description,
       })
       .from(agentProfileSkills)
       .innerJoin(skills, eq(skills.id, agentProfileSkills.skillId))
       .innerJoin(skillVersions, eq(skillVersions.id, agentProfileSkills.skillVersionId))
-      .where(eq(agentProfileSkills.profileId, profileId));
+      .where(
+        and(eq(agentProfileSkills.profileId, profileId), isNull(skills.externalServiceId), isNull(skills.retiredAt))
+      );
   }
 
   async recordDeliveries(projectEnvironmentId: string, delivered: DeliveredSkill[]): Promise<void> {

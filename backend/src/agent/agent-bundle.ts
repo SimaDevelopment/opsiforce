@@ -1,7 +1,8 @@
+import type { AgentServiceSettings } from '../../db/schema';
+
 export interface AgentBundleIdentity {
   displayName: string | null;
   description: string | null;
-  platformApi: boolean;
 }
 
 export interface AgentBundleProfile {
@@ -14,6 +15,8 @@ export interface AgentBundleSkillReference {
   name: string;
   skillId: string;
   skillVersionId: string;
+  externalServiceId?: string | null;
+  serviceSettings?: AgentServiceSettings | null;
 }
 
 /** A Template to write, as the folder it is read from and the hash a save of that folder gives. */
@@ -32,8 +35,5 @@ export interface AgentBundle {
 export interface SkillPin {
   skillId: string;
   skillVersionId: string;
-}
-
-export function pinsFromReferences(references: AgentBundleSkillReference[]): SkillPin[] {
-  return references.map(({ skillId, skillVersionId }) => ({ skillId, skillVersionId }));
+  serviceSettings?: AgentServiceSettings | null;
 }

@@ -14,7 +14,9 @@ terms: [Settings]
 - Gating is centralised in the layout route: the rail shows only sections the member may manage, `/settings` and any forbidden tab redirect to the first permitted one, and a member with none is sent home while the avatar dropdown hides the entry.
 - The backend gates the matching endpoints, so a hidden section is also a refused call ([Permissions](permissions.md)).
 - The rail is one shared component driven by a per-section tab config (label, group, icon, permission); [Admin](admin.md) renders the same component with its own config, and the configure-versus-operate split decides which surface a page belongs to.
-- [Store](../../GLOSSARY.md) is reached from the same avatar dropdown at `/store` and has two sections, Agents and Skills, as a tab bar above the page rather than a rail. Both are open to every member because browsing the catalog is free; creating and editing, the Builder included, needs `can_manage_skills` or `can_manage_agents` ([Permissions](permissions.md)).
+- [Store](../../GLOSSARY.md) is reached from the same avatar dropdown at `/store` and has three sections, Agents, Skills and External Services, as a tab bar above the page rather than a rail. Agents and Skills are open to every member because browsing the catalog is free; creating and editing, the Builder included, needs `can_manage_skills` or `can_manage_agents` ([Permissions](permissions.md)).
+- The External Services tab shows only with `can_manage_platform_external_services` or `can_manage_tenant_external_services`, lists the built-ins and the Organization's own services (a Draft until their first Publish) with All, Built-in, Custom and Needs setup filters, and pages them. Each service page (`/store/external-services/<id>`) has Overview and API tabs for everyone who can open it, plus a Service configuration tab, a form generated from the service's Service form, and a Calls tab for the holder who may edit it (the platform permission for a built-in); an Organization admin without the platform permission sees only [Available](../../GLOSSARY.md) built-ins, read-only ([Configuration](../external-services/configuration.md), [Call log](../external-services/call-log.md)).
+- With `can_manage_tenant_external_services`, **New External Service** registers a [Custom External Service](../../GLOSSARY.md) and opens its [External Service Builder](../../GLOSSARY.md) chat; the custom service's page adds the Draft and Default environment badges, the SDK badge, **Edit in Builder**, **Publish** (whose dialog also picks the environment callers reach), Disable, Enable and Delete ([External Service Builder](../external-services/external-service-builder.md)). The API tab renders the service's live `openapi.json` with Scalar, fetched through the signed-in session, never from a public URL.
 - Schedules is not a Settings section: it is operational, project-scoped runtime data and stays top-level ([Schedule](../projects/schedule.md)).
 
 ## Code
@@ -24,6 +26,7 @@ terms: [Settings]
 - `frontend/src/components/section-rail.tsx` — the rail shared with Admin.
 - `frontend/src/components/store/store-nav.tsx` — the Store's tab bar.
 - `frontend/src/routes/store/` — the Store layout route and its list pages.
+- `frontend/src/components/external-service-form/` — the generic form renderer every Service form and Project form goes through.
 
 ## Related
 

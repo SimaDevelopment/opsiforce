@@ -1,0 +1,9 @@
+{
+  "name": "@opsiforce/external-service-sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "ajv": "8.20.0",
+    "zod": "4.5.4"
+  }
+}

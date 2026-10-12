@@ -33,6 +33,7 @@ export interface ProjectViewProps extends ProjectSurfaceSlots {
   footer?: JSX.Element;
   onStatusEvent?: () => void;
   onPreviewVisible?: () => void;
+  showSkillsAndServices?: boolean;
 }
 
 export function ProjectView(props: ProjectViewProps) {
@@ -214,6 +215,8 @@ export function ProjectView(props: ProjectViewProps) {
                     <ProjectChatTab
                       projectId={props.projectId}
                       environmentId={activeEnvironmentId()}
+                      environmentName={activeEnvironment()?.name ?? 'Development'}
+                      showSkillsAndServices={props.showSkillsAndServices ?? true}
                       router={router()}
                       currentTitle={statusQuery.data?.title ?? null}
                       onAgentIdle={handleAgentIdle}

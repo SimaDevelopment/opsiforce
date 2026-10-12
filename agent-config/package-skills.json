@@ -9,7 +9,6 @@
       "dates",
       "dnd-kit",
       "document-generation",
-      "incoming-email",
       "llm-api",
       "nestjs-api",
       "react-dropzone",
@@ -18,8 +17,25 @@
       "sqlite",
       "state-management",
       "virtual-list",
-      "websockets",
-      "whatsapp"
+      "websockets"
+    ],
+    "external-service-builder": [
+      "agent-browser",
+      "animations",
+      "data-export",
+      "data-fetching",
+      "dates",
+      "dnd-kit",
+      "document-generation",
+      "llm-api",
+      "nestjs-api",
+      "react-dropzone",
+      "schedules",
+      "send-email",
+      "state-management",
+      "virtual-list",
+      "web-app",
+      "websockets"
     ]
   }
 }

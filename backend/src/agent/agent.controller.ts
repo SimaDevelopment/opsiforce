@@ -38,8 +38,10 @@ import type {
   AgentCaller,
   AgentDeliveryResponse,
   AgentDetail,
+  AgentDuplicateResult,
   AgentProfileSkillResponse,
   AgentResponse,
+  AgentServiceSettingsView,
   AgentSummary,
   CreateAgentDto,
   DuplicateAgentDto,
@@ -47,6 +49,7 @@ import type {
   PublishAgentResponse,
   SetAgentSkillDto,
   SetAgentVisibilityDto,
+  SetServiceSettingsDto,
   UpdateAgentDto,
   UpdateAgentProfileDto,
   UpdateAgentSettingsDto,
@@ -143,7 +146,9 @@ export class AgentController {
     const archivePath = join(this.uploadService.stagingRoot(), `.agent-import-${randomUUID()}.zip`);
     try {
       return await this.uploadService.consumeUpload({ tenantId: tenant.tenantId, uploadId }, archivePath, () =>
-        this.importService.import(caller, archivePath, dto?.displayName ?? null)
+        this.importService.import(caller, archivePath, dto?.displayName ?? null, {
+          canConfigureProjects: hasPermission(getGroupsHeader(req), Perms.configureProjectExternalServices),
+        })
       );
     } finally {
       await rm(archivePath, { force: true }).catch(() => {});
@@ -206,6 +211,31 @@ export class AgentController {
     return this.agentService.removeSkill(await this.caller(req, tenant, user), id, skillId);
   }
 
+  @Get(':id/skills/:skillId/service-settings')
+  async serviceSettings(
+    @Param('id') id: string,
+    @Param('skillId') skillId: string,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentServiceSettingsView> {
+    return this.agentService.serviceSettings(await this.caller(req, tenant, user), id, skillId);
+  }
+
+  @Put(':id/skills/:skillId/service-settings')
+  async setServiceSettings(
+    @Param('id') id: string,
+    @Param('skillId') skillId: string,
+    @Body() dto: SetServiceSettingsDto,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentProfileSkillResponse[]> {
+    return this.agentService.setServiceSettings(await this.caller(req, tenant, user), id, skillId, dto ?? {}, {
+      canConfigureProjects: hasPermission(getGroupsHeader(req), Perms.configureProjectExternalServices),
+    });
+  }
+
   @Post(':id/publish')
   @HttpCode(200)
   async publish(
@@ -236,8 +266,10 @@ export class AgentController {
     @Req() req: FastifyRequest,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
-  ): Promise<AgentDetail> {
-    return this.agentService.duplicate(await this.caller(req, tenant, user), id, dto);
+  ): Promise<AgentDuplicateResult> {
+    return this.agentService.duplicate(await this.caller(req, tenant, user), id, dto, {
+      canConfigureProjects: hasPermission(getGroupsHeader(req), Perms.configureProjectExternalServices),
+    });
   }
 
   @Get(':id/export')

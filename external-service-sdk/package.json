@@ -1,0 +1,41 @@
+{
+  "name": "@opsiforce/external-service-sdk",
+  "version": "1.0.0",
+  "description": "Write, check, test and serve an Opsiforce External Service.",
+  "private": true,
+  "bin": {
+    "external-service-cli": "./src/cli.ts"
+  },
+  "files": [
+    "src",
+    "service.schema.json",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts",
+    "./service-folder": "./src/service-folder.ts",
+    "./openapi": "./src/openapi-folder.ts",
+    "./testing": "./src/testing.ts",
+    "./forms": "./src/forms.ts",
+    "./platform": "./src/platform.ts",
+    "./service.schema.json": "./service.schema.json",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.ts'",
+    "ts": "tsc --noEmit",
+    "schema": "node scripts/write-service-schema.ts",
+    "tarball": "node scripts/pack-sdk.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  }
+}

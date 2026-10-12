@@ -1,6 +1,6 @@
 # Operational views live in an "Admin" section, in their own aggregator module — not folded into `pod`
 
-**Operational views live in Admin, a sibling of Settings reached from the avatar dropdown and built on the same left rail.** The dividing line is *configure vs operate*: a page that changes stored configuration belongs to Settings; a page that shows or acts on what is running now belongs to Admin. Admin's pages are Pods, Usage, External services and Storage, each gated by its own permission (`can_view_pods`, `can_view_external_services_usage`, `can_manage_external_services`, `can_view_platform_storage`). Schedules stays a standalone dropdown item.
+**Operational views live in Admin, a sibling of Settings reached from the avatar dropdown and built on the same left rail.** The dividing line is *configure vs operate*: a page that changes stored configuration belongs to Settings; a page that shows or acts on what is running now belongs to Admin. Admin's pages are Pods, Usage and Storage, each gated by its own permission (`can_view_pods`, `can_view_external_services_usage`, `can_view_platform_storage`). Schedules stays a standalone dropdown item.
 
 ## Why the rail is shared, not duplicated
 

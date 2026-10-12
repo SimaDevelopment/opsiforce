@@ -42,7 +42,13 @@ beforeAll(async () => {
   tenantId = await createTenantRow();
   userId = await createUserRow();
   author = { tenantId, userId, canManageAgents: true };
-  chatCaller = { tenantId, userId, canManageAgents: true, canManageSkills: true };
+  chatCaller = {
+    tenantId,
+    userId,
+    canManageAgents: true,
+    canManageSkills: true,
+    canManageTenantExternalServices: false,
+  };
   await harness.environments.ensureDefaultForTenant(tenantId);
   await ensureBuiltInSkill('platform');
   await ensureBuiltInAgent(BUILDER_AGENT_SLUG);

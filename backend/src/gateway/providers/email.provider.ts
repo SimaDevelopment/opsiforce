@@ -22,6 +22,7 @@ function isValidEmailPayload(payload: unknown): payload is EmailPayload {
   return true;
 }
 
+// TODO: remove in the release after External Services v2 ships: the dead POST /api/gateway dispatcher (it refuses email, its only provider)
 @Injectable()
 export class EmailProvider implements ServiceProvider {
   readonly serviceName = 'email';

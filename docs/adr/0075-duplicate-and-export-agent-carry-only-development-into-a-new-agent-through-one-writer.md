@@ -9,7 +9,7 @@ An Organization copies an Agent to re-brand it or build on it, and moves a Custo
 | Part | In the new Agent |
 |---|---|
 | Display name | the name typed by whoever copies it; the slug is derived from it again |
-| Description, `platform_api` | copied |
+| Description | copied |
 | Development Profile: prompt body, model, variant | copied |
 | Skill pins (Skill and Version) | copied, resolved in the target, `platform` like any other; `platform` is added at its current Version only when the source pins none |
 | Development Template | written again under `agent-templates/<newId>/`, with the same content hash |
@@ -54,7 +54,7 @@ Duplicate accepts App Builder and Makara App Builder. The copy is a Custom Agent
 ```
 manifest.json      { kind: "agent",
                      stamp{exportFormatVersion: 1, platformVersion, agentImageVersion, arch},
-                     agent{displayName, slug, description, platformApi},
+                     agent{displayName, slug, description},
                      profile{promptBody, model, variant},
                      skills[{name, origin: built_in|custom, contentHash, file?: "skills/<name>.zip"}],
                      template{hash} | null }

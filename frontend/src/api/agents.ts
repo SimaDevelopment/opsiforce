@@ -3,6 +3,7 @@ import { api, currentTenant, type Agent } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
 import { skillKeys, type SkillFlags } from './skills';
 import type { StoreFilter } from './store';
+import type { ServiceManifest } from '@opsiforce/external-service-sdk/forms';
 
 const MODEL_CATALOG_STALE_MS = 30_000;
 
@@ -14,6 +15,7 @@ export const agentKeys = {
   delivery: (id: string) => [...agentKeys.all, 'delivery', id] as const,
   exportPreview: (id: string) => [...agentKeys.all, 'export-preview', id] as const,
   models: () => [...agentKeys.all, 'models'] as const,
+  serviceSettings: (id: string, skillId: string) => [...agentKeys.all, 'service-settings', id, skillId] as const,
 };
 
 export interface StoreAgent extends Agent {
@@ -41,8 +43,26 @@ export interface AgentProfileSkill {
   pinnedVersion: number;
   latestVersion: number | null;
   updateAvailable: boolean;
+  retired: boolean;
   visibility: string;
   flags: SkillFlags;
+  externalServiceId: string | null;
+  serviceSettings: AgentServiceSettings | null;
+}
+
+export interface AgentServiceSettings {
+  operations: string[];
+  receive: string[];
+}
+
+export interface AgentServiceSettingsView {
+  service: {
+    id: string;
+    slug: string;
+    displayName: string;
+    manifest: Pick<ServiceManifest, 'operations' | 'events'>;
+  };
+  settings: AgentServiceSettings | null;
 }
 
 export interface AgentProfileTemplate {
@@ -68,7 +88,7 @@ export interface ShippedSkill {
 }
 
 export interface AgentDetail extends StoreAgent {
-  settings: { defaultEnvironmentId: string | null; platformApi: boolean };
+  settings: { defaultEnvironmentId: string | null };
   profiles: AgentProfile[];
   shippedSkills: ShippedSkill[];
   projectCount: number;
@@ -111,6 +131,7 @@ export interface PublishApplied {
   prompt: 'changed' | 'same';
   model: { from: string | null; to: string | null } | null;
   skills: { added: string[]; removed: string[]; repinned: string[] };
+  serviceSettings: string[];
   template: TemplateComparison;
 }
 
@@ -195,6 +216,15 @@ export interface AgentExportPreview {
   skills: { name: string; hits: KeyLikeHit[] }[];
 }
 
+export function useAgentServiceSettings(id: () => string, skillId: () => string) {
+  return createAppQuery(() => ({
+    queryKey: agentKeys.serviceSettings(id(), skillId()),
+    queryFn: () => api.get<AgentServiceSettingsView>(`/agents/${id()}/skills/${skillId()}/service-settings`),
+    staleTime: 0,
+    reconcile: false as const,
+  }));
+}
+
 export function useAgentExportPreview(id: () => string, enabled: () => boolean) {
   return createAppQuery(() => ({
     queryKey: agentKeys.exportPreview(id()),
@@ -255,6 +285,12 @@ export function useSetAgentSkill(id: () => string) {
   );
 }
 
+export function useSetAgentServiceSettings(id: () => string) {
+  return useAgentMutation(id, (agentId, input: { skillId: string; settings: AgentServiceSettings }) =>
+    api.put<AgentProfileSkill[]>(`/agents/${agentId}/skills/${input.skillId}/service-settings`, input.settings)
+  );
+}
+
 export function useRemoveAgentSkill(id: () => string) {
   return useAgentMutation(id, (agentId, skillId: string) =>
     api.delete<AgentProfileSkill[]>(`/agents/${agentId}/skills/${skillId}`)
@@ -285,9 +321,14 @@ export function useSetAgentDisabled(id: () => string) {
   );
 }
 
+export interface AgentDuplicateResult {
+  agent: AgentDetail;
+  notes: AgentImportNote[];
+}
+
 export function useDuplicateAgent(id: () => string) {
   return useAgentMutation(id, (agentId, displayName: string) =>
-    api.post<AgentDetail>(`/agents/${agentId}/duplicate`, { displayName })
+    api.post<AgentDuplicateResult>(`/agents/${agentId}/duplicate`, { displayName })
   );
 }
 

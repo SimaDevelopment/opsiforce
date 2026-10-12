@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Perms } from '../permission/permission.constants';
 
 export type ModelPart = 'provider' | 'model' | 'variant';
 
@@ -86,5 +87,31 @@ export function notExportable(label: string): BadRequestException {
   return new BadRequestException({
     code: 'not_exportable',
     message: `${label} is a Built-in Agent, so it can't be exported; duplicate it and export the copy`,
+  });
+}
+
+export function builtInKeepsProjectConfiguration(label: string): BadRequestException {
+  return new BadRequestException({
+    code: 'built_in_agent',
+    message: `${label} is a Built-in Agent: its Projects keep their own External Service configuration`,
+  });
+}
+
+export function serviceSettingsInvalid(problems: string[]): BadRequestException {
+  return new BadRequestException({ code: 'bad_request', message: problems.join('; ') });
+}
+
+export function serviceSettingsNeedProjectPermission(operations: string[]): ForbiddenException {
+  return new ForbiddenException({
+    code: 'missing_permission',
+    permission: Perms.configureProjectExternalServices,
+    message: `Turning on ${operations.map((name) => `\`${name}\``).join(', ')} needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+  });
+}
+
+export function serviceSettingsUnavailable(skillName: string): ConflictException {
+  return new ConflictException({
+    code: 'service_unavailable',
+    message: `The service settings of \`${skillName}\` can't be read or changed while its External Service isn't available`,
   });
 }

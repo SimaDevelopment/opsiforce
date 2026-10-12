@@ -22,6 +22,7 @@
     "@ibm/plex": "^6.4.1",
     "@kobalte/core": "^0.13.11",
     "@module-federation/enhanced": "^2.8.2",
+    "@opsiforce/external-service-sdk": "workspace:*",
     "@pierre/diffs": "^1.1.15",
     "@pierre/trees": "1.0.0-beta.4",
     "@sentry/solid": "^10.36.0",

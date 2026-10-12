@@ -13,7 +13,11 @@ import {
   workspaceMembers,
   workspaces,
 } from '../../../db/schema';
-import { reachableHiddenProjectsWhere, visibleProjectsFilter } from '../../project/project-visibility';
+import {
+  hiddenProjectReachOf,
+  reachableHiddenProjectsWhere,
+  visibleProjectsFilter,
+} from '../../project/project-visibility';
 import type { ProjectKind, ProjectStatus } from '../../project/project.types';
 import { beforeCursor, cursorValue, takePage, type TakenPage } from '../pagination';
 import type { ProjectListQuery } from './projects.schema';
@@ -130,7 +134,7 @@ export class PublicProjectsRepository {
       .where(
         and(
           eq(projects.id, projectId),
-          reachableHiddenProjectsWhere(scope.tenantId, scope.userId),
+          reachableHiddenProjectsWhere(scope.tenantId, scope.userId, await hiddenProjectReachOf(scope.userId)),
           createdByCallingProject(scope)
         )
       )

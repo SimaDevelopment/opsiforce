@@ -1,6 +1,6 @@
 ---
 name: platform
-description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
+description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, calling External Services and their errors, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
 ---
 
 # The Opsiforce platform
@@ -112,8 +112,8 @@ The platform's own values below are real environment variables: read those from 
 | `APP_LLM_BASE_URL` | OpenAI-compatible base URL for the LLM gateway |
 | `APP_LLM_API_KEY` | Key for that gateway |
 | `SERVICE_GATEWAY_URL` | Base URL of the platform's service gateway |
-| `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway |
-| `EXTERNAL_SERVICES_URL` | Base URL for the external-services endpoints |
+| `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway and for External Services |
+| `EXTERNAL_SERVICES_URL` | Base URL for calling External Services (§External Services) |
 
 ## AI runs on the gateway — never locally
 
@@ -196,17 +196,88 @@ sqlite3 -readonly -header -column /workspace/data/database.db \
 
 Date filters like `datetime('now','-N hours')` work, or compare `created_at` to an ISO string. Drop `-header -column` when piping.
 
-## Inbound messages — `/workspace/data/external-services.db`
+## External Services — `$EXTERNAL_SERVICES_URL`
 
-A second read-only SQLite file holding messages that arrived from outside — inbound email, WhatsApp. The platform backend is the only writer; never create tables, write, or run migrations against it. Its two tables (`messages`, `attachments`) are created lazily when the first message arrives, so `no such table: messages` means "nothing has arrived yet", not a broken setup. Every service shares the tables, so always filter by `service`.
+An External Service connects the project to an outside system: incoming email, WhatsApp, or a system the Organization added itself. Each one this project has arrives as its own `service-<slug>` skill with that service's concepts and gotchas; this section is how every one of them is called. Services this Organization offers but this project has not enabled are listed under External services in the chat bar; when a task needs one, tell the person to enable it there. The App calls a service exactly as you do, with the same key and the same checks, so code you try from the shell behaves the same at runtime.
+
+| Request | What it answers |
+|---|---|
+| `GET $EXTERNAL_SERVICES_URL/<slug>` | Describe: which Operations are switched on here, the Project configuration with labels (secrets never shown), whether it is complete. Read it before you plan |
+| `GET $EXTERNAL_SERVICES_URL/<slug>/openapi.json` | Every Operation with its kind and input schema, built live from the service |
+| `POST $EXTERNAL_SERVICES_URL/<slug>/<operation>` | Calls one Operation; the input is the JSON body |
+| `GET $EXTERNAL_SERVICES_URL/<slug>/calls?limit=50` | This environment's recent Calls, the App's included — how you find out why last night's run failed |
+
+Every request carries `Authorization: Bearer $SERVICE_GATEWAY_API_KEY`. From the shell:
+
+```bash
+curl -s "$EXTERNAL_SERVICES_URL/<slug>" -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
+```
+
+In App code, use this helper rather than a client library; it marks the call as the App's and retries a service that is reloading or starting:
+
+```js
+async function callService(slug, operation, input = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetch(`${process.env.EXTERNAL_SERVICES_URL}/${slug}/${operation}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${process.env.SERVICE_GATEWAY_API_KEY}`, 'content-type': 'application/json', 'x-opsiforce-via': 'app' },
+      body: JSON.stringify(input),
+    });
+    const retryAfter = Number(response.headers.get('retry-after'));
+    if (response.status === 503 && retryAfter > 0 && attempt < 4) { await new Promise((r) => setTimeout(r, retryAfter * 1000)); continue; }
+    const body = response.headers.get('content-type')?.includes('json') ? await response.json() : Buffer.from(await response.arrayBuffer());
+    if (!response.ok) throw Object.assign(new Error(body.detail ?? `${slug}/${operation} failed`), { status: response.status, problem: body });
+    return body;
+  }
+}
+```
+
+A refusal is `application/problem+json` with a `code`. Act on the code, and when the user has to do something, tell them in one plain sentence — never the code, the URL or the JSON:
+
+| `code` | What to do | What the user hears |
+|---|---|---|
+| `operation-off` (403) | Don't retry; the Operation is switched off for this environment | "<Operation title> in <Service> is switched off for this project — turn it on under External services, below the chat." |
+| `out-of-bounds` (403) | The body names the `bound`, your `value` and the `allowed` values with labels; retry with an allowed one if the user's intent allows it | "I can only reach <allowed labels> here; <value> isn't one of them — add it under External services, below the chat." |
+| `configuration-incomplete` (409) | Don't retry; describe lists what is `missing` | "<Service> isn't fully set up for this project yet — open it under External services, below the chat, and fill in <missing>." |
+| `service-reloading`, `service-starting` (503) | Wait the `Retry-After` seconds and retry, silently | Nothing, unless it still fails after a few tries |
+| `service-failed` (502) | Don't retry blindly; the body carries a `callId`, and `/calls` shows the Call | "<Service> failed on that request (call <callId>); I can try again or look into it." |
+| `input-too-large` (413) | Split the input into smaller calls | "That's too large to send to <Service> in one go, so I'll send it in parts." |
+| `invalid-input` (400) | Your input does not match the schema; fix it from `openapi.json` and retry | Nothing |
+
+`service-not-configured` (503) and `unknown-service` (404) mean the service is not available here at all: say so instead of building around it.
+
+Describe always answers for the environment you run in. In a Development chat that is Development: its switches and configuration are this environment's own, and Publish carries them to Production. Development changes go live on Publish, so never tell the user what Production can do from what you see here.
+
+## Inbound Events — `/workspace/data/external-services.db`
+
+A second read-only SQLite file holding Events that arrived from outside through External Services the user switched receiving on for (an email, a WhatsApp message, a card moved in another tool). The platform backend is the only writer; never create tables, write, or run migrations against it. Its tables are created when the first Event arrives, so `no such table: events` means "nothing has arrived yet", not a broken setup. Every service shares the tables, so always filter by `service` (and `type`).
+
+- `events`: `id`, `service`, `type`, `key` (unique per service and type: a resent Event is not stored twice), `occurred_at`, `received_at`, `data` (JSON, read with `json_extract`; its shape is in the service's `service-<slug>` skill), `app_delivered_at`.
+- `event_files`: `event_id`, `name`, `mime_type`, `size_bytes`, `path` — the bytes are a file at `path`, read it with `fs`.
+
+The platform rings the App for every stored batch: `POST /api/external-services/<slug>` with `{ "service": "<slug>", "eventIds": [12, 13] }` and no auth header, waking the App first. The template's catch-all stub answers 501; add a concrete route for the service above it (`DoorbellNotification` is in `doorbell-notification.ts`):
+
+```typescript
+@Post("my-service")
+async myService(@Body() notification: DoorbellNotification): Promise<{ received: true }> {
+  await this.myServiceEvents.process(notification.eventIds)
+  return { received: true }
+}
+```
+
+- The body carries ids only; read the rows from SQLite, so the live path and the catch-up path run the same code.
+- A 2xx stamps `app_delivered_at`. A 5xx or a timeout (10 s) is retried after 30 s, 2 min, 10 min, 1 h and 6 h. A 404 or 501 means "not wired": the platform stops ringing for that service until the App starts again.
+- Answer quickly and process idempotently: key the App's own records on the Event `id` (a `UNIQUE` column in `app.db`), because an id can arrive twice.
+- Catch up on boot and from a schedule: `SELECT id FROM events WHERE service = ? AND app_delivered_at IS NULL ORDER BY id`.
+
+An App built before Events existed reads the older `messages` / `attachments` tables (attachment bytes inline as `BLOB`) and gets `rowIds` next to `eventIds`; the platform keeps writing both for that environment. Leave such an App on `messages` unless the user asks for a change; new code reads `events`.
 
 ## What else the platform can do
 
 These capabilities exist and are delivered as skills that can be added to an agent. If one is not in your skill list, the capability is still real — say so, and the user can have it added.
 
 - **AI gateway recipes** — worked examples for chat, structured output, streaming, vision, image generation, transcription and text-to-speech against `APP_LLM_BASE_URL`.
-- **Inbound email** — an App can be given its own address; mail with attachments lands in the external-services database and rings the App. **Sending** email is not supported by the platform; offer an in-app alternative instead of installing a mail library.
-- **WhatsApp intake** — inbound messages, photos, documents and voice notes from allowlisted chats and groups. Inbound only.
+- **External Services** — the outside systems this platform and this Organization connect: what may arrive into the App and what an agent or App may call. An Agent knows a service through its `service-<slug>` skill: one the Agent carries, or one this project gets once the service is configured here. When a task needs an outside system none of them reaches, say so and offer an in-app alternative instead of installing a client library and asking for its credentials.
 - **Schedules** — recurring background work, run on a cron schedule by the platform.
 - **Browser testing** — a headless browser in the pod for walking the real user flow and seeing what the user sees.
 - **Document generation** — Word, PowerPoint, Excel and PDF deliverables, with the libraries already installed in the container.

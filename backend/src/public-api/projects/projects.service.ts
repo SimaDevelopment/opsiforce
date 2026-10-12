@@ -4,6 +4,8 @@ import type { ChatRow } from '../../builder/builder-chat.repository';
 import { BuilderChatService } from '../../builder/builder-chat.service';
 import { Perms } from '../../permission/permission.constants';
 import { AgentStatusService } from '../../project/agent-status.service';
+import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
+import { MAX_PROJECT_CHAIN_DEPTH } from '../../project/project.constants';
 import { ProjectService } from '../../project/project.service';
 import { isChatKind, TEST_PROJECT_KIND } from '../../project/project.types';
 import { ProjectEnvironmentService } from '../../project-environment/project-environment.service';
@@ -32,7 +34,8 @@ export class PublicProjectsService {
     private readonly projects: ProjectService,
     private readonly environments: ProjectEnvironmentService,
     private readonly connections: AgentConnectionService,
-    private readonly builderChats: BuilderChatService
+    private readonly builderChats: BuilderChatService,
+    private readonly provenance: ProjectProvenanceRepository
   ) {}
 
   async list(caller: Caller, query: ProjectListQuery): Promise<ProjectPageDto> {
@@ -48,6 +51,7 @@ export class PublicProjectsService {
   }
 
   async create(caller: Caller, body: CreateProject): Promise<ProjectDto> {
+    await this.refuseChainTooDeep(caller);
     const chat = body.kind === undefined ? null : await this.requireCallingBuilderChat(caller);
     if (chat) await this.requireChatMayTest(chat, body.agentId);
     const placement = await this.placement.resolve(caller, body);
@@ -70,6 +74,14 @@ export class PublicProjectsService {
     if (!row) throw new InternalServerErrorException(`Project ${created.id} vanished right after creation`);
     const [dto] = await this.toDtos([row]);
     return dto;
+  }
+
+  private async refuseChainTooDeep(caller: Caller): Promise<void> {
+    const callingProjectId = chatProjectIdOf(caller);
+    if (callingProjectId === null) return;
+    if ((await this.provenance.chainDepth(callingProjectId)) >= MAX_PROJECT_CHAIN_DEPTH) {
+      throw Errors.chainTooDeep(MAX_PROJECT_CHAIN_DEPTH);
+    }
   }
 
   async updateTest(caller: Caller, projectId: string): Promise<void> {

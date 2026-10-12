@@ -8,7 +8,7 @@ import { RequireAnyPermission } from '../permission/permission.guard';
 import { Perms } from '../permission/permission.constants';
 
 const CHUNK_DIGEST_HEADER = 'x-chunk-sha256';
-const IMPORT_UPLOAD_PERMISSIONS = [Perms.importProject, Perms.manageAgents];
+const IMPORT_UPLOAD_PERMISSIONS = [Perms.importProject, Perms.manageAgents, Perms.manageTenantExternalServices];
 
 interface ChunkRequest extends FastifyRequest {
   body: Readable;

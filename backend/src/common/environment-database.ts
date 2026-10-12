@@ -15,15 +15,16 @@ export function environmentDatabasePath(envDirectory: string, fileName: string):
   return path.join(envDirectory, 'data', fileName);
 }
 
-export async function openEnvironmentDatabase(
+export function openEnvironmentDatabase(
   envDirectory: string,
   fileName: string,
   pragmas: SqlitePragmaProfile
 ): Promise<Database> {
-  const connection = await open({
-    filename: environmentDatabasePath(envDirectory, fileName),
-    driver: sqlite3.Database,
-  });
+  return openDatabaseFile(environmentDatabasePath(envDirectory, fileName), pragmas);
+}
+
+export async function openDatabaseFile(filename: string, pragmas: SqlitePragmaProfile): Promise<Database> {
+  const connection = await open({ filename, driver: sqlite3.Database });
   try {
     for (const statement of pragmaStatements(pragmas)) {
       await connection.exec(statement);

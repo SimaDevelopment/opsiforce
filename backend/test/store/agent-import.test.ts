@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { agentProfiles, agents, skillVersions, skills } from '../../db/schema';
+import { agentProfiles, agents, externalServices, skillVersions, skills } from '../../db/schema';
 import { slugifyAgentName } from '../../src/agent/agent-bundle.writer';
 import type { AgentExportManifest } from '../../src/agent/agent-export';
 import type { AgentExportService } from '../../src/agent/agent-export.service';
@@ -23,6 +23,7 @@ import {
   agentTemplatesDir,
   defaultEnvironmentId,
   ensureBuiltInAgent,
+  ensureBuiltInServiceSkill,
   ensureBuiltInSkill,
   seedBuilderChat,
   withNewerBuiltInVersion,
@@ -187,7 +188,7 @@ async function archiveFile(archive: Buffer): Promise<string> {
 }
 
 async function runImport(archive: Buffer, displayName: string | null = null, caller: AgentCaller = target) {
-  return importer.import(caller, await archiveFile(archive), displayName);
+  return importer.import(caller, await archiveFile(archive), displayName, { canConfigureProjects: true });
 }
 
 function byJoinedText(a: (string | null)[], b: (string | null)[]): number {
@@ -230,6 +231,53 @@ async function builtInSkillWithTwoVersions(): Promise<{ name: string; first: str
   return { name, first, latest };
 }
 
+async function builtInServiceSkill(): Promise<{ skillId: string; name: string }> {
+  const slug = `svc-${randomUUID().slice(0, 8)}`;
+  const serviceId = randomUUID();
+  await db.insert(externalServices).values({ id: serviceId, origin: 'built_in', slug });
+  const skillId = randomUUID();
+  const name = `service-${slug}`;
+  await db.insert(skills).values({ id: skillId, origin: 'built_in', name, externalServiceId: serviceId });
+  const versionId = randomUUID();
+  await db
+    .insert(skillVersions)
+    .values({ id: versionId, skillId, version: 1, contentHash: `hash-${slug}`, createdVia: 'service' });
+  await db.update(skills).set({ latestVersionId: versionId }).where(eq(skills.id, skillId));
+  return { skillId, name };
+}
+
+describe('an Agent carrying a Service skill', () => {
+  it('exports the Service skill by name only, and an import links the importing Organization’s one', async () => {
+    const source = await sourceAgent();
+    const service = await builtInServiceSkill();
+    await harness.agents.setSkill(author, source.agent.id, service.skillId, {});
+
+    const archive = await exportOf(source.agent.id);
+
+    const written = (await unpackSkill(archive)).map((file) => file.path);
+    expect(written).not.toContain(`skills/${service.name}.zip`);
+    const { agent, notes } = await runImport(archive);
+    expect((development(agent).skills ?? []).map((skill) => skill.name)).toContain(service.name);
+    expect(notes.filter((note) => 'name' in note && note.name === service.name)).toEqual([]);
+  });
+
+  it('leaves out a Service skill whose service the importing Organization lacks, with a note, and imports the rest', async () => {
+    const source = await sourceAgent();
+    const archive = await rewrite(await exportOf(source.agent.id), (written) => {
+      written.skills.push({ name: 'service-nowhere-here', origin: 'service', contentHash: 'x' });
+    });
+
+    const { agent, notes } = await runImport(archive);
+
+    expect((development(agent).skills ?? []).map((skill) => skill.name)).not.toContain('service-nowhere-here');
+    expect(notes).toContainEqual({
+      kind: 'skill',
+      name: 'service-nowhere-here',
+      message: expect.stringContaining("isn't available here"),
+    });
+  });
+});
+
 describe('importing an Agent export into another Organization', () => {
   it('creates a private Custom Agent of the importer carrying the prompt, model, Skills and Template', async () => {
     const source = await sourceAgent();
@@ -268,7 +316,10 @@ describe('importing an Agent export into another Organization', () => {
     const source = await sourceAgent();
     const { agent } = await runImport(await exportOf(source.agent.id), uniqueName('Seeded import'));
 
-    const chat = await harness.builderChats.openFor({ ...target, canManageSkills: true }, { agentId: agent.id });
+    const chat = await harness.builderChats.openFor(
+      { ...target, canManageSkills: true, canManageTenantExternalServices: false },
+      { agentId: agent.id }
+    );
 
     const template = readSkillTree(join(storageMountPath, 'projects', chat.id, 'template'));
     expect(template.map((file) => file.path).toSorted()).toEqual(['README.md', 'scripts/check.sh']);
@@ -630,5 +681,69 @@ describe('the import transaction', () => {
       .from(skills)
       .where(and(eq(skills.name, source.skillName), isNull(skills.latestVersionId)));
     expect(orphanSkills).toEqual([]);
+  });
+});
+
+describe('an export pinning a Skill that External Services v2 retired', () => {
+  it('carries the Service skill in its place and says so', async () => {
+    const source = await sourceAgent();
+    await ensureBuiltInServiceSkill('whatsapp');
+    const archive = await rewrite(await exportOf(source.agent.id), (written) => {
+      written.skills.push({ name: 'whatsapp', origin: 'built_in', contentHash: 'v1-whatsapp' });
+    });
+
+    const { agent, notes } = await runImport(archive);
+
+    const carried = (development(agent).skills ?? []).map((skill) => skill.name);
+    expect(carried).toContain('service-whatsapp');
+    expect(carried).not.toContain('whatsapp');
+    expect(notes).toContainEqual({
+      kind: 'skill',
+      name: 'whatsapp',
+      message:
+        'The Skill `whatsapp` is retired, so the Agent carries the Service skill `service-whatsapp` in its place',
+    });
+  });
+
+  it('leaves the retired pin out when the export already carries its Service skill', async () => {
+    const source = await sourceAgent();
+    await ensureBuiltInServiceSkill('incoming-email');
+    const archive = await rewrite(await exportOf(source.agent.id), (written) => {
+      written.skills.push(
+        { name: 'incoming-email', origin: 'built_in', contentHash: 'v1-incoming-email' },
+        { name: 'service-incoming-email', origin: 'service', contentHash: 'any' }
+      );
+    });
+
+    const { agent, notes } = await runImport(archive);
+
+    const carried = (development(agent).skills ?? []).map((skill) => skill.name);
+    expect(carried.filter((name) => name === 'service-incoming-email')).toHaveLength(1);
+    expect(carried).not.toContain('incoming-email');
+    expect(notes).toContainEqual({
+      kind: 'skill',
+      name: 'incoming-email',
+      message:
+        'Left out the retired Skill `incoming-email`: the Agent already carries its replacement `service-incoming-email`',
+    });
+  });
+
+  it('leaves out any other retired Built-in Skill with a note instead of refusing the import', async () => {
+    const source = await sourceAgent();
+    const name = `retired-${randomUUID().slice(0, 8)}`;
+    const { skillId } = await ensureBuiltInSkill(name);
+    await db.update(skills).set({ retiredAt: new Date() }).where(eq(skills.id, skillId));
+    const archive = await rewrite(await exportOf(source.agent.id), (written) => {
+      written.skills.push({ name, origin: 'built_in', contentHash: 'retired' });
+    });
+
+    const { agent, notes } = await runImport(archive);
+
+    expect((development(agent).skills ?? []).map((skill) => skill.name)).not.toContain(name);
+    expect(notes).toContainEqual({
+      kind: 'skill',
+      name,
+      message: `Left out the Built-in Skill \`${name}\`: it is retired here`,
+    });
   });
 });

@@ -15,6 +15,7 @@ import { GitService } from '../git/git.service';
 import { ProjectService } from '../project/project.service';
 import { ProjectEventsService } from '../project/project-events.service';
 import { ProjectFilesService, type ProjectFileEntry } from '../project/project-files.service';
+import { exportStampOf } from './export-manifest';
 import { ProjectExportService } from './project-export.service';
 import {
   EXPORT_FORMAT_VERSION,
@@ -38,9 +39,6 @@ interface ArchiveEntry {
 export class ProjectExportProcessor extends WorkerHost {
   private readonly logger = new Logger(ProjectExportProcessor.name);
   private readonly storageMountPath: string;
-  private readonly platformVersion: string;
-  private readonly agentImageVersion: string;
-  private readonly arch: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -53,9 +51,6 @@ export class ProjectExportProcessor extends WorkerHost {
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
-    this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
-    this.agentImageVersion = this.configService.get<string>('agentImageVersion', this.platformVersion);
-    this.arch = this.configService.get<string>('arch', process.arch);
   }
 
   async process(job: Job<ProjectExportJobData>): Promise<void> {
@@ -123,12 +118,7 @@ export class ProjectExportProcessor extends WorkerHost {
         },
         appDetails: project.hasApp ? { name: project.appName, description: project.appDescription } : null,
         schedules,
-        stamp: {
-          exportFormatVersion: EXPORT_FORMAT_VERSION,
-          platformVersion: this.platformVersion,
-          agentImageVersion: this.agentImageVersion,
-          arch: this.arch,
-        },
+        stamp: exportStampOf(this.configService, EXPORT_FORMAT_VERSION),
       };
       await writeFile(path.join(stagingRoot, 'manifest.json'), JSON.stringify(manifest, null, 2));
 

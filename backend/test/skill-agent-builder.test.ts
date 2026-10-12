@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { readMergedAgentRegistry } from '../src/agent/agent-config';
 import { BUILDER_AGENT_SLUG } from '../src/agent/agent-visibility';
+import { BUILDER_CHAT_PUBLIC_API_WRITES } from '../src/builder/builder-chat.service';
 import { unpackSkill, validateSkillTree, type GateFinding } from '../src/store/gate';
 import { packageSkillNames, readSkillTree } from '../src/store/skill-tree';
 
@@ -108,8 +109,13 @@ describe('the Skill & Agent Builder registry entry', () => {
     // Not a literal: CLAUDE.md requires this to rise with every behaviour change to the package.
     expect(entry.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(entry.poolSize).toBe(0);
-    expect(entry.platformApi).toBe(true);
     expect(entry.default).not.toBe(true);
+  });
+
+  it('declares only the registry literals, never a Project configuration or a Skill', () => {
+    expect(Object.keys(entry).toSorted()).toEqual(
+      ['default', 'description', 'model', 'name', 'poolSize', 'port', 'variant', 'version'].toSorted()
+    );
   });
 
   it('runs the same model pair as the default agent, so nobody has to choose one', () => {
@@ -152,7 +158,7 @@ describe('the package', () => {
 
     expect([...composed].filter((name) => !own.has(name)).toSorted()).toEqual(['agent-browser', 'platform', 'web-app']);
     expect(shared.size).toBeGreaterThan(composed.size);
-    expect(persona).toContain('/skills?filter=built_in');
+    expect(persona).toContain('list_skills {"filter":"built_in"}');
   });
 
   it('carries the authoring skills as its own overrides, not in the shared pool every agent gets', () => {
@@ -327,7 +333,7 @@ describe('the persona', () => {
     expect(persona).toContain('builderSubject');
     expect(persona).not.toContain('builder-subject.json');
     expect(persona).toMatch(/start your first message with the answer/);
-    expect(persona).toMatch(/Never `POST \/agents` for it/);
+    expect(persona).toMatch(/Never `create_agent` for it/);
   });
 
   it('decides and does rather than asking for permission', () => {
@@ -344,7 +350,7 @@ describe('the persona', () => {
 
   it('validates a Skill tree under the name it will carry, and says which rules only the API answers', () => {
     expect(persona).toContain('node scripts/validate-skill.mjs scratch/<name> --name <name>');
-    expect(gateRules).toMatch(/`name_reserved` and 409 `name-unavailable` come only from the\s+API/);
+    expect(gateRules).toMatch(/`name_reserved` and `name-unavailable` come only from the\s+platform/);
   });
 
   it('tries a Skill in the chat of an Agent that carries it, never from its own chat', () => {
@@ -368,9 +374,9 @@ describe('the persona', () => {
 
 describe('the skill-authoring skill', () => {
   it('names the built-in catalogue call and all three offers', () => {
-    expect(skillAuthoring).toContain('/skills?filter=built_in');
+    expect(skillAuthoring).toContain(`list_skills '{"filter":"built_in"}'`);
     for (const offer of ['Reuse', 'Extend', 'Fresh']) expect(skillAuthoring).toContain(offer);
-    expect(skillAuthoring).toContain('/skills/$ID/versions');
+    expect(skillAuthoring).toContain('api.sh call create_skill_version');
   });
 
   it('splits ERRORS from LINTS and says which one blocks', () => {
@@ -379,8 +385,8 @@ describe('the skill-authoring skill', () => {
   });
 
   it('teaches the create, read-back, report loop', () => {
-    expect(skillAuthoring).toContain('POST /skills');
-    expect(skillAuthoring).toContain('/versions/$N/files');
+    expect(skillAuthoring).toContain('create_skill_version');
+    expect(skillAuthoring).toContain('get_skill_files');
     expect(skillAuthoring).toMatch(/read back/i);
   });
 
@@ -460,7 +466,7 @@ describe('the agent-authoring skill', () => {
   });
 
   it('points at stack Skills the Builder can read through the API', () => {
-    expect(stackSkill).toContain('GET /skills/{id}');
+    expect(stackSkill).toContain('`get_skill`');
     expect(stackSkill).not.toContain('`ui`');
   });
 
@@ -509,7 +515,7 @@ describe('the agent-authoring skill', () => {
     expect(agentAuthoring).not.toMatch(/scaffold/i);
     expect(stackSkill).not.toMatch(/scaffold|check-skeleton/i);
     expect(templateReference).toContain('cp -a /opt/agents/app-builder/template/app template/app');
-    expect(templateReference).toContain('PUT "/agents/$A/template"');
+    expect(templateReference).toContain('api.sh call save_agent_template');
     expect(templateReference).toContain('`template-refused`');
     expect(templateReference).toContain('`template-changed`');
     expect(templateReference).toContain('template: { hash }');
@@ -594,41 +600,21 @@ describe('the agent-authoring skill', () => {
   });
 });
 
-/** `METHOD /base/segment/:p` for every `/api/v1` route carrying `@AllowsGatewayCaller()`. */
-function gatewayOpenRoutes(): Set<string> {
-  const open = new Set<string>();
-  for (const resource of ['projects', 'agents', 'skills', 'me']) {
-    const source = readFileSync(
-      join(process.cwd(), 'src', 'public-api', resource, `${resource}.controller.ts`),
-      'utf8'
-    );
-    const [, base] = /@PublicApiController\('([^']+)'\)/.exec(source) ?? [];
-    expect(base).toBe(resource);
-    for (const [, method, path] of source.matchAll(
-      /@(Get|Post|Put|Delete|Patch)\((?:'([^']*)')?\)\s*\n\s*@AllowsGatewayCaller\(\)/g
-    )) {
-      open.add(`${method.toUpperCase()} ${normalizeRoute(`/${base}/${path ?? ''}`)}`);
-    }
-  }
-  return open;
+/** `METHOD /base/segment/:p` for every `/api/v1` route carrying `@ExternalServiceOperation(...)`. */
+function chatPublicApiOperations(): Set<string> {
+  const manifest = JSON.parse(
+    readFileSync(join(process.cwd(), '..', 'external-services', 'public-api', 'service.json'), 'utf8')
+  ) as { operations: Record<string, { kind?: string }> };
+  const writes: ReadonlySet<string> = new Set(BUILDER_CHAT_PUBLIC_API_WRITES);
+  return new Set(
+    Object.entries(manifest.operations)
+      .filter(([name, operation]) => (operation.kind ?? 'read') === 'read' || writes.has(name))
+      .map(([name]) => name)
+  );
 }
 
-/** Collapse every path parameter — `:id`, a `$shell` variable, a literal version number — and drop the query. */
-function normalizeRoute(path: string): string {
-  const parameter = (segment: string): boolean =>
-    segment.startsWith(':') || segment.includes('$') || /^\d+$/.test(segment);
-  return path
-    .split('?')[0]
-    .split('/')
-    .filter((segment) => segment.length > 0)
-    .map((segment) => (parameter(segment) ? ':p' : segment))
-    .join('/');
-}
-
-/** Every platform-API call the reference tells the Builder to make, as `METHOD path`. */
 function platformCallsIn(markdown: string): string[] {
-  const calls = [...markdown.matchAll(/\bapi(?:\.sh)? (?:call|status) (GET|POST|PUT|DELETE|PATCH) ["']?([^\s"')]+)/g)];
-  return calls.map(([, method, path]) => `${method} ${normalizeRoute(path)}`);
+  return [...markdown.matchAll(/\bapi(?:\.sh)? (?:call|status) ([a-z_]+)\b/g)].map(([, operation]) => operation);
 }
 
 describe('the test loop reference', () => {
@@ -696,19 +682,19 @@ describe('the test loop reference', () => {
     expect(testLoop).toMatch(/use the result once the way the brief's user would/);
   });
 
-  it('drives only routes this pod is actually allowed to call', () => {
-    const open = gatewayOpenRoutes();
+  it('drives only public-api Operations its chat configuration turns on', () => {
+    const open = chatPublicApiOperations();
     const driven = [...platformCallsIn(testLoop), ...platformCallsIn(testProjectScript)];
 
     expect(open.size).toBeGreaterThan(5);
     expect(platformCallsIn(testProjectScript).length).toBeGreaterThan(8);
     for (const call of new Set(driven)) {
-      expect([...open], `the test loop drives ${call}, which is not open to a gateway caller`).toContain(call);
+      expect([...open], `the test loop drives ${call}, which a new chat has switched off`).toContain(call);
     }
   });
 
-  it('is matched by the authoring references, which drive the Skill and Agent routes', () => {
-    const open = gatewayOpenRoutes();
+  it('is matched by the authoring references, which drive the Skill and Agent Operations', () => {
+    const open = chatPublicApiOperations();
     const agentApi = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'agent-api.md'), 'utf8');
     const driven = [
       ...platformCallsIn(skillApi),
@@ -719,14 +705,14 @@ describe('the test loop reference', () => {
 
     expect(driven.length).toBeGreaterThan(8);
     for (const call of new Set(driven)) {
-      expect([...open], `a reference drives ${call}, which is not open to a gateway caller`).toContain(call);
+      expect([...open], `a reference drives ${call}, which a new chat has switched off`).toContain(call);
     }
   });
 
   it('creates the Test Project the way the API accepts it, and waits with a ceiling', () => {
     expect(testLoop).toContain('sh scripts/tp.sh up');
     expect(testProjectScript).toContain('kind: "test"');
-    expect(testProjectScript).toContain('api call POST /projects');
+    expect(testProjectScript).toContain('api call create_project');
     expect(testProjectScript).toMatch(/environments\[0\]\.status/);
     expect(testProjectScript).toMatch(/wait_active\(\) \{[\s\S]*"\$attempts"[\s\S]*failed[\s\S]*return 1/);
   });
@@ -764,8 +750,8 @@ describe('the test loop reference', () => {
     expect(testLoop).toMatch(/no Project list shows it/);
     expect(testProjectScript).toContain('.builderTestProject.id');
     expect(testProjectScript).toContain('.testProjectId');
-    expect(testProjectScript).toContain('api call POST "/projects/$project/test/update"');
-    expect(testProjectScript).toContain('api call POST "/projects/$project/test/reset"');
+    expect(testProjectScript).toContain('api call update_test_project');
+    expect(testProjectScript).toContain('api call reset_test_project');
     expect(testProjectScript).not.toMatch(/DELETE/);
     expect(testLoop).not.toMatch(/supersede/i);
   });

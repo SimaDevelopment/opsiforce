@@ -48,10 +48,23 @@ export async function assertSkillVisibleToUser(tenantId: string, userId: string,
   return row;
 }
 
+export function isServiceSkill<T extends Pick<SkillRow, 'externalServiceId'>>(
+  skill: T
+): skill is T & { externalServiceId: string } {
+  return skill.externalServiceId !== null;
+}
+
+export function isRetiredSkill(skill: Pick<SkillRow, 'retiredAt'>): boolean {
+  return skill.retiredAt !== null;
+}
+
 export function canDisableSkill(skill: SkillRow, userId: string): boolean {
+  if (isServiceSkill(skill) || isRetiredSkill(skill)) return false;
   return skill.origin === 'custom' ? canEditSkill(skill, userId) : skill.name !== PLATFORM_SKILL_NAME;
 }
 
 export function canEditSkill(skill: SkillRow, userId: string): boolean {
-  return skill.origin === 'custom' && (skill.visibility === 'public' || skill.createdBy === userId);
+  return (
+    skill.origin === 'custom' && !isServiceSkill(skill) && (skill.visibility === 'public' || skill.createdBy === userId)
+  );
 }

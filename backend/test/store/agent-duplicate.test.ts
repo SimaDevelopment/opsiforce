@@ -42,7 +42,13 @@ beforeAll(async () => {
   const userId = await createUserRow();
   await harness.environments.ensureDefaultForTenant(tenantId);
   author = { tenantId, userId, canManageAgents: true };
-  chatCaller = { tenantId, userId, canManageAgents: true, canManageSkills: true };
+  chatCaller = {
+    tenantId,
+    userId,
+    canManageAgents: true,
+    canManageSkills: true,
+    canManageTenantExternalServices: false,
+  };
   developmentId = await defaultEnvironmentId(tenantId);
   const [production] = await db
     .select({ id: environments.id })
@@ -134,13 +140,17 @@ describe('duplicating a Custom Agent', () => {
       model: 'openai/gpt-5.6-sol',
       variant: 'low',
     });
-    await harness.agents.updateSettings(author, source.id, { platformApi: true });
     const hash = await saveTemplate(source.id, { 'README.md': '# Notes\n', 'scripts/check.sh': '#!/bin/sh\n' });
     const sourcePins = (development(await harness.agents.findOne(author, source.id)).skills ?? []).map(
       (skill) => skill.pinnedVersionId
     );
 
-    const copy = await harness.agents.duplicate(author, source.id, { displayName: uniqueName('Copy') });
+    const { agent: copy } = await harness.agents.duplicate(
+      author,
+      source.id,
+      { displayName: uniqueName('Copy') },
+      { canConfigureProjects: true }
+    );
 
     expect(copy).toMatchObject({
       origin: 'custom',
@@ -149,7 +159,7 @@ describe('duplicating a Custom Agent', () => {
       createdBy: author.userId,
       builderChatId: null,
       defaultEnvironmentId: productionId,
-      settings: { platformApi: true, defaultEnvironmentId: productionId },
+      settings: { defaultEnvironmentId: productionId },
     });
     expect(development(copy)).toMatchObject({
       promptBody: 'Write the notes.',
@@ -170,7 +180,12 @@ describe('duplicating a Custom Agent', () => {
     const source = await harness.agents.create(author, { displayName: uniqueName('Pinned platform') });
 
     await withNewerBuiltInVersion('platform', async ({ olderVersionId }) => {
-      const copy = await harness.agents.duplicate(author, source.id, { displayName: uniqueName('Platform copy') });
+      const { agent: copy } = await harness.agents.duplicate(
+        author,
+        source.id,
+        { displayName: uniqueName('Platform copy') },
+        { canConfigureProjects: true }
+      );
 
       const platform = (development(copy).skills ?? []).filter((skill) => skill.name === 'platform');
       expect(platform.map((skill) => skill.pinnedVersionId)).toEqual([olderVersionId]);
@@ -180,7 +195,12 @@ describe('duplicating a Custom Agent', () => {
   it('opens its first Builder chat with the inherited Template', async () => {
     const source = await harness.agents.create(author, { displayName: uniqueName('Seeded') });
     const hash = await saveTemplate(source.id, { 'app/index.html': '<p>starter</p>\n' });
-    const copy = await harness.agents.duplicate(author, source.id, { displayName: uniqueName('Seeded copy') });
+    const { agent: copy } = await harness.agents.duplicate(
+      author,
+      source.id,
+      { displayName: uniqueName('Seeded copy') },
+      { canConfigureProjects: true }
+    );
 
     const chat = await harness.builderChats.openFor(chatCaller, { agentId: copy.id });
 
@@ -194,20 +214,31 @@ describe('duplicating a Custom Agent', () => {
     const hash = await saveTemplate(source.id, { 'README.md': 'x\n' });
     await rm(join(agentTemplatesDir(source.id), '.versions', hash), { recursive: true, force: true });
 
-    expect(await code(harness.agents.duplicate(author, source.id, { displayName: uniqueName('Nope') }))).toBe(
-      'template_damaged'
-    );
+    expect(
+      await code(
+        harness.agents.duplicate(author, source.id, { displayName: uniqueName('Nope') }, { canConfigureProjects: true })
+      )
+    ).toBe('template_damaged');
   });
 
   it('refuses a taken name and a reserved Built-in slug before writing anything', async () => {
     const source = await harness.agents.create(author, { displayName: uniqueName('Named') });
 
-    expect(await code(harness.agents.duplicate(author, source.id, { displayName: source.displayName ?? '' }))).toBe(
-      'name_unavailable'
-    );
-    expect(await code(harness.agents.duplicate(author, source.id, { displayName: 'App Builder' }))).toBe(
-      'name_unavailable'
-    );
+    expect(
+      await code(
+        harness.agents.duplicate(
+          author,
+          source.id,
+          { displayName: source.displayName ?? '' },
+          { canConfigureProjects: true }
+        )
+      )
+    ).toBe('name_unavailable');
+    expect(
+      await code(
+        harness.agents.duplicate(author, source.id, { displayName: 'App Builder' }, { canConfigureProjects: true })
+      )
+    ).toBe('name_unavailable');
   });
 
   it('removes the new Template at once when the row transaction fails', async () => {
@@ -218,7 +249,9 @@ describe('duplicating a Custom Agent', () => {
     const displayName = uniqueName('Rolled back');
 
     try {
-      await expect(harness.agents.duplicate(author, source.id, { displayName })).rejects.toThrow('transaction failed');
+      await expect(
+        harness.agents.duplicate(author, source.id, { displayName }, { canConfigureProjects: true })
+      ).rejects.toThrow('transaction failed');
     } finally {
       transactionSpy.mockRestore();
     }
@@ -237,7 +270,12 @@ describe('duplicating a Built-in Agent', () => {
     const parked = await ensureBuiltInSkill('makara-ui');
     await harness.agents.setSkill(author, builtIn, parked.skillId, {});
 
-    const copy = await harness.agents.duplicate(author, builtIn, { displayName: uniqueName('Branded') });
+    const { agent: copy } = await harness.agents.duplicate(
+      author,
+      builtIn,
+      { displayName: uniqueName('Branded') },
+      { canConfigureProjects: true }
+    );
 
     const profile = development(copy);
     expect(profile.promptBody).toBe(promptBody('app-builder'));
@@ -257,7 +295,12 @@ describe('duplicating a Built-in Agent', () => {
     await ensureBuiltInSkill('dates');
     await ensureBuiltInSkill('makara-dates');
 
-    const copy = await harness.agents.duplicate(author, builtIn, { displayName: uniqueName('Makara copy') });
+    const { agent: copy } = await harness.agents.duplicate(
+      author,
+      builtIn,
+      { displayName: uniqueName('Makara copy') },
+      { canConfigureProjects: true }
+    );
 
     const profile = development(copy);
     expect(profile.promptBody).toBe(promptBody('makara-app-builder'));
@@ -270,9 +313,16 @@ describe('duplicating a Built-in Agent', () => {
   it('refuses the Skill & Agent Builder and marks it not duplicable', async () => {
     const builder = await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
 
-    expect(await code(harness.agents.duplicate(author, builder, { displayName: uniqueName('Builder') }))).toBe(
-      'not_duplicable'
-    );
+    expect(
+      await code(
+        harness.agents.duplicate(
+          author,
+          builder,
+          { displayName: uniqueName('Builder') },
+          { canConfigureProjects: true }
+        )
+      )
+    ).toBe('not_duplicable');
     expect((await harness.agents.findOne(author, builder)).duplicable).toBe(false);
     expect((await harness.agents.findOne(author, await ensureBuiltInAgent('app-builder'))).duplicable).toBe(true);
   });

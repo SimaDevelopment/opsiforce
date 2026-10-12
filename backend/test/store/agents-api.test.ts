@@ -129,7 +129,7 @@ describe('creating a custom agent', () => {
       createdBy: author.userId,
       projectCount: 0,
     });
-    expect(created.settings).toEqual({ defaultEnvironmentId: productionId, platformApi: false });
+    expect(created.settings).toEqual({ defaultEnvironmentId: productionId });
 
     const development = created.profiles.find((profile) => profile.environmentId === developmentId);
     expect(development).toMatchObject({ promptBody: '', ...defaultProfileModel() });
@@ -409,6 +409,7 @@ describe('publishing an agent to another environment', () => {
       prompt: 'same',
       model: null,
       skills: { added: [], removed: [], repinned: [] },
+      serviceSettings: [],
       template: 'none',
     });
 
@@ -539,7 +540,12 @@ describe('agent lifecycle', () => {
       variant: 'low',
     });
 
-    const copy = await service.duplicate(author, source.id, { displayName: agentName() });
+    const { agent: copy } = await service.duplicate(
+      author,
+      source.id,
+      { displayName: agentName() },
+      { canConfigureProjects: true }
+    );
 
     const development = copy.profiles.find((profile) => profile.environmentId === developmentId);
     expect(copy).toMatchObject({ visibility: 'private', origin: 'custom' });
@@ -587,12 +593,9 @@ describe('agent lifecycle', () => {
   it('points new projects at another environment through settings', async () => {
     const agent = await service.create(author, { displayName: agentName() });
 
-    const updated = await service.updateSettings(author, agent.id, {
-      defaultEnvironmentId: productionId,
-      platformApi: true,
-    });
+    const updated = await service.updateSettings(author, agent.id, { defaultEnvironmentId: productionId });
 
-    expect(updated.settings).toEqual({ defaultEnvironmentId: productionId, platformApi: true });
+    expect(updated.settings).toEqual({ defaultEnvironmentId: productionId });
     const foreign = await defaultEnvironmentId(otherTenantId);
     expect(await code(service.updateSettings(author, agent.id, { defaultEnvironmentId: foreign }))).toContain(
       'NotFoundException'
@@ -615,9 +618,9 @@ describe('agent lifecycle', () => {
   it('leaves an existing agent on a Development default as it is', async () => {
     const agent = await seedLiveAgent(tenantId, author.userId);
 
-    const kept = await service.updateSettings(author, agent.id, { platformApi: true });
+    const kept = await service.updateSettings(author, agent.id, {});
 
-    expect(kept).toMatchObject({ live: true, settings: { defaultEnvironmentId: developmentId, platformApi: true } });
+    expect(kept).toMatchObject({ live: true, settings: { defaultEnvironmentId: developmentId } });
   });
 });
 
@@ -836,8 +839,8 @@ describe('disabling an agent for one Organization (ADR-0070)', () => {
     expect((await service.findOne(caller, custom.id)).settings.defaultEnvironmentId).toBe(
       await defaultEnvironmentId(caller.tenantId)
     );
-    await expect(service.updateSettings(caller, custom.id, { platformApi: true })).resolves.toMatchObject({
-      settings: { platformApi: true },
+    await expect(service.updateSettings(caller, custom.id, {})).resolves.toMatchObject({
+      settings: { defaultEnvironmentId: await defaultEnvironmentId(caller.tenantId) },
     });
   });
 

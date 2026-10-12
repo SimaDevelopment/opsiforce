@@ -1,0 +1,52 @@
+{
+  "sdk": 1,
+  "displayName": "Opsiforce Public API",
+  "description": "Manage the Organization's Agents, Skills and Projects.",
+  "operations": {
+    "list_agents": {
+      "kind": "read",
+      "description": "List the Agents the caller's creator can see.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "cursor": { "type": "string", "maxLength": 200 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "validate_skill": {
+      "kind": "read",
+      "description": "Validate a Skill without saving it.",
+      "input": {
+        "type": "object",
+        "properties": { "content": { "type": "string", "maxLength": 200000 } },
+        "required": ["content"],
+        "additionalProperties": false
+      }
+    },
+    "create_project": {
+      "kind": "write",
+      "description": "Create a Project from an Agent.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "required": ["agentId", "name"],
+        "additionalProperties": false
+      }
+    },
+    "reset_test_project": {
+      "kind": "destructive",
+      "description": "Reset the Test Project of an Agent.",
+      "input": {
+        "type": "object",
+        "properties": { "agentId": { "type": "string", "format": "uuid" } },
+        "required": ["agentId"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FALLBACK_APP_PORT, agentAppPort, sharedAppPort, readMergedAgentRegistry } from '../src/agent/agent-config';
 import { buildPodSpec, type PodTemplateOptions } from '../src/pod/pod.template';
 import { resolvePreset, toK8sResources } from '../src/pod/pod-classes';
+import { packageSkillNames } from '../src/store/skill-tree';
 
 const agentConfig = join(process.cwd(), '..', 'agent-config');
 const entrypoint = readFileSync(join(agentConfig, 'scripts', 'entrypoint.sh'), 'utf8');
@@ -80,6 +81,29 @@ describe('the platform skill', () => {
     expect(platformSkill).toContain('websearch');
   });
 
+  it('carries the one External Services section every Service skill leans on', () => {
+    const [, section] = /^## External Services[^\n]*\n([\s\S]*?)^## /m.exec(platformSkill) ?? [];
+
+    expect(section).toBeDefined();
+    expect(section).toContain('async function callService(slug, operation, input = {})');
+    expect(section).toContain('$EXTERNAL_SERVICES_URL/<slug>/openapi.json');
+    expect(section).toContain('$EXTERNAL_SERVICES_URL/<slug>/calls?limit=50');
+    for (const code of [
+      'operation-off',
+      'out-of-bounds',
+      'configuration-incomplete',
+      'service-reloading',
+      'service-starting',
+      'service-failed',
+      'input-too-large',
+      'invalid-input',
+    ]) {
+      expect(section, code).toContain(`\`${code}\``);
+    }
+    expect(section).toContain('callId');
+    expect(section).toContain('Development changes go live on Publish');
+  });
+
   it('makes a first-time setup atomic and runs a root-refusing service as its own user', () => {
     expect(platformSkill).toMatch(/rename it into place once setup succeeds/);
     expect(platformSkill).toMatch(/refuses to run as root.*`startup\.sh` creates it idempotently/s);
@@ -91,6 +115,22 @@ describe('the platform skill', () => {
     for (const table of ['app_requests', 'process_logs', 'process_events']) {
       expect(platformSkill).toContain(table);
       expect(sqliteSkill).not.toContain(table);
+    }
+  });
+});
+
+describe('the inbound skills that became Service skills', () => {
+  it('ship in no package, so the content sweep removes them once from every workspace that owned them', () => {
+    for (const agent of Object.keys(readMergedAgentRegistry().agents)) {
+      const shipped = packageSkillNames(agent);
+      expect(shipped.has('incoming-email'), agent).toBe(false);
+      expect(shipped.has('whatsapp'), agent).toBe(false);
+    }
+  });
+
+  it('are given by no agents.json entry: an Agent gets a Service skill through the Store, a Project through its configuration', () => {
+    for (const [agent, entry] of Object.entries(readMergedAgentRegistry().agents)) {
+      expect(Object.keys(entry), agent).not.toContain('skills');
     }
   });
 });
@@ -138,57 +178,26 @@ describe('the app port', () => {
   });
 });
 
-describe('the platform-api credential in the pod', () => {
-  const platformApi = {
-    platformApiKey: 'gw-platform',
-    platformApiUrl: 'http://opsiforce-backend:3001/api/v1',
-    runtimeProxyUrl: 'http://proxy-agent:3005',
-  };
+describe('the pod credentials for the platform', () => {
+  const service = { gatewayApiKey: 'gw-service', gatewayUrl: 'http://gw/api/gateway' };
 
-  it('reaches a pod that holds a platform-api key', () => {
-    const withKey = environmentOf(buildPodSpec(baseOptions(platformApi)));
-
-    expect(withKey.get('OPSIFORCE_API_KEY')).toBe('gw-platform');
-    expect(withKey.get('OPSIFORCE_API_URL')).toBe('http://opsiforce-backend:3001/api/v1');
-  });
-
-  it('carries the runtime proxy origin beside the platform API base', () => {
-    const withKey = environmentOf(buildPodSpec(baseOptions(platformApi)));
-
-    expect(withKey.get('OPSIFORCE_RUNTIME_PROXY_URL')).toBe('http://proxy-agent:3005');
-  });
-
-  it('is absent from every other pod', () => {
-    const ordinary = environmentOf(buildPodSpec(baseOptions()));
-
-    expect(ordinary.has('OPSIFORCE_API_KEY')).toBe(false);
-    expect(ordinary.has('OPSIFORCE_API_URL')).toBe(false);
-    expect(ordinary.has('OPSIFORCE_RUNTIME_PROXY_URL')).toBe(false);
-  });
-
-  it('is absent when the key exists but no base URL is configured', () => {
-    const halfConfigured = environmentOf(buildPodSpec(baseOptions({ platformApiKey: 'gw-platform' })));
-
-    expect(halfConfigured.has('OPSIFORCE_API_KEY')).toBe(false);
-  });
-
-  it('is absent when the key and base URL exist but no runtime proxy origin does', () => {
-    const halfConfigured = environmentOf(
-      buildPodSpec(
-        baseOptions({ platformApiKey: 'gw-platform', platformApiUrl: 'http://opsiforce-backend:3001/api/v1' })
-      )
-    );
-
-    expect(halfConfigured.has('OPSIFORCE_API_KEY')).toBe(false);
-    expect(halfConfigured.has('OPSIFORCE_API_URL')).toBe(false);
-  });
-
-  it('never rides on the service gateway variables', () => {
-    const env = environmentOf(
-      buildPodSpec(baseOptions({ ...platformApi, gatewayApiKey: 'gw-service', gatewayUrl: 'http://gw/api/gateway' }))
-    );
+  it('gives every pod the runtime proxy origin beside its one service key', () => {
+    const env = environmentOf(buildPodSpec(baseOptions({ ...service, runtimeProxyUrl: 'http://proxy-agent:3005' })));
 
     expect(env.get('SERVICE_GATEWAY_API_KEY')).toBe('gw-service');
-    expect(env.get('OPSIFORCE_API_KEY')).toBe('gw-platform');
+    expect(env.get('OPSIFORCE_RUNTIME_PROXY_URL')).toBe('http://proxy-agent:3005');
+  });
+
+  it('leaves the runtime proxy origin out when none is configured', () => {
+    const env = environmentOf(buildPodSpec(baseOptions(service)));
+
+    expect(env.has('OPSIFORCE_RUNTIME_PROXY_URL')).toBe(false);
+  });
+
+  it('never hands a pod a second key or the platform API base', () => {
+    const env = environmentOf(buildPodSpec(baseOptions({ ...service, runtimeProxyUrl: 'http://proxy-agent:3005' })));
+
+    expect(env.has('OPSIFORCE_API_KEY')).toBe(false);
+    expect(env.has('OPSIFORCE_API_URL')).toBe(false);
   });
 });

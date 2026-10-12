@@ -1,26 +1,30 @@
 import { api } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
 
-export interface UsageEnvironmentBreakdown {
+export interface UsageCounters {
+  calls: number;
+  refused: number;
+  failed: number;
+  events: number;
+}
+
+export interface UsageEnvironmentBreakdown extends UsageCounters {
   projectEnvironmentId: string | null;
   environmentName: string | null;
   isDefault: boolean;
   deleted: boolean;
-  count: number;
 }
 
-export interface UsageProjectBreakdown {
+export interface UsageProjectBreakdown extends UsageCounters {
   projectId: string | null;
   projectTitle: string | null;
   deleted: boolean;
-  count: number;
   environments: UsageEnvironmentBreakdown[];
 }
 
-export interface UsageServiceBreakdown {
+export interface UsageServiceBreakdown extends UsageCounters {
   service: string;
   displayName: string;
-  count: number;
   projects: UsageProjectBreakdown[];
 }
 

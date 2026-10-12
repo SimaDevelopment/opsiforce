@@ -420,6 +420,10 @@ func (s *Server) resolveLabeled(
 	headers http.Header,
 	authKey string,
 ) (backend.EnsureResponse, error) {
+	if backend.GatewayBearer(headers) != "" {
+		return s.backend.Ensure(ctx, projectID, surface, headers)
+	}
+
 	cacheKey := fmt.Sprintf("%s|%s|%s", hostLabel, surface, authKey)
 
 	return s.cache.GetOrLoad(ctx, cacheKey, projectID, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {

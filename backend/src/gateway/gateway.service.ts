@@ -5,6 +5,7 @@ import { gatewayAuditLogs } from '../../db/schema';
 import { ServiceProviderRegistry } from './providers/provider-registry';
 import type { ServiceProviderContext, ServiceProviderResult } from './providers/service-provider.interface';
 
+// TODO: remove in the release after External Services v2 ships: the dead POST /api/gateway dispatcher (it refuses email, its only provider)
 @Injectable()
 export class GatewayService {
   private readonly logger = new Logger(GatewayService.name);

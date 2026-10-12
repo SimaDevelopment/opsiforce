@@ -12,6 +12,7 @@ const PROBLEM_BY_CODE: Record<string, (message: string) => PublicApiError> = {
   model_unknown: Errors.modelUnknown,
   not_publishable: Errors.notPublishable,
   template_changed: Errors.templateChanged,
+  outside_calling_project: Errors.outsideCallingProject,
 };
 
 interface CodedBody {

@@ -3,7 +3,7 @@ import { Dynamic } from 'solid-js/web';
 import { useNavigate } from '@tanstack/solid-router';
 import { Badge } from '~/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
-import { ArrowUp, Box, Globe, Lock, Package, Search } from '~/components/icons';
+import { ArrowUp, Box, Cable, Globe, Lock, Package, Search } from '~/components/icons';
 import { cn } from '~/lib/cn';
 
 export const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -59,6 +59,32 @@ export function OriginBadge(props: { origin: string }) {
   );
 }
 
+export function ServiceBadge(props: { available: boolean }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger as="span">
+        <Badge variant={props.available ? 'outline' : 'warning'} class="gap-1 font-medium">
+          <Cable class="h-3 w-3" aria-hidden="true" />
+          {props.available ? 'Service' : 'Service unavailable'}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>
+        {props.available
+          ? 'Comes from its External Service: each publish of the service lays the next version.'
+          : 'Its External Service is disabled or not set up, so no agent gets this skill and it cannot be added.'}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function ServiceMark(props: { externalServiceId: string | null; available: boolean }) {
+  return (
+    <Show when={props.externalServiceId}>
+      <ServiceBadge available={props.available} />
+    </Show>
+  );
+}
+
 export function VisibilityBadge(props: { visibility: string }) {
   return (
     <Show
@@ -81,8 +107,8 @@ export function VisibilityBadge(props: { visibility: string }) {
 const DEFAULT_MARK_CLASS =
   'inline-flex cursor-default items-center rounded px-1 text-[10px] font-semibold uppercase tracking-wide text-primary';
 
-export function DefaultEnvironmentMark(props: { environmentName: string; plain?: boolean }) {
-  const explanation = () => `New projects start from ${props.environmentName}.`;
+export function DefaultEnvironmentMark(props: { environmentName: string; plain?: boolean; explanation?: string }) {
+  const explanation = () => props.explanation ?? `New projects start from ${props.environmentName}.`;
   return (
     <Show
       when={!props.plain}
@@ -107,6 +133,21 @@ export function DisabledBadge() {
     <Badge variant="outline" class="font-medium text-muted-foreground">
       Disabled
     </Badge>
+  );
+}
+
+export function RetiredBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger as="span">
+        <Badge variant="outline" class="font-medium text-muted-foreground">
+          Retired
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>
+        The agent image no longer ships this skill: no agent gets it and it can't be added.
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

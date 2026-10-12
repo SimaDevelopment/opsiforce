@@ -1,9 +1,12 @@
 import { createMemo, createSignal, For, Show } from 'solid-js';
+import { callSources } from '~/api/external-service-calls';
 import {
   useExternalServicesUsage,
+  type UsageCounters,
   type UsageProjectBreakdown,
   type UsageServiceBreakdown,
 } from '~/api/external-services-usage';
+import { CallsTable } from '~/components/external-service/calls-table';
 import { cn } from '~/lib/cn';
 import { Badge } from '~/components/ui/badge';
 import { Skeleton } from '~/components/ui/skeleton';
@@ -11,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
 import { ChartColumn, ChevronRight, FolderKanban, Inbox, RefreshCw } from '~/components/icons';
 
-const COLUMN_COUNT = 3;
+const COLUMN_COUNT = 6;
 const MONTH_OPTION_COUNT = 12;
 
 function currentMonth(): string {
@@ -37,6 +40,10 @@ function formatCount(count: number): string {
   return count.toLocaleString();
 }
 
+function countsLine(counts: UsageCounters): string {
+  return `${formatCount(counts.calls)} calls · ${formatCount(counts.refused)} refused · ${formatCount(counts.failed)} failed · ${formatCount(counts.events)} events`;
+}
+
 function projectLabel(project: UsageProjectBreakdown): string {
   if (project.deleted) return 'Project (deleted)';
   return project.projectTitle?.trim() || 'Untitled project';
@@ -47,7 +54,7 @@ export function ExternalServicesUsagePage() {
   const usage = useExternalServicesUsage(month);
 
   const services = createMemo(() => usage.data?.services ?? []);
-  const total = createMemo(() => services().reduce((sum, service) => sum + service.count, 0));
+  const total = createMemo(() => services().reduce((sum, service) => sum + service.calls, 0));
 
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const toggleService = (key: string) =>
@@ -94,8 +101,9 @@ export function ExternalServicesUsagePage() {
       </div>
 
       <p class="text-xs text-muted-foreground mb-5 ml-8">
-        Inbound external-service messages stored in {formatMonth(month())} for your organization, per service. Counts
-        survive project and environment deletion.
+        External Service calls and stored events in {formatMonth(month())} for your Organization, per service. Refused
+        and failed calls are part of the calls. Counts survive Project and environment deletion and outlive the Calls
+        below.
       </p>
 
       <Show when={usage.isPending}>
@@ -116,7 +124,10 @@ export function ExternalServicesUsagePage() {
             <TableHeader>
               <TableRow>
                 <TableHead class="min-w-64">Service</TableHead>
-                <TableHead class="w-32 text-right">Messages</TableHead>
+                <TableHead class="w-24 text-right">Calls</TableHead>
+                <TableHead class="w-24 text-right">Refused</TableHead>
+                <TableHead class="w-24 text-right">Failed</TableHead>
+                <TableHead class="w-24 text-right">Events</TableHead>
                 <TableHead class="w-10" />
               </TableRow>
             </TableHeader>
@@ -134,6 +145,14 @@ export function ExternalServicesUsagePage() {
           </Table>
         </div>
       </Show>
+
+      <section class="mt-8">
+        <h2 class="mb-1 text-sm font-semibold">Calls</h2>
+        <p class="mb-3 text-xs text-muted-foreground">
+          Every Call made to or received for an External Service in your Organization, newest first.
+        </p>
+        <CallsTable source={callSources.tenant()} scope="tenant" showService />
+      </section>
     </div>
   );
 }
@@ -146,7 +165,10 @@ function ServiceRow(props: { service: UsageServiceBreakdown; expanded: boolean; 
           <div class="font-medium text-sm">{props.service.displayName}</div>
           <span class="font-mono text-[11px] text-muted-foreground">{props.service.service}</span>
         </TableCell>
-        <TableCell class="text-right text-sm tabular-nums">{formatCount(props.service.count)}</TableCell>
+        <TableCell class="text-right text-sm tabular-nums">{formatCount(props.service.calls)}</TableCell>
+        <TableCell class="text-right text-sm tabular-nums">{formatCount(props.service.refused)}</TableCell>
+        <TableCell class="text-right text-sm tabular-nums">{formatCount(props.service.failed)}</TableCell>
+        <TableCell class="text-right text-sm tabular-nums">{formatCount(props.service.events)}</TableCell>
         <TableCell class="text-right pr-3">
           <ChevronRight
             class={cn('w-4 h-4 inline text-muted-foreground transition-transform', props.expanded && 'rotate-90')}
@@ -175,9 +197,7 @@ function ProjectBreakdown(props: { project: UsageProjectBreakdown }) {
         <span class={cn('text-xs font-medium truncate', props.project.deleted && 'text-muted-foreground italic')}>
           {projectLabel(props.project)}
         </span>
-        <span class="ml-auto text-xs tabular-nums text-muted-foreground shrink-0">
-          {formatCount(props.project.count)}
-        </span>
+        <span class="ml-auto text-xs tabular-nums text-muted-foreground shrink-0">{countsLine(props.project)}</span>
       </div>
       <div class="mt-1 flex flex-col gap-0.5 pl-5">
         <For each={props.project.environments}>
@@ -188,9 +208,7 @@ function ProjectBreakdown(props: { project: UsageProjectBreakdown }) {
               >
                 {environment.deleted ? 'Environment (deleted)' : environment.environmentName}
               </span>
-              <span class="ml-auto text-xs tabular-nums text-muted-foreground shrink-0">
-                {formatCount(environment.count)}
-              </span>
+              <span class="ml-auto text-xs tabular-nums text-muted-foreground shrink-0">{countsLine(environment)}</span>
             </div>
           )}
         </For>
@@ -227,9 +245,9 @@ function EmptyState(props: { month: string }) {
   return (
     <div class="rounded-lg border border-border bg-card p-8 flex flex-col items-center gap-2 text-center">
       <Inbox class="w-6 h-6 text-muted-foreground" />
-      <p class="text-sm font-medium">No inbound messages in {formatMonth(props.month)}</p>
+      <p class="text-sm font-medium">No External Service usage in {formatMonth(props.month)}</p>
       <p class="text-xs text-muted-foreground">
-        Counters start filling as soon as an external service stores a message for an environment.
+        Counters fill as agents and Apps call External Services and as services store events for an environment.
       </p>
     </div>
   );

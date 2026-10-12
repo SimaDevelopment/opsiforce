@@ -7,7 +7,7 @@ import { defaultEnvironmentId, seedBuilderChat, seedLiveAgent, seedWorkspaceProj
 import {
   addMember,
   createTenant,
-  platformApiKeyFor,
+  callTokenFor,
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
@@ -63,7 +63,7 @@ describe('PUT /agents/:id/template', () => {
     const chat = await seedBuilderChat(tenant.tenantId, agentId, creator.userId);
     chatId = chat.chatId;
     templateDir = chat.templateDir;
-    chatKey = await platformApiKeyFor(app, tenant, chatId);
+    chatKey = callTokenFor(app, tenant, chatId);
   });
 
   beforeEach(async () => {
@@ -145,8 +145,8 @@ describe('PUT /agents/:id/template', () => {
 
     const callers = [
       creator.headers,
-      bearer(await platformApiKeyFor(app, tenant, otherChat.chatId)),
-      bearer(await platformApiKeyFor(app, tenant, testProjectId)),
+      bearer(callTokenFor(app, tenant, otherChat.chatId)),
+      bearer(callTokenFor(app, tenant, testProjectId)),
     ];
     for (const headers of callers) {
       const res = await save(headers);

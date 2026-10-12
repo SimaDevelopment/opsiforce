@@ -2,8 +2,8 @@
 /**
  * Turn a skill directory into the bodies the platform accepts:
  *
- *   node pack-skill.mjs --json scratch/<name> --name <name>   the body POST /skills wants
- *   node pack-skill.mjs --json scratch/<name>                  the body POST /skills/<id>/versions wants
+ *   node pack-skill.mjs --json scratch/<name> --name <name>   the input create_skill wants
+ *   node pack-skill.mjs --json scratch/<name>                  the files create_skill_version wants, beside the Skill's id
  *
  * It does not validate — run validate-skill.mjs first.
  *
@@ -141,7 +141,7 @@ function main(argv) {
 
   const tree = readSkillDirectory(directory)
   if (mode === "json") {
-    // `name` is required by POST /skills and refused by POST /skills/{id}/versions, so it is opt-in.
+    // `name` is required by create_skill and refused by create_skill_version, so it is opt-in.
     console.log(
       JSON.stringify({
         ...(name ? { name } : {}),

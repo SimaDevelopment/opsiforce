@@ -9,6 +9,7 @@ interface GatewayRequestBody {
   payload: unknown;
 }
 
+// TODO: remove in the release after External Services v2 ships: the dead POST /api/gateway dispatcher (it refuses email, its only provider)
 @Public()
 @UseGuards(GatewayAuthGuard)
 @Controller('gateway')

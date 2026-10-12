@@ -200,7 +200,7 @@ describe('public api openapi document', () => {
 
     expect(
       create.responses?.['409'].content?.['application/problem+json'].schema?.allOf?.[1].properties?.type?.enum
-    ).toEqual([errorTypeUri('test-project-exists'), errorTypeUri('limit-reached')]);
+    ).toEqual([errorTypeUri('test-project-exists'), errorTypeUri('limit-reached'), errorTypeUri('chain-too-deep')]);
     const schemas = document.components?.schemas as Record<string, NamedSchema> | undefined;
     expect(Object.keys(schemas?.ApiError.properties ?? {})).toContain('testProjectId');
 

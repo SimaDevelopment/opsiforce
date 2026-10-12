@@ -79,11 +79,10 @@ export class AgentBundleWriter {
           origin: 'custom',
           visibility: 'private',
           createdBy: caller.userId,
+          createdByProjectId: caller.callingProjectId ?? null,
           poolSize: 0,
         });
-        await tx
-          .insert(agentSettings)
-          .values({ agentId, defaultEnvironmentId: productionId, platformApi: identity.platformApi });
+        await tx.insert(agentSettings).values({ agentId, defaultEnvironmentId: productionId });
 
         const profileId = crypto.randomUUID();
         await tx.insert(agentProfiles).values({
@@ -94,13 +93,20 @@ export class AgentBundleWriter {
           model: profile.model,
           variant: profile.variant,
         });
-        const carried = [...draft.pins, ...mintedPins];
+        const carried: SkillPin[] = [...draft.pins, ...mintedPins];
         const carriesPlatform = platform !== null && carried.some((pin) => pin.skillId === platform.skillId);
-        const pins = platform && !carriesPlatform ? [platform, ...carried] : carried;
+        const pins: SkillPin[] = platform && !carriesPlatform ? [platform, ...carried] : carried;
         if (pins.length > 0) {
           await tx
             .insert(agentProfileSkills)
-            .values(pins.map((pin) => ({ profileId, skillId: pin.skillId, skillVersionId: pin.skillVersionId })))
+            .values(
+              pins.map((pin) => ({
+                profileId,
+                skillId: pin.skillId,
+                skillVersionId: pin.skillVersionId,
+                serviceSettings: pin.serviceSettings ?? null,
+              }))
+            )
             .onConflictDoNothing({ target: [agentProfileSkills.profileId, agentProfileSkills.skillId] });
         }
       });

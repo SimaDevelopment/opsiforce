@@ -1,6 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { GatewayKeyService } from '../../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../../identity/forwarded-identity.service';
 import { Perms } from '../../permission/permission.constants';
 import { parsePermissions } from '../../permission/permission.utils';
@@ -8,10 +7,12 @@ import { IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from '../../ten
 import { TenantService } from '../../tenant/tenant.service';
 import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
-import { ALLOWS_GATEWAY_CALLER_KEY } from './allows-gateway-caller.decorator';
+import { CallTokens } from '../../gateway/call-tokens';
+import { PUBLIC_API_SERVICE } from '../../external-services/configuration/operation-switches';
+import { EXTERNAL_SERVICE_OPERATION_KEY } from './external-service-operation.decorator';
 import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
 import type { Caller, CallerRequest } from './caller';
-import { gatewayBearerOf } from './gateway-bearer';
+import { podBearerOf, type PodBearer } from './gateway-bearer';
 
 function toRef({ tenantId, tenantName }: TenantContext): TenantRef {
   return { id: tenantId, name: tenantName };
@@ -23,7 +24,7 @@ export class PublicApiGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly tenantService: TenantService,
     private readonly identities: ForwardedIdentityService,
-    private readonly gatewayKeys: GatewayKeyService,
+    private readonly callTokens: CallTokens,
     private readonly provenance: ProjectProvenanceRepository
   ) {}
 
@@ -35,11 +36,9 @@ export class PublicApiGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<CallerRequest>();
-    const gatewayToken = gatewayBearerOf(request.headers);
+    const podBearer = podBearerOf(request.headers);
 
-    request.caller = gatewayToken
-      ? await this.gatewayCaller(gatewayToken, context)
-      : await this.forwardedCaller(request);
+    request.caller = podBearer ? await this.podCaller(podBearer, context) : await this.forwardedCaller(request);
     return true;
   }
 
@@ -74,9 +73,13 @@ export class PublicApiGuard implements CanActivate {
     };
   }
 
-  private async gatewayCaller(token: string, context: ExecutionContext): Promise<Caller> {
-    const key = await this.gatewayKeys.validateToken(token, 'platform-api');
-    if (!key?.tenantId) throw Errors.unauthenticated();
+  private async podCaller(bearer: PodBearer, context: ExecutionContext): Promise<Caller> {
+    const routeOperation = this.reflector.getAllAndOverride<string | undefined>(EXTERNAL_SERVICE_OPERATION_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    const key = bearer.kind === 'call-token' ? this.callTokens.redeem(bearer.token, routeOperation) : null;
+    if (key?.service !== PUBLIC_API_SERVICE) throw Errors.unauthenticated();
 
     const creatorId = await this.provenance.findCreatorId(key.projectId);
     if (!creatorId) throw Errors.unauthenticated();
@@ -90,11 +93,11 @@ export class PublicApiGuard implements CanActivate {
       throw Errors.tenantForbidden();
     }
 
-    this.assertRouteOpenToGatewayCaller(context);
+    if (!routeOperation) throw Errors.routeClosedToAgentCaller();
 
     const tenant: TenantRef = { id: tenantRow.id, name: tenantRow.name };
     return {
-      source: 'gateway-key',
+      source: 'call-token',
       projectId: key.projectId,
       user: {
         id: identity.keycloakId,
@@ -108,14 +111,6 @@ export class PublicApiGuard implements CanActivate {
       tenants: [tenant],
       permissions: new Set(parsePermissions(identity.groups)),
     };
-  }
-
-  private assertRouteOpenToGatewayCaller(context: ExecutionContext): void {
-    const allowed = this.reflector.getAllAndOverride<boolean>(ALLOWS_GATEWAY_CALLER_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (!allowed) throw Errors.routeClosedToAgentCaller();
   }
 
   private async resolveTenants(groups: string, tenantContext: TenantContext): Promise<TenantRef[]> {

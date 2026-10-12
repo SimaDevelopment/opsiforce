@@ -1,16 +1,14 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
-import { NotFoundException, type ExecutionContext } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { projects } from '../../db/schema';
 import { BuilderChatRepository } from '../../src/builder/builder-chat.repository';
-import { GatewayAuthGuard } from '../../src/gateway/gateway-auth.guard';
-import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectService } from '../../src/project/project.service';
-import { PROJECT_KINDS, type ProjectKind } from '../../src/project/project.types';
+import { CHAT_KINDS, PROJECT_KINDS, type ProjectKind } from '../../src/project/project.types';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import {
@@ -34,11 +32,6 @@ function compareIds(a: string | undefined, b: string | undefined): number {
 
 function idsOf(rows: { id: string }[]): string[] {
   return rows.map((row) => row.id);
-}
-
-function bearerContext(token: string): ExecutionContext {
-  const request = { headers: { authorization: `Bearer ${token}` } };
-  return { switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
 }
 
 describe('kind-stamped Projects are invisible everywhere a member can look', () => {
@@ -223,12 +216,10 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
 
   it('reaches the chats only through the Builder repository', async () => {
     const repository = app.get(BuilderChatRepository);
-    const found = await Promise.all(
-      [...hiddenIds.values()].map((id) => repository.findChat(tenant.tenantId, id))
-    );
+    const found = await Promise.all([...hiddenIds.values()].map((id) => repository.findChat(tenant.tenantId, id)));
 
     expect(found.flatMap((row) => (row ? [row.id] : [])).toSorted(compareIds)).toEqual(
-      [hiddenIds.get('skill_builder_chat'), hiddenIds.get('agent_builder_chat')].toSorted(compareIds)
+      CHAT_KINDS.map((kind) => hiddenIds.get(kind)).toSorted(compareIds)
     );
   });
 
@@ -250,49 +241,6 @@ describe('kind-stamped Projects are invisible everywhere a member can look', () 
       .from(projects)
       .where(eq(projects.id, ordinaryId));
     expect(row).toEqual({ createdBy: creator.userId, kind: null });
-  });
-});
-
-describe('gateway keys know their purpose', () => {
-  let harness: PublicApiTestApp;
-  let app: NestFastifyApplication;
-  let keys: GatewayKeyService;
-  let tenant: TenantFixture;
-  let projectId: string;
-
-  beforeAll(async () => {
-    harness = await createPublicApiTestApp();
-    app = harness.app;
-    keys = app.get(GatewayKeyService);
-    tenant = await createTenant(app);
-    projectId = await createProject(app, tenant);
-  });
-
-  afterAll(async () => {
-    await harness.close();
-  });
-
-  it('mints one key per purpose and resolves each only under its own purpose', async () => {
-    const service = await keys.getEnvironmentToken(projectId);
-    if (service === null) throw new Error('the Project has no service key');
-
-    const platform = await keys.createKey(projectId, projectId, tenant.tenantId, 'platform-api');
-    expect(platform).not.toBe(service);
-
-    expect(await keys.validateToken(service, 'service')).toMatchObject({ projectId });
-    expect(await keys.validateToken(platform, 'platform-api')).toMatchObject({ projectId });
-    expect(await keys.validateToken(platform, 'service')).toBeNull();
-    expect(await keys.validateToken(service, 'platform-api')).toBeNull();
-  });
-
-  it('refuses a platform-api key at the gateway guard', async () => {
-    const platform = await keys.createKey(projectId, projectId, tenant.tenantId, 'platform-api');
-    const service = await keys.getEnvironmentToken(projectId);
-    if (service === null) throw new Error('the Project has no service key');
-    const guard = new GatewayAuthGuard(keys);
-
-    await expect(guard.canActivate(bearerContext(platform))).rejects.toThrow('Invalid gateway token');
-    expect(await guard.canActivate(bearerContext(service))).toBe(true);
   });
 });
 

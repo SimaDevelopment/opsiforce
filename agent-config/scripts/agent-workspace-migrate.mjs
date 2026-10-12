@@ -51,6 +51,7 @@ export function createContext(env = process.env) {
     packagePromptPath: path.join(agentRoot, "agent.md"),
     packageTemplateDir: path.join(agentRoot, "template"),
     appDir: path.join(workspace, "app"),
+    switchedOffSkills: (env.SWITCHED_OFF_SKILLS || "").split(",").filter(Boolean),
   }
 }
 
@@ -195,12 +196,14 @@ export function buildOpenCodeConfig({ imageConfig, existingConfig, packageName, 
   return next
 }
 
-export function planSkills({ packageSkills, presentSkills, ownedSkills, builtInPackage }) {
+export function planSkills({ packageSkills, presentSkills, ownedSkills, builtInPackage, switchedOffSkills = [] }) {
   const present = new Set(presentSkills)
   const owned = new Set(ownedSkills)
+  const switchedOff = new Set(switchedOffSkills)
   const write = []
   const skip = []
   for (const name of packageSkills) {
+    if (switchedOff.has(name)) continue
     if (present.has(name) && !owned.has(name) && !builtInPackage) skip.push(name)
     else write.push(name)
   }
@@ -257,6 +260,7 @@ async function applyContent(context, summary, ownedSkills) {
     presentSkills: await listDirs(context.skillsDir),
     ownedSkills,
     builtInPackage: packageShipsPrompt,
+    switchedOffSkills: context.switchedOffSkills,
   })
   for (const name of plan.write) await writeSkill(context, name)
   for (const name of plan.remove) await rm(path.join(context.skillsDir, name), { recursive: true, force: true })
@@ -311,7 +315,18 @@ async function initRepository(context, holdsTemplate) {
   await runGit(context, ["config", "user.email", "agent@opsiforce.com"])
   await runGit(context, ["config", "user.name", "OpsiForce"])
   await runGit(context, ["add", "-A"])
-  await runGit(context, ["commit", "--allow-empty", "-m", holdsTemplate ? "Initial template" : "Initial workspace"])
+  await runGit(context, ["commit", "--allow-empty", "-m", await initialCommitMessage(context, holdsTemplate)])
+  await rm(initialCommitMessagePath(context), { force: true })
+}
+
+function initialCommitMessagePath(context) {
+  return path.join(context.workspace, ".opsiforce", "initial-commit-message")
+}
+
+async function initialCommitMessage(context, holdsTemplate) {
+  if (!holdsTemplate) return "Initial workspace"
+  const given = await readFile(initialCommitMessagePath(context), "utf8").catch(() => "")
+  return given.trim() || "Initial template"
 }
 
 function recordConflict(summary, migrationId, target, reason) {

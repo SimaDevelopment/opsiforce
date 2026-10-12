@@ -4,23 +4,24 @@ kind: operations
 
 # Onboard a WhatsApp number
 
-> Connect a WhatsApp number to the platform and wire its chats to a ProjectEnvironment.
+> Connect a WhatsApp number to the deployment and let a ProjectEnvironment receive its chats.
 
 ## Prerequisites
 
-- `can_manage_external_services`, a platform-operator permission held outside the admin bundle ([Permissions](../organization/permissions.md)).
+- `can_manage_platform_external_services`, a platform-operator permission held outside the admin bundle ([Permissions](../organization/permissions.md)).
 - A Whapi account and the phone that holds the number.
-- For a local backend, `EXTERNAL_SERVICES_WEBHOOK_BASE_URL` set to a tunnel origin and the backend restarted, since the webhook delivery URL is always the deployment's webhook base plus the fixed service path ([WhatsApp](../external-services/whatsapp.md)).
+- `OPSIFORCE_PUBLIC_URL` set; for a local backend, a tunnel origin in the package's `.env` and the backend restarted, since the webhook URL Whapi is given is always the deployment's public URL plus the fixed service path ([WhatsApp](../external-services/whatsapp.md)).
 
 ## Steps
 
-1. Create the channel in the provider dashboard and link the number by QR code (on the phone: WhatsApp, Settings, Linked devices). The channel must reach an authorised state before it delivers anything.
-2. Register it under Admin, External services: paste the channel id and API token and give it a label that carries the human context, since channels are platform-global. The platform generates the webhook secret, never shows it, and pushes the webhook configuration to the provider there and then.
-3. Allowlist chats from the project page: the environment dropdown's External services item opens a per-environment dialog that enumerates the channel's chats and groups through the stored token, with validated manual entry as a fallback. Until this step names an environment, that environment receives nothing.
-4. If the badge reports drift or the registration-time push failed, use rotate: it re-sends the full webhook configuration, merging with entries that are not the platform's own.
+1. Create the channel in the Whapi dashboard and copy its channel ID and API token.
+2. Open Store, External Services, WhatsApp, and its Service configuration. Add an item to Numbers: the channel ID, a label that says whose number it is (every Organization picks numbers by this label) and the API token. Save. The platform generates the webhook secret, shows it once, and registers the webhook with Whapi; "Saved, but …" means Whapi refused or was unreachable: fix the token or the API URL and press Retry.
+3. Press "Show QR code" on the number and scan it on the phone (WhatsApp, Settings, Linked devices) before the code expires. The button says when the number is already linked.
+4. In the Project, open WhatsApp under External services below the chat (needs `can_configure_project_external_services`): add a number, pick its chats from the searchable list, turn on receiving and save. Until then that environment receives nothing.
+5. When the webhook status line warns (another secret, another URL, no webhook, or no `messages` event), Rotate the number's webhook secret: it registers the webhook again.
 
 ## Verify
 
-- The channel row's webhook badge shows the configuration as pushed.
-- `GET $EXTERNAL_SERVICES_URL/whatsapp/identity` from the environment's pod lists the channel and its allowlisted chats.
-- A message sent in an allowlisted chat appears as a row in the environment's `external-services.db`.
+- The number's webhook status line reads "Registered with Whapi".
+- `GET $EXTERNAL_SERVICES_URL/whatsapp` from the environment's pod (describe) lists the number and chats under `projectConfiguration.channels` with `receive["message.received"]` on.
+- A message sent in one of those chats appears as a `message.received` row in the environment's `external-services.db` `events` table, and as an inbound Call on the service page's Calls tab.

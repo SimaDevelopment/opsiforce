@@ -326,7 +326,13 @@ describe('delete', () => {
     const removed: string[][] = [];
     await db
       .insert(projects)
-      .values({ id: chatId, tenantId, agentId: await anyAgentId(), kind: 'skill_builder_chat', createdBy: author.userId });
+      .values({
+        id: chatId,
+        tenantId,
+        agentId: await anyAgentId(),
+        kind: 'skill_builder_chat',
+        createdBy: author.userId,
+      });
     await db.update(skills).set({ builderChatId: chatId }).where(eq(skills.id, created.id));
 
     await service.remove(author, created.id, async (ids) => {
@@ -698,5 +704,40 @@ describe('disabling a built-in skill for one Organization (ADR-0072)', () => {
     await expect(service.setDisabled({ ...author, canManageSkills: false }, skillId, true)).rejects.toThrow(
       Perms.manageSkills
     );
+  });
+});
+
+async function retiredSkill(): Promise<string> {
+  const { skillId } = await ensureBuiltInSkill(`retired-${randomUUID().slice(0, 8)}`);
+  await db.update(skills).set({ retiredAt: new Date() }).where(eq(skills.id, skillId));
+  return skillId;
+}
+
+describe('a retired built-in skill', () => {
+  it('leaves the Store list, which the Add skills picker reads too, under every filter', async () => {
+    const skillId = await retiredSkill();
+
+    for (const filter of ['all', 'built_in', 'disabled']) {
+      expect((await service.list(author, filter, undefined)).map((row) => row.id)).not.toContain(skillId);
+    }
+  });
+
+  it('still opens, marked retired, unavailable and not disableable', async () => {
+    const skillId = await retiredSkill();
+
+    expect(await service.findOne(author, skillId)).toMatchObject({
+      retired: true,
+      available: false,
+      disableable: false,
+    });
+  });
+
+  it('cannot be added to an agent', async () => {
+    const skillId = await retiredSkill();
+    await harness.environments.ensureDefaultForTenant(tenantId);
+    const agentCaller = { tenantId, userId: author.userId, canManageAgents: true };
+    const agent = await harness.agents.create(agentCaller, { displayName: `Agent ${randomUUID().slice(0, 8)}` });
+
+    expect(await code(harness.agents.setSkill(agentCaller, agent.id, skillId, {}))).toBe('skill_retired');
   });
 });

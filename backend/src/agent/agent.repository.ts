@@ -64,7 +64,7 @@ export class AgentRepository {
 
   async settings(agentId: string): Promise<AgentSettingsResponse> {
     const [row] = await db.select().from(agentSettings).where(eq(agentSettings.agentId, agentId)).limit(1);
-    return { defaultEnvironmentId: row?.defaultEnvironmentId ?? null, platformApi: row?.platformApi ?? false };
+    return { defaultEnvironmentId: row?.defaultEnvironmentId ?? null };
   }
 
   async projectCount(agentId: string, tenantId: string): Promise<number> {
@@ -76,18 +76,19 @@ export class AgentRepository {
   }
 
   async shippedSkills(names: Set<string>): Promise<ShippedSkillResponse[]> {
-    const found = names.size === 0
-      ? []
-      : await db
-          .select({
-            skillId: skills.id,
-            name: skills.name,
-            displayName: skills.displayName,
-            version: skillVersions.version,
-          })
-          .from(skills)
-          .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
-          .where(and(isNull(skills.tenantId), inArray(skills.name, [...names])));
+    const found =
+      names.size === 0
+        ? []
+        : await db
+            .select({
+              skillId: skills.id,
+              name: skills.name,
+              displayName: skills.displayName,
+              version: skillVersions.version,
+            })
+            .from(skills)
+            .leftJoin(skillVersions, eq(skillVersions.id, skills.latestVersionId))
+            .where(and(isNull(skills.tenantId), inArray(skills.name, [...names])));
     const byName = new Map(found.map((row) => [row.name, row]));
     return [...names]
       .toSorted()
@@ -199,8 +200,11 @@ export class AgentRepository {
         name: skills.name,
         displayName: skills.displayName,
         visibility: skills.visibility,
+        externalServiceId: skills.externalServiceId,
         latestVersionId: skills.latestVersionId,
+        retiredAt: skills.retiredAt,
         pinnedVersionId: agentProfileSkills.skillVersionId,
+        serviceSettings: agentProfileSkills.serviceSettings,
         pinnedVersion: skillVersions.version,
         flags: skillVersions.flags,
         latestVersion: sql<number | null>`(
@@ -222,9 +226,13 @@ export class AgentRepository {
         pinnedVersionId: row.pinnedVersionId,
         pinnedVersion: row.pinnedVersion,
         latestVersion: row.latestVersion === null ? null : Number(row.latestVersion),
-        updateAvailable: row.latestVersionId !== null && row.latestVersionId !== row.pinnedVersionId,
+        updateAvailable:
+          row.retiredAt === null && row.latestVersionId !== null && row.latestVersionId !== row.pinnedVersionId,
+        retired: row.retiredAt !== null,
         visibility: row.visibility,
         flags: row.flags,
+        externalServiceId: row.externalServiceId,
+        serviceSettings: row.serviceSettings,
       });
     }
     return byProfile;

@@ -31,9 +31,7 @@ const bytea = customType<{ data: Buffer; default: false }>({
   dataType: () => "bytea",
 })
 
-export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "test"
-
-export type GatewayKeyPurposeValue = "service" | "platform-api"
+export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "external_service_builder_chat" | "test"
 
 export type LimitKeyValue = "projects"
 
@@ -132,6 +130,9 @@ export const agents = pgTable(
     variant: text("variant"),
     poolSize: integer("pool_size").notNull().default(0),
     builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, {
+      onDelete: "set null",
+    }),
+    createdByProjectId: text("created_by_project_id").references((): AnyPgColumn => projects.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -255,7 +256,7 @@ export const projects = pgTable(
     index("idx_projects_tenant_kind").on(table.tenantId, table.kind),
     check(
       "projects_kind_check",
-      sql`${table.kind} in ('skill_builder_chat', 'agent_builder_chat', 'test')`,
+      sql`${table.kind} in ('skill_builder_chat', 'agent_builder_chat', 'external_service_builder_chat', 'test')`,
     ),
   ],
 )
@@ -463,6 +464,7 @@ export const projectPublishJobs = pgTable(
     commitSha: text("commit_sha"),
     previousCommitSha: text("previous_commit_sha"),
     error: text("error"),
+    report: jsonb("report").$type<JsonValue[]>().notNull().default([]),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -520,7 +522,8 @@ export const projectGatewayKeys = pgTable("project_gateway_keys", {
   tenantId: text("tenant_id").references(() => tenants.id),
   token: text("token").notNull().unique(),
   status: text("status").notNull().default("active"),
-  purpose: text("purpose").$type<GatewayKeyPurposeValue>().notNull().default("service"),
+  // TODO: remove in the release after External Services v2 ships: unread; kept so backends of the previous release keep working during the rollout
+  purpose: text("purpose").notNull().default("service"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -528,6 +531,7 @@ export const projectGatewayKeys = pgTable("project_gateway_keys", {
   check("project_gateway_keys_purpose_check", sql`${table.purpose} in ('service', 'platform-api')`),
 ])
 
+// TODO: remove in the release after External Services v2 ships: the dead POST /api/gateway dispatcher (it refuses email, its only provider); written only by it
 export const gatewayAuditLogs = pgTable("gateway_audit_logs", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
@@ -546,6 +550,7 @@ export const gatewayAuditLogs = pgTable("gateway_audit_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 })
 
+// TODO: remove in the release after External Services v2 ships: v1 table, read only by the one-time importers
 export const externalServiceResource = pgTable(
   "external_service_resource",
   {
@@ -558,6 +563,7 @@ export const externalServiceResource = pgTable(
   (table) => [primaryKey({ columns: [table.service, table.resourceKey] })],
 )
 
+// TODO: remove in the release after External Services v2 ships: v1 table, read only by the one-time importers
 export const externalServiceConfig = pgTable(
   "external_service_config",
   {
@@ -588,7 +594,10 @@ export const externalServiceUsage = pgTable(
     ),
     service: text("service").notNull(),
     month: date("month").notNull(),
-    count: bigint("count", { mode: "number" }).notNull().default(0),
+    calls: bigint("calls", { mode: "number" }).notNull().default(0),
+    refused: bigint("refused", { mode: "number" }).notNull().default(0),
+    failed: bigint("failed", { mode: "number" }).notNull().default(0),
+    events: bigint("events", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -604,6 +613,177 @@ export const externalServiceUsage = pgTable(
     index("idx_external_service_usage_tenant_month").on(
       table.tenantId,
       table.month,
+    ),
+  ],
+)
+
+export type ExternalServiceOriginValue = "built_in" | "custom"
+
+export interface AgentServiceSettings {
+  operations: string[];
+  receive: string[];
+}
+
+export interface ExternalServicePendingHook {
+  previous: { [key: string]: JsonValue } | null
+  callId: string
+  code: string
+  detail: string | null
+  failedAt: string
+}
+
+export const externalServices = pgTable(
+  "external_services",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    origin: text("origin").$type<ExternalServiceOriginValue>().notNull(),
+    slug: text("slug").notNull(),
+    builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, { onDelete: "cascade" }),
+    defaultEnvironmentId: text("default_environment_id").references(() => environments.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("external_services_builder_chat_id_unique").on(table.builderChatId),
+    check(
+      "external_services_builder_chat_check",
+      sql`(${table.origin} = 'custom') = (${table.builderChatId} is not null)`,
+    ),
+    uniqueIndex("external_services_built_in_slug_unique")
+      .on(table.slug)
+      .where(sql`${table.tenantId} is null`),
+    uniqueIndex("external_services_tenant_id_slug_unique")
+      .on(table.tenantId, table.slug)
+      .where(sql`${table.tenantId} is not null`),
+    check(
+      "external_services_origin_check",
+      sql`(${table.origin} = 'built_in' and ${table.tenantId} is null) or (${table.origin} = 'custom' and ${table.tenantId} is not null)`,
+    ),
+  ],
+)
+
+export const externalServiceConfigs = pgTable(
+  "external_service_configs",
+  {
+    id: text("id").primaryKey(),
+    externalServiceId: text("external_service_id")
+      .references(() => externalServices.id, { onDelete: "cascade" })
+      .notNull(),
+    tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    environment: text("environment"),
+    values: jsonb("values").$type<{ [key: string]: JsonValue }>().notNull(),
+    pendingHook: jsonb("pending_hook").$type<ExternalServicePendingHook>(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("external_service_configs_owner_unique")
+      .on(table.externalServiceId, table.tenantId, table.environment)
+      .nullsNotDistinct(),
+    check(
+      "external_service_configs_environment_check",
+      sql`${table.environment} is null or ${table.environment} = 'development'`,
+    ),
+  ],
+)
+
+export const externalServiceProjectConfigs = pgTable(
+  "external_service_project_configs",
+  {
+    id: text("id").primaryKey(),
+    externalServiceId: text("external_service_id")
+      .references(() => externalServices.id, { onDelete: "cascade" })
+      .notNull(),
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    values: jsonb("values").$type<{ [key: string]: JsonValue }>().notNull(),
+    notice: jsonb("notice").$type<JsonValue>(),
+    pendingHook: jsonb("pending_hook").$type<ExternalServicePendingHook>(),
+    unwiredSince: timestamp("unwired_since"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("external_service_project_configs_owner_unique").on(
+      table.externalServiceId,
+      table.projectEnvironmentId,
+    ),
+    index("idx_external_service_project_configs_environment").on(table.projectEnvironmentId),
+    index("idx_external_service_project_configs_values").using(
+      "gin",
+      table.values.op("jsonb_path_ops"),
+    ),
+  ],
+)
+
+export type ExternalServiceCallKindValue = "operation" | "form" | "hook" | "inbound" | "delivery"
+
+export type ExternalServiceCallViaValue = "agent" | "app" | "form"
+
+export type ExternalServiceCallDecisionValue = "allowed" | "refused"
+
+export const externalServiceCalls = pgTable(
+  "external_service_calls",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").$type<ExternalServiceCallKindValue>().notNull(),
+    via: text("via").$type<ExternalServiceCallViaValue>(),
+    externalServiceId: text("external_service_id").references(() => externalServices.id, {
+      onDelete: "set null",
+    }),
+    slug: text("slug").notNull(),
+    manifestHash: text("manifest_hash"),
+    serviceEnvironmentId: text("service_environment_id").references(() => environments.id, {
+      onDelete: "set null",
+    }),
+    tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "set null" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    projectTitle: text("project_title"),
+    projectEnvironmentId: text("project_environment_id").references(() => projectEnvironments.id, {
+      onDelete: "set null",
+    }),
+    operation: text("operation"),
+    operationKind: text("operation_kind"),
+    decision: text("decision").$type<ExternalServiceCallDecisionValue>().notNull(),
+    status: integer("status").notNull(),
+    code: text("code"),
+    detail: text("detail"),
+    bounds: jsonb("bounds").$type<JsonValue>(),
+    inputBytes: integer("input_bytes"),
+    outputBytes: integer("output_bytes"),
+    durationMs: integer("duration_ms").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_external_service_calls_environment_service_created").on(
+      table.projectEnvironmentId,
+      table.externalServiceId,
+      table.createdAt,
+    ),
+    index("idx_external_service_calls_tenant_created").on(table.tenantId, table.createdAt),
+    index("idx_external_service_calls_service_created").on(table.externalServiceId, table.createdAt),
+    index("idx_external_service_calls_created").on(table.createdAt),
+    check(
+      "external_service_calls_kind_check",
+      sql`${table.kind} in ('operation', 'form', 'hook', 'inbound', 'delivery')`,
+    ),
+    check(
+      "external_service_calls_via_check",
+      sql`${table.via} is null or ${table.via} in ('agent', 'app', 'form')`,
+    ),
+    check(
+      "external_service_calls_decision_check",
+      sql`${table.decision} in ('allowed', 'refused')`,
+    ),
+    check(
+      "external_service_calls_detail_length_check",
+      sql`${table.detail} is null or char_length(${table.detail}) <= 500`,
     ),
   ],
 )
@@ -791,6 +971,7 @@ export const agentSettings = pgTable("agent_settings", {
   defaultEnvironmentId: text("default_environment_id").references(() => environments.id, {
     onDelete: "restrict",
   }),
+  // TODO: remove in the release after External Services v2 ships: unread; kept so backends of the previous release keep working during the rollout
   platformApi: boolean("platform_api").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
@@ -834,10 +1015,18 @@ export const skills = pgTable(
     builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, {
       onDelete: "set null",
     }),
+    createdByProjectId: text("created_by_project_id").references((): AnyPgColumn => projects.id, {
+      onDelete: "set null",
+    }),
+    externalServiceId: text("external_service_id").references((): AnyPgColumn => externalServices.id, {
+      onDelete: "cascade",
+    }),
+    retiredAt: timestamp("retired_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
+    uniqueIndex("skills_external_service_id_unique").on(table.externalServiceId),
     uniqueIndex("skills_tenant_id_name_unique")
       .on(table.tenantId, table.name)
       .where(sql`${table.tenantId} is not null`),
@@ -849,7 +1038,7 @@ export const skills = pgTable(
     check("skills_visibility_check", sql`${table.visibility} in ('private', 'public')`),
     check(
       "skills_custom_ownership_check",
-      sql`${table.origin} = 'built_in' or (${table.tenantId} is not null and ${table.createdBy} is not null)`,
+      sql`${table.origin} = 'built_in' or (${table.tenantId} is not null and (${table.createdBy} is not null or ${table.externalServiceId} is not null))`,
     ),
   ],
 )
@@ -910,7 +1099,7 @@ export const skillVersions = pgTable(
     index("idx_skill_versions_skill").on(table.skillId),
     check(
       "skill_versions_created_via_check",
-      sql`${table.createdVia} in ('form', 'builder', 'import', 'duplicate', 'reconciler')`,
+      sql`${table.createdVia} in ('form', 'builder', 'import', 'duplicate', 'reconciler', 'service')`,
     ),
   ],
 )
@@ -943,6 +1132,7 @@ export const agentProfileSkills = pgTable(
     skillVersionId: text("skill_version_id")
       .references(() => skillVersions.id, { onDelete: "restrict" })
       .notNull(),
+    serviceSettings: jsonb("service_settings").$type<AgentServiceSettings>(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
   (table) => [
@@ -985,6 +1175,24 @@ export const projectSkillDeliveryState = pgTable("project_skill_delivery_state",
   error: text("error"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
+
+export const projectEnvironmentSkillsOff = pgTable(
+  "project_environment_skills_off",
+  {
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    skillName: text("skill_name").notNull(),
+    switchedOffBy: text("switched_off_by").references(() => users.id, { onDelete: "set null" }),
+    switchedOffAt: timestamp("switched_off_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "project_environment_skills_off_pk",
+      columns: [table.projectEnvironmentId, table.skillName],
+    }),
+  ],
+)
 
 export const modelProviders = pgTable(
   "model_providers",

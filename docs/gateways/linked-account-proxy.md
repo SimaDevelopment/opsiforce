@@ -10,7 +10,7 @@ adrs: [0018]
 ## How it works
 
 - `linked-account-proxy` is a stateless Deployment in the cluster, one replica by default, that Bifrost reaches at `http://opsiforce-linked-account-proxy:8455/v1` for every [Linked account](../../GLOSSARY.md); it is built from Node built-ins only and holds nothing but a token cache ([ADR-0018](../adr/0018-linked-account-traffic-goes-through-a-stateless-in-cluster-proxy.md)).
-- The backend owns every token: the `linked-accounts` module signs the account in, keeps the encrypted credential in `linked_accounts` on the owning Model provider row, and refreshes it on demand under `SELECT … FOR UPDATE`, only within 5 minutes of expiry, saving the rotated tokens.
+- The backend owns every token: the `linked-accounts` module signs the account in, keeps the credential in `linked_accounts` on the owning Model provider row, sealed with `EXTERNAL_SERVICES_ENCRYPTION_KEY` and bound to that row (`linked_accounts|<modelProviderId>|credential`, [ADR-0080](../adr/0080-built-in-vendor-settings-live-in-service-configuration-and-sealed-secrets-are-bound-to-their-place.md)), and refreshes it on demand under `SELECT … FOR UPDATE`, only within 5 minutes of expiry, saving the rotated tokens.
 - On completion the backend writes a random `lap_…` secret as the provider's Bifrost key, keeps only its hash, points the provider's `base_url` at the proxy's Service URL with `allow_private_network: true`, and resyncs the Organizations that use it ([Linked account](../organization/linked-account.md)). When the provider is missing from Bifrost, or `custom-openai-1` has no platform row yet, the sign-in creates them.
 - For a pasted access token, which has no refresh token, the credential route asks OpenAI's `whoami` again on every read, which gives the proxy the account id, and a token past its `exp` or refused by `whoami` counts as ended.
 - A sign-in OpenAI has ended has its tokens deleted and every Organization using it resynced ([Linked account](../organization/linked-account.md)), and the credential route answers 409 until someone signs in again.
@@ -28,12 +28,14 @@ adrs: [0018]
 - A request without a `lap_…` key, or with one the backend doesn't know, gets 401 and never reaches ChatGPT.
 - A request that relies on server-side replay state (`previous_response_id` or an `item_reference` input) is refused with 400, since the proxy is stateless.
 - A request body over the cap (64 MiB) is refused with 413 when its declared length is over; a chunked body that grows past the cap has its connection dropped.
+- A credential copied onto another row does not open there: the credential route answers 500 and logs the row, and that account serves nothing until it signs in again. Credentials sealed before this binding are re-sealed to their row once, at backend boot.
 - When the backend can't be reached and no token is cached, the proxy answers 502 and Bifrost fails over to the format's other providers.
 - ChatGPT exposes no audio endpoint, so [Dictation](../projects/dictation.md) needs the built-in `openai` key.
 
 ## Code
 
 - `backend/src/linked-accounts/` — the credential route, the refresh, and the ChatGPT adapter's backend half.
+- `backend/src/sealing/` — sealing and opening a secret bound to its place.
 - `linked-account-proxy/src/` — the HTTP server, caller auth, the token cache and the body cap.
 - `linked-account-proxy/src/chatgpt/` — the ChatGPT forward and its fixed model list.
 - `helm/opsiforce-linked-account-proxy/` — the chart.

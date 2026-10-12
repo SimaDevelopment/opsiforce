@@ -34,9 +34,7 @@ import {
 import { DropdownMenuSeparator } from '~/components/ui/dropdown-menu';
 import { ActionsMenu, ActionsMenuItem } from '~/components/actions-menu';
 import { Spinner } from '~/components/ui/spinner';
-import { EnvironmentBadge } from '~/components/environment-badge';
 import {
-  DefaultEnvironmentMark,
   DisabledBadge,
   EmptyState,
   ErrorState,
@@ -48,6 +46,7 @@ import {
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ENTRY_SLUG_MAX_LENGTH, EntryNameField, isNameUnavailable } from '~/components/store/entry-name-field';
+import { EnvironmentList, EnvironmentSplit, type EnvironmentRowStatus } from '~/components/store/environment-list';
 import { InlineEdit } from '~/components/store/inline-edit';
 import { OpenBuilderButton } from '~/components/store/open-builder-button';
 import {
@@ -55,7 +54,6 @@ import {
   Ban,
   Bot,
   ChevronLeft,
-  ChevronRight,
   CirclePlay,
   Copy,
   Download,
@@ -181,7 +179,17 @@ function AgentBody(props: {
       </Show>
 
       <Show when={!isBuiltIn()}>
-        <div class="grid grid-cols-[minmax(0,1fr)_16rem] gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
+        <EnvironmentSplit
+          list={
+            <EnvironmentList
+              environments={props.environments}
+              selectedId={props.selectedId}
+              defaultEnvironmentId={props.agent.settings.defaultEnvironmentId}
+              statusOf={(environment) => agentEnvironmentStatus(environment, developmentProfile(), profileFor)}
+              onEnv={props.onEnv}
+            />
+          }
+        >
           <EnvironmentPanel
             agent={props.agent}
             environments={props.environments}
@@ -190,18 +198,7 @@ function AgentBody(props: {
             canManage={props.canManage}
             onAdd={() => setAdding(true)}
           />
-          <aside class="sticky top-4 self-start">
-            <SectionTitle>Environments</SectionTitle>
-            <EnvironmentList
-              agent={props.agent}
-              environments={props.environments}
-              development={developmentProfile()}
-              selectedId={props.selectedId}
-              profileFor={profileFor}
-              onEnv={props.onEnv}
-            />
-          </aside>
-        </div>
+        </EnvironmentSplit>
       </Show>
 
       <Show when={publishing()}>
@@ -521,9 +518,11 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
     if (!canSubmit()) return;
     setError(null);
     try {
-      const copy = await duplicate.mutateAsync(displayName().trim());
+      const { agent: copy, notes } = await duplicate.mutateAsync(displayName().trim());
       props.onOpenChange(false);
-      toast.success(`Created ${copy.displayName ?? copy.name}`);
+      toast.success(`Created ${copy.displayName ?? copy.name}`, {
+        description: notes.map((note) => note.message).join('\n') || undefined,
+      });
       void navigate({ to: '/store/agents/$id', params: { id: copy.id } });
     } catch (caught) {
       if (isNameUnavailable(caught)) {
@@ -804,61 +803,14 @@ function OmittedSkills(props: { omitted: AgentDeliverySummary['omitted'] }) {
   );
 }
 
-function EnvironmentList(props: {
-  agent: AgentDetail;
-  environments: Environment[];
-  development: AgentProfile | undefined;
-  selectedId: string;
-  profileFor: (environmentId: string) => AgentProfile | undefined;
-  onEnv: (environmentId: string) => void;
-}) {
-  return (
-    <RowList>
-      <For each={props.environments}>
-        {(environment) => {
-          const selected = () => environment.id === props.selectedId;
-          const status = () =>
-            environment.isDefault ? 'Where you edit' : driftText(props.development, props.profileFor(environment.id));
-          const stale = () =>
-            !environment.isDefault &&
-            isPublished(props.profileFor(environment.id)) &&
-            status() !== 'Same as Development';
-          return (
-            <button
-              type="button"
-              aria-pressed={selected()}
-              onClick={() => props.onEnv(environment.id)}
-              class={cn(
-                'group flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/60',
-                FOCUS_RING,
-                selected() && 'bg-accent'
-              )}
-            >
-              <span class="min-w-0 flex-1 space-y-0.5">
-                <span class="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                  <EnvironmentBadge environment={environment} />
-                  <span class="truncate">{environment.name}</span>
-                  <Show when={props.agent.settings.defaultEnvironmentId === environment.id}>
-                    <DefaultEnvironmentMark environmentName={environment.name} plain />
-                  </Show>
-                </span>
-                <span class={cn('block truncate text-xs', stale() ? 'text-amber-700' : 'text-muted-foreground')}>
-                  {status()}
-                </span>
-              </span>
-              <ChevronRight
-                class={cn(
-                  'h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5',
-                  selected() ? 'text-foreground' : 'text-muted-foreground'
-                )}
-                aria-hidden="true"
-              />
-            </button>
-          );
-        }}
-      </For>
-    </RowList>
-  );
+function agentEnvironmentStatus(
+  environment: Environment,
+  development: AgentProfile | undefined,
+  profileFor: (environmentId: string) => AgentProfile | undefined
+): EnvironmentRowStatus {
+  if (environment.isDefault) return { text: 'Where you edit', stale: false };
+  const text = driftText(development, profileFor(environment.id));
+  return { text, stale: isPublished(profileFor(environment.id)) && text !== 'Same as Development' };
 }
 
 function EnvironmentPanel(props: {

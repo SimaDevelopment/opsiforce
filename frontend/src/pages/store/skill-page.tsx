@@ -15,6 +15,7 @@ import {
   useSkillFiles,
   useSkillVersions,
   useUpdateSkill,
+  isAuthoredSkill,
   type Skill,
   type SkillAgentUsage,
   type SkillFlags,
@@ -37,6 +38,8 @@ import {
   ErrorState,
   FOCUS_RING,
   OriginBadge,
+  RetiredBadge,
+  ServiceMark,
   RowLink,
   RowList,
   SectionTitle,
@@ -111,7 +114,7 @@ export function SkillPage(props: SkillPageProps) {
   const files = useSkillFiles(skillId, selectedVersion);
   const flagsOfSelected = () =>
     versions.data?.find((version) => version.version === selectedVersion())?.flags ?? skill.data?.latestVersion?.flags;
-  const isCustom = () => skill.data?.origin === 'custom';
+  const isCustom = () => (skill.data ? isAuthoredSkill(skill.data) : false);
 
   return (
     <div class="h-full overflow-y-auto bg-background">
@@ -136,12 +139,22 @@ export function SkillPage(props: SkillPageProps) {
                   agents={agents.data ?? []}
                 />
 
-                <Show when={loaded().origin === 'built_in' && !loaded().available}>
+                <Show when={loaded().externalServiceId && !loaded().available}>
                   <div class="mb-6 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>
-                      This skill is no longer in the agent image. Agents that already pin a version keep it; no new
-                      version will arrive.
+                      Its External Service is unavailable here: disabled, unpublished or not set up. No agent gets this
+                      skill until the service is available again, and it cannot be added to an agent meanwhile.
+                    </span>
+                  </div>
+                </Show>
+
+                <Show when={loaded().retired}>
+                  <div class="mb-6 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      This skill is retired: the agent image no longer ships it. It is out of the Store, can't be added
+                      to an agent, and no workspace gets it any more, even where an agent still pins it.
                     </span>
                   </div>
                 </Show>
@@ -184,6 +197,12 @@ export function SkillPage(props: SkillPageProps) {
                         <p class="mt-2 text-xs text-muted-foreground">
                           Every save publishes the next version. Agents stay on the version they pinned until someone
                           upgrades them.
+                        </p>
+                      </Show>
+                      <Show when={loaded().externalServiceId}>
+                        <p class="mt-2 text-xs text-muted-foreground">
+                          Read-only: each publish of its External Service lays the next version, and every Agent
+                          carrying it follows the latest.
                         </p>
                       </Show>
                     </section>
@@ -232,7 +251,7 @@ function SkillHeader(props: {
   canManage: boolean;
   agents: SkillAgentUsage[];
 }) {
-  const isCustom = () => props.skill.origin === 'custom';
+  const isCustom = () => isAuthoredSkill(props.skill);
   const editable = () => props.canManage && isCustom();
   const update = useUpdateSkill(() => props.skill.id);
   const title = () => props.skill.displayName ?? props.skill.name;
@@ -282,9 +301,13 @@ function SkillHeader(props: {
             </span>
           </Show>
           <OriginBadge origin={props.skill.origin} />
+          <ServiceMark externalServiceId={props.skill.externalServiceId} available={props.skill.available} />
           <VisibilityBadge visibility={props.skill.visibility} />
           <Show when={props.skill.disabled}>
             <DisabledBadge />
+          </Show>
+          <Show when={props.skill.retired}>
+            <RetiredBadge />
           </Show>
           <Show when={props.flags?.has_executables}>
             <Tooltip>
@@ -317,7 +340,7 @@ function SkillHeader(props: {
               disabled={props.skill.disabled}
             />
           </Show>
-          <Show when={props.canManage}>
+          <Show when={props.canManage && !props.skill.retired}>
             <SkillActionsMenu skill={props.skill} agents={props.agents} />
           </Show>
         </>
@@ -327,7 +350,7 @@ function SkillHeader(props: {
 }
 
 function SkillActionsMenu(props: { skill: Skill; agents: SkillAgentUsage[] }) {
-  const isCustom = () => props.skill.origin === 'custom';
+  const isCustom = () => isAuthoredSkill(props.skill);
   const [duplicating, setDuplicating] = createSignal(false);
   const [widening, setWidening] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);

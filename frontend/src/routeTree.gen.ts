@@ -29,12 +29,14 @@ import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projec
 import { Route as AdminStorageRouteImport } from './routes/admin/storage'
 import { Route as AdminPodsRouteImport } from './routes/admin/pods'
 import { Route as StoreSkillsIndexRouteImport } from './routes/store/skills/index'
+import { Route as StoreExternalServicesIndexRouteImport } from './routes/store/external-services/index'
 import { Route as StoreAgentsIndexRouteImport } from './routes/store/agents/index'
-import { Route as AdminExternalServicesIndexRouteImport } from './routes/admin/external-services/index'
 import { Route as AdminExternalServicesUsageRouteImport } from './routes/admin/external-services/usage'
 import { Route as StoreSkillsIdIndexRouteImport } from './routes/store/skills/$id/index'
+import { Route as StoreExternalServicesIdIndexRouteImport } from './routes/store/external-services/$id/index'
 import { Route as StoreAgentsIdIndexRouteImport } from './routes/store/agents/$id/index'
 import { Route as StoreSkillsIdBuilderRouteImport } from './routes/store/skills/$id/builder'
+import { Route as StoreExternalServicesIdBuilderRouteImport } from './routes/store/external-services/$id/builder'
 import { Route as StoreAgentsIdBuilderRouteImport } from './routes/store/agents/$id/builder'
 
 const SchedulesRoute = SchedulesRouteImport.update({
@@ -137,17 +139,17 @@ const StoreSkillsIndexRoute = StoreSkillsIndexRouteImport.update({
   path: '/skills/',
   getParentRoute: () => StoreRouteRoute,
 } as any)
+const StoreExternalServicesIndexRoute =
+  StoreExternalServicesIndexRouteImport.update({
+    id: '/external-services/',
+    path: '/external-services/',
+    getParentRoute: () => StoreRouteRoute,
+  } as any)
 const StoreAgentsIndexRoute = StoreAgentsIndexRouteImport.update({
   id: '/agents/',
   path: '/agents/',
   getParentRoute: () => StoreRouteRoute,
 } as any)
-const AdminExternalServicesIndexRoute =
-  AdminExternalServicesIndexRouteImport.update({
-    id: '/external-services/',
-    path: '/external-services/',
-    getParentRoute: () => AdminRouteRoute,
-  } as any)
 const AdminExternalServicesUsageRoute =
   AdminExternalServicesUsageRouteImport.update({
     id: '/external-services/usage',
@@ -159,6 +161,12 @@ const StoreSkillsIdIndexRoute = StoreSkillsIdIndexRouteImport.update({
   path: '/skills/$id/',
   getParentRoute: () => StoreRouteRoute,
 } as any)
+const StoreExternalServicesIdIndexRoute =
+  StoreExternalServicesIdIndexRouteImport.update({
+    id: '/external-services/$id/',
+    path: '/external-services/$id/',
+    getParentRoute: () => StoreRouteRoute,
+  } as any)
 const StoreAgentsIdIndexRoute = StoreAgentsIdIndexRouteImport.update({
   id: '/agents/$id/',
   path: '/agents/$id/',
@@ -169,6 +177,12 @@ const StoreSkillsIdBuilderRoute = StoreSkillsIdBuilderRouteImport.update({
   path: '/skills/$id/builder',
   getParentRoute: () => StoreRouteRoute,
 } as any)
+const StoreExternalServicesIdBuilderRoute =
+  StoreExternalServicesIdBuilderRouteImport.update({
+    id: '/external-services/$id/builder',
+    path: '/external-services/$id/builder',
+    getParentRoute: () => StoreRouteRoute,
+  } as any)
 const StoreAgentsIdBuilderRoute = StoreAgentsIdBuilderRouteImport.update({
   id: '/agents/$id/builder',
   path: '/agents/$id/builder',
@@ -196,12 +210,14 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/store/': typeof StoreIndexRoute
   '/admin/external-services/usage': typeof AdminExternalServicesUsageRoute
-  '/admin/external-services/': typeof AdminExternalServicesIndexRoute
   '/store/agents/': typeof StoreAgentsIndexRoute
+  '/store/external-services/': typeof StoreExternalServicesIndexRoute
   '/store/skills/': typeof StoreSkillsIndexRoute
   '/store/agents/$id/builder': typeof StoreAgentsIdBuilderRoute
+  '/store/external-services/$id/builder': typeof StoreExternalServicesIdBuilderRoute
   '/store/skills/$id/builder': typeof StoreSkillsIdBuilderRoute
   '/store/agents/$id/': typeof StoreAgentsIdIndexRoute
+  '/store/external-services/$id/': typeof StoreExternalServicesIdIndexRoute
   '/store/skills/$id/': typeof StoreSkillsIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -223,12 +239,14 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/store': typeof StoreIndexRoute
   '/admin/external-services/usage': typeof AdminExternalServicesUsageRoute
-  '/admin/external-services': typeof AdminExternalServicesIndexRoute
   '/store/agents': typeof StoreAgentsIndexRoute
+  '/store/external-services': typeof StoreExternalServicesIndexRoute
   '/store/skills': typeof StoreSkillsIndexRoute
   '/store/agents/$id/builder': typeof StoreAgentsIdBuilderRoute
+  '/store/external-services/$id/builder': typeof StoreExternalServicesIdBuilderRoute
   '/store/skills/$id/builder': typeof StoreSkillsIdBuilderRoute
   '/store/agents/$id': typeof StoreAgentsIdIndexRoute
+  '/store/external-services/$id': typeof StoreExternalServicesIdIndexRoute
   '/store/skills/$id': typeof StoreSkillsIdIndexRoute
 }
 export interface FileRoutesById {
@@ -253,12 +271,14 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/store/': typeof StoreIndexRoute
   '/admin/external-services/usage': typeof AdminExternalServicesUsageRoute
-  '/admin/external-services/': typeof AdminExternalServicesIndexRoute
   '/store/agents/': typeof StoreAgentsIndexRoute
+  '/store/external-services/': typeof StoreExternalServicesIndexRoute
   '/store/skills/': typeof StoreSkillsIndexRoute
   '/store/agents/$id/builder': typeof StoreAgentsIdBuilderRoute
+  '/store/external-services/$id/builder': typeof StoreExternalServicesIdBuilderRoute
   '/store/skills/$id/builder': typeof StoreSkillsIdBuilderRoute
   '/store/agents/$id/': typeof StoreAgentsIdIndexRoute
+  '/store/external-services/$id/': typeof StoreExternalServicesIdIndexRoute
   '/store/skills/$id/': typeof StoreSkillsIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -284,12 +304,14 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/store/'
     | '/admin/external-services/usage'
-    | '/admin/external-services/'
     | '/store/agents/'
+    | '/store/external-services/'
     | '/store/skills/'
     | '/store/agents/$id/builder'
+    | '/store/external-services/$id/builder'
     | '/store/skills/$id/builder'
     | '/store/agents/$id/'
+    | '/store/external-services/$id/'
     | '/store/skills/$id/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -311,12 +333,14 @@ export interface FileRouteTypes {
     | '/settings'
     | '/store'
     | '/admin/external-services/usage'
-    | '/admin/external-services'
     | '/store/agents'
+    | '/store/external-services'
     | '/store/skills'
     | '/store/agents/$id/builder'
+    | '/store/external-services/$id/builder'
     | '/store/skills/$id/builder'
     | '/store/agents/$id'
+    | '/store/external-services/$id'
     | '/store/skills/$id'
   id:
     | '__root__'
@@ -340,12 +364,14 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/store/'
     | '/admin/external-services/usage'
-    | '/admin/external-services/'
     | '/store/agents/'
+    | '/store/external-services/'
     | '/store/skills/'
     | '/store/agents/$id/builder'
+    | '/store/external-services/$id/builder'
     | '/store/skills/$id/builder'
     | '/store/agents/$id/'
+    | '/store/external-services/$id/'
     | '/store/skills/$id/'
   fileRoutesById: FileRoutesById
 }
@@ -501,19 +527,19 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof StoreSkillsIndexRouteImport
       parentRoute: typeof StoreRouteRoute
     }
+    '/store/external-services/': {
+      id: '/store/external-services/'
+      path: '/external-services'
+      fullPath: '/store/external-services/'
+      preLoaderRoute: typeof StoreExternalServicesIndexRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
     '/store/agents/': {
       id: '/store/agents/'
       path: '/agents'
       fullPath: '/store/agents/'
       preLoaderRoute: typeof StoreAgentsIndexRouteImport
       parentRoute: typeof StoreRouteRoute
-    }
-    '/admin/external-services/': {
-      id: '/admin/external-services/'
-      path: '/external-services'
-      fullPath: '/admin/external-services/'
-      preLoaderRoute: typeof AdminExternalServicesIndexRouteImport
-      parentRoute: typeof AdminRouteRoute
     }
     '/admin/external-services/usage': {
       id: '/admin/external-services/usage'
@@ -527,6 +553,13 @@ declare module '@tanstack/solid-router' {
       path: '/skills/$id'
       fullPath: '/store/skills/$id/'
       preLoaderRoute: typeof StoreSkillsIdIndexRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
+    '/store/external-services/$id/': {
+      id: '/store/external-services/$id/'
+      path: '/external-services/$id'
+      fullPath: '/store/external-services/$id/'
+      preLoaderRoute: typeof StoreExternalServicesIdIndexRouteImport
       parentRoute: typeof StoreRouteRoute
     }
     '/store/agents/$id/': {
@@ -543,6 +576,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof StoreSkillsIdBuilderRouteImport
       parentRoute: typeof StoreRouteRoute
     }
+    '/store/external-services/$id/builder': {
+      id: '/store/external-services/$id/builder'
+      path: '/external-services/$id/builder'
+      fullPath: '/store/external-services/$id/builder'
+      preLoaderRoute: typeof StoreExternalServicesIdBuilderRouteImport
+      parentRoute: typeof StoreRouteRoute
+    }
     '/store/agents/$id/builder': {
       id: '/store/agents/$id/builder'
       path: '/agents/$id/builder'
@@ -557,14 +597,12 @@ interface AdminRouteRouteChildren {
   AdminPodsRoute: typeof AdminPodsRoute
   AdminStorageRoute: typeof AdminStorageRoute
   AdminExternalServicesUsageRoute: typeof AdminExternalServicesUsageRoute
-  AdminExternalServicesIndexRoute: typeof AdminExternalServicesIndexRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminPodsRoute: AdminPodsRoute,
   AdminStorageRoute: AdminStorageRoute,
   AdminExternalServicesUsageRoute: AdminExternalServicesUsageRoute,
-  AdminExternalServicesIndexRoute: AdminExternalServicesIndexRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
@@ -602,20 +640,26 @@ const SettingsRouteRouteWithChildren = SettingsRouteRoute._addFileChildren(
 interface StoreRouteRouteChildren {
   StoreIndexRoute: typeof StoreIndexRoute
   StoreAgentsIndexRoute: typeof StoreAgentsIndexRoute
+  StoreExternalServicesIndexRoute: typeof StoreExternalServicesIndexRoute
   StoreSkillsIndexRoute: typeof StoreSkillsIndexRoute
   StoreAgentsIdBuilderRoute: typeof StoreAgentsIdBuilderRoute
+  StoreExternalServicesIdBuilderRoute: typeof StoreExternalServicesIdBuilderRoute
   StoreSkillsIdBuilderRoute: typeof StoreSkillsIdBuilderRoute
   StoreAgentsIdIndexRoute: typeof StoreAgentsIdIndexRoute
+  StoreExternalServicesIdIndexRoute: typeof StoreExternalServicesIdIndexRoute
   StoreSkillsIdIndexRoute: typeof StoreSkillsIdIndexRoute
 }
 
 const StoreRouteRouteChildren: StoreRouteRouteChildren = {
   StoreIndexRoute: StoreIndexRoute,
   StoreAgentsIndexRoute: StoreAgentsIndexRoute,
+  StoreExternalServicesIndexRoute: StoreExternalServicesIndexRoute,
   StoreSkillsIndexRoute: StoreSkillsIndexRoute,
   StoreAgentsIdBuilderRoute: StoreAgentsIdBuilderRoute,
+  StoreExternalServicesIdBuilderRoute: StoreExternalServicesIdBuilderRoute,
   StoreSkillsIdBuilderRoute: StoreSkillsIdBuilderRoute,
   StoreAgentsIdIndexRoute: StoreAgentsIdIndexRoute,
+  StoreExternalServicesIdIndexRoute: StoreExternalServicesIdIndexRoute,
   StoreSkillsIdIndexRoute: StoreSkillsIdIndexRoute,
 }
 

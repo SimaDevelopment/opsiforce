@@ -39,6 +39,7 @@ export interface ProjectCreationContext {
   createdByProjectId?: string | null;
   kind?: ProjectKind | null;
   builderSubjectAgentId?: string | null;
+  configureBeforeDelivery?: ((projectEnvironmentId: string) => Promise<void>) | null;
 }
 
 export interface CreateProjectDto {
@@ -82,10 +83,17 @@ export type ProjectKind = ProjectKindValue;
 export const PROJECT_KINDS = [
   'skill_builder_chat',
   'agent_builder_chat',
+  'external_service_builder_chat',
   'test',
 ] as const satisfies readonly ProjectKind[];
 
-export const CHAT_KINDS = ['skill_builder_chat', 'agent_builder_chat'] as const satisfies readonly ProjectKind[];
+export const EXTERNAL_SERVICE_CHAT_KIND = 'external_service_builder_chat' satisfies ProjectKind;
+
+export const CHAT_KINDS = [
+  'skill_builder_chat',
+  'agent_builder_chat',
+  EXTERNAL_SERVICE_CHAT_KIND,
+] as const satisfies readonly ProjectKind[];
 
 export type ChatKind = (typeof CHAT_KINDS)[number];
 

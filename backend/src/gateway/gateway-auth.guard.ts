@@ -14,7 +14,7 @@ export class GatewayAuthGuard implements CanActivate {
     }
 
     const token = authHeader.slice(7);
-    const identity = await this.gatewayKeyService.validateToken(token, 'service');
+    const identity = await this.gatewayKeyService.validateToken(token);
     if (!identity) {
       throw new UnauthorizedException('Invalid gateway token');
     }

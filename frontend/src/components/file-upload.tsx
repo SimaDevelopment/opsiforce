@@ -1,4 +1,5 @@
-import { Show, type Component } from 'solid-js';
+import { Show, type Component, type JSX } from 'solid-js';
+import { STRIP_BUTTON_CLASS } from '~/components/composer-strip';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -10,7 +11,12 @@ import { uploadUrl } from '~/api/files';
 import { formatBytes } from '~/lib/format-bytes';
 import { createFileUpload, toUploadFiles, topLevelEntriesOf } from '~/lib/upload';
 
-export const FileUpload: Component<{ projectId: string; environmentId: string; host: () => HTMLElement }> = (props) => {
+export const FileUpload: Component<{
+  projectId: string;
+  environmentId: string;
+  host: () => HTMLElement;
+  stripItems?: JSX.Element;
+}> = (props) => {
   let fileInputRef: HTMLInputElement | undefined;
   let folderInputRef: HTMLInputElement | undefined;
 
@@ -30,62 +36,65 @@ export const FileUpload: Component<{ projectId: string; environmentId: string; h
 
   return (
     <>
-      <div class="shrink-0 border-t border-border bg-background px-3 py-2">
-        <Show
-          when={!upload.uploading()}
-          fallback={
-            <div class="flex flex-col gap-1.5">
-              <div class="flex h-7 items-center gap-3">
-                <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    class="h-full bg-primary rounded-full transition-all duration-150"
-                    style={{ width: `${upload.percent()}%` }}
-                  />
-                </div>
-                <span class="text-xs text-muted-foreground tabular-nums w-9 text-right">{upload.percent()}%</span>
-                <button
-                  onClick={() => upload.cancel()}
-                  class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
-                >
-                  Cancel
-                </button>
-              </div>
-              <div class="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                <span class="truncate" title={upload.statusLabel()}>
-                  {upload.statusLabel() || 'Uploading…'}
-                </span>
-                <span class="tabular-nums shrink-0">
-                  <Show
-                    when={upload.totalBytes() > 0}
-                    fallback={`${upload.preparedFiles()} / ${upload.totalFiles()} files`}
+      <div class="shrink-0 border-t border-border bg-background px-2 py-2">
+        <div class="w-full px-3 md:mx-auto md:max-w-[1000px]">
+          <Show
+            when={!upload.uploading()}
+            fallback={
+              <div class="flex flex-col gap-1.5">
+                <div class="flex h-7 items-center gap-3">
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      class="h-full bg-primary rounded-full transition-all duration-150"
+                      style={{ width: `${upload.percent()}%` }}
+                    />
+                  </div>
+                  <span class="text-xs text-muted-foreground tabular-nums w-9 text-right">{upload.percent()}%</span>
+                  <button
+                    onClick={() => upload.cancel()}
+                    class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
                   >
-                    {formatBytes(upload.sentBytes())} / {formatBytes(upload.totalBytes())}
-                  </Show>
-                </span>
+                    Cancel
+                  </button>
+                </div>
+                <div class="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                  <span class="truncate" title={upload.statusLabel()}>
+                    {upload.statusLabel() || 'Uploading…'}
+                  </span>
+                  <span class="tabular-nums shrink-0">
+                    <Show
+                      when={upload.totalBytes() > 0}
+                      fallback={`${upload.preparedFiles()} / ${upload.totalFiles()} files`}
+                    >
+                      {formatBytes(upload.sentBytes())} / {formatBytes(upload.totalBytes())}
+                    </Show>
+                  </span>
+                </div>
               </div>
+            }
+          >
+            <div class="flex min-h-7 flex-wrap items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger class={STRIP_BUTTON_CLASS}>
+                  <Upload class="h-3.5 w-3.5" />
+                  Upload
+                  <ChevronDown class="h-3 w-3 opacity-60" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent class="min-w-36">
+                  <DropdownMenuItem onSelect={() => fileInputRef?.click()}>
+                    <File class="h-3.5 w-3.5" />
+                    Files
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => folderInputRef?.click()}>
+                    <Folder class="h-3.5 w-3.5" />
+                    Folder
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {props.stripItems}
             </div>
-          }
-        >
-          <div class="flex h-7 items-center">
-            <DropdownMenu>
-              <DropdownMenuTrigger class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[expanded]:bg-accent data-[expanded]:text-foreground">
-                <Upload class="h-3.5 w-3.5" />
-                Upload
-                <ChevronDown class="h-3 w-3 opacity-60" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent class="min-w-36">
-                <DropdownMenuItem onSelect={() => fileInputRef?.click()}>
-                  <File class="h-3.5 w-3.5" />
-                  Files
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => folderInputRef?.click()}>
-                  <Folder class="h-3.5 w-3.5" />
-                  Folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </Show>
+          </Show>
+        </div>
       </div>
 
       <input ref={fileInputRef} type="file" multiple class="hidden" onChange={(e) => pick(e.currentTarget)} />

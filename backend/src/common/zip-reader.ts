@@ -1,7 +1,10 @@
 import { createWriteStream } from 'node:fs';
+import { chmod, mkdir, statfs } from 'node:fs/promises';
+import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
+import { EXECUTABLE_FILE_MODE } from './fs';
 
 const SYMLINK_MODE = 0o120000;
 const FILE_TYPE_MASK = 0o170000;
@@ -75,4 +78,32 @@ export async function readNamedEntry(zip: yauzl.ZipFile, name: string): Promise<
 
 export async function writeEntryToFile(zip: yauzl.ZipFile, entry: yauzl.Entry, target: string): Promise<void> {
   await pipeline(await openEntry(zip, entry), createWriteStream(target));
+}
+
+export async function writeConfinedEntry(
+  zip: yauzl.ZipFile,
+  entry: yauzl.Entry,
+  root: string,
+  relative: string
+): Promise<boolean> {
+  const target = path.resolve(root, relative);
+  const mode = entryMode(entry);
+  if (!target.startsWith(root + path.sep) || isSymlinkMode(mode)) return false;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeEntryToFile(zip, entry, target);
+  if (mode & 0o111) await chmod(target, EXECUTABLE_FILE_MODE);
+  return true;
+}
+
+export async function fitsOnVolume(
+  root: string,
+  entries: yauzl.Entry[],
+  prefix: string,
+  reserveBytes: number
+): Promise<boolean> {
+  const declared = entries
+    .filter((entry) => entry.fileName.startsWith(prefix))
+    .reduce((total, entry) => total + entry.uncompressedSize, 0);
+  const volume = await statfs(root);
+  return declared <= volume.bavail * volume.bsize - reserveBytes;
 }

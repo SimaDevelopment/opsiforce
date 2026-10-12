@@ -1,18 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import archiver from 'archiver';
 import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../db';
-import { skillVersions, skills } from '../../db/schema';
+import { skillVersions, skills, type AgentServiceSettings } from '../../db/schema';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
-import { fileMode, REGULAR_FILE_MODE } from '../common/fs';
+import { packExportArchive } from '../export/export-archive';
+import { exportStampOf } from '../export/export-manifest';
 import { packSkill, scanKeyLike, type SkillTree } from '../store/gate';
 import { SkillRepository } from '../store/skill.repository';
 import { notExportable } from './agent-errors';
 import {
   AGENT_EXPORT_FORMAT_VERSION,
   AGENT_EXPORT_KIND,
-  AGENT_EXPORT_MANIFEST,
   AGENT_EXPORT_TEMPLATE_DIR,
   agentExportFileName,
   agentExportSkillFile,
@@ -31,6 +30,7 @@ interface ExportedSkill {
   origin: AgentExportSkillOrigin;
   contentHash: string;
   tree: SkillTree | null;
+  serviceSettings: AgentServiceSettings | null;
 }
 
 interface ExportContents {
@@ -42,20 +42,12 @@ interface ExportContents {
 
 @Injectable()
 export class AgentExportService {
-  private readonly platformVersion: string;
-  private readonly agentImageVersion: string;
-  private readonly arch: string;
-
   constructor(
-    configService: ConfigService,
+    private readonly configService: ConfigService,
     private readonly bundleReader: AgentBundleReader,
     private readonly templates: AgentTemplateStore,
     private readonly skillRepository: SkillRepository
-  ) {
-    this.platformVersion = configService.get<string>('platformVersion', '0.1.0');
-    this.agentImageVersion = configService.get<string>('agentImageVersion', this.platformVersion);
-    this.arch = configService.get<string>('arch', process.arch);
-  }
+  ) {}
 
   async export(caller: AgentCaller, agentId: string): Promise<AgentExportFile> {
     const contents = await this.read(caller, agentId);
@@ -88,7 +80,12 @@ export class AgentExportService {
   private async readSkills(references: AgentBundleSkillReference[]): Promise<ExportedSkill[]> {
     if (references.length === 0) return [];
     const rows = await db
-      .select({ versionId: skillVersions.id, origin: skills.origin, contentHash: skillVersions.contentHash })
+      .select({
+        versionId: skillVersions.id,
+        origin: skills.origin,
+        externalServiceId: skills.externalServiceId,
+        contentHash: skillVersions.contentHash,
+      })
       .from(skillVersions)
       .innerJoin(skills, eq(skills.id, skillVersions.skillId))
       .where(
@@ -103,12 +100,13 @@ export class AgentExportService {
     for (const reference of references.toSorted((a, b) => a.name.localeCompare(b.name))) {
       const row = byVersion.get(reference.skillVersionId);
       if (!row) continue;
-      const origin = row.origin === 'custom' ? 'custom' : 'built_in';
+      const origin = exportedOrigin(row);
       exported.push({
         name: reference.name,
         origin,
         contentHash: row.contentHash,
         tree: origin === 'custom' ? await this.skillRepository.readTree(reference.skillVersionId) : null,
+        serviceSettings: origin === 'service' ? (reference.serviceSettings ?? null) : null,
       });
     }
     return exported;
@@ -117,17 +115,11 @@ export class AgentExportService {
   private manifest({ agent, bundle, skills: exported }: ExportContents): AgentExportManifest {
     return {
       kind: AGENT_EXPORT_KIND,
-      stamp: {
-        exportFormatVersion: AGENT_EXPORT_FORMAT_VERSION,
-        platformVersion: this.platformVersion,
-        agentImageVersion: this.agentImageVersion,
-        arch: this.arch,
-      },
+      stamp: exportStampOf(this.configService, AGENT_EXPORT_FORMAT_VERSION),
       agent: {
         displayName: bundle.identity.displayName,
         slug: agent.name,
         description: bundle.identity.description,
-        platformApi: bundle.identity.platformApi,
       },
       profile: bundle.profile,
       skills: exported.map((skill) => ({
@@ -135,6 +127,7 @@ export class AgentExportService {
         origin: skill.origin,
         contentHash: skill.contentHash,
         ...(skill.tree ? { file: agentExportSkillFile(skill.name) } : {}),
+        ...(skill.serviceSettings ? { serviceSettings: skill.serviceSettings } : {}),
       })),
       template: bundle.template ? { hash: bundle.template.hash } : null,
     };
@@ -144,26 +137,26 @@ export class AgentExportService {
 async function packExport(manifest: AgentExportManifest, contents: ExportContents): Promise<Buffer> {
   const skillPacks = await Promise.all(
     contents.skills.flatMap((skill) =>
-      skill.tree ? [packSkill(skill.tree).then((pack) => ({ name: agentExportSkillFile(skill.name), pack }))] : []
+      skill.tree
+        ? [
+            packSkill(skill.tree).then((pack) => ({
+              path: agentExportSkillFile(skill.name),
+              content: pack,
+              executable: false,
+            })),
+          ]
+        : []
     )
   );
+  const template = (contents.template ?? []).map((file) => ({
+    path: `${AGENT_EXPORT_TEMPLATE_DIR}/${file.path}`,
+    content: file.content,
+    executable: file.executable,
+  }));
+  return packExportArchive(manifest, [...template, ...skillPacks]);
+}
 
-  return new Promise((resolve, reject) => {
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    const chunks: Buffer[] = [];
-    archive.on('data', (chunk: Buffer) => chunks.push(chunk));
-    archive.on('warning', reject);
-    archive.on('error', reject);
-    archive.on('end', () => resolve(Buffer.concat(chunks)));
-
-    archive.append(JSON.stringify(manifest, null, 2), { name: AGENT_EXPORT_MANIFEST, mode: REGULAR_FILE_MODE });
-    for (const file of contents.template ?? []) {
-      archive.append(file.content, {
-        name: `${AGENT_EXPORT_TEMPLATE_DIR}/${file.path}`,
-        mode: fileMode(file.executable),
-      });
-    }
-    for (const { name, pack } of skillPacks) archive.append(pack, { name, mode: REGULAR_FILE_MODE });
-    void archive.finalize();
-  });
+function exportedOrigin(row: { origin: string; externalServiceId: string | null }): AgentExportSkillOrigin {
+  if (row.externalServiceId !== null) return 'service';
+  return row.origin === 'custom' ? 'custom' : 'built_in';
 }

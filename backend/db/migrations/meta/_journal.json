@@ -533,6 +533,27 @@
       "when": 1790800000000,
       "tag": "0075_linked-accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1790900000000,
+      "tag": "0076_external-services-v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0077_agent-service-settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0078_retired-skills",
+      "breakpoints": true
     }
   ]
 }

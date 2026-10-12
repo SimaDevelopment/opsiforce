@@ -19,9 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import { EnvironmentBadge } from '~/components/environment-badge';
-import { FOCUS_RING } from '~/components/store/store-list';
+import { DefaultEnvironmentSetting, PublishPreviewCard, PublishTargetList } from '~/components/publish-environments';
 import { AlertTriangle, Rocket } from '~/components/icons';
 import { cn } from '~/lib/cn';
 import { driftText, isPublished, profileDiff } from './agent-drift';
@@ -119,39 +117,19 @@ export function PublishAgentDialog(props: {
               This organization has only the Development environment, so there is nowhere to publish to yet.
             </p>
           </Show>
-          <div class="space-y-1.5" role="radiogroup" aria-label="Target environment">
-            <For each={props.targets}>
-              {(environment) => {
-                const published = () => isPublished(props.profileFor(environment.id));
-                const status = () => driftText(props.development, props.profileFor(environment.id));
-                const stale = () => published() && status() !== 'Same as Development';
-                return (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={chosen() === environment.id}
-                    onClick={() => {
-                      setPicked(environment.id);
-                      setError(null);
-                    }}
-                    class={cn(
-                      'flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
-                      FOCUS_RING,
-                      chosen() === environment.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'
-                    )}
-                  >
-                    <span class="inline-flex items-center gap-1.5">
-                      <EnvironmentBadge environment={environment} />
-                      <span class="text-xs font-medium text-foreground">{environment.name}</span>
-                    </span>
-                    <span class={cn('text-right text-xs', stale() ? 'text-amber-700' : 'text-muted-foreground')}>
-                      {status()}
-                    </span>
-                  </button>
-                );
-              }}
-            </For>
-          </div>
+          <PublishTargetList
+            targets={props.targets}
+            chosen={chosen()}
+            onPick={(environmentId) => {
+              setPicked(environmentId);
+              setError(null);
+            }}
+            status={(environment) => driftText(props.development, props.profileFor(environment.id))}
+            stale={(environment) =>
+              isPublished(props.profileFor(environment.id)) &&
+              driftText(props.development, props.profileFor(environment.id)) !== 'Same as Development'
+            }
+          />
 
           <Show when={ready()}>
             {(shown) => {
@@ -163,66 +141,70 @@ export function PublishAgentDialog(props: {
               };
               return (
                 <div class="space-y-3">
-                  <div class="overflow-hidden rounded-lg border border-border">
-                    <div class="border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                      {replaces() ? `What changes in ${targetName()}` : `What ${targetName()} will receive`}
-                    </div>
-                    <div class="divide-y divide-border">
-                      <DiffLine label="Prompt" changed={changes().promptChanged}>
-                        <Show when={changes().promptChanged} fallback="Same">
-                          {replaces()
-                            ? 'Rewritten from Development'
-                            : `${(development().promptBody ?? '').split('\n').length} lines`}
-                        </Show>
-                      </DiffLine>
-                      <DiffLine label="Model" changed={changes().modelChanged}>
-                        <Show when={changes().modelChanged} fallback="Same">
-                          <Show when={target()} fallback={modelLabel(development())}>
-                            {(previous) => (
-                              <>
-                                <span class="text-muted-foreground line-through">{modelLabel(previous())}</span> →{' '}
-                                {modelLabel(development())}
-                              </>
-                            )}
-                          </Show>
-                        </Show>
-                      </DiffLine>
-                      <DiffLine label="Skills" changed={changes().skillsChanged}>
-                        <Show when={changes().skillsChanged} fallback="Same">
-                          <span class="flex flex-wrap gap-1">
-                            <For each={changes().added}>
-                              {(skill) => (
-                                <Badge variant="success" class="font-mono font-normal">
-                                  + {skill.name} v{skill.pinnedVersion}
-                                </Badge>
-                              )}
-                            </For>
-                            <For each={changes().removed}>
-                              {(skill) => (
-                                <Badge variant="destructive" class="font-mono font-normal">
-                                  − {skill.name}
-                                </Badge>
-                              )}
-                            </For>
-                            <For each={changes().repinned}>
-                              {(entry) => (
-                                <Badge variant="warning" class="font-mono font-normal">
-                                  {entry.skill.name} v{entry.fromVersion} → v{entry.toVersion}
-                                </Badge>
-                              )}
-                            </For>
-                          </span>
-                        </Show>
-                      </DiffLine>
-                      <Show when={shownTemplate()}>
-                        {(template) => (
-                          <DiffLine label="Template" changed={changes().templateChanged}>
-                            {TEMPLATE_LABELS[template()]}
-                          </DiffLine>
-                        )}
+                  <PublishPreviewCard
+                    title={replaces() ? `What changes in ${targetName()}` : `What ${targetName()} will receive`}
+                  >
+                    <DiffLine label="Prompt" changed={changes().promptChanged}>
+                      <Show when={changes().promptChanged} fallback="Same">
+                        {replaces()
+                          ? 'Rewritten from Development'
+                          : `${(development().promptBody ?? '').split('\n').length} lines`}
                       </Show>
-                    </div>
-                  </div>
+                    </DiffLine>
+                    <DiffLine label="Model" changed={changes().modelChanged}>
+                      <Show when={changes().modelChanged} fallback="Same">
+                        <Show when={target()} fallback={modelLabel(development())}>
+                          {(previous) => (
+                            <>
+                              <span class="text-muted-foreground line-through">{modelLabel(previous())}</span> →{' '}
+                              {modelLabel(development())}
+                            </>
+                          )}
+                        </Show>
+                      </Show>
+                    </DiffLine>
+                    <DiffLine label="Skills" changed={changes().skillsChanged}>
+                      <Show when={changes().skillsChanged} fallback="Same">
+                        <span class="flex flex-wrap gap-1">
+                          <For each={changes().added}>
+                            {(skill) => (
+                              <Badge variant="success" class="font-mono font-normal">
+                                + {skill.name} v{skill.pinnedVersion}
+                              </Badge>
+                            )}
+                          </For>
+                          <For each={changes().removed}>
+                            {(skill) => (
+                              <Badge variant="destructive" class="font-mono font-normal">
+                                − {skill.name}
+                              </Badge>
+                            )}
+                          </For>
+                          <For each={changes().repinned}>
+                            {(entry) => (
+                              <Badge variant="warning" class="font-mono font-normal">
+                                {entry.skill.name} v{entry.fromVersion} → v{entry.toVersion}
+                              </Badge>
+                            )}
+                          </For>
+                          <For each={changes().serviceSettingsChanged}>
+                            {(skill) => (
+                              <Badge variant="warning" class="font-mono font-normal">
+                                {skill.name} service settings
+                              </Badge>
+                            )}
+                          </For>
+                        </span>
+                      </Show>
+                    </DiffLine>
+                    <Show when={shownTemplate()}>
+                      {(template) => (
+                        <DiffLine label="Template" changed={changes().templateChanged}>
+                          {TEMPLATE_LABELS[template()]}
+                        </DiffLine>
+                      )}
+                    </Show>
+                  </PublishPreviewCard>
 
                   <Show when={replaces() && !changes().empty}>
                     <p class="flex gap-2 text-xs text-muted-foreground">
@@ -292,53 +274,18 @@ function NewProjectsSetting(props: {
   };
 
   return (
-    <div class="rounded-lg border border-border">
-      <div class="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="min-w-0">
-          <label for="agent-default-environment" class="text-xs font-medium text-foreground">
-            New projects start from
-          </label>
-          <div class="mt-0.5 text-xs text-muted-foreground">
-            A project copies this environment's definition once, when it is created, and keeps it.
-          </div>
-        </div>
-        <div class="w-full sm:w-44">
-          <Select
-            options={props.choices}
-            optionValue="id"
-            optionTextValue="name"
-            value={chosen()}
-            onChange={(option) => option && void choose(option)}
-            itemComponent={(itemProps) => (
-              <SelectItem item={itemProps.item}>
-                <span class="flex items-center gap-1.5">
-                  <EnvironmentBadge environment={itemProps.item.rawValue} />
-                  {itemProps.item.rawValue.name}
-                </span>
-              </SelectItem>
-            )}
-          >
-            <SelectTrigger id="agent-default-environment" aria-label="New projects start from" class="h-8">
-              <SelectValue<Environment>>
-                {(state) => (
-                  <span class="flex items-center gap-1.5">
-                    <Show when={state.selectedOption()}>
-                      {(environment) => <EnvironmentBadge environment={environment()} />}
-                    </Show>
-                    {state.selectedOption()?.name ?? 'Select'}
-                  </span>
-                )}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent />
-          </Select>
-        </div>
-      </div>
-      <Show when={!offered()}>
-        <p class="border-t border-border px-3 py-2 text-xs text-amber-700">
-          Not offered when creating a project — nothing is published to {chosen()?.name ?? 'it'} yet.
-        </p>
-      </Show>
-    </div>
+    <DefaultEnvironmentSetting
+      id="agent-default-environment"
+      label="New projects start from"
+      description="A project copies this environment's definition once, when it is created, and keeps it."
+      choices={props.choices}
+      value={chosen()}
+      onChange={(environment) => void choose(environment)}
+      notice={
+        offered()
+          ? undefined
+          : `Not offered when creating a project — nothing is published to ${chosen()?.name ?? 'it'} yet.`
+      }
+    />
   );
 }

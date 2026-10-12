@@ -9,6 +9,7 @@ ENV NODE_OPTIONS="--max-http-header-size=128000"
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn ./.yarn
 COPY ${PKG_PREFIX}frontend ./packages/opsiforce/frontend
+COPY ${PKG_PREFIX}external-service-sdk ./packages/opsiforce/external-service-sdk
 
 RUN yarn workspaces focus --all
 
