@@ -92,6 +92,7 @@
 - [Local orchestration](operations/local-orchestration.md) — the tunnel, Tilt and the static identity
 - [Deployment](operations/deployment.md) — ship to a cluster through CI in dependency order
 - [Deploy to Azure (AKS)](operations/deploy-azure.md) — the platform contract for self-hosting on Azure
+- [Air-Gapped Single-Node Deployment](operations/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
 - [Cut over from Helm](operations/cutover-from-helm.md) — move an existing environment's traffic onto Settings → Model providers and `custom-openai-1` off the Codex OAuth Dock, steps 1–6 with their checks
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works

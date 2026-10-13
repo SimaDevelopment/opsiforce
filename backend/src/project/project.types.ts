@@ -171,6 +171,7 @@ export interface ProjectAppMeta {
 }
 
 export interface ProjectAuthOidcConfig {
+  forwardAccessToken?: boolean;
   clientId?: string;
   clientSecret?: string;
   discoveryUrl?: string;

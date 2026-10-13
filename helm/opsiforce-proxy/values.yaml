@@ -69,10 +69,11 @@ oauth2Proxy:
   provider: keycloak-oidc
   emailClaim: preferred_username
   clientId:
+  clientSecret: ""
   cookieSecret:
+  cookieSecure: false
   cookieDomain:
   cookieName:
-  clientSecret:
   issuerUrl:
   logoutUrl:
   redirectUrl:

@@ -21,7 +21,13 @@ const EMPTY_CONFIG: ProjectAuthOidcConfig = {
 };
 
 function configsEqual(a: ProjectAuthOidcConfig, b: ProjectAuthOidcConfig): boolean {
-  const keys: (keyof ProjectAuthOidcConfig)[] = ['clientId', 'clientSecret', 'discoveryUrl', 'scope'];
+  const keys: (keyof ProjectAuthOidcConfig)[] = [
+    'clientId',
+    'clientSecret',
+    'discoveryUrl',
+    'scope',
+    'forwardAccessToken',
+  ];
   return keys.every((k) => (a[k] ?? '') === (b[k] ?? ''));
 }
 

@@ -4,10 +4,11 @@ import solidPlugin from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-import { OC_PACKAGES_ROOT, opencodeMessageStamp, opencodeResolver } from "./vite-plugins/index.ts";
+import { deploymentBranding, OC_PACKAGES_ROOT, opencodeMessageStamp, opencodeResolver } from "./vite-plugins/index.ts";
 
 export default defineConfig(({ mode }) => ({
   plugins: [
+    deploymentBranding(),
     opencodeResolver(),
     opencodeMessageStamp(),
     tanstackRouter({

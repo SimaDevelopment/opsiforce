@@ -12,6 +12,7 @@ config:
   cephfsPvcName: "opsiforce-cephfs"
   storageMountPath: "/workspace-data"
   proxyControlToken: ""
+  appAuthForwardingSigningKey: ""
   vscodePort: "8080"
   dbViewerPort: "8081"
 

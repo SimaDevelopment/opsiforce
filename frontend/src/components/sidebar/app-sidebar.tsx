@@ -1,4 +1,5 @@
 import { Show, createSignal } from 'solid-js';
+import { branding } from '~/lib/branding';
 import { toast } from 'solid-sonner';
 import { useNavigate } from '@tanstack/solid-router';
 import { useAgents } from '~/api/agents';
@@ -96,10 +97,10 @@ export function AppSidebar() {
             onClick={() => navigate({ to: '/' })}
             title="Home"
           >
-            <img alt="Opsiforce" src="/assets/icons/brands/opsiforce.svg" class="w-4 h-4" />
+            <img alt={branding.name} src={branding.icon} class="w-4 h-4" />
           </div>
           <span class="font-semibold text-sm text-sidebar-foreground truncate group-data-[collapsible=icon]/sidebar:hidden">
-            Opsiforce
+            {branding.name}
           </span>
           <div class="ml-auto group-data-[collapsible=icon]/sidebar:hidden">
             <SidebarTrigger />
