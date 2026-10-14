@@ -321,6 +321,7 @@ describe('the persona', () => {
       '/workspace/user_uploaded_files/',
       '/workspace/generated_files/',
       '/workspace/data/database.db',
+      '/workspace/data/logs/',
     ];
 
     for (const fact of platformFacts) {
@@ -487,7 +488,7 @@ describe('the agent-authoring skill', () => {
     expect(agentAuthoring).toContain('$APP_PORT');
     expect(agentAuthoring).toContain('startup.sh');
     expect(agentAuthoring).toContain('app.meta.json');
-    expect(agentAuthoring).toMatch(/observability database/);
+    expect(agentAuthoring).toMatch(/process logs and request log/);
   });
 
   it('loads agent-browser core, not the full reference, before the first interaction', () => {

@@ -127,7 +127,8 @@ app/
   data/
     app.db                    — the App's data (tables you create via migrations)
 data/
-  database.db                 — platform logs: HTTP requests, process output, events (read-only)
+  database.db                 — platform request log: every HTTP request to the App (read-only)
+  logs/                       — platform process logs: output and lifecycle events, read with `process-logs`
 ```
 
 New pages, components, modules and migrations go inside these directories — that is what they are for. Do not add top-level directories or files beside them, and do not move what is there.

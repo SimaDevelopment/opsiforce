@@ -7,7 +7,7 @@ export VSCODE_PORT="${VSCODE_PORT:-8080}"
 export DB_VIEWER_PORT="${DB_VIEWER_PORT:-8081}"
 export DB_VIEWER_SQL_TIME_LIMIT_MS="${DB_VIEWER_SQL_TIME_LIMIT_MS:-5000}"
 
-mkdir -p /workspace/app/data /workspace/data
+mkdir -p /workspace/app/data /workspace/data/logs
 
 EXTERNAL_SERVICES_DB=/workspace/data/external-services.db
 [ -f "${EXTERNAL_SERVICES_DB}" ] || sqlite3 "${EXTERNAL_SERVICES_DB}" "VACUUM;"

@@ -1,27 +1,38 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 const (
-	defaultDBPath = "/workspace/data/database.db"
-	batchSize     = 100
-	flushInterval = 500 * time.Millisecond
-	maxLineLength = 10 * 1024
-	busyTimeoutMs = 1000
+	defaultLogDir   = "/workspace/data/logs"
+	flushInterval   = 500 * time.Millisecond
+	pruneInterval   = time.Hour
+	maxLineLength   = 10 * 1024
+	maxBatchLines   = 100
+	timestampLayout = "2006-01-02T15:04:05.000Z"
+	eventMarker     = "[event]"
 )
+
+type retention struct {
+	maxFileBytes int64
+	maxBackups   int
+	maxAge       time.Duration
+}
+
+var defaultRetention = retention{
+	maxFileBytes: 10 * 1024 * 1024,
+	maxBackups:   3,
+	maxAge:       72 * time.Hour,
+}
 
 type stringFlag struct {
 	value string
@@ -38,10 +49,20 @@ func (f *stringFlag) String() string {
 	return f.value
 }
 
-type logWriter struct {
-	db    *sql.DB
-	name  string
-	batch []string
+type logFile struct {
+	dir             string
+	path            string
+	retention       retention
+	now             func() time.Time
+	file            *os.File
+	size            int64
+	batch           []string
+	lastReportedErr error
+}
+
+type eventField struct {
+	key   string
+	value stringFlag
 }
 
 type streamEvent struct {
@@ -66,215 +87,231 @@ func main() {
 	flag.Var(&restartFlag, "restart", "")
 	flag.Parse()
 
-	name := nameFlag.value
-	if name == "" {
+	log := newLogFile(logDir(), nameFlag.value, defaultRetention, time.Now)
+	defer log.close()
+
+	switch {
+	case eventFlag.set:
+		log.add(eventLine(eventFlag.value, []eventField{
+			{"exit_code", exitCodeFlag},
+			{"uptime_seconds", uptimeFlag},
+			{"restart_count", restartFlag},
+		}))
+		log.flush()
+	case lineFlag.set:
+		log.add(lineFlag.value)
+		log.flush()
+	default:
+		log.prune()
+		stream(log)
+	}
+}
+
+func logDir() string {
+	if dir := os.Getenv("PROCESS_LOG_DIR"); dir != "" {
+		return dir
+	}
+	return defaultLogDir
+}
+
+var unsafeNameCharacters = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+
+func fileName(processName string) string {
+	name := unsafeNameCharacters.ReplaceAllString(processName, "_")
+	if strings.Trim(name, ".") == "" {
 		name = "unknown"
 	}
+	return name + ".log"
+}
 
-	writer, err := newLogWriter(name)
-	if eventFlag.set {
-		if err == nil {
-			writer.insertEvent(eventFlag.value, parseOptionalInt(exitCodeFlag), parseOptionalInt(uptimeFlag), parseOptionalInt(restartFlag))
-			writer.close()
+func newLogFile(dir, processName string, retention retention, now func() time.Time) *logFile {
+	return &logFile{
+		dir:       dir,
+		path:      filepath.Join(dir, fileName(processName)),
+		retention: retention,
+		now:       now,
+		batch:     make([]string, 0, maxBatchLines),
+	}
+}
+
+func eventLine(event string, fields []eventField) string {
+	parts := []string{eventMarker, event}
+	for _, field := range fields {
+		if !field.value.set || field.value.value == "" {
+			continue
 		}
+		if _, err := strconv.Atoi(field.value.value); err != nil {
+			continue
+		}
+		parts = append(parts, field.key+"="+field.value.value)
+	}
+	return strings.Join(parts, " ")
+}
+
+func (l *logFile) add(line string) {
+	l.batch = append(l.batch, l.now().UTC().Format(timestampLayout)+" "+truncateLine(line)+"\n")
+	if len(l.batch) >= maxBatchLines {
+		l.flush()
+	}
+}
+
+func (l *logFile) flush() {
+	if len(l.batch) == 0 {
+		return
+	}
+	defer func() { l.batch = l.batch[:0] }()
+
+	if !l.ensureOpen() {
 		return
 	}
 
-	if lineFlag.set {
-		if err == nil {
-			writer.addLine(lineFlag.value)
-			writer.flush()
-			writer.close()
+	chunk := strings.Join(l.batch, "")
+	if l.size > 0 && l.size+int64(len(chunk)) > l.retention.maxFileBytes {
+		l.rotate()
+		if !l.ensureOpen() {
+			return
 		}
-		return
 	}
 
+	written, err := io.WriteString(l.file, chunk)
+	l.size += int64(written)
 	if err != nil {
-		passthrough()
-		return
+		l.reportError(err)
+		l.closeFile()
 	}
-
-	defer writer.close()
-	stream(writer)
 }
 
-func newLogWriter(name string) (*logWriter, error) {
-	dbPath := os.Getenv("PROCESS_LOG_DB_PATH")
-	if dbPath == "" {
-		dbPath = defaultDBPath
+func (l *logFile) ensureOpen() bool {
+	if l.file != nil && l.stillAtPath() {
+		return true
 	}
+	l.closeFile()
 
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		return nil, err
+	if err := os.MkdirAll(l.dir, 0o755); err != nil {
+		l.reportError(err)
+		return false
 	}
-
-	db, err := sql.Open("sqlite", dbPath)
+	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return nil, err
-	}
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-
-	for _, statement := range []string{
-		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeoutMs),
-		"PRAGMA journal_mode = TRUNCATE",
-		"PRAGMA synchronous = NORMAL",
-		`CREATE TABLE IF NOT EXISTS process_logs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			process_name TEXT NOT NULL,
-			line TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`,
-		`CREATE TABLE IF NOT EXISTS process_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			process_name TEXT NOT NULL,
-			event TEXT NOT NULL,
-			exit_code INTEGER,
-			uptime_seconds INTEGER,
-			restart_count INTEGER,
-			created_at TEXT NOT NULL DEFAULT (datetime('now'))
-		)`,
-		"CREATE INDEX IF NOT EXISTS idx_process_logs_process_name ON process_logs(process_name)",
-		"CREATE INDEX IF NOT EXISTS idx_process_logs_created_at ON process_logs(created_at)",
-		"CREATE INDEX IF NOT EXISTS idx_process_events_process_name ON process_events(process_name)",
-	} {
-		if _, err := db.Exec(statement); err != nil {
-			_ = db.Close()
-			return nil, err
-		}
-	}
-
-	return &logWriter{
-		db:    db,
-		name:  name,
-		batch: make([]string, 0, batchSize),
-	}, nil
-}
-
-func (w *logWriter) close() {
-	if w.db != nil {
-		_ = w.db.Close()
-	}
-}
-
-func (w *logWriter) addLine(line string) {
-	w.batch = append(w.batch, line)
-	if len(w.batch) >= batchSize {
-		w.flush()
-	}
-}
-
-func (w *logWriter) flush() {
-	if len(w.batch) == 0 || w.db == nil {
-		return
-	}
-
-	lines := w.batch
-	ok := w.writeTransaction(func(ctx context.Context, conn *sql.Conn) error {
-		stmt, err := conn.PrepareContext(ctx, "INSERT INTO process_logs (process_name, line) VALUES (?, ?)")
-		if err != nil {
-			return err
-		}
-
-		for _, line := range lines {
-			if _, err := stmt.ExecContext(ctx, w.name, truncateLine(line)); err != nil {
-				_ = stmt.Close()
-				return err
-			}
-		}
-
-		return stmt.Close()
-	})
-	if !ok {
-		w.batch = w.batch[:0]
-		return
-	}
-
-	w.batch = w.batch[:0]
-}
-
-func (w *logWriter) insertEvent(event string, exitCode any, uptime any, restart any) {
-	if w.db == nil {
-		return
-	}
-	w.writeTransaction(func(ctx context.Context, conn *sql.Conn) error {
-		_, err := conn.ExecContext(
-			ctx,
-			"INSERT INTO process_events (process_name, event, exit_code, uptime_seconds, restart_count) VALUES (?, ?, ?, ?, ?)",
-			w.name,
-			event,
-			exitCode,
-			uptime,
-			restart,
-		)
-		return err
-	})
-}
-
-func (w *logWriter) writeTransaction(fn func(context.Context, *sql.Conn) error) bool {
-	if w.db == nil {
+		l.reportError(err)
 		return false
 	}
-
-	ctx := context.Background()
-	conn, err := w.db.Conn(ctx)
+	info, err := file.Stat()
 	if err != nil {
-		return false
-	}
-	defer conn.Close()
-
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		_ = file.Close()
+		l.reportError(err)
 		return false
 	}
 
-	committed := false
-	defer func() {
-		if !committed {
-			_, _ = conn.ExecContext(ctx, "ROLLBACK")
-		}
-	}()
-
-	if err := fn(ctx, conn); err != nil {
-		return false
-	}
-
-	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
-		return false
-	}
-	committed = true
-
+	l.file = file
+	l.size = info.Size()
+	l.lastReportedErr = nil
 	return true
 }
 
-func stream(writer *logWriter) {
+func (l *logFile) stillAtPath() bool {
+	opened, err := l.file.Stat()
+	if err != nil {
+		return false
+	}
+	current, err := os.Stat(l.path)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(opened, current)
+}
+
+func (l *logFile) rotate() {
+	l.closeFile()
+	for index := l.retention.maxBackups; index >= 1; index-- {
+		source := l.backupPath(index - 1)
+		if index == l.retention.maxBackups {
+			_ = os.Remove(l.backupPath(index))
+		}
+		_ = os.Rename(source, l.backupPath(index))
+	}
+	if l.retention.maxBackups == 0 {
+		_ = os.Remove(l.path)
+	}
+	l.prune()
+}
+
+func (l *logFile) backupPath(index int) string {
+	if index == 0 {
+		return l.path
+	}
+	return l.path + "." + strconv.Itoa(index)
+}
+
+func (l *logFile) prune() {
+	entries, err := os.ReadDir(l.dir)
+	if err != nil {
+		return
+	}
+	cutoff := l.now().Add(-l.retention.maxAge)
+	own := filepath.Base(l.path)
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || name == own || !strings.Contains(name, ".log") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(l.dir, name))
+	}
+}
+
+func (l *logFile) reportError(err error) {
+	if l.lastReportedErr != nil && l.lastReportedErr.Error() == err.Error() {
+		return
+	}
+	l.lastReportedErr = err
+	fmt.Fprintf(os.Stderr, "log-writer: %s: %v\n", l.path, err)
+}
+
+func (l *logFile) closeFile() {
+	if l.file != nil {
+		_ = l.file.Close()
+		l.file = nil
+	}
+}
+
+func (l *logFile) close() {
+	l.flush()
+	l.closeFile()
+}
+
+func stream(log *logFile) {
 	events := make(chan streamEvent)
 	go readStream(os.Stdin, events)
 
-	ticker := time.NewTicker(flushInterval)
-	defer ticker.Stop()
+	flushTicker := time.NewTicker(flushInterval)
+	defer flushTicker.Stop()
+	pruneTicker := time.NewTicker(pruneInterval)
+	defer pruneTicker.Stop()
 
 	for {
 		select {
 		case event, ok := <-events:
 			if !ok {
-				writer.flush()
+				log.flush()
 				return
 			}
 			if event.output != "" {
 				_, _ = io.WriteString(os.Stdout, event.output)
 			}
 			if event.hasLine {
-				writer.addLine(event.line)
+				log.add(event.line)
 			}
-		case <-ticker.C:
-			writer.flush()
+		case <-flushTicker.C:
+			log.flush()
+		case <-pruneTicker.C:
+			log.prune()
 		}
 	}
-}
-
-func passthrough() {
-	_, _ = io.Copy(os.Stdout, os.Stdin)
 }
 
 func readStream(input io.Reader, events chan<- streamEvent) {
@@ -331,18 +368,8 @@ func appendLineSegment(line *strings.Builder, truncated bool, segment string) bo
 	return true
 }
 
-func parseOptionalInt(value stringFlag) any {
-	if !value.set || value.value == "" {
-		return nil
-	}
-	parsed, err := strconv.Atoi(value.value)
-	if err != nil {
-		return nil
-	}
-	return parsed
-}
-
 func truncateLine(line string) string {
+	line = strings.TrimSuffix(line, "\r")
 	if len(line) <= maxLineLength {
 		return line
 	}

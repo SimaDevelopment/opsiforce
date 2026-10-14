@@ -77,6 +77,7 @@ describe('the platform skill', () => {
     expect(platformSkill).toContain('/workspace/generated_files/');
     expect(platformSkill).toContain('app/opsiforce.env.json');
     expect(platformSkill).toContain('/workspace/data/database.db');
+    expect(platformSkill).toContain('/workspace/data/logs/');
     expect(platformSkill).toContain('/workspace/data/external-services.db');
     expect(platformSkill).toContain('websearch');
   });
@@ -112,10 +113,17 @@ describe('the platform skill', () => {
   it('owns the observability schemas and queries that left the sqlite skill', () => {
     const sqliteSkill = readFileSync(join(agentConfig, 'skills', 'sqlite', 'SKILL.md'), 'utf8');
 
-    for (const table of ['app_requests', 'process_logs', 'process_events']) {
-      expect(platformSkill).toContain(table);
-      expect(sqliteSkill).not.toContain(table);
+    expect(platformSkill).toContain('app_requests');
+    expect(sqliteSkill).not.toContain('app_requests');
+    expect(platformSkill).toContain('process-logs --events --since 2m');
+    expect(sqliteSkill).not.toContain('process-logs');
+  });
+
+  it('reads process output from log files, not from tables that no longer exist', () => {
+    for (const table of ['process_logs', 'process_events']) {
+      expect(platformSkill).not.toContain(table);
     }
+    expect(platformSkill).toContain('/workspace/data/logs/');
   });
 });
 

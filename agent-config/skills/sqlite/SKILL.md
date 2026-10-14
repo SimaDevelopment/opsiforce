@@ -7,7 +7,7 @@ description: The App's own SQLite database via Node 24's built-in node:sqlite �
 
 The app uses Node 24's built-in `node:sqlite` (`DatabaseSync`). Synchronous API, zero dependencies, no native compile step. Imported as `import { DatabaseSync } from "node:sqlite"`. Database file is at `data/app.db`.
 
-The platform's two read-only databases — observability (`/workspace/data/database.db`) and inbound Events (`/workspace/data/external-services.db`) — are different files with a different owner: the `platform` skill has their rules, and each External Service's `service-<slug>` skill has the `data` of its Events and its queries.
+The platform's two read-only databases — the request log (`/workspace/data/database.db`) and inbound Events (`/workspace/data/external-services.db`) — are different files with a different owner: the `platform` skill has their rules, and each External Service's `service-<slug>` skill has the `data` of its Events and its queries.
 
 ## DatabaseService API
 

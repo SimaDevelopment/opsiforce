@@ -18,7 +18,7 @@ chat's, and a new Agent cannot be picked for a Project until someone has publish
 
 **1. Never restate anything the `platform` skill covers.** Every agent, including every Custom Agent,
 carries `platform` — the App contract (`startup.sh`, `$APP_PORT`, `app.meta.json`), the pod restart,
-files, configuration, the LLM gateway, the observability database. Read it once so you know what it
+files, configuration, the LLM gateway, the process logs and request log. Read it once so you know what it
 covers. A copy in a body goes stale the next time the platform changes. Write none of it.
 
 **2. When the child builds, serves or delivers anything, tell it to load the skill and to check its

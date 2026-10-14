@@ -5,7 +5,7 @@ Each ProjectEnvironment gets one `data/external-services.db` beside its workspac
 ## Considered options
 
 - **Store in the App's own database.** Rejected: platform tables inside the App's migration story.
-- **Store in the observability database.** Rejected: that file is disposable by design.
+- **Store in the request log's database.** Rejected: that file is disposable by design.
 - **Deliver the Event in the callback.** Rejected: two data paths to keep equal; the schema is the whole contract, and catching up after downtime is the same read as the live path.
 
 ## Consequences
