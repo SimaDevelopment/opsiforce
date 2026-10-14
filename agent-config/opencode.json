@@ -33,6 +33,11 @@
       "action": "edit",
       "resource": "data/database.db",
       "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "data/logs/**",
+      "effect": "deny"
     }
   ],
   "providers": {

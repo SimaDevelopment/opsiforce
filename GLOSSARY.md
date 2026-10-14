@@ -475,6 +475,10 @@ _Avoid_: Buffer size, max body size (collides with upload limits)
 
 ### Runtime
 
+**Process Log**:
+What one supervised process in a pod printed, with its lifecycle events (started, crashed, stopped, signal, gave up), kept as timestamped text files in the workspace for three days. Read by the Agent to tell whether the App booted or why it crashed.
+_Avoid_: Observability database (process output is in no database); container logs (what Kubernetes keeps, gone with the pod)
+
 **Keep-alive activity**:
 The traffic that keeps a ProjectEnvironment's pod running, of two kinds: **agent activity** — the user working through the agent (chat, the code editor, the database viewer, file uploads) — and **app activity** — the running App's own traffic (its public and preview URLs, and scheduled runs). Each kind has its own idle timeout; the pod is suspended only once both kinds have been idle past their timeouts. "Why a pod is still alive" is always one of these two, never a finer reason.
 _Avoid_: Chat (one input to agent activity, not a category of its own); Heartbeat, Ping (non-canonical)

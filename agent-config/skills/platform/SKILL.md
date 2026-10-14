@@ -52,7 +52,7 @@ Gone with the container, every time:
 - **State lives under `/workspace/app/data/`.** Anything a process writes and must keep — a database, uploads, caches worth keeping — goes there, so it survives a restart. `data/` is ignored by git, so none of it is published.
 - **A first-time setup is finished or redone, never half-trusted.** Initialise into a temporary directory beside the target and rename it into place once setup succeeds, so a container killed mid-setup leaves nothing that looks initialised.
 - **A service that refuses to run as root** runs as an unprivileged user that owns its directory under `data/`. A user created in the container is gone after a restart, so `startup.sh` creates it idempotently.
-- **Every long-running process runs under `guard`, in the foreground.** `guard <name> <command> &` supervises it: the platform restarts it whenever it exits, crashed or not, and its output and lifecycle land in the observability database under `<name>`. A command that daemonises itself and returns escapes supervision, stays invisible to the logs, and collides with itself when `startup.sh` runs again — run the process's foreground mode instead. The server on `$APP_PORT` is one of these processes, not a special case. A server that must be compiled builds inside its guarded command — `guard <server> sh -c '<build> && exec <binary>'` — so every restart runs current source; in development it runs under a watcher that rebuilds on save, since nothing restarts it by hand.
+- **Every long-running process runs under `guard`, in the foreground.** `guard <name> <command> &` supervises it: the platform restarts it whenever it exits, crashed or not, and its output and lifecycle land in `/workspace/data/logs/<name>.log`, read with `process-logs <name>`. A command that daemonises itself and returns escapes supervision, stays invisible to the logs, and collides with itself when `startup.sh` runs again — run the process's foreground mode instead. The server on `$APP_PORT` is one of these processes, not a special case. A server that must be compiled builds inside its guarded command — `guard <server> sh -c '<build> && exec <binary>'` — so every restart runs current source; in development it runs under a watcher that rebuilds on save, since nothing restarts it by hand.
 - **Expect leftovers from a dead container.** The previous container was killed, not shut down, so a process that keeps a lock or pid file under `data/` finds it still there. Make its start tolerate that. Decide whether a service is already running by asking the service itself — its own ready check or client — never by a process number read from a file: numbers are reused in a new container, so a stale one can point at an unrelated process.
 - **Survive a dependency restarting.** A service the server uses can restart underneath it, and `guard` brings it back in seconds. The server reconnects on its next request instead of holding on to a connection that died with the old process.
 - **Order is the dependency order.** Start what the server needs before the server, and end with `wait -n` so the script exits — and is run again — when a supervised process gives up.
@@ -137,17 +137,30 @@ Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call. `OPENAI_API_K
 > ❌ User names a real entity → you seed the DB with invented names, prices, or stats that look plausible
 > ✅ User names a real entity → you search first, then seed with real, verifiable facts
 
-## The platform observability database — `/workspace/data/database.db`
+## Platform observability — process logs and the request log
 
-A **read-only** SQLite file, one per project, where the platform records everything it sees. Never create tables or write to it; always open it with `-readonly`. Use it to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits.
+The platform records what every process prints and every request the App serves. Use both to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits. Both are the platform's and read-only to you, and both keep only the last few days.
 
-| Table | What it captures | Key columns |
-|---|---|---|
-| `app_requests` | Every HTTP request to the App | `method`, `url`, `status`, `duration_ms`, `request_body`, `response_body`, `request_headers`, `response_headers`, `size`, `domain`, `created_at` |
-| `process_logs` | stdout/stderr from every process | `process_name`, `line`, `created_at` |
-| `process_events` | Lifecycle events | `process_name`, `event` (started/crashed/stopped/signal/gave_up), `exit_code`, `uptime_seconds`, `restart_count`, `created_at` |
+### Process logs — `process-logs`, files under `/workspace/data/logs/`
 
-Process names come from whatever `startup.sh` supervises, plus the platform's own. Run `SELECT DISTINCT process_name FROM process_logs` when unsure; `webapp` is the supervisor's own meta-lines, `opencode` is you, `vscode` is the editor.
+Every supervised process writes its stdout/stderr and its lifecycle events (`started`, `crashed`, `stopped`, `signal`, `gave_up`, with `exit_code`, `uptime_seconds` and `restart_count`) to `/workspace/data/logs/<process>.log`, rotated as it grows. Read them with `process-logs`, which merges the rotated files and every process by time:
+
+```bash
+process-logs --list                # every process, its last write and size
+process-logs -n 100 <process>      # the last 100 lines of one process
+process-logs --follow <process>    # stream while you reproduce something
+```
+
+`--since`, `--events` and `--grep` narrow any of these; `process-logs --help` has the rest. Process names come from whatever `startup.sh` supervises, plus the platform's own: `webapp` is the supervisor's own meta-lines, `opencode` is you, `vscode` is the editor, `dbviewer` the database viewer.
+
+### The request log — `/workspace/data/database.db`
+
+A SQLite file holding one table, `app_requests`: every HTTP request to the App. Always open it with `-readonly`.
+
+| Column | |
+|---|---|
+| `method`, `url`, `status`, `duration_ms`, `size`, `domain`, `created_at` | what was asked and how it went |
+| `request_body`, `response_body`, `request_headers`, `response_headers` | the payloads, when the Project's Request Logging level records them |
 
 ### Verify the App booted — run after every round of edits
 
@@ -155,23 +168,17 @@ Both of these should come back empty (or show only healthy `started` events) bef
 
 ```bash
 # 1. Crashes in the last 2 minutes
-sqlite3 -readonly -header -column /workspace/data/database.db \
-  "SELECT created_at, process_name, event, exit_code, uptime_seconds, restart_count
-   FROM process_events WHERE created_at > datetime('now','-2 minutes') ORDER BY id DESC"
+process-logs --events --since 2m
 
-# 2. Error lines from the App in the last 2 minutes
-sqlite3 -readonly -header -column /workspace/data/database.db \
-  "SELECT created_at, process_name, line FROM process_logs
-   WHERE created_at > datetime('now','-2 minutes')
-     AND (line LIKE '%error%' OR line LIKE '%Error%' OR line LIKE '%FAIL%' OR line LIKE '%Cannot find%' OR line LIKE '%Unexpected%')
-   ORDER BY id DESC LIMIT 50"
+# 2. Error lines in the last 2 minutes
+process-logs --since 2m --grep 'error|fail|cannot find|unexpected'
 ```
 
-A recent `event='crashed'` with a climbing `restart_count` and small `uptime_seconds` is a crash loop — a hard error, fix it before continuing. `event='started'` with nothing else recent is healthy.
+A recent `crashed` event with a climbing `restart_count` and small `uptime_seconds` is a crash loop — a hard error, fix it before continuing. `started` with nothing else recent is healthy.
 
 ### Then walk it, and keep what you saw
 
-Fix what those queries show before opening a browser: a blank page is almost always a crashed server, which the logs catch and guessing at the UI does not. When you carry `agent-browser`, walk the flow you changed in it before saying it is done — open the page, run the flow, check the result — and use it to see what the user sees when they report something broken. Save every screenshot to `/workspace/.cache/checks/`, which survives a restart and is never published.
+Fix what those commands show before opening a browser: a blank page is almost always a crashed server, which the logs catch and guessing at the UI does not. When you carry `agent-browser`, walk the flow you changed in it before saying it is done — open the page, run the flow, check the result — and use it to see what the user sees when they report something broken. Save every screenshot to `/workspace/.cache/checks/`, which survives a restart and is never published.
 
 ### Investigate failed requests and crashes
 
@@ -189,12 +196,11 @@ sqlite3 -readonly -header -column /workspace/data/database.db \
 sqlite3 -readonly -header -column /workspace/data/database.db \
   "SELECT method, url, status, duration_ms, created_at FROM app_requests ORDER BY duration_ms DESC LIMIT 20"
 
-# Output from one process
-sqlite3 -readonly -header -column /workspace/data/database.db \
-  "SELECT created_at, line FROM process_logs WHERE process_name='<name>' ORDER BY id DESC LIMIT 50"
+# What one process printed around a failure
+process-logs --since 15m <name>
 ```
 
-Date filters like `datetime('now','-N hours')` work, or compare `created_at` to an ISO string. Drop `-header -column` when piping.
+`created_at` is UTC, as are the log timestamps, so a failed request and the process lines around it line up. Date filters like `datetime('now','-N hours')` work, or compare `created_at` to an ISO string. Drop `-header -column` when piping.
 
 ## External Services — `$EXTERNAL_SERVICES_URL`
 

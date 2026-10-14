@@ -31,7 +31,7 @@ The Skill & Agent Builder authors Skills and Custom Agents by conversation, and 
 ## Consequences
 
 - Every new listing query must filter on `kind`. One that forgets shows every author's chats and Test Projects to the whole Organization.
-- The `vscode`, `db` and `app` surfaces do not run the reach gate. A member who learns a chat's environment id reaches its code-server and its observability database.
+- The `vscode`, `db` and `app` surfaces do not run the reach gate. A member who learns a chat's environment id reaches its code-server and its request log.
 - A chat widens when its subject is made public, and never narrows on its own.
 - A Skill the Builder creates for an Agent it is writing has no chat until someone opens the Builder on it.
 - Storage attribution is unchanged: chats and Test Projects are tenant Projects and appear under their Organization in Admin storage.

@@ -11,6 +11,7 @@
 - [Storage](runtime/storage.md) — how disk usage on the shared volume is measured and attributed
 - [Resources](runtime/resources.md) — how a Project's pod size is chosen, stored and applied
 - [Pod Tools](runtime/pod-tools.md) — the five processes in a pod and how VS Code and the DB viewer reach the browser
+- [Process Log](runtime/process-log.md) — where each pod process's output and lifecycle events go, their rotation and how an Agent reads them
 
 **Projects** (`projects/`)
 - [Environments](projects/environments.md) — the two-entity model, public URLs, App Auth and the Environments switcher
@@ -95,6 +96,7 @@
 - [Air-Gapped Single-Node Deployment](operations/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
 - [Cut over from Helm](operations/cutover-from-helm.md) — move an existing environment's traffic onto Settings → Model providers and `custom-openai-1` off the Codex OAuth Dock, steps 1–6 with their checks
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
+- [Migrate process logs to files](operations/migrate-process-logs-to-files.md) — move existing workspaces off the `process_logs`/`process_events` tables, from the backend pod
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps
 - [Add an external service](operations/add-an-external-service.md) — a folder with a Service manifest, handlers and a Service skill, and one commit

@@ -82,10 +82,11 @@ RUN mkdir -p /opt/agents/external-service-builder/reference /opt/agents/external
     && chmod -R a-w /opt/opsiforce/external-service-sdk /opt/agents/external-service-builder/reference
 
 COPY agent-config/scripts/guard.sh /usr/local/bin/guard
+COPY agent-config/scripts/process-logs.sh /usr/local/bin/process-logs
 COPY agent-config/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY agent-config/scripts/agent-workspace-migrate.mjs /usr/local/bin/agent-workspace-migrate
 COPY agent-config/datasette-metadata.yml /opt/opencode/datasette-metadata.yml
-RUN chmod +x /usr/local/bin/guard /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
+RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep file \
