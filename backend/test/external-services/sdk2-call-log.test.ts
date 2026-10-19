@@ -256,6 +256,20 @@ describe('the Call log an SDK 2 service writes, read by the backend', () => {
     expect((await read(serviceCallLog('?since=2h'))).statusCode).toBe(400);
   });
 
+  it("names no other Organization's Project or environment a service wrote into its records", async () => {
+    const foreign = await consumerIn(app, (await tenantAdmin(app)).tenant);
+    stagedRows(
+      recordsFileOf(service.directory),
+      [{ path: '/foreign', projectId: foreign.projectId, projectEnvironmentId: foreign.projectEnvironmentId }],
+      Date.now()
+    );
+
+    const { calls, projects } = await page(serviceCallLog());
+
+    expect(calls).toEqual([expect.objectContaining({ path: '/foreign', projectTitle: null, environmentName: null })]);
+    expect(projects.map((project) => project.title)).not.toContain(foreign.projectTitle);
+  });
+
   it('pages older and newer with cursors', async () => {
     stagedRows(
       recordsFileOf(service.directory),

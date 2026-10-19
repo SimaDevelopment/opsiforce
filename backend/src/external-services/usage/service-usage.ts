@@ -167,12 +167,15 @@ function distinct(values: (string | null)[]): string[] {
   return [...new Set(values.filter((value): value is string => value !== null))];
 }
 
-async function viewOf({ months, month, counts }: MonthOfCounts): Promise<ServiceUsageView> {
-  const environmentsById = await knownEnvironments(distinct(counts.map((count) => count.projectEnvironmentId)));
+async function viewOf(tenantId: string, { months, month, counts }: MonthOfCounts): Promise<ServiceUsageView> {
+  const environmentsById = await knownEnvironments(
+    tenantId,
+    distinct(counts.map((count) => count.projectEnvironmentId))
+  );
   const projectIdOf = (count: CountedValue) =>
     count.projectId ??
     (count.projectEnvironmentId ? (environmentsById.get(count.projectEnvironmentId)?.projectId ?? null) : null);
-  const titles = await projectTitles(distinct(counts.map(projectIdOf)));
+  const titles = await projectTitles(tenantId, distinct(counts.map(projectIdOf)));
 
   const totals: UsageValues = {};
   let service: UsageValues | null = null;
@@ -241,12 +244,12 @@ export class ServiceUsage {
   async view(tenantId: string, serviceId: string, copy: ServiceCopy, month?: string): Promise<ServiceUsageView> {
     const registered = await this.registry.byIdForTenant(tenantId, serviceId);
     if (registered && isAdaptedBuiltIn(registered)) {
-      return viewOf(await tableMonth(tenantId, registered.slug, month));
+      return viewOf(tenantId, await tableMonth(tenantId, registered.slug, month));
     }
     const home = await this.homes.of(tenantId, serviceId, copy);
     const counted = home
       ? await this.homes.read(home, (database) => recordedMonth(database, month), NOTHING_COUNTED)
       : NOTHING_COUNTED;
-    return viewOf(counted);
+    return viewOf(tenantId, counted);
   }
 }

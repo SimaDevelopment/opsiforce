@@ -226,12 +226,13 @@ func TestWebhookLaneKeepsAuthorizationDropsCookieAndReservedHeadersAndAddsThePla
 	}
 }
 
-func TestWebhookLaneSandboxesEveryAnswerAndReplacesTheServicesOwn(t *testing.T) {
+func TestWebhookLaneSandboxesEveryAnswerReplacesTheServicesOwnAndDropsItsCookies(t *testing.T) {
 	stack := newWebhookStack(t, "pod")
 	stack.service.answer = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src *")
 		w.Header().Set("Content-Type", "text/html")
-		w.Header().Add("Set-Cookie", "kept=1")
+		w.Header().Add("Set-Cookie", "_oauth2_proxy=attacker; Path=/; Secure; HttpOnly")
+		w.Header().Set("Clear-Site-Data", `"cookies"`)
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("<b>hi</b>"))
 	}
@@ -242,8 +243,11 @@ func TestWebhookLaneSandboxesEveryAnswerAndReplacesTheServicesOwn(t *testing.T) 
 		t.Fatalf("answer changed: %d", resp.StatusCode)
 	}
 	assertSandboxed(t, resp)
-	if resp.Header.Get("Content-Type") != "text/html" || resp.Header.Get("Set-Cookie") != "kept=1" {
+	if resp.Header.Get("Content-Type") != "text/html" {
 		t.Fatalf("headers changed: %v", resp.Header)
+	}
+	if resp.Header.Get("Set-Cookie") != "" || resp.Header.Get("Clear-Site-Data") != "" {
+		t.Fatalf("the service changed the platform origin's cookies: %v", resp.Header)
 	}
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@opsiforce/external-service-sdk",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Write, check, test and serve an Opsiforce External Service.",
   "private": true,
   "bin": {

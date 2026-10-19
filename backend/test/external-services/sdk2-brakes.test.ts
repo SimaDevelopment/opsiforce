@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { db } from '../../db';
+import { projectGatewayKeys } from '../../db/schema';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
@@ -273,6 +276,27 @@ describe('the brakes on an SDK 2 service', () => {
           .slice(deletedBefore)
           .map((call) => call.args.podName)
       ).toContain(fakePods().assignedPodName(consumer.projectEnvironmentId));
+    });
+
+    it('leaves exactly one active key when two rotations race', async () => {
+      const keys = app.get(GatewayKeyService);
+
+      const rotations = await Promise.all([
+        keys.rotate(consumer.projectId, consumer.projectEnvironmentId, admin.tenant.tenantId),
+        keys.rotate(consumer.projectId, consumer.projectEnvironmentId, admin.tenant.tenantId),
+      ]);
+
+      const active = await db
+        .select({ token: projectGatewayKeys.token })
+        .from(projectGatewayKeys)
+        .where(
+          and(
+            eq(projectGatewayKeys.projectEnvironmentId, consumer.projectEnvironmentId),
+            eq(projectGatewayKeys.status, 'active')
+          )
+        );
+      expect(active).toHaveLength(1);
+      expect(rotations.map((rotation) => rotation.token)).toContain(active[0]?.token);
     });
 
     it("also evicts the service's cached callers when the rotated key is the service pod's own", async () => {
