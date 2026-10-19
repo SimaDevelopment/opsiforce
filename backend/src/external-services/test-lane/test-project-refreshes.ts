@@ -53,12 +53,7 @@ export class TestProjectRefreshes {
     previous: ConfigurationValues | null,
     current: ConfigurationValues | null
   ): Promise<void> {
-    const failure = await this.serviceSaveHooks.saved(
-      development,
-      callersOwner(development),
-      { previous, current },
-      null
-    );
+    const failure = await this.serviceSaveHooks.saved(development, callersOwner(development), { previous, current });
     if (failure) {
       this.logger.warn(
         `Reset of a Test Project of ${development.slug}: Development's Service configuration hook failed: ${failure.code}`

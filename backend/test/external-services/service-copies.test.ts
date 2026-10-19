@@ -85,15 +85,15 @@ function packageJson(sdkVersion: string): string {
   });
 }
 
-function serviceFiles(sdkVersion = '1.0.0'): Record<string, string | Buffer> {
+function serviceFiles(sdkVersion = '2.0.0'): Record<string, string | Buffer> {
   return {
     'service.json': JSON.stringify(BOARDS_MANIFEST, null, 2),
     'package.json': packageJson(sdkVersion),
     'yarn.lock': '# lockfile\n',
-    'handlers.ts': 'export default {};\n',
+    'service.ts': 'export default {};\n',
     'src/client.ts': 'export const base = "https://boards.example";\n',
     'SKILL.md': '# Boards\n',
-    'test/handlers.test.ts': 'test("works", () => {});\n',
+    'test/groups/cards.test.ts': 'test("works", () => {});\n',
     'startup.sh': '#!/bin/bash\nexec yarn dev\n',
     [`vendor/external-service-sdk-${sdkVersion}.tgz`]: SDK_TARBALL,
   };
@@ -104,7 +104,7 @@ const JUNK = {
   '.yarn/install-state.gz': 'state',
   '.pnp.cjs': 'pnp',
   'node_modules/left-pad/index.js': 'module',
-  '._handlers.ts': 'resource fork',
+  '._service.ts': 'resource fork',
 };
 
 async function writeApp(workspace: string, files: Record<string, string | Buffer>): Promise<void> {
@@ -120,7 +120,7 @@ interface SourceService extends CreatedCustomService {
   workspace: string;
 }
 
-async function sourceService(person: PersonFixture = admin, sdkVersion = '1.0.0'): Promise<SourceService> {
+async function sourceService(person: PersonFixture = admin, sdkVersion = '2.0.0'): Promise<SourceService> {
   const service = await createCustomService(app, person, 'Boards', uniqueSlug('boards'));
   const workspace = await developmentDirectory(service.builderChatId);
   await writeApp(workspace, serviceFiles(sdkVersion));
@@ -130,7 +130,7 @@ async function sourceService(person: PersonFixture = admin, sdkVersion = '1.0.0'
   await writeApp(workspace, JUNK);
   await git(workspace, ['add', '-f', '--', ...Object.keys(JUNK).map((path) => `app/${path}`)]);
   await git(workspace, ['commit', '-q', '-m', 'Boards']);
-  await writeFile(join(workspace, 'app', 'handlers.ts'), 'export default { uncommitted: true };\n');
+  await writeFile(join(workspace, 'app', 'service.ts'), 'export default { uncommitted: true };\n');
   await writeFile(join(workspace, 'app', 'draft.ts'), 'export const draft = 1;\n');
   return { ...service, workspace };
 }
@@ -272,7 +272,7 @@ describe('exporting a custom External Service', () => {
         platformVersion: expect.any(String),
         agentImageVersion: expect.any(String),
         arch: expect.any(String),
-        sdkVersion: '1.0.0',
+        sdkVersion: '2.0.0',
       },
       service: { name: 'Boards', slug: source.slug },
     });
@@ -496,7 +496,7 @@ describe('importing a service export', () => {
 
     const junky = await withExtraEntries(archive, [
       { name: '__MACOSX/app/._service.json', content: 'fork' },
-      { name: 'app/._handlers.ts', content: 'fork' },
+      { name: 'app/._service.ts', content: 'fork' },
       { name: 'app/node_modules/x/index.js', content: 'x' },
       { name: 'notes.txt', content: 'outside app' },
     ]);
@@ -577,22 +577,24 @@ describe('importing a service export', () => {
     expect(res.json()).toMatchObject({ code: 'not_a_service_export' });
   });
 
-  it('imports a different SDK major version as a Draft with a warning, and Publish refuses it until the builder upgrades', async () => {
-    const source = await sourceService(admin, '2.0.0');
+  it('imports an SDK 1 Export as a Draft with the rebuild warning, and Publish refuses it', async () => {
+    const source = await sourceService(admin, '1.0.0');
 
     const res = await importRoute(elsewhere, {
       uploadId: await upload(elsewhere, await exportOf(source)),
-      slug: uniqueSlug('sdk-two'),
+      slug: uniqueSlug('sdk-one'),
     });
 
     expect(res.statusCode, res.body).toBe(201);
     const imported = res.json<{ service: CreatedCustomService; warnings: string[] }>();
-    expect(imported.warnings).toEqual([expect.stringContaining('upgrade')]);
+    expect(imported.warnings).toEqual([
+      'Built on SDK 1: rebuild it on SDK 2 or delete it; Publish refuses it until then',
+    ]);
     const published = await publishService(app, elsewhere, imported.service.id, {
       environmentId: await productionEnvironmentOf(elsewhere.tenant.tenantId),
     });
     expect(published.statusCode).toBe(409);
-    expect(published.json()).toMatchObject({ code: 'check-failed' });
+    expect(published.json()).toMatchObject({ code: 'built-on-sdk-1' });
   });
 });
 

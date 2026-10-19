@@ -1,7 +1,6 @@
 import { Catch, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
-import { problem } from '@opsiforce/external-service-sdk';
 import type { FastifyReply } from 'fastify';
-import { sendProblem } from '../http/problem-reply';
+import { problem, sendProblem } from '../http/problem-reply';
 
 export type CustomServiceRefusalCode =
   | 'invalid-name'
@@ -13,7 +12,9 @@ export type CustomServiceRefusalCode =
   | 'check-failed'
   | 'not-published'
   | 'service-busy'
-  | 'nothing-committed';
+  | 'probe-failed'
+  | 'nothing-committed'
+  | 'built-on-sdk-1';
 
 export class CustomServiceRefusal extends Error {
   constructor(

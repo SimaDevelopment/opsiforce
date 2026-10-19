@@ -59,8 +59,14 @@ data:
   {{- if .Values.config.runtimeProxyUrl }}
   OPSIFORCE_RUNTIME_PROXY_URL: {{ .Values.config.runtimeProxyUrl | quote }}
   {{- end }}
-  {{- if .Values.config.externalServicesUrl }}
-  EXTERNAL_SERVICES_URL: {{ .Values.config.externalServicesUrl | quote }}
+  {{- if .Values.config.externalServicesHost }}
+  EXTERNAL_SERVICES_HOST: {{ .Values.config.externalServicesHost | quote }}
+  {{- end }}
+  {{- if .Values.config.externalServiceProxyControl }}
+  EXTERNAL_SERVICE_PROXY_CONTROL: {{ .Values.config.externalServiceProxyControl | quote }}
+  {{- end }}
+  {{- if .Values.config.podCaBundleConfigMap }}
+  POD_CA_BUNDLE_CONFIGMAP: {{ .Values.config.podCaBundleConfigMap | quote }}
   {{- end }}
   {{- if ne (toString .Values.config.externalServiceCallLogRetentionDays) "" }}
   EXTERNAL_SERVICE_CALL_LOG_RETENTION_DAYS: {{ .Values.config.externalServiceCallLogRetentionDays | quote }}

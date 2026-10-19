@@ -16,7 +16,7 @@ export class AvailableServiceSwitches extends ServiceSwitchCatalog {
       id: service.id,
       slug: service.slug,
       displayName: service.manifest.displayName,
-      manifest: { operations: service.manifest.operations, events: service.manifest.events },
+      manifest: { projectForm: service.manifest.projectForm },
     };
   }
 }

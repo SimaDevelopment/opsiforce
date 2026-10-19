@@ -3,9 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { assertModelCatalogShipped } from './agent/agent-models';
 import { AppModule } from './app.module';
-import { GATE_BODY_LIMIT, GATE_ROUTE_PREFIX } from './external-services/gate/gate-routes';
-import { routeBodyLimitHook } from './external-services/http/route-body-limit.hook';
-import { webhookPreParsingHooks } from './external-services/http/webhook-routes';
+import { registerBuiltInsAdapterRoutes } from './external-services/built-ins/built-ins-routes';
 import { requirePermissionHook } from './permission/permission.hook';
 import { configurePublicApi, createHttpAdapter } from './public-api/public-api.bootstrap';
 import { assertBuiltInSkillsShipped } from './store/skill-tree';
@@ -36,10 +34,9 @@ async function bootstrap() {
   });
 
   await configurePublicApi(app);
+  await registerBuiltInsAdapterRoutes(app);
 
   fastify.addHook('onRequest', requirePermissionHook('/api/admin/queues', 'can_view_queue_dashboard'));
-  for (const hook of webhookPreParsingHooks()) fastify.addHook('preParsing', hook);
-  fastify.addHook('preParsing', routeBodyLimitHook(GATE_ROUTE_PREFIX, GATE_BODY_LIMIT));
 
   app.enableCors({
     origin: true,

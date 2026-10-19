@@ -1,99 +1,14 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "Fixture Inbox",
   "description": "A pretend message provider whose webhooks the backend tests send.",
-  "icon": "icon.svg",
   "inbound": true,
   "serviceForm": [{ "key": "signingKey", "type": "secret", "label": "Signing key", "required": true }],
-  "projectForm": [
-    { "key": "address", "type": "text", "label": "Address" },
-    {
-      "key": "labelsMode",
-      "type": "radio",
-      "label": "Labels",
-      "default": "selected",
-      "options": [
-        { "value": "selected", "label": "Selected labels" },
-        { "value": "all", "label": "All labels" }
-      ]
-    },
-    {
-      "key": "labelIds",
-      "type": "multiselect",
-      "label": "Labels",
-      "visibleWhen": { "field": "labelsMode", "equals": "selected" },
-      "options": [
-        { "value": "urgent", "label": "Urgent" },
-        { "value": "billing", "label": "Billing" },
-        { "value": "spam", "label": "Spam" }
-      ]
-    },
-    {
-      "key": "rooms",
-      "type": "list",
-      "label": "Rooms",
-      "item": [
-        {
-          "key": "room",
-          "type": "select",
-          "label": "Room",
-          "required": true,
-          "options": [
-            { "value": "red", "label": "Red room" },
-            { "value": "blue", "label": "Blue room" }
-          ]
-        },
-        {
-          "key": "memberIds",
-          "type": "multiselect",
-          "label": "Members",
-          "options": [
-            { "value": "ann", "label": "Ann" },
-            { "value": "bob", "label": "Bob" }
-          ]
-        }
-      ]
-    }
-  ],
+  "projectForm": [{ "key": "address", "type": "text", "label": "Address" }],
   "events": {
     "message.received": {
       "title": "Message received",
-      "description": "A message arrived at an address.",
-      "data": {
-        "type": "object",
-        "required": ["address", "text"],
-        "properties": {
-          "address": { "type": "string", "boundTo": "address" },
-          "text": { "type": "string" }
-        }
-      }
-    },
-    "label.added": {
-      "title": "Label added",
-      "description": "A label was put on a conversation.",
-      "data": {
-        "type": "object",
-        "required": ["labelId"],
-        "properties": { "labelId": { "type": "string", "boundTo": "label" } }
-      }
-    },
-    "member.posted": {
-      "title": "Member posted",
-      "description": "A member posted in a room.",
-      "data": {
-        "type": "object",
-        "required": ["room", "memberId"],
-        "properties": {
-          "room": { "type": "string", "boundTo": "room" },
-          "memberId": { "type": "string", "boundTo": "member" }
-        }
-      }
+      "description": "A message arrived at the Project's address."
     }
-  },
-  "bounds": {
-    "address": { "path": "address" },
-    "label": { "path": "labelIds", "unless": { "labelsMode": "all" } },
-    "room": { "path": "rooms[].room" },
-    "member": { "path": "rooms[].memberIds", "where": { "room": "/room" } }
   }
 }

@@ -129,7 +129,7 @@ describe('the one-time swap of retired skills for their Service skills', () => {
     const swap = await retiredSkillWithServiceReplacement();
     const { profileIds } = await agentWithProfiles();
     const [profileId] = profileIds;
-    const settings = { operations: ['send'], receive: [] };
+    const settings = { notifyOn: ['message.received'] };
     await db.insert(agentProfileSkills).values([
       { profileId, skillId: swap.retired.skillId, skillVersionId: swap.retired.versionId },
       {

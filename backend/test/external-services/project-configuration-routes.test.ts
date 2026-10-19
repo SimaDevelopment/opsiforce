@@ -18,7 +18,6 @@ import {
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
 import { builtInServiceId, forgetPlatformServiceConfiguration } from './support/fixtures';
 import {
-  callOperation,
   configurePlatformService,
   gateCaller,
   mailboxIds,
@@ -84,7 +83,7 @@ describe('the Project configuration routes behind the chat bar', () => {
     });
   }
 
-  it('shows any Project member the configuration read-only, with reads on for a new one', async () => {
+  it('shows any Project member the configuration read-only, with only its form values', async () => {
     const res = await readAs(member);
 
     expect(res.statusCode, res.body).toBe(200);
@@ -93,15 +92,10 @@ describe('the Project configuration routes behind the chat bar', () => {
       slug: FIXTURE_SERVICE,
       origin: 'built_in',
       displayName: 'Fixture CRM',
-      projectConfiguration: {
-        saved: false,
-        missing: ['mailbox'],
-        operations: { get_account: true, get_member: true, update_account: false, delete_account: false },
-        receive: {},
-        newOperations: [],
-        newEventTypes: [],
-      },
+      projectConfiguration: { saved: false, missing: ['mailbox'] },
     });
+    expect(res.json().projectConfiguration).not.toHaveProperty('operations');
+    expect(res.json().projectConfiguration).not.toHaveProperty('receive');
     expect(res.json().manifest.projectForm).toBeDefined();
     expect(res.json().manifest.serviceForm).toBeUndefined();
   });
@@ -130,7 +124,6 @@ describe('the Project configuration routes behind the chat bar', () => {
 
     const saved = await saveAs(configurer, {
       mailbox: supportMailbox,
-      operations: { update_account: true },
       _labels: { accountIds: { acc_1: 'Acme' } },
       accountIds: ['acc_1'],
     });
@@ -140,7 +133,6 @@ describe('the Project configuration routes behind the chat bar', () => {
       saved: true,
       missing: [],
       values: { mailbox: supportMailbox, accountIds: ['acc_1'] },
-      operations: { get_account: true, get_member: true, update_account: true, delete_account: false },
       labels: { accountIds: { acc_1: 'Acme' } },
     });
     expect((await readAs(member)).json().projectConfiguration.values.mailbox).toBe(supportMailbox);
@@ -157,50 +149,14 @@ describe('the Project configuration routes behind the chat bar', () => {
     });
   });
 
-  it('marks an Operation added since the last save as new and off, until the next save', async () => {
-    await storeProjectConfiguration(FIXTURE_SERVICE, caller.projectEnvironmentId, {
-      mailbox: supportMailbox,
-      operations: { get_account: true, get_member: true, update_account: false },
-      receive: {},
-      _labels: {},
-    });
+  it('reports a stored value that no longer fits as missing', async () => {
+    await storeProjectConfiguration(FIXTURE_SERVICE, caller.projectEnvironmentId, { mailbox: 42 });
 
-    const before = (await readAs(member)).json().projectConfiguration;
-    expect(before.newOperations).toEqual(['delete_account']);
-    expect(before.operations.delete_account).toBe(false);
-
-    await saveAs(configurer, { mailbox: supportMailbox });
-
-    expect((await readAs(member)).json().projectConfiguration.newOperations).toEqual([]);
-    expect((await storedProjectConfiguration(FIXTURE_SERVICE, caller.projectEnvironmentId))?.operations).toEqual({
-      get_account: true,
-      get_member: true,
-      update_account: false,
-      delete_account: false,
-    });
-  });
-
-  it('reports a saved configuration as missing exactly what the Gate refuses with 409', async () => {
-    await storeProjectConfiguration(FIXTURE_SERVICE, caller.projectEnvironmentId, {
-      mailbox: 42,
-      operations: { get_account: true },
-    });
-
-    const read = (await readAs(member)).json().projectConfiguration;
-    const call = await callOperation(app, {
-      key: caller.key,
-      slug: FIXTURE_SERVICE,
-      operation: 'get_account',
-      input: { accountId: 'acc_1' },
-    });
-
-    expect(read).toMatchObject({ saved: true, missing: ['mailbox'] });
-    expect(call.statusCode).toBe(409);
-    expect(call.json()).toMatchObject({ code: 'configuration-incomplete', missing: read.missing });
+    expect((await readAs(member)).json().projectConfiguration).toMatchObject({ saved: true, missing: ['mailbox'] });
   });
 
   it('lists the Available services with each configuration state for the bar', async () => {
-    await saveAs(configurer, { mailbox: supportMailbox, operations: { update_account: true } });
+    await saveAs(configurer, { mailbox: supportMailbox });
 
     const res = await readAs(member, servicesUrl());
 
@@ -211,7 +167,7 @@ describe('the Project configuration routes behind the chat bar', () => {
         slug: FIXTURE_SERVICE,
         displayName: 'Fixture CRM',
         origin: 'built_in',
-        configuration: { saved: true, missing: [], operationsOn: 3, operationsTotal: 4, receiving: 0 },
+        configuration: { saved: true, missing: [] },
       }),
     ]);
   });

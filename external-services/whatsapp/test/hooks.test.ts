@@ -19,7 +19,7 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     assert.equal(res.status, 204);
     const patch = service.upstream.requests.find((request) => request.method === 'PATCH');
     assert.equal(patch?.headers.authorization, 'Bearer sales-api-token');
-    assert.deepEqual(JSON.parse(patch?.body ?? '{}'), {
+    assert.deepEqual(JSON.parse(patch?.body || '{}'), {
       webhooks: [
         foreign,
         {
@@ -62,7 +62,7 @@ describe('whatsapp onServiceConfigurationSaved', () => {
 
     const patch = service.upstream.requests.find((request) => request.method === 'PATCH');
     assert.deepEqual(
-      JSON.parse(patch?.body ?? '{}').webhooks.map((entry: { url: string }) => entry.url),
+      JSON.parse(patch?.body || '{}').webhooks.map((entry: { url: string }) => entry.url),
       [webhookUrl]
     );
   });
@@ -79,7 +79,7 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     assert.deepEqual(service.upstream.requests, []);
   });
 
-  it('fails the save hook with Whapi’s answer when Whapi refuses, so the operator sees Retry', async () => {
+  it('fails the save hook when Whapi refuses, so the operator sees Retry', async () => {
     const service = whatsapp();
     service.upstream.reply(`GET ${apiUrl}/settings`, { error: { message: 'Unauthorized' } }, { status: 401 });
 
@@ -89,11 +89,10 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     });
 
     assert.equal(res.status, 502);
-    assert.equal(res.problem?.type, 'urn:opsiforce:error:upstream-unauthorized');
-    assert.match(res.problem?.detail ?? '', /Sales number/);
+    assert.equal(res.headers.get('opsiforce-outcome'), 'failed');
   });
 
-  it('still registers the other numbers when Whapi refuses one, then fails the hook naming it', async () => {
+  it('still registers the other numbers when Whapi refuses one, then fails the hook', async () => {
     const service = whatsapp();
     const refusedForSupport = (request: { headers: Record<string, string> }) =>
       request.headers.authorization === 'Bearer support-api-token'
@@ -108,8 +107,6 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     });
 
     assert.equal(res.status, 502);
-    assert.match(res.problem?.detail ?? '', /Support number/);
-    assert.doesNotMatch(res.problem?.detail ?? '', /Sales number/);
     const patches = service.upstream.requests.filter((request) => request.method === 'PATCH');
     assert.deepEqual(
       patches.map((patch) => patch.headers.authorization),
@@ -132,7 +129,7 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     assert.equal(res.status, 204);
     const patch = service.upstream.requests.find((request) => request.method === 'PATCH');
     assert.equal(patch?.headers.authorization, 'Bearer support-api-token');
-    assert.deepEqual(JSON.parse(patch?.body ?? '{}'), { webhooks: [foreign] });
+    assert.deepEqual(JSON.parse(patch?.body || '{}'), { webhooks: [foreign] });
   });
 
   it('leaves another deployment’s webhook on a removed number', async () => {
@@ -151,7 +148,7 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     });
 
     const patch = service.upstream.requests.find((request) => request.method === 'PATCH');
-    assert.deepEqual(JSON.parse(patch?.body ?? '{}'), { webhooks: [elsewhere] });
+    assert.deepEqual(JSON.parse(patch?.body || '{}'), { webhooks: [elsewhere] });
   });
 
   it('takes Opsiforce’s webhook off every number when the Service configuration is cleared', async () => {
@@ -177,7 +174,7 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     assert.equal(res.status, 204);
     const patches = service.upstream.requests.filter((request) => request.method === 'PATCH');
     assert.deepEqual(
-      patches.map((patch) => [patch.headers.authorization, JSON.parse(patch.body ?? '{}')]),
+      patches.map((patch) => [patch.headers.authorization, JSON.parse(patch.body || '{}')]),
       [
         ['Bearer sales-api-token', { webhooks: [] }],
         ['Bearer support-api-token', { webhooks: [] }],
@@ -198,22 +195,5 @@ describe('whatsapp onServiceConfigurationSaved', () => {
     });
 
     assert.equal(res.status, 204);
-    assert.ok(
-      service.logs.some(
-        (line) => line.level === 'warn' && /Support number/.test(String(line.message) + JSON.stringify(line))
-      )
-    );
-  });
-
-  it('fails the save hook when the deployment has no public URL to register', async () => {
-    const service = whatsapp({ webhookUrl: '' });
-
-    const res = await service.hook('onServiceConfigurationSaved', {
-      previous: null,
-      current: { apiUrl, channels: [sales] },
-    });
-
-    assert.equal(res.status, 409);
-    assert.equal(res.problem?.type, 'urn:opsiforce:error:no-public-url');
   });
 });

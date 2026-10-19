@@ -17,8 +17,6 @@ import { ServiceRegistry, type RegisteredService } from '../registry/service-reg
 
 export const WHATSAPP_SERVICE = 'whatsapp';
 
-const RECEIVED_EVENT = 'message.received';
-
 interface ImportedNumber {
   channelId: string;
   label: string;
@@ -80,8 +78,6 @@ function projectConfigurationOf(wiring: V1Wiring[], itemIds: Map<string, string>
   );
   return {
     channels,
-    operations: {},
-    receive: { [RECEIVED_EVENT]: true },
     _labels: Object.keys(chatNames).length > 0 ? { chats: chatNames } : {},
   };
 }
@@ -190,7 +186,6 @@ export class WhatsappUpgrade implements OnApplicationBootstrap {
           set: {
             values: sql`${externalServiceProjectConfigs.values} || jsonb_build_object(
               'channels', ${JSON.stringify(values.channels)}::jsonb,
-              'receive', coalesce(${externalServiceProjectConfigs.values}->'receive', '{}'::jsonb) || ${JSON.stringify(values.receive)}::jsonb,
               '_labels', coalesce(${externalServiceProjectConfigs.values}->'_labels', '{}'::jsonb) || ${JSON.stringify(values._labels)}::jsonb
             )`,
             updatedAt: new Date(),

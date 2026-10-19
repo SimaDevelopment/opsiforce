@@ -34,6 +34,7 @@ export interface ProjectViewProps extends ProjectSurfaceSlots {
   onStatusEvent?: () => void;
   onPreviewVisible?: () => void;
   showSkillsAndServices?: boolean;
+  servesApp?: boolean;
 }
 
 export function ProjectView(props: ProjectViewProps) {
@@ -109,7 +110,7 @@ export function ProjectView(props: ProjectViewProps) {
     initialPrompt: () => props.initialPrompt(),
     onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
-  const app = () => statusQuery.data?.app;
+  const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
   const previewVisible = () => app()?.exists === true || previewRequest() !== null;
 
   createEffect(

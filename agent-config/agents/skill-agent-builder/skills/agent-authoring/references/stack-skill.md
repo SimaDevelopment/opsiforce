@@ -6,7 +6,7 @@ another stack. The files a Project starts from are the Template's, never the Ski
 
 The Built-in stack skills are the model to copy: `sqlite`, `nestjs-api` and `data-fetching` each settle
 one part of the stack with decisions, conventions and short examples, and none of them holds an App's
-code. Read one with `get_skill` and its latest Version's files before you draft; your pod does
+code. Read one with `GET /skills/<id>` and its latest Version's files before you draft; your pod does
 not carry them. The Agent's body still holds the Architecture and names the Skill; the Skill holds the
 detail behind it. `skill-authoring` has the draft → validate → publish loop.
 

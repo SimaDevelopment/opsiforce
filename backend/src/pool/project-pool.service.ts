@@ -27,7 +27,7 @@ import {
 } from '../../db/schema';
 import { resolvePreset } from '../pod/pod-classes';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
-import { assertRoomForProject } from '../project/project-limit';
+import { assertRoomForCreatedProject, assertRoomForProject, type CreatedProjectsCap } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
 import { BifrostService } from '../bifrost/bifrost.service';
 import { retryBifrostWrite } from '../bifrost/bifrost-retries';
@@ -69,6 +69,7 @@ export interface PoolClaim {
   createdByProjectId: string | null;
   kind: ProjectKind | null;
   configureBeforeDelivery: ((projectEnvironmentId: string) => Promise<void>) | null;
+  createdProjectsCap: CreatedProjectsCap | null;
 }
 
 interface PendingRow {
@@ -85,7 +86,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   private readonly logger = new Logger(ProjectPoolService.name);
   private readonly platformVersion: string;
   private readonly gatewayUrl: string;
-  private readonly externalServicesUrl: string;
   private readonly storageMountPath: string;
   private readonly poolSizeOverride: number | null;
   private agentTargetByName = new Map<string, number>();
@@ -116,7 +116,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   ) {
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
-    this.externalServicesUrl = this.configService.get<string>('externalServicesUrl', '');
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.poolSizeOverride = this.configService.get<number | null>('poolSizeOverride', null);
   }
@@ -375,6 +374,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
 
     return db.transaction(async (tx) => {
       await assertRoomForProject(tx, claim.tenantId, claim.kind);
+      await assertRoomForCreatedProject(tx, claim.createdProjectsCap);
       const reserved = await tx
         .select({
           id: projects.id,
@@ -608,7 +608,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         agentName,
         gatewayApiKey: gatewayApiKey ?? undefined,
         gatewayUrl: this.gatewayUrl,
-        externalServicesUrl: this.externalServicesUrl,
         controlToken: crypto.randomBytes(32).toString('hex'),
       });
 

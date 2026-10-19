@@ -49,8 +49,8 @@ export function NewExternalServiceDialog(props: { open: boolean; onOpenChange: (
           <DialogHeader>
             <DialogTitle>New External Service</DialogTitle>
             <DialogDescription>
-              Name it, then describe it to the External Service Builder. You approve its forms and Operations before it
-              writes them, and you publish it when it is ready.
+              Name it, then describe it to the External Service Builder. You approve its forms and the requests it lets
+              through before it writes them, and you publish it when it is ready.
             </DialogDescription>
           </DialogHeader>
 

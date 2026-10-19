@@ -29,8 +29,7 @@ export class ServiceConfigurationSaveHooks {
   async saved(
     service: RegisteredService,
     owner: ConfigurationOwner,
-    change: ServiceConfigurationChange,
-    userId: string | null
+    change: ServiceConfigurationChange
   ): Promise<HookFailure | null> {
     const configId = await this.store.rowIdOf(service, owner);
     if (!configId) return null;
@@ -39,26 +38,14 @@ export class ServiceConfigurationSaveHooks {
     const outcome = await this.hooks.call({
       service,
       hook: HOOK,
-      deliver: () =>
-        this.delivery.forServiceHook({
-          service,
-          owner,
-          serviceConfiguration: change.current ?? previous ?? {},
-          previous,
-          current: change.current,
-        }),
-      record: { tenantId: owner.tenantId, userId },
+      deliver: () => this.delivery.forServiceHook({ service, owner, previous, current: change.current }),
     });
     return this.pending.settle({ serviceConfigId: configId }, outcome, previous, servicePlaceOf(service, owner));
   }
 
-  async retry(
-    service: RegisteredService,
-    owner: ConfigurationOwner,
-    userId: string | null
-  ): Promise<HookFailure | null> {
+  async retry(service: RegisteredService, owner: ConfigurationOwner): Promise<HookFailure | null> {
     const current = await this.store.read(service, owner);
-    return this.saved(service, owner, { previous: null, current: current.values }, userId);
+    return this.saved(service, owner, { previous: null, current: current.values });
   }
 
   async discard(service: RegisteredService, owner: ConfigurationOwner): Promise<void> {
@@ -79,20 +66,16 @@ export class ServiceConfigurationSaveHooks {
         kind: 'failed',
         callId: randomUUID(),
         code: AWAITING_PUBLISH,
-        detail: 'The new version runs this hook once its Publish finishes.',
+        detail: 'Applies once the Publish finishes.',
       },
       previous,
       servicePlaceOf(service, owner)
     );
   }
 
-  async runPending(
-    service: RegisteredService,
-    owner: ConfigurationOwner,
-    userId: string | null
-  ): Promise<HookFailure | null> {
+  async runPending(service: RegisteredService, owner: ConfigurationOwner): Promise<HookFailure | null> {
     if (!(await this.failureOf(service, owner))) return null;
-    return this.retry(service, owner, userId);
+    return this.retry(service, owner);
   }
 
   async failureOf(service: RegisteredService, owner: ConfigurationOwner): Promise<HookFailure | null> {

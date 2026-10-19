@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { defaultOperationSwitches, reservedProjectConfigurationKeys } from '@opsiforce/external-service-sdk/platform';
+import { reservedProjectConfigurationKeys } from '@opsiforce/external-service-sdk/platform';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { externalServiceProjectConfigs } from '../../../db/schema';
@@ -16,8 +16,6 @@ import { readTolerantly } from './tolerant-read';
 import type { Transaction } from './transaction';
 import { savedKeepingValuesUnique } from './unique-values';
 
-export type Switches = Record<string, boolean>;
-
 export type ValueLabels = Record<string, Record<string, string>>;
 
 export interface ProjectConfigurationChange {
@@ -33,19 +31,13 @@ export interface CascadedProjectConfiguration {
 
 export interface CarriedProjectConfiguration {
   target: ProjectConfigurationChange;
-  source: ProjectConfigurationChange;
-  receiveTurnedOff: string[];
 }
 
 export interface ProjectConfiguration {
   saved: boolean;
   values: ConfigurationValues;
   missing: string[];
-  operations: Switches;
-  receive: Switches;
   labels: ValueLabels;
-  newOperations: string[];
-  newEventTypes: string[];
 }
 
 const maxLabelLength = 200;
@@ -56,33 +48,16 @@ export function projectPlaceOf(service: { id: string }, projectEnvironmentId: st
   return (path) => `${service.id}|environment:${projectEnvironmentId}|${path}`;
 }
 
+export interface ProjectConfigurationStart {
+  values?: ConfigurationValues;
+}
+
+function reservedValues(labels: ValueLabels): ConfigurationValues {
+  return { [LABELS_KEY]: labels };
+}
+
 export function storedShapeOf(configuration: ProjectConfiguration): ConfigurationValues {
-  return {
-    ...configuration.values,
-    operations: configuration.operations,
-    receive: configuration.receive,
-    [LABELS_KEY]: configuration.labels,
-  };
-}
-
-function storedSwitches(stored: unknown): Switches {
-  if (!isPlainValues(stored)) return {};
-  return Object.fromEntries(
-    Object.entries(stored).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')
-  );
-}
-
-function deliveredSwitches(names: readonly string[], stored: Switches): Switches {
-  return Object.fromEntries(names.map((name) => [name, stored[name] === true]));
-}
-
-function namesMissingFrom(names: readonly string[], stored: unknown): string[] {
-  const known = isPlainValues(stored) ? stored : {};
-  return names.filter((name) => !(name in known));
-}
-
-function everyNameOff(names: readonly string[]): Switches {
-  return Object.fromEntries(names.map((name) => [name, false]));
+  return { ...configuration.values, ...reservedValues(configuration.labels) };
 }
 
 function storedLabels(stored: unknown): ValueLabels {
@@ -97,67 +72,17 @@ function storedLabels(stored: unknown): ValueLabels {
   return labels;
 }
 
-function operationNamesOf(service: RegisteredService): string[] {
-  return Object.keys(service.manifest.operations ?? {});
-}
-
-function eventTypesOf(service: RegisteredService): string[] {
-  return Object.keys(service.manifest.events ?? {});
-}
-
 export function projectConfigurationFromStored(
   service: RegisteredService,
   stored: ConfigurationValues | undefined
 ): ProjectConfiguration {
   const read = readTolerantly(service.manifest.projectForm ?? [], stored ?? {});
-  const operations = stored ? storedSwitches(stored.operations) : defaultOperationSwitches(service.manifest);
   return {
     saved: stored !== undefined,
     values: read.values,
     missing: read.missing,
-    operations: deliveredSwitches(operationNamesOf(service), operations),
-    receive: deliveredSwitches(eventTypesOf(service), stored ? storedSwitches(stored.receive) : {}),
     labels: storedLabels(stored?.[LABELS_KEY]),
-    newOperations: stored ? namesMissingFrom(operationNamesOf(service), stored.operations) : [],
-    newEventTypes: stored ? namesMissingFrom(eventTypesOf(service), stored.receive) : [],
   };
-}
-
-function switchedOn(switches: Switches): string[] {
-  return Object.entries(switches)
-    .filter(([, on]) => on)
-    .map(([name]) => name);
-}
-
-function inDeclaredOrder(declared: readonly string[], names: string[]): string[] {
-  const rank = (name: string) => (declared.includes(name) ? declared.indexOf(name) : declared.length);
-  return names.toSorted((a, b) => rank(a) - rank(b));
-}
-
-function handedOverReceive(source: Switches, target: Switches): Switches {
-  const receive = { ...source };
-  for (const name of switchedOn(target)) receive[name] = true;
-  return receive;
-}
-
-export function submittedSwitches(
-  submitted: unknown,
-  key: string,
-  known: readonly string[],
-  issues: ConfigurationIssue[]
-): Switches {
-  if (submitted === undefined) return {};
-  if (!isPlainValues(submitted)) {
-    issues.push({ pointer: `/${key}`, message: 'must be an object of switches' });
-    return {};
-  }
-  const switches: Switches = {};
-  for (const [name, on] of Object.entries(submitted)) {
-    if (!known.includes(name)) issues.push({ pointer: `/${key}/${name}`, message: 'is not declared by this service' });
-    else if (typeof on !== 'boolean') issues.push({ pointer: `/${key}/${name}`, message: 'must be true or false' });
-    else switches[name] = on;
-  }
-  return switches;
 }
 
 function submittedLabels(submitted: unknown, issues: ConfigurationIssue[]): ValueLabels | undefined {
@@ -194,10 +119,6 @@ function withoutLabelsOf(labels: ValueLabels, ids: ReadonlySet<string>): ValueLa
   );
 }
 
-export function waitsForReceive(service: RegisteredService, receive: Switches): boolean {
-  return eventTypesOf(service).length > 0 && !Object.values(receive).some(Boolean);
-}
-
 @Injectable()
 export class ProjectConfigurationStore {
   constructor(
@@ -232,14 +153,10 @@ export class ProjectConfigurationStore {
   async startWith(
     service: RegisteredService,
     projectEnvironmentId: string,
-    operations: Switches,
-    receive: Switches = {}
+    start: ProjectConfigurationStart = {}
   ): Promise<void> {
-    const reserved = {
-      operations: deliveredSwitches(operationNamesOf(service), operations),
-      receive: deliveredSwitches(eventTypesOf(service), receive),
-      [LABELS_KEY]: {},
-    };
+    const reserved = reservedValues({});
+    const started = { ...start.values, ...reserved } as JsonObject;
     const form = service.manifest.projectForm ?? [];
     const placeOf = projectPlaceOf(service, projectEnvironmentId);
     await db.transaction(async (tx) => {
@@ -249,13 +166,13 @@ export class ProjectConfigurationStore {
           id: crypto.randomUUID(),
           externalServiceId: service.id,
           projectEnvironmentId,
-          values: reserved as JsonObject,
+          values: started,
         })
         .onConflictDoNothing({
           target: [externalServiceProjectConfigs.externalServiceId, externalServiceProjectConfigs.projectEnvironmentId],
         })
         .returning({ id: externalServiceProjectConfigs.id });
-      if (!created || waitsForReceive(service, reserved.receive)) return;
+      if (!created) return;
       await savedKeepingValuesUnique(tx, {
         serviceId: service.id,
         form,
@@ -269,7 +186,7 @@ export class ProjectConfigurationStore {
             generation: { source: this.generatedValues, fillEmpty: true, chosen },
           }),
         write: (generated) =>
-          this.write(tx, service, projectEnvironmentId, { ...generated.values, ...reserved } as JsonObject),
+          this.write(tx, service, projectEnvironmentId, { ...generated.values, ...started } as JsonObject),
       });
     });
   }
@@ -292,8 +209,6 @@ export class ProjectConfigurationStore {
       throw new InvalidConfigurationError([{ pointer: '/', message: 'must be an object of field values' }]);
     }
     const issues: ConfigurationIssue[] = [];
-    const operations = submittedSwitches(submitted.operations, 'operations', operationNamesOf(service), issues);
-    const receive = submittedSwitches(submitted.receive, 'receive', eventTypesOf(service), issues);
     const labels = submittedLabels(submitted[LABELS_KEY], issues);
     if (issues.length > 0) throw new InvalidConfigurationError(issues);
 
@@ -301,22 +216,8 @@ export class ProjectConfigurationStore {
     const placeOf = projectPlaceOf(service, projectEnvironmentId);
     return db.transaction(async (tx) => {
       const stored = await this.storedForUpdate(tx, service, projectEnvironmentId);
-      const reserved =
-        options.keepSwitches && stored
-          ? {
-              operations: storedSwitches(stored.operations),
-              receive: storedSwitches(stored.receive),
-              [LABELS_KEY]: storedLabels(stored[LABELS_KEY]),
-            }
-          : {
-              operations: {
-                ...everyNameOff(operationNamesOf(service)),
-                ...(stored ? storedSwitches(stored.operations) : defaultOperationSwitches(service.manifest)),
-                ...operations,
-              },
-              receive: { ...everyNameOff(eventTypesOf(service)), ...storedSwitches(stored?.receive), ...receive },
-              [LABELS_KEY]: labels ?? storedLabels(stored?.[LABELS_KEY]),
-            };
+      const keptLabels = options.keepLabels && stored ? undefined : labels;
+      const reserved = reservedValues(keptLabels ?? storedLabels(stored?.[LABELS_KEY]));
       const itemIds = repeatableItemIds();
       const saved = await savedKeepingValuesUnique(tx, {
         serviceId: service.id,
@@ -334,7 +235,7 @@ export class ProjectConfigurationStore {
             reservedKeys: reservedProjectConfigurationKeys,
             generation: {
               source: this.generatedValues,
-              fillEmpty: !waitsForReceive(service, reserved.receive),
+              fillEmpty: true,
               rotate: options.rotate,
               chosen,
             },
@@ -408,7 +309,7 @@ export class ProjectConfigurationStore {
     return notice;
   }
 
-  async forget(service: RegisteredService, projectEnvironmentId: string): Promise<void> {
+  async forget(service: Pick<RegisteredService, 'id'>, projectEnvironmentId: string): Promise<void> {
     await db.delete(externalServiceProjectConfigs).where(this.rowOf(service, projectEnvironmentId));
   }
 
@@ -429,16 +330,11 @@ export class ProjectConfigurationStore {
       const source = await this.storedForUpdate(tx, service, sourceEnvironmentId);
       if (!source) return null;
       const target = await this.storedForUpdate(tx, service, targetEnvironmentId);
-      const { operations, receive, [LABELS_KEY]: labels, ...formValues } = source;
-      const sourceReceive = storedSwitches(receive);
+      const { [LABELS_KEY]: labels, ...formValues } = source;
       const form = service.manifest.projectForm ?? [];
       const targetPlaceOf = projectPlaceOf(service, targetEnvironmentId);
       const copied = resealed(this.sealer, formValues, projectPlaceOf(service, sourceEnvironmentId), targetPlaceOf);
-      const reserved = {
-        operations: storedSwitches(operations),
-        receive: handedOverReceive(sourceReceive, storedSwitches(target?.receive)),
-        [LABELS_KEY]: storedLabels(labels),
-      };
+      const reserved = reservedValues(storedLabels(labels));
       const saved = await savedKeepingValuesUnique(tx, {
         serviceId: service.id,
         form,
@@ -451,24 +347,11 @@ export class ProjectConfigurationStore {
         write: (next) => this.write(tx, service, targetEnvironmentId, { ...next.values, ...reserved } as JsonObject),
       });
       const carried = { ...saved.values, ...reserved } as JsonObject;
-
-      const receiveTurnedOff = inDeclaredOrder(eventTypesOf(service), switchedOn(sourceReceive));
-      const sourceAfter = {
-        ...source,
-        receive: { ...sourceReceive, ...everyNameOff(receiveTurnedOff) },
-      } as JsonObject;
-      if (receiveTurnedOff.length > 0) await this.write(tx, service, sourceEnvironmentId, sourceAfter);
-
       return {
         target: {
           previous: target ? projectConfigurationFromStored(service, target) : null,
           current: projectConfigurationFromStored(service, carried),
         },
-        source: {
-          previous: projectConfigurationFromStored(service, source),
-          current: projectConfigurationFromStored(service, sourceAfter),
-        },
-        receiveTurnedOff,
       };
     });
   }
@@ -491,7 +374,7 @@ export class ProjectConfigurationStore {
     return row.id;
   }
 
-  private rowOf(service: RegisteredService, projectEnvironmentId: string) {
+  private rowOf(service: Pick<RegisteredService, 'id'>, projectEnvironmentId: string) {
     return and(
       eq(externalServiceProjectConfigs.externalServiceId, service.id),
       eq(externalServiceProjectConfigs.projectEnvironmentId, projectEnvironmentId)

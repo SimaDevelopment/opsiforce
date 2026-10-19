@@ -13,7 +13,7 @@ import {
   storedPlatformServiceConfiguration,
   type PersonFixture,
 } from './support/fixtures';
-import { askGate, gateCaller, storedProjectConfiguration } from './support/gate';
+import { gateCaller, storedProjectConfiguration } from './support/gate';
 import {
   channelsOf,
   retryServiceConfigurationHook,
@@ -21,7 +21,7 @@ import {
   saveServiceConfiguration,
   type Revealed,
 } from './support/generating';
-import { environmentDatabase, latestInboundCall } from './support/inbound';
+import { environmentDatabase } from './support/inbound';
 import { legacyRows, storedBeforeV2 } from './support/incoming-email';
 import {
   fakeWhapi,
@@ -127,6 +127,7 @@ describe('WhatsApp on a deployment upgraded with v1 numbers', () => {
     whapi = fakeWhapi();
     upgraded = await bootWith({ whapiApiUrl: WHAPI_URL, storageRoot });
     app = upgraded.app;
+    await upgraded.listen();
   });
 
   afterAll(async () => {
@@ -172,35 +173,35 @@ describe('WhatsApp on a deployment upgraded with v1 numbers', () => {
     expect(sealer.open(sales?.apiToken as never, `${serviceId}|platform|channels.${id}.apiToken`)).toBe(SALES.apiToken);
   });
 
-  it('turns each environment’s chat allowlist into a Project configuration that receives, with the chat names as labels', async () => {
+  it('turns each environment’s chat allowlist into its Project configuration, with the chat names as labels', async () => {
     const values = await storedProjectConfiguration(WHATSAPP_SERVICE, wired);
 
     expect(values).toMatchObject({
       channels: [{ channel: await itemIdOf(SALES.channelId), chats: [ANNA, ORDERS] }],
-      receive: { 'message.received': true },
       _labels: { chats: { [ANNA]: 'Anna' } },
     });
+    expect(values).not.toHaveProperty('receive');
+    expect(values).not.toHaveProperty('operations');
     expect((values?.channels as { id?: string }[] | undefined)?.[0]?.id).toMatch(/^li_/);
   });
 
   it('drops a configuration naming only a deleted number, and the deleted number from a mixed one', async () => {
     const dropped = await storedProjectConfiguration(WHATSAPP_SERVICE, wiredToADeletedNumber);
     expect(dropped?.channels).toBeUndefined();
-    expect(dropped?.receive).not.toMatchObject({ 'message.received': true });
     expect(await storedProjectConfiguration(WHATSAPP_SERVICE, partlyDeleted)).toMatchObject({
       channels: [{ channel: await itemIdOf(UNLABELLED.channelId), chats: [ORDERS] }],
       _labels: { chats: { [ORDERS]: 'Orders' } },
     });
   });
 
-  it('keeps receiving with the secret Whapi already holds', async () => {
+  it('keeps receiving with the secret Whapi already holds, through the built-ins adapter', async () => {
     const res = await sendWhatsapp(app, {
       channelId: SALES.channelId,
       secret: SALES.webhookSecret,
       messages: [{ id: `wamid.${crypto.randomUUID()}`, chatId: ANNA }],
     });
 
-    expect(res.statusCode, res.body).toBe(200);
+    expect(res.status, await res.text()).toBe(200);
     const { events } = await environmentDatabase(storageRoot, wired);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -219,21 +220,20 @@ describe('WhatsApp on a deployment upgraded with v1 numbers', () => {
       messages: [{ id: messageId, chatId: ORDERS }],
     });
 
-    expect(res.statusCode, res.body).toBe(200);
+    expect(res.status, await res.text()).toBe(200);
     const { messages } = await legacyRows(storageRoot, wired);
     expect(messages.map((message) => message.provider_message_id)).toContain(messageId);
   });
 
-  it('refuses a webhook with another secret and logs the refusal', async () => {
+  it('refuses a webhook with another secret and stores nothing', async () => {
     const res = await sendWhatsapp(app, {
       channelId: SALES.channelId,
       secret: UNLABELLED.webhookSecret,
       messages: [{ id: `wamid.${crypto.randomUUID()}`, chatId: ANNA }],
     });
 
-    expect(res.statusCode).toBe(401);
-    expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:invalid-signature' });
-    expect(await latestInboundCall(WHATSAPP_SERVICE)).toMatchObject({ status: 401, code: 'invalid-signature' });
+    expect(res.status).toBe(401);
+    expect((await res.json()).message).toMatch(/does not match a configured number/);
   });
 
   it('writes a legacy environment’s messages row in the v1 shape next to the Event', async () => {
@@ -244,7 +244,7 @@ describe('WhatsApp on a deployment upgraded with v1 numbers', () => {
       messages: [{ id: messageId, chatId: ANNA, text: 'Legacy hello' }],
     });
 
-    expect(res.statusCode, res.body).toBe(200);
+    expect(res.status, await res.text()).toBe(200);
     const { messages } = await legacyRows(storageRoot, legacy);
     const row = messages.find((message) => message.provider_message_id === messageId);
     expect(row).toMatchObject({
@@ -369,7 +369,7 @@ describe('operating WhatsApp numbers from the service page', () => {
     });
 
     expect(rotated.statusCode, rotated.body).toBe(200);
-    expect(rotated.json().hookFailure).toMatchObject({ code: 'upstream-failed' });
+    expect(rotated.json().hookFailure).toMatchObject({ code: 'service-failed' });
     const secret = (rotated.json().revealed as Revealed[])[0]?.value;
     expect(secret).toBeTruthy();
 
@@ -380,16 +380,13 @@ describe('operating WhatsApp numbers from the service page', () => {
     expect(patchesOf().at(-1)?.webhooks[0]?.headers['X-Opsiforce-Webhook-Secret']).toBe(secret);
   });
 
-  it('answers the old WhatsApp admin and agent routes with 404', async () => {
-    const caller = await gateCaller(app);
+  it('answers the old WhatsApp admin route with 404', async () => {
     const admin = await app.inject({
       method: 'GET',
       url: '/api/external-services/admin/whatsapp/channels',
       headers: operator.headers,
     });
-    const identity = await askGate(app, { key: caller.key, path: 'whatsapp/identity' });
 
     expect(admin.statusCode).toBe(404);
-    expect(identity.statusCode).toBe(404);
   });
 });

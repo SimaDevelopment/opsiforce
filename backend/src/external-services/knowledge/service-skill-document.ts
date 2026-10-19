@@ -29,20 +29,17 @@ function namedAuthored(authored: string, service: RegisteredService): string {
   return `---\nname: ${name}\n${lines.join('\n')}\n---\n${normalized.slice(match[0].length)}`;
 }
 
-function callingSection(slug: string): string {
+function serviceHostSection(slug: string): string {
+  const serviceHost = `https://${slug}.$EXTERNAL_SERVICES_HOST`;
   return [
-    '## Calling it',
+    '## Reaching it',
     '',
-    `Call \`${slug}\` the way the \`platform\` skill's External Services section describes:`,
-    '',
-    `- \`GET $EXTERNAL_SERVICES_URL/${slug}\` — which Operations are on in this environment, and its Project configuration`,
-    `- \`GET $EXTERNAL_SERVICES_URL/${slug}/openapi.json\` — every Operation with its input`,
-    `- \`POST $EXTERNAL_SERVICES_URL/${slug}/<operation>\` — call one`,
-    `- \`GET $EXTERNAL_SERVICES_URL/${slug}/calls?limit=50\` — this environment's recent Calls, to find out why one failed`,
+    `Reach \`${slug}\` at \`${serviceHost}\` the way the \`platform\` skill's External Services section describes.`,
+    `Before you plan work with it, read \`${serviceHost}/.well-known/opsiforce\`: its routes and this Project's configuration.`,
   ].join('\n');
 }
 
 export function serviceSkillDocument(service: RegisteredService): string {
   const body = service.serviceSkill ? namedAuthored(service.serviceSkill, service) : minimalBody(service);
-  return `${body.trimEnd()}\n\n${callingSection(service.slug)}\n`;
+  return `${body.trimEnd()}\n\n${serviceHostSection(service.slug)}\n`;
 }

@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { ServiceError } from '@opsiforce/external-service-sdk';
 import { createFileServiceState } from '@opsiforce/external-service-sdk/server';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -25,13 +24,12 @@ import { waitFor } from '../support/wait-for';
 import { addMember, createProject } from '../support/project-fixtures';
 import { createUserRow } from '../support/org-fixtures';
 import { SecretSealer, SecretUnreadableError } from '../../src/sealing/secret-sealer';
-import { environmentStateFile, startFakeServicePod, type FakeServicePod } from './support/fake-service-pod';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { createCustomService, ensureExternalServiceBuilder, renameSlug } from './support/custom-services';
 import { memberWithout, tenantAdmin, type PersonFixture } from './support/fixtures';
-import type { Revealed } from './support/generating';
-import { askGate, callOperation, callRowsOf, type GateCallerFixture } from './support/gate';
-import { environmentDatabase, latestInboundCall } from './support/inbound';
+import { callThroughGate, gatewayUrlOf, resolveCaller } from './support/gate-proxy';
+import type { GateCallerFixture } from './support/gate';
+import { environmentDatabase } from './support/inbound';
 import {
   addServiceEnvironment,
   BOARDS_MANIFEST,
@@ -45,6 +43,12 @@ import {
   writeServiceFiles,
   type PublishedService,
 } from './support/published-services';
+import {
+  environmentStateFile,
+  startSdk2ServicePod,
+  type Sdk2PodHandlers,
+  type Sdk2ServicePod,
+} from './support/sdk2-service-pod';
 import {
   builderLane,
   createTestProject,
@@ -85,31 +89,14 @@ async function stateKeys(stateFile: string): Promise<string[]> {
   return (await createFileServiceState(stateFile).list()).map((entry) => entry.key);
 }
 
-function scriptCards(pod: FakeServicePod, seen: string[]): void {
-  pod.scriptInbound(async (request, ctx) => {
-    seen.push(ctx.webhookUrl);
-    await ctx.state.set('last-webhook', ctx.webhookUrl);
-    const card = request.body as { id: string; boardId: string; name: string };
-    return {
-      events: [
-        {
-          type: 'card.created',
-          key: card.id,
-          occurredAt: '2026-10-08T09:30:00.000Z',
-          data: { boardId: card.boardId, name: card.name },
-        },
-      ],
-    };
-  });
-}
-
 describe("the External Service Builder's test lane", () => {
   let harness: ExternalServicesTestApp;
   let app: NestFastifyApplication;
   let storageRoot: string;
   let podPort: number;
   let admin: PersonFixture;
-  let pods: FakeServicePod[];
+  let gatewayUrl: string;
+  let pods: Sdk2ServicePod[];
 
   beforeAll(async () => {
     await ensureExternalServiceBuilder();
@@ -121,7 +108,7 @@ describe("the External Service Builder's test lane", () => {
       serviceStartHoldMs: 1_000,
     });
     app = harness.app;
-    await harness.listen();
+    gatewayUrl = gatewayUrlOf(await harness.listen());
   });
 
   afterAll(async () => {
@@ -138,10 +125,18 @@ describe("the External Service Builder's test lane", () => {
     for (const pod of pods) await pod.close();
   });
 
-  async function podWith(key: string, manifest: unknown, stateFile?: string): Promise<FakeServicePod> {
-    const pod = await startFakeServicePod({ manifest, gatewayKey: key, stateFile, port: podPort });
+  async function podWith(
+    key: string,
+    manifest: unknown,
+    options: { stateFile?: string; handlers?: Sdk2PodHandlers } = {}
+  ): Promise<Sdk2ServicePod> {
+    const pod = await startSdk2ServicePod({ manifest, gatewayKey: key, gatewayUrl, port: podPort, ...options });
     pods.push(pod);
     return pod;
+  }
+
+  function call(key: string, slug: string, path = '/boards/cards') {
+    return callThroughGate(app, { credential: `Bearer ${key}`, slug }, path);
   }
 
   async function stopPods(): Promise<void> {
@@ -269,25 +264,33 @@ describe("the External Service Builder's test lane", () => {
 
       expect(copied.statusCode, copied.body).toBe(200);
       expect(copied.json().hookFailure).toBeNull();
-      expect(pod.receivedHooks).toEqual([
+      expect(pod.hooks).toEqual([
         expect.objectContaining({ hook: 'onServiceConfigurationSaved', previous: null, current: READY_BOARDS }),
       ]);
     });
 
     it('keeps a save whose hook fails, shows the failure and re-runs the hook on Retry', async () => {
-      const pod = await podWith(running.key, DEVELOPMENT_MANIFEST);
-      pod.scriptHook('onServiceConfigurationSaved', () => {
-        throw new ServiceError({ status: 502, code: 'upstream-unavailable', detail: 'The board tool is down.' });
+      let hooksSeen = 0;
+      let failing = true;
+      await podWith(running.key, DEVELOPMENT_MANIFEST, {
+        handlers: {
+          hooks: {
+            onServiceConfigurationSaved: () => {
+              hooksSeen += 1;
+              if (failing) throw new Error('The board tool is down.');
+            },
+          },
+        },
       });
 
       const saved = await saveDevelopmentConfiguration(app, admin, service.id, DEVELOPMENT_BOARDS);
       expect(saved.statusCode, saved.body).toBe(200);
-      expect(saved.json().hookFailure).toMatchObject({ code: 'upstream-unavailable' });
+      expect(saved.json().hookFailure).toMatchObject({ code: 'service-failed' });
       expect((await developmentRoute(app, admin, service.id, {})).json().hookFailure).toMatchObject({
-        code: 'upstream-unavailable',
+        code: 'service-failed',
       });
 
-      pod.scriptHook('onServiceConfigurationSaved', () => undefined);
+      failing = false;
       const retried = await developmentRoute(app, admin, service.id, {
         method: 'POST',
         path: '/configuration/hook/retry',
@@ -295,7 +298,7 @@ describe("the External Service Builder's test lane", () => {
 
       expect(retried.statusCode, retried.body).toBe(200);
       expect(retried.json().hookFailure).toBeNull();
-      expect(pod.receivedHooks).toHaveLength(2);
+      expect(hooksSeen).toBe(2);
     });
 
     it('never opens a Development blob in Production', async () => {
@@ -304,17 +307,13 @@ describe("the External Service Builder's test lane", () => {
       await storeServiceConfigurationRaw(service.id, admin.tenant.tenantId, null, development ?? {});
       const consumer = await consumerIn(app, admin.tenant);
       await saveConsumerConfiguration(app, consumer, 'boards', { boardIds: ['b1'] });
-      await podWith(service.key, BOARDS_MANIFEST);
+      const pod = await podWith(service.key, BOARDS_MANIFEST);
 
-      const res = await callOperation(app, {
-        key: consumer.key,
-        slug: 'boards',
-        operation: 'list_cards',
-        input: { boardId: 'b1' },
-      });
+      const res = await call(consumer.key, 'boards');
 
-      expect(res.statusCode, res.body).toBe(500);
-      expect(res.json()).toMatchObject({ code: 'secret-unreadable' });
+      expect(res.status).toBe(502);
+      expect(res.headers.get('opsiforce-outcome')).toBe('failed');
+      expect(pod.received).toEqual([]);
     });
 
     it('belongs to Organization admins of the service', async () => {
@@ -343,18 +342,16 @@ describe("the External Service Builder's test lane", () => {
   });
 
   describe('the Test Project configuration', () => {
-    it('reveals a generated secret once, on the save that generates it', async () => {
+    it('generates the secret when the Test Project is configured and never reveals it on a later save', async () => {
       const created = await createCustomService(app, admin, 'Boards', 'boards');
       const development = await runningDevelopment(app, storageRoot, created.builderChatId, SIGNING_MANIFEST);
       await createTestProject(app, development.key);
-      const receiving = { boardIds: ['b1'], receive: { 'card.created': true } };
+      const receiving = { boardIds: ['b1'] };
 
       const first = await saveTestProjectConfiguration(app, development.key, receiving);
 
       expect(first.statusCode, first.body).toBe(200);
-      const [revealed] = first.json().revealed as Revealed[];
-      expect(revealed?.path).toBe('signingKey');
-      expect(revealed?.value).toEqual(expect.any(String));
+      expect(first.json().revealed).toEqual([]);
       expect(first.json().projectConfiguration.values.signingKey).toEqual({ stored: true });
       const again = await saveTestProjectConfiguration(app, development.key, {
         ...receiving,
@@ -386,83 +383,26 @@ describe("the External Service Builder's test lane", () => {
     it("sends the Test Project's calls to Development with Development's own Service configuration", async () => {
       const pod = await podWith(development.key, DEVELOPMENT_MANIFEST);
 
-      const res = await callOperation(app, {
-        key: testProject.key,
-        slug: 'boards',
-        operation: 'list_cards',
-        input: { boardId: 'b2' },
-      });
+      const res = await call(testProject.key, 'boards');
 
-      expect(res.statusCode, res.body).toBe(200);
-      expect(pod.requests.map((request) => request.gatewayKey)).toEqual([development.key]);
+      expect(res.status).toBe(200);
       expect(pod.received[0]).toMatchObject({
-        caller: { environmentId: testProject.projectEnvironmentId },
-        webhookUrl: `${PUBLIC_URL}/api/external-services/webhooks/${service.id}/development`,
+        caller: { projectEnvironmentId: testProject.projectEnvironmentId },
         serviceConfiguration: DEVELOPMENT_BOARDS,
         projectConfiguration: { boardIds: ['b2'] },
       });
-      const [call] = await callRowsOf(testProject.projectEnvironmentId);
-      expect(call).toMatchObject({
-        externalServiceId: service.id,
-        projectEnvironmentId: testProject.projectEnvironmentId,
-        serviceEnvironmentId: development.environmentId,
-        decision: 'allowed',
-      });
-      const described = await askGate(app, { key: testProject.key, path: 'boards' });
-      expect(described.json()).toMatchObject({ description: DEVELOPMENT_MANIFEST.description });
     });
 
     it('sends every other caller to the Default environment with the configuration callers use', async () => {
       const pod = await podWith(service.key, BOARDS_MANIFEST);
 
-      const res = await callOperation(app, {
-        key: consumer.key,
-        slug: 'boards',
-        operation: 'list_cards',
-        input: { boardId: 'b1' },
-      });
+      const res = await call(consumer.key, 'boards');
 
-      expect(res.statusCode, res.body).toBe(200);
-      expect(pod.requests.map((request) => request.gatewayKey)).toEqual([service.key]);
+      expect(res.status).toBe(200);
       expect(pod.received[0]).toMatchObject({
-        webhookUrl: `${PUBLIC_URL}/api/external-services/webhooks/${service.id}`,
+        caller: { projectEnvironmentId: consumer.projectEnvironmentId },
         serviceConfiguration: READY_BOARDS,
       });
-      const described = await askGate(app, { key: consumer.key, path: 'boards' });
-      expect(described.json().description).not.toBe(DEVELOPMENT_MANIFEST.description);
-    });
-
-    it("lets the builder probe the Gate as its Test Project, the Gate's refusals included", async () => {
-      const pod = await podWith(development.key, DEVELOPMENT_MANIFEST);
-
-      const allowed = await builderLane(app, development.key, {
-        method: 'POST',
-        path: '/probe/list_cards',
-        payload: { boardId: 'b2' },
-      });
-      expect(allowed.statusCode, allowed.body).toBe(200);
-      expect(pod.received[0]).toMatchObject({ caller: { environmentId: testProject.projectEnvironmentId } });
-
-      const refused = await builderLane(app, development.key, {
-        method: 'POST',
-        path: '/probe/list_cards',
-        payload: { boardId: 'b1' },
-      });
-      expect(refused.statusCode).toBe(403);
-      expect(refused.json()).toMatchObject({ code: 'out-of-bounds', value: 'b1' });
-      expect(pod.received).toHaveLength(1);
-
-      const calls = await builderLane(app, development.key, { path: '/probe/calls?limit=5' });
-      const operationCalls = calls.json().calls.filter((call: { kind: string }) => call.kind === 'operation');
-      expect(operationCalls.map((call: { code: string | null }) => call.code)).toEqual(['out-of-bounds', null]);
-      const described = await builderLane(app, development.key, { path: '/probe' });
-      expect(described.json()).toMatchObject({
-        service: 'boards',
-        projectConfiguration: { boardIds: ['b2'] },
-      });
-      const document = await builderLane(app, development.key, { path: '/probe/openapi.json' });
-      expect(document.statusCode).toBe(200);
-      expect(document.json().info.description).toContain(DEVELOPMENT_MANIFEST.description);
     });
 
     it("lets the builder run its Test Project's form calls, to turn the names in a brief into ids", async () => {
@@ -475,8 +415,17 @@ describe("the External Service Builder's test lane", () => {
       await writeServiceFiles(storageRoot, development.directory, picking, {
         modifiedAt: new Date(Date.now() + 60_000),
       });
-      const pod = await podWith(development.key, picking);
-      pod.scriptFormCall('options', 'listBoards', () => [{ value: 'b2', label: 'Operations' }]);
+      const seen: unknown[] = [];
+      await podWith(development.key, picking, {
+        handlers: {
+          options: {
+            listBoards: (draft, ctx) => {
+              seen.push({ form: draft.form, query: draft.query, caller: ctx.caller });
+              return [{ value: 'b2', label: 'Operations' }];
+            },
+          },
+        },
+      });
 
       const picked = await builderLane(app, development.key, {
         method: 'POST',
@@ -487,13 +436,13 @@ describe("the External Service Builder's test lane", () => {
 
       expect(picked.statusCode, picked.body).toBe(200);
       expect(picked.json()).toEqual([{ value: 'b2', label: 'Operations' }]);
-      expect(pod.receivedFormCalls[0]).toMatchObject({
-        route: 'options',
-        name: 'listBoards',
-        form: 'projectForm',
-        query: 'oper',
-        caller: { environmentId: testProject.projectEnvironmentId },
-      });
+      expect(seen).toEqual([
+        {
+          form: 'projectForm',
+          query: 'oper',
+          caller: expect.objectContaining({ projectEnvironmentId: testProject.projectEnvironmentId }),
+        },
+      ]);
       expect(unknown.statusCode).toBe(404);
       expect(unknown.json()).toMatchObject({ code: 'unknown-form-call' });
     });
@@ -509,26 +458,15 @@ describe("the External Service Builder's test lane", () => {
       );
       await podWith(draftDevelopment.key, DEVELOPMENT_MANIFEST);
 
-      const reached = await callOperation(app, {
-        key: draftTest.key,
-        slug: 'cards',
-        operation: 'list_cards',
-        input: { boardId: 'b1' },
-      });
-      expect(reached.statusCode, reached.body).toBe(200);
+      const reached = await call(draftTest.key, 'cards');
+      expect(reached.status).toBe(200);
 
-      const unknown = await callOperation(app, {
-        key: consumer.key,
-        slug: 'cards',
-        operation: 'list_cards',
-        input: { boardId: 'b1' },
-      });
+      const unknown = await resolveCaller(app, { credential: `Bearer ${consumer.key}`, slug: 'cards' });
       expect(unknown.statusCode).toBe(404);
-      expect(unknown.json()).toMatchObject({ code: 'unknown-service' });
     });
     it('configures the service under test on Update once Development can be served, and delivers its skill', async () => {
       const draft = await createCustomService(app, admin, 'Lanes', `lanes-${crypto.randomUUID().slice(0, 6)}`);
-      const draftDevelopment = await runningDevelopment(app, storageRoot, draft.builderChatId, { sdk: 1 });
+      const draftDevelopment = await runningDevelopment(app, storageRoot, draft.builderChatId, { sdk: 2 });
       const draftTest = await createTestProject(app, draftDevelopment.key);
       const delivery = app.get(DeliveryService);
       expect(await delivery.serviceSkillsFor(draftTest.projectEnvironmentId)).toEqual([]);
@@ -555,34 +493,20 @@ describe("the External Service Builder's test lane", () => {
       expect((await renameSlug(app, admin, draft.id, renamed)).statusCode).toBe(200);
       const pod = await podWith(draftDevelopment.key, DEVELOPMENT_MANIFEST);
 
-      const res = await callOperation(app, {
-        key: draftTest.key,
-        slug: renamed,
-        operation: 'list_cards',
-        input: { boardId: 'b1' },
-      });
+      const res = await call(draftTest.key, renamed);
 
-      expect(res.statusCode, res.body).toBe(200);
+      expect(res.status).toBe(200);
       expect(pod.received.at(-1)?.serviceConfiguration).toEqual(DEVELOPMENT_BOARDS);
     });
   });
 
-  describe("Development's webhook URL, Update and Reset", () => {
+  describe("Development's Update and Reset", () => {
     let service: PublishedService;
     let development: BuilderDevelopment;
     let testProject: CreatedTestProject;
     let consumer: GateCallerFixture;
 
-    const RECEIVING = { boardIds: ['b1'], receive: { 'card.created': true } };
-
-    function postCard(path: string, id: string) {
-      return app.inject({
-        method: 'POST',
-        url: `/api/external-services/webhooks/${path}`,
-        headers: { 'content-type': 'application/json' },
-        payload: { id, boardId: 'b1', name: `Card ${id}` },
-      });
-    }
+    const RECEIVING = { boardIds: ['b1'] };
 
     beforeEach(async () => {
       service = await publishCustomService(app, admin, storageRoot, { slug: 'boards' });
@@ -596,58 +520,26 @@ describe("the External Service Builder's test lane", () => {
       await saveConsumerConfiguration(app, consumer, 'boards', RECEIVING);
     });
 
-    it("matches Development's webhook URL only to the Test Project, and the service's own URL to everyone else", async () => {
-      const seen: string[] = [];
-      scriptCards(await podWith(development.key, DEVELOPMENT_MANIFEST), seen);
-
-      const toDevelopment = await postCard(`${service.id}/development`, 'c-dev');
-      expect(toDevelopment.statusCode, toDevelopment.body).toBe(200);
-      expect(seen).toEqual([`${PUBLIC_URL}/api/external-services/webhooks/${service.id}/development`]);
-      expect((await environmentDatabase(storageRoot, testProject.projectEnvironmentId)).events).toMatchObject([
-        { service: 'boards', type: 'card.created', key: 'c-dev' },
-      ]);
-      expect((await environmentDatabase(storageRoot, consumer.projectEnvironmentId)).events).toEqual([]);
-      expect(await latestInboundCall('boards')).toMatchObject({
-        externalServiceId: service.id,
-        serviceEnvironmentId: development.environmentId,
-      });
-
-      await stopPods();
-      scriptCards(await podWith(service.key, BOARDS_MANIFEST), seen);
-      const toProduction = await postCard(service.id, 'c-prod');
-      expect(toProduction.statusCode, toProduction.body).toBe(200);
-      expect((await environmentDatabase(storageRoot, consumer.projectEnvironmentId)).events).toMatchObject([
-        { key: 'c-prod' },
-      ]);
-      expect((await environmentDatabase(storageRoot, testProject.projectEnvironmentId)).events).toMatchObject([
-        { key: 'c-dev' },
-      ]);
-
-      const events = await builderLane(app, development.key, { path: '/test-project/events' });
-      expect(events.json().events).toMatchObject([{ type: 'card.created', key: 'c-dev', data: { boardId: 'b1' } }]);
-    });
-
-    it('answers 404 on the Development URL of a service that is not custom', async () => {
-      const res = await postCard(`${crypto.randomUUID()}/development`, 'c-none');
-      expect(res.statusCode).toBe(404);
-      expect(res.json()).toMatchObject({ code: 'unknown-service' });
-    });
-
     it("resets the Test Project: its Events cleared, Development's webhooks deregistered and registered afresh on wiped state", async () => {
       const developmentState = environmentStateFile(storageRoot, development.directory);
       const defaultState = environmentStateFile(storageRoot, service.directory);
-      const pod = await podWith(development.key, DEVELOPMENT_MANIFEST, developmentState);
-      scriptCards(pod, []);
+      const pod = await podWith(development.key, DEVELOPMENT_MANIFEST, { stateFile: developmentState });
       expect((await saveDevelopmentConfiguration(app, admin, service.id, DEVELOPMENT_BOARDS)).statusCode).toBe(200);
       expect((await saveTestProjectConfiguration(app, development.key, RECEIVING)).statusCode).toBe(200);
-      expect(pod.receivedHooks.at(-1)).toMatchObject({
+      expect(pod.hooks.at(-1)).toMatchObject({
         hook: 'onProjectConfigurationSaved',
         current: { boardIds: ['b1'] },
       });
-      expect((await postCard(`${service.id}/development`, 'c-1')).statusCode).toBe(200);
-      expect(await stateKeys(developmentState)).toEqual(['last-webhook']);
+      expect(
+        await pod.service.deliver(
+          { type: 'card.created', key: 'c-1', occurredAt: '2026-10-08T09:30:00.000Z', data: { boardId: 'b1' } },
+          { to: [testProject.projectEnvironmentId] }
+        )
+      ).toEqual([{ projectEnvironmentId: testProject.projectEnvironmentId, result: 'stored' }]);
+      await pod.service.state.set('registration', 'wh-1');
+      expect(await stateKeys(developmentState)).toEqual(['registration']);
       await createFileServiceState(defaultState).set('published-key', 1);
-      const hooksBefore = pod.receivedHooks.length;
+      const hooksBefore = pod.hooks.length;
 
       const res = await builderLane(app, development.key, { method: 'POST', path: '/test-project/reset' });
 
@@ -655,10 +547,10 @@ describe("the External Service Builder's test lane", () => {
       expect((await environmentDatabase(storageRoot, testProject.projectEnvironmentId)).events).toEqual([]);
       expect(existsSync(developmentState)).toBe(false);
       expect(await stateKeys(defaultState)).toEqual(['published-key']);
-      expect(pod.receivedHooks.slice(hooksBefore)).toEqual([
+      expect(pod.hooks.slice(hooksBefore)).toEqual([
         expect.objectContaining({
           hook: 'onProjectConfigurationSaved',
-          caller: expect.objectContaining({ environmentId: testProject.projectEnvironmentId }),
+          caller: expect.objectContaining({ projectEnvironmentId: testProject.projectEnvironmentId }),
           previous: expect.objectContaining({ boardIds: ['b1'] }),
           current: null,
           serviceConfiguration: DEVELOPMENT_BOARDS,
@@ -702,7 +594,7 @@ describe("the External Service Builder's test lane", () => {
       expect((await skill?.tree())?.[0]?.content.toString()).toContain('And now the lists.');
     });
 
-    it('lists the service under test in the Test Project chat bar as enabled, with its reads on', async () => {
+    it('lists the service under test in the Test Project chat bar as enabled and connected', async () => {
       const member = await addMember(app, admin.tenant, [
         Perms.manageTenantExternalServices,
         Perms.configureProjectExternalServices,
@@ -720,7 +612,7 @@ describe("the External Service Builder's test lane", () => {
           id: service.id,
           description: DEVELOPMENT_MANIFEST.description,
           state: 'enabled',
-          configuration: expect.objectContaining({ operationsOn: 1, receiving: 1 }),
+          configuration: { saved: true, missing: [] },
         })
       );
     });

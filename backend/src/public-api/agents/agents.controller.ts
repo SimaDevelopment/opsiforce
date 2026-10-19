@@ -1,6 +1,6 @@
 import { Body, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ExternalServiceOperation } from '../auth/external-service-operation.decorator';
+import { ServiceRoute } from '../auth/service-route.decorator';
 import { Caller } from '../auth/caller';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../public-api.decorator';
 import { PublicAgentsService } from './agents.service';
@@ -35,8 +35,9 @@ export class AgentsController {
   constructor(private readonly agents: PublicAgentsService) {}
 
   @Get()
-  @ExternalServiceOperation('list_agents')
+  @ServiceRoute({ summary: 'List Agents', allowedBy: [] })
   @ApiOperation({
+    operationId: 'list_agents',
     summary: 'List Agents',
     description:
       'The Agents you can build a Project on. Pass an id from here as agentId when creating one. Newest first; page with the opaque cursor.\n\n**Use it for** filling an Agent picker before Create a Project, or turning a name a user typed ("app-builder") into the agentId the create route wants. Agent ids differ per deployment, so resolve them here rather than storing one in your config.',
@@ -51,8 +52,9 @@ export class AgentsController {
   }
 
   @Post()
-  @ExternalServiceOperation('create_agent')
+  @ServiceRoute({ summary: 'Create a Custom Agent', allowedBy: ['createAgents'] })
   @ApiOperation({
+    operationId: 'create_agent',
     summary: 'Create a Custom Agent',
     description:
       "Creates an Agent private to you, with a kebab-case slug derived from `displayName` and a Development profile carrying an empty prompt, the given or default model pair, and the built-in `platform` Skill. The slug cannot change afterwards; a slug the deployment already uses is refused with 409.\n\nThe model must exist in the running distribution's catalog, and `variant` must be one of that model's reasoning efforts, or the call is refused naming the part that failed.\n\n**Use it for** standing an Agent up before writing it: create, then `PUT /agents/{id}/profile` with the prompt, then add Skills. A Project can be created from it as soon as its Development profile exists.",
@@ -64,8 +66,9 @@ export class AgentsController {
   }
 
   @Get(':id')
-  @ExternalServiceOperation('get_agent')
+  @ServiceRoute({ summary: 'Get an Agent', allowedBy: [] })
   @ApiOperation({
+    operationId: 'get_agent',
     summary: 'Get an Agent',
     description:
       'One Agent with its settings and one entry per Environment of the tenant. Every entry carries `environmentId`; `skills: null` marks an Environment this Agent has no profile at, which is how you tell "never published there" from "published with no Skills".\n\nA Built-in Agent reports `imageOwned: true` with `promptBody`, `model` and `variant` null — its behaviour comes from the agent image — but its Skills are the tenant\'s and are listed.\n\n**Use it for** reading the Development profile before editing it, and for `updateAvailable` on each pinned Skill.',
@@ -77,8 +80,9 @@ export class AgentsController {
   }
 
   @Patch(':id')
-  @ExternalServiceOperation('update_agent')
+  @ServiceRoute({ summary: 'Rename or describe an Agent', allowedBy: ['authorSkillsAndAgents'] })
   @ApiOperation({
+    operationId: 'update_agent',
     summary: 'Rename or describe an Agent',
     description:
       "Sets a Custom Agent's display name, or the one line the Store and the Project picker show under it. The slug stays what it was at creation, so Projects and links keep working.\n\n**Use it for** settling the description once the brief is clear, and renaming when the author asks for another name.",
@@ -94,8 +98,9 @@ export class AgentsController {
   }
 
   @Put(':id/profile')
-  @ExternalServiceOperation('update_agent_profile')
+  @ServiceRoute({ summary: "Edit an Agent's Development profile", allowedBy: ['authorSkillsAndAgents'] })
   @ApiOperation({
+    operationId: 'update_agent_profile',
     summary: 'Edit the Development profile',
     description:
       'Overwrites the Development profile: prompt body, model and reasoning effort. There are no Agent versions — this is the working copy, and Projects created from it afterwards get it. Existing Projects keep the files they were created with.\n\nRefused for a Built-in Agent, which the agent image owns, and for a model or variant this deployment does not carry.\n\n**Use it for** the write half of the authoring loop. Read the Agent, change `promptBody`, send the whole profile back.',
@@ -118,8 +123,9 @@ export class AgentsController {
   }
 
   @Put(':id/template')
-  @ExternalServiceOperation('save_agent_template')
+  @ServiceRoute({ summary: "Save an Agent's Development Template", allowedBy: ['authorSkillsAndAgents'] })
   @ApiOperation({
+    operationId: 'save_agent_template',
     summary: 'Save the Development Template',
     description:
       "Makes the Agent's Development Template an exact copy of the `template/` folder at the root of the calling Builder chat's workspace. There is no body: the folder is the input. A file deleted from `template/` leaves the Template, and a missing or empty `template/` removes it (`hash: null`). Saving the same files again gives the same `hash`. There is no size cap.\n\nOnly the Agent's own Builder chat may call it. A person, another chat and a Test Project are refused.\n\nThe save refuses symlinks, `app/opsiforce.env.json`, `app/app.meta.json` and `.env*` files other than `*.example` with 422, one `errors[]` item per path (`file`, `detail`), and saves nothing. It leaves out, and lists under `skipped`, what a Project must not start with: `AGENTS.md` at any depth, a root `opencode.json`/`opencode.jsonc`, `.claude/` and `.agents/`, platform folders (`.opencode/`, `.opsiforce/`, `.xdg/`, `.git/`), installed dependencies and package-manager state, any `data/`, `.cache/`, `.config/`, `.bun/`, `user_uploaded_files/`, `generated_files/`, and whatever the Template's own `.gitignore` files exclude. Key-like strings are listed under `warnings` and saved anyway. File modes are kept. When `template/` changes while it is being copied, the answer is 409 and nothing is saved.\n\n**Use it for** the save step of the authoring loop, after checking `template/` works. Read the new hash back per Environment on `GET /agents/{id}`.",
@@ -141,8 +147,9 @@ export class AgentsController {
   }
 
   @Get(':id/skills')
-  @ExternalServiceOperation('list_agent_skills')
+  @ServiceRoute({ summary: "List an Agent's Skills", allowedBy: [] })
   @ApiOperation({
+    operationId: 'list_agent_skills',
     summary: "List an Agent's Skills",
     description:
       "The Skills the Agent's Development profile carries, each with the Version it pins and whether a newer one exists.\n\n**Use it for** checking what an Agent already has before adding to it, and for spotting upgrades without fetching the whole Agent.",
@@ -154,8 +161,9 @@ export class AgentsController {
   }
 
   @Put(':id/skills/:skillId')
-  @ExternalServiceOperation('set_agent_skill')
+  @ServiceRoute({ summary: 'Add or re-pin a Skill on an Agent', allowedBy: ['authorSkillsAndAgents'] })
   @ApiOperation({
+    operationId: 'set_agent_skill',
     summary: 'Add or re-pin a Skill',
     description:
       'Puts the Skill on the Development profile, pinned to `versionId` or, with an empty object, to the latest Version. Sending it again with a newer `versionId` is the upgrade.\n\nRefused when the Skill is disabled, when the Agent already carries a different Skill of the same name — opencode would resolve the collision silently — and when a private Skill would land on a public or Built-in Agent.\n\n**Use it for** both adding and upgrading; there is no separate upgrade route. The answer is the whole Skill set, so you never have to re-read it.',
@@ -178,8 +186,9 @@ export class AgentsController {
   }
 
   @Delete(':id/skills/:skillId')
-  @ExternalServiceOperation('remove_agent_skill', { kind: 'write' })
+  @ServiceRoute({ summary: 'Remove a Skill from an Agent', allowedBy: ['authorSkillsAndAgents'] })
   @ApiOperation({
+    operationId: 'remove_agent_skill',
     summary: 'Remove a Skill',
     description:
       "Takes the Skill off the Development profile. The Skill itself is untouched, and Projects already created keep their copy. The built-in `platform` Skill cannot be removed — every Agent inherits the platform's own harness through it.\n\n**Use it for** trimming an Agent you are authoring. The answer is the remaining Skill set.",

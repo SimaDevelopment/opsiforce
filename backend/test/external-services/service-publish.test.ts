@@ -10,6 +10,7 @@ import { db } from '../../db';
 import { externalServiceConfigs, projectPublishJobs } from '../../db/schema';
 import { callersOwner } from '../../src/external-services/configuration/configuration-values';
 import { ServiceConfigurationStore } from '../../src/external-services/configuration/service-configuration.store';
+import { PublishProbes } from '../../src/external-services/publishing/publish-probes';
 import { ServiceDefaultEnvironments } from '../../src/external-services/publishing/service-default-environments';
 import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
 import { Perms } from '../../src/permission/permission.constants';
@@ -17,13 +18,12 @@ import { PublishController } from '../../src/publish/publish.controller';
 import { PublishModule } from '../../src/publish/publish.module';
 import { PROJECT_PUBLISH_QUEUE } from '../../src/publish/publish.types';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
-import { startFakeServicePod, type FakeServicePod } from './support/fake-service-pod';
 import type { FakeQueue } from '../support/infra-fakes';
 import { addMember } from '../support/project-fixtures';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
 import { tenantAdmin, type PersonFixture } from './support/fixtures';
-import { callOperation } from './support/gate';
+import { callThroughGate, gatewayUrlOf } from './support/gate-proxy';
 import {
   consumerIn,
   freePort,
@@ -34,6 +34,7 @@ import {
   writeServiceFiles,
   type PublishedService,
 } from './support/published-services';
+import { startSdk2ServicePod, type Sdk2ServicePod } from './support/sdk2-service-pod';
 import { publishReview, publishService } from './support/service-publishing';
 import {
   builderLane,
@@ -49,23 +50,12 @@ const BOARD_OPTIONS = [
   { value: 'b2', label: 'Operations' },
 ];
 
-const BOARD_INPUT = {
-  type: 'object',
-  required: ['boardId'],
-  properties: { boardId: { type: 'string', boundTo: 'board' } },
-};
-
 const PUBLISHED_MANIFEST = {
-  sdk: 1,
+  sdk: 2,
   displayName: 'Boards',
   description: 'A pretend board tool the Organization built itself.',
   serviceForm: [{ key: 'apiToken', type: 'secret', label: 'API token', required: true }],
   projectForm: [{ key: 'boards', type: 'multiselect', label: 'Boards', options: BOARD_OPTIONS }],
-  operations: {
-    list_cards: { kind: 'read', description: 'List the cards on one board.', input: BOARD_INPUT },
-    delete_card: { kind: 'destructive', description: 'Delete a card.', input: BOARD_INPUT },
-  },
-  bounds: { board: { path: 'boards' } },
 };
 
 const NEXT_MANIFEST = {
@@ -98,11 +88,6 @@ const NEXT_MANIFEST = {
       ],
     },
   ],
-  operations: {
-    list_cards: PUBLISHED_MANIFEST.operations.list_cards,
-    archive_card: { kind: 'write', description: 'Archive a card.', input: BOARD_INPUT },
-  },
-  bounds: { board: { path: 'boardIds' } },
 };
 
 const GENERATING_MANIFEST = {
@@ -133,7 +118,11 @@ describe('publishing a Custom External Service through its Publish dialog', () =
   let service: PublishedService;
   let development: BuilderDevelopment;
   let production: string;
-  let pod: FakeServicePod;
+  let gatewayUrl: string;
+  let pod: Sdk2ServicePod;
+
+  const startPod = (manifest: unknown) =>
+    startSdk2ServicePod({ manifest, gatewayKey: service.key, gatewayUrl, port: podPort });
 
   const publishQueue = () => app.get<FakeQueue>(getQueueToken(PROJECT_PUBLISH_QUEUE));
   const queuedPublishes = () =>
@@ -155,7 +144,7 @@ describe('publishing a Custom External Service through its Publish dialog', () =
   const landPublish = async (manifest: unknown) => {
     await writeServiceFiles(storageRoot, service.directory, manifest);
     await pod.close();
-    pod = await startFakeServicePod({ manifest, gatewayKey: service.key, port: podPort });
+    pod = await startPod(manifest);
     await app.get(ServiceDefaultEnvironments).publishedTo(service.builderChatId, service.projectEnvironmentId);
   };
 
@@ -168,9 +157,10 @@ describe('publishing a Custom External Service through its Publish dialog', () =
       servicePodPort: podPort,
       serviceStartHoldMs: 1_000,
       extraModules: [ProjectPublishRoutes],
+      providers: [{ provide: PublishProbes, useValue: { assertGuarded: async () => undefined } }],
     });
     app = harness.app;
-    await harness.listen();
+    gatewayUrl = gatewayUrlOf(await harness.listen());
   });
 
   afterAll(async () => {
@@ -184,7 +174,7 @@ describe('publishing a Custom External Service through its Publish dialog', () =
       slug: `boards-${crypto.randomUUID().slice(0, 6)}`,
       manifest: PUBLISHED_MANIFEST,
     });
-    pod = await startFakeServicePod({ manifest: PUBLISHED_MANIFEST, gatewayKey: service.key, port: podPort });
+    pod = await startPod(PUBLISHED_MANIFEST);
     expect((await saveCustomServiceConfiguration(app, admin, service.id, { apiToken: 'live-token' })).statusCode).toBe(
       200
     );
@@ -197,20 +187,17 @@ describe('publishing a Custom External Service through its Publish dialog', () =
       signingKey: 'dev-signing-key',
     });
     production = await productionEnvironmentOf(admin.tenant.tenantId);
-    pod.receivedHooks.length = 0;
+    pod.hooks.length = 0;
   });
 
   afterEach(async () => {
     await pod.close();
   });
 
-  it('reports the impact on existing Project configurations: renamed via was, now missing, new Operations off', async () => {
+  it('reports the impact on existing Project configurations: renamed via was and now missing', async () => {
     const first = await consumerIn(app, admin.tenant);
     const second = await consumerIn(app, admin.tenant);
-    await saveConsumerConfiguration(app, first, service.slug, {
-      boards: ['b1'],
-      operations: { list_cards: true, delete_card: true },
-    });
+    await saveConsumerConfiguration(app, first, service.slug, { boards: ['b1'] });
     await saveConsumerConfiguration(app, second, service.slug, { boards: ['b2'] });
     const testProject = await createTestProject(app, development.key);
     expect(
@@ -226,8 +213,6 @@ describe('publishing a Custom External Service through its Publish dialog', () =
       configurations: 2,
       renamed: [{ from: 'boards', to: 'boardIds', configurations: 2 }],
       needsAttention: [{ field: 'team', configurations: 2 }],
-      newOperationsOff: [{ operation: 'archive_card', configurations: 2 }],
-      removedOperations: [{ operation: 'delete_card', configurations: 1 }],
     });
     expect(review.impact.consumers.map((consumer: { projectId: string }) => consumer.projectId).toSorted()).toEqual(
       [first.projectId, second.projectId].toSorted()
@@ -289,7 +274,7 @@ describe('publishing a Custom External Service through its Publish dialog', () =
     expect(stored.region).toBe('eu');
     expect(openCallersSecret(stored, 'signingKey')).toBe('dev-signing-key');
     expect(openCallersSecret(stored, 'apiToken')).toBe('live-token');
-    expect(pod.receivedHooks).toEqual([]);
+    expect(pod.hooks).toEqual([]);
   });
 
   it('runs the Service configuration hook on the new version once the Publish lands', async () => {
@@ -301,7 +286,7 @@ describe('publishing a Custom External Service through its Publish dialog', () =
 
     await landPublish(NEXT_MANIFEST);
 
-    expect(pod.receivedHooks).toEqual([
+    expect(pod.hooks).toEqual([
       expect.objectContaining({
         hook: 'onServiceConfigurationSaved',
         previous: { apiToken: 'live-token' },
@@ -333,21 +318,21 @@ describe('publishing a Custom External Service through its Publish dialog', () =
     const consumer = await consumerIn(app, admin.tenant);
     await saveConsumerConfiguration(app, consumer, service.slug, { boards: ['b1'] });
     const listCards = () =>
-      callOperation(app, { key: consumer.key, slug: service.slug, operation: 'list_cards', input: { boardId: 'b1' } });
+      callThroughGate(app, { credential: `Bearer ${consumer.key}`, slug: service.slug }, '/boards/b1/cards');
 
     expect(
       (await publishService(app, admin, service.id, { environmentId: production, values: { region: 'eu' } })).statusCode
     ).toBe(202);
 
     const beforeLanding = await listCards();
-    expect(beforeLanding.statusCode, beforeLanding.body).toBe(200);
+    expect(beforeLanding.status).toBe(200);
     expect(pod.received.at(-1)?.serviceConfiguration).toMatchObject({ apiToken: 'live-token' });
 
     await landPublish(RENAMING_MANIFEST);
-    expect(pod.receivedHooks.at(-1)).toMatchObject({ previous: { token: 'live-token' } });
+    expect(pod.hooks.at(-1)).toMatchObject({ previous: { token: 'live-token' } });
 
     const afterLanding = await listCards();
-    expect(afterLanding.statusCode, afterLanding.body).toBe(200);
+    expect(afterLanding.status).toBe(200);
     expect(pod.received.at(-1)?.serviceConfiguration).toMatchObject({ token: 'live-token', region: 'eu' });
   });
 

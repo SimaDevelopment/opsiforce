@@ -1,13 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { ServiceError } from '@opsiforce/external-service-sdk';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { JsonValue } from '../../db/schema';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { fixtureCrmEvolved, type EvolvedBuiltIns } from './support/evolved-built-ins';
-import { dispatchToFakePod } from './support/gate';
+import { evolvedHooks, fixtureCrmEvolved, type EvolvedBuiltIns } from './support/evolved-built-ins';
 import { retryServiceConfigurationHook, saveServiceConfiguration } from './support/generating';
 import {
   builtInServiceId,
@@ -187,33 +183,27 @@ describe('a failed after-save hook once a secret field was renamed', () => {
       region: 'eu',
       apiKey: app.get(SecretSealer).seal('crm-key-1', `${serviceId}|platform|apiKey`),
     });
-    const manifest = JSON.parse(await readFile(join(evolved.dir, FIXTURE_SERVICE, 'service.json'), 'utf8')) as Record<
-      string,
-      unknown
-    >;
-    const service = await dispatchToFakePod(app, FIXTURE_SERVICE, { manifest });
+    const hooks = evolvedHooks();
+    hooks.fail = true;
     try {
-      service.pod.scriptHook('onServiceConfigurationSaved', () => {
-        throw new ServiceError({ status: 502, code: 'upstream-unavailable', detail: 'Try later.' });
-      });
       const saved = await saveServiceConfiguration(app, operator, serviceId, {
         baseUrl: 'https://crm.example.com',
         region: 'us',
         apiSecret: { stored: true },
       });
-      expect(saved.json().hookFailure).toMatchObject({ code: 'upstream-unavailable' });
+      expect(saved.json().hookFailure).toMatchObject({ code: 'service-failed' });
 
-      service.pod.scriptHook('onServiceConfigurationSaved', () => undefined);
+      hooks.fail = false;
       const retried = await retryServiceConfigurationHook(app, operator, serviceId);
 
       expect(retried.statusCode, retried.body).toBe(200);
       expect(retried.json().hookFailure).toBeNull();
-      expect(service.pod.receivedHooks.at(-1)).toMatchObject({
+      expect(hooks.seen.at(-1)).toMatchObject({
         previous: { region: 'eu', apiSecret: 'crm-key-1' },
         current: { region: 'us', apiSecret: 'crm-key-1' },
       });
     } finally {
-      await service.stop();
+      hooks.fail = false;
     }
   });
 });

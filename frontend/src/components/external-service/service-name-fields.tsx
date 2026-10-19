@@ -91,7 +91,7 @@ export function ServiceNameFields(props: {
             props.onEdit?.();
           }}
           class={INPUT_CLASS}
-          placeholder="e.g. Trello…"
+          placeholder="e.g. Helpdesk…"
           autofocus
         />
       </div>
@@ -113,7 +113,7 @@ export function ServiceNameFields(props: {
             props.onEdit?.();
           }}
           class={`${INPUT_CLASS} font-mono`}
-          placeholder="e.g. trello…"
+          placeholder="e.g. helpdesk…"
           aria-describedby={`${props.id}-slug-hint`}
           aria-invalid={props.naming.slugMessage() !== null}
         />

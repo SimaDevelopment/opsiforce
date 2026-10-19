@@ -7,7 +7,6 @@ import { environments, type ExternalServiceOriginValue } from '../../../db/schem
 import { CustomServiceRepository, type CustomServiceRow } from '../custom/custom-service.repository';
 import { sdkStatusOf, type SdkStatus } from '../publishing/sdk-status';
 import type { HookFailure } from '../gate/hook-calls';
-import { serviceOpenApiDocument, type ServiceOpenApiDocument } from '../gate/service-openapi';
 import { servableOrNone, UnservableCustomService } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
 import {
@@ -21,7 +20,6 @@ import { ConfigurationSaves } from './configuration-saves';
 import { isAvailable, ServiceAvailability } from './service-availability';
 import type { RevealedSecret } from './generated-values';
 import { rotationTarget } from './rotation';
-import { userIdOf } from './user-ids';
 import { serviceWebhookUrl } from './webhook-url';
 import { ServiceConfigurationSaveHooks } from './service-configuration-save-hooks';
 import { ServiceConfigurationStore, type ServiceConfigurationSave } from './service-configuration.store';
@@ -92,6 +90,7 @@ export interface UncallableCustomServiceView extends ServiceSummary {
   defaultEnvironment: NamedEnvironment | null;
   manifest: ServiceManifest | null;
   serviceSkill: string | null;
+  builtOnSdk1: boolean;
 }
 
 export interface SavedCustomServiceView extends CustomServiceView {
@@ -171,6 +170,7 @@ async function namedEnvironment(environmentId: string | null | undefined): Promi
 function uncallableViewOf(
   row: CustomServiceRow,
   development: RegisteredService | null,
+  builtOnSdk1: boolean,
   hidesBuiltIn: boolean,
   defaultEnvironment: NamedEnvironment | null
 ): UncallableCustomServiceView {
@@ -189,6 +189,7 @@ function uncallableViewOf(
     defaultEnvironment,
     manifest: development?.manifest ?? null,
     serviceSkill: development?.serviceSkill ?? null,
+    builtOnSdk1,
   };
 }
 
@@ -234,20 +235,16 @@ export class ServiceViews implements OnApplicationBootstrap {
     return this.read(this.platformService(id));
   }
 
-  async saveServiceConfiguration(id: string, values: unknown, keycloakId?: string): Promise<SavedOperatorServiceView> {
-    return this.save(this.platformService(id), values, keycloakId);
+  async saveServiceConfiguration(id: string, values: unknown): Promise<SavedOperatorServiceView> {
+    return this.save(this.platformService(id), values);
   }
 
-  async rotateServiceConfiguration(
-    id: string,
-    target: unknown,
-    keycloakId?: string
-  ): Promise<SavedOperatorServiceView> {
-    return this.rotate(this.platformService(id), target, keycloakId);
+  async rotateServiceConfiguration(id: string, target: unknown): Promise<SavedOperatorServiceView> {
+    return this.rotate(this.platformService(id), target);
   }
 
-  async retryServiceConfigurationHook(id: string, keycloakId?: string): Promise<OperatorServiceView> {
-    return this.retry(this.platformService(id), keycloakId);
+  async retryServiceConfigurationHook(id: string): Promise<OperatorServiceView> {
+    return this.retry(this.platformService(id));
   }
 
   discardServiceConfigurationHook(id: string): Promise<OperatorServiceView> {
@@ -271,40 +268,16 @@ export class ServiceViews implements OnApplicationBootstrap {
     return this.read(this.configuredCustom(custom));
   }
 
-  operatorOpenApi(id: string): ServiceOpenApiDocument {
-    return serviceOpenApiDocument(this.known(id));
+  saveCustomServiceConfiguration(tenantId: string, id: string, values: unknown): Promise<SavedCustomServiceView> {
+    return this.save(this.customService(tenantId, id), values);
   }
 
-  async tenantOpenApi(tenantId: string, id: string, managesCustomServices: boolean): Promise<ServiceOpenApiDocument> {
-    const builtIn = (await this.availableBuiltIns(tenantId)).find((candidate) => candidate.id === id);
-    if (builtIn) return serviceOpenApiDocument(builtIn);
-    const service = managesCustomServices
-      ? ((await this.ownCustomService(tenantId, id)) ?? (await this.ownDevelopment(tenantId, id)))
-      : undefined;
-    if (!service) throw new NotFoundException(`No External Service ${id}`);
-    return serviceOpenApiDocument(service);
+  rotateCustomServiceConfiguration(tenantId: string, id: string, target: unknown): Promise<SavedCustomServiceView> {
+    return this.rotate(this.customService(tenantId, id), target);
   }
 
-  saveCustomServiceConfiguration(
-    tenantId: string,
-    id: string,
-    values: unknown,
-    keycloakId?: string
-  ): Promise<SavedCustomServiceView> {
-    return this.save(this.customService(tenantId, id), values, keycloakId);
-  }
-
-  rotateCustomServiceConfiguration(
-    tenantId: string,
-    id: string,
-    target: unknown,
-    keycloakId?: string
-  ): Promise<SavedCustomServiceView> {
-    return this.rotate(this.customService(tenantId, id), target, keycloakId);
-  }
-
-  retryCustomServiceConfigurationHook(tenantId: string, id: string, keycloakId?: string): Promise<CustomServiceView> {
-    return this.retry(this.customService(tenantId, id), keycloakId);
+  retryCustomServiceConfigurationHook(tenantId: string, id: string): Promise<CustomServiceView> {
+    return this.retry(this.customService(tenantId, id));
   }
 
   discardCustomServiceConfigurationHook(tenantId: string, id: string): Promise<CustomServiceView> {
@@ -315,43 +288,25 @@ export class ServiceViews implements OnApplicationBootstrap {
     return this.read(this.developmentService(tenantId, id));
   }
 
-  saveDevelopmentConfiguration(
-    tenantId: string,
-    id: string,
-    values: unknown,
-    keycloakId?: string
-  ): Promise<DevelopmentServiceView> {
-    return this.save(this.developmentService(tenantId, id), values, keycloakId);
+  saveDevelopmentConfiguration(tenantId: string, id: string, values: unknown): Promise<DevelopmentServiceView> {
+    return this.save(this.developmentService(tenantId, id), values);
   }
 
-  rotateDevelopmentConfiguration(
-    tenantId: string,
-    id: string,
-    target: unknown,
-    keycloakId?: string
-  ): Promise<DevelopmentServiceView> {
-    return this.rotate(this.developmentService(tenantId, id), target, keycloakId);
+  rotateDevelopmentConfiguration(tenantId: string, id: string, target: unknown): Promise<DevelopmentServiceView> {
+    return this.rotate(this.developmentService(tenantId, id), target);
   }
 
-  retryDevelopmentConfigurationHook(
-    tenantId: string,
-    id: string,
-    keycloakId?: string
-  ): Promise<DevelopmentServiceView> {
-    return this.retry(this.developmentService(tenantId, id), keycloakId);
+  retryDevelopmentConfigurationHook(tenantId: string, id: string): Promise<DevelopmentServiceView> {
+    return this.retry(this.developmentService(tenantId, id));
   }
 
   discardDevelopmentConfigurationHook(tenantId: string, id: string): Promise<DevelopmentServiceView> {
     return this.discardHook(this.developmentService(tenantId, id));
   }
 
-  async copyProductionToDevelopment(
-    tenantId: string,
-    id: string,
-    keycloakId?: string
-  ): Promise<DevelopmentServiceView> {
+  async copyProductionToDevelopment(tenantId: string, id: string): Promise<DevelopmentServiceView> {
     const { service, owner, viewOf } = await this.developmentService(tenantId, id);
-    const saved = await this.saves.service(service, owner, await userIdOf(keycloakId), async () => {
+    const saved = await this.saves.service(service, owner, async () => {
       const copied = await this.store.copy(service, callersOwner({ tenantId }), owner);
       if (!copied) {
         throw new ConflictException({
@@ -369,36 +324,23 @@ export class ServiceViews implements OnApplicationBootstrap {
     return viewOf(await this.store.read(service, owner), await this.saveHooks.failureOf(service, owner));
   }
 
-  private async save<View>(
-    lookup: ConfiguredServiceLookup<View>,
-    values: unknown,
-    keycloakId: string | undefined
-  ): Promise<WithRevealed<View>> {
+  private async save<View>(lookup: ConfiguredServiceLookup<View>, values: unknown): Promise<WithRevealed<View>> {
     const configured = await lookup;
     const { service, owner } = configured;
-    return this.savedView(configured, await userIdOf(keycloakId), () =>
-      this.store.saveAndReport(service, owner, values)
-    );
+    return this.savedView(configured, () => this.store.saveAndReport(service, owner, values));
   }
 
-  private async rotate<View>(
-    lookup: ConfiguredServiceLookup<View>,
-    target: unknown,
-    keycloakId: string | undefined
-  ): Promise<WithRevealed<View>> {
+  private async rotate<View>(lookup: ConfiguredServiceLookup<View>, target: unknown): Promise<WithRevealed<View>> {
     const configured = await lookup;
     const { service, owner } = configured;
-    const userId = await userIdOf(keycloakId);
     const current = await this.store.read(service, owner);
     const rotate = rotationTarget(service.manifest.serviceForm ?? [], current.values, target);
-    return this.savedView(configured, userId, () =>
-      this.store.saveAndReport(service, owner, current.values, { rotate })
-    );
+    return this.savedView(configured, () => this.store.saveAndReport(service, owner, current.values, { rotate }));
   }
 
-  private async retry<View>(lookup: ConfiguredServiceLookup<View>, keycloakId: string | undefined): Promise<View> {
+  private async retry<View>(lookup: ConfiguredServiceLookup<View>): Promise<View> {
     const { service, owner, viewOf } = await lookup;
-    const hookFailure = await this.saveHooks.retry(service, owner, await userIdOf(keycloakId));
+    const hookFailure = await this.saveHooks.retry(service, owner);
     return viewOf(await this.store.read(service, owner), hookFailure);
   }
 
@@ -410,10 +352,9 @@ export class ServiceViews implements OnApplicationBootstrap {
 
   private async savedView<View>(
     { service, owner, viewOf }: ConfiguredService<View>,
-    userId: string | null,
     save: () => Promise<ServiceConfigurationSave>
   ): Promise<WithRevealed<View>> {
-    const saved = await this.saves.service(service, owner, userId, save);
+    const saved = await this.saves.service(service, owner, save);
     return { ...(await viewOf(saved.current, saved.hookFailure)), revealed: saved.revealed };
   }
 
@@ -474,10 +415,14 @@ export class ServiceViews implements OnApplicationBootstrap {
   private async uncallableView(tenantId: string, id: string): Promise<UncallableCustomServiceView> {
     const row = await this.customServices.findInTenant(tenantId, id);
     if (!row) throw new NotFoundException(`No External Service ${id}`);
-    const development = await servableOrNone(this.registry.development(id));
+    let builtOnSdk1 = false;
+    const development = await servableOrNone(this.registry.development(id), (error) => {
+      builtOnSdk1 = error.builtOnSdk1;
+    });
     return uncallableViewOf(
       row,
       development,
+      builtOnSdk1,
       this.isBuiltInSlug(row.slug),
       await namedEnvironment(row.defaultEnvironmentId)
     );

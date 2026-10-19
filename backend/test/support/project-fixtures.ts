@@ -6,7 +6,10 @@ import { projects, skills, tenantSettings, users, workspaces } from '../../db/sc
 import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
 import { ensureBuiltInAgent } from './agent-fixtures';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { CallTokens } from '../../src/gateway/call-tokens';
+import { mintCallerIdentity } from '@opsiforce/external-service-sdk/server';
+import { builtInCallerKey } from '../../src/external-services/built-ins/built-in-caller-key';
+import { PUBLIC_API_SERVICE } from '../../src/external-services/built-ins/public-api-service';
+import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectService } from '../../src/project/project.service';
@@ -185,18 +188,12 @@ export async function createProject(
   return project.id;
 }
 
-/** The bearer the Gate hands `public-api` for one call of this Project's pod; reusable only under `StandingCallTokens`. */
-export function callTokenFor(app: INestApplication, tenant: TenantFixture, projectId: string): string {
-  return app
-    .get(CallTokens)
-    .issue({
-      service: 'public-api',
-      callId: randomUUID(),
-      operation: 'any',
-      tenantId: tenant.tenantId,
-      projectId,
-      projectEnvironmentId: projectId,
-    }).token;
+/** The `X-Opsiforce-Caller` public-api's Service host hands `/api/v1` for a call from this Project's Development. */
+export function callerIdentityFor(app: INestApplication, tenant: TenantFixture, projectId: string): string {
+  return mintCallerIdentity(
+    { kind: 'call', tenantId: tenant.tenantId, projectId, projectEnvironmentId: projectId, environment: 'development' },
+    builtInCallerKey(app.get(SecretSealer), PUBLIC_API_SERVICE)
+  );
 }
 
 export function serviceKeyFor(app: INestApplication, tenant: TenantFixture, projectId: string): Promise<string> {

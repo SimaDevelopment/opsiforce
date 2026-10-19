@@ -11,16 +11,16 @@ Each environment of a Project can have its own random receiving address, such as
 
 ## The address
 
-Read it from describe, never hard-code it:
+Read it from the service, never hard-code it:
 
 ```bash
-curl -s "$EXTERNAL_SERVICES_URL/incoming-email" -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
+curl -s "https://incoming-email.$EXTERNAL_SERVICES_HOST/address" -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
 ```
 
-- The address is `info.address`. Development and each published environment have different addresses, so an address written into code or content is wrong the moment the App is published.
-- `info.address` empty, or `receive["email.received"]` off: this environment has no address yet. Tell the user to open **Incoming email** under External services, below the chat, turn on receiving and save; the address appears then.
-- `503 service-not-configured` or `404 unknown-service`: incoming email is not set up on this deployment. Say so plainly; never invent an address.
-- Tell the user the address in chat. If the App should show its own address, have the App's backend read describe at request time (`EXTERNAL_SERVICES_URL` and `SERVICE_GATEWAY_API_KEY` are in its environment) and serve it to the frontend; never expose the key to the frontend.
+- The answer is `{"address": "…"}`. Development and each published environment have different addresses, so an address written into code or content is wrong the moment the App is published.
+- `403` with `Opsiforce-Outcome: not connected`: this environment has no address yet. Tell the user to open **Incoming email** under External services, below the chat, and save; the address appears then. The answer's message carries the link to that dialog.
+- `404`: incoming email is not set up on this deployment. Say so plainly; never invent an address.
+- Tell the user the address in chat. If the App should show its own address, have the App's backend ask for it at request time (`EXTERNAL_SERVICES_HOST` and `SERVICE_GATEWAY_API_KEY` are in its environment) and serve it to the frontend; never expose the key to the frontend.
 - Only the user changes the address, with **Rotate** in the same dialog. The old address stops receiving at once and stored mail is untouched. Suggest it when the address leaked or draws spam, and give the user the new one afterwards.
 
 ## What an email looks like
@@ -73,5 +73,5 @@ sqlite3 -readonly -header -column /workspace/data/external-services.db \
      FROM events WHERE service = 'incoming-email' ORDER BY id DESC LIMIT 10;"
 ```
 
-- **No rows** → the mail never reached this environment. Check the sender used the address describe gives _now_ (it may have been rotated) and that receiving is on.
+- **No rows** → the mail never reached this environment. Check the sender used the address the service gives _now_ (it may have been rotated).
 - **Rows with `app_delivered_at` NULL** → stored, but the App was not rung successfully: the handler is missing (the template answers 501), it failed, or it is still being retried. Process them with the catch-up read.

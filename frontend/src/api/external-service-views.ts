@@ -104,6 +104,7 @@ export interface UncallableCustomServiceView extends ExternalServiceSummary {
   defaultEnvironment: DefaultEnvironment | null;
   manifest: ServiceManifest | null;
   serviceSkill: string | null;
+  builtOnSdk1: boolean;
 }
 
 export type TenantServiceEntry = TenantServiceView | CustomServiceSummary;
@@ -241,6 +242,17 @@ export function useServiceConsumers(id: () => string, enabled: () => boolean) {
     queryKey: externalServiceViewKeys.consumers(id()),
     queryFn: () => api.get<ServiceConsumer[]>(`${TENANT_SERVICES}/${id()}/consumers`),
     enabled: enabled(),
+  }));
+}
+
+export function useDisconnectServiceConsumer(id: () => string) {
+  const qc = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: (projectEnvironmentId: string) =>
+      api.delete<void>(`${TENANT_SERVICES}/${id()}/consumers/${projectEnvironmentId}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: externalServiceViewKeys.consumers(id()) });
+    },
   }));
 }
 

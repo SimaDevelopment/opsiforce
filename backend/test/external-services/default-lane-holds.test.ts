@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GatewayKeyService } from '../../src/gateway/gateway-key.service';
+import type { BuiltInsAdapter } from '../../src/external-services/built-ins/built-ins-adapter';
 import { DefaultLaneHolds } from '../../src/external-services/gate/default-lane-holds';
 import {
   DefaultLaneMoved,
@@ -12,6 +13,7 @@ import type { RegisteredService } from '../../src/external-services/registry/ser
 const onProductionDefault = {
   id: 'es_trel',
   slug: 'trello',
+  manifest: { displayName: 'Trello' },
   home: {
     builderChatId: 'chat_trel',
     environmentId: 'env_production',
@@ -23,7 +25,7 @@ const onProductionDefault = {
 } as RegisteredService;
 
 function dispatcherWith(holds: DefaultLaneHolds): ServiceDispatcher {
-  return new ServiceDispatcher({} as ServicePods, {} as GatewayKeyService, holds);
+  return new ServiceDispatcher({} as ServicePods, {} as GatewayKeyService, holds, {} as BuiltInsAdapter);
 }
 
 function failureOf(dispatching: Promise<unknown>): Promise<unknown> {
@@ -51,24 +53,6 @@ describe('the holds on a Custom External Service’s Default lane', () => {
     expect(holds.enter('es_trel', 'env_production')).toBe('entered');
   });
 
-  it('lets a webhook wait out a short hold instead of turning it away', async () => {
-    const holds = new DefaultLaneHolds();
-    expect(await holds.hold('es_trel', 1_000)).toBe(true);
-
-    const waiting = holds.enterWaiting('es_trel', 'env_production', 2_000);
-    expect(holds.enter('es_trel', 'env_production')).toBe('held');
-    setTimeout(() => holds.release('es_trel'), 50);
-
-    expect(await waiting).toBe('entered');
-  });
-
-  it('turns a webhook away when the hold outlasts its wait', async () => {
-    const holds = new DefaultLaneHolds();
-    expect(await holds.hold('es_trel', 1_000)).toBe(true);
-
-    expect(await holds.enterWaiting('es_trel', 'env_production', 20)).toBe('held');
-  });
-
   it('waits for calls already running before a switch copies the state file', async () => {
     const holds = new DefaultLaneHolds();
     expect(holds.enter('es_trel', 'env_production')).toBe('entered');
@@ -87,22 +71,29 @@ describe('a call the dispatcher turns away from a Custom External Service’s De
     holds.release('es_trel', 'env_staging');
 
     const failure = await failureOf(
-      dispatcherWith(holds).dispatch(onProductionDefault, { route: 'inbound', body: {} })
+      dispatcherWith(holds).dispatch(onProductionDefault, {
+        route: 'hooks',
+        name: 'onServiceConfigurationSaved',
+        body: {},
+      })
     );
 
     expect(failure).toBeInstanceOf(DefaultLaneMoved);
   });
 
-  it('says only that the service is reloading when a hold outlasts a call that may not wait', async () => {
+  it('says only that the service is reloading while a switch holds the lane', async () => {
     const holds = new DefaultLaneHolds();
     expect(await holds.hold('es_trel', 1_000)).toBe(true);
 
     const failure = await failureOf(
-      dispatcherWith(holds).dispatch(onProductionDefault, { route: 'operations', name: 'list', body: {} })
+      dispatcherWith(holds).dispatch(onProductionDefault, { route: 'options', name: 'list', body: {} })
     );
 
     expect(failure).toBeInstanceOf(ServiceDispatchError);
     expect(failure).not.toBeInstanceOf(DefaultLaneMoved);
-    expect(failure).toMatchObject({ code: 'service-reloading' });
+    expect(failure).toMatchObject({
+      code: 'service-reloading',
+      message: 'Trello is updating to a new version. Try again in a moment.',
+    });
   });
 });

@@ -27,7 +27,7 @@ export interface RevealedSecret {
 
 export interface SaveOptions {
   rotate?: string;
-  keepSwitches?: boolean;
+  keepLabels?: boolean;
   keepRenamedKeys?: boolean;
 }
 

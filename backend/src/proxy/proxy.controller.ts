@@ -13,7 +13,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { FastifyRequest } from 'fastify';
 import { appCanonicalHost } from '../common/app-host';
-import { OperationSwitches, PUBLIC_API_SERVICE } from '../external-services/configuration/operation-switches';
+import { WHO_CHANGES_PUBLIC_API_SETTINGS } from '../external-services/built-ins/public-api-service';
+import { PublicApiSettings } from '../external-services/configuration/public-api-settings';
+import { servesAnExternalService } from '../external-services/gate/service-projects';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../identity/forwarded-identity.service';
 import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
@@ -29,8 +31,6 @@ import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
 import { ProxyService } from './proxy.service';
 
 type ProxySurface = 'agent' | 'app' | 'vscode' | 'db';
-
-const CONNECT_PROJECT = 'connect_project';
 
 interface ProxySurfaceBody {
   surface?: ProxySurface;
@@ -66,7 +66,7 @@ export class ProxyController {
     private readonly identities: ForwardedIdentityService,
     private readonly gatewayKeys: GatewayKeyService,
     private readonly provenance: ProjectProvenanceRepository,
-    private readonly operationSwitches: OperationSwitches
+    private readonly publicApiSettings: PublicApiSettings
   ) {
     this.proxyControlToken = this.configService.getOrThrow<string>('proxyControlToken');
     this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
@@ -85,6 +85,10 @@ export class ProxyController {
 
     const env = await this.projectEnvironmentService.findByIdOrNull(environmentId);
     if (!env) throw new NotFoundException(`Project environment ${environmentId} not found`);
+
+    if (surface === 'app' && (await servesAnExternalService(env.projectId))) {
+      throw new NotFoundException(`Project environment ${environmentId} not found`);
+    }
 
     if (surface === 'agent') {
       if (!env.tenantId) throw new BadRequestException(`Project environment ${environmentId} not yet claimed`);
@@ -188,16 +192,16 @@ export class ProxyController {
   }
 
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {
-    const key = await this.gatewayKeys.validateToken(token);
-    if (!key?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
-    if (key.tenantId !== tenantId) throw new NotFoundException('Project not found');
-    if (!(await this.operationSwitches.isOn(PUBLIC_API_SERVICE, key.projectEnvironmentId, CONNECT_PROJECT))) {
+    const caller = await this.gatewayKeys.validateToken(token);
+    if (!caller?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
+    if (caller.tenantId !== tenantId) throw new NotFoundException('Project not found');
+    if ((await this.publicApiSettings.of(caller.projectEnvironmentId))?.driveCreatedProjects !== true) {
       throw new ForbiddenException(
-        `${CONNECT_PROJECT} is switched off in the calling Project's ${PUBLIC_API_SERVICE} configuration`
+        `"${this.publicApiSettings.labelOf('driveCreatedProjects')}" is off in the calling Project's configuration. ${WHO_CHANGES_PUBLIC_API_SETTINGS}`
       );
     }
 
-    const creatorId = await this.provenance.findCreatorId(key.projectId);
+    const creatorId = await this.provenance.findCreatorId(caller.projectId);
     if (!creatorId) throw new UnauthorizedException('The calling Project has no creator');
 
     const creator = await this.identities.resolveByPlatformId(creatorId);
@@ -210,7 +214,7 @@ export class ProxyController {
       throw new NotFoundException('Project not found');
     }
 
-    if (!(await this.provenance.isCreatedByProject(projectId, key.projectId))) {
+    if (!(await this.provenance.isCreatedByProject(projectId, caller.projectId))) {
       throw new ForbiddenException('The calling Project did not create this Project');
     }
   }

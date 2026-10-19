@@ -62,7 +62,8 @@ describe('the platform skill', () => {
     expect(named).toContain('OPSIFORCE_ENV');
     expect(named).toContain('SERVICE_GATEWAY_URL');
     expect(named).toContain('SERVICE_GATEWAY_API_KEY');
-    expect(named).toContain('EXTERNAL_SERVICES_URL');
+    expect(named).toContain('EXTERNAL_SERVICES_HOST');
+    expect(named).not.toContain('EXTERNAL_SERVICES_URL');
     expect(named).toContain('APP_LLM_BASE_URL');
     expect(named).toContain('APP_LLM_API_KEY');
 
@@ -86,23 +87,31 @@ describe('the platform skill', () => {
     const [, section] = /^## External Services[^\n]*\n([\s\S]*?)^## /m.exec(platformSkill) ?? [];
 
     expect(section).toBeDefined();
-    expect(section).toContain('async function callService(slug, operation, input = {})');
-    expect(section).toContain('$EXTERNAL_SERVICES_URL/<slug>/openapi.json');
-    expect(section).toContain('$EXTERNAL_SERVICES_URL/<slug>/calls?limit=50');
-    for (const code of [
+    expect(section).toContain('https://<slug>.$EXTERNAL_SERVICES_HOST');
+    expect(section).toContain('/.well-known/opsiforce');
+    expect(section).toContain('Authorization: Bearer $SERVICE_GATEWAY_API_KEY');
+    expect(section).toMatch(/never in a URL/);
+    expect(section).toContain('Opsiforce-Outcome');
+    expect(section).toMatch(/never retry/i);
+    expect(section).toContain("configure this Project's External Services");
+    expect(section).toContain('`data`');
+    expect(section).toContain('Development changes go live on Publish');
+  });
+
+  it('leaves the Operation-era calls and refusal codes behind', () => {
+    for (const retired of [
+      'EXTERNAL_SERVICES_URL',
+      'openapi.json',
+      'callService',
+      '/calls',
       'operation-off',
       'out-of-bounds',
       'configuration-incomplete',
-      'service-reloading',
       'service-starting',
-      'service-failed',
-      'input-too-large',
-      'invalid-input',
+      'x-opsiforce-via',
     ]) {
-      expect(section, code).toContain(`\`${code}\``);
+      expect(platformSkill, retired).not.toContain(retired);
     }
-    expect(section).toContain('callId');
-    expect(section).toContain('Development changes go live on Publish');
   });
 
   it('makes a first-time setup atomic and runs a root-refusing service as its own user', () => {

@@ -5,11 +5,10 @@ import { db } from '../../../db';
 import { externalServiceConfig, externalServiceResource } from '../../../db/schema';
 import { encryptResourceValue } from '../../../src/common/secret-crypto';
 import { encryptionKeyFrom } from '../../../src/sealing/secret-sealer';
+import { webhookThroughGate } from './gate-proxy';
 
 export const WHATSAPP_SERVICE = 'whatsapp';
-export const WHATSAPP_WEBHOOK_PATH = `/api/external-services/webhooks/${WHATSAPP_SERVICE}`;
 export const WHAPI_URL = 'https://whapi.test';
-export const RECEIVING_WHATSAPP = { receive: { 'message.received': true } };
 
 export interface V1Number {
   channelId: string;
@@ -94,12 +93,11 @@ export interface WhatsappMessage {
 export function sendWhatsapp(
   app: NestFastifyApplication,
   delivery: { channelId: string; secret: string; messages: WhatsappMessage[] }
-) {
-  return app.inject({
+): Promise<Response> {
+  return webhookThroughGate(app, { service: WHATSAPP_SERVICE }, '', {
     method: 'POST',
-    url: WHATSAPP_WEBHOOK_PATH,
     headers: { 'content-type': 'application/json', 'x-opsiforce-webhook-secret': delivery.secret },
-    payload: JSON.stringify({
+    body: JSON.stringify({
       channel_id: delivery.channelId,
       event: { type: 'messages', event: 'post' },
       messages: delivery.messages.map((message) => ({

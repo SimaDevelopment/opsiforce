@@ -3,9 +3,11 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectEnvironments } from '../../db/schema';
 import type { DbExecutor } from '../common/locks';
+import { GatewayKeyService } from '../gateway/gateway-key.service';
 import type { ProjectLifecycle } from '../project/project-lifecycle';
 import { ServiceConsumers } from './configuration/service-consumers';
 import { CustomServiceRepository } from './custom/custom-service.repository';
+import { GateEviction } from './gate/gate-eviction';
 import { ServiceSkillReach } from './knowledge/service-skill-reach';
 import { unpinServiceSkillsOfBuilderChat } from './knowledge/service-skill.repository';
 import { servesAsServiceDefault } from './publishing/service-default-environments';
@@ -19,7 +21,9 @@ export class ExternalServicesProjectLifecycle implements ProjectLifecycle {
     private readonly testProjectRefreshes: TestProjectRefreshes,
     private readonly consumers: ServiceConsumers,
     private readonly serviceSkillReach: ServiceSkillReach,
-    private readonly customServices: CustomServiceRepository
+    private readonly customServices: CustomServiceRepository,
+    private readonly gatewayKeys: GatewayKeyService,
+    private readonly gate: GateEviction
   ) {}
 
   async created(projectEnvironmentId: string): Promise<void> {
@@ -43,8 +47,14 @@ export class ExternalServicesProjectLifecycle implements ProjectLifecycle {
     return this.testProjectRefreshes.resetting(projectEnvironmentId);
   }
 
-  disabled(projectId: string): Promise<void> {
-    return this.reachServiceSkillOfBuilderChat(projectId);
+  async disabled(projectId: string): Promise<void> {
+    const tokens = await this.gatewayKeys.activeProjectTokens(projectId);
+    const service = await this.customServices.findByBuilderChat(projectId);
+    await Promise.all([
+      ...tokens.map((token) => this.gate.evictGatewayKey(token)),
+      ...(service ? [this.gate.evictService(service.tenantId, service.slug)] : []),
+    ]);
+    if (service) await this.serviceSkillReach.reachEnvironmentsOf(service);
   }
 
   enabled(projectId: string): Promise<void> {
@@ -53,6 +63,14 @@ export class ExternalServicesProjectLifecycle implements ProjectLifecycle {
 
   environmentRemoving(projectEnvironmentId: string): Promise<void> {
     return this.consumers.sayGoodbyeIn(projectEnvironmentId);
+  }
+
+  async gatewayKeysRevoked(projectId: string, tokens: string[]): Promise<void> {
+    const service = await this.customServices.findByBuilderChat(projectId);
+    await Promise.all([
+      ...tokens.map((token) => this.gate.evictGatewayKey(token)),
+      ...(service ? [this.gate.evictService(service.tenantId, service.slug)] : []),
+    ]);
   }
 
   removing(tx: DbExecutor, projectId: string): Promise<void> {

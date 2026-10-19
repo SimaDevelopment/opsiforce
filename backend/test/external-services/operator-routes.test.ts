@@ -66,12 +66,7 @@ describe('the platform operator routes for Built-in External Services', () => {
       icon: expect.stringContaining('<svg'),
       serviceConfiguration: { values: {}, missing: ['baseUrl', 'region', 'apiKey'] },
     });
-    expect(Object.keys(body.manifest.operations)).toEqual([
-      'get_account',
-      'update_account',
-      'delete_account',
-      'get_member',
-    ]);
+    expect(body.manifest).not.toHaveProperty('operations');
     expect(body.manifest.serviceForm.map((field: { key?: string }) => field.key)).toContain('apiKey');
   });
 

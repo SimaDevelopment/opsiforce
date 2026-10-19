@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { JsonValue } from '../common/json';
@@ -79,6 +79,10 @@ export class SecretSealer {
       this.logger.warn(`A sealed secret could not be re-sealed for ${place}: ${(err as Error).message}`);
       throw new SecretUnreadableError(place);
     }
+  }
+
+  derivedKey(purpose: string): string {
+    return createHmac('sha256', this.key).update(purpose, 'utf8').digest('base64url');
   }
 
   private opensAt(sealed: JsonValue, place: string): boolean {

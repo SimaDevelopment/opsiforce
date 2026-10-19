@@ -1,19 +1,20 @@
+import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { assertAccepted, assertRefused } from './support/check.ts';
+import { assertAccepted, assertRefused, errorsOf } from './support/check.ts';
 import { trelloManifest } from './support/fixtures.ts';
 
 test('the Trello example is a valid manifest', () => {
   assertAccepted(trelloManifest());
 });
 
-test('a manifest needs sdk 1, a displayName and a description', () => {
+test('a manifest needs sdk 2, a displayName and a description', () => {
   const { sdk: _sdk, displayName: _displayName, description: _description, ...rest } = trelloManifest();
 
-  assertRefused(rest, 'sdk', /sdk must be 1/);
+  assertRefused(rest, 'sdk', /sdk must be 2/);
   assertRefused(rest, 'displayName', /expected string/);
   assertRefused(rest, 'description', /expected string/);
-  assertRefused({ ...trelloManifest(), sdk: 2 }, 'sdk', /sdk must be 1/);
+  assertRefused({ ...trelloManifest(), sdk: 1 }, 'sdk', /sdk must be 2/);
 });
 
 test('the description is at most 300 characters', () => {
@@ -41,59 +42,29 @@ test('the icon is a relative path to an SVG file', () => {
   assertAccepted({ ...trelloManifest(), icon: 'assets/icon.svg' });
 });
 
-test('an Operation needs a kind, a description of at most 500 characters and an object input', () => {
-  const manifest = trelloManifest();
-  manifest.operations.list_cards.kind = 'admin';
-  manifest.operations.create_card.description = 'x'.repeat(501);
-  delete manifest.operations.delete_card.input;
+for (const key of ['operations', 'bounds', '$defs']) {
+  test(`a manifest refuses ${key}: SDK 2 has no Operations`, () => {
+    const errors = errorsOf({ ...trelloManifest(), [key]: {} });
+    assert.ok(
+      errors.some((error) => error.message.includes(`${key}: SDK 2 has no Operations`)),
+      JSON.stringify(errors)
+    );
+  });
+}
 
-  assertRefused(manifest, 'operations.list_cards.kind', /Invalid option/);
-  assertRefused(manifest, 'operations.create_card.description', /<=500/);
-  assertRefused(manifest, 'operations.delete_card.input', /expected object/);
-});
-
-test('Operation names are snake_case', () => {
-  const manifest = trelloManifest();
-  manifest.operations.createCard = manifest.operations.create_card;
-
-  assertRefused(manifest, 'operations.createCard', /snake_case/);
-});
-
-test('Operation limits stay within the caps', () => {
-  const manifest = trelloManifest();
-  manifest.operations.list_cards.limits = { inputBytes: 25 * 1024 * 1024, timeoutSeconds: 300 };
-  assertAccepted(manifest);
-
-  manifest.operations.list_cards.limits = { inputBytes: 25 * 1024 * 1024 + 1, timeoutSeconds: 301 };
-  assertRefused(manifest, 'operations.list_cards.limits.inputBytes', /<=26214400/);
-  assertRefused(manifest, 'operations.list_cards.limits.timeoutSeconds', /<=300/);
-});
-
-test('an Operation input must be an object schema', () => {
-  const manifest = trelloManifest();
-  manifest.operations.list_cards.input = { type: 'string' };
-
-  assertRefused(manifest, 'operations.list_cards.input', /must be an object schema/);
-});
-
-test('Events need inbound', () => {
-  const manifest = trelloManifest();
-  delete manifest.inbound;
-
-  assertRefused(manifest, 'events', /Events arrive only through inbound/);
-});
-
-test('an Event needs a title, a description and object data', () => {
+test('an Event needs a title and a description, and no data schema', () => {
   const manifest = trelloManifest();
   delete manifest.events['card.moved'].title;
-  manifest.events['card.moved'].data = { type: 'array', items: { type: 'string' } };
-
   assertRefused(manifest, 'events["card.moved"].title', /expected string/);
+
+  const withData = trelloManifest();
+  withData.events['card.moved'].data = { type: 'object' };
+  assertRefused(withData, 'events["card.moved"]', /data is not allowed: describe the Event data in the Service skill/);
 });
 
-test('Event data must be an object schema', () => {
+test('Event types are dotted snake_case', () => {
   const manifest = trelloManifest();
-  manifest.events['card.moved'].data = { type: 'array', items: { type: 'string', boundTo: 'board' } };
+  manifest.events.CardMoved = manifest.events['card.moved'];
 
-  assertRefused(manifest, 'events["card.moved"].data', /must be an object schema/);
+  assertRefused(manifest, 'events.CardMoved', /dotted snake_case/);
 });

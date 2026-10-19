@@ -96,6 +96,10 @@ export const Errors = {
     new PublicApiError('chain-too-deep', {
       detail: `This Project was made by a chain of ${maxDepth} Projects already, so it cannot create another.`,
     }),
+  maxCreatedProjects: (max: number, setting: string) =>
+    new PublicApiError('max-created-projects', {
+      detail: `This Project may create at most ${max} Projects (${setting}). Delete one you created, or ask someone who can configure this Project's External Services to raise it.`,
+    }),
   unexpected: () => new PublicApiError('unexpected'),
   fromForeignStatus: (status: number, detail: string) =>
     new PublicApiError(fallbackSlugForStatus(status), { detail }, {}, hasFallbackSlug(status) ? undefined : status),

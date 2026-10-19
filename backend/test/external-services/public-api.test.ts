@@ -1,13 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { mintCallerIdentity, callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
+import { eq } from 'drizzle-orm';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { db } from '../../db';
+import { projects } from '../../db/schema';
+import { builtInCallerKey } from '../../src/external-services/built-ins/built-in-caller-key';
+import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
+import {
+  MAX_CREATED_PROJECTS,
+  PUBLIC_API_SWITCHES,
+  PublicApiSettings,
+} from '../../src/external-services/configuration/public-api-settings';
+import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
 import { Perms } from '../../src/permission/permission.constants';
 import { ProjectEventsService } from '../../src/project/project-events.service';
-import { CallTokens } from '../../src/gateway/call-tokens';
-import { PlatformApiGrant } from '../../src/external-services/gate/platform-api-grant';
-import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
-import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
+import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import type { FakeProjectEventsService } from '../support/infra-fakes';
 import {
@@ -18,49 +26,104 @@ import {
   removeMemberFromTenant,
   serviceKeyFor,
   setMemberPermissions,
+  stampProjectKind,
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import {
-  askGate,
-  callOperation,
-  callRowsOf,
-  configurePlatformService,
-  dispatchToFakePod,
-  gateCaller,
-  mailboxIds,
-  READY_FIXTURE_CRM,
-  saveProjectConfiguration,
-  type ServicePodFixture,
-} from './support/gate';
-import { forgetPlatformServiceConfiguration } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { TENANT_SERVICES } from './support/custom-services';
+import { builtInServiceId } from './support/fixtures';
+import { callThroughGate } from './support/gate-proxy';
+import { saveProjectConfiguration } from './support/gate';
 
 const PUBLIC_API = 'public-api';
-const platformProbeBuiltInsDir = resolve(__dirname, 'support', 'platform-probe-built-ins');
 
-function bearer(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}` };
+const WHO_CHANGES_IT = "Someone who can configure this Project's External Services can change it.";
+
+const READS = [
+  'GET /api/v1/agents',
+  'GET /api/v1/agents/:id',
+  'GET /api/v1/agents/:id/skills',
+  'GET /api/v1/me',
+  'GET /api/v1/projects',
+  'GET /api/v1/projects/:id',
+  'GET /api/v1/skills',
+  'GET /api/v1/skills/:id',
+  'GET /api/v1/skills/:id/versions/:version/files',
+  'POST /api/v1/skills/validate',
+];
+
+const WRITES: Record<string, string[]> = {
+  authorSkillsAndAgents: [
+    'PATCH /api/v1/agents/:id',
+    'PUT /api/v1/agents/:id/profile',
+    'PUT /api/v1/agents/:id/template',
+    'PUT /api/v1/agents/:id/skills/:skillId',
+    'DELETE /api/v1/agents/:id/skills/:skillId',
+    'POST /api/v1/skills',
+    'PATCH /api/v1/skills/:id',
+    'POST /api/v1/skills/:id/versions',
+    'POST /api/v1/skills/:id/duplicate',
+  ],
+  createAgents: ['POST /api/v1/agents'],
+  createProjects: ['POST /api/v1/projects'],
+  driveCreatedProjects: [
+    'POST /api/v1/projects/:id/environments/:environmentId/connect',
+    'POST /api/v1/projects/:id/restart',
+    'POST /api/v1/projects/:id/test/update',
+    'POST /api/v1/projects/:id/test/reset',
+  ],
+  deleteCreatedProjects: ['DELETE /api/v1/projects/:id'],
+};
+
+const ALL_OFF = {
+  authorSkillsAndAgents: false,
+  createAgents: false,
+  createProjects: false,
+  maxCreatedProjects: 5,
+  driveCreatedProjects: false,
+  deleteCreatedProjects: false,
+};
+
+interface Pod {
+  projectId: string;
+  key: string;
 }
 
-describe('the Public API as a Built-in External Service', () => {
+interface DescribedRoute {
+  route: string;
+  allowedBy?: string[];
+  allowAll?: true;
+}
+
+describe('the Public API on its Service host', () => {
   let harness: ExternalServicesTestApp;
   let app: NestFastifyApplication;
   let tenant: TenantFixture;
   let creator: MemberFixture;
+  let admin: MemberFixture;
   let agentId: string;
 
-  async function pod(createdByProjectId?: string): Promise<{ projectId: string; key: string }> {
+  async function pod(createdByProjectId?: string): Promise<Pod> {
     const projectId = await createProject(app, tenant, { agentId, createdBy: creator.userId, createdByProjectId });
     return { projectId, key: await serviceKeyFor(app, tenant, projectId) };
   }
 
-  async function allowCreateProject(projectId: string): Promise<void> {
-    await saveProjectConfiguration(app, PUBLIC_API, projectId, { operations: { create_project: true } });
+  async function connectedPod(settings: Partial<typeof ALL_OFF> = {}, createdByProjectId?: string): Promise<Pod> {
+    const caller = await pod(createdByProjectId);
+    await saveProjectConfiguration(app, PUBLIC_API, caller.projectId, { ...ALL_OFF, ...settings });
+    return caller;
   }
 
-  function createProjectThroughGate(key: string, title: string) {
-    return callOperation(app, { key, slug: PUBLIC_API, operation: 'create_project', input: { title, agentId } });
+  function call(caller: Pod, method: string, path: string, body?: unknown): Promise<Response> {
+    return callThroughGate(app, { credential: `Bearer ${caller.key}`, slug: PUBLIC_API }, path, {
+      method,
+      ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }),
+    });
+  }
+
+  function createProjectAs(caller: Pod, title: string): Promise<Response> {
+    return call(caller, 'POST', '/api/v1/projects', { title, agentId });
   }
 
   beforeAll(async () => {
@@ -69,6 +132,7 @@ describe('the Public API as a Built-in External Service', () => {
     await harness.listen();
     tenant = await createTenant(app);
     creator = await addMember(app, tenant, [Perms.deleteProject]);
+    admin = await addMember(app, tenant, [Perms.manageTenantExternalServices]);
     agentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
   });
 
@@ -76,127 +140,288 @@ describe('the Public API as a Built-in External Service', () => {
     await harness.close();
   });
 
-  it('is Available with an empty Service form, reads on and writes off', async () => {
-    const { key } = await pod();
+  it('answers the real /api/v1 paths as the human who created the calling Project', async () => {
+    const caller = await connectedPod();
 
-    const res = await askGate(app, { key, path: PUBLIC_API });
+    const res = await call(caller, 'GET', '/api/v1/me');
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({
-      service: PUBLIC_API,
-      displayName: 'Opsiforce Public API',
-      complete: true,
-      operations: {
-        get_me: { kind: 'read', on: true },
-        validate_skill: { kind: 'read', on: true },
-        create_project: { kind: 'write', on: false },
-        remove_agent_skill: { kind: 'write', on: false },
-        delete_project: { kind: 'destructive', on: false },
-        reset_test_project: { kind: 'destructive', on: false },
-      },
-    });
-  });
-
-  it('answers get_me as the human who created the calling Project, through a call token', async () => {
-    const { projectId, key } = await pod();
-
-    const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'get_me' });
-
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
       id: creator.userId,
-      source: 'call-token',
+      source: 'caller-identity',
       tenant: { id: tenant.tenantId, name: tenant.name },
     });
-    const [row] = await callRowsOf(projectId);
-    expect(row).toMatchObject({ operation: 'get_me', decision: 'allowed', status: 200 });
   });
 
-  it('creates a Project stamped with the creator and the calling Project once create_project is on', async () => {
-    const { projectId, key } = await pod();
+  it('refuses a Project with no public-api configuration as not connected, in the API’s problem shape', async () => {
+    const caller = await pod();
 
-    const refused = await createProjectThroughGate(key, 'Switched off');
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json()).toMatchObject({ code: 'operation-off', operation: 'create_project' });
+    const res = await call(caller, 'GET', '/api/v1/me');
 
-    await allowCreateProject(projectId);
-    const res = await createProjectThroughGate(key, 'Through the Gate');
+    expect(res.status).toBe(403);
+    expect(res.headers.get('opsiforce-outcome')).toBe('not connected');
+    expect(res.headers.get('content-type')).toContain('application/problem+json');
+    const problem = await res.json();
+    expect(problem).toMatchObject({ type: 'urn:opsiforce:error:permission-denied', status: 403 });
+    expect(problem.detail).toContain(`/projects/${caller.projectId}?configure=public-api`);
+    expect(problem.detail).toContain(WHO_CHANGES_IT);
+  });
 
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({
-      title: 'Through the Gate',
-      createdBy: creator.userId,
-      createdByProjectId: projectId,
+  describe('which routes a Caller identity reaches', () => {
+    it('describes exactly the 26 decorated routes, reads open to every connected Project and each write behind one setting', async () => {
+      const caller = await connectedPod();
+
+      const res = await call(caller, 'GET', '/.well-known/opsiforce');
+
+      expect(res.status).toBe(200);
+      const routes = ((await res.json()) as { routes: DescribedRoute[] }).routes;
+      expect(routes).toHaveLength(26);
+      for (const read of READS) {
+        expect(routes.find((entry) => entry.route === read)).toMatchObject({ allowedBy: [], allowAll: true });
+      }
+      for (const [setting, writes] of Object.entries(WRITES)) {
+        for (const write of writes) {
+          expect(routes.find((entry) => entry.route === write)).toMatchObject({ allowedBy: [setting] });
+        }
+      }
+    });
+
+    it('answers not supported to an undecorated route, without running it', async () => {
+      const caller = await connectedPod({ authorSkillsAndAgents: true });
+      const project = await pod(caller.projectId);
+
+      const res = await call(caller, 'POST', `/api/v1/agents/${project.projectId}/publish`);
+
+      expect(res.status).toBe(404);
+      expect(res.headers.get('opsiforce-outcome')).toBe('not supported');
+      expect(await res.json()).toMatchObject({ type: 'urn:opsiforce:error:route-not-found' });
     });
   });
 
-  it('passes the Public API refusal through: a Project the caller did not create is not found', async () => {
-    const { projectId: foreign } = await pod();
-    const { key } = await pod();
+  describe('the five settings', () => {
+    const probes: Record<string, { method: string; path: (id: string) => string; body?: unknown; label: string }> = {
+      authorSkillsAndAgents: {
+        method: 'PATCH',
+        path: () => `/api/v1/skills/${randomUUID()}`,
+        body: { displayName: 'Renamed' },
+        label: 'Edit Agents and Skills',
+      },
+      createAgents: { method: 'POST', path: () => '/api/v1/agents', body: {}, label: 'Create Agents' },
+      createProjects: { method: 'POST', path: () => '/api/v1/projects', body: {}, label: 'Create Projects' },
+      driveCreatedProjects: {
+        method: 'POST',
+        path: (id) => `/api/v1/projects/${id}/restart`,
+        label: 'Manage created Projects',
+      },
+      deleteCreatedProjects: {
+        method: 'DELETE',
+        path: () => `/api/v1/projects/${randomUUID()}`,
+        label: 'Delete created Projects',
+      },
+    };
 
-    const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'get_project', input: { id: foreign } });
+    for (const [setting, probe] of Object.entries(probes)) {
+      it(`refuses ${setting} while it is off, naming the setting, its link and who changes it`, async () => {
+        const caller = await connectedPod();
 
-    expect(res.statusCode).toBe(404);
-    expect(res.json()).toMatchObject({ code: 'project-not-found' });
+        const res = await call(caller, probe.method, probe.path(caller.projectId), probe.body);
+
+        expect(res.status).toBe(403);
+        expect(res.headers.get('opsiforce-outcome')).toBe('not allowed');
+        expect(res.headers.get('opsiforce-setting')).toBe(setting);
+        const problem = await res.json();
+        expect(problem.type).toBe('urn:opsiforce:error:permission-denied');
+        expect(problem.detail).toContain(`Setting "${probe.label}"`);
+        expect(problem.detail).toContain(`configure=public-api&field=${setting}`);
+        expect(problem.detail).toContain(WHO_CHANGES_IT);
+      });
+
+      it(`lets the API answer once ${setting} is on`, async () => {
+        const caller = await connectedPod({ [setting]: true });
+
+        const res = await call(caller, probe.method, probe.path(caller.projectId), probe.body);
+
+        expect(res.headers.get('opsiforce-outcome')).toBeNull();
+        expect(res.status).not.toBe(403);
+        await res.text();
+      });
+    }
+  });
+
+  it("knows every setting of the service's Project form, labelled as the form labels it", () => {
+    const manifest = app.get(ServiceRegistry).bySlug('public-api')?.manifest;
+    const keys = (manifest?.projectForm ?? []).flatMap((field) =>
+      'key' in field && field.type !== 'info' ? [field.key] : []
+    );
+
+    expect(keys.toSorted()).toEqual([...PUBLIC_API_SWITCHES, MAX_CREATED_PROJECTS].toSorted());
+    expect(app.get(PublicApiSettings).labelOf(MAX_CREATED_PROJECTS)).toBe(
+      'Opsiforce Public API → Created Projects limit'
+    );
+  });
+
+  describe('Created Projects limit', () => {
+    it('refuses the next Project at the cap with 409 naming the setting and who can raise it', async () => {
+      const caller = await connectedPod({ createProjects: true, maxCreatedProjects: 2 });
+      for (const title of ['First', 'Second']) {
+        const created = await createProjectAs(caller, title);
+        expect(created.status, await created.text()).toBe(201);
+      }
+
+      const refused = await createProjectAs(caller, 'Third');
+
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({
+        type: 'urn:opsiforce:error:max-created-projects',
+        detail:
+          "This Project may create at most 2 Projects (Opsiforce Public API → Created Projects limit). Delete one you created, or ask someone who can configure this Project's External Services to raise it.",
+      });
+    });
+
+    it('lets parallel creates through only up to the cap', async () => {
+      const caller = await connectedPod({ createProjects: true, maxCreatedProjects: 2 });
+
+      const answers = await Promise.all(
+        ['One', 'Two', 'Three', 'Four', 'Five'].map((title) => createProjectAs(caller, title))
+      );
+
+      expect(answers.map((answer) => answer.status).toSorted()).toEqual([201, 201, 409, 409, 409]);
+      const created = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.createdByProjectId, caller.projectId));
+      expect(created).toHaveLength(2);
+    });
+
+    it('counts every created Project still there, a disabled one and a Test Project included', async () => {
+      const caller = await connectedPod({ createProjects: true, maxCreatedProjects: 2 });
+      const disabled = await pod(caller.projectId);
+      await db.update(projects).set({ disabled: true }).where(eq(projects.id, disabled.projectId));
+      const test = await pod(caller.projectId);
+      await stampProjectKind(test.projectId, 'test');
+
+      const refused = await createProjectAs(caller, 'Over the cap');
+
+      expect(refused.status).toBe(409);
+    });
+
+    it('frees a slot when a created Project is deleted', async () => {
+      const caller = await connectedPod({ createProjects: true, maxCreatedProjects: 1, deleteCreatedProjects: true });
+      const first = await createProjectAs(caller, 'Only one');
+      expect(first.status).toBe(201);
+      expect((await createProjectAs(caller, 'Refused')).status).toBe(409);
+
+      const deleted = await call(caller, 'DELETE', `/api/v1/projects/${(await first.json()).id}`);
+      expect(deleted.status, await deleted.text()).toBe(204);
+
+      const again = await createProjectAs(caller, 'In the freed slot');
+      expect(again.status, await again.text()).toBe(201);
+    });
+
+    it('leaves the depth-2 chain stop in place', async () => {
+      const root = await pod();
+      const child = await pod(root.projectId);
+      const grandchild = await connectedPod({ createProjects: true }, child.projectId);
+
+      const res = await createProjectAs(grandchild, 'Too deep');
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ type: 'urn:opsiforce:error:chain-too-deep' });
+    });
   });
 
   describe('who the call acts as', () => {
-    it('does not require can_use_public_api of the creator', async () => {
-      const { key } = await pod();
-
-      const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'get_me' });
-
-      expect(res.json().permissions).not.toContain(Perms.usePublicApi);
-    });
-
     it("carries the creator's permissions as they stand at each call", async () => {
-      const { projectId, key } = await pod();
-      await saveProjectConfiguration(app, PUBLIC_API, projectId, { operations: { delete_project: true } });
-      const target = (await pod(projectId)).projectId;
-      const deleteTarget = () =>
-        callOperation(app, { key, slug: PUBLIC_API, operation: 'delete_project', input: { id: target } });
+      const caller = await connectedPod({ deleteCreatedProjects: true });
+      const target = (await pod(caller.projectId)).projectId;
 
       await setMemberPermissions(tenant, creator, []);
-      const refused = await deleteTarget();
+      const refused = await call(caller, 'DELETE', `/api/v1/projects/${target}`);
       await setMemberPermissions(tenant, creator, [Perms.deleteProject]);
-      const allowed = await deleteTarget();
+      const allowed = await call(caller, 'DELETE', `/api/v1/projects/${target}`);
 
-      expect(refused.statusCode).toBe(502);
-      expect(refused.json()).toMatchObject({ code: 'permission-denied', permission: Perms.deleteProject });
-      expect(allowed.statusCode, allowed.body).toBe(200);
+      expect(refused.status).toBe(403);
+      expect(refused.headers.get('opsiforce-outcome')).toBeNull();
+      expect(await refused.json()).toMatchObject({ type: 'urn:opsiforce:error:permission-denied' });
+      expect(allowed.status, await allowed.text()).toBe(204);
     });
 
     it('refuses a Project that records no creator', async () => {
-      const { projectId, key } = await pod();
-      await clearProjectCreator(projectId);
+      const caller = await connectedPod();
+      await clearProjectCreator(caller.projectId);
 
-      const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'get_me' });
+      const res = await call(caller, 'GET', '/api/v1/me');
 
-      expect(res.json()).toMatchObject({ code: 'unauthenticated' });
+      expect(await res.json()).toMatchObject({ type: 'urn:opsiforce:error:unauthenticated' });
     });
 
     it('refuses a creator who no longer belongs to the Organization', async () => {
       const leaver = await addMember(app, tenant);
       const projectId = await createProject(app, tenant, { agentId, createdBy: leaver.userId });
-      const key = await serviceKeyFor(app, tenant, projectId);
+      await saveProjectConfiguration(app, PUBLIC_API, projectId, ALL_OFF);
+      const caller = { projectId, key: await serviceKeyFor(app, tenant, projectId) };
       await removeMemberFromTenant(leaver);
 
-      const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'get_me' });
+      const res = await call(caller, 'GET', '/api/v1/me');
 
-      expect(res.json()).toMatchObject({ code: 'tenant-forbidden' });
+      expect(await res.json()).toMatchObject({ type: 'urn:opsiforce:error:tenant-forbidden' });
     });
 
     it('lists only the Projects its Project created', async () => {
-      const { projectId, key } = await pod();
-      const own = (await pod(projectId)).projectId;
+      const caller = await connectedPod();
+      const own = (await pod(caller.projectId)).projectId;
       const { projectId: foreign } = await pod();
 
-      const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'list_projects' });
+      const res = await call(caller, 'GET', '/api/v1/projects');
 
-      const ids = res.json().items.map((item: { id: string }) => item.id);
+      const ids = ((await res.json()) as { items: { id: string }[] }).items.map((item) => item.id);
       expect(ids).toContain(own);
       expect(ids).not.toContain(foreign);
-      expect(ids).not.toContain(projectId);
+      expect(ids).not.toContain(caller.projectId);
+    });
+  });
+
+  describe('records', () => {
+    it('writes Caller-identity calls to the built-ins Call log and counts projects_created, but not a human’s calls', async () => {
+      const serviceId = await builtInServiceId(PUBLIC_API);
+      const caller = await connectedPod({ createProjects: true });
+      expect((await createProjectAs(caller, 'Counted')).status).toBe(201);
+      const human = await app.inject({ method: 'GET', url: '/api/v1/me', headers: creator.headers });
+      expect(human.statusCode).toBe(403);
+
+      const page = await vi.waitFor(async () => {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/api/external-services/projects/${caller.projectId}/environments/${caller.projectId}/services/${serviceId}/call-log`,
+          headers: admin.headers,
+        });
+        expect(res.statusCode, res.body).toBe(200);
+        const calls = res.json().calls as unknown[];
+        expect(calls).toHaveLength(1);
+        return res.json();
+      });
+      expect(page.calls[0]).toMatchObject({
+        callerKind: 'call',
+        method: 'POST',
+        path: '/api/v1/projects',
+        route: 'Create a Project',
+        outcome: 'handled',
+        status: 201,
+      });
+      await vi.waitFor(async () => {
+        const res = await app.inject({
+          method: 'GET',
+          url: `${TENANT_SERVICES}/${serviceId}/usage`,
+          headers: admin.headers,
+        });
+        const view = res.json();
+        expect(
+          view.projects.find((project: { projectId: string }) => project.projectId === caller.projectId)?.values
+        ).toMatchObject({ requests: 1, projects_created: 1 });
+        expect(view.counters).toContainEqual(
+          expect.objectContaining({ name: 'projects_created', label: 'Projects created' })
+        );
+      });
     });
   });
 
@@ -210,216 +435,59 @@ describe('the Public API as a Built-in External Service', () => {
     });
 
     it('publishes on the calling Project after a write', async () => {
-      const { projectId, key } = await pod();
-      await allowCreateProject(projectId);
+      const caller = await connectedPod({ createProjects: true });
 
-      const res = await createProjectThroughGate(key, 'Wakes the page');
+      const res = await createProjectAs(caller, 'Wakes the page');
 
-      expect(res.statusCode, res.body).toBe(200);
-      expect(events.callsTo('publish').map((call) => call.args.projectId)).toContain(projectId);
+      expect(res.status, await res.text()).toBe(201);
+      expect(events.callsTo('publish').map((entry) => entry.args.projectId)).toContain(caller.projectId);
     });
 
     it('stays quiet on a read', async () => {
-      const { key } = await pod();
+      const caller = await connectedPod();
       await new Promise((resolve) => setImmediate(resolve));
       events.calls.length = 0;
 
-      const res = await callOperation(app, { key, slug: PUBLIC_API, operation: 'get_me' });
+      const res = await call(caller, 'GET', '/api/v1/me');
 
-      expect(res.statusCode).toBe(200);
+      expect(res.status).toBe(200);
       expect(events.callsTo('publish')).toEqual([]);
     });
   });
 
-  describe('how deep the chain may go', () => {
-    it('lets a Project at depth 1 create a Project', async () => {
-      const root = await pod();
-      const child = await pod(root.projectId);
-      await allowCreateProject(child.projectId);
-
-      const res = await createProjectThroughGate(child.key, 'Grandchild');
-
-      expect(res.statusCode, res.body).toBe(200);
-      expect(res.json()).toMatchObject({ createdByProjectId: child.projectId });
-    });
-
-    it('refuses create_project from a Project at depth 2 with 409 chain-too-deep', async () => {
-      const root = await pod();
-      const child = await pod(root.projectId);
-      const grandchild = await pod(child.projectId);
-      await allowCreateProject(grandchild.projectId);
-
-      const res = await createProjectThroughGate(grandchild.key, 'Too deep');
-
-      expect(res.statusCode).toBe(409);
-      expect(res.json()).toMatchObject({ code: 'chain-too-deep' });
-    });
-  });
-
-  describe('/api/v1 and pod credentials', () => {
+  describe('/api/v1 reached without the Service host', () => {
     it('answers 401 to a Gateway Key', async () => {
-      const { key } = await pod();
+      const { key } = await connectedPod();
 
-      const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(key) });
+      const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { authorization: `Bearer ${key}` } });
 
       expect(res.statusCode).toBe(401);
       expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:unauthenticated' });
     });
 
-    it('answers 401 to a call token no Gate call issued', async () => {
-      const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer('gc-made-up') });
-
-      expect(res.statusCode).toBe(401);
-    });
-  });
-});
-
-describe('the call token a Built-in External Service gets', () => {
-  let harness: ExternalServicesTestApp;
-  let app: NestFastifyApplication;
-  let tenant: TenantFixture;
-  let projectId: string;
-  let key: string;
-
-  beforeAll(async () => {
-    harness = await createExternalServicesTestApp({ builtInsDir: platformProbeBuiltInsDir });
-    app = harness.app;
-    await harness.listen();
-    tenant = await createTenant(app);
-    const creator = await addMember(app, tenant);
-    projectId = await createProject(app, tenant, { createdBy: creator.userId });
-    key = await serviceKeyFor(app, tenant, projectId);
-  });
-
-  afterAll(async () => {
-    await harness.close();
-  });
-
-  function probe(kind: string) {
-    return callOperation(app, { key, slug: 'public-api', operation: 'get_me', input: { probe: kind } });
-  }
-
-  it('is handed only to public-api, never to another Built-in External Service', async () => {
-    const otherBuiltIn = await callOperation(app, {
-      key,
-      slug: 'platform-probe',
-      operation: 'get_me',
-      input: { probe: 'keep' },
-    });
-    const publicApi = await probe('keep');
-
-    expect(otherBuiltIn.statusCode, otherBuiltIn.body).toBe(200);
-    expect(otherBuiltIn.json()).toEqual({ kept: false });
-    expect(publicApi.json()).toEqual({ kept: true });
-  });
-
-  it('is minted only for the built-in public-api, never for a service of another origin under that slug', () => {
-    const publicApi = app.get(ServiceRegistry).bySlug('public-api');
-    if (!publicApi) throw new Error('public-api is not registered');
-    const grant = app.get(PlatformApiGrant);
-    const call = {
-      callId: randomUUID(),
-      operation: 'get_me',
-      caller: {
+    it('answers 401 to a Caller identity made for another built-in, and to an expired one', async () => {
+      const { projectId } = await connectedPod();
+      const claims = {
+        kind: 'call' as const,
         tenantId: tenant.tenantId,
         projectId,
-        projectTitle: null,
-        projectKind: null,
-        projectEnvironmentId: randomUUID(),
-        environment: 'production',
-        environmentName: 'Production',
-      },
-    };
+        projectEnvironmentId: projectId,
+        environment: 'development',
+      };
+      const sealer = app.get(SecretSealer);
+      const forEmail = mintCallerIdentity(claims, builtInCallerKey(sealer, 'incoming-email'));
+      const expired = mintCallerIdentity(claims, builtInCallerKey(sealer, PUBLIC_API), {
+        now: Date.now() - 10 * 60_000,
+      });
 
-    const granted = grant.grantFor(publicApi, call);
-    expect(granted).not.toBeNull();
-    granted?.revoke();
-    expect(grant.grantFor({ ...publicApi, origin: 'custom' }, call)).toBeNull();
-  });
-
-  it('is refused by the Public API when it was minted for another service', async () => {
-    const tokens = app.get(CallTokens);
-    const holder = {
-      callId: randomUUID(),
-      operation: 'get_me',
-      tenantId: tenant.tenantId,
-      projectId,
-      projectEnvironmentId: randomUUID(),
-    };
-    const forAnotherService = tokens.issue({ ...holder, service: 'platform-probe' });
-    const forPublicApi = tokens.issue({ ...holder, service: 'public-api' });
-
-    const refused = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(forAnotherService.token) });
-    const accepted = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(forPublicApi.token) });
-
-    expect(refused.statusCode).toBe(401);
-    expect(accepted.statusCode, accepted.body).toBe(200);
-  });
-
-  it('works once: the second use within the same call is refused', async () => {
-    const res = await probe('me-twice');
-
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toEqual({ first: 200, second: 401 });
-  });
-
-  it('works only during its own call: a token kept from an earlier call is refused', async () => {
-    const kept = await probe('keep');
-    expect(kept.json()).toEqual({ kept: true });
-
-    const res = await probe('me-with-kept');
-
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toEqual({ status: 401 });
-  });
-
-  it('works only for the Operation it was minted for: another Public API route refuses it', async () => {
-    const res = await probe('another-route');
-
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toEqual({ status: 401 });
-  });
-});
-
-describe('a service running in its own pod', () => {
-  let harness: ExternalServicesTestApp;
-  let app: NestFastifyApplication;
-  let service: ServicePodFixture | undefined;
-
-  beforeAll(async () => {
-    harness = await createExternalServicesTestApp();
-    app = harness.app;
-    await harness.listen();
-  });
-
-  afterEach(async () => {
-    await service?.stop();
-    service = undefined;
-  });
-
-  afterAll(async () => {
-    await harness.close();
-  });
-
-  it('gets no call token', async () => {
-    await forgetPlatformServiceConfiguration(FIXTURE_SERVICE);
-    const [mailbox] = mailboxIds(await configurePlatformService(app, FIXTURE_SERVICE, READY_FIXTURE_CRM));
-    const caller = await gateCaller(app);
-    await saveProjectConfiguration(app, FIXTURE_SERVICE, caller.projectEnvironmentId, {
-      mailbox,
-      accountIds: ['acc_1'],
+      for (const identity of [forEmail, expired]) {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/api/v1/me',
+          headers: { [callerIdentityHeader]: identity },
+        });
+        expect(res.statusCode).toBe(401);
+      }
     });
-    service = await dispatchToFakePod(app, FIXTURE_SERVICE);
-
-    const res = await callOperation(app, {
-      key: caller.key,
-      slug: FIXTURE_SERVICE,
-      operation: 'get_account',
-      input: { accountId: 'acc_1' },
-    });
-
-    expect(res.statusCode, res.body).toBe(200);
-    expect(service.pod.received).toHaveLength(1);
-    expect(service.pod.received[0]?.platformApi).toBeUndefined();
   });
 });

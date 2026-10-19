@@ -1,4 +1,5 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import 'reflect-metadata';
 import { getQueueToken } from '@nestjs/bullmq';
@@ -12,17 +13,24 @@ import { DEFAULT_AGENT_NAME, type AgentRow } from '../../src/agent/agent.types';
 import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
 import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { ProjectConfigurationStore } from '../../src/external-services/configuration/project-configuration.store';
+import { ServiceConsumers } from '../../src/external-services/configuration/service-consumers';
 import { ServiceSkillReach } from '../../src/external-services/knowledge/service-skill-reach';
-import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
 import { ProjectService } from '../../src/project/project.service';
 import { productionEnvironmentId } from '../../src/store/agent-profile.repository';
 import { SkillRepository } from '../../src/store/skill.repository';
 import { SkillService, type SkillCaller } from '../../src/store/skill.service';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
 import { fixtureCrmEvolved, type EvolvedBuiltIns } from './support/evolved-built-ins';
-import { builtInServiceId, forgetPlatformServiceConfiguration, platformOperator } from './support/fixtures';
-import { configurePlatformService, mailboxIds, READY_FIXTURE_CRM, storeProjectConfiguration } from './support/gate';
+import { ensureExternalServiceBuilder } from './support/custom-services';
+import {
+  builtInServiceId,
+  forgetPlatformServiceConfiguration,
+  platformOperator,
+  tenantAdmin,
+} from './support/fixtures';
+import { configurePlatformService, READY_FIXTURE_CRM, storeProjectConfiguration } from './support/gate';
+import { publishCustomService } from './support/published-services';
+import { SDK2_BOARDS_MANIFEST } from './support/sdk2-service-pod';
 import { ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
 import type { FakeQueue } from '../support/infra-fakes';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
@@ -140,7 +148,7 @@ describe('the Service skill in the Store', () => {
     const [file] = await app.get(SkillRepository).readTree(skill.latestVersionId);
     expect(file?.content.toString()).toMatch(/^---\nname: service-fixture-crm\n/);
     expect(file?.content.toString()).toContain('Accounts belong to pipelines.');
-    expect(file?.content.toString()).toContain('$EXTERNAL_SERVICES_URL/fixture-crm');
+    expect(file?.content.toString()).toContain('https://fixture-crm.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce');
   });
 
   it('lays no new version when the service’s document has not changed', async () => {
@@ -301,7 +309,7 @@ describe('a Project that configures a service its Agent does not carry', () => {
     const configured = await createProject(agentId);
     const other = await createProject(agentId);
 
-    await storeProjectConfiguration(FIXTURE_SERVICE, configured, { operations: {}, receive: {}, _labels: {} });
+    await storeProjectConfiguration(FIXTURE_SERVICE, configured, { _labels: {} });
     await deliveries.deliver({ projectEnvironmentId: configured, attempt: 0 });
     await deliveries.deliver({ projectEnvironmentId: other, attempt: 0 });
 
@@ -309,20 +317,18 @@ describe('a Project that configures a service its Agent does not carry', () => {
     expect(await installedSkillNames(other)).not.toContain(SERVICE_SKILL);
   });
 
-  it('starts that configuration with only the read Operations on', async () => {
+  it('loses it when the Project disconnects the service', async () => {
     const projectId = await createProject(await customAgent());
-    const store = app.get(ProjectConfigurationStore);
-    const service = app.get(ServiceRegistry).bySlug(FIXTURE_SERVICE);
-    if (!service) throw new Error(`${FIXTURE_SERVICE} is not registered`);
+    await storeProjectConfiguration(FIXTURE_SERVICE, projectId, { _labels: {} });
+    await deliveries.deliver({ projectEnvironmentId: projectId, attempt: 0 });
+    expect(await installedSkillNames(projectId)).toContain(SERVICE_SKILL);
+    const before = queue.callsTo('add').length;
 
-    const [mailbox] = mailboxIds(await configurePlatformService(app, FIXTURE_SERVICE, READY_FIXTURE_CRM));
+    await app.get(ServiceConsumers).disconnect(fixtureId, projectId);
 
-    const saved = await store.save(service, projectId, { mailbox });
-
-    const kinds = service.manifest.operations ?? {};
-    for (const [name, on] of Object.entries(saved.operations)) {
-      expect(on, name).toBe((kinds[name]?.kind ?? 'read') === 'read');
-    }
+    expect(enqueuedSince(before)).toContain(projectId);
+    await deliveries.deliver({ projectEnvironmentId: projectId, attempt: 0 });
+    expect(await installedSkillNames(projectId)).not.toContain(SERVICE_SKILL);
   });
 });
 
@@ -350,6 +356,40 @@ describe('a service folder without SKILL.md', () => {
     const file = await serviceSkillFile(project.id);
     expect(file).toMatch(/^---\nname: service-fixture-crm\ndescription: Fixture CRM — A pretend CRM/);
     expect(file).toContain('# Fixture CRM');
-    expect(file).toContain('$EXTERNAL_SERVICES_URL/fixture-crm/openapi.json');
+    expect(file).toContain('https://fixture-crm.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce');
+  });
+});
+
+describe('the Service skill of an SDK 2 service', () => {
+  let sdk2: ExternalServicesTestApp;
+  let storageRoot: string;
+
+  beforeAll(async () => {
+    await ensureExternalServiceBuilder();
+    storageRoot = await mkdtemp(path.join(tmpdir(), 'sdk2-service-skill-'));
+    sdk2 = await createExternalServicesTestApp({ env: { STORAGE_MOUNT_PATH: storageRoot } });
+  });
+
+  afterAll(async () => {
+    await sdk2.close();
+    await rm(storageRoot, { recursive: true, force: true });
+  });
+
+  it('points at the Service host and its /.well-known/opsiforce, and at no Operation endpoint', async () => {
+    const admin = await tenantAdmin(sdk2.app);
+    const slug = `boards-${crypto.randomUUID().slice(0, 8)}`;
+    const service = await publishCustomService(sdk2.app, admin, storageRoot, { slug, manifest: SDK2_BOARDS_MANIFEST });
+
+    const [skill] = await db.select().from(skills).where(eq(skills.externalServiceId, service.id));
+    if (!skill?.latestVersionId) throw new Error(`${slug} has no Service skill`);
+    const [file] = await sdk2.app.get(SkillRepository).readTree(skill.latestVersionId);
+    const content = file?.content.toString() ?? '';
+
+    expect(content).toMatch(new RegExp(`^---\\nname: service-${slug}\\n`));
+    expect(content).toContain(`https://${slug}.$EXTERNAL_SERVICES_HOST`);
+    expect(content).toContain(`https://${slug}.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce`);
+    for (const retired of ['EXTERNAL_SERVICES_URL', 'openapi.json', '/calls', '<operation>']) {
+      expect(content, retired).not.toContain(retired);
+    }
   });
 });

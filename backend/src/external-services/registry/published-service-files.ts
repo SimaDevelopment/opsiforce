@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sdkVersion, type ServiceManifest } from '@opsiforce/external-service-sdk';
-import { computeManifestHash } from '@opsiforce/external-service-sdk/server';
+import { computeManifestHash, manifestSdkOf } from '@opsiforce/external-service-sdk/server';
 import { manifestFileName } from '@opsiforce/external-service-sdk/service-folder';
 import { SERVICE_SKILL_FILE } from './built-in-services';
 import { readConfinedServiceFolder, readFileInFolder } from './service-folder-files';
@@ -25,6 +25,18 @@ export interface PublishedServiceFiles {
 }
 
 export class UnservableServiceFiles extends Error {}
+
+export const BUILT_ON_SDK_1 = 'Built on SDK 1: rebuild it on SDK 2 or delete it';
+
+export class Sdk1ServiceFiles extends UnservableServiceFiles {
+  constructor() {
+    super(BUILT_ON_SDK_1);
+  }
+}
+
+export function isBuiltOnSdk1(manifestJson: unknown, vendored: string | null): boolean {
+  return manifestSdkOf(manifestJson) === 1 || (vendored !== null && Number(vendored.split('.')[0]) === 1);
+}
 
 export interface ReadServiceFiles {
   files: PublishedServiceFiles;
@@ -90,14 +102,15 @@ export class PublishedServiceFilesReader {
   }
 
   private async readFolder(folder: string): Promise<PublishedServiceFiles> {
-    const { json, check } = await readConfinedServiceFolder(folder, { origin: 'custom' });
+    const { json, check } = await readConfinedServiceFolder(folder);
+    const vendored = vendoredSdkVersion(await readFileInFolder(folder, PACKAGE_FILE));
+    if (isBuiltOnSdk1(json, vendored)) throw new Sdk1ServiceFiles();
     if (!check.ok || !check.manifest) {
       const first = check.problems.find((problem) => problem.severity === 'error');
       throw new UnservableServiceFiles(
         first ? `${first.path}: ${first.message}` : `${manifestFileName} does not pass check`
       );
     }
-    const vendored = vendoredSdkVersion(await readFileInFolder(folder, PACKAGE_FILE));
     if (!acceptsSdk(vendored)) {
       throw new UnservableServiceFiles(`SDK ${vendored} is not an SDK ${sdkVersion}.x`);
     }

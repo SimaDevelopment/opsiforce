@@ -67,6 +67,7 @@ export { default as ChartColumn } from 'lucide-solid/icons/chart-column';
 export { default as KeyRound } from 'lucide-solid/icons/key-round';
 export { default as Mail } from 'lucide-solid/icons/mail';
 export { default as Cable } from 'lucide-solid/icons/cable';
+export { default as Unplug } from 'lucide-solid/icons/unplug';
 export { default as List } from 'lucide-solid/icons/list';
 export { default as LayoutGrid } from 'lucide-solid/icons/layout-grid';
 export { default as Files } from 'lucide-solid/icons/files';

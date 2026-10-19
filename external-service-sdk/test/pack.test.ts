@@ -67,10 +67,10 @@ test('the tarball holds compiled JavaScript and declarations, never TypeScript s
   }
 });
 
-test('the tarball carries the README, the CHANGELOG and the manifest schema', () => {
+test('the tarball carries the README, the CHANGELOG, the wire contract and the manifest schema', () => {
   const files = filesUnder(join(unpacked, 'package'));
 
-  for (const file of ['README.md', 'CHANGELOG.md', 'service.schema.json', 'package.json']) {
+  for (const file of ['README.md', 'CHANGELOG.md', 'WIRE-CONTRACT.md', 'service.schema.json', 'package.json']) {
     assert.ok(files.includes(file), `missing ${file}`);
   }
   assert.match(

@@ -35,10 +35,10 @@ Offer the author the honest answer, including "this does not need a Skill".
 Before drafting anything, list what already exists and read the closest match:
 
 ```sh
-sh /workspace/scripts/api.sh call list_skills '{"filter":"built_in"}'
-sh /workspace/scripts/api.sh call list_skills '{"q":"release"}'
-sh /workspace/scripts/api.sh call get_skill "{\"id\":\"$ID\"}"                          # its latest version number is here
-sh /workspace/scripts/api.sh call get_skill_files "{\"id\":\"$ID\",\"version\":$N}"     # read that one, or the one an Agent pins — never assume 1
+sh /workspace/scripts/api.sh GET '/skills?filter=built_in'
+sh /workspace/scripts/api.sh GET '/skills?q=release'
+sh /workspace/scripts/api.sh GET "/skills/$ID"                          # its latest version number is here
+sh /workspace/scripts/api.sh GET "/skills/$ID/versions/$N/files"        # read that one, or the one an Agent pins — never assume 1
 ```
 
 Then decide, and say which you did:
@@ -46,7 +46,7 @@ Then decide, and say which you did:
 | Path | When | How |
 |---|---|---|
 | **Reuse** | an existing Skill already does it | add it to the Agent — no new Skill at all. In a Skill's chat, tell the author which one already covers it |
-| **Extend** | close, but needs house specifics | in an Agent's chat, `duplicate_skill {"id":"…","name":"…"}` → a private copy under a new name, then publish a Version onto it and add it. In a Skill's chat, read its files and publish them, changed, as a Version of this chat's Skill |
+| **Extend** | close, but needs house specifics | in an Agent's chat, `POST /skills/<id>/duplicate {"name":"…"}` → a private copy under a new name, then publish a Version onto it and add it. In a Skill's chat, read its files and publish them, changed, as a Version of this chat's Skill |
 | **Fresh** | nothing close | draft in `scratch/<name>/` |
 
 Put the choice to the author only when Reuse and Extend are both plausible and the brief does not say
@@ -62,14 +62,14 @@ Draft, validate offline, publish, read back — in one pass, once the tree valid
 # 1. draft under scratch/<name>/ — SKILL.md plus any references/
 # 2. the same gate the API runs, offline:
 node /workspace/scripts/validate-skill.mjs scratch/release-notes --name release-notes
-# 3. publish a Version onto the Skill — its id and the files, no --name, which a Version refuses:
-node /workspace/scripts/pack-skill.mjs --json scratch/release-notes | jq --arg id "$ID" '. + {id: $id}' > scratch/body.json
-sh /workspace/scripts/api.sh call create_skill_version @scratch/body.json
+# 3. publish a Version onto the Skill — its id in the path, the files without --name, which a Version refuses:
+node /workspace/scripts/pack-skill.mjs --json scratch/release-notes > scratch/body.json
+sh /workspace/scripts/api.sh POST "/skills/$ID/versions" @scratch/body.json
 # only a new Skill an Agent needs is created instead, with its name:
 # node /workspace/scripts/pack-skill.mjs --json scratch/release-notes --name release-notes > scratch/body.json
-# sh /workspace/scripts/api.sh call create_skill @scratch/body.json
+# sh /workspace/scripts/api.sh POST /skills @scratch/body.json
 # 4. read back what landed, and say the Version number to the author:
-sh /workspace/scripts/api.sh call get_skill_files "{\"id\":\"$ID\",\"version\":$N}"
+sh /workspace/scripts/api.sh GET "/skills/$ID/versions/$N/files"
 ```
 
 **Every submission is a whole tree.** A Version is minted from the files you send, and nothing is

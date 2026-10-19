@@ -3,11 +3,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { Job } from 'bullmq';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CallLogCleanupProcessor } from '../../src/external-services/calls/call-log-cleanup.processor';
+import {
+  builtInCount,
+  ExternalServiceUsageService,
+} from '../../src/external-services/usage/external-service-usage.service';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { backdateCall, callIdsOf, stageCalls, usageRowsOf } from './support/call-log';
+import { callIdsOf, stageCalls, usageRowsOf } from './support/call-log';
 import { forgetPlatformServiceConfiguration } from './support/fixtures';
 import {
-  callOperation,
   configurePlatformService,
   gateCaller,
   mailboxIds,
@@ -66,21 +69,36 @@ describe('Call log retention', () => {
   });
 
   it('leaves Usage intact when the Calls it counted are gone', async () => {
-    const res = await callOperation(app, {
-      key: caller.key,
-      slug: FIXTURE_SERVICE,
-      operation: 'delete_account',
-      input: { accountId: 'acc_1' },
-    });
-    expect(res.statusCode).toBe(403);
-    const callId = res.json<{ callId: string }>().callId;
+    const [callId = ''] = await stageCalls([
+      {
+        tenantId: caller.tenant.tenantId,
+        projectId: caller.projectId,
+        projectEnvironmentId: caller.projectEnvironmentId,
+        outcome: 'not allowed',
+        status: 403,
+        createdAt: daysAgo(30),
+      },
+    ]);
+    await app.get(ExternalServiceUsageService).count(
+      {
+        tenantId: caller.tenant.tenantId,
+        projectId: caller.projectId,
+        projectEnvironmentId: caller.projectEnvironmentId,
+        service: FIXTURE_SERVICE,
+      },
+      [builtInCount('requests'), builtInCount('not_allowed')]
+    );
     const before = await usageRowsOf(caller.projectEnvironmentId);
-    await backdateCall(callId, daysAgo(30));
 
     await runDailyCleanup();
 
     expect(await callIdsOf([callId])).toEqual([]);
-    expect(before).toEqual([expect.objectContaining({ calls: 1, refused: 1 })]);
-    expect(await usageRowsOf(caller.projectEnvironmentId)).toEqual(before);
+    expect(before.map((row) => [row.name, row.value]).toSorted()).toEqual([
+      ['not_allowed', 1],
+      ['requests', 1],
+    ]);
+    expect((await usageRowsOf(caller.projectEnvironmentId)).toSorted((a, b) => a.name.localeCompare(b.name))).toEqual(
+      before.toSorted((a, b) => a.name.localeCompare(b.name))
+    );
   });
 });

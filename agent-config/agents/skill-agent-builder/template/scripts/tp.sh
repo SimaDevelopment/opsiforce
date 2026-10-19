@@ -3,7 +3,7 @@
 # (projectId, agentId, environmentId, baseUrl, sessionId, lastMessageId), so every call picks up
 # where the last one stopped, in a new shell or a resumed chat alike.
 #
-#   sh scripts/tp.sh up                  # find it (state, get_me, a 409) or create it; wait; connect
+#   sh scripts/tp.sh up                  # find it (state, GET /me, a 409) or create it; wait; connect
 #   sh scripts/tp.sh prompt '<text>'     # send it under a fresh msg_ id, then wait as `turn` does
 #   sh scripts/tp.sh turn                # wait for the child's turn: turn.sh's exit codes
 #   sh scripts/tp.sh interrupt           # stop the child's turn: for a genuine stall only
@@ -28,7 +28,6 @@ export API_MAX_TIME="${API_MAX_TIME:-60}"
 
 api() { sh "$here/api.sh" "$@"; }
 die() { echo "$*" >&2; exit 1; }
-project_input() { jq -cn --arg id "$1" '{id: $id}'; }
 
 get() { jq -r --arg k "$1" '.[$k] // empty' "$state" 2>/dev/null || true; }
 
@@ -75,7 +74,7 @@ wait_active() {
   status=unknown
   while [ "$i" -lt "$attempts" ]; do
     i=$((i + 1))
-    body=$(api call get_project "$(project_input "$project")")
+    body=$(api GET "/projects/$project")
     if [ "$(printf '%s' "$body" | jq -r '.disabled // false')" = true ]; then
       echo "disabled: Test Project $project is switched off; it comes back from the Test run pane's menu beside this chat"
       return 1
@@ -91,12 +90,12 @@ wait_active() {
 
 connect() {
   project=$1
-  environment=$(api call get_project "$(project_input "$project")" | jq -r '.environments[0].id // empty')
+  environment=$(api GET "/projects/$project" | jq -r '.environments[0].id // empty')
   [ -n "$environment" ] || die "Test Project $project reports no environment"
   i=0
   while :; do
     i=$((i + 1))
-    connection=$(api call connect_project "$(jq -cn --arg id "$project" --arg e "$environment" '{id: $id, environmentId: $e}')")
+    connection=$(api POST "/projects/$project/environments/$environment/connect")
     base=$(printf '%s' "$connection" | jq -r '.baseUrl // empty' 2>/dev/null || true)
     [ -n "$base" ] && break
     [ "$i" -lt "$attempts" ] || { refused "$connection" || true; die "connect kept refusing"; }
@@ -121,7 +120,7 @@ ready() {
   set -e
   if [ "$waited" -eq 7 ]; then
     echo "environment failed: restarting it once"
-    out=$(api call restart_project "$(project_input "$project")") && sent=0 || sent=$?
+    out=$(api POST "/projects/$project/restart") && sent=0 || sent=$?
     accepted "$sent" restart "$out"
     set +e
     wait_active "$project"
@@ -137,21 +136,21 @@ up() {
   rename_legacy
   project=$(get projectId)
   if [ -n "$project" ]; then
-    code=$(api status get_project "$(project_input "$project")")
+    code=$(api status GET "/projects/$project")
     case "$code" in
       200) ;;
       404) echo "Test Project $project is gone"; project=""; printf '{}\n' > "$state" ;;
-      *) die "get_project $project answered $code" ;;
+      *) die "GET /projects/$project answered $code" ;;
     esac
   fi
   if [ -z "$project" ]; then
-    me=$(api call get_me)
+    me=$(api GET /me)
     type=$(printf '%s' "$me" | jq -r '.builderSubject.type // empty')
     [ "$type" = agent ] || die "this chat authors a ${type:-subject nobody named}; a Test Project runs an Agent"
     agent=$(printf '%s' "$me" | jq -r .builderSubject.id)
     project=$(printf '%s' "$me" | jq -r '.builderTestProject.id // empty')
     if [ -z "$project" ]; then
-      created=$(api call create_project "$(jq -cn --arg a "$agent" '{agentId: $a, title: "Test run", kind: "test"}')")
+      created=$(api POST /projects "$(jq -cn --arg a "$agent" '{agentId: $a, title: "Test run", kind: "test"}')")
       project=$(printf '%s' "$created" | jq -r '.id // .testProjectId // empty' 2>/dev/null || true)
       [ -n "$project" ] || { refused "$created" || true; die "the create was refused"; }
     fi
@@ -167,9 +166,9 @@ refresh() {
   kind=$1
   project=$(need projectId)
   case "$kind" in
-    restart) out=$(api call restart_project "$(project_input "$project")") && sent=0 || sent=$? ;;
-    update) out=$(api call update_test_project "$(project_input "$project")") && sent=0 || sent=$? ;;
-    reset) out=$(api call reset_test_project "$(project_input "$project")") && sent=0 || sent=$? ;;
+    restart) out=$(api POST "/projects/$project/restart") && sent=0 || sent=$? ;;
+    update) out=$(api POST "/projects/$project/test/update") && sent=0 || sent=$? ;;
+    reset) out=$(api POST "/projects/$project/test/reset") && sent=0 || sent=$? ;;
   esac
   accepted "$sent" "$kind" "$out"
   case "$kind" in

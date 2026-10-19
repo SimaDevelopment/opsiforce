@@ -1,19 +1,27 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DiscoveryModule } from '@nestjs/core';
 import { ServiceSkillSource } from '../delivery/service-skill-source';
 import { ServiceSkillAvailability } from '../store/service-skill-availability';
 import { ServiceSwitchCatalog } from '../store/service-switch-catalog';
 import { GatewayModule } from '../gateway/gateway.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
 import { SealingModule } from '../sealing/sealing.module';
-import { CallLogReader } from './calls/call-log-reader';
+import { BuiltInRecords } from './built-ins/built-in-records';
+import { BuiltInsAdapter } from './built-ins/built-ins-adapter';
+import { PublicApiService } from './built-ins/public-api-service';
+import { ServiceCallLog } from './calls/service-call-log';
+import { ServiceRecordsHomes } from './calls/service-records-file';
+import { ServiceUsage } from './usage/service-usage';
 import { ConfigurationDelivery } from './configuration/configuration-delivery';
+import { ConfigurationFetch } from './configuration/configuration-fetch';
 import { ConfigurationSaves } from './configuration/configuration-saves';
 import { GeneratedValueBackfill } from './configuration/generated-value-backfill';
 import { GeneratedValueSource } from './configuration/generated-values';
-import { OperationSwitches } from './configuration/operation-switches';
+import { PublicApiSettings } from './configuration/public-api-settings';
 import { PendingHooks } from './configuration/pending-hooks';
 import { ServiceConfigurationSaveHooks } from './configuration/service-configuration-save-hooks';
+import { PublishedDefaults } from './configuration/published-defaults';
 import { ProjectConfigurationCarry } from './configuration/project-configuration-carry';
 import { ProjectConfigurationSaveHooks } from './configuration/project-configuration-save-hooks';
 import { ProjectConfigurationStore } from './configuration/project-configuration.store';
@@ -24,27 +32,28 @@ import { ServiceConsumers } from './configuration/service-consumers';
 import { ServiceViews } from './configuration/service-views';
 import { CustomServiceRepository } from './custom/custom-service.repository';
 import { Doorbell } from './doorbell/doorbell';
-import { CallLog } from './gate/call-log';
-import { ExternalServiceGate } from './gate/external-service-gate';
 import { FormCalls } from './gate/form-calls';
 import { GateCallers } from './gate/gate-caller';
-import { GateSurfaces } from './gate/gate-surfaces';
 import { HookCalls } from './gate/hook-calls';
-import { EventReceivers } from './inbound/event-receivers';
-import { InboundPipeline } from './inbound/inbound-pipeline';
-import { ExternalServiceGateController } from './gate/gate.controller';
+import { EventDeliveries } from './inbound/event-deliveries';
+import { EventDeliveryCap } from './inbound/event-delivery-cap';
+import { EventDeliveryStatus } from './inbound/event-delivery-status';
+import { EventDeliveriesController } from './http/event-deliveries.controller';
 import { DefaultLaneHolds, SERVICE_SWITCH_DRAIN, SERVICE_SWITCH_DRAIN_MS } from './gate/default-lane-holds';
 import { ServiceDispatcher } from './gate/service-dispatcher';
 import { SERVICE_POD_PORT, SERVICE_START_HOLD, SERVICE_START_HOLD_MS, ServicePods } from './gate/service-pods';
 import { TenantServicesController } from './http/tenant-services.controller';
 import { PlatformServicesController } from './http/platform-services.controller';
 import { ProjectServicesController } from './http/project-services.controller';
-import { WebhooksController } from './http/webhooks.controller';
+import { ConfigurationFetchController } from './http/configuration-fetch.controller';
+import { GateController } from './http/gate.controller';
+import { CallerResolutions } from './gate/caller-resolution';
 import { ServiceSkillReach } from './knowledge/service-skill-reach';
 import { ServiceSkillVersions } from './knowledge/service-skill-versions';
 import { ServiceSkills } from './knowledge/service-skills';
 import { ConfigurationsAtCreate } from './test-lane/configurations-at-create';
 import { ServiceStateFiles } from './custom/service-state-files';
+import { GateEviction } from './gate/gate-eviction';
 import { ExternalServiceStore } from './inbound/external-service-store';
 import { BUILT_IN_SERVICES_DIR, shippedBuiltInServicesDir } from './registry/built-in-services';
 import { CustomServiceCatalog } from './registry/custom-service-catalog';
@@ -52,30 +61,33 @@ import { PublishedServiceFilesReader } from './registry/published-service-files'
 import { ServiceDefaultEnvironments } from './publishing/service-default-environments';
 import { ServiceRegistry } from './registry/service-registry';
 import { TestProjectRefreshes } from './test-lane/test-project-refreshes';
-import { ExternalServiceUsageController } from './usage/external-service-usage.controller';
 import { IncomingEmailUpgrade } from './upgrade/incoming-email-upgrade';
 import { ExternalServiceUsageService } from './usage/external-service-usage.service';
 import { RetiredSkillSwapUpgrade } from './upgrade/retired-skill-swap-upgrade';
 import { WhatsappUpgrade } from './upgrade/whatsapp-upgrade';
-import { DispatchContexts } from './gate/dispatch-contexts';
-import { PlatformApiGrant } from './gate/platform-api-grant';
 import { PROJECT_LIFECYCLE } from '../project/project-lifecycle';
 import { ExternalServicesProjectLifecycle } from './external-services-project-lifecycle';
 import { AvailableServiceSwitches } from './knowledge/available-service-switches';
 
 @Global()
 @Module({
-  imports: [GatewayModule, ProjectEnvironmentModule, SealingModule],
+  imports: [DiscoveryModule, GatewayModule, ProjectEnvironmentModule, SealingModule],
   controllers: [
-    WebhooksController,
-    ExternalServiceGateController,
-    ExternalServiceUsageController,
     PlatformServicesController,
     TenantServicesController,
     ProjectServicesController,
+    GateController,
+    ConfigurationFetchController,
+    EventDeliveriesController,
   ],
   providers: [
+    BuiltInRecords,
+    BuiltInsAdapter,
+    PublicApiService,
     ExternalServiceStore,
+    EventDeliveryCap,
+    EventDeliveries,
+    EventDeliveryStatus,
     ExternalServiceUsageService,
     { provide: BUILT_IN_SERVICES_DIR, useFactory: shippedBuiltInServicesDir },
     PublishedServiceFilesReader,
@@ -83,8 +95,10 @@ import { AvailableServiceSwitches } from './knowledge/available-service-switches
     ServiceRegistry,
     GeneratedValueSource,
     GeneratedValueBackfill,
+    PublishedDefaults,
     ServiceDefaultEnvironments,
     ServiceStateFiles,
+    GateEviction,
     {
       provide: SERVICE_POD_PORT,
       useFactory: (config: ConfigService) => config.getOrThrow<number>('appPort'),
@@ -110,45 +124,43 @@ import { AvailableServiceSwitches } from './knowledge/available-service-switches
     RetiredSkillSwapUpgrade,
     CustomServiceRepository,
     ProjectConfigurationStore,
-    OperationSwitches,
+    PublicApiSettings,
     ProjectConfigurationSaveHooks,
     ServiceConfigurationSaveHooks,
     PendingHooks,
     HookCalls,
-    DispatchContexts,
     ProjectConfigurationCarry,
     ConfigurationSaves,
     ServiceConsumers,
     ConfigurationDelivery,
+    ConfigurationFetch,
+    CallerResolutions,
     ProjectServiceViews,
     GateCallers,
     ServicePods,
     ServiceDispatcher,
-    CallLog,
-    CallLogReader,
-    PlatformApiGrant,
-    ExternalServiceGate,
+    ServiceCallLog,
+    ServiceRecordsHomes,
+    ServiceUsage,
     FormCalls,
-    GateSurfaces,
-    EventReceivers,
-    InboundPipeline,
     Doorbell,
     TestProjectRefreshes,
     ExternalServicesProjectLifecycle,
     { provide: PROJECT_LIFECYCLE, useExisting: ExternalServicesProjectLifecycle },
   ],
   exports: [
+    BuiltInsAdapter,
+    EventDeliveries,
     ServiceDefaultEnvironments,
     ServiceSkillSource,
     ServiceSkillAvailability,
     ServiceSwitchCatalog,
     ServiceSkillReach,
     PROJECT_LIFECYCLE,
-    OperationSwitches,
+    PublicApiSettings,
     Doorbell,
     ServiceRegistry,
     ExternalServiceStore,
-    CallLog,
     ProjectConfigurationCarry,
     ConfigurationSaves,
     ServiceConfigurationStore,
@@ -156,11 +168,11 @@ import { AvailableServiceSwitches } from './knowledge/available-service-switches
     ProjectConfigurationStore,
     ProjectConfigurationSaveHooks,
     GateCallers,
-    ExternalServiceGate,
+    ServicePods,
     FormCalls,
-    GateSurfaces,
     ServiceConsumers,
     CustomServiceRepository,
+    GateEviction,
   ],
 })
 export class ExternalServicesModule {}

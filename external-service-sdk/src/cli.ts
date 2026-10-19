@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { formatCheck } from './check-output.ts';
-import { generate } from './cli-generate.ts';
 import { report } from './cli-report.ts';
 import { dev, serve } from './cli-serve.ts';
 import { typesFileName } from './codegen.ts';
@@ -13,52 +12,37 @@ import { writeServiceTypes } from './types-file.ts';
 const USAGE = `external-service-cli: tools for an External Service folder
 
 Usage:
-  external-service-cli check [folder] [--built-in]            Check the folder's service.json (default: the current folder)
-  external-service-cli types [folder] [--built-in]            Write service.types.ts from the folder's service.json
-  external-service-cli dev [folder] [--port N] [--built-in]   Serve the folder and reload on every change (Development)
-  external-service-cli serve [folder] [--port N] [--built-in] Serve the folder without reloading (Production)
+  external-service-cli check [folder]              Check the folder's service.json (default: the current folder)
+  external-service-cli types [folder]              Write service.types.ts from the folder's service.json
+  external-service-cli dev [folder] [--port N]     Serve the folder and reload on every change (Development)
+  external-service-cli serve [folder] [--port N]   Serve the folder without reloading (Production)
   external-service-cli report [folder] --from <lines.json> [--out <path>]
-                                                              Write the test report the Publish dialog reads
-                                                              (default: /workspace/.cache/service-test-report.json)
-  external-service-cli generate --from-openapi <file|URL> [folder] [--built-in]
-                                                              Write service.json, openapi-routes.json and
-                                                              service.types.ts from an OpenAPI 3 document
-  external-service-cli --help                                 Show this message
+                                                   Write the test report the Publish dialog reads
+                                                   (default: /workspace/.cache/service-test-report.json)
+  external-service-cli --help                      Show this message
 
 check prints every error and warning and exits 1 when there is an error.
-dev and serve answer the /_service wire on --port (default: $APP_PORT, else 3000) and need SERVICE_GATEWAY_API_KEY.
+dev and serve serve service.ts's defineService(…) on --port (default: $APP_PORT, else 3000): its Service routes
+and /.well-known/opsiforce, for requests carrying a Caller identity signed with SERVICE_GATEWAY_API_KEY.
+They read their configurations from $SERVICE_GATEWAY_URL.
 dev also rewrites service.types.ts whenever service.json changes.
 report reads {"lines": [{expectation, result, source, callIds, reason?}]}, stamps the commit and manifest hash,
 and refuses a malformed report without writing it.
-generate makes one Operation per route (only the routes marked x-opsiforce-operation, when any is), its input
-the route's path, query and body fields in one object, its kind from the method (GET read, DELETE destructive,
-others write) unless x-opsiforce-kind says otherwise. It keeps an existing service.json apart from its
-operations and $defs, and fails without writing when two routes or two fields share a name.
---built-in applies the Built-in External Service rules (every Event type bound).
 `;
 
-function folderArgs(args: string[]) {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: { 'built-in': { type: 'boolean', default: false } },
-  });
-  return {
-    folder: resolve(positionals[0] ?? '.'),
-    origin: values['built-in'] ? ('built_in' as const) : ('custom' as const),
-  };
+function folderOf(args: string[]): string {
+  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  return resolve(positionals[0] ?? '.');
 }
 
 async function check(args: string[]): Promise<number> {
-  const { folder, origin } = folderArgs(args);
-  const result = await checkServiceFolder(folder, { origin });
+  const result = await checkServiceFolder(folderOf(args));
   process.stdout.write(formatCheck(result));
   return result.ok ? 0 : 1;
 }
 
 async function types(args: string[]): Promise<number> {
-  const { folder, origin } = folderArgs(args);
-  const result = await writeServiceTypes(folder, origin);
+  const result = await writeServiceTypes(folderOf(args));
   if (!result.ok) {
     process.stdout.write(formatCheck(result.check));
     return 1;
@@ -67,7 +51,7 @@ async function types(args: string[]): Promise<number> {
   return 0;
 }
 
-const commands: Record<string, (args: string[]) => Promise<number>> = { check, types, generate, dev, serve, report };
+const commands: Record<string, (args: string[]) => Promise<number>> = { check, types, dev, serve, report };
 
 async function main(): Promise<number> {
   const [command, ...args] = process.argv.slice(2);

@@ -1,7 +1,8 @@
-import type { ServiceManifest } from '@opsiforce/external-service-sdk';
+import type { Field, ServiceManifest } from '@opsiforce/external-service-sdk';
+import { formValuesSchema, serviceSettingsFormOf, valueFieldsOf } from '@opsiforce/external-service-sdk/platform';
 import type { AgentServiceSettings } from '../../db/schema';
 
-export type ServiceSwitches = Pick<ServiceManifest, 'operations' | 'events'>;
+export type ServiceSwitches = Pick<ServiceManifest, 'projectForm'>;
 
 export interface SwitchableService {
   id: string;
@@ -15,22 +16,46 @@ export abstract class ServiceSwitchCatalog {
 }
 
 export interface KeptServiceSettings {
-  settings: AgentServiceSettings;
+  settings: AgentServiceSettings | null;
   dropped: string[];
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function serviceSettingsFieldKeys(manifest: ServiceSwitches): string[] {
+  return valueFieldsOf(serviceSettingsFormOf(manifest.projectForm ?? [])).map((field) => field.key);
+}
+
+export function settableFieldValues(manifest: ServiceSwitches, settings: AgentServiceSettings): AgentServiceSettings {
+  const settable = new Set(serviceSettingsFieldKeys(manifest));
+  return Object.fromEntries(Object.entries(settings).filter(([key]) => settable.has(key)));
+}
+
+function optional(form: readonly Field[]): Field[] {
+  return form.map((field) => {
+    if (field.type === 'section') return { ...field, fields: optional(field.fields) as typeof field.fields };
+    return 'required' in field ? { ...field, required: false } : field;
+  });
+}
+
+export function fieldValueSettingProblems(manifest: ServiceSwitches, values: Record<string, unknown>): string[] {
+  const settable = serviceSettingsFieldKeys(manifest);
+  const unknown = Object.keys(values).filter((key) => !settable.includes(key));
+  if (unknown.length > 0) {
+    return [`values names what isn't a setting of this service (unknown or picked per Project): ${unknown.join(', ')}`];
+  }
+  const parsed = formValuesSchema(optional(serviceSettingsFormOf(manifest.projectForm ?? []))).safeParse(values);
+  if (parsed.success) return [];
+  return parsed.error.issues.map((issue) => `values.${issue.path.map(String).join('.')}: ${issue.message}`);
+}
+
 export function keptServiceSettings(manifest: ServiceSwitches, settings: AgentServiceSettings): KeptServiceSettings {
-  const operations = Object.keys(manifest.operations ?? {});
-  const events = Object.keys(manifest.events ?? {});
+  const settable = new Set(serviceSettingsFieldKeys(manifest));
   return {
-    settings: {
-      operations: operations.filter((name) => settings.operations.includes(name)),
-      receive: events.filter((type) => settings.receive.includes(type)),
-    },
-    dropped: [
-      ...settings.operations.filter((name) => !operations.includes(name)),
-      ...settings.receive.filter((type) => !events.includes(type)),
-    ],
+    settings: settableFieldValues(manifest, settings),
+    dropped: Object.keys(settings).filter((key) => !settable.has(key)),
   };
 }
 
@@ -40,19 +65,9 @@ export function settingsWithinGrants(
   grants: { canConfigureProjects: boolean }
 ): KeptServiceSettings {
   if (grants.canConfigureProjects) return { settings, dropped: [] };
-  const isRead = (name: string) => manifest.operations?.[name]?.kind === 'read';
-  return {
-    settings: { ...settings, operations: settings.operations.filter(isRead) },
-    dropped: settings.operations.filter((name) => !isRead(name)),
-  };
-}
-
-function isNames(names: unknown): boolean {
-  return Array.isArray(names) && names.every((name) => typeof name === 'string');
+  return { settings: null, dropped: Object.keys(settings) };
 }
 
 export function isAgentServiceSettings(value: unknown): value is AgentServiceSettings {
-  if (typeof value !== 'object' || value === null) return false;
-  const { operations, receive } = value as Record<string, unknown>;
-  return isNames(operations) && isNames(receive);
+  return isPlainObject(value);
 }

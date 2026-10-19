@@ -81,9 +81,10 @@ func forwardIdentity(out http.Header, in http.Header) {
 }
 
 type Client struct {
-	baseURL string
-	token   string
-	client  *http.Client
+	baseURL  string
+	token    string
+	client   *http.Client
+	resolver *http.Client
 }
 
 func New(baseURL string, token string, timeout time.Duration) *Client {
@@ -93,7 +94,61 @@ func New(baseURL string, token string, timeout time.Duration) *Client {
 		client: &http.Client{
 			Timeout: timeout,
 		},
+		resolver: &http.Client{},
 	}
+}
+
+type CallerResolution struct {
+	ServedBy       string `json:"servedBy"`
+	Upstream       string `json:"upstream"`
+	CallerIdentity string `json:"callerIdentity"`
+	TenantID       string `json:"tenantId"`
+	ServiceID      string `json:"serviceId"`
+	Slug           string `json:"slug"`
+}
+
+const ServedByBuiltIn = "built-in"
+
+func (c *Client) ResolveCaller(ctx context.Context, credential string, slug string) (CallerResolution, error) {
+	return c.resolve(ctx, "/api/internal/proxy/external-services/resolve", map[string]any{"credential": credential, "slug": slug})
+}
+
+func (c *Client) ResolveWebhook(ctx context.Context, service string, development bool) (CallerResolution, error) {
+	return c.resolve(ctx, "/api/internal/proxy/external-services/resolve-webhook", map[string]any{"service": service, "development": development})
+}
+
+func (c *Client) resolve(ctx context.Context, path string, body map[string]any) (CallerResolution, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return CallerResolution{}, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		return CallerResolution{}, err
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-proxy-control-token", c.token)
+
+	resp, err := c.resolver.Do(req)
+	if err != nil {
+		return CallerResolution{}, err
+	}
+	defer resp.Body.Close()
+
+	answer, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return CallerResolution{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return CallerResolution{}, &StatusError{StatusCode: resp.StatusCode, Body: answer}
+	}
+
+	var resolution CallerResolution
+	if err := json.Unmarshal(answer, &resolution); err != nil {
+		return CallerResolution{}, err
+	}
+	return resolution, nil
 }
 
 func (c *Client) Ensure(ctx context.Context, projectID string, surface Surface, headers http.Header) (EnsureResponse, error) {

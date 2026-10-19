@@ -21,6 +21,9 @@ ports:
   app: 3002
   vscode: 3003
   db: 3004
+  externalService: 3006
+  externalServiceControl: 3007
+  externalServiceWebhook: 3008
 
 resources:
   agent:
@@ -36,6 +39,10 @@ resources:
       cpu: 50m
       memory: 128Mi
   db:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  externalService:
     requests:
       cpu: 50m
       memory: 128Mi

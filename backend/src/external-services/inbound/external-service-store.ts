@@ -221,6 +221,17 @@ export class ExternalServiceStore {
     });
   }
 
+  async undeliveredEventCount(envDirectory: string, service: string): Promise<number> {
+    return withDatabase(envDirectory, { whenMissing: 0 }, async (connection) => {
+      if (!(await hasTable(connection, 'events'))) return 0;
+      const row = await connection.get<{ waiting: number }>(
+        'SELECT count(*) AS waiting FROM events WHERE service = ? AND app_delivered_at IS NULL',
+        service
+      );
+      return row?.waiting ?? 0;
+    });
+  }
+
   async recentEvents(envDirectory: string, service: string, limit: number): Promise<StoredEvent[]> {
     return withDatabase(envDirectory, { whenMissing: [] }, async (connection) => {
       if (!(await hasTable(connection, 'events'))) return [];

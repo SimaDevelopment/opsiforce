@@ -42,13 +42,13 @@ describe('the Built-in External Services the backend boots with', () => {
 
   it('refuses to boot when a built-in folder fails the manifest check, naming the folder and the problem', async () => {
     await expect(createExternalServicesTestApp({ builtInsDir: brokenBuiltInsDir })).rejects.toThrow(
-      /fixture-broken[\s\S]*"thing" is not declared in bounds/
+      /fixture-broken[\s\S]*operations: SDK 2 has no Operations/
     );
   });
 
-  it('refuses to boot when a built-in folder has no handlers.ts', async () => {
+  it('refuses to boot when a built-in folder has no service.ts', async () => {
     await expect(createExternalServicesTestApp({ builtInsDir: handlerlessBuiltInsDir })).rejects.toThrow(
-      /fixture-handlerless[\s\S]*handlers\.ts is missing/
+      /fixture-handlerless[\s\S]*service\.ts is missing/
     );
   });
 });

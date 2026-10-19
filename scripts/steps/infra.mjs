@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { verifyTunnelBound } from './tunnel.mjs';
 
@@ -9,6 +9,14 @@ const TLS_SECRET_NAME = 'traefik-me-tls';
 const HELM_TIMEOUT = '5m';
 const PLUGIN_PLACEHOLDER = '@@OIDC_PLUGIN_VERSION@@';
 const PLUGIN_PATH = '/plugins-local/src/github.com/sevensolutions/traefik-oidc-auth';
+const EXTERNAL_SERVICES_HOSTNAME = `external-services.${ROOT_HOSTNAME}`;
+const TRAEFIK_SERVICE_NAME = `traefik.${TRAEFIK_NAMESPACE}.svc.cluster.local`;
+const COREDNS_REWRITES = [
+  `rewrite name regex (.+)\\.${EXTERNAL_SERVICES_HOSTNAME.replaceAll('.', '\\.')} ${TRAEFIK_SERVICE_NAME} answer auto`,
+  `rewrite name exact ${ROOT_HOSTNAME} ${TRAEFIK_SERVICE_NAME} answer auto`,
+];
+const POD_CA_CONFIGMAP = 'opsiforce-local-ca';
+const PUBLIC_ROOTS = ['/etc/ssl/cert.pem', '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
 
 const CERT_DOMAINS = [
   ROOT_HOSTNAME,
@@ -17,6 +25,7 @@ const CERT_DOMAINS = [
   `*.preview.apps.${ROOT_HOSTNAME}`,
   `*.code.${ROOT_HOSTNAME}`,
   `*.db.${ROOT_HOSTNAME}`,
+  `*.${EXTERNAL_SERVICES_HOSTNAME}`,
 ];
 
 function localInfraPath(ctx, file) {
@@ -162,6 +171,56 @@ function applyTls(ctx, certFile, keyFile) {
   ctx.note('applied the TLS secret, default TLSStore, and Traefik middlewares (headers, gzip).');
 }
 
+function routeServiceHostsToTraefik(ctx) {
+  const corefile = ctx.capture('kubectl', [
+    'get',
+    'configmap',
+    'coredns',
+    '--namespace',
+    'kube-system',
+    '-o',
+    'jsonpath={.data.Corefile}',
+  ]);
+  const missing = COREDNS_REWRITES.filter((rule) => !corefile.includes(rule));
+  if (missing.length === 0) {
+    ctx.note(`CoreDNS already sends ${ROOT_HOSTNAME} and *.${EXTERNAL_SERVICES_HOSTNAME} to Traefik.`);
+    return;
+  }
+  const rewritten = corefile.replace(/^(\s*)ready$/m, (line, indent) => [line, ...missing.map((rule) => `${indent}${rule}`)].join('\n'));
+  if (rewritten === corefile)
+    throw new Error('CoreDNS Corefile has no `ready` line to anchor the Service host rewrite.');
+  const patch = JSON.stringify({ data: { Corefile: rewritten } });
+  ctx.run('kubectl', ['patch', 'configmap', 'coredns', '--namespace', 'kube-system', '--type', 'merge', '-p', patch]);
+  ctx.note(
+    `CoreDNS now sends ${ROOT_HOSTNAME} and *.${EXTERNAL_SERVICES_HOSTNAME} to Traefik, so pods reach Service hosts and Webhook addresses.`
+  );
+}
+
+function trustLocalCaInPods(ctx) {
+  const caRoot = ctx.capture('mkcert', ['-CAROOT']);
+  const publicRoots = PUBLIC_ROOTS.find((file) => existsSync(file));
+  if (!publicRoots) throw new Error(`No system CA bundle found (looked in ${PUBLIC_ROOTS.join(', ')}).`);
+  const bundle = `${readFileSync(publicRoots, 'utf8').trimEnd()}\n${readFileSync(join(caRoot, 'rootCA.pem'), 'utf8')}`;
+  const bundleFile = join(ctx.paths.home, 'pod-ca-certificates.crt');
+  writeFileSync(bundleFile, bundle);
+  const configMapYaml = ctx.capture('kubectl', [
+    'create',
+    'configmap',
+    POD_CA_CONFIGMAP,
+    '--namespace',
+    DATA_NAMESPACE,
+    `--from-file=ca-certificates.crt=${bundleFile}`,
+    '--dry-run=client',
+    '-o',
+    'yaml',
+  ]);
+  ctx.run('kubectl', ['apply', '--server-side', '--force-conflicts', '-f', '-'], {
+    input: configMapYaml,
+    stdio: ['pipe', 'inherit', 'inherit'],
+  });
+  ctx.note(`applied ${POD_CA_CONFIGMAP}: the system roots plus the mkcert CA, mounted into Project pods.`);
+}
+
 function verifyOidcPlugin(ctx) {
   const listing = ctx.tryCapture('kubectl', [
     'exec',
@@ -189,6 +248,8 @@ export async function run(ctx) {
   installTraefik(ctx);
   await verifyTunnelBound(ctx);
   applyTls(ctx, certFile, keyFile);
+  routeServiceHostsToTraefik(ctx);
+  trustLocalCaInPods(ctx);
   verifyOidcPlugin(ctx);
   ctx.note(`infra ready — HTTPS for *.${ROOT_HOSTNAME} serves once the stack is up.`);
 }

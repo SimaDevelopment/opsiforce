@@ -115,8 +115,7 @@ export interface SetAgentSkillDto {
 }
 
 export interface SetServiceSettingsDto {
-  operations?: unknown;
-  receive?: unknown;
+  values?: unknown;
 }
 
 export interface AgentServiceSettingsView {

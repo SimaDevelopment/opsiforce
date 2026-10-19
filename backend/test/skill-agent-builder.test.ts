@@ -6,7 +6,12 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { readMergedAgentRegistry } from '../src/agent/agent-config';
 import { BUILDER_AGENT_SLUG } from '../src/agent/agent-visibility';
-import { BUILDER_CHAT_PUBLIC_API_WRITES } from '../src/builder/builder-chat.service';
+import { serviceRoutesOf } from '../src/external-services/built-ins/public-api-service';
+import { BUILDER_CHAT_PUBLIC_API_SWITCHES } from '../src/external-services/configuration/public-api-settings';
+import { AgentsController } from '../src/public-api/agents/agents.controller';
+import { MeController } from '../src/public-api/me/me.controller';
+import { ProjectsController } from '../src/public-api/projects/projects.controller';
+import { SkillsController } from '../src/public-api/skills/skills.controller';
 import { unpackSkill, validateSkillTree, type GateFinding } from '../src/store/gate';
 import { packageSkillNames, readSkillTree } from '../src/store/skill-tree';
 
@@ -158,7 +163,7 @@ describe('the package', () => {
 
     expect([...composed].filter((name) => !own.has(name)).toSorted()).toEqual(['agent-browser', 'platform', 'web-app']);
     expect(shared.size).toBeGreaterThan(composed.size);
-    expect(persona).toContain('list_skills {"filter":"built_in"}');
+    expect(persona).toContain('GET /skills?filter=built_in');
   });
 
   it('carries the authoring skills as its own overrides, not in the shared pool every agent gets', () => {
@@ -334,7 +339,7 @@ describe('the persona', () => {
     expect(persona).toContain('builderSubject');
     expect(persona).not.toContain('builder-subject.json');
     expect(persona).toMatch(/start your first message with the answer/);
-    expect(persona).toMatch(/Never `create_agent` for it/);
+    expect(persona).toMatch(/Never `POST \/agents` for it/);
   });
 
   it('decides and does rather than asking for permission', () => {
@@ -375,9 +380,9 @@ describe('the persona', () => {
 
 describe('the skill-authoring skill', () => {
   it('names the built-in catalogue call and all three offers', () => {
-    expect(skillAuthoring).toContain(`list_skills '{"filter":"built_in"}'`);
+    expect(skillAuthoring).toContain(`api.sh GET '/skills?filter=built_in'`);
     for (const offer of ['Reuse', 'Extend', 'Fresh']) expect(skillAuthoring).toContain(offer);
-    expect(skillAuthoring).toContain('api.sh call create_skill_version');
+    expect(skillAuthoring).toContain('api.sh POST "/skills/$ID/versions"');
   });
 
   it('splits ERRORS from LINTS and says which one blocks', () => {
@@ -386,8 +391,8 @@ describe('the skill-authoring skill', () => {
   });
 
   it('teaches the create, read-back, report loop', () => {
-    expect(skillAuthoring).toContain('create_skill_version');
-    expect(skillAuthoring).toContain('get_skill_files');
+    expect(skillAuthoring).toContain('POST "/skills/$ID/versions"');
+    expect(skillAuthoring).toContain('GET "/skills/$ID/versions/$N/files"');
     expect(skillAuthoring).toMatch(/read back/i);
   });
 
@@ -467,7 +472,7 @@ describe('the agent-authoring skill', () => {
   });
 
   it('points at stack Skills the Builder can read through the API', () => {
-    expect(stackSkill).toContain('`get_skill`');
+    expect(stackSkill).toContain('`GET /skills/<id>`');
     expect(stackSkill).not.toContain('`ui`');
   });
 
@@ -516,7 +521,7 @@ describe('the agent-authoring skill', () => {
     expect(agentAuthoring).not.toMatch(/scaffold/i);
     expect(stackSkill).not.toMatch(/scaffold|check-skeleton/i);
     expect(templateReference).toContain('cp -a /opt/agents/app-builder/template/app template/app');
-    expect(templateReference).toContain('api.sh call save_agent_template');
+    expect(templateReference).toContain('api.sh PUT "/agents/$A/template"');
     expect(templateReference).toContain('`template-refused`');
     expect(templateReference).toContain('`template-changed`');
     expect(templateReference).toContain('template: { hash }');
@@ -601,21 +606,33 @@ describe('the agent-authoring skill', () => {
   });
 });
 
-/** `METHOD /base/segment/:p` for every `/api/v1` route carrying `@ExternalServiceOperation(...)`. */
-function chatPublicApiOperations(): Set<string> {
-  const manifest = JSON.parse(
-    readFileSync(join(process.cwd(), '..', 'external-services', 'public-api', 'service.json'), 'utf8')
-  ) as { operations: Record<string, { kind?: string }> };
-  const writes: ReadonlySet<string> = new Set(BUILDER_CHAT_PUBLIC_API_WRITES);
-  return new Set(
-    Object.entries(manifest.operations)
-      .filter(([name, operation]) => (operation.kind ?? 'read') === 'read' || writes.has(name))
-      .map(([name]) => name)
-  );
+/** `METHOD /api/v1/segment/:p` for every decorated `/api/v1` route a new Builder chat's settings open. */
+function chatPublicApiRoutes(): string[] {
+  const settings: Record<string, unknown> = BUILDER_CHAT_PUBLIC_API_SWITCHES;
+  return [ProjectsController, AgentsController, SkillsController, MeController]
+    .flatMap((controller) => serviceRoutesOf(controller))
+    .filter((route) => route.allowedBy.every((setting) => settings[setting] === true))
+    .map((route) => route.pattern);
+}
+
+function isOpen(open: readonly string[], call: string): boolean {
+  const [method, path] = call.split(' ');
+  const segments = path.split('?')[0].split('/').filter(Boolean);
+  return open.some((pattern) => {
+    const [openMethod, openPath] = pattern.split(' ');
+    const expected = openPath.split('/').filter(Boolean).slice(2);
+    return (
+      openMethod === method &&
+      expected.length === segments.length &&
+      expected.every((segment, index) => segment.startsWith(':') || segment === segments[index])
+    );
+  });
 }
 
 function platformCallsIn(markdown: string): string[] {
-  return [...markdown.matchAll(/\bapi(?:\.sh)? (?:call|status) ([a-z_]+)\b/g)].map(([, operation]) => operation);
+  return [...markdown.matchAll(/\bapi(?:\.sh)? (?:status )?(GET|POST|PUT|PATCH|DELETE) ['"]?(\/[^\s'"`)]*)/g)].map(
+    ([, method, path]) => `${method} ${path.replace(/\$\w+|<[^>]+>/g, 'x')}`
+  );
 }
 
 describe('the test loop reference', () => {
@@ -683,19 +700,19 @@ describe('the test loop reference', () => {
     expect(testLoop).toMatch(/use the result once the way the brief's user would/);
   });
 
-  it('drives only public-api Operations its chat configuration turns on', () => {
-    const open = chatPublicApiOperations();
+  it('drives only public-api routes its chat configuration opens', () => {
+    const open = chatPublicApiRoutes();
     const driven = [...platformCallsIn(testLoop), ...platformCallsIn(testProjectScript)];
 
-    expect(open.size).toBeGreaterThan(5);
+    expect(open.length).toBeGreaterThan(5);
     expect(platformCallsIn(testProjectScript).length).toBeGreaterThan(8);
     for (const call of new Set(driven)) {
-      expect([...open], `the test loop drives ${call}, which a new chat has switched off`).toContain(call);
+      expect(isOpen(open, call), `the test loop drives ${call}, which a new chat may not call`).toBe(true);
     }
   });
 
-  it('is matched by the authoring references, which drive the Skill and Agent Operations', () => {
-    const open = chatPublicApiOperations();
+  it('is matched by the authoring references, which drive the Skill and Agent routes', () => {
+    const open = chatPublicApiRoutes();
     const agentApi = readFileSync(join(packageRoot, 'skills', 'agent-authoring', 'references', 'agent-api.md'), 'utf8');
     const driven = [
       ...platformCallsIn(skillApi),
@@ -706,14 +723,14 @@ describe('the test loop reference', () => {
 
     expect(driven.length).toBeGreaterThan(8);
     for (const call of new Set(driven)) {
-      expect([...open], `a reference drives ${call}, which a new chat has switched off`).toContain(call);
+      expect(isOpen(open, call), `a reference drives ${call}, which a new chat may not call`).toBe(true);
     }
   });
 
   it('creates the Test Project the way the API accepts it, and waits with a ceiling', () => {
     expect(testLoop).toContain('sh scripts/tp.sh up');
     expect(testProjectScript).toContain('kind: "test"');
-    expect(testProjectScript).toContain('api call create_project');
+    expect(testProjectScript).toContain('api POST /projects');
     expect(testProjectScript).toMatch(/environments\[0\]\.status/);
     expect(testProjectScript).toMatch(/wait_active\(\) \{[\s\S]*"\$attempts"[\s\S]*failed[\s\S]*return 1/);
   });
@@ -751,8 +768,8 @@ describe('the test loop reference', () => {
     expect(testLoop).toMatch(/no Project list shows it/);
     expect(testProjectScript).toContain('.builderTestProject.id');
     expect(testProjectScript).toContain('.testProjectId');
-    expect(testProjectScript).toContain('api call update_test_project');
-    expect(testProjectScript).toContain('api call reset_test_project');
+    expect(testProjectScript).toContain('api POST "/projects/$project/test/update"');
+    expect(testProjectScript).toContain('api POST "/projects/$project/test/reset"');
     expect(testProjectScript).not.toMatch(/DELETE/);
     expect(testLoop).not.toMatch(/supersede/i);
   });

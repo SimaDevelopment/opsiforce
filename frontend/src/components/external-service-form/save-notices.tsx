@@ -55,10 +55,7 @@ function FailedHookNotice(props: HookFailureActions) {
     >
       <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span>Saved, but the service could not apply it: {props.failure.detail ?? 'its after-save hook failed.'}</span>
-        <span class="font-mono text-[10px] text-muted-foreground">
-          {props.failure.code} · call {props.failure.callId}
-        </span>
+        <span>Saved, but the service could not apply it. {props.failure.detail ?? 'Try again.'}</span>
         <Show when={actionFailed()}>{(message) => <span class="text-destructive">{message()}</span>}</Show>
       </div>
       <Button

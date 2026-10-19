@@ -16,7 +16,12 @@ import {
   type AgentProfileRow,
 } from '../store/agent-profile.repository';
 import { ServiceSkillAvailability } from '../store/service-skill-availability';
-import { ServiceSwitchCatalog, settingsWithinGrants, type ServiceSwitches } from '../store/service-switch-catalog';
+import {
+  fieldValueSettingProblems,
+  ServiceSwitchCatalog,
+  settingsWithinGrants,
+  type ServiceSwitches,
+} from '../store/service-switch-catalog';
 import { serviceSkillUnavailable, skillRetired, visibilityIncoherent } from '../store/store-errors';
 import { assertSkillVisibleToUser, isRetiredSkill, isServiceSkill, type SkillRow } from '../store/skill-visibility';
 import { packageSkillNames } from '../store/skill-tree';
@@ -26,7 +31,7 @@ import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { compareTemplates } from '../agent-template/agent-template.types';
 import { lockAgentTemplate } from '../common/locks';
 import type { AgentBundleSkillReference, SkillPin } from './agent-bundle';
-import { writeOperationsTurnedOff, type AgentImportNote } from './agent-import';
+import { serviceSettingsLeftOut, serviceSettingsOfUnavailableService, type AgentImportNote } from './agent-import';
 import { canEditAgent } from './agent-visibility';
 import { ModelProvidersService } from '../model-provider/model-provider.service';
 import {
@@ -34,8 +39,8 @@ import {
   duplicateSkillName,
   modelUnreachable,
   notPublishable,
+  fieldSettingsNeedProjectPermission,
   serviceSettingsInvalid,
-  serviceSettingsNeedProjectPermission,
   serviceSettingsUnavailable,
   shippedSkillName,
 } from './agent-errors';
@@ -196,14 +201,7 @@ export class AgentProfileService {
   ): Promise<AgentProfileSkillResponse[]> {
     this.assertProfileWritable(agent, caller);
     const { service, pin, profile } = await this.carriedService(agent, caller, skillId);
-    const settings = submittedServiceSettings(service.manifest, dto);
-    const wasOn = new Set(pin.serviceSettings?.operations ?? []);
-    const grantsWrites = settings.operations.filter(
-      (name) => !wasOn.has(name) && service.manifest.operations?.[name]?.kind !== 'read'
-    );
-    if (grantsWrites.length > 0 && !grants.canConfigureProjects) {
-      throw serviceSettingsNeedProjectPermission(grantsWrites);
-    }
+    const settings = submittedFieldValueSettings(service.manifest, dto, pin.name, grants);
     await db
       .update(agentProfileSkills)
       .set({ serviceSettings: settings })
@@ -226,8 +224,15 @@ export class AgentProfileService {
       const service = externalServiceId
         ? await this.serviceSwitches.availableService(tenantId, externalServiceId)
         : null;
-      const granted = settingsWithinGrants(service?.manifest ?? {}, serviceSettings, grants);
-      if (granted.dropped.length > 0) notes.push(writeOperationsTurnedOff(name, granted.dropped));
+      if (!service) {
+        notes.push(serviceSettingsOfUnavailableService(name));
+        pins.push({ skillId, skillVersionId, serviceSettings: null });
+        continue;
+      }
+      const granted = settingsWithinGrants(service.manifest, serviceSettings, grants);
+      if (granted.dropped.length > 0) {
+        notes.push(serviceSettingsLeftOut(name));
+      }
       pins.push({ skillId, skillVersionId, serviceSettings: granted.settings });
     }
     return { pins, notes };
@@ -363,24 +368,20 @@ export class AgentProfileService {
   }
 }
 
-function submittedServiceSettings(manifest: ServiceSwitches, dto: SetServiceSettingsDto): AgentServiceSettings {
-  const problems: string[] = [];
-  const namesOf = (submitted: unknown, key: string, declared: string[]): string[] => {
-    if (submitted === undefined) return [];
-    if (!Array.isArray(submitted) || !submitted.every((name) => typeof name === 'string')) {
-      problems.push(`${key} must be a list of names`);
-      return [];
-    }
-    const unknown = submitted.filter((name) => !declared.includes(name));
-    if (unknown.length > 0) problems.push(`${key} names what this service doesn't declare: ${unknown.join(', ')}`);
-    return declared.filter((name) => submitted.includes(name));
-  };
-  const settings = {
-    operations: namesOf(dto?.operations, 'operations', Object.keys(manifest.operations ?? {})),
-    receive: namesOf(dto?.receive, 'receive', Object.keys(manifest.events ?? {})),
-  };
+function submittedFieldValueSettings(
+  manifest: ServiceSwitches,
+  dto: SetServiceSettingsDto,
+  skillName: string,
+  grants: { canConfigureProjects: boolean }
+): AgentServiceSettings {
+  if (!grants.canConfigureProjects) throw fieldSettingsNeedProjectPermission(skillName);
+  const values = dto?.values;
+  if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+    throw serviceSettingsInvalid(['values must be an object of Project-form field values']);
+  }
+  const problems = fieldValueSettingProblems(manifest, values as Record<string, unknown>);
   if (problems.length > 0) throw serviceSettingsInvalid(problems);
-  return settings;
+  return values as AgentServiceSettings;
 }
 
 async function carriedRows(tx: typeof db, profileId: string): Promise<CarriedRow[]> {

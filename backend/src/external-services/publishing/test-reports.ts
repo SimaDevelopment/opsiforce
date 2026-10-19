@@ -7,15 +7,23 @@ import {
   serviceTestReportSchema,
   type ServiceTestReportLine,
 } from '@opsiforce/external-service-sdk/platform';
-import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '../../../db';
-import { externalServiceCalls } from '../../../db/schema';
+import { recordsFileInWorkspace } from '@opsiforce/external-service-sdk/server';
 import { GitService } from '../../git/git.service';
+import { readServiceRecords, RecordsBusy, RecordsUnreadable } from '../calls/service-records-file';
 import { readStampedFileInFolder } from '../registry/service-folder-files';
 
 const WORKSPACE_ROOT = '/workspace/';
 
 const SOURCES_THAT_CALL_THE_SERVICE: ReadonlySet<string> = new Set(['live-call', 'conversation']);
+
+export interface TestedService {
+  manifestHash: string | null;
+}
+
+interface CitedCall {
+  id: string;
+  reachedUpstream: boolean;
+}
 
 export type TestReportView =
   | { state: 'missing' }
@@ -48,7 +56,7 @@ export class ServiceTestReports {
     this.storageMountPath = config.getOrThrow<string>('storageMountPath');
   }
 
-  async of(serviceId: string, manifestHash: string | null, workspaceDirectory: string): Promise<TestReportView> {
+  async of(service: TestedService, workspaceDirectory: string): Promise<TestReportView> {
     const workspace = join(this.storageMountPath, workspaceDirectory);
     const stamped = await readStampedFileInFolder(workspace, workspaceRelativeTestReportPath());
     if (stamped === null) return { state: 'missing' };
@@ -70,9 +78,9 @@ export class ServiceTestReports {
     const [headCommit, changedSince, calls] = await Promise.all([
       this.git.currentSha(workspace).catch(() => null),
       this.git.changedSince(workspace, report.commit).catch(() => null),
-      this.callsOf(serviceId, report.lines),
+      this.requestsOf(join(workspace, recordsFileInWorkspace), report.lines),
     ]);
-    const allowed = new Set(calls.filter((call) => call.decision === 'allowed').map((call) => call.id));
+    const reachedUpstream = new Set(calls.filter((call) => call.reachedUpstream).map((call) => call.id));
     const known = new Set(calls.map((call) => call.id));
     return {
       state: 'present',
@@ -80,7 +88,7 @@ export class ServiceTestReports {
       commit: report.commit,
       headCommit,
       changedSince,
-      manifestMatches: report.manifestHash === manifestHash,
+      manifestMatches: report.manifestHash === service.manifestHash,
       counts: {
         pass: report.lines.filter((line) => line.result === 'pass').length,
         fail: report.lines.filter((line) => line.result === 'fail').length,
@@ -91,18 +99,33 @@ export class ServiceTestReports {
         (line) =>
           line.result !== 'not-checked' &&
           SOURCES_THAT_CALL_THE_SERVICE.has(line.source) &&
-          line.callIds.some((id) => allowed.has(id))
+          line.callIds.some((id) => reachedUpstream.has(id))
       ),
       unknownCallIds: [...new Set(report.lines.flatMap((line) => line.callIds))].filter((id) => !known.has(id)),
     };
   }
 
-  private async callsOf(serviceId: string, lines: ServiceTestReportLine[]) {
-    const ids = [...new Set(lines.flatMap((line) => line.callIds))];
+  private async requestsOf(recordsFile: string, lines: ServiceTestReportLine[]): Promise<CitedCall[]> {
+    const ids = citedIdsOf(lines);
     if (ids.length === 0) return [];
-    return db
-      .select({ id: externalServiceCalls.id, decision: externalServiceCalls.decision })
-      .from(externalServiceCalls)
-      .where(and(eq(externalServiceCalls.externalServiceId, serviceId), inArray(externalServiceCalls.id, ids)));
+    try {
+      const requests = await readServiceRecords(
+        recordsFile,
+        (database) =>
+          database.all<{ id: string; outcome: string }[]>(
+            `SELECT request_id AS id, outcome FROM calls WHERE request_id IN (${ids.map(() => '?').join(', ')})`,
+            ids
+          ),
+        []
+      );
+      return requests.map((request) => ({ id: request.id, reachedUpstream: request.outcome === 'proxied' }));
+    } catch (error) {
+      if (error instanceof RecordsBusy || error instanceof RecordsUnreadable) return [];
+      throw error;
+    }
   }
+}
+
+function citedIdsOf(lines: ServiceTestReportLine[]): string[] {
+  return [...new Set(lines.flatMap((line) => line.callIds))];
 }

@@ -2,16 +2,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { db } from '../../db';
-import { externalServiceCalls } from '../../db/schema';
+import { Doorbell } from '../../src/external-services/doorbell/doorbell';
+import { builtInServiceId, forgetPlatformServiceConfiguration } from './support/fixtures';
 import { startFakeApp, type FakeApp } from './support/fake-app';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { usageRowsOf } from './support/call-log';
 import {
   appActivity,
-  deliveryCalls,
   doorbellQueue,
   podComesUp,
   podStarts,
@@ -19,7 +17,6 @@ import {
   ringDoorbells,
   suspend,
 } from './support/doorbell';
-import { forgetPlatformServiceConfiguration } from './support/fixtures';
 import { configurePlatformService, type GateCallerFixture } from './support/gate';
 import {
   environmentDatabase,
@@ -68,7 +65,7 @@ describe('the doorbell that wakes the App for stored Events', () => {
 
   async function runningReceiver(): Promise<{ receiver: GateCallerFixture; address: string }> {
     const address = `desk-${crypto.randomUUID()}`;
-    const receiver = await receivingEnvironment(app, { address, receive: { 'message.received': true } });
+    const receiver = await receivingEnvironment(app, { address });
     await podComesUp(app, receiver.projectEnvironmentId);
     return { receiver, address };
   }
@@ -98,20 +95,8 @@ describe('the doorbell that wakes the App for stored Events', () => {
     ]);
     expect(events).toHaveLength(3);
     expect(appActivity(app, receiver.projectEnvironmentId)).toBeGreaterThan(0);
-    expect(await deliveryCalls(receiver.projectEnvironmentId)).toEqual([
-      expect.objectContaining({
-        kind: 'delivery',
-        slug: INBOX_SERVICE,
-        tenantId: receiver.tenant.tenantId,
-        projectId: receiver.projectId,
-        projectTitle: receiver.projectTitle,
-        decision: 'allowed',
-        status: 200,
-        code: null,
-      }),
-    ]);
     expect(await usageRowsOf(receiver.projectEnvironmentId)).toEqual([
-      expect.objectContaining({ calls: 0, refused: 0, failed: 0, events: 3 }),
+      expect.objectContaining({ name: 'events', label: 'Events', value: 3 }),
     ]);
   });
 
@@ -180,10 +165,6 @@ describe('the doorbell that wakes the App for stored Events', () => {
     expect(fakeApp.received).toHaveLength(6);
     expect(doorbellQueue(app).delaysOf(ring?.id ?? '')).toEqual([30_000, 120_000, 600_000, 3_600_000, 21_600_000]);
     expect(queuedRingOf(receiver.projectEnvironmentId)).toBeUndefined();
-    const calls = await deliveryCalls(receiver.projectEnvironmentId);
-    expect(calls.map((call) => [call.status, call.code])).toEqual(Array.from({ length: 6 }, () => [503, 'app-failed']));
-    expect(calls[0]?.detail).toBe('The App answered 503. Ringing again in 30 s.');
-    expect(calls[5]?.detail).toBe('The App answered 503. Gave up after 6 rings.');
     const { events } = await environmentDatabase(storageRoot, receiver.projectEnvironmentId);
     expect(events.map((event) => event.appDeliveredAt)).toEqual([null]);
 
@@ -204,8 +185,6 @@ describe('the doorbell that wakes the App for stored Events', () => {
 
     expect(fakeApp.received).toHaveLength(1);
     expect(queuedRingOf(receiver.projectEnvironmentId)).toBeUndefined();
-    const calls = await deliveryCalls(receiver.projectEnvironmentId);
-    expect(calls.map((call) => [call.status, call.code])).toEqual([[400, 'app-refused']]);
   });
 
   it('rings again for an Event stored while the previous ring was finishing', async () => {
@@ -227,11 +206,7 @@ describe('the doorbell that wakes the App for stored Events', () => {
 
     await ringDoorbells(app, Number.POSITIVE_INFINITY);
 
-    const calls = await deliveryCalls(receiver.projectEnvironmentId);
-    expect(calls.map((call) => [call.status, call.code])).toEqual([
-      [500, 'app-failed'],
-      [200, null],
-    ]);
+    expect(fakeApp.received).toHaveLength(2);
     const { events } = await environmentDatabase(storageRoot, receiver.projectEnvironmentId);
     expect(events.every((event) => event.appDeliveredAt !== null)).toBe(true);
   });
@@ -252,14 +227,7 @@ describe('the doorbell that wakes the App for stored Events', () => {
     expect((await reportAppServing(app, receiver)).statusCode).toBe(201);
     await ringDoorbells(app);
 
-    const calls = await deliveryCalls(receiver.projectEnvironmentId);
-    expect(calls.map((call) => [call.status, call.code])).toEqual([
-      [503, 'app-failed'],
-      [503, 'app-failed'],
-      [503, 'app-failed'],
-      [200, null],
-    ]);
-    expect(calls[2]?.detail).toBe('The App answered 503. Ringing again in 30 s.');
+    expect(fakeApp.received).toHaveLength(4);
     expect(queuedRingOf(receiver.projectEnvironmentId)).toBeUndefined();
     const { events } = await environmentDatabase(storageRoot, receiver.projectEnvironmentId);
     expect(events.every((event) => event.appDeliveredAt !== null)).toBe(true);
@@ -285,12 +253,11 @@ describe('the doorbell that wakes the App for stored Events', () => {
     expect(events.every((event) => event.appDeliveredAt !== null)).toBe(true);
   });
 
-  it('App start with nothing undelivered writes no Call and wakes nothing', async () => {
+  it('App start with nothing undelivered rings nothing and wakes nothing', async () => {
     const { receiver, address } = await runningReceiver();
     await sendMessages(address, ['idle-1']);
     await ringDoorbells(app);
     fakeApp.received.length = 0;
-    const callsBefore = await deliveryCalls(receiver.projectEnvironmentId);
     const activityBefore = appActivity(app, receiver.projectEnvironmentId);
     const startsBefore = podStarts(app, receiver.projectEnvironmentId);
 
@@ -299,7 +266,6 @@ describe('the doorbell that wakes the App for stored Events', () => {
     await ringDoorbells(app);
 
     expect(fakeApp.received).toEqual([]);
-    expect(await deliveryCalls(receiver.projectEnvironmentId)).toEqual(callsBefore);
     expect(appActivity(app, receiver.projectEnvironmentId)).toBe(activityBefore);
     expect(podStarts(app, receiver.projectEnvironmentId)).toBe(startsBefore);
   });
@@ -309,9 +275,9 @@ describe('the doorbell that wakes the App for stored Events', () => {
     fakeApp.answer(status);
     await sendMessages(address, [`unwired-${status}-1`]);
     await ringDoorbells(app);
-    expect(await deliveryCalls(receiver.projectEnvironmentId)).toEqual([
-      expect.objectContaining({ decision: 'refused', status, code: 'not-wired' }),
-    ]);
+    expect(
+      await app.get(Doorbell).isUnwired(receiver.projectEnvironmentId, await builtInServiceId(INBOX_SERVICE))
+    ).toBe(true);
 
     fakeApp.answer(200);
     fakeApp.received.length = 0;
@@ -348,7 +314,7 @@ describe('the doorbell that wakes the App for stored Events', () => {
     expect(events.every((event) => event.appDeliveredAt !== null)).toBe(true);
   });
 
-  it('answers 503 when the doorbell cannot be queued, and the provider resend rings it', async () => {
+  it('fails the webhook when the doorbell cannot be queued, and the provider resend rings it', async () => {
     const { receiver, address } = await runningReceiver();
     const payload = {
       events: [providerEvent({ type: 'message.received', key: 'unqueued-1', data: { address, text: 'Hello' } })],
@@ -356,14 +322,8 @@ describe('the doorbell that wakes the App for stored Events', () => {
     doorbellQueue(app).failNextAdd(new Error('Redis is unreachable'));
 
     const refused = await sendWebhook(app, payload);
-    expect(refused.statusCode).toBe(503);
-    expect(refused.headers['content-type']).toContain('application/problem+json');
-    expect(refused.json()).toMatchObject({ status: 503, code: 'doorbell-unavailable' });
-    const [logged] = await db
-      .select({ status: externalServiceCalls.status, code: externalServiceCalls.code })
-      .from(externalServiceCalls)
-      .where(eq(externalServiceCalls.id, refused.json<{ callId: string }>().callId));
-    expect(logged).toEqual({ status: 503, code: 'doorbell-unavailable' });
+    expect(refused.statusCode).toBe(502);
+    expect(refused.headers['opsiforce-outcome']).toBe('failed');
 
     expect((await sendWebhook(app, payload)).statusCode).toBe(200);
     await ringDoorbells(app);

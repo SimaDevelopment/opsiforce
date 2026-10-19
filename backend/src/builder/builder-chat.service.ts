@@ -6,10 +6,10 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { defaultOperationSwitches } from '@opsiforce/external-service-sdk/platform';
 import { AgentService } from '../agent/agent.service';
 import { canEditAgent, findVisibleAgent } from '../agent/agent-visibility';
-import { PUBLIC_API_SERVICE } from '../external-services/configuration/operation-switches';
+import { PUBLIC_API_SERVICE } from '../external-services/built-ins/public-api-service';
+import { builderChatPublicApiSettings } from '../external-services/configuration/public-api-settings';
 import { ProjectConfigurationStore } from '../external-services/configuration/project-configuration.store';
 import { ServiceRegistry } from '../external-services/registry/service-registry';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
@@ -37,23 +37,6 @@ const CHAT_KIND_OF: Record<BuilderSubjectType, ChatKind> = {
   skill: 'skill_builder_chat',
   external_service: EXTERNAL_SERVICE_CHAT_KIND,
 };
-
-export const BUILDER_CHAT_PUBLIC_API_WRITES = [
-  'create_skill',
-  'create_skill_version',
-  'update_skill',
-  'duplicate_skill',
-  'update_agent',
-  'update_agent_profile',
-  'save_agent_template',
-  'set_agent_skill',
-  'remove_agent_skill',
-  'create_project',
-  'connect_project',
-  'restart_project',
-  'update_test_project',
-  'reset_test_project',
-] as const;
 
 const SUBJECT_NOUN: Record<BuilderSubjectType, string> = {
   agent: 'Agent',
@@ -166,8 +149,7 @@ export class BuilderChatService {
       );
     }
     await this.projectConfigurationStore.startWith(service, chatId, {
-      ...defaultOperationSwitches(service.manifest),
-      ...Object.fromEntries(BUILDER_CHAT_PUBLIC_API_WRITES.map((operation) => [operation, true])),
+      values: builderChatPublicApiSettings(service.manifest),
     });
   }
 

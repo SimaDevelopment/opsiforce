@@ -3,14 +3,13 @@ import { test } from 'node:test';
 
 import { testService } from '@opsiforce/external-service-sdk/testing';
 
-import handlers from '../handlers.ts';
-import manifest from '../service.json' with { type: 'json' };
+import service from '../service.ts';
 
-test('refuses an Operation the manifest does not declare, as the Gate would', async () => {
-  const service = testService(manifest, handlers);
+test('refuses a request outside every group as not supported', async () => {
+  const kit = testService(service, { serviceConfiguration: {}, projectConfiguration: {} });
 
-  const answer = await service.call('not_declared', {});
+  const answer = await kit.fetch('/anything', { method: 'POST' });
 
   assert.equal(answer.status, 404);
-  assert.equal(answer.problem?.type, 'urn:opsiforce:error:unknown-operation');
+  assert.equal(answer.headers.get('opsiforce-outcome'), 'not supported');
 });

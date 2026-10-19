@@ -1,4 +1,4 @@
-import { Boxes, ChartColumn, Database } from '~/components/icons';
+import { Boxes, Database } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { firstPermittedRailTab, railTabForPath, type RailTab } from '~/constants/section-rail';
 
@@ -12,14 +12,6 @@ export const ADMIN_TABS: RailTab[] = [
     group: 'Operations',
     icon: Boxes,
     isPermitted: (has) => has(Permission.viewPods),
-  },
-  {
-    to: '/admin/external-services/usage',
-    label: 'Usage',
-    description: 'External Service calls and events: monthly counts and every Call of the Organization.',
-    group: 'Operations',
-    icon: ChartColumn,
-    isPermitted: (has) => has(Permission.viewExternalServicesUsage),
   },
   {
     to: '/admin/storage',

@@ -594,20 +594,20 @@ export const externalServiceUsage = pgTable(
     ),
     service: text("service").notNull(),
     month: date("month").notNull(),
-    calls: bigint("calls", { mode: "number" }).notNull().default(0),
-    refused: bigint("refused", { mode: "number" }).notNull().default(0),
-    failed: bigint("failed", { mode: "number" }).notNull().default(0),
-    events: bigint("events", { mode: "number" }).notNull().default(0),
+    name: text("name").notNull(),
+    label: text("label").notNull(),
+    value: bigint("value", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("external_service_usage_bucket_unique").on(
+    unique("external_service_usage_count_unique").on(
       table.tenantId,
-      table.projectId,
-      table.projectEnvironmentId,
       table.service,
       table.month,
+      table.projectId,
+      table.projectEnvironmentId,
+      table.name,
     ),
     index("idx_external_service_usage_month").on(table.month),
     index("idx_external_service_usage_tenant_month").on(
@@ -619,10 +619,7 @@ export const externalServiceUsage = pgTable(
 
 export type ExternalServiceOriginValue = "built_in" | "custom"
 
-export interface AgentServiceSettings {
-  operations: string[];
-  receive: string[];
-}
+export type AgentServiceSettings = { [key: string]: JsonValue }
 
 export interface ExternalServicePendingHook {
   previous: { [key: string]: JsonValue } | null
@@ -721,43 +718,37 @@ export const externalServiceProjectConfigs = pgTable(
   ],
 )
 
-export type ExternalServiceCallKindValue = "operation" | "form" | "hook" | "inbound" | "delivery"
+export type ExternalServiceCallOutcomeValue = "handled" | "not supported" | "not allowed" | "failed"
 
-export type ExternalServiceCallViaValue = "agent" | "app" | "form"
-
-export type ExternalServiceCallDecisionValue = "allowed" | "refused"
+export type ExternalServiceCallerKindValue = "call" | "platform"
 
 export const externalServiceCalls = pgTable(
   "external_service_calls",
   {
     id: text("id").primaryKey(),
-    kind: text("kind").$type<ExternalServiceCallKindValue>().notNull(),
-    via: text("via").$type<ExternalServiceCallViaValue>(),
     externalServiceId: text("external_service_id").references(() => externalServices.id, {
       onDelete: "set null",
     }),
     slug: text("slug").notNull(),
     manifestHash: text("manifest_hash"),
-    serviceEnvironmentId: text("service_environment_id").references(() => environments.id, {
-      onDelete: "set null",
-    }),
     tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "set null" }),
     projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
-    projectTitle: text("project_title"),
     projectEnvironmentId: text("project_environment_id").references(() => projectEnvironments.id, {
       onDelete: "set null",
     }),
-    operation: text("operation"),
-    operationKind: text("operation_kind"),
-    decision: text("decision").$type<ExternalServiceCallDecisionValue>().notNull(),
     status: integer("status").notNull(),
-    code: text("code"),
-    detail: text("detail"),
-    bounds: jsonb("bounds").$type<JsonValue>(),
     inputBytes: integer("input_bytes"),
     outputBytes: integer("output_bytes"),
     durationMs: integer("duration_ms").notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    requestId: text("request_id").notNull(),
+    callerKind: text("caller_kind").$type<ExternalServiceCallerKindValue>().notNull(),
+    environment: text("environment"),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    route: text("route"),
+    outcome: text("outcome").$type<ExternalServiceCallOutcomeValue>().notNull(),
+    reason: text("reason"),
+    notes: jsonb("notes").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -770,20 +761,12 @@ export const externalServiceCalls = pgTable(
     index("idx_external_service_calls_service_created").on(table.externalServiceId, table.createdAt),
     index("idx_external_service_calls_created").on(table.createdAt),
     check(
-      "external_service_calls_kind_check",
-      sql`${table.kind} in ('operation', 'form', 'hook', 'inbound', 'delivery')`,
+      "external_service_calls_outcome_check",
+      sql`${table.outcome} in ('handled', 'not supported', 'not allowed', 'failed')`,
     ),
     check(
-      "external_service_calls_via_check",
-      sql`${table.via} is null or ${table.via} in ('agent', 'app', 'form')`,
-    ),
-    check(
-      "external_service_calls_decision_check",
-      sql`${table.decision} in ('allowed', 'refused')`,
-    ),
-    check(
-      "external_service_calls_detail_length_check",
-      sql`${table.detail} is null or char_length(${table.detail}) <= 500`,
+      "external_service_calls_caller_kind_check",
+      sql`${table.callerKind} in ('call', 'platform')`,
     ),
   ],
 )

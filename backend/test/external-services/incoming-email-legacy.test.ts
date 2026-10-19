@@ -15,7 +15,6 @@ import {
   legacyRows,
   MAILGUN_SIGNING_KEY,
   RECEIVING_DOMAIN,
-  RECEIVING_EMAIL,
   sendMail,
   storedBeforeV2,
   storeV1Address,
@@ -23,7 +22,7 @@ import {
 
 const DOORBELL_PATH = `/api/external-services/${EMAIL_SERVICE}`;
 
-describe('incoming email in an environment whose App was built on the messages table', () => {
+describe('incoming email, through the built-ins adapter, in an environment whose App was built on the messages table', () => {
   let storageRoot: string;
   let fakeApp: FakeApp;
   let harness: ExternalServicesTestApp;
@@ -49,6 +48,7 @@ describe('incoming email in an environment whose App was built on the messages t
     await before.close();
     harness = await boot();
     app = harness.app;
+    await harness.listen();
     serviceId = await builtInServiceId(EMAIL_SERVICE);
   });
 
@@ -65,7 +65,7 @@ describe('incoming email in an environment whose App was built on the messages t
 
   async function receivingEnvironment(): Promise<{ project: ConfiguringProject; localPart: string }> {
     const project = await configuringProject(app);
-    const saved = await saveProjectService(app, project, serviceId, RECEIVING_EMAIL);
+    const saved = await saveProjectService(app, project, serviceId, {});
     await podComesUp(app, project.projectEnvironmentId);
     return { project, localPart: saved.json().projectConfiguration.values.localPart as string };
   }
@@ -84,7 +84,7 @@ describe('incoming email in an environment whose App was built on the messages t
       text: 'Two boxes, please.',
       attachments: [{ filename: 'order.csv', mimeType: 'text/csv', text: 'sku,qty\nbox,2\n' }],
     });
-    expect(res.statusCode, res.body).toBe(200);
+    expect(res.status, await res.text()).toBe(200);
     await ringDoorbells(app);
 
     const { events } = await environmentDatabase(storageRoot, project.projectEnvironmentId);

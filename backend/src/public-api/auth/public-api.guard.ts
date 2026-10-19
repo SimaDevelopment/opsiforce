@@ -7,12 +7,14 @@ import { IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from '../../ten
 import { TenantService } from '../../tenant/tenant.service';
 import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
-import { CallTokens } from '../../gateway/call-tokens';
-import { PUBLIC_API_SERVICE } from '../../external-services/configuration/operation-switches';
-import { EXTERNAL_SERVICE_OPERATION_KEY } from './external-service-operation.decorator';
+import { verifyCallerIdentity } from '@opsiforce/external-service-sdk/server';
+import { builtInCallerKey } from '../../external-services/built-ins/built-in-caller-key';
+import { PUBLIC_API_SERVICE } from '../../external-services/built-ins/public-api-service';
+import { SecretSealer } from '../../sealing/secret-sealer';
+import { SERVICE_ROUTE_KEY } from './service-route.decorator';
 import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
 import type { Caller, CallerRequest } from './caller';
-import { podBearerOf, type PodBearer } from './gateway-bearer';
+import { podCredentialOf, type PodCredential } from './gateway-bearer';
 
 function toRef({ tenantId, tenantName }: TenantContext): TenantRef {
   return { id: tenantId, name: tenantName };
@@ -20,13 +22,17 @@ function toRef({ tenantId, tenantName }: TenantContext): TenantRef {
 
 @Injectable()
 export class PublicApiGuard implements CanActivate {
+  private readonly callerKey: string;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly tenantService: TenantService,
     private readonly identities: ForwardedIdentityService,
-    private readonly callTokens: CallTokens,
-    private readonly provenance: ProjectProvenanceRepository
-  ) {}
+    private readonly provenance: ProjectProvenanceRepository,
+    sealer: SecretSealer
+  ) {
+    this.callerKey = builtInCallerKey(sealer, PUBLIC_API_SERVICE);
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -36,9 +42,9 @@ export class PublicApiGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<CallerRequest>();
-    const podBearer = podBearerOf(request.headers);
+    const podCredential = podCredentialOf(request.headers);
 
-    request.caller = podBearer ? await this.podCaller(podBearer, context) : await this.forwardedCaller(request);
+    request.caller = podCredential ? await this.podCaller(podCredential, context) : await this.forwardedCaller(request);
     return true;
   }
 
@@ -73,13 +79,14 @@ export class PublicApiGuard implements CanActivate {
     };
   }
 
-  private async podCaller(bearer: PodBearer, context: ExecutionContext): Promise<Caller> {
-    const routeOperation = this.reflector.getAllAndOverride<string | undefined>(EXTERNAL_SERVICE_OPERATION_KEY, [
+  private async podCaller(credential: PodCredential, context: ExecutionContext): Promise<Caller> {
+    const serviceRoute = this.reflector.getAllAndOverride<object | undefined>(SERVICE_ROUTE_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    const key = bearer.kind === 'call-token' ? this.callTokens.redeem(bearer.token, routeOperation) : null;
-    if (key?.service !== PUBLIC_API_SERVICE) throw Errors.unauthenticated();
+    const key =
+      credential.kind === 'caller-identity' ? verifyCallerIdentity(credential.token, this.callerKey) : undefined;
+    if (key?.kind !== 'call' || !key.projectId || !key.projectEnvironmentId) throw Errors.unauthenticated();
 
     const creatorId = await this.provenance.findCreatorId(key.projectId);
     if (!creatorId) throw Errors.unauthenticated();
@@ -93,12 +100,13 @@ export class PublicApiGuard implements CanActivate {
       throw Errors.tenantForbidden();
     }
 
-    if (!routeOperation) throw Errors.routeClosedToAgentCaller();
+    if (!serviceRoute) throw Errors.routeClosedToAgentCaller();
 
     const tenant: TenantRef = { id: tenantRow.id, name: tenantRow.name };
     return {
-      source: 'call-token',
+      source: 'caller-identity',
       projectId: key.projectId,
+      projectEnvironmentId: key.projectEnvironmentId,
       user: {
         id: identity.keycloakId,
         platformId: identity.platformId,

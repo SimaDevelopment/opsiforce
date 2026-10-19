@@ -1,5 +1,6 @@
 import type { ProjectKindValue } from '../../db/schema';
 import type { PodClass } from '../pod/pod-classes';
+import type { CreatedProjectsCap } from './project-limit';
 
 export const ProjectStatus = {
   Starting: 'starting',
@@ -40,6 +41,7 @@ export interface ProjectCreationContext {
   kind?: ProjectKind | null;
   builderSubjectAgentId?: string | null;
   configureBeforeDelivery?: ((projectEnvironmentId: string) => Promise<void>) | null;
+  createdProjectsCap?: CreatedProjectsCap | null;
 }
 
 export interface CreateProjectDto {

@@ -50,19 +50,20 @@ export interface AgentProfileSkill {
   serviceSettings: AgentServiceSettings | null;
 }
 
-export interface AgentServiceSettings {
-  operations: string[];
-  receive: string[];
-}
+export type AgentServiceSettings = Record<string, unknown>;
 
 export interface AgentServiceSettingsView {
   service: {
     id: string;
     slug: string;
     displayName: string;
-    manifest: Pick<ServiceManifest, 'operations' | 'events'>;
+    manifest: Pick<ServiceManifest, 'projectForm'>;
   };
   settings: AgentServiceSettings | null;
+}
+
+export interface AgentServiceSettingsInput {
+  values: AgentServiceSettings;
 }
 
 export interface AgentProfileTemplate {
@@ -286,7 +287,7 @@ export function useSetAgentSkill(id: () => string) {
 }
 
 export function useSetAgentServiceSettings(id: () => string) {
-  return useAgentMutation(id, (agentId, input: { skillId: string; settings: AgentServiceSettings }) =>
+  return useAgentMutation(id, (agentId, input: { skillId: string; settings: AgentServiceSettingsInput }) =>
     api.put<AgentProfileSkill[]>(`/agents/${agentId}/skills/${input.skillId}/service-settings`, input.settings)
   );
 }

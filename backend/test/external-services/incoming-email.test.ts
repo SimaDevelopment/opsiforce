@@ -12,19 +12,18 @@ import {
   platformOperator,
   storedPlatformServiceConfiguration,
 } from './support/fixtures';
-import { askGate, callOperation } from './support/gate';
+import { callThroughGate } from './support/gate-proxy';
 import {
   configuringProject,
   readProjectService,
   saveProjectService,
   type ConfiguringProject,
 } from './support/generating';
-import { environmentDatabase, fileOnDisk, latestInboundCall } from './support/inbound';
+import { environmentDatabase, fileOnDisk } from './support/inbound';
 import {
   EMAIL_SERVICE,
   MAILGUN_SIGNING_KEY,
   RECEIVING_DOMAIN,
-  RECEIVING_EMAIL,
   runAddressMigration,
   sendMail,
   storeV1Address,
@@ -92,17 +91,17 @@ describe('incoming email on a deployment upgraded with the Mailgun settings', ()
 
     const unset = await bootWith({ domain: '', signingKey: '' });
     try {
+      await unset.listen();
       expect(await storedPlatformServiceConfiguration(EMAIL_SERVICE)).toBeNull();
       const res = await sendMail(unset.app, { to: `abcdefghijklmnop@${RECEIVING_DOMAIN}` });
-      expect(res.statusCode).toBe(503);
-      expect(res.json().type).toBe('urn:opsiforce:error:service-not-configured');
+      expect(res.status).toBe(503);
     } finally {
       await unset.close();
     }
   });
 });
 
-describe('receiving email at a Project environment address', () => {
+describe('receiving email at a Project environment address, through the built-ins adapter', () => {
   let harness: ExternalServicesTestApp;
   let app: NestFastifyApplication;
   let storageRoot: string;
@@ -118,6 +117,7 @@ describe('receiving email at a Project environment address', () => {
       { STORAGE_MOUNT_PATH: storageRoot }
     );
     app = harness.app;
+    await harness.listen();
     serviceId = await builtInServiceId(EMAIL_SERVICE);
   });
 
@@ -128,27 +128,30 @@ describe('receiving email at a Project environment address', () => {
 
   async function receivingProject(): Promise<{ project: ConfiguringProject; localPart: string }> {
     const project = await configuringProject(app);
-    const saved = await saveProjectService(app, project, serviceId, RECEIVING_EMAIL);
+    const saved = await saveProjectService(app, project, serviceId, {});
     expect(saved.statusCode, saved.body).toBe(200);
     return { project, localPart: saved.json().projectConfiguration.values.localPart as string };
   }
 
-  it('gives an environment an address only once Receive is on and saved', async () => {
+  async function addressOf(project: ConfiguringProject) {
+    return callThroughGate(app, { credential: `Bearer ${project.key}`, slug: EMAIL_SERVICE }, '/address');
+  }
+
+  it('gives an environment an address once its configuration is saved, and tells it on the Service host', async () => {
     const project = await configuringProject(app);
 
     const unsaved = await readProjectService(app, project, serviceId);
     expect(unsaved.json().projectConfiguration.values.localPart).toBeUndefined();
-    const quiet = await saveProjectService(app, project, serviceId, {});
-    expect(quiet.json().projectConfiguration.values.localPart).toBeUndefined();
-    const described = await askGate(app, { key: project.key, path: EMAIL_SERVICE });
-    expect(described.json().info).toEqual({ address: '' });
+    const notConnected = await addressOf(project);
+    expect(notConnected.status).toBe(403);
+    expect(notConnected.headers.get('opsiforce-outcome')).toBe('not connected');
 
-    const receiving = await saveProjectService(app, project, serviceId, RECEIVING_EMAIL);
-    const localPart = receiving.json().projectConfiguration.values.localPart as string;
+    const saved = await saveProjectService(app, project, serviceId, {});
+    const localPart = saved.json().projectConfiguration.values.localPart as string;
     expect(localPart).toMatch(/^[a-z0-9]{16}$/);
-    expect((await askGate(app, { key: project.key, path: EMAIL_SERVICE })).json().info).toEqual({
-      address: `${localPart}@${RECEIVING_DOMAIN}`,
-    });
+    const told = await addressOf(project);
+    expect(told.status).toBe(200);
+    expect(await told.json()).toEqual({ address: `${localPart}@${RECEIVING_DOMAIN}` });
   });
 
   it('gives the configuration dialog the receiving domain its address template needs, and no secret', async () => {
@@ -171,7 +174,7 @@ describe('receiving email at a Project environment address', () => {
       attachments: [{ filename: 'order.csv', mimeType: 'text/csv', text: 'sku,qty\nbox,2\n' }],
     });
 
-    expect(res.statusCode, res.body).toBe(200);
+    expect(res.status, await res.text()).toBe(200);
     const stored = await environmentDatabase(storageRoot, project.projectEnvironmentId);
     expect(stored.events).toEqual([
       expect.objectContaining({
@@ -198,21 +201,25 @@ describe('receiving email at a Project environment address', () => {
 
     const res = await sendMail(app, { to: `${localPart}@${RECEIVING_DOMAIN}`, signingKey: 'not-the-key' });
 
-    expect(res.statusCode).toBe(401);
-    expect(res.json().type).toBe('urn:opsiforce:error:invalid-signature');
+    expect(res.status).toBe(401);
+    expect((await res.json()).message).toMatch(/signature does not match/);
     expect((await environmentDatabase(storageRoot, project.projectEnvironmentId)).events).toEqual([]);
   });
 
-  it('answers 200 to mail for an address no environment has, logging it unmatched', async () => {
+  it('answers 200 to mail for an address no environment has', async () => {
     const res = await sendMail(app, { to: `nobodyhasthisone@${RECEIVING_DOMAIN}` });
 
-    expect(res.statusCode, res.body).toBe(200);
-    expect(await latestInboundCall(EMAIL_SERVICE)).toMatchObject({ code: 'unmatched' });
+    expect(res.status, await res.text()).toBe(200);
   });
 
-  it('stops receiving at an address once Receive is switched off', async () => {
+  it('stops receiving at an address once its environment is disconnected', async () => {
     const { project, localPart } = await receivingProject();
-    await saveProjectService(app, project, serviceId, { receive: { 'email.received': false } });
+    const disconnected = await app.inject({
+      method: 'DELETE',
+      url: `/api/external-services/projects/${project.projectId}/environments/${project.projectEnvironmentId}/services/${serviceId}/configuration`,
+      headers: project.configurer.headers,
+    });
+    expect(disconnected.statusCode, disconnected.body).toBeLessThan(300);
 
     await sendMail(app, { to: `${localPart}@${RECEIVING_DOMAIN}` });
 
@@ -226,16 +233,13 @@ describe('receiving email at a Project environment address', () => {
     await runAddressMigration();
 
     const view = (await readProjectService(app, project, serviceId)).json().projectConfiguration;
-    expect(view).toMatchObject({ values: { localPart: 'k3p9x2mq7fd41abv' }, receive: { 'email.received': true } });
+    expect(view).toMatchObject({ values: { localPart: 'k3p9x2mq7fd41abv' } });
     await sendMail(app, { to: `k3p9x2mq7fd41abv@${RECEIVING_DOMAIN}`, subject: 'Still here' });
     expect((await environmentDatabase(storageRoot, project.projectEnvironmentId)).events).toEqual([
       expect.objectContaining({ data: expect.objectContaining({ subject: 'Still here' }) }),
     ]);
     const other = await configuringProject(app);
-    const taken = await saveProjectService(app, other, serviceId, {
-      ...RECEIVING_EMAIL,
-      localPart: 'k3p9x2mq7fd41abv',
-    });
+    const taken = await saveProjectService(app, other, serviceId, { localPart: 'k3p9x2mq7fd41abv' });
     expect(taken.statusCode).toBe(400);
     expect(taken.json().errors).toEqual([{ pointer: '/localPart', message: 'is taken' }]);
   });
@@ -246,8 +250,7 @@ describe('receiving email at a Project environment address', () => {
 
     await runAddressMigration();
 
-    const described = await askGate(app, { key: project.key, path: EMAIL_SERVICE });
-    expect(described.json().info).toEqual({ address: `q1w2e3r4t5y6u7i8@${RECEIVING_DOMAIN}` });
+    expect(await (await addressOf(project)).json()).toEqual({ address: `q1w2e3r4t5y6u7i8@${RECEIVING_DOMAIN}` });
     await sendMail(app, { to: `q1w2e3r4t5y6u7i8@${RECEIVING_DOMAIN}` });
     expect((await environmentDatabase(storageRoot, project.projectEnvironmentId)).events).toHaveLength(1);
   });
@@ -261,23 +264,5 @@ describe('receiving email at a Project environment address', () => {
     expect((await readProjectService(app, project, serviceId)).json().projectConfiguration.values.localPart).toBe(
       localPart
     );
-  });
-
-  it('serves none of the old address routes', async () => {
-    const { project } = await receivingProject();
-    const operator = await platformOperator(app);
-
-    const regenerate = await callOperation(app, { key: project.key, slug: EMAIL_SERVICE, operation: 'regenerate' });
-    const identity = await askGate(app, { key: project.key, path: `${EMAIL_SERVICE}/identity` });
-    const adminAddress = await app.inject({
-      method: 'GET',
-      url: `/api/external-services/admin/${EMAIL_SERVICE}/environments/${project.projectEnvironmentId}/address`,
-      headers: operator.headers,
-    });
-
-    expect(regenerate.statusCode).toBe(404);
-    expect(regenerate.json().type).toBe('urn:opsiforce:error:unknown-operation');
-    expect(identity.statusCode).toBe(404);
-    expect(adminAddress.statusCode).toBe(404);
   });
 });

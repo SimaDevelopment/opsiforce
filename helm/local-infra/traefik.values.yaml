@@ -36,6 +36,9 @@ ports:
     http:
       tls:
         enabled: true
+    transport:
+      respondingTimeouts:
+        readTimeout: "0s"
 
 persistence:
   enabled: false

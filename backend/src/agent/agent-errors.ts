@@ -101,11 +101,11 @@ export function serviceSettingsInvalid(problems: string[]): BadRequestException 
   return new BadRequestException({ code: 'bad_request', message: problems.join('; ') });
 }
 
-export function serviceSettingsNeedProjectPermission(operations: string[]): ForbiddenException {
+export function fieldSettingsNeedProjectPermission(skillName: string): ForbiddenException {
   return new ForbiddenException({
     code: 'missing_permission',
     permission: Perms.configureProjectExternalServices,
-    message: `Turning on ${operations.map((name) => `\`${name}\``).join(', ')} needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+    message: `Setting the service settings of \`${skillName}\` needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
   });
 }
 

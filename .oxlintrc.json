@@ -28,9 +28,11 @@
     {
       "files": [
         "**/external-service-sdk/test/fixtures/*/handlers.ts",
+        "**/external-service-sdk/test/fixtures/*/service.ts",
         "**/external-services/*/handlers.ts",
-        "**/test/external-services/support/built-ins/*/handlers.ts",
-        "**/test/external-services/support/*-built-ins/*/handlers.ts"
+        "**/external-services/*/service.ts",
+        "**/test/external-services/support/built-ins/*/service.ts",
+        "**/test/external-services/support/*-built-ins/*/service.ts"
       ],
       "rules": { "import/no-default-export": "off" }
     }

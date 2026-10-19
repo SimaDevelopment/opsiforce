@@ -1,5 +1,5 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "Fixture CRM",
   "description": "A pretend CRM that the backend tests configure and call.",
   "icon": "icon.svg",
@@ -10,7 +10,9 @@
       "type": "text",
       "label": "API URL",
       "required": true,
-      "validate": { "format": "url" }
+      "validate": {
+        "format": "url"
+      }
     },
     {
       "key": "region",
@@ -18,12 +20,28 @@
       "label": "Region",
       "required": true,
       "options": [
-        { "value": "eu", "label": "Europe" },
-        { "value": "us", "label": "United States" }
+        {
+          "value": "eu",
+          "label": "Europe"
+        },
+        {
+          "value": "us",
+          "label": "United States"
+        }
       ]
     },
-    { "key": "apiKey", "type": "secret", "label": "API key", "required": true },
-    { "key": "connection", "type": "info", "label": "Connection", "call": "connectionStatus" },
+    {
+      "key": "apiKey",
+      "type": "secret",
+      "label": "API key",
+      "required": true
+    },
+    {
+      "key": "connection",
+      "type": "info",
+      "label": "Connection",
+      "call": "connectionStatus"
+    },
     {
       "type": "section",
       "title": "Advanced",
@@ -44,9 +62,24 @@
       "type": "list",
       "label": "Mailboxes",
       "item": [
-        { "key": "label", "type": "text", "label": "Label", "required": true },
-        { "key": "token", "type": "secret", "label": "Token", "required": true },
-        { "key": "test", "type": "button", "label": "Test mailbox", "call": "testMailbox" }
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "required": true
+        },
+        {
+          "key": "token",
+          "type": "secret",
+          "label": "Token",
+          "required": true
+        },
+        {
+          "key": "test",
+          "type": "button",
+          "label": "Test mailbox",
+          "call": "testMailbox"
+        }
       ]
     }
   ],
@@ -56,15 +89,24 @@
       "type": "select",
       "label": "Mailbox",
       "required": true,
-      "options": { "serviceConfiguration": "mailboxes", "labelKey": "label" }
+      "options": {
+        "serviceConfiguration": "mailboxes",
+        "labelKey": "label"
+      }
     },
     {
       "key": "pipeline",
       "type": "select",
       "label": "Pipeline",
       "options": [
-        { "value": "sales", "label": "Sales" },
-        { "value": "support", "label": "Support" }
+        {
+          "value": "sales",
+          "label": "Sales"
+        },
+        {
+          "value": "support",
+          "label": "Support"
+        }
       ]
     },
     {
@@ -73,25 +115,46 @@
       "label": "Inbox address",
       "template": "{{pipeline}}@{{serviceConfiguration.region}}.inbox.test"
     },
-    { "key": "signingSecret", "type": "secret", "label": "Signing secret" },
+    {
+      "key": "signingSecret",
+      "type": "secret",
+      "label": "Signing secret"
+    },
     {
       "key": "accountsMode",
       "type": "radio",
       "label": "Accounts",
       "default": "selected",
       "options": [
-        { "value": "selected", "label": "Selected accounts" },
-        { "value": "all", "label": "All accounts" }
+        {
+          "value": "selected",
+          "label": "Selected accounts"
+        },
+        {
+          "value": "all",
+          "label": "All accounts"
+        }
       ]
     },
     {
       "key": "accountIds",
       "type": "multiselect",
       "label": "Accounts",
-      "visibleWhen": { "field": "accountsMode", "equals": "selected" },
-      "options": { "call": "listAccounts", "searchable": true }
+      "visibleWhen": {
+        "field": "accountsMode",
+        "equals": "selected"
+      },
+      "options": {
+        "call": "listAccounts",
+        "searchable": true
+      }
     },
-    { "key": "accountsSummary", "type": "info", "label": "Accounts summary", "call": "accountsSummary" },
+    {
+      "key": "accountsSummary",
+      "type": "info",
+      "label": "Accounts summary",
+      "call": "accountsSummary"
+    },
     {
       "key": "teams",
       "type": "list",
@@ -103,15 +166,26 @@
           "label": "Team",
           "required": true,
           "options": [
-            { "value": "red", "label": "Red team" },
-            { "value": "blue", "label": "Blue team" }
+            {
+              "value": "red",
+              "label": "Red team"
+            },
+            {
+              "value": "blue",
+              "label": "Blue team"
+            }
           ]
         },
         {
           "key": "memberIds",
           "type": "multiselect",
           "label": "Members",
-          "options": { "call": "listMembers", "dependsOn": ["team"] }
+          "options": {
+            "call": "listMembers",
+            "dependsOn": [
+              "team"
+            ]
+          }
         }
       ]
     },
@@ -122,66 +196,5 @@
       "call": "sendInvite",
       "confirm": "Send a test invite to the picked mailbox?"
     }
-  ],
-  "operations": {
-    "get_account": {
-      "kind": "read",
-      "description": "Read one account the Project configuration allows.",
-      "input": { "$ref": "#/$defs/AccountRef" },
-      "outputExample": { "id": "acc_1", "name": "Acme" }
-    },
-    "update_account": {
-      "kind": "write",
-      "title": "Update account",
-      "description": "Rename an allowed account and move it to an allowed pipeline.",
-      "input": { "$ref": "#/$defs/UpdateAccount" },
-      "limits": { "inputBytes": 1024 }
-    },
-    "delete_account": {
-      "kind": "destructive",
-      "description": "Delete an allowed account.",
-      "input": { "$ref": "#/$defs/AccountRef" }
-    },
-    "get_member": {
-      "kind": "read",
-      "description": "Read one member of an allowed team.",
-      "input": { "$ref": "#/$defs/MemberRef" },
-      "limits": { "timeoutSeconds": 1 }
-    }
-  },
-  "bounds": {
-    "pipeline": { "path": "pipeline" },
-    "account": { "path": "accountIds", "unless": { "accountsMode": "all" } },
-    "team": { "path": "teams[].team" },
-    "member": { "path": "teams[].memberIds", "where": { "team": "/team" } }
-  },
-  "$defs": {
-    "AccountRef": {
-      "type": "object",
-      "properties": {
-        "accountId": { "type": "string", "maxLength": 64, "boundTo": "account" }
-      },
-      "required": ["accountId"],
-      "additionalProperties": false
-    },
-    "UpdateAccount": {
-      "type": "object",
-      "properties": {
-        "accountId": { "type": "string", "maxLength": 64, "boundTo": "account" },
-        "pipeline": { "type": "string", "maxLength": 64, "boundTo": "pipeline" },
-        "name": { "type": "string", "minLength": 1, "maxLength": 200 }
-      },
-      "required": ["accountId", "pipeline", "name"],
-      "additionalProperties": false
-    },
-    "MemberRef": {
-      "type": "object",
-      "properties": {
-        "team": { "type": "string", "maxLength": 64, "boundTo": "team" },
-        "memberId": { "type": "string", "maxLength": 64, "boundTo": "member" }
-      },
-      "required": ["team", "memberId"],
-      "additionalProperties": false
-    }
-  }
+  ]
 }

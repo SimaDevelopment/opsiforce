@@ -29,9 +29,15 @@ export class FakePodService extends RecordingFake {
   async createAssignedPod(
     environmentId: string,
     directory: string,
-    projectId: string
+    projectId: string,
+    options: { serviceWebhookUrl?: string } = {}
   ): Promise<{ podName: string; created: boolean }> {
-    this.record('createAssignedPod', { environmentId, directory, projectId });
+    this.record('createAssignedPod', {
+      environmentId,
+      directory,
+      projectId,
+      ...(options.serviceWebhookUrl === undefined ? {} : { serviceWebhookUrl: options.serviceWebhookUrl }),
+    });
     return { podName: this.assignedPodName(environmentId), created: true };
   }
 

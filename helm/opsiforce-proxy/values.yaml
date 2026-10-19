@@ -41,7 +41,6 @@ auth:
       - can_manage_tenant_external_services
       - can_configure_project_external_services
       - can_manage_project_skills
-      - can_view_external_services_usage
       - can_view_platform_storage
       - can_manage_platform_storage
       - can_manage_platform_limits
@@ -125,6 +124,12 @@ vscodeProxy:
 dbProxy:
   backendService: ""
   appsHostname: ""
+
+externalServiceProxy:
+  backendService: ""
+  backendPort: "3006"
+  webhookPort: "3008"
+  hostname: ""
 
 bifrostDashboard:
   enabled: true

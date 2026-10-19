@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
@@ -9,6 +13,7 @@ const COMMITTER = ['-c', 'user.email=publish@opsiforce.local', '-c', 'user.name=
 const EXECUTABLE_BLOB_MODE = '100755';
 const COMMITTED_FILE_MODES = new Set(['100644', EXECUTABLE_BLOB_MODE]);
 const MAX_BLOB_BYTES = 256 * 1024 * 1024;
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 export interface CommittedFile {
   path: string;
@@ -25,8 +30,8 @@ function splitOnce(text: string, separator: string): [string, string] {
 export class GitService {
   private readonly logger = new Logger(GitService.name);
 
-  private async git(cwd: string, args: string[]): Promise<string> {
-    const { stdout } = await run('git', [...BASE_CONFIG, ...args], { cwd, maxBuffer: 32 * 1024 * 1024 });
+  private async git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
+    const { stdout } = await run('git', [...BASE_CONFIG, ...args], { cwd, env, maxBuffer: 32 * 1024 * 1024 });
     return stdout.trim();
   }
 
@@ -120,6 +125,44 @@ export class GitService {
     return [...new Set([...changed.split('\n'), ...untracked.split('\n')])]
       .filter((line) => line.length > 0)
       .toSorted();
+  }
+
+  async hasCommit(dir: string, sha: string): Promise<boolean> {
+    try {
+      await this.git(dir, ['cat-file', '-e', `${sha}^{commit}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async workingTreeDiffs(dir: string, base: string | null, folder: string, pathspecs: string[]): Promise<string[]> {
+    const env = { ...process.env, GIT_INDEX_FILE: join(tmpdir(), `opsiforce-diff-${randomUUID()}`) };
+    try {
+      if (await this.hasCommits(dir)) await this.git(dir, ['read-tree', 'HEAD'], env);
+      await this.git(dir, ['add', '-A', '--', folder], env);
+      return await Promise.all(
+        pathspecs.map((pathspec) =>
+          this.git(
+            dir,
+            [
+              '-c',
+              'core.quotePath=false',
+              'diff',
+              '--cached',
+              '--no-color',
+              '--no-ext-diff',
+              base ?? EMPTY_TREE,
+              '--',
+              pathspec,
+            ],
+            env
+          )
+        )
+      );
+    } finally {
+      await rm(env.GIT_INDEX_FILE, { force: true });
+    }
   }
 
   async committedFiles(dir: string, folder: string): Promise<CommittedFile[]> {

@@ -23,8 +23,11 @@ function normalizeCodexResponsesBody(body: JsonRecord): JsonRecord {
   return normalized;
 }
 
-function buildUpstreamHeaders(credential: LinkedAccountCredential): Headers {
+function buildUpstreamHeaders(credential: LinkedAccountCredential, body: JsonRecord): Headers {
   const headers = new Headers();
+  if (typeof body.prompt_cache_key === 'string' && body.prompt_cache_key) {
+    headers.set('session-id', body.prompt_cache_key);
+  }
   headers.set('content-type', 'application/json');
   headers.set('authorization', `Bearer ${credential.accessToken}`);
   if (credential.accountId) headers.set('chatgpt-account-id', credential.accountId);
@@ -218,7 +221,7 @@ async function streamToCaller(res: ServerResponse, body: ReadableStream<Uint8Arr
 function callCodex(credential: LinkedAccountCredential, body: JsonRecord): Promise<Response> {
   return fetch(CODEX_RESPONSES_URL, {
     method: 'POST',
-    headers: buildUpstreamHeaders(credential),
+    headers: buildUpstreamHeaders(credential, body),
     body: JSON.stringify(normalizeCodexResponsesBody(body)),
   });
 }

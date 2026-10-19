@@ -6,6 +6,8 @@ import { ProjectModule } from '../../project/project.module';
 import { PublishModule } from '../../publish/publish.module';
 import { ServicePodWaker } from '../gate/service-pod-waker';
 import { ConfigurationImpacts } from '../publishing/configuration-impacts';
+import { PublishChangesReader } from '../publishing/publish-changes';
+import { PublishProbes } from '../publishing/publish-probes';
 import { ServiceEnvironmentManifests } from '../publishing/service-environment-manifests';
 import { ServicePublishing } from '../publishing/service-publishing';
 import { ServicePublishingController } from '../publishing/service-publishing.controller';
@@ -31,6 +33,8 @@ import { ProjectPodWaker } from './project-pod-waker';
     ConfigurationImpacts,
     ServiceTestReports,
     ServicePublishing,
+    PublishProbes,
+    PublishChangesReader,
     ServiceEnvironmentManifests,
     { provide: ServicePodWaker, useClass: ProjectPodWaker },
   ],

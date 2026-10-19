@@ -3,6 +3,7 @@ import {
   Calendar,
   Check,
   EllipsisVertical,
+  KeyRound,
   Rocket,
   RotateCcw,
   ShieldCheck,
@@ -38,6 +39,7 @@ export interface EnvManageRowProps {
   onAuth: () => void;
   onSchedules: () => void;
   onRestart: () => void;
+  onRotateGatewayKey: () => void;
   onDelete: () => void;
   onPublish: () => void;
   onVariables: () => void;
@@ -123,6 +125,10 @@ export function EnvManageRow(props: EnvManageRowProps) {
                 Restart
               </DropdownMenuItem>
             </Show>
+            <DropdownMenuItem onSelect={() => props.onRotateGatewayKey()}>
+              <KeyRound class="h-3.5 w-3.5 text-muted-foreground" />
+              Rotate Gateway Key
+            </DropdownMenuItem>
             <Show when={canDeleteEnv()}>
               <DropdownMenuSeparator />
               <DropdownMenuItem

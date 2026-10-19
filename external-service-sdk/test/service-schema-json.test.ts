@@ -19,7 +19,7 @@ test('service.schema.json matches the zod meta-schema (run `yarn schema` after c
 test('editors validating with service.schema.json accept the example manifests and refuse a misspelled key', () => {
   const validate = new Ajv2020({ strict: false }).compile(committed);
 
-  for (const name of ['trello', 'incoming-email', 'whatsapp', 'public-api']) {
+  for (const name of ['trello', 'whatsapp', 'github-sdk2']) {
     assert.equal(validate(fixtureManifest(name)), true, `${name}: ${JSON.stringify(validate.errors)}`);
   }
   const misspelled = trelloManifest();

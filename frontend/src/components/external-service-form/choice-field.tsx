@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js';
-import { serviceConfigurationSourceOf, type Field } from '@opsiforce/external-service-sdk/forms';
+import { serviceConfigurationSourceOf, valueFieldsOf, type Field } from '@opsiforce/external-service-sdk/forms';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { AlertTriangle, Check, ExternalLink, LoaderCircle, Plus, Search, X } from '~/components/icons';
 import { cn } from '~/lib/cn';
@@ -29,6 +29,7 @@ export function ChoiceField(props: {
   field: ChoiceFieldDefinition;
   value: unknown;
   scope: FormValues;
+  scopeFields: readonly Field[];
   itemId?: string;
   onChange: (value: unknown) => void;
   ctx: FormContext;
@@ -158,7 +159,10 @@ export function ChoiceField(props: {
     if (next && callSource() && (loaded() === null || loadedFor() !== query())) void load(query());
   };
 
-  const parentLabels = () => waitingFor().join(', ');
+  const parentLabels = () =>
+    waitingFor()
+      .map((key) => valueFieldsOf(props.scopeFields).find((field) => field.key === key)?.label ?? key)
+      .join(', ');
 
   return (
     <div class="flex flex-col gap-1.5">
@@ -290,12 +294,9 @@ export function ChoiceField(props: {
         </Show>
       </div>
       <Show when={callSource()}>
-        {(source) => (
-          <span class="inline-flex items-center gap-1 text-[10px] text-muted-foreground/80">
-            <ExternalLink class="h-2.5 w-2.5" aria-hidden="true" /> choices come from the service ({source().call}
-            {source().dependsOn?.length ? `, after ${source().dependsOn?.join(', ')}` : ''})
-          </span>
-        )}
+        <span class="inline-flex items-center gap-1 text-[10px] text-muted-foreground/80">
+          <ExternalLink class="h-2.5 w-2.5" aria-hidden="true" /> Choices come from the service
+        </span>
       </Show>
       <Show when={!open() && failure() && selected().length > 0}>
         <span class="text-[10px] text-muted-foreground">Couldn't check these picks with the service.</span>

@@ -17,8 +17,8 @@ import { Perms } from '../../permission/permission.constants';
 import { RequireAnyPermission, RequirePermission } from '../../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
-import { CurrentUser, type UserContext } from '../../user/user.decorator';
-import { CallLogReader, parseCallPageQuery, type CallPage } from '../calls/call-log-reader';
+import { parseCallLogQuery, ServiceCallLog, type CallLogPage } from '../calls/service-call-log';
+import { parseServiceCopy } from '../calls/service-records-file';
 import { InvalidConfigurationFilter } from '../configuration/invalid-configuration.error';
 import {
   ServiceViews,
@@ -28,13 +28,13 @@ import {
   type SavedCustomServiceView,
   type UncallableCustomServiceView,
 } from '../configuration/service-views';
-import type { ServiceOpenApiDocument } from '../gate/service-openapi';
 import { CustomServiceRepository } from '../custom/custom-service.repository';
 import { customServiceSummaryOf, type CustomServiceSummary } from '../custom/custom-service-summary';
 import { FormCalls, formCallRouteOf } from '../gate/form-calls';
 import { sendGateAnswer } from '../gate/service-answers';
 import type { ServiceLane } from '../registry/custom-service-catalog';
 import { ServiceRegistry } from '../registry/service-registry';
+import { parseUsageMonth, ServiceUsage, type ServiceUsageView } from '../usage/service-usage';
 
 export type TenantServiceEntry = TenantServiceView | CustomServiceSummary;
 
@@ -50,7 +50,8 @@ export class TenantServicesController {
     private readonly views: ServiceViews,
     private readonly customServices: CustomServiceRepository,
     private readonly registry: ServiceRegistry,
-    private readonly calls: CallLogReader,
+    private readonly callLog: ServiceCallLog,
+    private readonly usage: ServiceUsage,
     private readonly formCalls: FormCalls
   ) {}
 
@@ -83,24 +84,14 @@ export class TenantServicesController {
     return this.views.tenantView(tenant.tenantId, id, managesCustomServices(req));
   }
 
-  @Get(':id/openapi.json')
-  openApi(
-    @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext,
-    @Req() req: FastifyRequest
-  ): Promise<ServiceOpenApiDocument> {
-    return this.views.tenantOpenApi(tenant.tenantId, id, managesCustomServices(req));
-  }
-
   @Put(':id/configuration')
   @RequirePermission(Perms.manageTenantExternalServices)
   saveServiceConfiguration(
     @Param('id') id: string,
     @Body() body: { values?: unknown } | undefined,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<SavedCustomServiceView> {
-    return this.views.saveCustomServiceConfiguration(tenant.tenantId, id, body?.values, user.userId);
+    return this.views.saveCustomServiceConfiguration(tenant.tenantId, id, body?.values);
   }
 
   @Post(':id/configuration/rotate')
@@ -109,10 +100,9 @@ export class TenantServicesController {
   rotateServiceConfiguration(
     @Param('id') id: string,
     @Body() body: unknown,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<SavedCustomServiceView> {
-    return this.views.rotateCustomServiceConfiguration(tenant.tenantId, id, body, user.userId);
+    return this.views.rotateCustomServiceConfiguration(tenant.tenantId, id, body);
   }
 
   @Post(':id/configuration/hook/retry')
@@ -120,10 +110,9 @@ export class TenantServicesController {
   @RequirePermission(Perms.manageTenantExternalServices)
   retryServiceConfigurationHook(
     @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<CustomServiceView> {
-    return this.views.retryCustomServiceConfigurationHook(tenant.tenantId, id, user.userId);
+    return this.views.retryCustomServiceConfigurationHook(tenant.tenantId, id);
   }
 
   @Post(':id/configuration/hook/discard')
@@ -147,10 +136,9 @@ export class TenantServicesController {
   saveDevelopmentConfiguration(
     @Param('id') id: string,
     @Body() body: { values?: unknown } | undefined,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<DevelopmentServiceView> {
-    return this.views.saveDevelopmentConfiguration(tenant.tenantId, id, body?.values, user.userId);
+    return this.views.saveDevelopmentConfiguration(tenant.tenantId, id, body?.values);
   }
 
   @Post(':id/development/configuration/rotate')
@@ -159,10 +147,9 @@ export class TenantServicesController {
   rotateDevelopmentConfiguration(
     @Param('id') id: string,
     @Body() body: unknown,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<DevelopmentServiceView> {
-    return this.views.rotateDevelopmentConfiguration(tenant.tenantId, id, body, user.userId);
+    return this.views.rotateDevelopmentConfiguration(tenant.tenantId, id, body);
   }
 
   @Post(':id/development/configuration/hook/retry')
@@ -170,10 +157,9 @@ export class TenantServicesController {
   @RequirePermission(Perms.manageTenantExternalServices)
   retryDevelopmentConfigurationHook(
     @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<DevelopmentServiceView> {
-    return this.views.retryDevelopmentConfigurationHook(tenant.tenantId, id, user.userId);
+    return this.views.retryDevelopmentConfigurationHook(tenant.tenantId, id);
   }
 
   @Post(':id/development/configuration/hook/discard')
@@ -191,10 +177,9 @@ export class TenantServicesController {
   @RequirePermission(Perms.manageTenantExternalServices)
   copyProductionToDevelopment(
     @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext
+    @CurrentTenant() tenant: TenantContext
   ): Promise<DevelopmentServiceView> {
-    return this.views.copyProductionToDevelopment(tenant.tenantId, id, user.userId);
+    return this.views.copyProductionToDevelopment(tenant.tenantId, id);
   }
 
   @Post(':id/development/:route/:name')
@@ -205,10 +190,9 @@ export class TenantServicesController {
     @Param('name') name: string,
     @Body() body: unknown,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext,
     @Res() reply: FastifyReply
   ): Promise<void> {
-    await this.sendServiceFormCall(reply, { id, route, name, body, tenant, user, lane: 'development' });
+    await this.sendServiceFormCall(reply, { id, route, name, body, tenant, lane: 'development' });
   }
 
   @Post(':id/:route/:name')
@@ -219,10 +203,9 @@ export class TenantServicesController {
     @Param('name') name: string,
     @Body() body: unknown,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserContext,
     @Res() reply: FastifyReply
   ): Promise<void> {
-    await this.sendServiceFormCall(reply, { id, route, name, body, tenant, user, lane: 'default' });
+    await this.sendServiceFormCall(reply, { id, route, name, body, tenant, lane: 'default' });
   }
 
   private async sendServiceFormCall(
@@ -233,7 +216,6 @@ export class TenantServicesController {
       name: string;
       body: unknown;
       tenant: TenantContext;
-      user: UserContext;
       lane: ServiceLane;
     }
   ): Promise<void> {
@@ -244,7 +226,6 @@ export class TenantServicesController {
       await this.formCalls.callServiceForm({
         serviceId: call.id,
         tenantId: call.tenant.tenantId,
-        keycloakId: call.user.userId,
         route: formCallRoute,
         name: call.name,
         body: call.body,
@@ -253,16 +234,25 @@ export class TenantServicesController {
     );
   }
 
-  @Get(':id/calls')
+  @Get(':id/call-log')
   @RequirePermission(Perms.manageTenantExternalServices)
-  async listCalls(
+  readCallLog(
     @Param('id') id: string,
     @Query() query: Record<string, unknown>,
     @CurrentTenant() tenant: TenantContext
-  ): Promise<CallPage> {
-    const page = parseCallPageQuery(query);
-    const service = await this.calls.serviceOwnership(id);
-    if (service.tenantId !== tenant.tenantId) throw new NotFoundException(`No External Service ${id}`);
-    return this.calls.page({ serviceId: id, tenantId: tenant.tenantId }, page);
+  ): Promise<CallLogPage> {
+    const page = parseCallLogQuery(query);
+    const copy = parseServiceCopy(query.copy);
+    return this.callLog.page({ tenantId: tenant.tenantId, serviceId: id, copy }, page);
+  }
+
+  @Get(':id/usage')
+  @RequirePermission(Perms.manageTenantExternalServices)
+  readUsage(
+    @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<ServiceUsageView> {
+    return this.usage.view(tenant.tenantId, id, parseServiceCopy(query.copy), parseUsageMonth(query.month));
   }
 }

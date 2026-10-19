@@ -80,7 +80,7 @@ describe('which Built-in External Services an Organization is offered', () => {
       origin: 'built_in',
       displayName: 'Fixture CRM',
     });
-    expect(Object.keys(body.manifest.operations)).toContain('get_account');
+    expect(body.manifest.projectForm.map((field: { key?: string }) => field.key)).toContain('mailbox');
     expect(body.manifest).not.toHaveProperty('serviceForm');
     expect(body).not.toHaveProperty('serviceConfiguration');
     expect(res.body).not.toContain('crm.example.com');

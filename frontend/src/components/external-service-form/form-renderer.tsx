@@ -1,4 +1,15 @@
-import { For, Match, Show, Switch, createMemo, createSignal, createUniqueId, type JSX } from 'solid-js';
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  on,
+  type JSX,
+} from 'solid-js';
 import { renderInfoTemplate, visibleFieldKeys, type Field } from '@opsiforce/external-service-sdk/forms';
 import { Button } from '~/components/ui/button';
 import { Switch as Toggle, SwitchControl, SwitchLabel, SwitchThumb } from '~/components/ui/switch';
@@ -8,7 +19,8 @@ import { ChoiceField } from './choice-field';
 import { CopyButton } from './copy-button';
 import { CallButton, CallInfo } from './form-call-fields';
 import { GeneratedField } from './generated-field';
-import { fixedOptionsOf, type FormContext } from './form-context';
+import { fixedOptionsOf, type FieldOption, type FormContext } from './form-context';
+import { formCallFailure } from './form-labels';
 import { ICON_BUTTON_CLASS, INPUT_CLASS, INVALID_INPUT_CLASS } from './form-styles';
 import {
   errorKeyOf,
@@ -31,6 +43,7 @@ type ButtonFieldDefinition = Extract<Field, { type: 'button' }>;
 
 interface LevelProps {
   fields: readonly Field[];
+  scopeFields: readonly Field[];
   scope: FormValues;
   path: FieldPath;
   ctx: FormContext;
@@ -39,7 +52,15 @@ interface LevelProps {
 const DEFAULT_LIST_MAX_ITEMS = 100;
 
 export function ServiceFormFields(props: { fields: readonly Field[]; ctx: FormContext }) {
-  return <FieldList fields={props.fields} scope={props.ctx.draft.values} path={[]} ctx={props.ctx} />;
+  return (
+    <FieldList
+      fields={props.fields}
+      scopeFields={props.fields}
+      scope={props.ctx.draft.values}
+      path={[]}
+      ctx={props.ctx}
+    />
+  );
 }
 
 export function ReadOnlyNotice(props: { children: JSX.Element }) {
@@ -61,13 +82,34 @@ function FieldList(props: LevelProps) {
             when={field.type === 'section' ? field : undefined}
             fallback={
               <Show when={visible().has((field as KeyedField).key)}>
-                <FieldView field={field as KeyedField} scope={props.scope} path={props.path} ctx={props.ctx} />
+                <div
+                  data-field-key={props.path.length === 0 ? (field as KeyedField).key : undefined}
+                  class={cn(
+                    props.path.length === 0 &&
+                      props.ctx.focusedField === (field as KeyedField).key &&
+                      'rounded-md bg-amber-50 ring-2 ring-amber-400 ring-offset-4 ring-offset-amber-50'
+                  )}
+                >
+                  <FieldView
+                    field={field as KeyedField}
+                    scopeFields={props.scopeFields}
+                    scope={props.scope}
+                    path={props.path}
+                    ctx={props.ctx}
+                  />
+                </div>
               </Show>
             }
           >
             {(section) => (
               <Show when={isSectionVisible(section(), visible())}>
-                <SectionField section={section()} scope={props.scope} path={props.path} ctx={props.ctx} />
+                <SectionField
+                  section={section()}
+                  scopeFields={props.scopeFields}
+                  scope={props.scope}
+                  path={props.path}
+                  ctx={props.ctx}
+                />
               </Show>
             )}
           </Show>
@@ -108,7 +150,13 @@ function FieldShell(props: {
   );
 }
 
-function FieldView(props: { field: KeyedField; scope: FormValues; path: FieldPath; ctx: FormContext }) {
+function FieldView(props: {
+  field: KeyedField;
+  scopeFields: readonly Field[];
+  scope: FormValues;
+  path: FieldPath;
+  ctx: FormContext;
+}) {
   const id = createUniqueId();
   const path = () => [...props.path, props.field.key];
   const value = () => props.scope[props.field.key];
@@ -240,6 +288,8 @@ function FieldView(props: { field: KeyedField; scope: FormValues; path: FieldPat
               id={id}
               field={radio() as Extract<Field, { type: 'radio' }>}
               value={value()}
+              scope={props.scope}
+              itemId={itemId()}
               onChange={set}
               ctx={props.ctx}
             />
@@ -254,6 +304,7 @@ function FieldView(props: { field: KeyedField; scope: FormValues; path: FieldPat
               field={choice() as Extract<Field, { type: 'select' | 'multiselect' }>}
               value={value()}
               scope={props.scope}
+              scopeFields={props.scopeFields}
               itemId={itemId()}
               onChange={set}
               ctx={props.ctx}
@@ -278,15 +329,62 @@ function FieldView(props: { field: KeyedField; scope: FormValues; path: FieldPat
   );
 }
 
+function isUnset(value: unknown): boolean {
+  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+}
+
 function RadioGroup(props: {
   id: string;
   field: Extract<Field, { type: 'radio' }>;
   value: unknown;
+  scope: FormValues;
+  itemId?: string;
   onChange: (value: unknown) => void;
   ctx: FormContext;
 }) {
   const name = `radio-${props.id}`;
-  const options = () => fixedOptionsOf(props.field, props.ctx) ?? [];
+  const [called, setCalled] = createSignal<FieldOption[] | null>(null);
+  const [failure, setFailure] = createSignal<string | null>(null);
+  const callSource = () => {
+    const listed = props.field.options;
+    return !Array.isArray(listed) && 'call' in listed ? listed : null;
+  };
+  const waitingFor = () => (callSource()?.dependsOn ?? []).filter((parent) => isUnset(props.scope[parent]));
+  const parentValues = () => JSON.stringify((callSource()?.dependsOn ?? []).map((parent) => props.scope[parent]));
+
+  let requestNumber = 0;
+  const load = async () => {
+    const source = callSource();
+    const callService = props.ctx.callService;
+    const number = ++requestNumber;
+    setCalled(null);
+    setFailure(null);
+    if (!source || !callService || waitingFor().length > 0) return;
+    try {
+      const answer = (await callService('options', source.call, {
+        query: '',
+        ...(props.itemId === undefined ? {} : { item: props.itemId }),
+      })) as FieldOption[];
+      if (number !== requestNumber) return;
+      setCalled(answer);
+      props.ctx.seenOptions?.(props.field.key, answer);
+    } catch (error) {
+      if (number === requestNumber) setFailure(formCallFailure(error));
+    }
+  };
+
+  createEffect(on(parentValues, () => void load()));
+  createEffect(
+    on(
+      parentValues,
+      () => {
+        if (callSource() && !props.ctx.readOnly() && !isUnset(props.value)) props.onChange(undefined);
+      },
+      { defer: true }
+    )
+  );
+
+  const options = () => fixedOptionsOf(props.field, props.ctx) ?? called() ?? [];
   return (
     <fieldset id={props.id} class="flex flex-wrap gap-1.5 border-0 p-0">
       <legend class="sr-only">{props.field.label ?? props.field.key}</legend>
@@ -324,17 +422,33 @@ function RadioGroup(props: {
           );
         }}
       </For>
+      <Show when={callSource() && waitingFor().length > 0 && !props.ctx.readOnly()}>
+        <span class="text-[11px] text-muted-foreground">Choose {waitingFor().join(', ')} first</span>
+      </Show>
+      <Show when={failure()}>
+        {(message) => (
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-destructive" role="alert">
+            {message()}
+            <button type="button" class="text-foreground underline underline-offset-2" onClick={() => void load()}>
+              Try again
+            </button>
+          </span>
+        )}
+      </Show>
     </fieldset>
   );
 }
 
 function SectionField(props: {
   section: SectionFieldDefinition;
+  scopeFields: readonly Field[];
   scope: FormValues;
   path: FieldPath;
   ctx: FormContext;
 }) {
-  const [open, setOpen] = createSignal(!props.section.collapsed);
+  const holdsFocusedField = () =>
+    props.ctx.focusedField !== undefined && props.section.fields.some((field) => field.key === props.ctx.focusedField);
+  const [open, setOpen] = createSignal(!props.section.collapsed || holdsFocusedField());
   const contentId = createUniqueId();
   return (
     <div class="rounded-md border border-border">
@@ -358,20 +472,43 @@ function SectionField(props: {
       </button>
       <Show when={open()}>
         <div id={contentId} class="border-t border-border p-2.5">
-          <FieldList fields={props.section.fields} scope={props.scope} path={props.path} ctx={props.ctx} />
+          <FieldList
+            fields={props.section.fields}
+            scopeFields={props.scopeFields}
+            scope={props.scope}
+            path={props.path}
+            ctx={props.ctx}
+          />
         </div>
       </Show>
     </div>
   );
 }
 
-function itemTitle(list: ListFieldDefinition, item: FormValues): string | undefined {
+function filledText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+function itemTitle(list: ListFieldDefinition, item: FormValues, ctx: FormContext): string | undefined {
   for (const field of list.item) {
-    if (field.type !== 'text' || field.generate) continue;
-    const value = item[field.key];
-    if (typeof value === 'string' && value.trim() !== '') return value;
+    if (field.type === 'text' && !field.generate) return filledText(item[field.key]);
+    if (field.type === 'select' || field.type === 'radio') {
+      const value = filledText(item[field.key]);
+      if (value === undefined) return undefined;
+      return (
+        fixedOptionsOf(field, ctx)?.find((option) => option.value === value)?.label ??
+        ctx.storedLabel(field.key, value) ??
+        value
+      );
+    }
   }
   return undefined;
+}
+
+function singularOf(noun: string): string {
+  if (/[^aeiou]ies$/.test(noun)) return `${noun.slice(0, -3)}y`;
+  if (/(ss|us)$/.test(noun)) return noun;
+  return noun.replace(/s$/, '');
 }
 
 function capitalized(text: string): string {
@@ -387,7 +524,7 @@ function ListField(props: { list: ListFieldDefinition; scope: FormValues; path: 
   };
   const maxItems = () => props.list.maxItems ?? DEFAULT_LIST_MAX_ITEMS;
   const write = (next: FormValues[]) => props.ctx.draft.setAt(listPath(), next.length === 0 ? undefined : next);
-  const itemNoun = () => (props.list.label ?? 'item').toLowerCase().replace(/s$/, '');
+  const itemNoun = () => singularOf((props.list.label ?? 'item').toLowerCase());
 
   return (
     <FieldShell id={id} field={props.list} error={props.ctx.draft.errorAt(listPath())}>
@@ -397,20 +534,26 @@ function ListField(props: { list: ListFieldDefinition; scope: FormValues; path: 
             <div class="rounded-md border border-border p-2.5">
               <div class="-mt-1 mb-1.5 flex items-center gap-2">
                 <span class="min-w-0 flex-1 truncate text-xs font-medium">
-                  {itemTitle(props.list, item) ?? `${capitalized(itemNoun())} ${index() + 1}`}
+                  {itemTitle(props.list, item, props.ctx) ?? `${capitalized(itemNoun())} ${index() + 1}`}
                 </span>
                 <Show when={!props.ctx.readOnly()}>
                   <button
                     type="button"
                     class={cn(ICON_BUTTON_CLASS, 'hover:text-destructive')}
-                    aria-label={`Remove ${itemTitle(props.list, item) ?? `${itemNoun()} ${index() + 1}`}`}
+                    aria-label={`Remove ${itemTitle(props.list, item, props.ctx) ?? `${itemNoun()} ${index() + 1}`}`}
                     onClick={() => write(items().filter((_, position) => position !== index()))}
                   >
                     <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </Show>
               </div>
-              <FieldList fields={props.list.item} scope={item} path={[...listPath(), index()]} ctx={props.ctx} />
+              <FieldList
+                fields={props.list.item}
+                scopeFields={props.list.item}
+                scope={item}
+                path={[...listPath(), index()]}
+                ctx={props.ctx}
+              />
             </div>
           )}
         </For>

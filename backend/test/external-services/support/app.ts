@@ -8,10 +8,10 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { AgentSessionModule } from '../../../src/agent-session/agent-session.module';
 import { configuration } from '../../../src/config/configuration';
+import { registerBuiltInsAdapterRoutes } from '../../../src/external-services/built-ins/built-ins-routes';
 import { CustomServicesModule } from '../../../src/external-services/custom/custom-services.module';
 import { DoorbellModule } from '../../../src/external-services/doorbell/doorbell.module';
 import { ExternalServicesModule } from '../../../src/external-services/external-services.module';
-import { webhookPreParsingHooks } from '../../../src/external-services/http/webhook-routes';
 import { SERVICE_POD_PORT, SERVICE_START_HOLD_MS } from '../../../src/external-services/gate/service-pods';
 import { BUILT_IN_SERVICES_DIR } from '../../../src/external-services/registry/built-in-services';
 import { GatewayAuthGuard } from '../../../src/gateway/gateway-auth.guard';
@@ -78,6 +78,7 @@ export interface ExternalServicesTestAppOptions {
   env?: Record<string, string>;
   config?: Record<string, unknown>;
   extraModules?: NonNullable<ModuleMetadata['imports']>;
+  providers?: { provide: unknown; useValue: unknown }[];
 }
 
 export interface ExternalServicesTestApp {
@@ -137,6 +138,9 @@ export async function createExternalServicesTestApp(
     if (options.serviceStartHoldMs !== undefined) {
       builder = builder.overrideProvider(SERVICE_START_HOLD_MS).useValue(options.serviceStartHoldMs);
     }
+    for (const { provide, useValue } of options.providers ?? []) {
+      builder = builder.overrideProvider(provide).useValue(useValue);
+    }
     const moduleRef = await builder.compile();
 
     const app = moduleRef.createNestApplication<NestFastifyApplication>(
@@ -145,7 +149,7 @@ export async function createExternalServicesTestApp(
     await configurePublicApi(app);
     const fastify = app.getHttpAdapter().getInstance();
     await fastify.register(import('@fastify/multipart'));
-    for (const hook of webhookPreParsingHooks()) fastify.addHook('preParsing', hook);
+    await registerBuiltInsAdapterRoutes(app);
     try {
       await app.init();
     } catch (error) {

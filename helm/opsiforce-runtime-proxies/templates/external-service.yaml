@@ -1,0 +1,102 @@
+{{- $name := include "opsiforce-runtime-proxies.proxyFullname" (dict "root" . "name" "external-service") }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      annotations:
+        rollme: {{ randAlphaNum 5 | quote }}
+        karpenter.sh/do-not-disrupt: "true"
+      labels:
+        app: {{ $name }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ default (include "opsiforce-runtime-proxies.fullname" .) .Values.serviceAccount.name }}
+      containers:
+        - name: external-service
+          lifecycle:
+            preStop:
+              exec:
+                command: [ sh, -c, "sleep 10" ]
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --mode
+            - external-service
+            - --port
+            - {{ printf "%v" .Values.ports.externalService | quote }}
+          env:
+            - name: OPSIFORCE_PROXY_CONTROL_PORT
+              value: {{ printf "%v" .Values.ports.externalServiceControl | quote }}
+            - name: OPSIFORCE_PROXY_WEBHOOK_PORT
+              value: {{ printf "%v" .Values.ports.externalServiceWebhook | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "opsiforce-runtime-proxies.fullname" . }}-config
+            - secretRef:
+                name: {{ include "opsiforce-runtime-proxies.fullname" . }}-secret
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.externalService }}
+            - name: webhook
+              containerPort: {{ .Values.ports.externalServiceWebhook }}
+            - name: control
+              containerPort: {{ .Values.ports.externalServiceControl }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: control
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: control
+          resources:
+            {{- toYaml .Values.resources.externalService | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  annotations:
+    service.kubernetes.io/topology-mode: "Auto"
+spec:
+  ports:
+    - name: http
+      port: {{ .Values.ports.externalService }}
+      protocol: TCP
+      targetPort: http
+    - name: webhook
+      port: {{ .Values.ports.externalServiceWebhook }}
+      protocol: TCP
+      targetPort: webhook
+  selector:
+    app: {{ $name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-control
+spec:
+  clusterIP: None
+  ports:
+    - name: control
+      port: {{ .Values.ports.externalServiceControl }}
+      protocol: TCP
+      targetPort: control
+  selector:
+    app: {{ $name }}

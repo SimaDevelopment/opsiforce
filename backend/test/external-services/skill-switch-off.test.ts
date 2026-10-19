@@ -328,7 +328,7 @@ describe('a Service skill', () => {
   it('stays off in a Project that configures the service while its Agent does not carry it', async () => {
     const projectId = await runningProject();
     const configurer = await addMember(app, tenant, [Perms.configureProjectExternalServices]);
-    await storeProjectConfiguration(FIXTURE_SERVICE, projectId, { operations: {}, receive: {}, _labels: {} });
+    await storeProjectConfiguration(FIXTURE_SERVICE, projectId, { _labels: {} });
     await deliveries.deliver({ projectEnvironmentId: projectId, attempt: 0 });
     expect(await installedSkillNames(projectId)).toContain(SERVICE_SKILL);
 

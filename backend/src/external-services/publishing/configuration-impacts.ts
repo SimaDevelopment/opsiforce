@@ -6,6 +6,7 @@ import { environments, externalServiceProjectConfigs, projectEnvironments, proje
 import { TEST_PROJECT_KIND } from '../../project/project.types';
 import { isPlainValues, type ConfigurationValues } from '../configuration/configuration-values';
 import { projectConfigurationFromStored } from '../configuration/project-configuration.store';
+import { defaultsMissingFrom, type WrittenDefault } from '../configuration/published-defaults';
 import type { RegisteredService } from '../registry/service-registry';
 
 export interface FieldRename {
@@ -20,16 +21,14 @@ export interface ConsumerImpact {
   environmentName: string | null;
   renamed: FieldRename[];
   needsAttention: string[];
-  newOperationsOff: string[];
-  removedOperations: string[];
+  newDefaults: WrittenDefault[];
 }
 
 export interface ConfigurationImpact {
   configurations: number;
   renamed: (FieldRename & { configurations: number })[];
   needsAttention: { field: string; configurations: number }[];
-  newOperationsOff: { operation: string; configurations: number }[];
-  removedOperations: { operation: string; configurations: number }[];
+  newDefaults: (WrittenDefault & { configurations: number })[];
   consumers: ConsumerImpact[];
 }
 
@@ -52,14 +51,6 @@ function renamesOf(next: RegisteredService, stored: ConfigurationValues): FieldR
     .map((field) => ({ from: field.was as string, to: field.key }));
 }
 
-function switchedOnIn(stored: ConfigurationValues): string[] {
-  const operations = stored.operations;
-  if (!isPlainValues(operations)) return [];
-  return Object.entries(operations)
-    .filter(([, on]) => on === true)
-    .map(([name]) => name);
-}
-
 function consumerImpactOf(
   current: RegisteredService | null,
   next: RegisteredService,
@@ -68,8 +59,6 @@ function consumerImpactOf(
   const before = current ? projectConfigurationFromStored(current, consumer.values) : null;
   const after = projectConfigurationFromStored(next, consumer.values);
   const missingBefore = new Set(before?.missing.map(fieldOf) ?? []);
-  const declaredBefore = new Set(Object.keys(current?.manifest.operations ?? {}));
-  const declaredAfter = new Set(Object.keys(next.manifest.operations ?? {}));
   return {
     projectId: consumer.projectId,
     projectTitle: consumer.projectTitle,
@@ -77,19 +66,12 @@ function consumerImpactOf(
     environmentName: consumer.environmentName,
     renamed: renamesOf(next, consumer.values),
     needsAttention: [...new Set(after.missing.map(fieldOf))].filter((field) => !missingBefore.has(field)),
-    newOperationsOff: after.newOperations.filter((operation) => !declaredBefore.has(operation)),
-    removedOperations: switchedOnIn(consumer.values).filter((operation) => !declaredAfter.has(operation)),
+    newDefaults: defaultsMissingFrom(next.manifest.projectForm ?? [], consumer.values),
   };
 }
 
 function isAffected(impact: ConsumerImpact): boolean {
-  return (
-    impact.renamed.length +
-      impact.needsAttention.length +
-      impact.newOperationsOff.length +
-      impact.removedOperations.length >
-    0
-  );
+  return impact.renamed.length + impact.needsAttention.length + impact.newDefaults.length > 0;
 }
 
 function tally<T>(impacts: ConsumerImpact[], pick: (impact: ConsumerImpact) => T[], keyOf: (entry: T) => string) {
@@ -126,16 +108,11 @@ export class ConfigurationImpacts {
         (impact) => impact.needsAttention,
         (field) => field
       ).map(({ entry, configurations }) => ({ field: entry, configurations })),
-      newOperationsOff: tally(
+      newDefaults: tally(
         impacts,
-        (impact) => impact.newOperationsOff,
-        (operation) => operation
-      ).map(({ entry, configurations }) => ({ operation: entry, configurations })),
-      removedOperations: tally(
-        impacts,
-        (impact) => impact.removedOperations,
-        (operation) => operation
-      ).map(({ entry, configurations }) => ({ operation: entry, configurations })),
+        (impact) => impact.newDefaults,
+        (written) => written.key
+      ).map(({ entry, configurations }) => ({ ...entry, configurations })),
       consumers: impacts.filter(isAffected),
     };
   }

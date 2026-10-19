@@ -1,8 +1,10 @@
 export type { Field, FieldType, Form, OptionsSource, VisibleWhen } from './fields.ts';
-export type { Operation, OperationKind, ServiceManifest } from './manifest.ts';
+export type { ServiceManifest } from './manifest.ts';
 export { formValuesSchema, secretStandIn, visibleFieldKeys } from './form-values.ts';
 export {
+  isTargetField,
   serviceConfigurationSourceOf,
+  serviceSettingsFormOf,
   valueFieldsOf,
   type FormValues,
   type ServiceConfigurationSource,

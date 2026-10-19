@@ -1,13 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import {
-  checkServiceManifest,
-  formatProblemPath,
-  type ManifestCheck,
-  type ManifestCheckOptions,
-  type ManifestProblem,
-} from './check-manifest.ts';
+import { checkServiceManifest, formatProblemPath, type ManifestCheck, type ManifestProblem } from './check-manifest.ts';
 import { manifestLimits } from './manifest.ts';
 
 export const manifestFileName = 'service.json';
@@ -37,7 +31,24 @@ export interface ServiceFolderRead {
   check: ManifestCheck;
 }
 
-export async function readServiceFolder(folder: string, options: ManifestCheckOptions): Promise<ServiceFolderRead> {
+interface FolderCheck {
+  ok: boolean;
+  manifest?: { icon?: string };
+  problems: ManifestProblem[];
+}
+
+export async function readServiceFolder(folder: string): Promise<ServiceFolderRead> {
+  return readManifestFolder(folder, checkServiceManifest);
+}
+
+export async function checkServiceFolder(folder: string): Promise<ManifestCheck> {
+  return (await readServiceFolder(folder)).check;
+}
+
+async function readManifestFolder<Check extends FolderCheck>(
+  folder: string,
+  check: (json: unknown) => Check
+): Promise<{ json: unknown; check: Check }> {
   const manifestPath = join(folder, manifestFileName);
   let raw: string;
   try {
@@ -56,20 +67,16 @@ export async function readServiceFolder(folder: string, options: ManifestCheckOp
     return refused(`${manifestFileName} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  const check = checkServiceManifest(json, options);
-  const icon = check.manifest?.icon;
-  if (icon === undefined) return { json, check };
+  const checked = check(json);
+  const icon = checked.manifest?.icon;
+  if (icon === undefined) return { json, check: checked };
 
   const iconProblems = await checkIcon(join(folder, icon));
   const problems: ManifestProblem[] = [
-    ...check.problems,
+    ...checked.problems,
     ...iconProblems.map((message) => ({ severity: 'error' as const, path: formatProblemPath(['icon']), message })),
   ];
-  return { json, check: { ...check, ok: check.ok && iconProblems.length === 0, problems } };
-}
-
-export async function checkServiceFolder(folder: string, options: ManifestCheckOptions): Promise<ManifestCheck> {
-  return (await readServiceFolder(folder, options)).check;
+  return { json, check: { ...checked, ok: checked.ok && iconProblems.length === 0, problems } };
 }
 
 async function checkIcon(iconPath: string): Promise<string[]> {
@@ -85,6 +92,6 @@ async function checkIcon(iconPath: string): Promise<string[]> {
   return svgIconProblems(await readFile(iconPath, 'utf8')).map((problem) => `icon ${problem}`);
 }
 
-function refused(message: string): ServiceFolderRead {
-  return { json: undefined, check: { ok: false, problems: [{ severity: 'error', path: '', message }] } };
+function refused<Check extends FolderCheck>(message: string): { json: unknown; check: Check } {
+  return { json: undefined, check: { ok: false, problems: [{ severity: 'error', path: '', message }] } as Check };
 }

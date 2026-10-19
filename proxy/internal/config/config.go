@@ -15,7 +15,11 @@ const (
 	ModeApp    Mode = "app"
 	ModeVSCode Mode = "vscode"
 	ModeDB     Mode = "db"
+
+	ModeExternalService Mode = "external-service"
 )
+
+const maxCallerCacheTTL = 5 * time.Second
 
 type Config struct {
 	Mode                        Mode
@@ -32,6 +36,10 @@ type Config struct {
 	RequestBufferLimit          int64
 	RequestLogBodyLimit         int
 	RequestLogQueueDepth        int
+	ControlPort                 int
+	WebhookPort                 int
+	ServiceStartHold            time.Duration
+	CallerCacheTTL              time.Duration
 }
 
 func Load(modeArg string, portArg int) (Config, error) {
@@ -55,12 +63,16 @@ func Load(modeArg string, portArg int) (Config, error) {
 		RequestBufferLimit:          int64(intEnv("OPSIFORCE_PROXY_REQUEST_BUFFER_LIMIT_BYTES", 3*1024*1024)),
 		RequestLogBodyLimit:         intEnv("OPSIFORCE_PROXY_REQUEST_LOG_BODY_LIMIT_BYTES", 256*1024),
 		RequestLogQueueDepth:        intEnv("OPSIFORCE_PROXY_REQUEST_LOG_QUEUE_DEPTH", 32),
+		ControlPort:                 intEnv("OPSIFORCE_PROXY_CONTROL_PORT", 3007),
+		WebhookPort:                 intEnv("OPSIFORCE_PROXY_WEBHOOK_PORT", 3008),
+		ServiceStartHold:            positiveDurationEnv("OPSIFORCE_PROXY_SERVICE_START_HOLD", 65*time.Second),
+		CallerCacheTTL:              min(positiveDurationEnv("OPSIFORCE_PROXY_CALLER_CACHE_TTL", maxCallerCacheTTL), maxCallerCacheTTL),
 	}, nil
 }
 
 func parseMode(value string) (Mode, error) {
 	switch Mode(value) {
-	case ModeAgent, ModeApp, ModeVSCode, ModeDB:
+	case ModeAgent, ModeApp, ModeVSCode, ModeDB, ModeExternalService:
 		return Mode(value), nil
 	default:
 		return "", errors.New("invalid proxy mode")
@@ -81,6 +93,8 @@ func defaultPort(mode Mode, portArg int) int {
 		return 3003
 	case ModeDB:
 		return 3004
+	case ModeExternalService:
+		return 3006
 	default:
 		return 3005
 	}

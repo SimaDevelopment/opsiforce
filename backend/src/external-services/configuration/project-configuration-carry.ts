@@ -14,7 +14,6 @@ export type ProjectConfigurationCarryLine =
       service: string;
       displayName: string;
       outcome: 'carried';
-      receiveTurnedOff: string[];
     }
   | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'failed'; code: string };
 
@@ -64,7 +63,7 @@ export class ProjectConfigurationCarry {
         this.store.carry(service, sourceEnvironmentId, targetEnvironmentId)
       );
       if (!carried) return null;
-      return { ...named, outcome: 'carried', receiveTurnedOff: carried.receiveTurnedOff };
+      return { ...named, outcome: 'carried' };
     } catch (err) {
       this.logger.warn(
         `Carrying the ${service.slug} Project configuration from ${sourceEnvironmentId} to ${targetEnvironmentId} failed: ${errorMessage(err)}`
