@@ -2,6 +2,10 @@
 
 Minor versions only add optional things; a service written for `2.0.0` runs on every `2.x`. A change that breaks the wire or the manifest is a new `sdk` major.
 
+## 2.0.1
+
+- A caller that hangs up during a streamed upload no longer crashes the service: the upload to the upstream is cancelled and every other request keeps being answered.
+
 ## 2.0.0
 
 SDK 2 is the only SDK in this package: a service is a transparent proxy with a policy. Its wire is [WIRE-CONTRACT.md](WIRE-CONTRACT.md). A service written for `1.x` does not run on `2.x` and has no upgrade path; its builder rebuilds it on SDK 2.

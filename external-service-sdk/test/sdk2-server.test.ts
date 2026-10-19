@@ -55,7 +55,11 @@ async function upstreamServer(
   const seen: Seen[] = [];
   const server = createServer(async (request, response) => {
     const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(chunk as Buffer);
+    try {
+      for await (const chunk of request) chunks.push(chunk as Buffer);
+    } catch {
+      return;
+    }
     const body = Buffer.concat(chunks);
     seen.push({ method: request.method ?? '', url: request.url ?? '', headers: request.headers, body });
     answer(request, response, body);
@@ -275,6 +279,42 @@ test('a chunked upload nobody reads is streamed to the upstream as sent', async 
   assert.equal(answer, 200);
   assert.equal(github.seen[0]?.headers['transfer-encoding'], 'chunked');
   assert.equal(github.seen[0]?.body.toString(), 'first chunk;second chunk');
+});
+
+test('a caller that hangs up during a streamed upload leaves the server answering', async (t) => {
+  const github = await upstreamServer(t);
+  const port = await serviceServer(
+    t,
+    (url) => [
+      route('POST /api/v3/upload', {
+        summary: 'Upload',
+        allowedBy: [],
+        to: credentialed(url),
+        check: allowAll,
+      }),
+    ],
+    github.url
+  );
+
+  await new Promise<void>((resolve) => {
+    const outgoing = httpRequest({
+      host: '127.0.0.1',
+      port,
+      method: 'POST',
+      path: '/api/v3/upload',
+      headers: { 'x-opsiforce-caller': identity() },
+    });
+    outgoing.on('error', () => resolve());
+    outgoing.write('first chunk;');
+    setTimeout(() => {
+      outgoing.destroy();
+      resolve();
+    }, 50);
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const next = await send(port, { method: 'POST', path: '/api/v3/upload', body: 'small' });
+
+  assert.equal(next.status, 200);
 });
 
 function upgradeRequest(port: number, path: string, callerIdentity: string): Promise<string> {

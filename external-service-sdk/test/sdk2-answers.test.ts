@@ -6,6 +6,7 @@ import { allowAll, defineService, route, upstream } from '@opsiforce/external-se
 import { mintCallerIdentity } from '@opsiforce/external-service-sdk/server';
 import { testGatewayKey, testService, testServiceCaller } from '@opsiforce/external-service-sdk/testing';
 
+import { sdkPackageVersion } from '../src/package-version.ts';
 import {
   definedWith,
   githubManifest,
@@ -198,7 +199,7 @@ test('GET /.well-known/opsiforce describes the upstreams, the ordered routes and
   const described = (await answer.json()) as Record<string, unknown>;
 
   assert.equal(answer.status, 200);
-  assert.equal(described.sdk, '2.0.0');
+  assert.equal(described.sdk, sdkPackageVersion);
   assert.match(described.manifestHash as string, /^[0-9a-f]{64}$/);
   assert.equal(described.settingsLink, 'https://opsiforce.test/projects/project_test?configure=service');
   assert.deepEqual(described.configuration, {

@@ -106,6 +106,8 @@ interface ServicePageModel extends ExternalServiceSummary {
 
 const BUILT_IN_PAGE = { published: true, sdk: null, defaultEnvironment: null, builtOnSdk1: false } as const;
 
+const UNWRITTEN_SKILL_PLACEHOLDER = 'Say what the upstream system is and when an Agent should reach for this service';
+
 function withoutServiceForm(manifest: ServiceManifest): Omit<ServiceManifest, 'serviceForm'> {
   const { serviceForm: _serviceForm, ...rest } = manifest;
   return rest;
@@ -614,9 +616,17 @@ function OverviewTab(props: {
           }
         >
           {(skill) => (
-            <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[11px] leading-relaxed">
-              {skill()}
-            </pre>
+            <>
+              <Show when={skill().includes(UNWRITTEN_SKILL_PLACEHOLDER)}>
+                <p class="mb-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  The builder hasn't written this service's skill yet. This is the starting placeholder, and Agents
+                  connected to this service read it until the builder replaces it.
+                </p>
+              </Show>
+              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[11px] leading-relaxed">
+                {skill()}
+              </pre>
+            </>
           )}
         </Show>
       </section>

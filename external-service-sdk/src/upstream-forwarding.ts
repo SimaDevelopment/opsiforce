@@ -1,6 +1,6 @@
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { finished, pipeline, Readable } from 'node:stream';
+import { finished, pipeline, Readable, type Writable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import {
   brotliDecompressSync,
@@ -226,13 +226,15 @@ export function headerRecord(headers: Headers): Record<string, string> {
   return Object.fromEntries(headers);
 }
 
-export function writeBody(body: UpstreamCall['body'], destination: NodeJS.WritableStream & { end(): void }): void {
+export function writeBody(body: UpstreamCall['body'], destination: Writable): void {
   if (body === null) {
     destination.end();
   } else if (body instanceof Uint8Array) {
     destination.end(body);
   } else {
-    Readable.fromWeb(body as NodeReadableStream<Uint8Array>).pipe(destination);
+    pipeline(Readable.fromWeb(body as NodeReadableStream<Uint8Array>), destination, (error) => {
+      if (error) destination.destroy(error);
+    });
   }
 }
 

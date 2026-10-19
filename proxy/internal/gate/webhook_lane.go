@@ -158,6 +158,8 @@ func (d *Gate) unreachableWebhook(w http.ResponseWriter, r *http.Request, err er
 }
 
 func sandbox(header http.Header) {
+	header.Del("Set-Cookie")
+	header.Del("Clear-Site-Data")
 	header.Set("Content-Security-Policy", "sandbox")
 	header.Set("X-Content-Type-Options", "nosniff")
 }

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
 import { projectGatewayKeys } from '../../db/schema';
@@ -81,6 +81,9 @@ export class GatewayKeyService {
   ): Promise<{ revoked: string[]; token: string }> {
     const token = `gw-${crypto.randomUUID()}`;
     const revoked = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`gateway-key:${projectEnvironmentId}`}, 0))`
+      );
       const previous = await tx
         .update(projectGatewayKeys)
         .set({ status: 'revoked', updatedAt: new Date() })

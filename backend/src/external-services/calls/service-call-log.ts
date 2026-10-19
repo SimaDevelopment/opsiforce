@@ -364,7 +364,10 @@ export class ServiceCallLog {
     const registered = await this.registry.byIdForTenant(scope.tenantId, scope.serviceId);
     if (registered && isAdaptedBuiltIn(registered)) {
       const projectEnvironmentId = 'projectEnvironmentId' in scope ? scope.projectEnvironmentId : undefined;
-      return this.viewOf(await builtInPage(registered, scope.tenantId, query, projectEnvironmentId, Date.now()));
+      return this.viewOf(
+        scope.tenantId,
+        await builtInPage(registered, scope.tenantId, query, projectEnvironmentId, Date.now())
+      );
     }
     const copy =
       'copy' in scope
@@ -376,7 +379,7 @@ export class ServiceCallLog {
     const stored = home
       ? await this.homes.read(home, (database) => storedPage(database, query, projectEnvironmentId, now), EMPTY_PAGE)
       : EMPTY_PAGE;
-    return this.viewOf(stored);
+    return this.viewOf(scope.tenantId, stored);
   }
 
   private async copyServing(tenantId: string, serviceId: string, projectEnvironmentId: string): Promise<ServiceCopy> {
@@ -384,7 +387,7 @@ export class ServiceCallLog {
     return tested?.id === serviceId ? 'development' : 'default';
   }
 
-  private async viewOf(stored: StoredPage): Promise<CallLogPage> {
+  private async viewOf(tenantId: string, stored: StoredPage): Promise<CallLogPage> {
     const projectIds = [
       ...new Set([...stored.projectIds, ...stored.rows.flatMap((row) => (row.project_id ? [row.project_id] : []))]),
     ];
@@ -392,8 +395,8 @@ export class ServiceCallLog {
       ...new Set(stored.rows.flatMap((row) => (row.project_environment_id ? [row.project_environment_id] : []))),
     ];
     const [titles, environmentsById] = await Promise.all([
-      projectTitles(projectIds),
-      knownEnvironments(projectEnvironmentIds),
+      projectTitles(tenantId, projectIds),
+      knownEnvironments(tenantId, projectEnvironmentIds),
     ]);
     const newest = stored.rows[0];
     const oldest = stored.rows.at(-1);
