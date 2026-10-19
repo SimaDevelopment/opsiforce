@@ -231,9 +231,17 @@ The host holds a request for up to a minute while a sleeping service wakes, so a
 - `routes` — what the service serves, in order, first match wins: the pattern, `action` (`proxy` passes the request to an upstream, `handle` is answered by the service itself as its skill describes, `refuse` is blocked), a `summary`, and `allowedBy`, the settings that govern it. A request no route matches is refused.
 - `configuration` — this Project's settings by field, with labels and secrets masked, and `settingsLink`, the page where they change.
 
-A summary says when a route filters an answer or changes a request: read it as a difference from the outside system's docs. Whether a request is allowed is decided from the request itself, so the answer holds no verdicts: plan from the settings and the `allowedBy` fields, then make the call.
+A summary says when a route filters an answer or changes a request: read it as a difference from the outside system's docs. The settings and `allowedBy` tell you which requests a task takes; whether one is allowed is the service's to decide, from the request itself, so the answer holds no verdicts.
 
 `/.well-known/opsiforce` answers for the environment you run in. In a Development chat that is Development's own configuration, which Publish carries to the published environment: Development changes go live on Publish, so never tell the user what Production can do from what you see here.
+
+### Make the request; the service decides
+
+Only the service decides what this Project may do. When the user asks for something, make the request it takes and relay the answer, also when the settings suggest a refusal: the service's refusal carries the reason, the setting and its link, and its Call log shows the people who configure it what was asked for.
+
+To act on something the user names without an id, find it through the service the way its outside system's API finds things (a search, a list) and use what comes back. An empty or filtered answer is the service's answer: tell the user the service returned nothing by that name for this Project and give the `settingsLink`, leaving the reason to the service. An id or a link the user gives you goes into the request as it is.
+
+Tell the user something is refused, unavailable or not found only from a service answer to a request you made for it.
 
 ### Relay a refusal
 

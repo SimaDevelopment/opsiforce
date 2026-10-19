@@ -146,6 +146,13 @@ committed (`yarn install --immutable`, then `external-service-cli serve`).
   narrow a search, escape a search qualifier, look up an item's target before acting on it, require a
   sign-off line. Leave the upstream's answers, names, query parameters and limits as they are: a
   parameter no setting governs passes through, since clients send ones you did not list.
+- **A hidden target answers like a missing one wherever a caller could guess it.** Lists, searches and
+  lookups by name or by a guessable key (a sequential number, `owner/name`) answer exactly as the
+  upstream would if the targets outside this Project's settings did not exist, so a Project learns
+  nothing about targets it was not given. A request naming a hidden target by an id it could only
+  have been handed (a random id, a link) is refused as *not allowed*, naming the setting that selects
+  targets. Callers find a target by asking the service, so the read group passes the upstream's own
+  way of finding one by name.
 - **One Service configuration serves every Project.** In a route, use only the items of
   `ctx.serviceConfiguration` the caller's Project configuration references (the account it picked);
   `service.configuration()` is for code with no caller (`references/handlers.md`).

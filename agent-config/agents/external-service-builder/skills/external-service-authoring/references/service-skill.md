@@ -10,8 +10,9 @@ that will use the service for as long as it exists.
 Write the skill as the layer on top of these, which are always current:
 
 - **The `platform` skill**: how to reach any service at `https://<slug>.$EXTERNAL_SERVICES_HOST` with
-  `$SERVICE_GATEWAY_API_KEY` in a header, to read `/.well-known/opsiforce` before planning, and how to
-  relay a refusal (what, why, the link, never retry a *not allowed*).
+  `$SERVICE_GATEWAY_API_KEY` in a header, to read `/.well-known/opsiforce` before planning, to make
+  every request a task takes and leave the verdict to the service (finding a target by name through
+  it), and how to relay a refusal (what, why, the link, never retry a *not allowed*).
 - **`/.well-known/opsiforce`**, served live from your code: the upstreams with their real addresses and
   mounts, every route with its summary and the settings that govern it, and this Project's settings
   with their labels.
