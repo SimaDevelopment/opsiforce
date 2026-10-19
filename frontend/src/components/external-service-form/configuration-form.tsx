@@ -147,17 +147,17 @@ export function useConfigurationForm<View>(options: ConfigurationFormOptions<Vie
 export function ConfigurationFooter(props: {
   saving: boolean;
   failure: string | null;
-  saved: string | null;
   hint?: string | null;
   compact?: boolean;
   canSave?: boolean;
+  saveLabel?: string;
   cancel?: { label: string; onClick: () => void };
 }) {
   const textSize = () => (props.compact ? 'text-[11px]' : 'text-xs');
   const saveButton = () => (
     <Show when={props.canSave ?? true}>
       <Button size="sm" type="submit" class={props.compact ? 'h-7 text-xs' : undefined} loading={props.saving}>
-        Save
+        {props.saveLabel ?? 'Save'}
       </Button>
     </Show>
   );
@@ -174,14 +174,7 @@ export function ConfigurationFooter(props: {
           </span>
         )}
       </Show>
-      <Show when={!props.failure && props.saved}>
-        {(message) => (
-          <span class={cn(textSize(), 'text-emerald-700')} role="status">
-            {message()}
-          </span>
-        )}
-      </Show>
-      <Show when={!props.failure && !props.saved && props.hint}>
+      <Show when={!props.failure && props.hint}>
         {(message) => <span class={cn(textSize(), 'text-muted-foreground')}>{message()}</span>}
       </Show>
       <Show when={props.compact}>

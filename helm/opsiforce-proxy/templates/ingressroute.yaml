@@ -12,6 +12,13 @@ spec:
   entryPoints:
     - websecure
   routes:
+    {{- if .Values.externalServiceProxy.backendService }}
+    - match: Host(`{{ .Values.ingressRoute.hostname }}`) && PathPrefix(`/api/external-services/webhooks/`)
+      kind: Rule
+      services:
+        - name: {{ .Values.externalServiceProxy.backendService }}
+          port: {{ .Values.externalServiceProxy.webhookPort }}
+    {{- end }}
     - match: Host(`{{ .Values.ingressRoute.hostname }}`)
       kind: Rule
       services:

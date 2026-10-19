@@ -24,7 +24,7 @@ kind: operations
    4. opsiforce-backend   the proxies call its control API
    5. linked-account-proxy  fetches Linked-account tokens from the backend; Bifrost calls it by Service name
    6. opsiforce-frontend  ─┐ both must exist before the edge proxy routes to them
-   7. runtime-proxies     ─┘ four Go deployments from one image
+   7. runtime-proxies     ─┘ five Go deployments from one image (agent, app, vscode, db, external-service)
    8. opsiforce-proxy     nginx, oauth2-proxy and the Traefik IngressRoutes fanning out to all of the above
    ```
 

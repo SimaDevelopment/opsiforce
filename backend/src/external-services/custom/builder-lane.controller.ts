@@ -3,16 +3,25 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../tenant/tenant.decorator';
 import { InvalidConfigurationFilter } from '../configuration/invalid-configuration.error';
 import { sendProblem } from '../http/problem-reply';
-import { ExternalServiceGate } from '../gate/external-service-gate';
-import { FormCalls, formCallRouteOf } from '../gate/form-calls';
-import { inputBytesOfRequest } from '../gate/gate.controller';
+import { FormCalls, formCallRouteOf, type FormCallRoute } from '../gate/form-calls';
 import { GateRefusal, refuse } from '../gate/gate-refusals';
-import { bearerTokenOf, GATE_MOUNT, VIA_HEADER, viaOf } from '../gate/gate-routes';
-import { GateSurfaces, type SurfaceAnswer } from '../gate/gate-surfaces';
+import { bearerTokenOf } from '../gate/gate-routes';
 import { sendGateAnswer } from '../gate/service-answers';
 import { BuilderLane, type BuilderChat } from './builder-lane';
 
-const BUILDER_LANE_PATH = `${GATE_MOUNT}/_builder`;
+const BUILDER_LANE_PATH = 'gateway/_builder';
+
+function requiredFormCallRoute(route: string): FormCallRoute {
+  const formCallRoute = formCallRouteOf(route);
+  if (!formCallRoute) {
+    refuse({
+      status: 404,
+      code: 'unknown-form-call',
+      detail: `Form calls are options, info or buttons, not ${route}.`,
+    });
+  }
+  return formCallRoute;
+}
 
 @Public()
 @Controller(BUILDER_LANE_PATH)
@@ -20,8 +29,6 @@ const BUILDER_LANE_PATH = `${GATE_MOUNT}/_builder`;
 export class BuilderLaneController {
   constructor(
     private readonly lane: BuilderLane,
-    private readonly gate: ExternalServiceGate,
-    private readonly surfaces: GateSurfaces,
     private readonly formCalls: FormCalls
   ) {}
 
@@ -72,52 +79,25 @@ export class BuilderLaneController {
     await this.answer(reply, (chat) => this.lane.events(chat, limit), request);
   }
 
-  @Get('probe')
-  async describe(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
-    await this.probeSurface(request, reply, (from, slug) => this.surfaces.describe(from, slug));
-  }
-
-  @Get('probe/openapi.json')
-  async openApi(@Req() request: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
-    await this.probeSurface(request, reply, (from, slug) =>
-      this.surfaces.openApi(from, slug, request.headers['if-none-match'])
-    );
-  }
-
-  @Get('probe/calls')
-  async recentCalls(
+  @Post('probe/service/:route/:name')
+  async callServiceForm(
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
-    @Query('limit') limit: string | undefined
-  ): Promise<void> {
-    await this.probeSurface(request, reply, (from, slug) => this.surfaces.recentCalls(from, slug, limit));
-  }
-
-  @Post('probe/:operation')
-  async callOperation(
-    @Req() request: FastifyRequest,
-    @Res() reply: FastifyReply,
-    @Param('operation') operation: string,
+    @Param('route') route: string,
+    @Param('name') name: string,
     @Body() body: unknown
   ): Promise<void> {
-    let chat: BuilderChat;
-    let caller;
     try {
-      chat = await this.lane.chatOf(bearerTokenOf(request.headers.authorization));
-      caller = await this.lane.testProjectCaller(chat);
+      const formCallRoute = requiredFormCallRoute(route);
+      const chat = await this.lane.chatOf(bearerTokenOf(request.headers.authorization));
+      const development = await this.lane.servableDevelopment(chat);
+      await sendGateAnswer(
+        reply,
+        await this.formCalls.callDevelopmentServiceForm({ development, route: formCallRoute, name, body })
+      );
     } catch (error) {
       await this.sendRefusal(reply, error);
-      return;
     }
-    const answer = await this.gate.callOperation({
-      from: { caller },
-      slug: chat.slug,
-      operation,
-      input: body ?? {},
-      inputBytes: inputBytesOfRequest(request, body),
-      via: viaOf(request.headers[VIA_HEADER]),
-    });
-    await sendGateAnswer(reply, answer);
   }
 
   @Post('probe/:route/:name')
@@ -129,35 +109,10 @@ export class BuilderLaneController {
     @Body() body: unknown
   ): Promise<void> {
     try {
-      const formCallRoute = formCallRouteOf(route);
-      if (!formCallRoute) {
-        refuse({
-          status: 404,
-          code: 'unknown-form-call',
-          detail: `Form calls are options, info or buttons, not ${route}.`,
-        });
-      }
+      const formCallRoute = requiredFormCallRoute(route);
       const chat = await this.lane.chatOf(bearerTokenOf(request.headers.authorization));
       const target = await this.lane.formCallTarget(chat);
       await sendGateAnswer(reply, await this.formCalls.callProjectForm({ target, route: formCallRoute, name, body }));
-    } catch (error) {
-      await this.sendRefusal(reply, error);
-    }
-  }
-
-  private async probeSurface(
-    request: FastifyRequest,
-    reply: FastifyReply,
-    surface: (
-      from: { caller: Awaited<ReturnType<BuilderLane['testProjectCaller']>> },
-      slug: string
-    ) => Promise<SurfaceAnswer>
-  ): Promise<void> {
-    try {
-      const chat = await this.lane.chatOf(bearerTokenOf(request.headers.authorization));
-      const caller = await this.lane.testProjectCaller(chat);
-      const answer = await surface({ caller }, chat.slug);
-      await reply.status(answer.status).headers(answer.headers).send(answer.body);
     } catch (error) {
       await this.sendRefusal(reply, error);
     }

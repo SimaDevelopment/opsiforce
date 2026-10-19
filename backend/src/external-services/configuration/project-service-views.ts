@@ -29,6 +29,7 @@ import {
 import type { RemovedItemsNotice } from './removed-items';
 import { rotationTarget } from './rotation';
 import { ServiceConfigurationStore } from './service-configuration.store';
+import { ServiceConsumers } from './service-consumers';
 import { summaryOf, type ServiceSummary } from './service-views';
 import type { TolerantRead } from './tolerant-read';
 import { serviceWebhookUrl } from './webhook-url';
@@ -43,9 +44,6 @@ export interface ProjectEnvironmentViewer {
 export interface ProjectConfigurationState {
   saved: boolean;
   missing: string[];
-  operationsOn: number;
-  operationsTotal: number;
-  receiving: number;
 }
 
 export type ProjectServiceState = 'enabled' | 'needs-configuration' | 'available';
@@ -160,14 +158,7 @@ function serviceConfigurationOptionsOf(
 }
 
 function stateOf(configuration: ProjectConfiguration): ProjectConfigurationState {
-  const operations = Object.values(configuration.operations);
-  return {
-    saved: configuration.saved,
-    missing: configuration.missing,
-    operationsOn: operations.filter(Boolean).length,
-    operationsTotal: operations.length,
-    receiving: Object.values(configuration.receive).filter(Boolean).length,
-  };
+  return { saved: configuration.saved, missing: configuration.missing };
 }
 
 function serviceStateOf(configuration: ProjectConfiguration, carriedByAgent: boolean): ProjectServiceState {
@@ -195,6 +186,7 @@ export class ProjectServiceViews {
     private readonly deliveries: DeliveryService,
     private readonly saveHooks: ProjectConfigurationSaveHooks,
     private readonly saves: ConfigurationSaves,
+    private readonly consumers: ServiceConsumers,
     private readonly config: ConfigService
   ) {}
 
@@ -228,29 +220,36 @@ export class ProjectServiceViews {
   }
 
   async save(viewer: ProjectEnvironmentViewer, serviceId: string, values: unknown): Promise<SavedProjectServiceView> {
-    const { userId } = await this.reachableProjectEnvironment(viewer);
+    await this.reachableProjectEnvironment(viewer);
     const { service, serviceConfiguration } = await this.availableService(viewer, serviceId);
-    return this.savedView(service, serviceConfiguration, viewer, userId, () =>
+    return this.savedView(service, serviceConfiguration, viewer, () =>
       this.projectConfigurationStore.saveAndReport(service, viewer.projectEnvironmentId, values)
     );
   }
 
   async rotate(viewer: ProjectEnvironmentViewer, serviceId: string, target: unknown): Promise<SavedProjectServiceView> {
-    const { userId } = await this.reachableProjectEnvironment(viewer);
+    await this.reachableProjectEnvironment(viewer);
     const { service, serviceConfiguration } = await this.availableService(viewer, serviceId);
     const current = await this.projectConfigurationStore.read(service, viewer.projectEnvironmentId);
     const rotate = rotationTarget(service.manifest.projectForm ?? [], current.values, target);
-    return this.savedView(service, serviceConfiguration, viewer, userId, () =>
+    return this.savedView(service, serviceConfiguration, viewer, () =>
       this.projectConfigurationStore.saveAndReport(service, viewer.projectEnvironmentId, storedShapeOf(current), {
         rotate,
       })
     );
   }
 
+  async disconnect(viewer: ProjectEnvironmentViewer, serviceId: string): Promise<ProjectServiceView> {
+    await this.reachableProjectEnvironment(viewer);
+    const { service } = await this.availableService(viewer, serviceId);
+    await this.consumers.disconnect(service.id, viewer.projectEnvironmentId);
+    return this.view(viewer, serviceId);
+  }
+
   async retryHook(viewer: ProjectEnvironmentViewer, serviceId: string): Promise<ProjectServiceView> {
-    const { userId } = await this.reachableProjectEnvironment(viewer);
+    await this.reachableProjectEnvironment(viewer);
     const { service, serviceConfiguration } = await this.availableService(viewer, serviceId);
-    const hookFailure = await this.saveHooks.retry(service, viewer.projectEnvironmentId, userId);
+    const hookFailure = await this.saveHooks.retry(service, viewer.projectEnvironmentId);
     return this.viewOf(
       service,
       serviceConfiguration,
@@ -277,10 +276,9 @@ export class ProjectServiceViews {
     service: RegisteredService,
     serviceConfiguration: TolerantRead,
     viewer: ProjectEnvironmentViewer,
-    userId: string,
     save: () => Promise<ProjectConfigurationSave>
   ): Promise<SavedProjectServiceView> {
-    const saved = await this.saves.project(service, viewer.projectEnvironmentId, userId, save);
+    const saved = await this.saves.project(service, viewer.projectEnvironmentId, save);
     const carried = await this.servicesCarriedByAgent(viewer);
     return {
       ...this.viewOf(service, serviceConfiguration, saved.current, carried, saved.hookFailure),

@@ -27,7 +27,6 @@ export const Permission = {
   manageUsers: 'can_manage_users',
   manageSchedules: 'can_manage_schedules',
   viewPods: 'can_view_pods',
-  viewExternalServicesUsage: 'can_view_external_services_usage',
   managePlatformExternalServices: 'can_manage_platform_external_services',
   manageTenantExternalServices: 'can_manage_tenant_external_services',
   configureProjectExternalServices: 'can_configure_project_external_services',

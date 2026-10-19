@@ -3,18 +3,18 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { allowAll, route, type RouteHandler } from '@opsiforce/external-service-sdk';
 import { createFileServiceState } from '@opsiforce/external-service-sdk/server';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServices } from '../../db/schema';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { waitFor } from '../support/wait-for';
-import { environmentStateFile, startFakeServicePod, type FakeServicePod } from './support/fake-service-pod';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
 import { tenantAdmin, type PersonFixture } from './support/fixtures';
-import { callOperation, type GateCallerFixture } from './support/gate';
+import { callThroughGate, gatewayUrlOf } from './support/gate-proxy';
+import type { GateCallerFixture } from './support/gate';
 import {
   addServiceEnvironment,
   BOARDS_MANIFEST,
@@ -27,13 +27,13 @@ import {
   writeServiceFiles,
   type PublishedService,
 } from './support/published-services';
+import { environmentStateFile, startSdk2ServicePod, type Sdk2ServicePod } from './support/sdk2-service-pod';
 import { defaultEnvironmentReview, serviceEnvironments, switchDefaultEnvironment } from './support/service-publishing';
 
 const STAGING_MANIFEST = {
   ...BOARDS_MANIFEST,
   description: 'The board tool, renamed fields and all.',
   projectForm: [{ ...BOARDS_MANIFEST.projectForm[0], key: 'boards', was: 'boardIds' }],
-  bounds: { board: { path: 'boards' } },
 };
 
 describe('switching the Default environment of a Custom External Service', () => {
@@ -45,10 +45,24 @@ describe('switching the Default environment of a Custom External Service', () =>
   let service: PublishedService;
   let staging: { environmentId: string; projectEnvironmentId: string; directory: string; key: string };
   let consumer: GateCallerFixture;
-  let pod: FakeServicePod;
+  let gatewayUrl: string;
+  let pod: Sdk2ServicePod;
 
-  const listCards = () =>
-    callOperation(app, { key: consumer.key, slug: service.slug, operation: 'list_cards', input: { boardId: 'b1' } });
+  const startPod = (
+    copy: { key: string; directory: string },
+    manifest: unknown,
+    handle: RouteHandler = () => Response.json({})
+  ) =>
+    startSdk2ServicePod({
+      manifest,
+      gatewayKey: copy.key,
+      gatewayUrl,
+      stateFile: environmentStateFile(storageRoot, copy.directory),
+      port: podPort,
+      routes: () => [route('GET /cards', { summary: 'Lists the cards', allowedBy: [], check: allowAll, handle })],
+    });
+
+  const listCards = () => callThroughGate(app, { credential: `Bearer ${consumer.key}`, slug: service.slug }, '/cards');
 
   const serviceView = () =>
     app.inject({ method: 'GET', url: `${TENANT_SERVICES}/${service.id}`, headers: admin.headers });
@@ -63,7 +77,7 @@ describe('switching the Default environment of a Custom External Service', () =>
       serviceStartHoldMs: 1_000,
     });
     app = harness.app;
-    await harness.listen();
+    gatewayUrl = gatewayUrlOf(await harness.listen());
   });
 
   afterAll(async () => {
@@ -84,11 +98,9 @@ describe('switching the Default environment of a Custom External Service', () =>
       ...(await addServiceEnvironment(app, service.builderChatId, admin.tenant.tenantId, environment.id)),
     };
     await writeServiceFiles(storageRoot, staging.directory, STAGING_MANIFEST);
-    pod = await startFakeServicePod({
-      manifest: BOARDS_MANIFEST,
-      gatewayKey: service.key,
-      stateFile: environmentStateFile(storageRoot, service.directory),
-      port: podPort,
+    pod = await startPod(service, BOARDS_MANIFEST, async (_request, ctx) => {
+      await ctx.state.set('upstreamWebhook', 'wh-1');
+      return Response.json({ from: 'production' });
     });
     expect((await saveCustomServiceConfiguration(app, admin, service.id, READY_BOARDS)).statusCode).toBe(200);
     consumer = await consumerIn(app, admin.tenant);
@@ -133,11 +145,7 @@ describe('switching the Default environment of a Custom External Service', () =>
   });
 
   it("moves callers to the chosen environment, copying the old Default's ctx.state file, and keeps the webhook URL", async () => {
-    pod.script('list_cards', async (_input, ctx) => {
-      await ctx.state.set('upstreamWebhook', 'wh-1');
-      return { from: 'production' };
-    });
-    expect((await listCards()).json()).toEqual({ from: 'production' });
+    expect(await (await listCards()).json()).toEqual({ from: 'production' });
     const webhookUrl = (await serviceView()).json().webhookUrl;
 
     const res = await switchDefaultEnvironment(app, admin, service.id, { environmentId: staging.environmentId });
@@ -147,19 +155,12 @@ describe('switching the Default environment of a Custom External Service', () =>
     const [row] = await db.select().from(externalServices).where(eq(externalServices.id, service.id));
     expect(row?.defaultEnvironmentId).toBe(staging.environmentId);
     await pod.close();
-    pod = await startFakeServicePod({
-      manifest: STAGING_MANIFEST,
-      gatewayKey: staging.key,
-      stateFile: environmentStateFile(storageRoot, staging.directory),
-      port: podPort,
-    });
-    pod.script('list_cards', async (_input, ctx) => ({
-      from: 'staging',
-      webhook: await ctx.state.get('upstreamWebhook'),
-    }));
+    pod = await startPod(staging, STAGING_MANIFEST, async (_request, ctx) =>
+      Response.json({ from: 'staging', webhook: await ctx.state.get('upstreamWebhook') })
+    );
     const answer = await listCards();
-    expect(answer.statusCode, answer.body).toBe(200);
-    expect(answer.json()).toEqual({ from: 'staging', webhook: 'wh-1' });
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).toEqual({ from: 'staging', webhook: 'wh-1' });
     expect((await serviceView()).json()).toMatchObject({
       webhookUrl,
       defaultEnvironment: { environmentId: staging.environmentId, name: 'Staging' },
@@ -185,41 +186,6 @@ describe('switching the Default environment of a Custom External Service', () =>
     expect(neverPublished.statusCode).toBe(409);
     const [row] = await db.select().from(externalServices).where(eq(externalServices.id, service.id));
     expect(row?.defaultEnvironmentId).toBe(service.environmentId);
-  });
-
-  it('holds new calls with 503 service-reloading and copies the state an in-flight call writes before switching', async () => {
-    let releaseFirst: () => void = () => undefined;
-    const firstMayFinish = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    let calls = 0;
-    pod.script('list_cards', async (_input, ctx) => {
-      calls += 1;
-      if (calls > 1) return { from: 'production' };
-      await firstMayFinish;
-      await ctx.state.set('written-in-flight', true);
-      return { from: 'production', slow: true };
-    });
-    const inFlight = listCards();
-    await waitFor(() => calls === 1);
-
-    const switching = switchDefaultEnvironment(app, admin, service.id, { environmentId: staging.environmentId });
-    let held: Awaited<ReturnType<typeof listCards>> | undefined;
-    await waitFor(async () => {
-      const res = await listCards();
-      if (res.statusCode !== 503) return false;
-      held = res;
-      return true;
-    });
-    releaseFirst();
-
-    expect((await inFlight).json()).toEqual({ from: 'production', slow: true });
-    expect((await switching).statusCode).toBe(200);
-    expect(held?.json()).toMatchObject({ code: 'service-reloading' });
-    expect(held?.headers['retry-after']).toBeDefined();
-    expect(
-      await createFileServiceState(environmentStateFile(storageRoot, staging.directory)).get('written-in-flight')
-    ).toBe(true);
   });
 
   it('runs two switches one after the other, the last one leaving the state where callers land', async () => {

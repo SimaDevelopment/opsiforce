@@ -98,6 +98,26 @@ describe('upstream headers', () => {
     expect(headers?.['chatgpt-account-id']).toBe(LINKED_ACCOUNT.accountId);
     expect(headers?.originator).toBe('codex_cli_rs');
   });
+
+  it('sends the prompt cache key as the session-id ChatGPT routes its cache by', async () => {
+    const res = await proxy.sendLikeBifrost({
+      model: 'gpt-6.1-sol',
+      input: USER_TURN,
+      prompt_cache_key: 'ses_eb77bb310ffeMdyelnVWjuZJZ8',
+    });
+    await res.text();
+
+    const request = proxy.upstream.requests[0];
+    expect(request?.headers['session-id']).toBe('ses_eb77bb310ffeMdyelnVWjuZJZ8');
+    expect(request?.body.prompt_cache_key).toBe('ses_eb77bb310ffeMdyelnVWjuZJZ8');
+  });
+
+  it('sends no session-id when the caller gives no prompt cache key', async () => {
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-6.1-sol', input: USER_TURN, prompt_cache_key: '' });
+    await res.text();
+
+    expect(proxy.upstream.requests[0]?.headers).not.toHaveProperty('session-id');
+  });
 });
 
 describe('responses', () => {

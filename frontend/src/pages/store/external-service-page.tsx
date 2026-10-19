@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal, untrack, type JSX } from 'solid-js';
+import { toast } from 'solid-sonner';
 import { useNavigate } from '@tanstack/solid-router';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk/forms';
 import { useEnvironments, type Environment } from '~/api/environments';
@@ -26,23 +27,18 @@ import {
   type OperatorServiceView,
   type SdkStatus,
 } from '~/api/external-service-views';
-import { callSources } from '~/api/external-service-calls';
+import { callLogSources, type ServiceCopy } from '~/api/external-service-call-log';
 import { usePermissions } from '~/api/permissions';
 import { ActionsMenu, ActionsMenuItem } from '~/components/actions-menu';
-import { ServiceApiReference } from '~/components/external-service/api-reference';
-import { CallsTable } from '~/components/external-service/calls-table';
+import { CallLog } from '~/components/external-service/call-log';
+import { ConnectedProjects } from '~/components/external-service/connected-projects';
+import { ServiceUsage } from '~/components/external-service/service-usage';
 import { PublishServiceDialog } from '~/components/external-service/publish-service-dialog';
 import { DuplicateServiceDialog, ExportServiceDialog } from '~/components/external-service/service-copy-dialogs';
 import { SdkBadge } from '~/components/external-service/sdk-badge';
 import { canManageExternalService, canSeeExternalServices } from '~/components/external-service/service-access';
 import { DeleteServiceDialog, DisableServiceDialog } from '~/components/external-service/service-lifecycle-dialogs';
-import {
-  ChangeMark,
-  KindPill,
-  NeedsSetupBadge,
-  ServiceIcon,
-  usedByLabel,
-} from '~/components/external-service/service-marks';
+import { ChangeMark, NeedsSetupBadge, ServiceIcon } from '~/components/external-service/service-marks';
 import {
   ConfigurationFooter,
   createConfigurationEdits,
@@ -59,6 +55,7 @@ import {
   DisabledBadge,
   EmptyState,
   ErrorState,
+  FilterChips,
   OriginBadge,
   RowList,
   SectionTitle,
@@ -82,7 +79,7 @@ import { Badge } from '~/components/ui/badge';
 import { cn } from '~/lib/cn';
 import { createDocumentTitle } from '~/lib/create-document-title';
 
-export const EXTERNAL_SERVICE_TABS = ['overview', 'configuration', 'calls', 'api'] as const;
+export const EXTERNAL_SERVICE_TABS = ['overview', 'configuration', 'calls', 'usage'] as const;
 
 export type ExternalServiceTab = (typeof EXTERNAL_SERVICE_TABS)[number];
 
@@ -90,7 +87,7 @@ const TAB_LABELS: Record<ExternalServiceTab, string> = {
   overview: 'Overview',
   configuration: 'Service configuration',
   calls: 'Calls',
-  api: 'API',
+  usage: 'Usage',
 };
 
 interface ServicePageModel extends ExternalServiceSummary {
@@ -104,9 +101,10 @@ interface ServicePageModel extends ExternalServiceSummary {
   published: boolean;
   sdk: SdkStatus | null;
   defaultEnvironment: DefaultEnvironment | null;
+  builtOnSdk1: boolean;
 }
 
-const BUILT_IN_PAGE = { published: true, sdk: null, defaultEnvironment: null } as const;
+const BUILT_IN_PAGE = { published: true, sdk: null, defaultEnvironment: null, builtOnSdk1: false } as const;
 
 function withoutServiceForm(manifest: ServiceManifest): Omit<ServiceManifest, 'serviceForm'> {
   const { serviceForm: _serviceForm, ...rest } = manifest;
@@ -114,10 +112,7 @@ function withoutServiceForm(manifest: ServiceManifest): Omit<ServiceManifest, 's
 }
 
 function unreadableManifest(service: ExternalServiceSummary): Omit<ServiceManifest, 'serviceForm'> {
-  return { sdk: 1, displayName: service.displayName, description: service.description } as Omit<
-    ServiceManifest,
-    'serviceForm'
-  >;
+  return { displayName: service.displayName, description: service.description } as Omit<ServiceManifest, 'serviceForm'>;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -169,6 +164,7 @@ export function ExternalServicePage(props: {
         manifest: withoutServiceForm(view.manifest),
         fullManifest: view.manifest,
         operator: view,
+        builtOnSdk1: false,
       };
     }
     if (isUncallableCustomServiceView(view)) {
@@ -236,6 +232,7 @@ export function ExternalServicePage(props: {
                   <ServiceBody
                     service={service()}
                     canManage={canManageExternalService(service().origin, hasPermission)}
+                    canReadUsage={isTenantAdmin()}
                     tab={props.tab}
                     env={props.env}
                     onTab={props.onTab}
@@ -254,22 +251,23 @@ export function ExternalServicePage(props: {
 function ServiceBody(props: {
   service: ServicePageModel;
   canManage: boolean;
+  canReadUsage: boolean;
   tab: string | undefined;
   env: string | undefined;
   onTab: (tab: ExternalServiceTab) => void;
   onEnv: (environmentId: string) => void;
 }) {
   const editable = () => (props.canManage ? props.service.operator : null);
+  const builtInCallLog = () => props.service.origin === 'built_in';
+  const canReadCalls = () => (builtInCallLog() ? props.canReadUsage : props.canManage);
   const tabs = (): ExternalServiceTab[] =>
     EXTERNAL_SERVICE_TABS.filter((tab) => {
+      if (props.service.builtOnSdk1) return tab === 'overview';
       if (tab === 'configuration') return editable() !== null;
-      if (tab === 'calls') return props.canManage;
+      if (tab === 'calls') return canReadCalls();
+      if (tab === 'usage') return props.canReadUsage;
       return true;
     });
-  const callsSource = () =>
-    props.service.origin === 'built_in'
-      ? callSources.platformService(props.service.id)
-      : callSources.tenantService(props.service.id);
   const tab = (): ExternalServiceTab => tabs().find((candidate) => candidate === props.tab) ?? 'overview';
 
   return (
@@ -296,19 +294,38 @@ function ServiceBody(props: {
             </TabsContent>
           )}
         </Show>
-        <Show when={props.canManage}>
+        <Show when={canReadCalls()}>
           <TabsContent value="calls" class="mt-6">
-            <CallsTable source={callsSource()} scope={props.service.origin === 'built_in' ? 'platform' : 'tenant'} />
+            <ServiceCallLog serviceId={props.service.id} showCopy={!builtInCallLog()} />
           </TabsContent>
         </Show>
-        <TabsContent value="api" class="mt-6">
-          <ApiTab
-            service={props.service}
-            asOperator={props.service.operator !== null && props.service.origin === 'built_in'}
-          />
-        </TabsContent>
+        <Show when={props.canReadUsage}>
+          <TabsContent value="usage" class="mt-6">
+            <ServiceUsage serviceId={props.service.id} showCopy={props.service.origin === 'custom'} />
+          </TabsContent>
+        </Show>
       </Tabs>
     </>
+  );
+}
+
+const COPY_OPTIONS: { id: ServiceCopy; label: string }[] = [
+  { id: 'default', label: 'Default' },
+  { id: 'development', label: 'Development' },
+];
+
+function ServiceCallLog(props: { serviceId: string; showCopy: boolean }) {
+  const [copy, setCopy] = createSignal<ServiceCopy>('default');
+  return (
+    <CallLog
+      source={callLogSources.tenantService(props.serviceId, copy())}
+      showProject
+      toolbar={
+        props.showCopy ? (
+          <FilterChips label="Copy of the service" options={COPY_OPTIONS} value={copy()} onChange={setCopy} />
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -389,10 +406,12 @@ function ServiceHeader(props: { service: ServicePageModel; editable: OperatorSer
                       <Pencil class="h-3.5 w-3.5" aria-hidden="true" />
                       Edit in Builder
                     </Button>
-                    <Button size="sm" onClick={() => setPublishOpen(true)}>
-                      <Rocket class="h-3.5 w-3.5" aria-hidden="true" />
-                      Publish
-                    </Button>
+                    <Show when={!service().builtOnSdk1}>
+                      <Button size="sm" onClick={() => setPublishOpen(true)}>
+                        <Rocket class="h-3.5 w-3.5" aria-hidden="true" />
+                        Publish
+                      </Button>
+                    </Show>
                   </>
                 )}
               </Show>
@@ -449,7 +468,6 @@ interface ManifestShown {
   manifest: ShownManifest | null;
   callers: ShownManifest | null;
   changes: ManifestDiff | null;
-  removedInUse: EnvironmentManifest['removedInUse'];
   environmentName: string | null;
 }
 
@@ -457,8 +475,7 @@ interface ListedItem<T> {
   key: string;
   item: T;
   change: ManifestChange | null;
-  aspects: ManifestDiff['operations'][number]['aspects'];
-  usedBy: number;
+  aspects: ManifestDiff['events'][number]['aspects'];
 }
 
 const ENVIRONMENT_STATUS_TEXT: Record<EnvironmentManifest['status'], EnvironmentRowStatus> = {
@@ -471,8 +488,7 @@ const ENVIRONMENT_STATUS_TEXT: Record<EnvironmentManifest['status'], Environment
 function listedItems<T>(
   current: Record<string, T>,
   callers: Record<string, T>,
-  changes: { key: string; change: ManifestChange; aspects: ListedItem<T>['aspects'] }[] | null,
-  usedBy: (key: string) => number
+  changes: { key: string; change: ManifestChange; aspects: ListedItem<T>['aspects'] }[] | null
 ): ListedItem<T>[] {
   const changeOf = new Map((changes ?? []).map((entry) => [entry.key, entry]));
   const present = Object.entries(current).map(([key, item]) => ({
@@ -480,7 +496,6 @@ function listedItems<T>(
     item,
     change: changeOf.get(key)?.change ?? null,
     aspects: changeOf.get(key)?.aspects ?? [],
-    usedBy: 0,
   }));
   const removed = (changes ?? [])
     .filter((entry) => entry.change === 'removed' && callers[entry.key] !== undefined)
@@ -489,7 +504,6 @@ function listedItems<T>(
       item: callers[entry.key] as T,
       change: 'removed' as const,
       aspects: [],
-      usedBy: usedBy(entry.key),
     }));
   return [...present, ...removed];
 }
@@ -520,7 +534,6 @@ function OverviewTab(props: {
         manifest: props.service.manifest,
         callers: null,
         changes: null,
-        removedInUse: [],
         environmentName: null,
       };
     }
@@ -528,7 +541,6 @@ function OverviewTab(props: {
       manifest: entry.manifest,
       callers: callersEntry()?.manifest ?? null,
       changes: entry.changes,
-      removedInUse: entry.removedInUse,
       environmentName: entry.name,
     };
   };
@@ -538,6 +550,12 @@ function OverviewTab(props: {
   };
 
   const Content = () => (
+    <Show when={!props.service.builtOnSdk1} fallback={<BuiltOnSdk1Notice />}>
+      <ServiceOverview />
+    </Show>
+  );
+
+  const ServiceOverview = () => (
     <div class="flex min-w-0 flex-col gap-8">
       <Show when={props.service.hidesBuiltIn}>
         <div class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
@@ -578,6 +596,10 @@ function OverviewTab(props: {
         }
       >
         {(manifest) => <ManifestLists manifest={manifest()} shown={shown()} />}
+      </Show>
+
+      <Show when={props.canManage && props.service.origin === 'custom'}>
+        <ConnectedProjects serviceId={props.service.id} serviceName={props.service.displayName} />
       </Show>
 
       <section>
@@ -623,47 +645,28 @@ function OverviewTab(props: {
   );
 }
 
+function BuiltOnSdk1Notice() {
+  return (
+    <div class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+      <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+      <p class="flex-1 text-xs text-amber-900">
+        Built on SDK 1, rebuild or delete. Opsiforce no longer serves SDK 1 services: rebuild this one on SDK 2 in the
+        Builder, or delete it.
+      </p>
+    </div>
+  );
+}
+
 function ManifestLists(props: { manifest: ShownManifest; shown: ManifestShown }) {
-  const usedBy = (operation: string) =>
-    props.shown.removedInUse.find((entry) => entry.operation === operation)?.configurations ?? 0;
-  const operations = () =>
-    listedItems(
-      props.manifest.operations ?? {},
-      props.shown.callers?.operations ?? {},
-      props.shown.changes?.operations.map((entry) => ({ ...entry, key: entry.name })) ?? null,
-      usedBy
-    );
   const events = () =>
     listedItems(
       props.manifest.events ?? {},
       props.shown.callers?.events ?? {},
-      props.shown.changes?.events.map((entry) => ({ ...entry, key: entry.type })) ?? null,
-      () => 0
+      props.shown.changes?.events.map((entry) => ({ ...entry, key: entry.type })) ?? null
     );
 
   return (
     <>
-      <section>
-        <SectionTitle>Operations</SectionTitle>
-        <Show
-          when={operations().length > 0}
-          fallback={<p class="text-xs text-muted-foreground">No Operations. This service only delivers Events.</p>}
-        >
-          <RowList>
-            <For each={operations()}>
-              {(listed) => (
-                <ManifestRow
-                  listed={listed}
-                  kind={<KindPill kind={listed.item.kind} />}
-                  title={listed.item.title}
-                  description={listed.item.description}
-                />
-              )}
-            </For>
-          </RowList>
-        </Show>
-      </section>
-
       <section>
         <SectionTitle>Events</SectionTitle>
         <Show
@@ -718,9 +721,6 @@ function ManifestRow<T>(props: {
       <Show when={props.listed.change}>
         {(change) => (
           <span class="flex shrink-0 items-center gap-2">
-            <Show when={props.listed.usedBy > 0}>
-              <span class="text-xs text-amber-700">{usedByLabel(props.listed.usedBy)}</span>
-            </Show>
             <ChangeMark change={change()} aspects={props.listed.aspects} />
           </span>
         )}
@@ -774,7 +774,12 @@ function ServiceConfigurationEditor(props: {
     missing: props.view.serviceConfiguration.missing,
     save,
     onEdit: props.edits.edited,
-    onSaved: props.edits.rebase,
+    onSaved: (next) => {
+      props.edits.rebase(next);
+      if (next.hookFailure) return;
+      if (next.available) toast.success(`Saved the ${next.manifest.displayName} configuration`);
+      else toast.warning('Saved, but the service still needs setup: some required fields are empty.');
+    },
     saveFailedMessage: 'The Service configuration could not be saved.',
   });
 
@@ -789,14 +794,6 @@ function ServiceConfigurationEditor(props: {
       callServiceForm(props.view, route, name, { values: configuration.draftValues(), ...request }),
     revealed: props.edits.revealed,
     rotate: props.edits.rotate,
-  };
-
-  const savedNotice = () => {
-    const saved = props.edits.saved();
-    if (!saved || saved.hookFailure) return null;
-    return saved.available
-      ? 'Saved. Secrets stay encrypted; blank boxes kept their values.'
-      : 'Saved, but the service still needs setup: some required fields are empty.';
   };
 
   return (
@@ -827,27 +824,10 @@ function ServiceConfigurationEditor(props: {
           <ConfigurationFooter
             saving={configuration.saving()}
             failure={configuration.failure()}
-            saved={savedNotice()}
             hint={!props.edits.saved() && configuration.draft.isDirty() ? 'Unsaved changes' : null}
           />
         </form>
       </Show>
     </div>
-  );
-}
-
-function ApiTab(props: { service: ServicePageModel; asOperator: boolean }) {
-  return (
-    <ServiceApiReference
-      serviceId={props.service.id}
-      origin={props.service.origin}
-      displayName={props.service.displayName}
-      asOperator={props.asOperator}
-    >
-      <p class="max-w-2xl text-xs text-muted-foreground">
-        Agents and Apps in your Projects call each Operation with a POST to its path, sending the input as the JSON
-        body. A Project's configuration decides which Operations are switched on there.
-      </p>
-    </ServiceApiReference>
   );
 }

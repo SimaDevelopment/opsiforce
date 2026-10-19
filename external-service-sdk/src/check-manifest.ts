@@ -2,12 +2,7 @@ import type { z } from 'zod';
 
 import type { Field, FieldType } from './fields.ts';
 import { templateVariablesOf } from './info-template.ts';
-import { createInputSchemaCompiler } from './input-validators.ts';
-import { inputSchemaLimits, type InputSchema } from './input-schema.ts';
 import { manifestLimits, serviceManifestSchema, type ServiceManifest } from './manifest.ts';
-import { boundInputsOf } from './schema-inputs.ts';
-
-export type ServiceOrigin = 'built_in' | 'custom';
 
 const utf8 = new TextEncoder();
 
@@ -25,10 +20,6 @@ export interface ManifestCheck {
   ok: boolean;
   manifest?: ServiceManifest;
   problems: ManifestProblem[];
-}
-
-export interface ManifestCheckOptions {
-  origin: ServiceOrigin;
 }
 
 type Path = (string | number)[];
@@ -54,10 +45,7 @@ const valueFieldTypes = new Set<FieldType>([
   'list',
   'keyValue',
 ]);
-const boundableFieldTypes = new Set<FieldType>(['text', 'textarea', 'radio', 'select', 'multiselect']);
 const templateFieldTypes = new Set<FieldType>(['text', 'textarea', 'number', 'toggle', 'radio', 'select']);
-const scalarBoundableFieldTypes = new Set<FieldType>(['text', 'textarea', 'radio', 'select']);
-const reservedProjectKeys = new Set(['operations', 'receive']);
 const reservedListItemKeys = new Set(['id']);
 
 export function formatProblemPath(path: readonly PropertyKey[]): string {
@@ -71,7 +59,7 @@ export function formatProblemPath(path: readonly PropertyKey[]): string {
     .replace(/^\./, '');
 }
 
-class ProblemList {
+export class ProblemList {
   readonly problems: ManifestProblem[] = [];
 
   error(path: Path, message: string): void {
@@ -87,7 +75,7 @@ class ProblemList {
   }
 }
 
-export function checkServiceManifest(input: unknown, options: ManifestCheckOptions): ManifestCheck {
+export function checkServiceManifest(input: unknown): ManifestCheck {
   const problems = new ProblemList();
   const bytes = utf8ByteLength(JSON.stringify(input) ?? '');
   if (bytes > manifestLimits.maxManifestBytes) {
@@ -101,18 +89,11 @@ export function checkServiceManifest(input: unknown, options: ManifestCheckOptio
     return { ok: false, problems: problems.problems };
   }
 
-  const manifest = parsed.data;
-  checkForms(manifest, problems);
-  checkInputSchemas(manifest, problems);
-  checkBounds(manifest, problems);
-  checkEvents(manifest, options, problems);
-  if (!problems.hasErrors) compileInputSchemas(manifest, problems);
-  warnOnUnboundChanges(manifest, problems);
-
-  return { ok: !problems.hasErrors, manifest, problems: problems.problems };
+  checkForms(parsed.data, problems);
+  return { ok: !problems.hasErrors, manifest: parsed.data, problems: problems.problems };
 }
 
-function reportZodIssue(problems: ProblemList, issue: z.core.$ZodIssue): void {
+export function reportZodIssue(problems: ProblemList, issue: z.core.$ZodIssue): void {
   if (issue.code === 'invalid_union' && issue.errors.length > 0) {
     const closest = issue.errors.reduce((best, errors) => (errors.length < best.length ? errors : best));
     for (const nested of closest) reportZodIssue(problems, { ...nested, path: [...issue.path, ...nested.path] });
@@ -145,7 +126,10 @@ function topLevelFields(fields: readonly Field[] | undefined): Map<string, Keyed
   return keyedFields(flattenLevel(fields ?? [], []));
 }
 
-function checkForms(manifest: ServiceManifest, problems: ProblemList): void {
+export function checkForms(
+  manifest: Pick<ServiceManifest, 'serviceForm' | 'projectForm'>,
+  problems: ProblemList
+): void {
   const serviceFields = topLevelFields(manifest.serviceForm);
   for (const form of ['serviceForm', 'projectForm'] as const) {
     const placed = flattenLevel(manifest[form] ?? [], [form]);
@@ -173,11 +157,15 @@ function checkLevel(placed: PlacedField[], context: LevelContext, problems: Prob
     if (context.inItem && reservedListItemKeys.has(field.key)) {
       problems.error([...path, 'key'], `"${field.key}" is reserved: the platform assigns each list item its id`);
     }
-    if (!context.inItem && context.form === 'projectForm' && reservedProjectKeys.has(field.key)) {
-      problems.error([...path, 'key'], `"${field.key}" is reserved in a Project configuration`);
-    }
     if (field.was !== undefined && keyed.has(field.was)) {
       problems.error([...path, 'was'], `was names "${field.was}", which is still a field at this level`);
+    }
+
+    if (valueFieldTypes.has(field.type) && !('label' in field && field.label)) {
+      problems.warning(
+        [...path, 'label'],
+        `"${field.key}" has no label, so people see its key "${field.key}" in the form and in refusals`
+      );
     }
 
     checkFieldRules(field, path, keyed, context, problems);
@@ -354,243 +342,5 @@ function checkTemplateField(
     problems.error(path, `{{${variable}}} ${missingMessage}`);
   } else if (!templateFieldTypes.has(field.type)) {
     problems.error(path, `{{${variable}}} is a ${field.type} field; a template shows only plain single values`);
-  }
-}
-
-interface SchemaRoot {
-  path: Path;
-  schema: InputSchema;
-}
-
-function schemaRoots(manifest: ServiceManifest): {
-  operations: SchemaRoot[];
-  events: SchemaRoot[];
-  defs: SchemaRoot[];
-} {
-  return {
-    operations: Object.entries(manifest.operations ?? {}).map(([name, operation]) => ({
-      path: ['operations', name, 'input'],
-      schema: operation.input,
-    })),
-    events: Object.entries(manifest.events ?? {}).map(([type, event]) => ({
-      path: ['events', type, 'data'],
-      schema: event.data,
-    })),
-    defs: Object.entries(manifest.$defs ?? {}).map(([name, schema]) => ({ path: ['$defs', name], schema })),
-  };
-}
-
-function childSchemas(schema: InputSchema, path: Path): SchemaRoot[] {
-  const children: SchemaRoot[] = [];
-  for (const [name, property] of Object.entries(schema.properties ?? {})) {
-    children.push({ path: [...path, 'properties', name], schema: property });
-  }
-  if (typeof schema.additionalProperties === 'object') {
-    children.push({ path: [...path, 'additionalProperties'], schema: schema.additionalProperties });
-  }
-  if (schema.items) children.push({ path: [...path, 'items'], schema: schema.items });
-  for (const keyword of ['anyOf', 'oneOf'] as const) {
-    schema[keyword]?.forEach((alternative, index) =>
-      children.push({ path: [...path, keyword, index], schema: alternative })
-    );
-  }
-  return children;
-}
-
-function eachSchemaNode(root: SchemaRoot, visit: (node: SchemaRoot) => void): void {
-  visit(root);
-  for (const child of childSchemas(root.schema, root.path)) eachSchemaNode(child, visit);
-}
-
-function refTarget(ref: string): string {
-  return ref.slice('#/$defs/'.length);
-}
-
-function checkInputSchemas(manifest: ServiceManifest, problems: ProblemList): void {
-  const defs = manifest.$defs ?? {};
-  const roots = schemaRoots(manifest);
-  const allRoots = [...roots.operations, ...roots.events, ...roots.defs];
-
-  for (const root of allRoots) {
-    const bytes = utf8ByteLength(JSON.stringify(root.schema));
-    if (bytes > inputSchemaLimits.maxSchemaBytes) {
-      problems.error(root.path, `this schema is ${bytes} bytes; the limit is ${inputSchemaLimits.maxSchemaBytes}`);
-    }
-    eachSchemaNode(root, ({ schema, path }) => {
-      if (schema.$ref !== undefined && !(refTarget(schema.$ref) in defs)) {
-        problems.error([...path, '$ref'], `${schema.$ref} does not exist in $defs`);
-      }
-      if (schema.boundTo !== undefined && schema.type !== 'string') {
-        problems.error([...path, 'boundTo'], 'boundTo applies only to a string schema (or the items of an array)');
-      }
-    });
-  }
-  if (problems.hasErrors) return;
-
-  const cycle = findRefCycle(defs);
-  if (cycle) {
-    problems.error(['$defs', cycle[0] ?? ''], `$defs refer to each other in a cycle: ${cycle.join(' → ')}`);
-    return;
-  }
-
-  for (const root of [...roots.operations, ...roots.events, ...roots.defs]) {
-    const depth = schemaDepth(root.schema, defs);
-    if (depth > inputSchemaLimits.maxDepth) {
-      problems.error(root.path, `this schema nests ${depth} levels deep; the limit is ${inputSchemaLimits.maxDepth}`);
-    }
-  }
-  for (const root of [...roots.operations, ...roots.events]) {
-    if (resolveRef(root.schema, defs).type !== 'object') {
-      problems.error(root.path, 'must be an object schema (type "object")');
-    }
-  }
-}
-
-function refsIn(schema: InputSchema): string[] {
-  const refs: string[] = [];
-  eachSchemaNode({ path: [], schema }, ({ schema: node }) => {
-    if (node.$ref !== undefined) refs.push(refTarget(node.$ref));
-  });
-  return refs;
-}
-
-function findRefCycle(defs: Record<string, InputSchema>): string[] | undefined {
-  const done = new Set<string>();
-  const visit = (name: string, trail: string[]): string[] | undefined => {
-    if (trail.includes(name)) return [...trail.slice(trail.indexOf(name)), name];
-    if (done.has(name)) return undefined;
-    const schema = defs[name];
-    for (const target of schema ? refsIn(schema) : []) {
-      const cycle = visit(target, [...trail, name]);
-      if (cycle) return cycle;
-    }
-    done.add(name);
-    return undefined;
-  };
-  for (const name of Object.keys(defs)) {
-    const cycle = visit(name, []);
-    if (cycle) return cycle;
-  }
-  return undefined;
-}
-
-function resolveRef(schema: InputSchema, defs: Record<string, InputSchema>): InputSchema {
-  let resolved = schema;
-  while (resolved.$ref !== undefined) {
-    const target = defs[refTarget(resolved.$ref)];
-    if (!target) return resolved;
-    resolved = target;
-  }
-  return resolved;
-}
-
-function schemaDepth(schema: InputSchema, defs: Record<string, InputSchema>): number {
-  const resolved = resolveRef(schema, defs);
-  const children = childSchemas(resolved, []);
-  return 1 + Math.max(0, ...children.map((child) => schemaDepth(child.schema, defs)));
-}
-
-function checkBounds(manifest: ServiceManifest, problems: ProblemList): void {
-  const bounds = manifest.bounds ?? {};
-  const projectFields = topLevelFields(manifest.projectForm);
-
-  for (const [name, bound] of Object.entries(bounds)) {
-    const path: Path = ['bounds', name];
-    const [fieldKey = '', itemKey] = bound.path.split('[].');
-    const field = projectFields.get(fieldKey);
-
-    if (itemKey === undefined) {
-      if (!field || !boundableFieldTypes.has(field.type)) {
-        problems.error([...path, 'path'], boundPathMessage(bound.path, field));
-      }
-      if (bound.where) problems.error([...path, 'where'], 'where works only with a list item path (list[].field)');
-    } else if (!field || field.type !== 'list') {
-      problems.error([...path, 'path'], `"${fieldKey}" is not a list field of the Project form`);
-    } else {
-      const itemFields = topLevelFields(field.item);
-      const itemField = itemFields.get(itemKey);
-      if (!itemField || !boundableFieldTypes.has(itemField.type)) {
-        problems.error([...path, 'path'], boundPathMessage(bound.path, itemField));
-      }
-      for (const whereKey of Object.keys(bound.where ?? {})) {
-        const whereField = itemFields.get(whereKey);
-        if (!whereField || !scalarBoundableFieldTypes.has(whereField.type)) {
-          problems.error(
-            [...path, 'where', whereKey],
-            `"${whereKey}" is not a single-value field of the "${fieldKey}" items`
-          );
-        }
-      }
-    }
-
-    for (const unlessKey of Object.keys(bound.unless ?? {})) {
-      if (!valueFieldTypes.has(projectFields.get(unlessKey)?.type ?? 'section')) {
-        problems.error([...path, 'unless', unlessKey], `"${unlessKey}" is not a Project form field`);
-      }
-    }
-  }
-
-  const used = new Set<string>();
-  const roots = schemaRoots(manifest);
-  for (const root of [...roots.operations, ...roots.events, ...roots.defs]) {
-    eachSchemaNode(root, ({ schema, path }) => {
-      if (schema.boundTo === undefined) return;
-      used.add(schema.boundTo);
-      if (!(schema.boundTo in bounds)) {
-        problems.error([...path, 'boundTo'], `"${schema.boundTo}" is not declared in bounds`);
-      }
-    });
-  }
-  for (const name of Object.keys(bounds)) {
-    if (!used.has(name))
-      problems.warning(['bounds', name], `bound "${name}" is declared but no input or Event uses it`);
-  }
-}
-
-function boundPathMessage(path: string, field: KeyedField | undefined): string {
-  if (!field) return `"${path}" is not a Project form field`;
-  return `"${path}" is a ${field.type} field; a bound reads a text, textarea, radio, select or multiselect field`;
-}
-
-function checkEvents(manifest: ServiceManifest, options: ManifestCheckOptions, problems: ProblemList): void {
-  const events = Object.entries(manifest.events ?? {});
-  if (events.length > 0 && manifest.inbound !== true) {
-    problems.error(['events'], 'Events arrive only through inbound; set "inbound": true');
-  }
-  if (options.origin !== 'built_in' || problems.hasErrors) return;
-  const defs = manifest.$defs ?? {};
-  for (const [type, event] of events) {
-    if (boundInputsOf(event.data, defs).length === 0) {
-      problems.error(
-        ['events', type, 'data'],
-        'a Built-in External Service binds every Event type: mark the property that routes it with boundTo'
-      );
-    }
-  }
-}
-
-function compileInputSchemas(manifest: ServiceManifest, problems: ProblemList): void {
-  const compile = createInputSchemaCompiler(manifest.$defs);
-  const roots = schemaRoots(manifest);
-  for (const root of [...roots.operations, ...roots.events]) {
-    try {
-      compile(root.schema);
-    } catch (error) {
-      problems.error(root.path, error instanceof Error ? error.message : String(error));
-    }
-  }
-}
-
-function warnOnUnboundChanges(manifest: ServiceManifest, problems: ProblemList): void {
-  if (problems.hasErrors) return;
-  const defs = manifest.$defs ?? {};
-  for (const [name, operation] of Object.entries(manifest.operations ?? {})) {
-    if (operation.kind === 'read') continue;
-    if (boundInputsOf(operation.input, defs).length === 0) {
-      problems.warning(
-        ['operations', name],
-        `${operation.kind} Operation with no bound: any id the caller passes reaches the service; confirm this before Publish`
-      );
-    }
   }
 }

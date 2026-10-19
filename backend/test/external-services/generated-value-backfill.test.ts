@@ -9,7 +9,6 @@ import {
   KEYS_SERVICE,
   platformServiceUrl,
   READY_KEYS,
-  RECEIVING,
   readProjectService,
   saveProjectService,
   saveServiceConfiguration,
@@ -38,10 +37,7 @@ describe('a Built-in manifest that newly declares generated fields', () => {
     expect(saved.statusCode, saved.body).toBe(200);
     expect(channelsOf(saved.json())[0]?.inboxKey).toBeUndefined();
     const project = await configuringProject(before.app);
-    const configured = await saveProjectService(before.app, project, serviceId, {
-      ...RECEIVING,
-      operations: { send_message: true },
-    });
+    const configured = await saveProjectService(before.app, project, serviceId, {});
     expect(configured.json().projectConfiguration.values.localPart).toBeUndefined();
     await before.close();
 
@@ -59,8 +55,6 @@ describe('a Built-in manifest that newly declares generated fields', () => {
       ]);
       const reopened = (await readProjectService(after.app, project, serviceId)).json().projectConfiguration;
       expect(reopened.values.localPart).toMatch(/^[a-z0-9]{16}$/);
-      expect(reopened.operations).toEqual({ send_message: true });
-      expect(reopened.receive).toEqual({ 'message.received': true });
     } finally {
       await after.close();
       await evolved.remove();

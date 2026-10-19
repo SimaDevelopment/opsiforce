@@ -141,6 +141,18 @@ export function useRestartProjectEnvironment() {
   }));
 }
 
+export function useRotateGatewayKey() {
+  const qc = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: (params: { projectId: string; environmentId: string }) =>
+      api.post<void>(`/projects/${params.projectId}/environments/${params.environmentId}/gateway-key/rotate`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: environmentKeys.forProject(vars.projectId) });
+      qc.invalidateQueries({ queryKey: projectKeys.all });
+    },
+  }));
+}
+
 export function useDeleteProjectEnvironment() {
   const qc = useQueryClient();
   return createMutation(() => ({

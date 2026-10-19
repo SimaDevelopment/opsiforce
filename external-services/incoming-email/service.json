@@ -1,5 +1,5 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "Incoming email",
   "description": "Receive email, with attachments, at a Project's own address.",
   "inbound": true,
@@ -47,67 +47,7 @@
   "events": {
     "email.received": {
       "title": "Email received",
-      "description": "An email arrived at the Project's address.",
-      "data": {
-        "$ref": "#/$defs/ReceivedEmail"
-      }
-    }
-  },
-  "bounds": {
-    "address": { "path": "localPart" }
-  },
-  "$defs": {
-    "Attachment": {
-      "type": "object",
-      "properties": {
-        "filename": { "type": "string" },
-        "mimeType": { "type": "string" },
-        "size": { "type": "integer", "minimum": 0 }
-      },
-      "required": ["filename", "mimeType", "size"]
-    },
-    "ReceivedEmail": {
-      "type": "object",
-      "properties": {
-        "address": {
-          "type": "string",
-          "description": "The local part of the recipient address: the Project's address before the @.",
-          "boundTo": "address"
-        },
-        "recipient": { "type": "string", "description": "The full recipient address, lowercased." },
-        "from": { "type": "string", "description": "The envelope sender's address." },
-        "fromHeader": { "type": "string", "description": "The From header as written, display name included." },
-        "subject": { "type": "string" },
-        "text": {
-          "type": "string",
-          "description": "The plain-text body without quoted replies and signatures; usually the part to read."
-        },
-        "bodyPlain": { "type": "string", "description": "The whole plain-text body." },
-        "bodyHtml": { "type": "string", "description": "The whole HTML body, when the email has one." },
-        "messageId": { "type": "string" },
-        "headers": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": { "type": "string" },
-              "value": { "type": "string" }
-            },
-            "required": ["name", "value"]
-          }
-        },
-        "attachments": {
-          "type": "array",
-          "description": "The attachments stored as this Event's files, in order.",
-          "items": { "$ref": "#/$defs/Attachment" }
-        },
-        "omittedAttachments": {
-          "type": "array",
-          "description": "Attachments larger than the deployment's limit, not stored.",
-          "items": { "$ref": "#/$defs/Attachment" }
-        }
-      },
-      "required": ["address", "recipient", "from", "subject", "text", "headers", "attachments", "omittedAttachments"]
+      "description": "An email arrived at the Project's address; its data is described in the Service skill."
     }
   }
 }

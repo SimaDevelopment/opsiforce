@@ -1,30 +1,8 @@
 import { Match, Show, Switch } from 'solid-js';
-import type { Operation } from '@opsiforce/external-service-sdk/forms';
 import type { ChangedAspect, ManifestChange } from '~/api/external-service-publishing';
 import { Badge } from '~/components/ui/badge';
 import { AlertTriangle } from '~/components/icons';
 import { cn } from '~/lib/cn';
-
-type OperationKind = Operation['kind'];
-
-const KIND_PILL_CLASS: Record<OperationKind, string> = {
-  read: 'bg-muted text-muted-foreground',
-  write: 'bg-amber-50 text-amber-700',
-  destructive: 'bg-red-50 text-red-700',
-};
-
-export function KindPill(props: { kind: OperationKind }) {
-  return (
-    <span
-      class={cn(
-        'inline-flex shrink-0 rounded px-1.5 py-px text-[10px] font-medium uppercase tracking-wide',
-        KIND_PILL_CLASS[props.kind]
-      )}
-    >
-      {props.kind}
-    </span>
-  );
-}
 
 export function ChangeMark(props: { change: ManifestChange; aspects: ChangedAspect[] }) {
   return (
@@ -46,10 +24,6 @@ export function ChangeMark(props: { change: ManifestChange; aspects: ChangedAspe
       </Match>
     </Switch>
   );
-}
-
-export function usedByLabel(configurations: number): string {
-  return configurations === 1 ? 'used by 1 Project configuration' : `used by ${configurations} Project configurations`;
 }
 
 export function NeedsSetupBadge() {

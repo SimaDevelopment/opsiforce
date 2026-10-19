@@ -16,7 +16,7 @@ export interface ServiceConfigurationSource {
   labelKey: string;
 }
 
-export const reservedProjectConfigurationKeys = ['operations', 'receive', '_labels'] as const;
+export const reservedProjectConfigurationKeys = ['_labels'] as const;
 
 export function placedFieldsOf(fields: readonly Field[], conditions: VisibleWhen[] = []): PlacedField[] {
   return fields.flatMap((field): PlacedField[] => {
@@ -34,6 +34,24 @@ export function valueFieldsOf(fields: readonly Field[]): ValueField[] {
   return placedFieldsOf(fields)
     .map(({ field }) => field)
     .filter(isValueField);
+}
+
+export function isTargetField(field: KeyedField): boolean {
+  if (field.type === 'secret') return true;
+  if (field.type === 'text' && field.generate !== undefined) return true;
+  if (field.type === 'list') return placedFieldsOf(field.item).some((placed) => isTargetField(placed.field));
+  return 'options' in field && !Array.isArray(field.options);
+}
+
+export function serviceSettingsFormOf(projectForm: readonly Field[]): Field[] {
+  return projectForm.flatMap((field): Field[] => {
+    if (field.type === 'section') {
+      const fields = serviceSettingsFormOf(field.fields) as typeof field.fields;
+      return fields.length > 0 ? [{ ...field, fields }] : [];
+    }
+    if (field.type === 'button' || (field.type === 'info' && field.call !== undefined)) return [];
+    return isTargetField(field) ? [] : [field];
+  });
 }
 
 export function fieldNamed(fields: readonly Field[] | undefined, key: string): KeyedField | undefined {
@@ -69,7 +87,28 @@ export function withSecrets(fields: readonly Field[] | undefined, values: unknow
   return result;
 }
 
-export function withoutKeys(values: unknown, keys: readonly string[]): FormValues {
-  if (!isPlainObject(values)) return {};
-  return Object.fromEntries(Object.entries(values).filter(([key]) => !keys.includes(key)));
+export type FormCallRoute = 'options' | 'info' | 'buttons';
+
+export function formCallOf(field: KeyedField): { route: FormCallRoute; name: string } | undefined {
+  if ('options' in field && !Array.isArray(field.options) && 'call' in field.options) {
+    return { route: 'options', name: field.options.call };
+  }
+  if (field.type === 'info' && field.call !== undefined) return { route: 'info', name: field.call };
+  if (field.type === 'button') return { route: 'buttons', name: field.call };
+  return undefined;
+}
+
+export function formCallNames(forms: readonly (readonly Field[] | undefined)[]): Record<FormCallRoute, string[]> {
+  const calls: Record<FormCallRoute, Set<string>> = { options: new Set(), info: new Set(), buttons: new Set() };
+  for (const form of forms) {
+    eachKeyedField(form, (field) => {
+      const call = formCallOf(field);
+      if (call) calls[call.route].add(call.name);
+    });
+  }
+  return {
+    options: [...calls.options].toSorted(),
+    info: [...calls.info].toSorted(),
+    buttons: [...calls.buttons].toSorted(),
+  };
 }

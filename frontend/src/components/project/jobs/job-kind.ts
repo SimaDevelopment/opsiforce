@@ -118,9 +118,7 @@ function publishReportText(line: PublishReportLine, environmentName: string): st
   if (line.outcome === 'failed') {
     return `${line.displayName}: its configuration couldn't be copied to ${environmentName} (${line.code}); Development keeps receiving.`;
   }
-  const copied = `${line.displayName}: configuration copied to ${environmentName}`;
-  if (line.receiveTurnedOff.length === 0) return `${copied}.`;
-  return `${copied}; Receive turned off in Development for ${line.receiveTurnedOff.join(', ')}.`;
+  return `${line.displayName}: configuration copied to ${environmentName}.`;
 }
 
 const publishAdapter: JobKindAdapter<TrackedPublish> = {

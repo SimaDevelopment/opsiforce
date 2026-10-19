@@ -35,7 +35,7 @@ adrs: [0035]
 
 ### Where it is built
 
-- The API is a separate `public-api` module tree with one sub-module per resource and shared auth, errors and validation, reusing the domain services underneath; one zod schema per DTO validates the request, serializes the response and produces the OpenAPI 3.1 document served at `/api/v1/openapi.json` and rendered by Scalar at `/api/v1/docs`, neither needing a token.
+- The API is a separate `public-api` module tree with one sub-module per resource and shared auth, errors and validation, reusing the domain services underneath; one zod schema per DTO validates the request, serializes the response and produces the OpenAPI 3.1 document served at `/api/v1/openapi.json` and rendered by Scalar at `/api/v1/docs`, neither needing a token. Every route names a stable snake_case `operationId` (`list_projects`, `connect_project`, …) in its `@ApiOperation`, so generated clients keep their method names; an `operationId` is never renamed within v1.
 - The schemas plug into NestJS 12's native Standard Schema support and are strict on both sides.
 - The API brings its own Fastify adapter, which keeps the original Fastify error as the `cause` so a malformed body reaches the filter as a validation failure, and replaces the JSON body parser with one that lets an empty body through on `/api/v1` paths so a bodiless `connect` works from any client.
 - There is no committed spec snapshot; the running server is the source of truth.

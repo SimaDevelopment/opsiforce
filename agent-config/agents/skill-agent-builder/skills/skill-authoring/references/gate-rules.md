@@ -1,7 +1,7 @@
 # Every gate rule
 
-These are the findings `scripts/validate-skill.mjs`, `create_skill`, `create_skill_version` and
-`validate_skill` answer. The local script answers every one when it runs with `--name`, except
+These are the findings `scripts/validate-skill.mjs`, `POST /skills`, `POST /skills/<id>/versions` and
+`POST /skills/validate` answer. The local script answers every one when it runs with `--name`, except
 two that need the Organization's names: `name_reserved` and `name-unavailable` come only from the
 platform. Each finding carries `rule`, `message`, `file` and `line`; the `rule` id is stable and safe to branch on.
 

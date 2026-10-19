@@ -10,14 +10,9 @@ import type {
   RotateTarget,
 } from './external-service-views';
 
-export type Switches = Record<string, boolean>;
-
 export interface ProjectConfigurationState {
   saved: boolean;
   missing: string[];
-  operationsOn: number;
-  operationsTotal: number;
-  receiving: number;
 }
 
 export type ProjectServiceState = 'enabled' | 'needs-configuration' | 'available';
@@ -36,11 +31,7 @@ export interface ProjectConfiguration {
   saved: boolean;
   values: ConfigurationValues;
   missing: string[];
-  operations: Switches;
-  receive: Switches;
   labels: Record<string, Record<string, string>>;
-  newOperations: string[];
-  newEventTypes: string[];
 }
 
 export interface ServiceConfigurationOptions {
@@ -79,7 +70,16 @@ export const projectExternalServiceKeys = {
     [...projectExternalServiceKeys.all, ref.projectId, ref.projectEnvironmentId] as const,
   view: (ref: ProjectEnvironmentRef, serviceId: string) =>
     [...projectExternalServiceKeys.list(ref), serviceId] as const,
+  eventDelivery: (ref: ProjectEnvironmentRef, serviceId: string) =>
+    [...projectExternalServiceKeys.view(ref, serviceId), 'event-delivery'] as const,
 };
+
+export interface EventDeliveryStatus {
+  notYetTaken: number;
+  appNotWired: boolean;
+}
+
+const EVENT_DELIVERY_REFRESH_MS = 15_000;
 
 export function needsAttention(configuration: Pick<ProjectConfigurationState, 'saved' | 'missing'>): boolean {
   return configuration.saved && configuration.missing.length > 0;
@@ -105,6 +105,15 @@ export function useProjectExternalServices(ref: () => ProjectEnvironmentRef) {
   return createAppQuery(() => ({
     queryKey: projectExternalServiceKeys.list(ref()),
     queryFn: () => api.get<ProjectServiceList>(servicesPath(ref())),
+  }));
+}
+
+export function useEventDeliveryStatus(ref: () => ProjectEnvironmentRef, serviceId: () => string) {
+  return createAppQuery(() => ({
+    queryKey: projectExternalServiceKeys.eventDelivery(ref(), serviceId()),
+    queryFn: () => api.get<EventDeliveryStatus>(`${servicesPath(ref())}/${serviceId()}/event-delivery`),
+    refetchInterval: EVENT_DELIVERY_REFRESH_MS,
+    refetchIntervalInBackground: false,
   }));
 }
 
@@ -158,5 +167,11 @@ export function useRetryProjectConfigurationHook(ref: () => ProjectEnvironmentRe
 export function useDiscardProjectConfigurationHook(ref: () => ProjectEnvironmentRef, serviceId: () => string) {
   return useProjectViewMutation(ref, () =>
     api.post<ProjectServiceView>(`${servicesPath(ref())}/${serviceId()}/configuration/hook/discard`, {})
+  );
+}
+
+export function useDisconnectProjectService(ref: () => ProjectEnvironmentRef, serviceId: () => string) {
+  return useProjectViewMutation(ref, () =>
+    api.delete<ProjectServiceView>(`${servicesPath(ref())}/${serviceId()}/configuration`)
   );
 }

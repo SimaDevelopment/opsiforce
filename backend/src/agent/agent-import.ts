@@ -30,11 +30,19 @@ export interface AgentImportResult {
   notes: AgentImportNote[];
 }
 
-export function writeOperationsTurnedOff(skillName: string, operations: string[]): AgentImportNote {
+export function serviceSettingsLeftOut(skillName: string): AgentImportNote {
   return {
     kind: 'skill',
     name: skillName,
-    message: `Turned ${operations.map((name) => `\`${name}\``).join(', ')} off in the service settings of \`${skillName}\`: turning on a write or destructive Operation needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+    message: `Left out the service settings of \`${skillName}\`: setting them needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+  };
+}
+
+export function serviceSettingsOfUnavailableService(skillName: string): AgentImportNote {
+  return {
+    kind: 'skill',
+    name: skillName,
+    message: `Left out the service settings of \`${skillName}\`: its External Service isn't available here`,
   };
 }
 

@@ -48,10 +48,10 @@ import {
 import {
   importRefused,
   notAnAgentExport,
+  serviceSettingsLeftOut,
   type AgentImportNote,
   type AgentImportProblem,
   type AgentImportResult,
-  writeOperationsTurnedOff,
 } from './agent-import';
 import { AgentService } from './agent.service';
 import type { AgentCaller } from './agent.types';
@@ -255,8 +255,11 @@ export class AgentImportService {
         message: `Left ${kept.dropped.map((name) => `\`${name}\``).join(', ')} out of the service settings of \`${skillName}\`: the External Service here doesn't have them`,
       });
     }
+    if (!kept.settings) return null;
     const granted = settingsWithinGrants(service.manifest, kept.settings, plan.grants);
-    if (granted.dropped.length > 0) plan.notes.push(writeOperationsTurnedOff(skillName, granted.dropped));
+    if (granted.dropped.length > 0) {
+      plan.notes.push(serviceSettingsLeftOut(skillName));
+    }
     return granted.settings;
   }
 

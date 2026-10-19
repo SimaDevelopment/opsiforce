@@ -48,15 +48,15 @@
 - [Request Logging](gateways/request-logging.md) — how much of an App's traffic the app-mode proxy records
 
 **External services** (`external-services/`)
-- [Service manifest](external-services/service-manifest.md) — what an External Service is made of: the folder, `service.json`, the handlers and the SDK
-- [Gate](external-services/gate.md) — the checks in front of every Operation call, what the service receives and what is checked on the way back
+- [Service manifest](external-services/service-manifest.md) — what an External Service is made of: the folder, `service.json`, its routes and the SDK
+- [Gate](external-services/gate.md) — how a pod's call reaches a service's Service host, the Caller identity it carries, and the platform's own form calls and hooks
 - [Configuration](external-services/configuration.md) — the Service and Project configurations: storage, sealing, Available, saves, Rotate and after-save hooks
-- [Event](external-services/events.md) — webhooks into Events: verification, routing by bounds, the per-environment store and the doorbell
+- [Event](external-services/events.md) — webhooks into Events: the Webhook address, delivery to chosen environments, the per-environment store and the doorbell
 - [Call log](external-services/call-log.md) — what each call records, retention, Usage and who reads them
 - [Service skill](external-services/service-skill.md) — a service's Skill in the Store, given per Agent or per configured Project, and how it reaches Projects
 - [External Service Builder](external-services/external-service-builder.md) — writing, testing, publishing and retiring a Custom External Service, and its Default environment
 - [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new service
-- [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls through the Gate
+- [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls on its Service host
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment
 - [WhatsApp](external-services/whatsapp.md) — numbers in the Service configuration, chats per environment, the v1 import
 
@@ -99,5 +99,5 @@
 - [Migrate process logs to files](operations/migrate-process-logs-to-files.md) — move existing workspaces off the `process_logs`/`process_events` tables, from the backend pod
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps
-- [Add an external service](operations/add-an-external-service.md) — a folder with a Service manifest, handlers and a Service skill, and one commit
+- [Add an external service](operations/add-an-external-service.md) — a folder with a Service manifest, its `service.ts` and a Service skill, and one commit
 - [Onboard a WhatsApp number](operations/onboard-a-whatsapp-number.md) — Whapi channel, the number item, QR link, picking chats

@@ -1,16 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { handlerTimeoutSeconds, serviceErrorStatuses } from '@opsiforce/external-service-sdk/platform';
 import {
+  callerIdentityHeader,
   expectedManifestHeader,
-  gatewayKeyHeader,
+  formCallTimeoutSeconds,
   manifestHeader,
-  type DispatchRequest,
-  type ServiceResponse,
+  mintCallerIdentity,
+  wellKnownPath,
 } from '@opsiforce/external-service-sdk/server';
+import { failureMessages } from '@opsiforce/external-service-sdk/platform';
 import { GatewayKeyService } from '../../gateway/gateway-key.service';
+import { BuiltInsAdapter, isAdaptedBuiltIn, type AdaptedBuiltIn } from '../built-ins/built-ins-adapter';
 import type { RegisteredService } from '../registry/service-registry';
-import { GATE_RESPONSE_LIMIT } from './gate-routes';
-import { DefaultLaneHolds, INBOUND_HOLD_WAIT_MS } from './default-lane-holds';
+import { FORM_ANSWER_LIMIT } from './gate-routes';
+import { DefaultLaneHolds } from './default-lane-holds';
+import { platformCallerOf } from './gate-caller';
 import { ServicePods, UnreachablePod, type ServicePod } from './service-pods';
 
 export type DispatchFailureCode =
@@ -30,30 +33,74 @@ export class ServiceDispatchError extends Error {
   }
 }
 
+function nameOf(service: Pick<RegisteredService, 'manifest'>): string {
+  return service.manifest.displayName;
+}
+
+function updating(service: Pick<RegisteredService, 'manifest'>): string {
+  return `${nameOf(service)} is updating to a new version. Try again in a moment.`;
+}
+
+function unreachable(service: Pick<RegisteredService, 'manifest'>): ServiceDispatchError {
+  return new ServiceDispatchError('service-failed', `${nameOf(service)} couldn't be reached. Try again in a moment.`);
+}
+
+const unreachablePodWording: Record<UnreachablePod['code'], (name: string) => string> = {
+  'service-disabled': (name) => `${name} is turned off.`,
+  'service-failed': (name) => `${name} couldn't start.`,
+  'service-starting': (name) => `${name} is starting. Try again in a moment.`,
+};
+
 export class DefaultLaneMoved extends ServiceDispatchError {
-  constructor(slug: string) {
-    super('service-reloading', `"${slug}" moved its Default environment; retry shortly.`);
+  constructor(service: Pick<RegisteredService, 'manifest'>) {
+    super('service-reloading', updating(service));
   }
+}
+
+export interface PlatformCallTarget {
+  tenantId: string;
+  projectId: string;
+  projectEnvironmentId: string;
+  environment: string;
+}
+
+export function platformCallTargetOf(caller: PlatformCallTarget): PlatformCallTarget {
+  return {
+    tenantId: caller.tenantId,
+    projectId: caller.projectId,
+    projectEnvironmentId: caller.projectEnvironmentId,
+    environment: caller.environment,
+  };
+}
+
+interface Exchange {
+  gatewayKey: string;
+  describedAs: string;
+  send(path: string, init: RequestInit): Promise<Response>;
+}
+
+export type PlatformRoute = 'options' | 'info' | 'buttons' | 'hooks';
+
+export interface PodDispatchRequest {
+  route: PlatformRoute;
+  name: string;
+  body: unknown;
+  signal?: AbortSignal;
+  for?: PlatformCallTarget;
+}
+
+export interface ServiceResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: Uint8Array;
 }
 
 const HTTP_GRACE_SECONDS = 5;
 
-const SERVICE_ANSWER_STATUSES: ReadonlySet<number> = new Set([200, 204, ...serviceErrorStatuses]);
-
 class ResponseTooLarge extends Error {}
 
-function isOutOfBoundsRefusal(status: number, body: Uint8Array): boolean {
-  if (status !== 403) return false;
-  try {
-    return (JSON.parse(new TextDecoder().decode(body)) as { code?: unknown }).code === 'out-of-bounds';
-  } catch {
-    return false;
-  }
-}
-
-function servicePath(request: DispatchRequest): string {
-  if (request.route === 'inbound') return '/_service/inbound';
-  return `/_service/${request.route}/${encodeURIComponent(request.name ?? '')}`;
+function wellKnownPathOf(request: PodDispatchRequest): string {
+  return `${wellKnownPath}/${request.route}/${encodeURIComponent(request.name)}`;
 }
 
 async function bodyWithin(response: Response, limit: number): Promise<Uint8Array> {
@@ -72,11 +119,8 @@ async function bodyWithin(response: Response, limit: number): Promise<Uint8Array
   return Buffer.concat(chunks);
 }
 
-function tooLarge(): ServiceDispatchError {
-  return new ServiceDispatchError(
-    'response-too-large',
-    `The service answered with more than ${GATE_RESPONSE_LIMIT} bytes.`
-  );
+function tooLarge(service: Pick<RegisteredService, 'manifest'>): ServiceDispatchError {
+  return new ServiceDispatchError('response-too-large', failureMessages.failed(nameOf(service)));
 }
 
 @Injectable()
@@ -86,26 +130,15 @@ export class ServiceDispatcher {
   constructor(
     private readonly pods: ServicePods,
     private readonly keys: GatewayKeyService,
-    private readonly holds: DefaultLaneHolds
+    private readonly holds: DefaultLaneHolds,
+    private readonly builtIns: BuiltInsAdapter
   ) {}
 
-  runsInProcess(
-    service: RegisteredService
-  ): service is RegisteredService & { runtime: NonNullable<RegisteredService['runtime']> } {
-    return service.home === null && service.runtime !== null && !this.pods.podOf(service.id);
-  }
-
-  async dispatch(service: RegisteredService, request: DispatchRequest): Promise<ServiceResponse> {
+  async dispatch(service: RegisteredService, request: PodDispatchRequest): Promise<ServiceResponse> {
     if (service.home?.lane !== 'default') return this.dispatchNow(service, request);
-    const holdWaitMs = request.route === 'inbound' ? INBOUND_HOLD_WAIT_MS : 0;
-    const entry = await this.holds.enterWaiting(service.id, service.home.environmentId, holdWaitMs);
-    if (entry === 'moved') throw new DefaultLaneMoved(service.slug);
-    if (entry === 'held') {
-      throw new ServiceDispatchError(
-        'service-reloading',
-        `"${service.slug}" is switching its Default environment; retry shortly.`
-      );
-    }
+    const entry = this.holds.enter(service.id, service.home.environmentId);
+    if (entry === 'moved') throw new DefaultLaneMoved(service);
+    if (entry === 'held') throw new ServiceDispatchError('service-reloading', updating(service));
     try {
       return await this.dispatchNow(service, request);
     } finally {
@@ -113,10 +146,29 @@ export class ServiceDispatcher {
     }
   }
 
-  private async dispatchNow(service: RegisteredService, request: DispatchRequest): Promise<ServiceResponse> {
+  private async dispatchNow(service: RegisteredService, request: PodDispatchRequest): Promise<ServiceResponse> {
     const pod = await this.podFor(service);
-    const expecting = { ...request, expectedManifestHash: service.manifestHash };
-    return pod ? this.overHttp(service, pod, expecting) : this.inProcess(service, expecting);
+    if (pod) return this.overHttp(service, pod, request);
+    if (isAdaptedBuiltIn(service)) return this.exchange(service, this.adapted(service), request);
+    throw unreachable(service);
+  }
+
+  private adapted(service: AdaptedBuiltIn): Exchange {
+    return {
+      gatewayKey: this.builtIns.keyOf(service),
+      describedAs: `"${service.slug}"`,
+      send: (path, init) => {
+        const headers = new Headers(init.headers);
+        headers.set('host', 'built-in.local');
+        return this.builtIns.answer(service, {
+          method: init.method ?? 'POST',
+          target: path,
+          headers,
+          body: typeof init.body === 'string' ? new Blob([init.body]).stream() : null,
+          ...(init.signal ? { signal: init.signal } : {}),
+        });
+      },
+    };
   }
 
   private async podFor(service: RegisteredService): Promise<ServicePod | undefined> {
@@ -126,71 +178,83 @@ export class ServiceDispatcher {
     } catch (error) {
       if (!(error instanceof UnreachablePod)) throw error;
       if (error.code === 'service-failed') this.logger.warn(`The pod of "${service.slug}": ${error.message}`);
-      throw new ServiceDispatchError(error.code, error.message);
+      throw new ServiceDispatchError(error.code, unreachablePodWording[error.code](nameOf(service)));
     }
-  }
-
-  private inProcess(service: RegisteredService, request: DispatchRequest): Promise<ServiceResponse> {
-    if (!service.runtime) throw new ServiceDispatchError('service-failed', 'The service could not be reached.');
-    return service.runtime.dispatch(request);
   }
 
   private async overHttp(
     service: RegisteredService,
     pod: ServicePod,
-    request: DispatchRequest
+    request: PodDispatchRequest
   ): Promise<ServiceResponse> {
     const gatewayKey = await this.keys.getEnvironmentToken(pod.projectEnvironmentId);
     if (!gatewayKey) {
       this.logger.error(`The pod of "${service.slug}" has no service key (${pod.projectEnvironmentId})`);
-      throw new ServiceDispatchError('service-failed', 'The service could not be reached.');
+      throw unreachable(service);
     }
-    const timeoutSeconds = handlerTimeoutSeconds(service.manifest, request.route, request.name) + HTTP_GRACE_SECONDS;
+    return this.exchange(
+      service,
+      {
+        gatewayKey,
+        describedAs: `The pod of "${service.slug}"`,
+        send: (path, init) => fetch(new URL(path, pod.url), init),
+      },
+      request,
+      pod.projectEnvironmentId
+    );
+  }
+
+  private async exchange(
+    service: RegisteredService,
+    target: Exchange,
+    request: PodDispatchRequest,
+    projectEnvironmentId?: string
+  ): Promise<ServiceResponse> {
+    const { gatewayKey } = target;
+    const timeoutSeconds = formCallTimeoutSeconds + HTTP_GRACE_SECONDS;
+    const limit = FORM_ANSWER_LIMIT;
     let response: Response;
     let body: Uint8Array;
     try {
-      response = await fetch(new URL(servicePath(request), pod.url), {
+      response = await target.send(wellKnownPathOf(request), {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          [gatewayKeyHeader]: gatewayKey,
-          ...(request.expectedManifestHash === undefined
-            ? {}
-            : { [expectedManifestHeader]: request.expectedManifestHash }),
+          [callerIdentityHeader]: this.platformIdentity(service, request, gatewayKey),
+          [expectedManifestHeader]: service.manifestHash,
         },
         body: JSON.stringify(request.body),
         signal: request.signal
           ? AbortSignal.any([request.signal, AbortSignal.timeout(timeoutSeconds * 1000)])
           : AbortSignal.timeout(timeoutSeconds * 1000),
       });
-      body = await bodyWithin(response, GATE_RESPONSE_LIMIT);
+      body = await bodyWithin(response, limit);
     } catch (error) {
-      if (error instanceof ResponseTooLarge) throw tooLarge();
-      if ((error as Error).name === 'TimeoutError') {
-        throw new ServiceDispatchError('timeout', `The service did not answer within ${timeoutSeconds} s.`);
+      if (error instanceof ResponseTooLarge) {
+        this.logger.warn(`${target.describedAs} answered with more than ${limit} bytes`);
+        throw tooLarge(service);
       }
-      this.logger.warn(`The pod of "${service.slug}" could not be reached: ${(error as Error).message}`);
-      throw new ServiceDispatchError('service-failed', 'The service could not be reached.');
+      if ((error as Error).name === 'TimeoutError') {
+        this.logger.warn(`${target.describedAs} did not answer within ${timeoutSeconds} s`);
+        throw new ServiceDispatchError('timeout', `${nameOf(service)} didn't answer in time. Try again in a moment.`);
+      }
+      this.logger.warn(`${target.describedAs} could not be reached: ${(error as Error).message}`);
+      throw unreachable(service);
     }
 
     if (response.status === 503 && response.headers.get(manifestHeader) !== service.manifestHash) {
-      throw new ServiceDispatchError(
-        'service-reloading',
-        `"${service.slug}" is reloading a new version; retry shortly.`
+      throw new ServiceDispatchError('service-reloading', updating(service));
+    }
+    if (response.status === 401) {
+      this.logger.error(
+        `${target.describedAs} refused the platform's Caller identity for ${projectEnvironmentId ?? 'the platform'}`
       );
-    }
-    if (response.status === 401 && request.route !== 'inbound') {
-      this.logger.error(`The pod of "${service.slug}" refused the Gate's key for ${pod.projectEnvironmentId}`);
-      throw new ServiceDispatchError('service-failed', 'The service refused the platform.');
-    }
-    if (
-      request.route !== 'inbound' &&
-      !SERVICE_ANSWER_STATUSES.has(response.status) &&
-      !isOutOfBoundsRefusal(response.status, body)
-    ) {
-      this.logger.error(`The pod of "${service.slug}" answered ${response.status}, a status no service may use`);
-      throw new ServiceDispatchError('service-failed', 'The service failed while handling this call.');
+      throw unreachable(service);
     }
     return { status: response.status, headers: Object.fromEntries(response.headers), body };
+  }
+
+  private platformIdentity(service: RegisteredService, request: PodDispatchRequest, gatewayKey: string): string {
+    return mintCallerIdentity({ ...platformCallerOf(service.tenantId), ...request.for }, gatewayKey);
   }
 }

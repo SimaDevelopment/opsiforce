@@ -10,7 +10,7 @@ import { TENANT_SERVICES } from './custom-services';
 import type { PersonFixture } from './fixtures';
 import { BOARDS_MANIFEST, writeServiceFiles } from './published-services';
 
-export const BUILDER_LANE = '/api/external-services/agent/_builder';
+export const BUILDER_LANE = '/api/gateway/_builder';
 
 export const DEVELOPMENT_BOARDS = { apiToken: 'boards-dev-token', apiSecret: 'boards-dev-webhook-secret' };
 
@@ -55,11 +55,14 @@ export async function writeDevelopmentSkill(storageRoot: string, directory: stri
   await writeFile(join(storageRoot, directory, 'app', 'SKILL.md'), text);
 }
 
-export function builderLane(
-  app: NestFastifyApplication,
-  key: string | null,
-  request: { method?: 'GET' | 'POST' | 'PUT'; path?: string; payload?: unknown; headers?: Record<string, string> }
-) {
+interface BuilderLaneRequest {
+  method?: 'GET' | 'POST' | 'PUT';
+  path?: string;
+  payload?: unknown;
+  headers?: Record<string, string>;
+}
+
+export function builderLane(app: NestFastifyApplication, key: string | null, request: BuilderLaneRequest) {
   return app.inject({
     method: request.method ?? 'GET',
     url: `${BUILDER_LANE}${request.path ?? ''}`,

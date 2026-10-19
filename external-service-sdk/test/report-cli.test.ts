@@ -10,7 +10,7 @@ import { computeManifestHash } from '@opsiforce/external-service-sdk/server';
 
 import { runCli } from './support/cli.ts';
 import { serviceFolderWith } from './support/fixtures.ts';
-import { echoManifest } from './support/runtime.ts';
+import { githubManifest } from './support/sdk2.ts';
 
 const lines = [
   {
@@ -20,7 +20,7 @@ const lines = [
     callIds: [],
   },
   {
-    expectation: 'echo through the Gate answers 200 and leaves a Call row',
+    expectation: 'a read through the Service host answers 200 and leaves a Call log row',
     result: 'pass',
     source: 'live-call',
     callIds: ['call_01J9ZK8V'],
@@ -39,7 +39,7 @@ function git(folder: string, ...args: string[]): string {
 }
 
 function committedEchoFolder(): { folder: string; commit: string } {
-  const folder = serviceFolderWith({ 'service.json': JSON.stringify(echoManifest()) });
+  const folder = serviceFolderWith({ 'service.json': JSON.stringify(githubManifest()) });
   git(folder, 'init', '-q');
   git(folder, 'add', '.');
   git(folder, '-c', 'user.name=Builder', '-c', 'user.email=builder@opsiforce.test', 'commit', '-q', '-m', 'echo');
@@ -66,7 +66,7 @@ test('report writes the commit, the manifest hash and the lines', () => {
   assert.match(run.stdout, /2 pass, 0 fail, 1 not checked/);
   assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')), {
     commit,
-    manifestHash: computeManifestHash(echoManifest()),
+    manifestHash: computeManifestHash(githubManifest()),
     lines,
   });
 });
@@ -92,7 +92,7 @@ test('report refuses malformed lines and writes nothing', () => {
 });
 
 test('report refuses a folder that is not a git checkout', () => {
-  const folder = serviceFolderWith({ 'service.json': JSON.stringify(echoManifest()) });
+  const folder = serviceFolderWith({ 'service.json': JSON.stringify(githubManifest()) });
   const out = reportPath();
 
   const run = runCli(['report', folder, '--from', linesFile({ lines }), '--out', out]);

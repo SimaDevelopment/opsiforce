@@ -1,9 +1,9 @@
-import { ServiceError, type HookContext, type Hooks } from '@opsiforce/external-service-sdk';
+import type { ConfigurationHooks, FormHandlerContext } from '@opsiforce/external-service-sdk';
 
 import type { Manifest, ServiceConfiguration } from '../service.types.ts';
 import {
   apiBaseOf,
-  asServiceError,
+  channelFailure,
   channelOf,
   registeredSecretOf,
   registeredWebhooks,
@@ -65,51 +65,45 @@ function needsRegistration(channel: Channel, before: Channel | undefined, apiUrl
   );
 }
 
+const hookBudgetMs = 10_000;
+
 async function removeWebhooksOfRemovedNumbers(
   previous: ServiceConfiguration,
   current: ServiceConfiguration | null,
-  ctx: HookContext<Manifest>
+  ctx: FormHandlerContext<Manifest>,
+  signal: AbortSignal
 ): Promise<void> {
+  const failures: string[] = [];
   for (const channel of (previous.channels ?? []).filter((removed) => !current || !channelOf(current, removed.id))) {
     try {
-      await removeWebhook(previous, channel, ctx.webhookUrl, ctx.signal);
-      ctx.log.info('Removed the WhatsApp webhook from Whapi', { channelId: channel.channelId });
+      await removeWebhook(previous, channel, ctx.service.webhookUrl, signal);
     } catch (error) {
-      ctx.log.warn('Could not remove the WhatsApp webhook of a removed number', {
-        number: channel.label,
-        detail: error instanceof Error ? error.message : String(error),
-      });
+      failures.push(`${channel.label}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  if (failures.length > 0) ctx.note({ webhooksNotRemoved: failures });
 }
 
-export const onServiceConfigurationSaved: NonNullable<Hooks<Manifest>['onServiceConfigurationSaved']> = async (
-  { previous, current },
-  ctx
-) => {
-  if (previous) await removeWebhooksOfRemovedNumbers(previous, current, ctx);
+export const onServiceConfigurationSaved: NonNullable<
+  ConfigurationHooks<Manifest>['onServiceConfigurationSaved']
+> = async ({ previous, current }, ctx) => {
+  const signal = AbortSignal.timeout(hookBudgetMs);
+  if (previous) await removeWebhooksOfRemovedNumbers(previous, current, ctx, signal);
   if (!current) return;
   const apiUrlChanged = previous !== null && apiBaseOf(previous) !== apiBaseOf(current);
   const changed = (current.channels ?? []).filter((channel) =>
     needsRegistration(channel, previous ? channelOf(previous, channel.id) : undefined, apiUrlChanged)
   );
   if (changed.length === 0) return;
-  if (!ctx.webhookUrl) {
-    throw new ServiceError({
-      status: 409,
-      code: 'no-public-url',
-      detail: 'OPSIFORCE_PUBLIC_URL is not set, so Whapi cannot be given a webhook URL.',
-    });
-  }
+  const { webhookUrl } = ctx.service;
+  if (!webhookUrl) throw new Error('OPSIFORCE_PUBLIC_URL is not set, so Whapi cannot be given a webhook URL.');
   let firstFailure: unknown;
   for (const channel of changed) {
     try {
-      await registerWebhook(current, channel, ctx.webhookUrl, ctx.signal);
+      await registerWebhook(current, channel, webhookUrl, signal);
     } catch (error) {
-      firstFailure ??= asServiceError(error, channel);
-      continue;
+      firstFailure ??= channelFailure(error, channel);
     }
-    ctx.log.info('Registered the WhatsApp webhook with Whapi', { channelId: channel.channelId });
   }
   if (firstFailure !== undefined) throw firstFailure;
 };

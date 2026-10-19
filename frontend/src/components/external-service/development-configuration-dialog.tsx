@@ -1,4 +1,5 @@
-import { Show, createSignal, untrack } from 'solid-js';
+import { Show, createEffect, createSignal, on, untrack } from 'solid-js';
+import { toast } from 'solid-sonner';
 import { ApiError } from '~/api/client';
 import {
   callDevelopmentServiceForm,
@@ -31,6 +32,18 @@ export function DevelopmentConfigurationDialog(props: { serviceId: string; open:
     () => props.serviceId,
     () => props.open
   );
+  const [openedAt, setOpenedAt] = createSignal(0);
+  createEffect(
+    on(
+      () => props.open,
+      (open) => {
+        if (!open) return;
+        setOpenedAt(Date.now());
+        void view.refetch();
+      }
+    )
+  );
+  const readSinceOpening = () => (view.data && view.dataUpdatedAt >= openedAt() ? view.data : undefined);
 
   return (
     <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
@@ -43,7 +56,7 @@ export function DevelopmentConfigurationDialog(props: { serviceId: string; open:
           </DialogDescription>
         </DialogHeader>
         <Show
-          when={view.data}
+          when={readSinceOpening()}
           fallback={
             <Show
               when={view.isError}
@@ -61,42 +74,26 @@ export function DevelopmentConfigurationDialog(props: { serviceId: string; open:
             </Show>
           }
         >
-          {(loaded) => <DevelopmentEditor serviceId={props.serviceId} initial={untrack(loaded)} />}
+          {(loaded) => (
+            <DevelopmentEditor serviceId={props.serviceId} initial={untrack(loaded)} onClose={props.onClose} />
+          )}
         </Show>
       </DialogContent>
     </Dialog>
   );
 }
 
-function DevelopmentEditor(props: { serviceId: string; initial: DevelopmentServiceView }) {
-  const [notice, setNotice] = createSignal<string | null>(null);
+function DevelopmentEditor(props: { serviceId: string; initial: DevelopmentServiceView; onClose: () => void }) {
   const [confirmingCopy, setConfirmingCopy] = createSignal(false);
   const copy = useCopyProductionToDevelopment(() => props.serviceId);
   const rotate = useRotateDevelopmentConfiguration(() => props.serviceId);
   const retry = useRetryDevelopmentConfigurationHook(() => props.serviceId);
   const discard = useDiscardDevelopmentConfigurationHook(() => props.serviceId);
   const edits = createConfigurationEdits(props.initial, {
-    rotate: async (target) => {
-      const next = await rotate.mutateAsync(target);
-      setNotice(null);
-      return next;
-    },
-    retry: async () => {
-      const next = await retry.mutateAsync(undefined);
-      setNotice(null);
-      return next;
-    },
-    discard: async () => {
-      const next = await discard.mutateAsync(undefined);
-      setNotice(null);
-      return next;
-    },
+    rotate: (target) => rotate.mutateAsync(target),
+    retry: () => retry.mutateAsync(undefined),
+    discard: () => discard.mutateAsync(undefined),
   });
-
-  const rebase = (next: DevelopmentServiceView, message: string) => {
-    edits.rebase(next);
-    setNotice(message);
-  };
 
   return (
     <div class="flex flex-col gap-4">
@@ -136,8 +133,11 @@ function DevelopmentEditor(props: { serviceId: string; initial: DevelopmentServi
         confirmLabel="Copy"
         onConfirm={() =>
           copy.mutate(undefined, {
-            onSuccess: (next) => rebase(next, 'Copied from Production.'),
-            onError: (error) => setNotice(error.message || 'The configuration could not be copied.'),
+            onSuccess: (next) => {
+              edits.rebase(next);
+              toast.success('Copied the Production configuration into Development');
+            },
+            onError: (error) => toast.error(error.message || 'The configuration could not be copied.'),
           })
         }
       />
@@ -147,12 +147,13 @@ function DevelopmentEditor(props: { serviceId: string; initial: DevelopmentServi
             serviceId={props.serviceId}
             view={view}
             edits={edits}
-            notice={notice()}
-            onSaved={(next) => rebase(next, 'Saved. Secrets stay encrypted; blank boxes kept their values.')}
-            onEdit={() => {
-              edits.edited();
-              setNotice(null);
+            onSaved={(next) => {
+              edits.rebase(next);
+              if (next.hookFailure) return;
+              toast.success('Saved the Development configuration');
+              if (!next.revealed?.length) props.onClose();
             }}
+            onEdit={edits.edited}
           />
         )}
       </Show>
@@ -164,7 +165,6 @@ function DevelopmentForm(props: {
   serviceId: string;
   view: DevelopmentServiceView;
   edits: ConfigurationEdits<DevelopmentServiceView>;
-  notice: string | null;
   onSaved: (view: DevelopmentServiceView) => void;
   onEdit: () => void;
 }) {
@@ -214,10 +214,9 @@ function DevelopmentForm(props: {
         <ConfigurationFooter
           saving={configuration.saving()}
           failure={configuration.failure()}
-          saved={props.view.hookFailure ? null : props.notice}
           hint={
             props.view.serviceConfiguration.missing.length > 0
-              ? 'Until the required fields are filled, the Test Project\'s calls answer "not configured".'
+              ? "Until the required fields are filled, the Test Project's calls that need them fail."
               : null
           }
         />

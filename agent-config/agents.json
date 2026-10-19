@@ -5,7 +5,7 @@
       "description": "Build apps and assist with your requests.",
       "default": true,
       "port": 3000,
-      "version": "0.7.0",
+      "version": "0.8.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
       "poolSize": 3
@@ -15,17 +15,17 @@
       "description": "Author Skills and Custom Agents by conversation, and test them.",
       "default": false,
       "port": 3000,
-      "version": "1.4.0",
+      "version": "1.5.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
       "poolSize": 0
     },
     "external-service-builder": {
       "name": "External Service Builder",
-      "description": "Author a Custom External Service by conversation: its API, its handlers and their tests.",
+      "description": "Author a Custom External Service by conversation: an outside API passed through under the settings you agree, with its tests.",
       "default": false,
       "port": 3000,
-      "version": "1.1.0",
+      "version": "1.2.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
       "poolSize": 0

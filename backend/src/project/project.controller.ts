@@ -6,6 +6,7 @@ import {
   Put,
   Delete,
   Body,
+  HttpCode,
   Param,
   Req,
   Res,
@@ -330,6 +331,18 @@ export class ProjectController {
   ) {
     await this.gate(id, tenant, user);
     return this.projectService.restart(id, tenant.tenantId, environmentId);
+  }
+
+  @Post(':id/environments/:environmentId/gateway-key/rotate')
+  @HttpCode(204)
+  async rotateGatewayKey(
+    @Param('id') id: string,
+    @Param('environmentId') environmentId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<void> {
+    await this.gate(id, tenant, user);
+    await this.projectService.rotateGatewayKey(id, tenant.tenantId, environmentId);
   }
 
   @Get(':id/environments/:environmentId/variables')

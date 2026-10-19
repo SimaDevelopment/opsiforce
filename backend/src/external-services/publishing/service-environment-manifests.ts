@@ -4,20 +4,12 @@ import { ConfigService } from '@nestjs/config';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk';
 import { EnvironmentService } from '../../environment/environment.service';
 import { GitService } from '../../git/git.service';
-import { CustomServiceRepository, type CustomServiceRow } from '../custom/custom-service.repository';
-import { servableOrNone } from '../registry/custom-service-catalog';
+import { CustomServiceRepository } from '../custom/custom-service.repository';
 import { SERVICE_APP_FOLDER } from '../registry/published-service-files';
-import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
-import { ConfigurationImpacts } from './configuration-impacts';
 import { manifestDiff, type ManifestDiff } from './manifest-diff';
 import { manifestIn, serviceInstancesOf, type ServiceInstance } from './service-instances';
 
 export type EnvironmentManifestStatus = 'development' | 'same-as-development' | 'development-differs' | 'unpublished';
-
-export interface RemovedOperationInUse {
-  operation: string;
-  configurations: number;
-}
 
 export interface EnvironmentManifestView {
   environmentId: string;
@@ -27,10 +19,9 @@ export interface EnvironmentManifestView {
   publishedCommitSha: string | null;
   manifest: ServiceManifest | null;
   changes: ManifestDiff | null;
-  removedInUse: RemovedOperationInUse[];
 }
 
-type ReadEnvironment = Omit<EnvironmentManifestView, 'changes' | 'removedInUse'>;
+type ReadEnvironment = Omit<EnvironmentManifestView, 'changes'>;
 
 const APP_PATH_PREFIX = `${SERVICE_APP_FOLDER}/`;
 
@@ -42,8 +33,6 @@ export class ServiceEnvironmentManifests {
     config: ConfigService,
     private readonly repository: CustomServiceRepository,
     private readonly environments: EnvironmentService,
-    private readonly registry: ServiceRegistry,
-    private readonly impacts: ConfigurationImpacts,
     private readonly git: GitService
   ) {
     this.storageMountPath = config.getOrThrow<string>('storageMountPath');
@@ -79,21 +68,13 @@ export class ServiceEnvironmentManifests {
       })
     );
     const callers = read.find((environment) => environment.serviceDefault)?.manifest ?? null;
-    return Promise.all(
-      read.map(async (environment) => {
-        const changes =
-          callers && environment.manifest && !environment.serviceDefault
-            ? manifestDiff(callers, environment.manifest)
-            : null;
-        return {
-          ...environment,
-          changes,
-          removedInUse: changes?.operations.some((operation) => operation.change === 'removed')
-            ? await this.removedInUse(service, environment)
-            : [],
-        };
-      })
-    );
+    return read.map((environment) => ({
+      ...environment,
+      changes:
+        callers && environment.manifest && !environment.serviceDefault
+          ? manifestDiff(callers, environment.manifest)
+          : null,
+    }));
   }
 
   private async statusOf(
@@ -107,25 +88,5 @@ export class ServiceEnvironmentManifests {
     return changed !== null && !changed.some((path) => path.startsWith(APP_PATH_PREFIX))
       ? 'same-as-development'
       : 'development-differs';
-  }
-
-  private async removedInUse(
-    service: CustomServiceRow,
-    environment: ReadEnvironment
-  ): Promise<RemovedOperationInUse[]> {
-    const [callers, selected] = await Promise.all([
-      servableOrNone(this.registry.publishedCustom(service.id)),
-      this.registeredIn(service, environment),
-    ]);
-    if (!callers || !selected) return [];
-    return (await this.impacts.between(callers, selected, service.builderChatId)).removedOperations;
-  }
-
-  private registeredIn(service: CustomServiceRow, environment: ReadEnvironment): Promise<RegisteredService | null> {
-    return servableOrNone(
-      environment.status === 'development'
-        ? this.registry.development(service.id)
-        : this.registry.publishedAt(service.id, environment.environmentId)
-    );
   }
 }

@@ -22,9 +22,12 @@ export async function stageCalls(
 ): Promise<string[]> {
   const staged = rows.map(({ createdAt, ...row }) => ({
     id: crypto.randomUUID(),
-    kind: 'operation',
+    requestId: crypto.randomUUID(),
+    callerKind: 'call',
+    method: 'GET',
+    path: '/accounts',
+    outcome: 'handled',
     slug: 'fixture-crm',
-    decision: 'allowed',
     status: 200,
     durationMs: 3,
     ...row,

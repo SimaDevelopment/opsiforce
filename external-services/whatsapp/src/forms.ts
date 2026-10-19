@@ -1,14 +1,15 @@
 import type {
-  ButtonHandler,
-  InfoHandler,
+  ButtonResult,
+  FormDraft,
+  FormHandlerContext,
   InfoResult,
   OptionItem,
-  OptionsHandler,
+  OptionsDraft,
 } from '@opsiforce/external-service-sdk';
 
-import type { Manifest, ServiceConfiguration } from '../service.types.ts';
+import type { Manifest, ProjectConfiguration, ServiceConfiguration } from '../service.types.ts';
 import {
-  asServiceError,
+  channelFailure,
   channelOf,
   namedPages,
   registeredSecretOf,
@@ -83,43 +84,53 @@ function qrImage(base64: string): { mimeType: string; base64: string } {
     : { mimeType: 'image/png', base64 };
 }
 
-export const listChats: OptionsHandler<Manifest> = async ({ values, query }, ctx) => {
-  const channel = channelOf(ctx.serviceConfiguration, values.channel);
+const formCallBudgetMs = 10_000;
+
+type Context = FormHandlerContext<Manifest>;
+
+function pickedChannelItem(draft: OptionsDraft): unknown {
+  const items = (draft.values as ProjectConfiguration).channels ?? [];
+  return items.find((item) => item.id === draft.item)?.channel;
+}
+
+export async function listChats(draft: OptionsDraft, ctx: Context): Promise<OptionItem[]> {
+  const channel = channelOf(ctx.serviceConfiguration, pickedChannelItem(draft));
   if (!channel) return [];
   try {
-    const chats = await chatsOf(ctx.serviceConfiguration, channel, ctx.signal);
-    return chats.filter((chat) => matchesQuery(chat, query));
+    const chats = await chatsOf(ctx.serviceConfiguration, channel, AbortSignal.timeout(formCallBudgetMs));
+    return chats.filter((chat) => matchesQuery(chat, draft.query));
   } catch (error) {
-    throw asServiceError(error, channel);
+    throw channelFailure(error, channel);
   }
-};
+}
 
-export const webhookStatus: InfoHandler<Manifest> = async ({ values }, ctx) => {
-  const channel = channelOf(ctx.serviceConfiguration, values.id);
+export async function webhookStatus(draft: FormDraft, ctx: Context): Promise<InfoResult> {
+  const channel = channelOf(ctx.serviceConfiguration, draft.item);
   const secret = channel?.webhookSecret?.reveal();
   if (!channel || !secret) return { text: 'Save the number to register its webhook.', level: 'info' };
-  if (!ctx.webhookUrl) {
+  const { webhookUrl } = ctx.service;
+  if (!webhookUrl) {
     return { text: 'OPSIFORCE_PUBLIC_URL is not set, so no webhook can be registered.', level: 'error' };
   }
   try {
     return webhookStatusOf(
-      await registeredWebhooks(ctx.serviceConfiguration, channel, ctx.signal),
-      ctx.webhookUrl,
+      await registeredWebhooks(ctx.serviceConfiguration, channel, AbortSignal.timeout(formCallBudgetMs)),
+      webhookUrl,
       secret
     );
   } catch (error) {
-    throw asServiceError(error, channel);
+    return { text: `Could not ask Whapi: ${(channelFailure(error, channel) as Error).message}`, level: 'error' };
   }
-};
+}
 
-export const showQr: ButtonHandler<Manifest> = async ({ values }, ctx) => {
-  const channel = channelOf(ctx.serviceConfiguration, values.id);
+export async function showQr(draft: FormDraft, ctx: Context): Promise<ButtonResult> {
+  const channel = channelOf(ctx.serviceConfiguration, draft.item);
   if (!channel) return { message: 'Save the number before linking it.', level: 'info' };
   try {
     const login = await whapi<{ base64?: string; expire?: number }>(ctx.serviceConfiguration, channel, {
       method: 'GET',
       path: '/users/login',
-      signal: ctx.signal,
+      signal: AbortSignal.timeout(formCallBudgetMs),
     });
     if (!login.base64) {
       return { message: 'Whapi sent no QR code; open the channel on the Whapi dashboard.', level: 'warning' };
@@ -133,6 +144,6 @@ export const showQr: ButtonHandler<Manifest> = async ({ values }, ctx) => {
     if (error instanceof WhapiRefusal && error.status === 409) {
       return { message: `${channel.label} is already linked to WhatsApp.`, level: 'success' };
     }
-    throw asServiceError(error, channel);
+    return { message: (channelFailure(error, channel) as Error).message, level: 'error' };
   }
-};
+}

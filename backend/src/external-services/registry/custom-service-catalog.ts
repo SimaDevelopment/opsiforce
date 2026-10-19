@@ -5,7 +5,7 @@ import { db } from '../../../db';
 import { errorMessage } from '../../common/error-message';
 import { externalServices, projectEnvironments, projects } from '../../../db/schema';
 import { TEST_PROJECT_KIND } from '../../project/project.types';
-import { PublishedServiceFilesReader, UnservableServiceFiles } from './published-service-files';
+import { PublishedServiceFilesReader, Sdk1ServiceFiles, UnservableServiceFiles } from './published-service-files';
 import type { RegisteredService } from './service-registry';
 
 export type ServiceLane = 'default' | 'development';
@@ -30,7 +30,8 @@ export class UnservableCustomService extends Error {
   constructor(
     readonly slug: string,
     reason: string,
-    readonly disabled: boolean
+    readonly disabled: boolean,
+    readonly builtOnSdk1: boolean
   ) {
     super(reason);
   }
@@ -196,8 +197,9 @@ export class CustomServiceCatalog {
     try {
       read = await this.files.read(row.directory);
     } catch (error) {
-      if (error instanceof UnservableServiceFiles)
-        throw new UnservableCustomService(row.slug, error.message, row.disabled);
+      if (error instanceof UnservableServiceFiles) {
+        throw new UnservableCustomService(row.slug, error.message, row.disabled, error instanceof Sdk1ServiceFiles);
+      }
       throw error;
     }
     const { files } = read;
@@ -210,7 +212,7 @@ export class CustomServiceCatalog {
       manifestHash: files.manifestHash,
       icon: files.icon,
       serviceSkill: files.serviceSkill,
-      runtime: null,
+      defined: null,
       home: {
         builderChatId: row.builderChatId ?? '',
         environmentId: row.environmentId ?? '',

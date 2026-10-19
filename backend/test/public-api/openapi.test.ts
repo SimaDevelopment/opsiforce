@@ -110,6 +110,28 @@ describe('public api openapi document', () => {
     expect(routes).toEqual(V1_ROUTES);
   });
 
+  it('names every route with its own stable operationId', () => {
+    const operationIds = Object.fromEntries(
+      Object.entries(document.paths).flatMap(([path, operations]) =>
+        Object.entries(operations as Record<string, { operationId?: string }>)
+          .filter(([method]) => HTTP_METHODS.has(method))
+          .map(([method, operation]) => [`${method.toUpperCase()} ${path}`, operation.operationId])
+      )
+    );
+
+    expect(operationIds).toMatchObject({
+      'GET /api/v1/me': 'get_me',
+      'GET /api/v1/projects': 'list_projects',
+      'POST /api/v1/projects/{id}/environments/{environmentId}/connect': 'connect_project',
+      'POST /api/v1/projects/{id}/test/reset': 'reset_test_project',
+      'DELETE /api/v1/agents/{id}/skills/{skillId}': 'remove_agent_skill',
+      'POST /api/v1/skills/{id}/versions': 'create_skill_version',
+    });
+    const names = Object.values(operationIds);
+    for (const name of names) expect(name).toMatch(/^[a-z]+(?:_[a-z]+)+$/);
+    expect(new Set(names).size).toBe(V1_ROUTES.length);
+  });
+
   it('hoists every schema into components and leaves no inline $defs', () => {
     expect(Object.keys(document.components?.schemas ?? {})).toEqual(
       expect.arrayContaining([
@@ -200,7 +222,12 @@ describe('public api openapi document', () => {
 
     expect(
       create.responses?.['409'].content?.['application/problem+json'].schema?.allOf?.[1].properties?.type?.enum
-    ).toEqual([errorTypeUri('test-project-exists'), errorTypeUri('limit-reached'), errorTypeUri('chain-too-deep')]);
+    ).toEqual([
+      errorTypeUri('test-project-exists'),
+      errorTypeUri('limit-reached'),
+      errorTypeUri('chain-too-deep'),
+      errorTypeUri('max-created-projects'),
+    ]);
     const schemas = document.components?.schemas as Record<string, NamedSchema> | undefined;
     expect(Object.keys(schemas?.ApiError.properties ?? {})).toContain('testProjectId');
 

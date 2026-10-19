@@ -20,7 +20,7 @@ import type { PersonFixture } from './fixtures';
 import type { GateCallerFixture } from './gate';
 
 export const BOARDS_MANIFEST = {
-  sdk: 1,
+  sdk: 2,
   displayName: 'Fixture Boards',
   description: 'A pretend board tool the Organization built itself.',
   inbound: true,
@@ -39,30 +39,9 @@ export const BOARDS_MANIFEST = {
       ],
     },
   ],
-  operations: {
-    list_cards: {
-      kind: 'read',
-      description: 'List the cards on one board.',
-      input: {
-        type: 'object',
-        required: ['boardId'],
-        properties: { boardId: { type: 'string', boundTo: 'board' } },
-      },
-      outputExample: { cards: [] },
-    },
-  },
   events: {
-    'card.created': {
-      title: 'Card created',
-      description: 'A card was added to a board.',
-      data: {
-        type: 'object',
-        required: ['boardId', 'name'],
-        properties: { boardId: { type: 'string', boundTo: 'board' }, name: { type: 'string' } },
-      },
-    },
+    'card.created': { title: 'Card created', description: 'A card was added to a board.' },
   },
-  bounds: { board: { path: 'boardIds' } },
 } as const;
 
 export const PUBLISHED_COMMIT = 'c0ffee'.padEnd(40, '0');
@@ -103,7 +82,7 @@ export async function writeServiceFiles(
     JSON.stringify({
       name: 'opsiforce-external-service',
       dependencies: {
-        '@opsiforce/external-service-sdk': `file:./vendor/external-service-sdk-${options.sdkVersion ?? '1.0.0'}.tgz`,
+        '@opsiforce/external-service-sdk': `file:./vendor/external-service-sdk-${options.sdkVersion ?? '2.0.0'}.tgz`,
       },
     })
   );

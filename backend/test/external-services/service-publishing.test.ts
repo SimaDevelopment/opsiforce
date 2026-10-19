@@ -3,7 +3,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { computeManifestHash } from '@opsiforce/external-service-sdk/server';
+import {
+  computeManifestHash,
+  createFileServiceRecords,
+  recordsFileInWorkspace,
+} from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import {
@@ -12,10 +16,9 @@ import {
   TENANT_SERVICES,
   type CreatedCustomService,
 } from './support/custom-services';
-import { memberWithout, tenantAdmin, type PersonFixture } from './support/fixtures';
+import { tenantAdmin, type PersonFixture } from './support/fixtures';
 import { BOARDS_MANIFEST, productionEnvironmentOf } from './support/published-services';
 import { runningDevelopment, type BuilderDevelopment } from './support/test-lane';
-import { stageCalls } from './support/call-log';
 import { committedWorkspace, publishReview, writeTestReport } from './support/service-publishing';
 
 const SHIPPED_SDK_VERSION = (
@@ -24,19 +27,32 @@ const SHIPPED_SDK_VERSION = (
 
 const MOVING_MANIFEST = {
   ...BOARDS_MANIFEST,
-  operations: {
-    ...BOARDS_MANIFEST.operations,
-    move_card: {
-      kind: 'write',
-      description: 'Move a card to another list.',
-      input: {
-        type: 'object',
-        required: ['cardId', 'listId'],
-        properties: { cardId: { type: 'string' }, listId: { type: 'string' } },
-      },
-    },
+  events: {
+    ...BOARDS_MANIFEST.events,
+    'card.moved': { title: 'Card moved', description: 'A card moved to another list.' },
   },
 };
+
+function recordedRequest(requestId: string, outcome: 'proxied' | 'not allowed') {
+  return {
+    requestId,
+    time: new Date().toISOString(),
+    callerKind: 'call' as const,
+    projectId: null,
+    projectEnvironmentId: null,
+    environment: null,
+    method: 'GET',
+    path: '/boards/b1/cards',
+    route: 'List cards',
+    outcome,
+    reason: null,
+    status: outcome === 'proxied' ? 200 : 403,
+    bytesIn: 0,
+    bytesOut: 2,
+    durationMs: 3,
+    notes: {},
+  };
+}
 
 describe('the Publish dialog of a Custom External Service', () => {
   let harness: ExternalServicesTestApp;
@@ -66,41 +82,21 @@ describe('the Publish dialog of a Custom External Service', () => {
     production = await productionEnvironmentOf(admin.tenant.tenantId);
   });
 
-  it("shows the check report of Development's files: kinds, bound and unbound inputs, write-with-no-bound warnings", async () => {
+  it("shows the check report of Development's files: its Event types and no problems", async () => {
     const res = await publishReview(app, admin, service.id, production);
 
     expect(res.statusCode, res.body).toBe(200);
     const review = res.json();
     expect(review.target).toMatchObject({ environmentId: production, name: 'Production', firstPublish: true });
-    expect(review.check.ok).toBe(true);
-    expect(review.check.operations).toEqual([
-      { name: 'list_cards', kind: 'read', inputs: [{ pointer: '/boardId', bound: 'board' }] },
-      {
-        name: 'move_card',
-        kind: 'write',
-        inputs: [
-          { pointer: '/cardId', bound: null },
-          { pointer: '/listId', bound: null },
-        ],
-      },
-    ]);
-    expect(review.check.events).toEqual([
-      {
-        type: 'card.created',
-        title: 'Card created',
-        inputs: [
-          { pointer: '/boardId', bound: 'board' },
-          { pointer: '/name', bound: null },
-        ],
-      },
-    ]);
-    expect(review.check.problems).toEqual([
-      expect.objectContaining({
-        severity: 'warning',
-        path: 'operations.move_card',
-        message: expect.stringContaining('no bound'),
-      }),
-    ]);
+    expect(review.check).toEqual({
+      ok: true,
+      problems: [],
+      events: [
+        { type: 'card.created', title: 'Card created' },
+        { type: 'card.moved', title: 'Card moved' },
+      ],
+    });
+    expect(review.builtOnSdk1).toBe(false);
   });
 
   it('says when the builder wrote no test report', async () => {
@@ -112,24 +108,31 @@ describe('the Publish dialog of a Custom External Service', () => {
   it('reads the test report: what was tested at which commit, what was not, the real upstream, files changed since', async () => {
     const workspace = join(storageRoot, development.directory);
     const commit = await committedWorkspace(workspace);
-    const [answered, refused] = await stageCalls([
-      { externalServiceId: service.id, slug: service.slug, decision: 'allowed' },
-      { externalServiceId: service.id, slug: service.slug, decision: 'refused', status: 403, code: 'out-of-bounds' },
-    ]);
+    const answered = 'req-answered';
+    const refused = 'req-refused';
+    const records = createFileServiceRecords({ file: join(workspace, recordsFileInWorkspace) });
+    records.call(recordedRequest(answered, 'proxied'));
+    records.call(recordedRequest(refused, 'not allowed'));
+    records.close();
     await writeTestReport(workspace, {
       commit,
       manifestHash: computeManifestHash(MOVING_MANIFEST),
       lines: [
-        { expectation: 'list_cards lists the Roadmap board', result: 'pass', source: 'live-call', callIds: [answered] },
+        {
+          expectation: 'listing cards shows the Roadmap board',
+          result: 'pass',
+          source: 'live-call',
+          callIds: [answered],
+        },
         {
           expectation: 'another board is refused',
           result: 'pass',
           source: 'live-call',
           callIds: [refused, 'no-such-call'],
         },
-        { expectation: 'move_card handles a 429', result: 'pass', source: 'unit-test', callIds: [] },
+        { expectation: 'moving a card handles a 429', result: 'pass', source: 'unit-test', callIds: [] },
         {
-          expectation: 'move_card moves a card',
+          expectation: 'moving a card moves it',
           result: 'not-checked',
           source: 'live-call',
           callIds: [],
@@ -137,7 +140,7 @@ describe('the Publish dialog of a Custom External Service', () => {
         },
       ],
     });
-    await writeFile(join(workspace, 'app', 'handlers.ts'), 'export default {};\n');
+    await writeFile(join(workspace, 'app', 'service.ts'), 'export default {};\n');
 
     const review = (await publishReview(app, admin, service.id, production)).json();
 
@@ -145,7 +148,7 @@ describe('the Publish dialog of a Custom External Service', () => {
       state: 'present',
       commit,
       headCommit: commit,
-      changedSince: ['app/handlers.ts'],
+      changedSince: expect.arrayContaining(['app/service.ts']),
       manifestMatches: true,
       counts: { pass: 3, fail: 0, notChecked: 1 },
       upstreamCalled: true,
@@ -160,7 +163,7 @@ describe('the Publish dialog of a Custom External Service', () => {
     await writeTestReport(workspace, {
       commit,
       manifestHash: computeManifestHash(BOARDS_MANIFEST),
-      lines: [{ expectation: 'list_cards answers', result: 'pass', source: 'unit-test', callIds: [] }],
+      lines: [{ expectation: 'listing cards answers', result: 'pass', source: 'unit-test', callIds: [] }],
     });
 
     const review = (await publishReview(app, admin, service.id, production)).json();
@@ -198,29 +201,51 @@ describe('the Publish dialog of a Custom External Service', () => {
       displayName: 'Fixture Boards',
       builderChatId: service.builderChatId,
       defaultEnvironment: null,
-      sdk: { vendored: '1.0.0', latest: SHIPPED_SDK_VERSION, status: 'current' },
+      sdk: { vendored: SHIPPED_SDK_VERSION, latest: SHIPPED_SDK_VERSION, status: 'current' },
     });
-    expect(Object.keys(res.json().manifest.operations)).toEqual(['list_cards', 'move_card']);
+    expect(Object.keys(res.json().manifest.events)).toEqual(['card.created', 'card.moved']);
   });
 
-  it("serves the service's live openapi.json to signed-in managers only", async () => {
-    const res = await app.inject({
-      method: 'GET',
-      url: `${TENANT_SERVICES}/${service.id}/openapi.json`,
+  it('shows a service built on SDK 1 with its warning, and Publish refuses it', async () => {
+    await runningDevelopment(app, storageRoot, service.builderChatId, {
+      sdk: 1,
+      displayName: 'Old Boards',
+      description: 'Built before SDK 2.',
+      operations: { list_cards: { kind: 'read', description: 'List cards.', input: { type: 'object' } } },
+    });
+
+    const review = (await publishReview(app, admin, service.id, production)).json();
+    const published = await app.inject({
+      method: 'POST',
+      url: `${TENANT_SERVICES}/${service.id}/publish`,
+      headers: admin.headers,
+      payload: { environmentId: production },
+    });
+
+    expect(review.builtOnSdk1).toBe(true);
+    expect(published.statusCode, published.body).toBe(409);
+    expect(published.json()).toMatchObject({
+      type: 'urn:opsiforce:error:built-on-sdk-1',
+      detail: 'Built on SDK 1: rebuild it on SDK 2 or delete it',
+    });
+  });
+
+  it('loads the page of a service built on SDK 1 saying so, and deletes it', async () => {
+    await runningDevelopment(app, storageRoot, service.builderChatId, {
+      ...BOARDS_MANIFEST,
+      sdk: 1,
+      operations: { list_cards: { kind: 'read', description: 'List cards.', input: { type: 'object' } } },
+    });
+
+    const page = await app.inject({ method: 'GET', url: `${TENANT_SERVICES}/${service.id}`, headers: admin.headers });
+    const deleted = await app.inject({
+      method: 'DELETE',
+      url: `${TENANT_SERVICES}/${service.id}?confirmSlug=${service.slug}`,
       headers: admin.headers,
     });
-    const stranger = await memberWithout(app);
-    const refused = await app.inject({
-      method: 'GET',
-      url: `${TENANT_SERVICES}/${service.id}/openapi.json`,
-      headers: stranger.headers,
-    });
-    const anonymous = await app.inject({ method: 'GET', url: `${TENANT_SERVICES}/${service.id}/openapi.json` });
 
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ openapi: '3.1.0' });
-    expect(Object.keys(res.json().paths)).toEqual(['/list_cards', '/move_card']);
-    expect(refused.statusCode).toBe(403);
-    expect([401, 403]).toContain(anonymous.statusCode);
+    expect(page.statusCode, page.body).toBe(200);
+    expect(page.json()).toMatchObject({ id: service.id, builtOnSdk1: true, manifest: null, displayName: 'Boards' });
+    expect(deleted.statusCode, deleted.body).toBe(204);
   });
 });

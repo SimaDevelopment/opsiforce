@@ -108,7 +108,7 @@ k8s_resource(
 )
 
 # ───────────────────────── Runtime proxies ─────────────────────────
-# Go binaries (mode={agent,app,vscode,db}). Deployed in the same namespace
+# Go binaries (mode={agent,app,vscode,db,external-service}). Deployed in the same namespace
 # as backend + agents so RBAC stays namespaced and service references
 # resolve via short name.
 docker_build_with_restart(
@@ -145,6 +145,7 @@ k8s_resource(
 k8s_resource(workload='proxy-app', new_name='runtime-proxies-app', labels=['cluster'])
 k8s_resource(workload='proxy-vscode', new_name='runtime-proxies-vscode', labels=['cluster'])
 k8s_resource(workload='proxy-db', new_name='runtime-proxies-db', labels=['cluster'])
+k8s_resource(workload='proxy-external-service', new_name='runtime-proxies-external-service', labels=['cluster'])
 
 # ───────────────────────── Linked-account proxy ─────────────────────────
 # Stateless Node server Bifrost reaches at http://opsiforce-linked-account-proxy:8455/v1 for

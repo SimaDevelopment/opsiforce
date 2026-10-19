@@ -1,5 +1,5 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "WhatsApp",
   "description": "Receive WhatsApp messages on the numbers your Organization connects.",
   "inbound": true,
@@ -9,19 +9,53 @@
       "type": "text",
       "label": "Whapi API URL",
       "default": "https://gate.whapi.cloud",
-      "validate": { "format": "url" }
+      "validate": {
+        "format": "url"
+      }
     },
     {
       "key": "channels",
       "type": "list",
       "label": "Numbers",
       "item": [
-        { "key": "channelId", "type": "text", "label": "Channel id", "required": true },
-        { "key": "label", "type": "text", "label": "Label", "required": true },
-        { "key": "apiToken", "type": "secret", "label": "API token", "required": true },
-        { "key": "webhookSecret", "type": "secret", "label": "Webhook secret", "generate": { "bytes": 32 } },
-        { "key": "webhookStatus", "type": "info", "label": "Webhook", "call": "webhookStatus" },
-        { "key": "qr", "type": "button", "label": "Show QR code", "call": "showQr" }
+        {
+          "key": "channelId",
+          "type": "text",
+          "label": "Channel id",
+          "required": true
+        },
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "required": true
+        },
+        {
+          "key": "apiToken",
+          "type": "secret",
+          "label": "API token",
+          "required": true
+        },
+        {
+          "key": "webhookSecret",
+          "type": "secret",
+          "label": "Webhook secret",
+          "generate": {
+            "bytes": 32
+          }
+        },
+        {
+          "key": "webhookStatus",
+          "type": "info",
+          "label": "Webhook",
+          "call": "webhookStatus"
+        },
+        {
+          "key": "qr",
+          "type": "button",
+          "label": "Show QR code",
+          "call": "showQr"
+        }
       ]
     }
   ],
@@ -36,13 +70,22 @@
           "type": "select",
           "label": "Number",
           "required": true,
-          "options": { "serviceConfiguration": "channels", "labelKey": "label" }
+          "options": {
+            "serviceConfiguration": "channels",
+            "labelKey": "label"
+          }
         },
         {
           "key": "chats",
           "type": "multiselect",
           "label": "Chats",
-          "options": { "call": "listChats", "dependsOn": ["channel"], "searchable": true }
+          "options": {
+            "call": "listChats",
+            "dependsOn": [
+              "channel"
+            ],
+            "searchable": true
+          }
         }
       ]
     }
@@ -50,21 +93,7 @@
   "events": {
     "message.received": {
       "title": "Message received",
-      "description": "A WhatsApp message arrived in an allowed chat.",
-      "data": {
-        "type": "object",
-        "properties": {
-          "channel": { "type": "string", "maxLength": 64, "boundTo": "channelItem" },
-          "chatId": { "type": "string", "maxLength": 128, "boundTo": "chat" },
-          "from": { "type": "string", "maxLength": 128 },
-          "text": { "type": "string" }
-        },
-        "required": ["channel", "chatId"]
-      }
+      "description": "A WhatsApp message arrived in an allowed chat."
     }
-  },
-  "bounds": {
-    "channelItem": { "path": "channels[].channel" },
-    "chat": { "path": "channels[].chats", "where": { "channel": "/channel" } }
   }
 }

@@ -44,6 +44,7 @@ import {
 import { PodService, PodStartupFailedError } from '../pod/pod.service';
 import { PodCacheService } from '../pod/pod.cache.service';
 import { ProxyService } from '../proxy/proxy.service';
+import { podWebhookUrl } from '../external-services/configuration/webhook-url';
 import { ProjectPoolService } from '../pool/project-pool.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { BifrostService } from '../bifrost/bifrost.service';
@@ -170,7 +171,7 @@ import { ProjectEventsService } from './project-events.service';
 import { AppService } from './app.service';
 import { AppReadinessService } from './app-readiness.service';
 import { AgentStatusService } from './agent-status.service';
-import { assertRoomForProject } from './project-limit';
+import { assertRoomForCreatedProject, assertRoomForProject, CreatedProjectsCapReached } from './project-limit';
 import { LimitReachedException } from '../limit/limit-reached.exception';
 import {
   ACTIVE_DUPLICATE_STATUSES,
@@ -466,6 +467,7 @@ export class ProjectService implements OnApplicationBootstrap {
       kind = null,
       builderSubjectAgentId = null,
       configureBeforeDelivery = null,
+      createdProjectsCap = null,
     } = context;
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
@@ -482,12 +484,13 @@ export class ProjectService implements OnApplicationBootstrap {
         createdByProjectId,
         kind,
         configureBeforeDelivery,
+        createdProjectsCap,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
-        if (err instanceof LimitReachedException) throw err;
+        if (err instanceof LimitReachedException || err instanceof CreatedProjectsCapReached) throw err;
         this.logger.warn(`Pool claim failed; falling back to slow path: ${(err as Error).message}`);
         return null;
       });
@@ -506,6 +509,7 @@ export class ProjectService implements OnApplicationBootstrap {
       kind,
       builderSubjectAgentId,
       configureBeforeDelivery,
+      createdProjectsCap,
     });
   }
 
@@ -530,6 +534,7 @@ export class ProjectService implements OnApplicationBootstrap {
       kind,
       builderSubjectAgentId,
       configureBeforeDelivery,
+      createdProjectsCap,
     } = context;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
@@ -538,6 +543,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, kind);
+      await assertRoomForCreatedProject(tx, createdProjectsCap);
       await tx.insert(projects).values({
         id,
         tenantId,
@@ -1403,6 +1409,20 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
     return this.findOne(id, tenantId);
+  }
+
+  async rotateGatewayKey(id: string, tenantId: string, environmentId: string): Promise<void> {
+    const project = await this.findOne(id, tenantId);
+    const env = await this.projectEnvironmentService.findById(environmentId);
+    if (env.projectId !== id) {
+      throw new NotFoundException(`Environment ${environmentId} not found`);
+    }
+
+    const { revoked } = await this.gatewayKeyService.rotate(id, env.id, tenantId);
+    await this.lifecycle?.gatewayKeysRevoked(id, revoked);
+    if (!project.disabled && env.status !== ProjectStatus.Suspended) {
+      await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
+    }
   }
 
   /** Update (Test Project): overlay Development's Template and commit it, leaving the pod and the chat running. */
@@ -2349,11 +2369,12 @@ export class ProjectService implements OnApplicationBootstrap {
       throw new Error(`Cannot start pool environment ${env.id} without a tenant`);
     }
 
-    const [bifrostOptions, gatewayApiKey, agentName, podResources] = await Promise.all([
+    const [bifrostOptions, gatewayApiKey, agentName, podResources, serviceWebhookUrl] = await Promise.all([
       this.bifrostService.getEnvironmentPodOptions(env.id),
       this.gatewayKeyService.getEnvironmentToken(env.id),
       this.agentService.resolvePackageName(env.agentId),
       this.podResourcesForProject(env.projectId),
+      podWebhookUrl(this.configService, env),
     ]);
 
     if (this.bifrostService.isEnabled() && !bifrostOptions) {
@@ -2367,8 +2388,8 @@ export class ProjectService implements OnApplicationBootstrap {
       agentName,
       gatewayApiKey: gatewayApiKey ?? undefined,
       gatewayUrl: this.configService.get<string>('gatewayUrl', ''),
+      serviceWebhookUrl,
       runtimeProxyUrl: this.configService.get<string>('runtimeProxyUrl', ''),
-      externalServicesUrl: this.configService.get<string>('externalServicesUrl', ''),
       opsiforceEnv: env.isDefault ? undefined : 'production',
       environmentSlug: env.environmentSlug,
       resources: podResources,

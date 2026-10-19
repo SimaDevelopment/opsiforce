@@ -17,7 +17,7 @@ interface SourcePackage {
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const readingCopyName = 'latest';
-const copiedFiles = ['README.md', 'CHANGELOG.md', 'service.schema.json'];
+const copiedFiles = ['README.md', 'CHANGELOG.md', 'WIRE-CONTRACT.md', 'service.schema.json'];
 const platformOnlyExports = new Set(['./forms', './platform']);
 const fixedMtimeSeconds = 499162500;
 const tarBlock = 512;

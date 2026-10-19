@@ -554,6 +554,27 @@
       "when": 1791100000000,
       "tag": "0078_retired-skills",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1791200000000,
+      "tag": "0079_built-ins-records",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0080_public-api-settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1791400000000,
+      "tag": "0081_sdk-1-removed",
+      "breakpoints": true
     }
   ]
 }

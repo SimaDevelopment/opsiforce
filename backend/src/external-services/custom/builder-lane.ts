@@ -7,14 +7,14 @@ import { externalServices, projectEnvironments, projects } from '../../../db/sch
 import { GatewayKeyService } from '../../gateway/gateway-key.service';
 import { ProjectService } from '../../project/project.service';
 import { TEST_PROJECT_KIND } from '../../project/project.types';
-import { masked } from '../configuration/configuration-values';
+import { masked, type ConfigurationValues } from '../configuration/configuration-values';
 import { ConfigurationSaves } from '../configuration/configuration-saves';
 import type { RevealedSecret } from '../configuration/generated-values';
 import { ProjectConfigurationStore, type ProjectConfiguration } from '../configuration/project-configuration.store';
 import type { ProjectFormCallTarget } from '../configuration/project-service-views';
 import { ServiceConfigurationStore } from '../configuration/service-configuration.store';
 import { serviceWebhookUrl } from '../configuration/webhook-url';
-import { GateCallers, type GateCaller } from '../gate/gate-caller';
+import { GateCallers } from '../gate/gate-caller';
 import { refuse, refuseUnconfiguredService, refuseUnknownCaller } from '../gate/gate-refusals';
 import { ExternalServiceStore, type StoredEvent } from '../inbound/external-service-store';
 import { UnservableCustomService } from '../registry/custom-service-catalog';
@@ -45,19 +45,26 @@ export interface TestProjectView {
 }
 
 export interface BuilderLaneView {
-  service: { id: string; slug: string; name: string; published: boolean; disabled: boolean };
+  service: {
+    id: string;
+    slug: string;
+    name: string;
+    published: boolean;
+    disabled: boolean;
+    serviceHost: string | null;
+  };
   development: {
     webhookUrl: string | null;
     servable: boolean;
     problem: string | null;
-    serviceConfiguration: { saved: boolean; missing: string[] };
+    serviceConfiguration: { saved: boolean; values: ConfigurationValues; missing: string[] };
   };
-  testProject: TestProjectView | null;
+  testProject: (TestProjectView & { gatewayKey: string | null }) | null;
 }
 
 export interface TestProjectConfigurationView {
   service: string;
-  projectConfiguration: ProjectConfiguration;
+  projectConfiguration: ProjectConfiguration | Pick<ProjectConfiguration, 'saved' | 'values' | 'missing'>;
 }
 
 export interface SavedTestProjectConfigurationView extends TestProjectConfigurationView {
@@ -128,6 +135,7 @@ export class BuilderLane {
         environment: 'development',
       }));
     const stored = development.service ? await this.serviceConfigurations.storedEnvironments(development.service) : [];
+    const testProject = await this.testProjectOf(chat);
     return {
       service: {
         id: chat.serviceId,
@@ -135,6 +143,7 @@ export class BuilderLane {
         name: chat.name,
         published: chat.published,
         disabled: chat.disabled,
+        serviceHost: this.serviceHostOf(chat.slug),
       },
       development: {
         webhookUrl: serviceWebhookUrl(this.config, {
@@ -145,9 +154,17 @@ export class BuilderLane {
         }),
         servable: development.service !== null,
         problem: development.problem,
-        serviceConfiguration: { saved: stored.includes('development'), missing: read ? read.missing : [] },
+        serviceConfiguration: {
+          saved: stored.includes('development'),
+          values:
+            read && development.service ? masked(development.service.manifest.serviceForm ?? [], read.values) : {},
+          missing: read ? read.missing : [],
+        },
       },
-      testProject: await this.testProjectOf(chat),
+      testProject: testProject && {
+        ...testProject,
+        gatewayKey: await this.keys.getEnvironmentToken(testProject.projectEnvironmentId),
+      },
     };
   }
 
@@ -200,17 +217,10 @@ export class BuilderLane {
 
   async saveConfiguration(chat: BuilderChat, values: unknown): Promise<SavedTestProjectConfigurationView> {
     const { testProject, development } = await this.testLane(chat);
-    const saved = await this.saves.project(development, testProject.projectEnvironmentId, null, () =>
+    const saved = await this.saves.project(development, testProject.projectEnvironmentId, () =>
       this.projectConfigurationStore.saveAndReport(development, testProject.projectEnvironmentId, values)
     );
     return { ...this.configurationView(development, saved.current), revealed: saved.revealed };
-  }
-
-  async testProjectCaller(chat: BuilderChat): Promise<GateCaller> {
-    const testProject = await this.requireTestProject(chat);
-    const caller = await this.callers.byProjectEnvironment(chat.tenantId, testProject.projectEnvironmentId);
-    if (!caller) this.refuseNoTestProject();
-    return caller;
   }
 
   async formCallTarget(chat: BuilderChat): Promise<ProjectFormCallTarget> {
@@ -218,7 +228,7 @@ export class BuilderLane {
     const caller = await this.callers.byProjectEnvironment(chat.tenantId, testProject.projectEnvironmentId);
     if (!caller) this.refuseNoTestProject();
     const serviceConfiguration = (await this.serviceConfigurations.readAllAsCallers([development])).get(development.id);
-    if (!serviceConfiguration) refuseUnconfiguredService(chat.slug);
+    if (!serviceConfiguration) refuseUnconfiguredService(development);
     return {
       service: development,
       serviceConfiguration,
@@ -248,21 +258,7 @@ export class BuilderLane {
     };
   }
 
-  private configurationView(
-    development: RegisteredService,
-    configuration: ProjectConfiguration
-  ): TestProjectConfigurationView {
-    return {
-      service: development.slug,
-      projectConfiguration: {
-        ...configuration,
-        values: masked(development.manifest.projectForm ?? [], configuration.values),
-      },
-    };
-  }
-
-  private async testLane(chat: BuilderChat): Promise<{ testProject: TestProjectView; development: RegisteredService }> {
-    const testProject = await this.requireTestProject(chat);
+  async servableDevelopment(chat: BuilderChat): Promise<RegisteredService> {
     const development = await this.developmentOrProblem(chat);
     if (!development.service) {
       refuse({
@@ -271,7 +267,28 @@ export class BuilderLane {
         detail: `Development's service.json cannot be served yet: ${development.problem}`,
       });
     }
-    return { testProject, development: development.service };
+    return development.service;
+  }
+
+  private configurationView(
+    development: RegisteredService,
+    configuration: ProjectConfiguration
+  ): TestProjectConfigurationView {
+    const values = masked(development.manifest.projectForm ?? [], configuration.values);
+    return {
+      service: development.slug,
+      projectConfiguration: { saved: configuration.saved, values, missing: configuration.missing },
+    };
+  }
+
+  private async testLane(chat: BuilderChat): Promise<{ testProject: TestProjectView; development: RegisteredService }> {
+    const testProject = await this.requireTestProject(chat);
+    return { testProject, development: await this.servableDevelopment(chat) };
+  }
+
+  private serviceHostOf(slug: string): string | null {
+    const externalServicesHost = this.config.get<string>('externalServicesHost', '');
+    return externalServicesHost === '' ? null : `https://${slug}.${externalServicesHost}`;
   }
 
   private async developmentOrProblem(

@@ -4,27 +4,23 @@ import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { and, eq, gte } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ServiceError } from '@opsiforce/external-service-sdk';
 import { db } from '../../db';
 import {
   agentProfileSkills,
   agentProfiles,
-  externalServiceCalls,
   externalServiceConfigs,
   externalServiceProjectConfigs,
   skills,
 } from '../../db/schema';
 import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
-import { CallLog } from '../../src/external-services/gate/call-log';
 import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectController } from '../../src/project/project.controller';
 import { ProjectService } from '../../src/project/project.service';
 import { AppReadinessService } from '../../src/project/app-readiness.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
-import { startFakeServicePod, type FakeServicePod } from './support/fake-service-pod';
 import type { FakePodService, FakeQueue } from '../support/infra-fakes';
 import { addMember } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
@@ -38,7 +34,9 @@ import {
   postCustomService,
 } from './support/custom-services';
 import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from './support/fixtures';
-import { callOperation, productionCaller, type GateCallerFixture } from './support/gate';
+import { callThroughGate, gatewayUrlOf, resolveCaller, resolveWebhook } from './support/gate-proxy';
+import { productionCaller, type GateCallerFixture } from './support/gate';
+import { startSdk2ServicePod, type Sdk2PodHandlers, type Sdk2ServicePod } from './support/sdk2-service-pod';
 import {
   BOARDS_MANIFEST,
   consumerIn,
@@ -84,7 +82,8 @@ describe('disabling and enabling a Custom External Service', () => {
   let admin: PersonFixture;
   let service: PublishedService;
   let consumer: GateCallerFixture;
-  let pod: FakeServicePod;
+  let pod: Sdk2ServicePod;
+  let gatewayUrl: string;
 
   beforeAll(async () => {
     await ensureExternalServiceBuilder();
@@ -97,7 +96,7 @@ describe('disabling and enabling a Custom External Service', () => {
       extraModules: [ProjectRoutes],
     });
     app = harness.app;
-    await harness.listen();
+    gatewayUrl = gatewayUrlOf(await harness.listen());
   });
 
   afterAll(async () => {
@@ -112,7 +111,7 @@ describe('disabling and enabling a Custom External Service', () => {
     expect(saved.statusCode, saved.body).toBe(200);
     consumer = await consumerIn(app, admin.tenant);
     await saveConsumerConfiguration(app, consumer, 'boards', { boardIds: ['b1'] });
-    pod = await startFakeServicePod({ manifest: BOARDS_MANIFEST, gatewayKey: service.key, port: podPort });
+    pod = await startSdk2ServicePod({ manifest: BOARDS_MANIFEST, gatewayKey: service.key, gatewayUrl, port: podPort });
   });
 
   afterEach(async () => {
@@ -123,8 +122,12 @@ describe('disabling and enabling a Custom External Service', () => {
     return app.get(PodService) as unknown as FakePodService;
   }
 
+  function resolveConsumer() {
+    return resolveCaller(app, { credential: `Bearer ${consumer.key}`, slug: 'boards' });
+  }
+
   function listCards() {
-    return callOperation(app, { key: consumer.key, slug: 'boards', operation: 'list_cards', input: { boardId: 'b1' } });
+    return callThroughGate(app, { credential: `Bearer ${consumer.key}`, slug: 'boards' }, '/boards/b1/cards');
   }
 
   function lifecycle(action: 'disable' | 'enable', person: PersonFixture = admin, id = service.id) {
@@ -161,7 +164,7 @@ describe('disabling and enabling a Custom External Service', () => {
     return res.json<{ services: { id: string }[] }>().services.map((entry) => entry.id);
   }
 
-  it('stops the pods, answers service-disabled and hides the service from Project forms, keeping its configuration', async () => {
+  it('stops the pods, answers turned off and hides the service from Project forms, keeping its configuration', async () => {
     const res = await lifecycle('disable');
 
     expect(res.statusCode, res.body).toBe(200);
@@ -173,18 +176,13 @@ describe('disabling and enabling a Custom External Service', () => {
         .map((call) => call.args.podName)
     ).toContain(pods().assignedPodName(service.projectEnvironmentId));
 
-    const call = await listCards();
-    expect(call.statusCode).toBe(503);
-    expect(call.json()).toMatchObject({ code: 'service-disabled' });
-    expect(pod.requests).toEqual([]);
+    const call = await resolveConsumer();
+    expect(call.statusCode).toBe(404);
+    expect(call.json()).toEqual({ message: 'Fixture Boards is turned off in this Organization.' });
+    expect(pod.received).toEqual([]);
 
-    const inbound = await app.inject({
-      method: 'POST',
-      url: `/api/external-services/webhooks/${service.id}`,
-      headers: { 'content-type': 'application/json' },
-      payload: '{}',
-    });
-    expect(inbound.statusCode).toBe(503);
+    const inbound = await resolveWebhook(app, { service: service.id });
+    expect(inbound.statusCode).toBe(404);
 
     expect(await projectServiceIds()).not.toContain(service.id);
 
@@ -233,7 +231,7 @@ describe('disabling and enabling a Custom External Service', () => {
     app.get(AppReadinessService).markServing(service.projectEnvironmentId);
 
     const call = await listCards();
-    expect(call.statusCode, call.body).toBe(200);
+    expect(call.status).toBe(200);
     expect(pod.received).toHaveLength(1);
     expect(await projectServiceIds()).toContain(service.id);
   });
@@ -249,9 +247,7 @@ describe('disabling and enabling a Custom External Service', () => {
 
     expect(disabling).toContain(consumer.projectEnvironmentId);
     expect((await builderProjectRow(service.builderChatId))?.disabled).toBe(true);
-    const call = await listCards();
-    expect(call.statusCode).toBe(503);
-    expect(call.json()).toMatchObject({ code: 'service-disabled' });
+    expect((await resolveConsumer()).statusCode).toBe(404);
     expect(await projectServiceIds()).not.toContain(service.id);
 
     const enabling = await skillDeliveriesQueuedDuring(async () => {
@@ -285,7 +281,8 @@ describe('deleting a Custom External Service', () => {
   let service: PublishedService;
   let roadmap: GateCallerFixture;
   let operations: GateCallerFixture;
-  let pod: FakeServicePod;
+  let pod: Sdk2ServicePod;
+  let gatewayUrl: string;
 
   beforeAll(async () => {
     await ensureExternalServiceBuilder();
@@ -298,7 +295,7 @@ describe('deleting a Custom External Service', () => {
       extraModules: [ProjectRoutes],
     });
     app = harness.app;
-    await harness.listen();
+    gatewayUrl = gatewayUrlOf(await harness.listen());
   });
 
   afterAll(async () => {
@@ -309,13 +306,13 @@ describe('deleting a Custom External Service', () => {
   beforeEach(async () => {
     admin = await tenantAdmin(app);
     service = await publishCustomService(app, admin, storageRoot, { slug: 'boards' });
-    pod = await startFakeServicePod({ manifest: BOARDS_MANIFEST, gatewayKey: service.key, port: podPort });
+    pod = await startSdk2ServicePod({ manifest: BOARDS_MANIFEST, gatewayKey: service.key, gatewayUrl, port: podPort });
     await saveCustomServiceConfiguration(app, admin, service.id, READY_BOARDS);
     roadmap = await consumerIn(app, admin.tenant);
     operations = await consumerIn(app, admin.tenant);
     await saveConsumerConfiguration(app, roadmap, 'boards', { boardIds: ['b1'] });
     await saveConsumerConfiguration(app, operations, 'boards', { boardIds: ['b2'] });
-    pod.receivedHooks.length = 0;
+    pod.hooks.length = 0;
   });
 
   afterEach(async () => {
@@ -323,9 +320,9 @@ describe('deleting a Custom External Service', () => {
   });
 
   function goodbyes() {
-    return pod.receivedHooks.map(({ hook, caller, previous, current }) => ({
+    return pod.hooks.map(({ hook, caller, previous, current }) => ({
       hook,
-      projectEnvironmentId: caller?.environmentId,
+      projectEnvironmentId: caller.projectEnvironmentId,
       previous,
       current,
     }));
@@ -349,7 +346,18 @@ describe('deleting a Custom External Service', () => {
   }
 
   function listCards(caller: GateCallerFixture, boardId: string) {
-    return callOperation(app, { key: caller.key, slug: 'boards', operation: 'list_cards', input: { boardId } });
+    return callThroughGate(app, { credential: `Bearer ${caller.key}`, slug: 'boards' }, `/boards/${boardId}/cards`);
+  }
+
+  async function restartPodWith(handlers: Sdk2PodHandlers): Promise<void> {
+    await pod.close();
+    pod = await startSdk2ServicePod({
+      manifest: BOARDS_MANIFEST,
+      gatewayKey: service.key,
+      gatewayUrl,
+      port: podPort,
+      handlers,
+    });
   }
 
   async function knownToAnAgent(serviceId: string): Promise<void> {
@@ -420,13 +428,12 @@ describe('deleting a Custom External Service', () => {
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:slug-mismatch', status: 400 });
     expect(await customServiceRow(service.id)).toBeDefined();
-    expect(pod.receivedHooks).toEqual([]);
+    expect(pod.hooks).toEqual([]);
   });
 
   it('runs every consumer hook, then removes the service and its configurations', async () => {
-    pod.script('list_cards', () => ({ cards: [] }));
     const call = await listCards(roadmap, 'b1');
-    expect(call.statusCode, call.body).toBe(200);
+    expect(call.status).toBe(200);
     await db.insert(externalServiceConfigs).values({
       id: crypto.randomUUID(),
       externalServiceId: service.id,
@@ -470,93 +477,48 @@ describe('deleting a Custom External Service', () => {
       serviceSkills: 0,
       profileEntries: 0,
     });
-    const kept = await db
-      .select()
-      .from(externalServiceCalls)
-      .where(eq(externalServiceCalls.projectEnvironmentId, roadmap.projectEnvironmentId));
-    expect(kept.map(({ kind, operation }) => [kind, operation])).toEqual(
-      expect.arrayContaining([
-        ['operation', 'list_cards'],
-        ['hook', 'onProjectConfigurationSaved'],
-      ])
-    );
-    expect(kept.filter((row) => row.externalServiceId !== null)).toEqual([]);
-    expect(kept).toEqual(kept.map(() => expect.objectContaining({ slug: 'boards', tenantId: admin.tenant.tenantId })));
   });
 
-  it('answers unknown-service afterwards and frees the slug', async () => {
+  it('answers no such service afterwards and frees the slug', async () => {
     expect((await deleteService('boards')).statusCode).toBe(204);
 
-    const call = await listCards(roadmap, 'b1');
+    const call = await resolveCaller(app, { credential: `Bearer ${roadmap.key}`, slug: 'boards' });
     expect(call.statusCode).toBe(404);
-    expect(call.json()).toMatchObject({ code: 'unknown-service' });
-    const inbound = await app.inject({
-      method: 'POST',
-      url: `/api/external-services/webhooks/${service.id}`,
-      headers: { 'content-type': 'application/json' },
-      payload: '{}',
-    });
-    expect(inbound.statusCode).toBe(404);
+    expect(call.json()).toEqual({ message: 'There is no External Service "boards" in this Organization.' });
+    expect((await resolveWebhook(app, { service: service.id })).statusCode).toBe(404);
     expect((await consumersOf()).statusCode).toBe(404);
 
     const again = await postCustomService(app, admin, { name: 'Boards again', slug: 'boards' });
     expect(again.statusCode, again.body).toBe(201);
   });
 
-  it('keeps a goodbye hook Call that lands after the service row is gone', async () => {
-    expect((await deleteService('boards')).statusCode).toBe(204);
-    const lateCallId = crypto.randomUUID();
-
-    await app.get(CallLog).record({
-      id: lateCallId,
-      kind: 'hook',
-      via: null,
-      externalServiceId: service.id,
-      slug: 'boards',
-      operation: 'onProjectConfigurationSaved',
-      decision: 'allowed',
-      status: 200,
-      durationMs: 10_000,
-      tenantId: admin.tenant.tenantId,
-      projectId: roadmap.projectId,
-      projectEnvironmentId: roadmap.projectEnvironmentId,
-    });
-
-    const [late] = await db.select().from(externalServiceCalls).where(eq(externalServiceCalls.id, lateCallId));
-    expect(late).toMatchObject({ externalServiceId: null, slug: 'boards', kind: 'hook', status: 200 });
-  });
-
   it('waits once for a pod that does not start, not once per consumer', async () => {
     await pod.close();
     await suspendServicePod(service.projectEnvironmentId);
-    const deletedFrom = new Date();
+    const started = Date.now();
 
     const res = await deleteService('boards');
 
     expect(res.statusCode, res.body).toBe(204);
-    const hookCalls = await db
-      .select()
-      .from(externalServiceCalls)
-      .where(
-        and(
-          eq(externalServiceCalls.tenantId, admin.tenant.tenantId),
-          eq(externalServiceCalls.kind, 'hook'),
-          gte(externalServiceCalls.createdAt, deletedFrom)
-        )
-      );
-    expect(hookCalls).toHaveLength(1);
-    expect(hookCalls[0]).toMatchObject({ code: 'service-starting' });
+    expect(Date.now() - started).toBeLessThan(START_HOLD_MS * 2);
+    expect(await customServiceRow(service.id)).toBeUndefined();
   });
 
   it('deletes even when a consumer hook fails', async () => {
-    pod.scriptHook('onProjectConfigurationSaved', () => {
-      throw new ServiceError({ status: 502, code: 'upstream-unavailable', detail: 'The board tool is down.' });
+    let goodbyesSeen = 0;
+    await restartPodWith({
+      hooks: {
+        onProjectConfigurationSaved: () => {
+          goodbyesSeen += 1;
+          throw new Error('The board tool is down.');
+        },
+      },
     });
 
     const res = await deleteService('boards');
 
     expect(res.statusCode, res.body).toBe(204);
-    expect(pod.receivedHooks).toHaveLength(2);
+    expect(goodbyesSeen).toBe(2);
     expect(await customServiceRow(service.id)).toBeUndefined();
   });
 
@@ -572,15 +534,16 @@ describe('deleting a Custom External Service', () => {
   async function developmentWithTestProject(builderChatId: string, serviceId: string) {
     const development = await runningDevelopment(app, storageRoot, builderChatId);
     await pod.close();
-    pod = await startFakeServicePod({
+    pod = await startSdk2ServicePod({
       manifest: DEVELOPMENT_MANIFEST,
       gatewayKey: development.key,
+      gatewayUrl,
       port: podPort,
     });
     expect((await saveDevelopmentConfiguration(app, admin, serviceId, DEVELOPMENT_BOARDS)).statusCode).toBe(200);
     const testProject = await createTestProject(app, development.key);
     expect((await saveTestProjectConfiguration(app, development.key, { boardIds: ['b2'] })).statusCode).toBe(200);
-    pod.receivedHooks.length = 0;
+    pod.hooks.length = 0;
     return testProject;
   }
 
@@ -600,7 +563,7 @@ describe('deleting a Custom External Service', () => {
   it('says goodbye when a consuming environment is deleted', async () => {
     const production = await productionCaller(app, operations);
     await saveConsumerConfiguration(app, production, 'boards', { boardIds: ['b1'] });
-    pod.receivedHooks.length = 0;
+    pod.hooks.length = 0;
 
     await app
       .get(ProjectService)
@@ -657,11 +620,7 @@ describe('deleting a Custom External Service', () => {
 
     expect((await deleteService('boards')).statusCode).toBe(204);
 
-    const hookCalls = await db
-      .select()
-      .from(externalServiceCalls)
-      .where(eq(externalServiceCalls.projectEnvironmentId, roadmap.projectEnvironmentId));
-    expect(hookCalls.filter((row) => row.kind === 'hook' && row.status === 503)).toEqual([]);
+    expect(goodbyes()).toEqual([]);
   });
 
   it("refuses the Project routes' Delete of its builder chat and of the chat's environments", async () => {
@@ -713,7 +672,8 @@ describe("deleting a service whose Test Project's Development is asleep", () => 
   let app: NestFastifyApplication;
   let storageRoot: string;
   let podPort: number;
-  let pod: FakeServicePod | undefined;
+  let pod: Sdk2ServicePod | undefined;
+  let gatewayUrl: string;
 
   beforeAll(async () => {
     await ensureExternalServiceBuilder();
@@ -726,7 +686,7 @@ describe("deleting a service whose Test Project's Development is asleep", () => 
       extraModules: [ProjectRoutes],
     });
     app = harness.app;
-    await harness.listen();
+    gatewayUrl = gatewayUrlOf(await harness.listen());
   });
 
   afterAll(async () => {
@@ -739,7 +699,12 @@ describe("deleting a service whose Test Project's Development is asleep", () => 
     const admin = await tenantAdmin(app);
     const draft = await createCustomService(app, admin, 'Draft boards', `draft-${crypto.randomUUID().slice(0, 6)}`);
     const development = await runningDevelopment(app, storageRoot, draft.builderChatId);
-    pod = await startFakeServicePod({ manifest: DEVELOPMENT_MANIFEST, gatewayKey: development.key, port: podPort });
+    pod = await startSdk2ServicePod({
+      manifest: DEVELOPMENT_MANIFEST,
+      gatewayKey: development.key,
+      gatewayUrl,
+      port: podPort,
+    });
     expect((await saveDevelopmentConfiguration(app, admin, draft.id, DEVELOPMENT_BOARDS)).statusCode).toBe(200);
     const testProject = await createTestProject(app, development.key);
     expect((await saveTestProjectConfiguration(app, development.key, { boardIds: ['b2'] })).statusCode).toBe(200);
@@ -755,14 +720,19 @@ describe("deleting a service whose Test Project's Development is asleep", () => 
     });
     await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
     await new Promise((resolve) => setTimeout(resolve, WAKE_TAKES_MS));
-    pod = await startFakeServicePod({ manifest: DEVELOPMENT_MANIFEST, gatewayKey: development.key, port: podPort });
+    pod = await startSdk2ServicePod({
+      manifest: DEVELOPMENT_MANIFEST,
+      gatewayKey: development.key,
+      gatewayUrl,
+      port: podPort,
+    });
     pods.markPodReady(podName, '127.0.0.1');
     await waitFor(async () => (await serviceEnvironmentRow(development.projectEnvironmentId))?.status !== 'suspended');
     app.get(AppReadinessService).markServing(development.projectEnvironmentId);
 
     expect((await deleted).statusCode).toBe(204);
     expect(
-      pod.receivedHooks.map(({ hook, caller, current }) => ({ hook, environmentId: caller?.environmentId, current }))
+      pod.hooks.map(({ hook, caller, current }) => ({ hook, environmentId: caller.projectEnvironmentId, current }))
     ).toEqual([
       { hook: 'onProjectConfigurationSaved', environmentId: testProject.projectEnvironmentId, current: null },
     ]);

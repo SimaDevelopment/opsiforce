@@ -1,11 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { ServiceError } from '@opsiforce/external-service-sdk';
-import { and, eq } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { externalServiceCalls, externalServiceUsage } from '../../db/schema';
+import { externalServiceUsage } from '../../db/schema';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { Perms } from '../../src/permission/permission.constants';
 import { addMember } from '../support/project-fixtures';
@@ -16,18 +13,17 @@ import {
   platformOperator,
   type PersonFixture,
 } from './support/fixtures';
-import { dispatchToFakePod, type ServicePodFixture } from './support/gate';
 import {
   channelsOf,
   configuringProject,
   discardProjectServiceHook,
   discardServiceConfigurationHook,
+  failHooks,
   forgetRecordedHooks,
   generatingBuiltInsDir,
   KEYS_SERVICE,
   platformServiceUrl,
   READY_KEYS,
-  RECEIVING,
   readProjectService,
   retryProjectServiceHook,
   retryServiceConfigurationHook,
@@ -39,23 +35,14 @@ import {
   type Revealed,
 } from './support/generating';
 
-const keysManifest = JSON.parse(
-  readFileSync(join(generatingBuiltInsDir, KEYS_SERVICE, 'service.json'), 'utf8')
-) as Record<string, unknown>;
-
-async function hookCallsOf(serviceId: string, hook: string) {
-  return db
-    .select()
-    .from(externalServiceCalls)
-    .where(and(eq(externalServiceCalls.externalServiceId, serviceId), eq(externalServiceCalls.operation, hook)));
-}
+const HOOK_THREW =
+  "Fixture Keys couldn't do this. Try again; if it keeps failing, an Organization admin can check this service's Calls.";
 
 describe('after-save hooks, Rotate, Retry and Discard', () => {
   let harness: ExternalServicesTestApp;
   let app: NestFastifyApplication;
   let operator: PersonFixture;
   let serviceId: string;
-  let servicePod: ServicePodFixture | undefined;
 
   beforeAll(async () => {
     harness = await createExternalServicesTestApp({ builtInsDir: generatingBuiltInsDir });
@@ -71,15 +58,9 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
   beforeEach(async () => {
     await forgetPlatformServiceConfiguration(KEYS_SERVICE);
     forgetRecordedHooks();
-    await db.delete(externalServiceCalls).where(eq(externalServiceCalls.externalServiceId, serviceId));
   });
 
-  afterEach(async () => {
-    await servicePod?.stop();
-    servicePod = undefined;
-  });
-
-  it('runs onServiceConfigurationSaved after the save with opened secrets and logs a hook Call', async () => {
+  it('runs onServiceConfigurationSaved after the save with opened secrets, counting no Usage', async () => {
     const first = await saveServiceConfiguration(app, operator, serviceId, READY_KEYS);
     expect(first.statusCode, first.body).toBe(200);
     expect(first.json().hookFailure).toBeNull();
@@ -103,9 +84,6 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
       current: ['Support'],
     });
 
-    const calls = await hookCallsOf(serviceId, 'onServiceConfigurationSaved');
-    expect(calls).toHaveLength(2);
-    expect(calls[0]).toMatchObject({ kind: 'hook', via: null, decision: 'allowed', status: 204, code: null });
     const usage = await db.select().from(externalServiceUsage).where(eq(externalServiceUsage.service, KEYS_SERVICE));
     expect(usage).toEqual([]);
   });
@@ -120,42 +98,31 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
     expect(res.json()).toMatchObject({
       available: true,
       serviceConfiguration: { values: { apiToken: { stored: true } } },
-      hookFailure: { code: 'upstream-refused', detail: 'The provider refused the webhook.' },
+      hookFailure: { code: 'service-failed', detail: HOOK_THREW },
     });
     const reread = await app.inject({ method: 'GET', url: platformServiceUrl(serviceId), headers: operator.headers });
-    expect(reread.json().hookFailure).toMatchObject({ code: 'upstream-refused' });
-    const [call] = await hookCallsOf(serviceId, 'onServiceConfigurationSaved');
-    expect(call).toMatchObject({ id: res.json().hookFailure.callId, status: 502, code: 'upstream-refused' });
+    expect(reread.json().hookFailure).toMatchObject({ code: 'service-failed' });
   });
 
   it('re-runs a failed hook on Retry with the configuration the service last acknowledged', async () => {
-    servicePod = await dispatchToFakePod(app, KEYS_SERVICE, { manifest: keysManifest });
-    servicePod.pod.scriptHook('onServiceConfigurationSaved', () => {
-      throw new ServiceError({ status: 502, code: 'upstream-unavailable', detail: 'Try later.' });
-    });
+    failHooks({ service: true });
 
     const failed = await saveServiceConfiguration(app, operator, serviceId, READY_KEYS);
-    expect(failed.json().hookFailure).toMatchObject({ code: 'upstream-unavailable' });
+    expect(failed.json().hookFailure).toMatchObject({ code: 'service-failed' });
     const support = channelsOf(failed.json())[0];
     const second = await saveServiceConfiguration(app, operator, serviceId, {
       apiToken: '',
       channels: [{ id: support?.id, label: 'Support desk', token: '' }],
     });
-    expect(second.json().hookFailure).toMatchObject({ code: 'upstream-unavailable' });
+    expect(second.json().hookFailure).toMatchObject({ code: 'service-failed' });
+    expect(recordedHook('hooks/service')).toBeUndefined();
 
-    servicePod.pod.scriptHook('onServiceConfigurationSaved', () => undefined);
+    failHooks({});
     const retried = await retryServiceConfigurationHook(app, operator, serviceId);
 
     expect(retried.statusCode, retried.body).toBe(200);
     expect(retried.json().hookFailure).toBeNull();
-    const hooks = servicePod.pod.receivedHooks;
-    expect(hooks).toHaveLength(3);
-    expect(hooks[1]?.previous).toBeNull();
-    expect(hooks[2]).toMatchObject({
-      hook: 'onServiceConfigurationSaved',
-      previous: null,
-      current: { apiToken: READY_KEYS.apiToken, channels: [{ label: 'Support desk', token: 'support-channel-token' }] },
-    });
+    expect(recordedHook('hooks/service')).toMatchObject({ previous: null, current: ['Support desk'] });
     const reread = await app.inject({ method: 'GET', url: platformServiceUrl(serviceId), headers: operator.headers });
     expect(reread.json().hookFailure).toBeNull();
   });
@@ -181,7 +148,6 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
       channelsOf(saved.json()).map((channel) => channel.id)
     );
     expect((recordedHook('hooks/service') as { webhookSecrets: string[] }).webhookSecrets[0]).toBe(revealed[0]?.value);
-    expect(await hookCallsOf(serviceId, 'onServiceConfigurationSaved')).toHaveLength(2);
   });
 
   it('refuses to rotate a field the form does not generate', async () => {
@@ -201,7 +167,7 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
       ...READY_KEYS,
       apiToken: 'refused-upstream',
     });
-    expect(failed.json().hookFailure).toMatchObject({ code: 'upstream-refused' });
+    expect(failed.json().hookFailure).toMatchObject({ code: 'service-failed' });
 
     const discarded = await discardServiceConfigurationHook(app, operator, serviceId);
 
@@ -212,7 +178,7 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
     });
     const reread = await app.inject({ method: 'GET', url: platformServiceUrl(serviceId), headers: operator.headers });
     expect(reread.json().hookFailure).toBeNull();
-    expect(await hookCallsOf(serviceId, 'onServiceConfigurationSaved')).toHaveLength(1);
+    expect(recordedHook('hooks/service')).toBeUndefined();
   });
 
   it('keeps Rotate, Retry and Discard of a Service configuration to platform operators', async () => {
@@ -229,83 +195,64 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
       await saveServiceConfiguration(app, operator, serviceId, READY_KEYS);
     });
 
-    it('runs onProjectConfigurationSaved with Receive and only the list items the configuration references', async () => {
+    it('runs onProjectConfigurationSaved with the saved values and the whole Service configuration', async () => {
       const project = await configuringProject(app);
       const read = await readProjectService(app, project, serviceId);
       const [support] = read.json().serviceConfigurationOptions[0].options as { value: string }[];
 
-      const saved = await saveProjectService(app, project, serviceId, { ...RECEIVING, channel: support?.value });
+      const saved = await saveProjectService(app, project, serviceId, { channel: support?.value });
 
       expect(saved.statusCode, saved.body).toBe(200);
       expect(saved.json().hookFailure).toBeNull();
       const localPart = saved.json().projectConfiguration.values.localPart as string;
-      expect(recordedHook(`hooks/project/${project.projectEnvironmentId}`)).toEqual({
+      expect(recordedHook(`hooks/project/${project.projectEnvironmentId}`)).toMatchObject({
         previous: null,
         current: localPart,
         previousChannel: null,
         currentChannel: support?.value,
-        receive: { 'message.received': true },
-        channels: ['Support'],
-      });
-      const call = (await hookCallsOf(serviceId, 'onProjectConfigurationSaved')).find(
-        (row) => row.projectEnvironmentId === project.projectEnvironmentId
-      );
-      expect(call).toMatchObject({
-        kind: 'hook',
-        status: 204,
-        tenantId: project.tenant.tenantId,
-        projectId: project.projectId,
-        userId: project.configurer.userId,
+        channels: ['Support', 'Sales'],
       });
     });
 
     it('shows a failed Project hook as "Saved, but" until Retry succeeds', async () => {
-      servicePod = await dispatchToFakePod(app, KEYS_SERVICE, { manifest: keysManifest });
-      servicePod.pod.scriptHook('onProjectConfigurationSaved', () => {
-        throw new ServiceError({ status: 409, code: 'address-in-use', detail: 'The provider already routes it.' });
-      });
+      failHooks({ project: true });
       const project = await configuringProject(app);
 
-      const saved = await saveProjectService(app, project, serviceId, RECEIVING);
+      const saved = await saveProjectService(app, project, serviceId, {});
       expect(saved.statusCode).toBe(200);
-      expect(saved.json().hookFailure).toMatchObject({ code: 'address-in-use' });
+      expect(saved.json().hookFailure).toMatchObject({ code: 'service-failed' });
       expect((await readProjectService(app, project, serviceId)).json().hookFailure).toMatchObject({
-        code: 'address-in-use',
+        code: 'service-failed',
       });
 
-      servicePod.pod.scriptHook('onProjectConfigurationSaved', () => undefined);
+      failHooks({});
       const retried = await retryProjectServiceHook(app, project, serviceId);
       expect(retried.statusCode, retried.body).toBe(200);
       expect(retried.json().hookFailure).toBeNull();
-      const [, retry] = servicePod.pod.receivedHooks;
-      expect(retry).toMatchObject({
-        hook: 'onProjectConfigurationSaved',
+      expect(recordedHook(`hooks/project/${project.projectEnvironmentId}`)).toMatchObject({
         previous: null,
-        current: { receive: { 'message.received': true } },
-        caller: { environmentId: project.projectEnvironmentId, via: 'form' },
+        current: saved.json().projectConfiguration.values.localPart,
       });
     });
 
     it('forgets a failed Project hook on Discard without calling the service again', async () => {
-      servicePod = await dispatchToFakePod(app, KEYS_SERVICE, { manifest: keysManifest });
-      servicePod.pod.scriptHook('onProjectConfigurationSaved', () => {
-        throw new ServiceError({ status: 409, code: 'address-in-use', detail: 'The provider already routes it.' });
-      });
+      failHooks({ project: true });
       const project = await configuringProject(app);
-      const saved = await saveProjectService(app, project, serviceId, RECEIVING);
-      expect(saved.json().hookFailure).toMatchObject({ code: 'address-in-use' });
+      const saved = await saveProjectService(app, project, serviceId, {});
+      expect(saved.json().hookFailure).toMatchObject({ code: 'service-failed' });
+      failHooks({});
 
       const discarded = await discardProjectServiceHook(app, project, serviceId);
 
       expect(discarded.statusCode, discarded.body).toBe(200);
       expect(discarded.json().hookFailure).toBeNull();
       expect((await readProjectService(app, project, serviceId)).json().hookFailure).toBeNull();
-      expect(servicePod.pod.receivedHooks).toHaveLength(1);
+      expect(recordedHook(`hooks/project/${project.projectEnvironmentId}`)).toBeUndefined();
     });
 
     it('keeps Rotate, Retry and Discard of a Project configuration to its configurers', async () => {
       const project = await configuringProject(app);
-      await saveProjectService(app, project, serviceId, RECEIVING);
+      await saveProjectService(app, project, serviceId, {});
       const member = { ...project, configurer: await addMember(app, project.tenant, [Perms.usePublicApi]) };
 
       expect((await rotateProjectService(app, member, serviceId, { field: 'localPart' })).statusCode).toBe(403);
@@ -315,7 +262,7 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
 
     it('rotates a generated Project form value and fires the hook with the old and new values', async () => {
       const project = await configuringProject(app);
-      const saved = await saveProjectService(app, project, serviceId, RECEIVING);
+      const saved = await saveProjectService(app, project, serviceId, {});
       const before = saved.json().projectConfiguration.values.localPart as string;
 
       const rotated = await rotateProjectService(app, project, serviceId, { field: 'localPart' });

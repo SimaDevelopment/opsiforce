@@ -234,3 +234,12 @@ function levelSchema(fields: readonly Field[], listItem: boolean): z.ZodType<For
 export function formValuesSchema(fields: readonly Field[]): z.ZodType<FormValues> {
   return levelSchema(fields, false);
 }
+
+export function missingRequiredFieldKeys(fields: readonly Field[], values: FormValues): string[] {
+  const visible = visibleFieldKeys(fields, values);
+  return placedFieldsOf(fields)
+    .map(({ field }) => field)
+    .filter((field) => 'required' in field && field.required === true && visible.has(field.key))
+    .filter((field) => isMissing(values[field.key]))
+    .map((field) => field.key);
+}

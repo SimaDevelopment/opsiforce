@@ -194,14 +194,12 @@ test('keys are unique across a form, sections included', () => {
   assertRefused(manifest, at(added, '.fields[0].key'), /key "callback" is used twice/);
 });
 
-test('a Project form cannot use the reserved keys', () => {
-  for (const key of ['operations', 'receive']) {
-    assertRefused(
-      withProjectFields({ key, type: 'toggle' }),
-      'projectForm[3].key',
-      /reserved in a Project configuration/
-    );
-  }
+test('a list item cannot use the id key the platform assigns', () => {
+  assertRefused(
+    withProjectFields({ key: 'repositories', type: 'list', item: [{ key: 'id', type: 'text' }] }),
+    'projectForm[3].item[0].key',
+    /reserved: the platform assigns each list item its id/
+  );
 });
 
 test('was cannot name a field that still exists', () => {

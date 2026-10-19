@@ -47,7 +47,9 @@ config:
   bifrostFallbackProvider: ""
   gatewayUrl: ""
   runtimeProxyUrl: ""
-  externalServicesUrl: ""
+  externalServicesHost: ""
+  externalServiceProxyControl: ""
+  podCaBundleConfigMap: ""
   # Days a Call log row is kept; empty = the backend default (30). Usage counters are kept forever.
   externalServiceCallLogRetentionDays: ""
   # TODO: remove in the release after External Services v2 ships: every mailgun* key and whapiApiUrl (dead /api/gateway email provider + one-time v1 importers)

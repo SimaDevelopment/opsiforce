@@ -1,6 +1,5 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "New External Service",
-  "description": "Describe what this service lets agents and Apps do.",
-  "operations": {}
+  "description": "Describe what this service lets agents and Apps do."
 }

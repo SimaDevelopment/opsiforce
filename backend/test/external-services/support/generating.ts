@@ -1,11 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { computeManifestHash } from '@opsiforce/external-service-sdk/server';
+import { resolve } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Perms } from '../../../src/permission/permission.constants';
 import { addMember, type MemberFixture } from '../../support/project-fixtures';
 import type { PersonFixture } from './fixtures';
+import { evolvedBuiltIn, type EvolvedBuiltIns } from './evolved-built-ins';
 import { gateCaller, type GateCallerFixture } from './gate';
 
 export const generatingBuiltInsDir = resolve(__dirname, 'generating-built-ins');
@@ -103,6 +101,11 @@ export function forgetRecordedHooks(): void {
   recordedHooks().clear();
 }
 
+export function failHooks(hooks: { service?: boolean; project?: boolean }): void {
+  recordedHooks().set('fail/service', hooks.service === true);
+  recordedHooks().set('fail/project', hooks.project === true);
+}
+
 export interface ConfiguringProject extends GateCallerFixture {
   configurer: MemberFixture;
 }
@@ -168,30 +171,6 @@ export function discardProjectServiceHook(app: NestFastifyApplication, project: 
   });
 }
 
-export const RECEIVING = { receive: { 'message.received': true } };
-
-export interface EvolvedKeys {
-  dir: string;
-  remove(): Promise<void>;
-}
-
-export async function fixtureKeysEvolved(edit: (manifest: Record<string, unknown>) => void): Promise<EvolvedKeys> {
-  const dir = await mkdtemp(join(tmpdir(), 'evolved-keys-'));
-  const folder = join(dir, KEYS_SERVICE);
-  await mkdir(folder);
-  const manifest = JSON.parse(
-    await readFile(join(generatingBuiltInsDir, KEYS_SERVICE, 'service.json'), 'utf8')
-  ) as Record<string, unknown>;
-  edit(manifest);
-  await writeFile(join(folder, 'service.json'), JSON.stringify(manifest, null, 2));
-  await writeFile(
-    join(folder, 'handlers.ts'),
-    `export default {
-  manifestHash: ${JSON.stringify(computeManifestHash(manifest))},
-  operations: { send_message: (input) => input },
-  inbound: () => ({ events: [] }),
-};
-`
-  );
-  return { dir, remove: () => rm(dir, { recursive: true, force: true }) };
+export function fixtureKeysEvolved(edit: (manifest: Record<string, unknown>) => void): Promise<EvolvedBuiltIns> {
+  return evolvedBuiltIn(generatingBuiltInsDir, KEYS_SERVICE, edit);
 }

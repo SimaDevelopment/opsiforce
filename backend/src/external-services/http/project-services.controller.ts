@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   NotFoundException,
@@ -13,12 +14,13 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { Perms } from '../../permission/permission.constants';
-import { RequirePermission } from '../../permission/permission.guard';
+import { RequireAnyPermission, RequirePermission } from '../../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../../user/user.decorator';
-import { CallLogReader, parseCallPageQuery, type CallPage } from '../calls/call-log-reader';
+import { parseCallLogQuery, ServiceCallLog, type CallLogPage } from '../calls/service-call-log';
 import { InvalidConfigurationFilter } from '../configuration/invalid-configuration.error';
 import { FormCalls, formCallRouteOf } from '../gate/form-calls';
+import { EventDeliveryStatus, type EventDeliveryStatusView } from '../inbound/event-delivery-status';
 import { sendGateAnswer } from '../gate/service-answers';
 import {
   ProjectServiceViews,
@@ -34,7 +36,8 @@ export class ProjectServicesController {
   constructor(
     private readonly views: ProjectServiceViews,
     private readonly formCalls: FormCalls,
-    private readonly calls: CallLogReader
+    private readonly callLog: ServiceCallLog,
+    private readonly eventDeliveries: EventDeliveryStatus
   ) {}
 
   @Get()
@@ -58,22 +61,30 @@ export class ProjectServicesController {
     return this.views.view(this.viewer(tenant, user, projectId, projectEnvironmentId), serviceId);
   }
 
-  @Get(':serviceId/calls')
-  async listCalls(
+  @Get(':serviceId/call-log')
+  async readCallLog(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,
     @Param('serviceId') serviceId: string,
     @Query() query: Record<string, unknown>,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
-  ): Promise<CallPage> {
-    const page = parseCallPageQuery(query);
+  ): Promise<CallLogPage> {
+    const { projectId: _project, ...page } = parseCallLogQuery(query);
     await this.views.assertCanOpen(this.viewer(tenant, user, projectId, projectEnvironmentId));
-    const service = await this.calls.serviceOwnership(serviceId);
-    if (service.tenantId !== null && service.tenantId !== tenant.tenantId) {
-      throw new NotFoundException(`No External Service ${serviceId}`);
-    }
-    return this.calls.page({ projectEnvironmentId, serviceId }, page);
+    return this.callLog.page({ tenantId: tenant.tenantId, serviceId, projectEnvironmentId }, page);
+  }
+
+  @Get(':serviceId/event-delivery')
+  async readEventDelivery(
+    @Param('projectId') projectId: string,
+    @Param('projectEnvironmentId') projectEnvironmentId: string,
+    @Param('serviceId') serviceId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<EventDeliveryStatusView> {
+    await this.views.assertCanOpen(this.viewer(tenant, user, projectId, projectEnvironmentId));
+    return this.eventDeliveries.of(tenant.tenantId, projectEnvironmentId, serviceId);
   }
 
   @Put(':serviceId/configuration')
@@ -88,6 +99,18 @@ export class ProjectServicesController {
   ): Promise<SavedProjectServiceView> {
     const viewer = this.viewer(tenant, user, projectId, projectEnvironmentId);
     return this.views.save(viewer, serviceId, body?.values);
+  }
+
+  @Delete(':serviceId/configuration')
+  @RequireAnyPermission([Perms.configureProjectExternalServices, Perms.manageTenantExternalServices])
+  disconnect(
+    @Param('projectId') projectId: string,
+    @Param('projectEnvironmentId') projectEnvironmentId: string,
+    @Param('serviceId') serviceId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<ProjectServiceView> {
+    return this.views.disconnect(this.viewer(tenant, user, projectId, projectEnvironmentId), serviceId);
   }
 
   @Post(':serviceId/configuration/rotate')

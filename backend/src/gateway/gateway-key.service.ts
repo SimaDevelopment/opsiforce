@@ -66,6 +66,46 @@ export class GatewayKeyService {
     return key?.token ?? null;
   }
 
+  async activeProjectTokens(projectId: string): Promise<string[]> {
+    const keys = await db
+      .select({ token: projectGatewayKeys.token })
+      .from(projectGatewayKeys)
+      .where(and(eq(projectGatewayKeys.projectId, projectId), eq(projectGatewayKeys.status, 'active')));
+    return keys.map((key) => key.token);
+  }
+
+  async rotate(
+    projectId: string,
+    projectEnvironmentId: string,
+    tenantId: string
+  ): Promise<{ revoked: string[]; token: string }> {
+    const token = `gw-${crypto.randomUUID()}`;
+    const revoked = await db.transaction(async (tx) => {
+      const previous = await tx
+        .update(projectGatewayKeys)
+        .set({ status: 'revoked', updatedAt: new Date() })
+        .where(
+          and(
+            eq(projectGatewayKeys.projectEnvironmentId, projectEnvironmentId),
+            eq(projectGatewayKeys.status, 'active')
+          )
+        )
+        .returning({ token: projectGatewayKeys.token });
+      await tx.insert(projectGatewayKeys).values({
+        id: crypto.randomUUID(),
+        projectId,
+        projectEnvironmentId,
+        tenantId,
+        token,
+        status: 'active',
+      });
+      return previous.map((key) => key.token);
+    });
+
+    this.logger.log(`Rotated the gateway key of environment ${projectEnvironmentId}`);
+    return { revoked, token };
+  }
+
   async revokeKeys(projectId: string): Promise<void> {
     await db
       .update(projectGatewayKeys)

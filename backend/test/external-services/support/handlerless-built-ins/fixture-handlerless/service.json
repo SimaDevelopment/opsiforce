@@ -1,12 +1,5 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "Fixture handlerless",
-  "description": "A built-in whose folder has no handlers.ts.",
-  "operations": {
-    "read_thing": {
-      "kind": "read",
-      "description": "Read a thing.",
-      "input": { "type": "object", "properties": { "thingId": { "type": "string" } } }
-    }
-  }
+  "description": "A built-in whose folder has no service.ts."
 }

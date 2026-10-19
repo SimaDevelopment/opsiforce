@@ -1,6 +1,6 @@
 # Built-in vendor settings live in Service configuration, and every sealed secret is bound to its place
 
-A Built-in External Service needs vendor settings (a receiving domain, a signing key, an API URL) just as a Custom External Service does, and a Custom one keeps them in its Service configuration edited in the UI. The Gate decrypts a Service configuration and hands the plaintext to code an Organization wrote ([ADR-0078](0078-an-external-service-receives-its-secrets-with-each-call-from-the-gate.md)), so a ciphertext that opens anywhere would reach that code.
+A Built-in External Service needs vendor settings (a receiving domain, a signing key, an API URL) just as a Custom External Service does, and a Custom one keeps them in its Service configuration edited in the UI. The Gate decrypts a Service configuration and hands the plaintext to code an Organization wrote ([ADR-0078](0078-an-external-service-fetches-its-configurations-from-the-backend-by-the-caller-identity-and-holds-them-only-in-memory.md)), so a ciphertext that opens anywhere would reach that code.
 
 **Everything about the outside system lives in the built-in's Service configuration. Only facts about the deployment stay environment variables. Every sealed value carries the place it belongs to as AES-GCM associated data.** Concretely:
 

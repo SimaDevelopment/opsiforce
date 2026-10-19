@@ -3,6 +3,8 @@ import { asc, eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { environments, externalServiceProjectConfigs, projectEnvironments, projects } from '../../../db/schema';
 import { errorMessage } from '../../common/error-message';
+import { SkillDeliveryService } from '../../delivery/skill-delivery.service';
+import type { HookFailure } from '../gate/hook-calls';
 import { servableOrNone } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
 import { ProjectConfigurationSaveHooks } from './project-configuration-save-hooks';
@@ -15,6 +17,10 @@ export interface ServiceConsumer {
   environmentName: string | null;
 }
 
+function describedFailure(failure: HookFailure): string {
+  return `${failure.code}${failure.detail ? `: ${failure.detail}` : ''}`;
+}
+
 @Injectable()
 export class ServiceConsumers {
   private readonly logger = new Logger(ServiceConsumers.name);
@@ -22,7 +28,8 @@ export class ServiceConsumers {
   constructor(
     private readonly registry: ServiceRegistry,
     private readonly store: ProjectConfigurationStore,
-    private readonly saveHooks: ProjectConfigurationSaveHooks
+    private readonly saveHooks: ProjectConfigurationSaveHooks,
+    private readonly skillDeliveries: SkillDeliveryService
   ) {}
 
   of(serviceId: string): Promise<ServiceConsumer[]> {
@@ -66,17 +73,26 @@ export class ServiceConsumers {
     }
   }
 
+  async disconnect(serviceId: string, projectEnvironmentId: string): Promise<void> {
+    const service = await this.servingLaneOf(projectEnvironmentId, serviceId);
+    const previous = service ? await this.store.read(service, projectEnvironmentId) : null;
+    await this.store.forget({ id: serviceId }, projectEnvironmentId);
+    await this.skillDeliveries.enqueueEnvironments([projectEnvironmentId]);
+    if (!service || !previous?.saved) return;
+    try {
+      const failure = await this.saveHooks.disconnected(service, projectEnvironmentId, previous);
+      if (failure) this.warnDisconnectHookFailed(service, projectEnvironmentId, describedFailure(failure));
+    } catch (err) {
+      this.warnDisconnectHookFailed(service, projectEnvironmentId, errorMessage(err));
+    }
+  }
+
   private async sayGoodbyeTo(service: RegisteredService, projectEnvironmentId: string): Promise<string | null> {
     try {
       const previous = await this.store.read(service, projectEnvironmentId);
       if (previous.missing.length > 0) return null;
       const failure = await this.saveHooks.saved(service, projectEnvironmentId, { previous, current: null });
-      if (failure)
-        this.warnGoodbyeFailed(
-          service,
-          projectEnvironmentId,
-          `${failure.code}${failure.detail ? `: ${failure.detail}` : ''}`
-        );
+      if (failure) this.warnGoodbyeFailed(service, projectEnvironmentId, describedFailure(failure));
       return failure?.code ?? null;
     } catch (err) {
       this.warnGoodbyeFailed(service, projectEnvironmentId, errorMessage(err));
@@ -89,6 +105,12 @@ export class ServiceConsumers {
   private warnGoodbyeFailed(service: RegisteredService, projectEnvironmentId: string, reason: string): void {
     this.logger.warn(
       `The ${service.slug} save hook for ${projectEnvironmentId} failed before its configuration was deleted: ${reason}`
+    );
+  }
+
+  private warnDisconnectHookFailed(service: RegisteredService, projectEnvironmentId: string, reason: string): void {
+    this.logger.warn(
+      `The ${service.slug} save hook for ${projectEnvironmentId} failed after a Disconnect; the service drops its cached configuration within 5 s anyway: ${reason}`
     );
   }
 

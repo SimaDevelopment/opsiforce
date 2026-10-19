@@ -104,8 +104,8 @@ all.
 
 A Custom Agent starts with `platform` and nothing else; **every other capability is an explicit add**,
 and Built-in Skills are Store rows like any other, so adding `sqlite` is the same act as adding an
-authored Skill. Read the catalogue first (`list_skills {"filter":"built_in"}`, and `get_skill` plus
-`get_skill_files` for a Skill's files). A stack skill goes only on an Agent with that stack.
+authored Skill. Read the catalogue first (`GET /skills?filter=built_in`, and `GET /skills/<id>` plus
+`GET /skills/<id>/versions/<version>/files` for a Skill's files). A stack skill goes only on an Agent with that stack.
 
 On a starter snapshot, pin `web-app` and **every** Skill in its *Skills for this stack* table, minus
 any whose layer the Template replaced, plus the Skill for what replaced it — the set App

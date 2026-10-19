@@ -20,7 +20,14 @@ import {
 import { GitService, type CommittedFile } from '../../git/git.service';
 import { importsRootPath } from '../../project/project-import.types';
 import { scanKeyLike } from '../../store/gate';
-import { acceptsSdk, PACKAGE_FILE, SERVICE_APP_FOLDER, vendoredSdkVersion } from '../registry/published-service-files';
+import {
+  acceptsSdk,
+  BUILT_ON_SDK_1,
+  isBuiltOnSdk1,
+  PACKAGE_FILE,
+  SERVICE_APP_FOLDER,
+  vendoredSdkVersion,
+} from '../registry/published-service-files';
 import { CustomServiceRefusal } from './custom-service-refusal';
 import { CustomServiceRepository, type CustomServiceRow } from './custom-service.repository';
 import { CustomServices, type CustomServiceCreator } from './custom-services.service';
@@ -174,15 +181,16 @@ function givenOr(value: unknown, fallback: string, field: 'name' | 'slug'): stri
 }
 
 async function warningsFor(appDir: string, files: CommittedFile[]): Promise<string[]> {
+  const { json, check } = await readServiceFolder(appDir);
+  const vendored = vendoredSdkVersion(packageJsonOf(files));
+  if (isBuiltOnSdk1(json, vendored)) return [`${BUILT_ON_SDK_1}; Publish refuses it until then`];
   const warnings: string[] = [];
-  const { check } = await readServiceFolder(appDir, { origin: 'custom' });
   if (!check.ok) {
     const first = check.problems.find((problem) => problem.severity === 'error');
     warnings.push(
       `${first ? `${first.path}: ${first.message}` : `${manifestFileName} does not pass check`}; the builder must fix it before you can publish`
     );
   }
-  const vendored = vendoredSdkVersion(packageJsonOf(files));
   if (!acceptsSdk(vendored)) {
     warnings.push(
       `It is built on SDK ${vendored}, and this deployment runs SDK ${sdkVersion}.x; the builder must upgrade it before you can publish`

@@ -2,7 +2,17 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import type { ServiceState, StateEntry } from './handlers.ts';
+export interface StateEntry {
+  key: string;
+  value: unknown;
+}
+
+export interface ServiceState {
+  get<Value = unknown>(key: string): Promise<Value | undefined>;
+  set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<void>;
+  list(prefix?: string): Promise<StateEntry[]>;
+}
 
 export const stateFileInWorkspace = 'data/service-state.db';
 
@@ -85,4 +95,42 @@ export function unavailableServiceState(message: string): ServiceState {
     throw new Error(message);
   };
   return { get: fail, set: fail, delete: fail, list: fail };
+}
+
+export interface AtomicServiceState extends ServiceState {
+  update<Value>(
+    key: string,
+    change: (current: Value | undefined) => Value | undefined | Promise<Value | undefined>
+  ): Promise<Value | undefined>;
+}
+
+export function withAtomicUpdate(state: ServiceState): AtomicServiceState {
+  const pending = new Map<string, Promise<unknown>>();
+  return {
+    get: (key) => state.get(key),
+    set: (key, value) => state.set(key, value),
+    delete: (key) => state.delete(key),
+    list: (prefix) => state.list(prefix),
+    update<Value>(
+      key: string,
+      change: (current: Value | undefined) => Value | undefined | Promise<Value | undefined>
+    ): Promise<Value | undefined> {
+      checkKey(key);
+      const previous = pending.get(key) ?? Promise.resolve();
+      const run = previous
+        .catch(() => undefined)
+        .then(async () => {
+          const value = await change(await state.get<Value>(key));
+          if (value === undefined) await state.delete(key);
+          else await state.set(key, value);
+          return value;
+        });
+      pending.set(key, run);
+      const forget = () => {
+        if (pending.get(key) === run) pending.delete(key);
+      };
+      run.then(forget, forget);
+      return run;
+    },
+  };
 }

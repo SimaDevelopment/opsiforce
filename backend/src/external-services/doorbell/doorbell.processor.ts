@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger, NotFoundException } from '@nestjs/common';
@@ -10,7 +9,6 @@ import { projectEnvironments, projects } from '../../../db/schema';
 import { AppReadinessService } from '../../project/app-readiness.service';
 import { ProjectService } from '../../project/project.service';
 import { ProxyService } from '../../proxy/proxy.service';
-import { CallLog, type CallRecord } from '../gate/call-log';
 import { ExternalServiceStore } from '../inbound/external-service-store';
 import { servableOrNone } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
@@ -43,8 +41,6 @@ interface ReceivingEnvironment {
   tenantId: string | null;
 }
 
-const encoder = new TextEncoder();
-
 function duration(ms: number): string {
   if (ms >= 3_600_000) return `${ms / 3_600_000} h`;
   if (ms >= 60_000) return `${ms / 60_000} min`;
@@ -73,7 +69,6 @@ export class DoorbellProcessor extends WorkerHost {
     private readonly services: ServiceRegistry,
     private readonly doorbell: Doorbell,
     private readonly store: ExternalServiceStore,
-    private readonly callLog: CallLog,
     private readonly projectService: ProjectService,
     private readonly appReadiness: AppReadinessService,
     private readonly proxy: ProxyService,
@@ -96,14 +91,17 @@ export class DoorbellProcessor extends WorkerHost {
     const rowIds = await this.store.undeliveredLegacyRowIds(envDirectory, service.slug, MAX_EVENT_IDS_PER_RING);
     if (eventIds.length === 0 && (rowIds ?? []).length === 0) return;
 
-    const started = performance.now();
     const body = JSON.stringify(
       rowIds === null ? { service: service.slug, eventIds } : { service: service.slug, rowIds, eventIds }
     );
     const ring = await this.ring(projectEnvironmentId, service, body, eventIds.length, rowIds?.length ?? 0);
     if (ring.outcome === 'retry') ring.detail += this.retryNote(retry);
 
-    await this.callLog.record(this.callOf(service, projectEnvironmentId, environment, ring, body, started));
+    if (ring.outcome !== 'delivered') {
+      this.logger.log(
+        `Doorbell for "${service.slug}" in environment ${projectEnvironmentId}: ${ring.outcome} (${ring.code ?? ring.status}) ${ring.detail}`
+      );
+    }
 
     if (ring.outcome === 'delivered') {
       await this.store.markEventsDelivered(envDirectory, eventIds);
@@ -252,34 +250,6 @@ export class DoorbellProcessor extends WorkerHost {
       };
     }
     return null;
-  }
-
-  private callOf(
-    service: RegisteredService,
-    projectEnvironmentId: string,
-    environment: ReceivingEnvironment,
-    ring: Ring,
-    body: string,
-    started: number
-  ): CallRecord {
-    return {
-      id: randomUUID(),
-      kind: 'delivery',
-      slug: service.slug,
-      externalServiceId: service.id,
-      manifestHash: service.manifestHash,
-      tenantId: environment.tenantId,
-      projectId: environment.projectId,
-      projectTitle: environment.projectTitle,
-      projectEnvironmentId,
-      decision: ring.outcome === 'not-wired' ? 'refused' : 'allowed',
-      status: ring.status,
-      code: ring.code,
-      detail: ring.detail,
-      inputBytes: encoder.encode(body).byteLength,
-      outputBytes: ring.outputBytes ?? null,
-      durationMs: Math.round(performance.now() - started),
-    };
   }
 
   private async receivingEnvironment(projectEnvironmentId: string): Promise<ReceivingEnvironment | null> {

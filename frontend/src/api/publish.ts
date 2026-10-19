@@ -45,13 +45,7 @@ export interface PublishDto {
 }
 
 export type PublishReportLine =
-  | {
-      kind: 'project-configuration';
-      service: string;
-      displayName: string;
-      outcome: 'carried';
-      receiveTurnedOff: string[];
-    }
+  | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'carried' }
   | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'failed'; code: string }
   | { kind: 'skills-off'; switchedOff: string[]; switchedOn: string[] };
 

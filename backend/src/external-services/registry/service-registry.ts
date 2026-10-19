@@ -1,6 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
-import type { ServiceManifest } from '@opsiforce/external-service-sdk';
-import type { ServiceRuntime } from '@opsiforce/external-service-sdk/server';
+import type { DefinedService, ServiceManifest } from '@opsiforce/external-service-sdk';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../../db';
 import { externalServices, type ExternalServiceOriginValue } from '../../../db/schema';
@@ -16,7 +15,7 @@ export interface RegisteredService {
   manifestHash: string;
   icon: string | null;
   serviceSkill: string | null;
-  runtime: ServiceRuntime | null;
+  defined: DefinedService | null;
   home: ServiceHome | null;
 }
 
@@ -139,7 +138,7 @@ export class ServiceRegistry implements OnModuleInit {
       manifestHash: folder.manifestHash,
       icon: folder.icon,
       serviceSkill: folder.serviceSkill,
-      runtime: folder.runtime,
+      defined: folder.defined,
       home: null,
     };
   }

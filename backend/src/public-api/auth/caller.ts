@@ -5,12 +5,13 @@ import type { IdentityKind } from '../../identity/forwarded-identity.service';
 import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
 
-export type CallerSource = 'idp-bearer' | 'call-token';
+export type CallerSource = 'idp-bearer' | 'caller-identity';
 export type CallerUserKind = IdentityKind;
 
 export interface Caller {
   source: CallerSource;
   projectId?: string;
+  projectEnvironmentId?: string;
   user: {
     id: string;
     platformId: string;

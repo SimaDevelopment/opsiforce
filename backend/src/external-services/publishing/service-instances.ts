@@ -32,8 +32,6 @@ export function serviceAppFolder(storageMountPath: string, directory: string): s
 }
 
 export async function manifestIn(storageMountPath: string, directory: string): Promise<ServiceManifest | null> {
-  const { check } = await readConfinedServiceFolder(serviceAppFolder(storageMountPath, directory), {
-    origin: 'custom',
-  });
+  const { check } = await readConfinedServiceFolder(serviceAppFolder(storageMountPath, directory));
   return check.manifest ?? null;
 }

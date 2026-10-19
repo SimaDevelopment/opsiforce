@@ -36,6 +36,12 @@ dbProxy:
   backendService: "proxy-db"
   appsHostname: db.opsiforce.localtest.me
 
+externalServiceProxy:
+  backendService: "proxy-external-service"
+  backendPort: "3006"
+  webhookPort: "3008"
+  hostname: external-services.opsiforce.localtest.me
+
 bifrostDashboard:
   enabled: true
   serviceName: opsiforce-bifrost

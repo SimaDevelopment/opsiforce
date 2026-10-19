@@ -1,7 +1,6 @@
 import { Catch, HttpStatus, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
-import { problem } from '@opsiforce/external-service-sdk';
 import type { FastifyReply } from 'fastify';
-import { sendProblem } from '../http/problem-reply';
+import { problem, sendProblem } from '../http/problem-reply';
 
 export interface ConfigurationIssue {
   pointer: string;
@@ -22,7 +21,7 @@ export class InvalidConfigurationFilter implements ExceptionFilter<InvalidConfig
       problem({
         status: HttpStatus.BAD_REQUEST,
         code: 'invalid-configuration',
-        detail: 'The values do not fit the Service form',
+        detail: 'The values do not fit the form',
         message: error.message,
         errors: error.issues,
       })

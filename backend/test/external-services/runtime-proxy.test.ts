@@ -10,7 +10,7 @@ import { startFakePod, type FakePod } from '../support/fake-pod';
 import type { FakePodService } from '../support/infra-fakes';
 import {
   addMember,
-  callTokenFor,
+  callerIdentityFor,
   createProject,
   createTenant,
   serviceKeyFor,
@@ -73,13 +73,17 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     return projectId;
   }
 
-  async function caller(connectProject: boolean): Promise<{ projectId: string; key: string }> {
+  function drive(projectId: string, driveCreatedProjects: boolean) {
+    return saveProjectConfiguration(app, PUBLIC_API, projectId, { driveCreatedProjects });
+  }
+
+  async function caller(driveCreatedProjects: boolean): Promise<{ projectId: string; key: string }> {
     const projectId = await runningProject();
-    await saveProjectConfiguration(app, PUBLIC_API, projectId, { operations: { connect_project: connectProject } });
+    await drive(projectId, driveCreatedProjects);
     return { projectId, key: await serviceKeyFor(app, tenant, projectId) };
   }
 
-  it('lets the service key reach a Project its Project created while connect_project is on', async () => {
+  it('lets the service key reach a Project its Project created while Manage created Projects is on', async () => {
     const { projectId, key } = await caller(true);
     const childId = await runningProject({ createdByProjectId: projectId });
 
@@ -89,7 +93,7 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     expect(res.json()).toMatchObject({ state: 'ready' });
   });
 
-  it('refuses while connect_project is off, as a new Project configuration has it', async () => {
+  it('refuses a Project with no public-api configuration', async () => {
     const projectId = await runningProject();
     const key = await serviceKeyFor(app, tenant, projectId);
     const childId = await runningProject({ createdByProjectId: projectId });
@@ -97,18 +101,28 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     const res = await ensure(childId, key);
 
     expect(res.statusCode).toBe(403);
-    expect(res.body).toContain('connect_project');
+    expect(res.body).toContain('Manage created Projects');
   });
 
-  it('checks the switch live on every request', async () => {
+  it('refuses while Manage created Projects is off, as a new Project configuration has it', async () => {
+    const { projectId, key } = await caller(false);
+    const childId = await runningProject({ createdByProjectId: projectId });
+
+    const res = await ensure(childId, key);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toContain("Someone who can configure this Project's External Services can change it.");
+  });
+
+  it('checks the setting live on every request', async () => {
     const { projectId, key } = await caller(true);
     const childId = await runningProject({ createdByProjectId: projectId });
     expect((await ensure(childId, key)).statusCode).toBe(201);
 
-    await saveProjectConfiguration(app, PUBLIC_API, projectId, { operations: { connect_project: false } });
+    await drive(projectId, false);
     expect((await ensure(childId, key)).statusCode).toBe(403);
 
-    await saveProjectConfiguration(app, PUBLIC_API, projectId, { operations: { connect_project: true } });
+    await drive(projectId, true);
     expect((await ensure(childId, key)).statusCode).toBe(201);
   });
 
@@ -128,11 +142,11 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     expect((await ensure(testProjectId, key)).statusCode).toBe(201);
   });
 
-  it('refuses a key it does not know and a call token', async () => {
+  it('refuses a key it does not know and a Caller identity', async () => {
     const { projectId } = await caller(true);
     const childId = await runningProject({ createdByProjectId: projectId });
 
     expect((await ensure(childId, 'gw-unknown')).statusCode).toBe(401);
-    expect((await ensure(childId, callTokenFor(app, tenant, projectId))).statusCode).toBe(401);
+    expect((await ensure(childId, callerIdentityFor(app, tenant, projectId))).statusCode).toBe(401);
   });
 });

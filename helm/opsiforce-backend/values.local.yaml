@@ -46,7 +46,9 @@ config:
   bifrostAdminPassword: "opsiforce-local-admin"
   gatewayUrl: "http://opsiforce-backend:3001/api/gateway"
   runtimeProxyUrl: "http://proxy-agent:3005"
-  externalServicesUrl: "http://opsiforce-backend:3001/api/external-services/agent"
+  externalServicesHost: "external-services.opsiforce.localtest.me"
+  externalServiceProxyControl: "proxy-external-service-control.local.svc.cluster.local:3007"
+  podCaBundleConfigMap: "opsiforce-local-ca"
   # TODO: remove in the release after External Services v2 ships: every mailgun* key and whapiApiUrl (dead /api/gateway email provider + one-time v1 importers)
   mailgunApiKey: "key-example"
   mailgunDomain: "sima"

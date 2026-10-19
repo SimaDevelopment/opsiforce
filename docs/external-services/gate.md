@@ -1,76 +1,60 @@
 ---
 kind: explanation
-terms: [Gate]
-adrs: [0078]
+terms: [Gate, Caller identity]
+adrs: [0046, 0078, 0083]
 ---
 
 # Gate
 
-> What does the platform check before a pod's call reaches an External Service, what does it hand the service, and what does it check on the way back?
+> How does a call from a pod reach an External Service, what does the service learn about the caller, and how does the platform call a service itself?
 
 ## How it works
 
-### The call
+### A caller's call
 
-- Every call a pod makes to an [External Service](../../GLOSSARY.md) is `POST /api/external-services/agent/<slug>/<operation>` with the pod's `service` [Gateway Key](../../GLOSSARY.md) as its bearer, reached through `EXTERNAL_SERVICES_URL` and cluster-internal like the [Service Gateway](../gateways/service-gateway.md) mount. The [Gate](../../GLOSSARY.md) resolves the calling ProjectEnvironment from the key and `<slug>` among the Built-in External Services and its Organization's published Custom External Services; the Organization's own service wins, and a built-in that later takes the same name stays hidden there.
-- The checks run in a fixed order, and every one before dispatch runs without waking a service pod; each refusal is `application/problem+json` with the code below:
-
-```
-1  caller's key                      401 unauthorized
-2  slug                              404 unknown-service
-3  service state                     503 service-disabled · 503 service-not-configured
-4  the Operation                     404 unknown-operation
-5  Project configuration complete    409 configuration-incomplete (lists `missing`)
-6  Operation switch                  403 operation-off
-7  input size, then schema           413 input-too-large · 400 invalid-input (each error's pointer)
-8  bounds                            403 out-of-bounds (operation, bound, pointer, value, allowed)
-9  open and trim secrets             500 secret-unreadable
-10 dispatch                          503 service-reloading (a Default switch) · 503 service-starting · 502 timeout · 502 service-failed
-11 check the answer                  503 service-reloading · 502 secret-in-response · 502 response-too-large
-12 write one Call
-```
-
-- The Gate route reads at most 25 MB; within that an Operation takes its `limits.inputBytes` (1 MB by default) and runs for its `limits.timeoutSeconds` (30 s by default, 300 at most) plus 5 s of grace. The Gate fills each input's `default`s before the handler sees it.
-- The [Service configuration](../../GLOSSARY.md) the call reads is the callers' one; the [Project configuration](../../GLOSSARY.md) is the calling ProjectEnvironment's, read tolerantly against the current manifest ([Configuration](configuration.md)). A builder chat's Test Project reaches the service's Development instead, with Development's own Service configuration ([External Service Builder](external-service-builder.md)).
-- `x-opsiforce-via: app` marks a call from App code; a missing header means `agent`. It only labels the [Call log](call-log.md) and grants nothing.
+- Every call a pod makes to an [External Service](../../GLOSSARY.md) goes to the service's [Service host](../../GLOSSARY.md), `<slug>.external-services.<base>`, with the pod's [Gateway Key](../../GLOSSARY.md) in any header, and passes the [Gate](../../GLOSSARY.md): the `external-service` runtime proxy (the Gate's proxy, [Request flows](../runtime/request-flows.md#service-hosts)) and the backend's resolve endpoint behind it.
+- The backend answers `POST /api/internal/proxy/external-services/resolve` (`{credential, slug}` with the proxy control token, `credential` being the header value that carries the caller's Gateway Key, Basic credentials decoded). It resolves the calling ProjectEnvironment from the key and `<slug>` among the Built-in External Services and its Organization's published Custom External Services; the Organization's own service wins, and a built-in that later takes the same name stays hidden there.
+- Its answer is the pod's address and a freshly minted [Caller identity](../../GLOSSARY.md) (`kind: call`, the tenant, Project, ProjectEnvironment and environment slug, two minutes long) signed with the receiving copy's own Gateway Key ([ADR-0046](../adr/0046-an-external-service-owns-its-api-and-its-service-policy-the-gate-only-identifies-the-caller-finds-the-service-and-forwards-the-call-untouched.md)). For a built-in served in the backend (`incoming-email`, `whatsapp`, `public-api`) it is `servedBy: "built-in"` with a backend path, and the Caller identity is signed with the built-ins key.
+- A Test Project resolves to Development, and every other caller to the service's [Default environment (External Service)](../../GLOSSARY.md). A sleeping copy is woken and the answer held up to 60 s, until the pod reports it serves and has an address ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
+- Every refusal is `{message}`: 401 for a missing, unknown or revoked key or a disabled Project's, 404 for an unknown, unpublished, deleted, disabled ("… is turned off in this Organization") or SDK 1 service, 502 when the pod failed, 504 when it did not start in time.
+- The Gate forwards the request untouched apart from the credential: the header that carried the key is replaced by the Caller identity in `X-Opsiforce-Caller`, and incoming `X-Opsiforce-*` headers are dropped. It never reads, changes or judges what was asked or what comes back, and it keeps no record of the call: the service's own [Service policy](../../GLOSSARY.md) decides, and its SDK writes the [Call log](call-log.md).
 
 ### What the service receives
 
-- The Gate hands the service both configurations in each call's `context`, decrypted for that call only: every sealed secret is opened only at the place it was sealed, and a `list` of the Service configuration that a Project form field picks items from travels cut to the items this Project configuration picked, so a Project given one mailbox never receives another mailbox's token ([ADR-0078](../adr/0078-an-external-service-receives-its-secrets-with-each-call-from-the-gate.md), [ADR-0080](../adr/0080-built-in-vendor-settings-live-in-service-configuration-and-sealed-secrets-are-bound-to-their-place.md)). Lists no Project field picks from travel whole.
-- A built-in runs in process; a Custom External Service is reached over HTTP at its [Default environment (External Service)](../../GLOSSARY.md)'s pod with that ProjectEnvironment's own `service` key in `x-opsiforce-gate`, which the SDK compares in constant time before any handler runs. A down pod is woken with `ensureEnvironment` and the call held up to 60 s, until the pod reports it serves and has an address (a serving mark left by a pod that was just killed does not end the hold), then answered `503 service-starting` with `Retry-After: 5` ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
-- Only the in-process `public-api` built-in gets `ctx.platformApi`: a single-use `gc-` call token the Gate holds in memory and revokes when the call ends ([Public API built-in](public-api.md)).
-- `ctx.state` is a key/value store of JSON values, keys of 1–256 characters, that the service pod keeps itself in a SQLite file of its ProjectEnvironment's data folder, `/workspace/data/service-state.db`. Every environment of the service has its own; `data/` is never committed, so a Publish never carries one. Its size is bounded only by the environment's storage. Switching the Default environment holds the service's calls with `503 service-reloading` and `Retry-After: 2` (an incoming webhook waits up to 5 s for the hold to end instead) until the calls in flight finish, copies the old Default's file over the new one's, then moves callers ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)). A built-in has none: its `ctx.state` throws.
+- The SDK checks the Caller identity's signature with its pod's own key, its expiry and that it was made for this copy, before any Service route runs; nothing the request says about itself counts.
+- No configuration travels with a caller's call. The SDK fetches the calling ProjectEnvironment's Project configuration and the Service configuration from the backend with its pod's own key, holds them in memory and drops a copy when the backend tells it of a save ([Configuration](configuration.md), [ADR-0078](../adr/0078-an-external-service-fetches-its-configurations-from-the-backend-by-the-caller-identity-and-holds-them-only-in-memory.md)).
+- `ctx.state` is a key/value store of JSON values, keys of 1–256 characters, that the service pod keeps itself in a SQLite file of its ProjectEnvironment's data folder, `/workspace/data/service-state.db`, beside the records file `service-records.db`. Every environment of the service has its own; `data/` is never committed, so a Publish never carries one. Its size is bounded only by the environment's storage. Switching the Default environment holds the platform's own calls with `503 service-reloading` and `Retry-After: 2`, and a caller's or webhook's resolve waits within its 60 s hold (`504` past it), until the platform's calls in flight finish; it copies the old Default's files over the new one's, then moves callers ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
 
-### What comes back
+### The platform's own calls
 
-- Every call to a service carries the manifest hash the Gate enforces as `x-opsiforce-expected-manifest`, and the SDK answers `503 service-reloading` without running a handler when it serves another one, so a write never runs against a manifest the Gate did not check. A call that was routed to the old Default environment while a switch moved it is refused the same way; an incoming webhook is instead logged as `503 service-moved` and routed once more, a single time, to the new Default, while one whose hold outlasts its 5 s wait is answered `503 service-reloading` without a second try, so a sender never waits much past 5 s.
-- The Gate checks every answer before passing it on: one stamped with another manifest hash in `x-opsiforce-manifest` is `503 service-reloading` with `Retry-After: 2`, one whose body contains a secret the Gate sent is withheld as `502 secret-in-response`, a pod's answer over 25 MB is `502 response-too-large` (an in-process built-in's has no cap), and a pod that cannot be reached, refuses the Gate's key or answers a status other than 200, 204, 400, 404, 409, 422, 429 or 502 is `502 service-failed`, except the `403 out-of-bounds` problem a handler's `ctx.bounds` check answers. A service's own problem passes through with its status, `code` and `Retry-After`. A form call's answer reaches the browser only as JSON in the shape its route allows (options, info or a button result), re-encoded by the Gate, else `502 service-failed`, and every Gate answer carries `X-Content-Type-Options: nosniff` and a sandboxing `Content-Security-Policy`. A manifest-hash mismatch is logged as an error, except from a Development lane, where `yarn dev` reloads make it expected.
-- Every call, allowed or refused, writes one Call row with the service, Operation, kind, decision, status, code, bound values touched, sizes and duration, never a body ([Call log](call-log.md)).
-
-### Reads for the calling agent
-
-- Three reads ride the same key and always answer for the caller's own ProjectEnvironment: `GET agent/<slug>` (describe: each Operation's kind and switch, the Project configuration with secrets as `{stored: true}` and chosen values labelled from `_labels`, the rendered `info` templates, `complete` and `missing`), `GET agent/<slug>/openapi.json` (OpenAPI 3.1 built from the manifest the Gate enforces, every Operation a `POST` with its bound inputs explained and its problems declared, `ETag` = the manifest hash, `304` on `If-None-Match`; the document is cached per service, slug and manifest hash, so a Duplicate or Import sharing the manifest gets its own `servers` URL) and `GET agent/<slug>/calls?limit=` (that ProjectEnvironment's Calls to the service, newest first, 50 by default, at most 200). None writes a Call, and no service's document is part of the public `/api/v1/docs`.
+- The platform calls a service itself for a form's options, info or buttons while someone edits a Form, and for its after-save hooks: `POST /.well-known/opsiforce/{options|info|buttons|hooks}/<name>` at the copy's pod, or in process through the built-ins adapter, with a `platform` Caller identity naming the ProjectEnvironment it acts for (or none, for the service as a whole).
+- A form call's body carries the unsaved values with stored secrets filled in and opened; a hook's carries the previous and current values. Every sealed secret is opened only at the place it was sealed ([ADR-0080](../adr/0080-built-in-vendor-settings-live-in-service-configuration-and-sealed-secrets-are-bound-to-their-place.md)).
+- Each of these calls carries the manifest hash the platform uses as `x-opsiforce-expected-manifest`, and the SDK answers `503 service-reloading` without running a handler when it serves another one. An answer stamped with another manifest hash in `x-opsiforce-manifest` is `503 service-reloading` with `Retry-After: 2` too; a mismatch is logged as an error, except from a Development lane, where `yarn dev` reloads make it expected.
+- A form call runs for at most 10 s plus 5 s of grace. Its answer is read up to 2 MB and reaches the browser only as JSON in the shape its route allows (options, info or a button result), re-encoded by the platform, else `502 service-failed` (`response-too-large` over 2 MB); options are cut to the first 50, and a button image must be png, jpeg, gif or webp (its bytes matching the type) of at most 1 MB. A service's own refusal passes through with its status and message. A failure reads in plain words with the service's display name ("<Name> couldn't do this. Try again; if it keeps failing, an Organization admin can check this service's Calls.", "<Name> sent choices this form can't show.", "<Name> couldn't start."), a form call that no longer fits the manifest "This form is out of date. Reload the page and try again."; handler names, codes and call ids stay in the logs and the service's Calls tab.
+- These calls are not held by a Default-environment switch: while one holds the lane, or when a call was routed to the old Default while a switch moved it, it is refused `503 service-reloading` at once, and the form or hook can be retried.
 
 ## Edge cases
 
-- When the service's Service configuration is incomplete, every call answers `503 service-not-configured` before the Operation is even looked up.
-- When the Project configuration lacks a required value or holds one the current manifest no longer accepts, the call answers `409 configuration-incomplete` naming the fields.
-- When an Operation is new since the Project configuration was saved, it reads as switched off and answers `403 operation-off`.
-- When a custom service is disabled or deleted, its calls answer `503 service-disabled` or `404 unknown-service`; a disabled service whose files cannot be served answers `503 service-disabled` too.
-- When a sealed value was copied to another row, opening it fails and the call answers `500 secret-unreadable` without reaching the service.
-- When a published custom service's files fail `check` or vendor an SDK of another major than 1, its calls answer `502 service-failed`.
+- When a key belongs to a disabled Project, the resolve answers 401: a disabled Project's key identifies no one.
+- When a custom service is disabled, deleted or never published, the resolve answers 404 and the Gate forwards nothing.
+- When a service is built on SDK 1, the resolve answers 404 "… is built on SDK 1 and must be rebuilt on SDK 2 or deleted.": the platform serves no SDK 1 service, and its page says to rebuild or delete it ([External Service Builder](external-service-builder.md)).
+- When a path holds `.` or `..` segments, the edge resolves them before the Gate (Traefik's path sanitizing, left on), so `/1/boards/<a>/../<b>/cards` reaches the service as `/1/boards/<b>/cards` and its Service policy judges `<b>`, the path that is actually forwarded. The SDK's *not supported* refusal of unsafe paths stays as defence in depth for whatever still reaches a service unresolved: an encoded form the edge leaves, or a request that did not cross the edge.
+- When the Project configuration lacks a required value, the platform still forwards the call; the SDK refuses it with a message naming the field and a link to the configuration ([Configuration](configuration.md)).
+- When a sealed value was copied to another row, opening it for a form call or hook fails with `500 secret-unreadable` without reaching the service.
 
 ## Code
 
-- `backend/src/external-services/gate/` — the Gate, its refusals, the dispatcher and pod waking, the answer checks, describe, `openapi.json` and the Call write.
-- `backend/src/external-services/configuration/configuration-delivery.ts` — opening and trimming the configurations each call carries.
-- `backend/src/external-services/custom/service-state-files.ts` — copying the `ctx.state` file on a Default environment switch and removing Development's on Reset.
-- `external-service-sdk/` — the Operation admission and bounds checker the Gate imports.
+- `proxy/internal/gate/` — the Gate's proxy: finding the key, the caller cache, forwarding, the webhook lane.
+- `backend/src/external-services/http/gate.controller.ts` — the resolve endpoints the Gate's proxy calls.
+- `backend/src/external-services/gate/` — the resolve answer (the key in a header value, the copy, the pod and the minted Caller identity), its cache eviction, the platform's form and hook calls, the dispatcher and pod waking, the manifest-hash check and the Default-environment holds.
+- `backend/src/external-services/configuration/configuration-delivery.ts` — opening the configurations a form call or hook carries.
+- `backend/src/external-services/custom/service-state-files.ts` — copying the data files on a Default environment switch and removing Development's on Reset.
 
 ## Related
 
-- [Service manifest](service-manifest.md) — what declares the Operations, inputs and bounds the Gate enforces.
-- [Configuration](configuration.md) — the two configurations the Gate reads.
-- [Call log](call-log.md) — where every call is recorded and who reads it.
+- [Request flows](../runtime/request-flows.md) — the Gate's proxy and the Service hosts.
+- [Service manifest](service-manifest.md) — what a service is made of and the SDK that enforces its Service policy.
+- [Configuration](configuration.md) — the two configurations a service fetches.
+- [Call log](call-log.md) — the records a service keeps of every call.
 - [Service Gateway](../gateways/service-gateway.md) — the key the Gate authenticates.
-- [Public API built-in](public-api.md) — the in-process built-in that reaches `/api/v1` through the Gate.
+- [Public API built-in](public-api.md) — the in-process built-in that `/api/v1` serves on its Service host.

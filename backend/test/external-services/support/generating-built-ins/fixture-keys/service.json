@@ -1,25 +1,58 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "Fixture Keys",
   "description": "A pretend messaging service with numbers in a list, generated secrets and save hooks.",
   "inbound": true,
   "serviceForm": [
-    { "key": "apiToken", "type": "secret", "label": "API token", "required": true },
-    { "key": "signingSecret", "type": "secret", "label": "Signing secret", "generate": { "bytes": 32 } },
+    {
+      "key": "apiToken",
+      "type": "secret",
+      "label": "API token",
+      "required": true
+    },
+    {
+      "key": "signingSecret",
+      "type": "secret",
+      "label": "Signing secret",
+      "generate": {
+        "bytes": 32
+      }
+    },
     {
       "key": "channels",
       "type": "list",
       "label": "Channels",
       "maxItems": 3,
       "item": [
-        { "key": "label", "type": "text", "label": "Label", "required": true },
-        { "key": "token", "type": "secret", "label": "Token", "required": true },
-        { "key": "webhookSecret", "type": "secret", "label": "Webhook secret", "generate": { "bytes": 16 } },
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "required": true
+        },
+        {
+          "key": "token",
+          "type": "secret",
+          "label": "Token",
+          "required": true
+        },
+        {
+          "key": "webhookSecret",
+          "type": "secret",
+          "label": "Webhook secret",
+          "generate": {
+            "bytes": 16
+          }
+        },
         {
           "key": "inboxKey",
           "type": "text",
           "label": "Inbox key",
-          "generate": { "length": 8, "alphabet": "digits", "unique": true }
+          "generate": {
+            "length": 8,
+            "alphabet": "digits",
+            "unique": true
+          }
         }
       ]
     }
@@ -29,19 +62,29 @@
       "key": "channel",
       "type": "select",
       "label": "Channel",
-      "options": { "serviceConfiguration": "channels", "labelKey": "label" }
+      "options": {
+        "serviceConfiguration": "channels",
+        "labelKey": "label"
+      }
     },
     {
       "key": "watched",
       "type": "multiselect",
       "label": "Watched channels",
-      "options": { "serviceConfiguration": "channels", "labelKey": "label" }
+      "options": {
+        "serviceConfiguration": "channels",
+        "labelKey": "label"
+      }
     },
     {
       "key": "localPart",
       "type": "text",
       "label": "Address",
-      "generate": { "length": 16, "alphabet": "lowercaseAlphanumeric", "unique": true }
+      "generate": {
+        "length": 16,
+        "alphabet": "lowercaseAlphanumeric",
+        "unique": true
+      }
     },
     {
       "key": "rooms",
@@ -54,47 +97,37 @@
           "label": "Room",
           "required": true,
           "options": [
-            { "value": "red", "label": "Red room" },
-            { "value": "blue", "label": "Blue room" }
+            {
+              "value": "red",
+              "label": "Red room"
+            },
+            {
+              "value": "blue",
+              "label": "Blue room"
+            }
           ]
         },
         {
           "key": "channel",
           "type": "select",
           "label": "Channel",
-          "options": { "serviceConfiguration": "channels", "labelKey": "label" }
+          "options": {
+            "serviceConfiguration": "channels",
+            "labelKey": "label"
+          }
         }
       ]
+    },
+    {
+      "key": "greeting",
+      "type": "text",
+      "label": "Greeting"
     }
   ],
-  "operations": {
-    "send_message": {
-      "kind": "write",
-      "description": "Send a message through the picked channel.",
-      "input": {
-        "type": "object",
-        "properties": {
-          "channel": { "type": "string", "maxLength": 64, "boundTo": "channel" },
-          "text": { "type": "string", "maxLength": 200 }
-        },
-        "required": ["channel", "text"],
-        "additionalProperties": false
-      }
-    }
-  },
   "events": {
     "message.received": {
       "title": "Message received",
-      "description": "A message arrived at the Project's address.",
-      "data": {
-        "type": "object",
-        "properties": { "address": { "type": "string", "boundTo": "address" } },
-        "required": ["address"]
-      }
+      "description": "A message arrived at the Project's address."
     }
-  },
-  "bounds": {
-    "channel": { "path": "channel" },
-    "address": { "path": "localPart" }
   }
 }

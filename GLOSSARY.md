@@ -352,7 +352,7 @@ _Avoid_: Recreate, Restart (a pod restart keeps the workspace)
 ### External Services
 
 **External Service**:
-The one program that speaks to one outside system (WhatsApp, an inbox, GitHub, the public API) on the platform's behalf, written once against the platform's SDK: it alone uses that system's credentials, which the platform keeps and hands it with each call, its Service manifest declares what may be configured, what an Agent may call and what may arrive, and every call reaches it through the Gate. One shape whoever wrote it.
+The one program that speaks to one outside system (WhatsApp, an inbox, a code host, the public API) on the platform's behalf, written once against the platform's SDK: it alone uses that system's credentials, which the platform keeps for it; it owns its API — what callers may send and what they get back — and its Service policy; its Service manifest declares what may be configured and what may arrive, and every call reaches it through the Gate. One shape whoever wrote it.
 _Avoid_: Integration, Connector, Gatekeeper, Plugin; Channel (WhatsApp's word for a number)
 
 **Built-in External Service**:
@@ -364,27 +364,31 @@ An External Service one Organization authored, run as its own App and live only 
 _Avoid_: Tenant service, User service, Private service; Draft (there is no draft state — Development is where the builder works, and a service no Publish has reached is simply not published yet, as for a Custom Agent)
 
 **Service manifest**:
-The one file (`service.json`) that declares everything about an External Service the platform needs without running it: its Service form, its Project form, its Operations, the Event types it may receive and what each Operation or Event may reach.
+The one file (`service.json`) that declares what the platform needs about an External Service without running it: its Service form, its Project form and the Event types it may receive. What the service serves is its Service routes, not part of the manifest.
 _Avoid_: Manifest unqualified (an App's `app.meta.json` is not one); Definition, Descriptor, Spec
+
+**Service routes**:
+The ordered list, in an External Service's own code, of the requests it serves: each passed to the outside system as it is, refused, or answered by the service itself when there is nothing to pass through, and each with the part of the service's Service policy that decides who may. A request no route matches is refused as not supported. Callers read the list from the service itself; the platform only shows it.
+_Avoid_: Operations, Endpoints, API spec, Route table in user-facing copy
 
 **Form**:
 The fields an External Service declares in its Service manifest for one level of configuration — a Service form and a Project form — which the platform renders and the right person fills in.
-_Avoid_: Schema (an Operation's input), Fields, Settings; Configurator
+_Avoid_: Schema, Fields, Settings; Configurator
 
 **Service configuration**:
 The values filled into an External Service's Service form, one per service and owner: for a Built-in External Service one for the whole platform, set by the platform operator; for a Custom External Service one for its Organization, set by that Organization's admin, plus a second one for its Development that only test calls read, so trying a new version never touches what callers use. WhatsApp's numbers and their tokens are items in it.
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — which of the service's things that environment may reach, which Operations it may call and which Event types it receives. Each ProjectEnvironment carries its own, starting with the service's read Operations on and its writes off, or from its Custom Agent's Service settings (Agent); having one gives that environment the service's Service skill, and Publish carries Development's forward.
-_Avoid_: Environment configuration (collides with Environment Variables); Grant, Scope, Settings
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, and Publish carries Development's forward.
+_Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
-**Operation**:
-One named thing an Agent can ask an External Service to do — `list_cards` on Trello, `create_issue` on GitHub, `create_project` on the Public API — declared in the Service manifest with a kind of read, write or destructive, and allowed or denied by each Project configuration. What fills a Form's dropdowns or answers its buttons is never an Operation.
-_Avoid_: Tool (the agent-side thing), Action (one kind only), Capability, Endpoint, Method
+**Disconnect (External Service)**:
+Removing one ProjectEnvironment's Project configuration for an External Service, so the service refuses that environment from its next call while every other Project keeps using it. The brake for one Project whose calls get through when they should not. Connecting again means filling the Project form again.
+_Avoid_: Revoke, Block, Suspend, Disable (the whole service, or a Project)
 
 **Event**:
-One thing that arrived from an outside system through an External Service — a WhatsApp message, an email, a GitHub issue opened, a Trello card moved — of a type declared in its Service manifest. A ProjectEnvironment receives an Event only if its Project configuration turned that type on and covers what the Event is about; it is then kept for that environment's App, which is told it arrived.
+One thing that arrived from an outside system through an External Service — a WhatsApp message, an email, an issue opened, a card moved — of a type declared in its Service manifest. The service decides which ProjectEnvironments receive it, reading their Project configurations (a repository they cover, a "Notify on" choice its author offered), and hands it over; the platform only checks that each receiver is connected to the service, keeps the Event for that environment's App and tells the App it arrived.
 _Avoid_: Message (one kind only), Webhook (how it travels), Notification, Hook
 
 **Service skill**:
@@ -392,27 +396,43 @@ The skill an External Service carries to teach Agents what it is for and how to 
 _Avoid_: Integration skill, Connector skill
 
 **Service settings (Agent)**:
-Which Operations and Event types of one External Service a Custom Agent turns on in every Project created from it, held beside the Service skill it carries and set by whoever manages the Agent. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it; its targets are still picked in the Project, and a later change to the settings reaches no existing Project.
+The values of one External Service's Project form, other than its targets, that a Custom Agent writes into every Project created from it, held beside the Service skill it carries and set by whoever manages the Agent and may configure Projects' External Services. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it; its targets are still picked in the Project, and a later change to the settings reaches no existing Project.
 _Avoid_: Agent defaults, Default configuration, Service profile
 
+**Service host**:
+The hostname an External Service is reached at by any client calling for a ProjectEnvironment — the service's slug under the platform's External Services domain, the same name in every Organization: which Organization's service it means is settled by who is calling, never by the name. It does not change once the service is published, so callers may write it into their own tools and code, and code that uses it keeps working when copied to another Organization that has a service of that slug.
+_Avoid_: Service URL, Endpoint, Subdomain, Gateway URL
+
 **Gate**:
-The one place in the platform every call from a ProjectEnvironment's pod — its Agent or its App — to an External Service passes through: it identifies the calling ProjectEnvironment, refuses any Operation its Project configuration does not allow, or whose input does not fit the Service manifest or reaches past that Project configuration, and records the call.
-_Avoid_: Gateway (collides with Gateway Key and the LLM gateway), Proxy, Gatekeeper (cloudflare-os's word for the service itself)
+The one place in the platform every call from a ProjectEnvironment's pod — its Agent or its App — to an External Service passes through: it identifies the calling ProjectEnvironment from its credential, finds the service the call is addressed to and forwards the call untouched except that the caller's credential is replaced by its Caller identity. It refuses only a caller it cannot identify (a disabled Project's key identifies no one) or a service that is not there (a disabled one is not); it never reads, changes or judges what was asked or what comes back — the service's Service policy does. It keeps no record of the calls it forwards.
+_Avoid_: Gateway (collides with Gateway Key and the LLM gateway), Proxy (the Go runtime proxy), Front door, Gatekeeper (cloudflare-os's word for the service itself)
+
+**Webhook address**:
+The public address, on the platform's own host, that an outside system sends an External Service's webhooks to — a Custom service's named by the service itself rather than its slug, because a sender has no caller to say which Organization it means; a Built-in's by its slug, which means one service in the whole deployment. Anything may reach it; the service decides what is genuine, and nothing it answers there can act as the signed-in user. It never changes, so registrations made upstream outlive a switch of the Default environment.
+_Avoid_: Webhook URL, Inbound endpoint, Callback URL
+
+**Caller identity**:
+The platform's short-lived, signed statement of whom a request to an External Service is for, valid only at the copy of the service it was made for: a ProjectEnvironment calling it, the platform acting for one ProjectEnvironment or for the service as a whole, or an inbound delivery with no caller. It is the only thing a service trusts about who is asking; nothing the request says about itself counts, and an App's signed-in end user is never part of it.
+_Avoid_: Caller context, Via, Gate key, Caller token
+
+**Service policy**:
+The code in an External Service that decides, for each request, whether and how the calling ProjectEnvironment may proceed, reading its Project configuration — refusing a repository the Project was not given, or a ticket queue it may only read. It answers a refusal the way the caller's client expects, saying what to fix or whom to ask. The platform never sees it.
+_Avoid_: Permission (the platform's `can_*` word), Bounds, Rule, Admission, Access control
 
 **Call log**:
-The platform's record of every Call it makes to or receives for an External Service — an Agent's or App's Operation through the Gate, a form's option list, info or button, an after-save hook, an incoming webhook, a doorbell ring to a receiving App — saying who called, what it touched, whether the Gate allowed it and how it ended, never what was sent or returned. Kept for a limited time; Usage outlives it.
+An External Service's own record of every request it receives — from a calling ProjectEnvironment or from the platform — saying who asked, what was asked for, what the service did with it and why, never what was sent or returned. The service writes it and keeps it for a limited time; the platform writes none of it and only shows it to the Organization's service managers and to each Project's people for their own calls.
 _Avoid_: Audit log, Request log (an App's own traffic, see Request Logging), Activity (collides with Keep-alive activity), Gate log
 
 **Usage (External Service)**:
-The monthly counts per Organization, Project, environment and External Service of Calls to Operations the Gate let through, refused or saw fail, and of Events kept — the summary that remains after the Call log entries it counts are gone.
-_Avoid_: Metering, Billing (nothing is charged)
+The monthly counts an External Service keeps about itself, per Project and environment: the requests it received, refused and failed, and the counters its author defined (pull requests opened, cards created). For display only — a limit the service enforces is its own state, not Usage. The service writes them and keeps them for as long as it exists; the platform only shows them on the service's page.
+_Avoid_: Metering, Billing (nothing is charged), Quota (a limit is the service's state)
 
 **External Service Builder**:
-The Built-in Agent an Organization admin chats with to author a Custom External Service. It starts from an empty service, learns from the Built-in External Services as worked examples, stops for the human to approve which Operations the service offers before writing any of them, and never Publishes the service itself — a human does, after reviewing how each Operation is classified and bounded.
+The Built-in Agent an Organization admin chats with to author a Custom External Service. It passes the outside system's own API through, inventing an endpoint only where there is nothing to pass through, where a client needs one, or where the person insists. Before writing code it agrees with the person on the settings, what each one lets through, the upstream credential's permissions, and the outside system's own protections that hold even if the service's code is wrong. It never Publishes the service itself: a human does, reading the note it leaves on what each version lets through.
 _Avoid_: Builder alone in user-facing copy (ambiguous beside app-builder and the Skill & Agent Builder); Service builder, Integration builder, Connector builder
 
 **Available**:
-An External Service whose Service configuration is complete against its Service form (for a Custom one, the configuration callers use, against its Default environment's form). Only an Available service is offered to Organizations; there is no separate switch.
+An External Service whose Service configuration has every required field of its Service form filled (for a Custom one, the configuration callers use, against its Default environment's form). Only an Available service is offered for Projects to connect; it decides nothing about calls, which the service answers itself. There is no separate switch.
 _Avoid_: Enabled, Active, Configured, Installed
 
 **Default environment (External Service)**:
@@ -448,11 +468,11 @@ The credential a program — the CLI, an integration, another Agent — presents
 _Avoid_: Client key; API key (non-canonical); Personal access token (canonical only in other products); Tenant header (internal name — never user-facing)
 
 **Gateway Key**:
-The per-ProjectEnvironment `gw-` token a pod holds: the one key every pod has for Schedules, External Services, the runtime proxy and platform pushes. It never opens the public API itself: a pod reaches that only through the Public API External Service. Never a user credential — the platform resolves it to the human who created the Project.
+The per-ProjectEnvironment `gw-` token a pod holds: the one key every pod has for Schedules, External Services, the runtime proxy and platform pushes. It never opens the public API itself: a pod reaches that only through the Public API External Service. Never a user credential — the platform resolves it to the human who created the Project. It works only while its Project is enabled. Rotating it replaces it at once, which is how a leaked key is stopped without deleting anything.
 _Avoid_: API key (collides with API Token); Pod token; Platform-api key (retired: a pod has one key)
 
 **Agent Caller**:
-A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only as the Public API External Service through the Gate: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the Operations its Project configuration allows. It reads what that person can see, but changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it, and a chain of Projects creating Projects stops at depth two.
+A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only at the Public API External Service's Service host: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the kinds of work its Project configuration turns on. It reads the Skills and Custom Agents that person can see but only the Projects its own Project created, and changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it; it keeps no more Projects than its Project configuration allows, and a chain of Projects creating Projects stops at depth two.
 _Avoid_: Bot (a service account is an ordinary user); Machine user; Pod identity (the identity is the human's)
 
 **Error**:
@@ -490,7 +510,7 @@ The permission-gated surface where a member **configures** the Organization curr
 _Avoid_: Tenant Settings (retired user-facing label — the old modal that held only Integrations + Environments); Config (non-canonical); Admin (the operational sibling — a separate destination, not a synonym for Settings); conflating with Defaults (one section within Settings, not the whole)
 
 **Admin**:
-The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown, built on the same left-rail layout (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods, Usage); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
+The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown, built on the same left-rail layout (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
 _Avoid_: Settings (the configuration sibling — a different destination); Admin panel, Console, Operations, Monitoring (non-canonical — say Admin); conflating with Pods (the first page within Admin, not the whole)
 
 **Store**:
@@ -503,7 +523,7 @@ _Avoid_: Super admin, Global admin (role concepts — the system has only flat p
 
 **Storage**:
 The Admin view of disk usage on the shared volume — one measured number per ProjectEnvironment directory, rolled up Environment → Project → Organization, plus Unattributed storage, reconciled against the volume's actual usage. Gated by a Platform-scope permission, so it shows all Organizations and ignores the selector. Read-only, current-state snapshot; sizes may lag recent writes.
-_Avoid_: Disk usage, Quota (no quotas exist — the view only observes); Usage (the external-services Admin page — a different thing); Storage view per Organization (Platform-scope by definition)
+_Avoid_: Disk usage, Quota (no quotas exist — the view only observes); Usage (an External Service's own counts — a different thing); Storage view per Organization (Platform-scope by definition)
 
 **Pending deletion**:
 Disk usage from an Organization's deleted Projects and ProjectEnvironments whose directories are retained until cleanup retention expires. Attributed to the Organization — it answers "why is this Organization's total bigger than the sum of its projects" — as one aggregate per Organization, never itemized (the project record is gone; a bare directory identifier tells an operator nothing).

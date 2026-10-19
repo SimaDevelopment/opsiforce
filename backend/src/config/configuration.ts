@@ -118,8 +118,9 @@ export const configuration = () => {
     externalServiceCallLogRetentionDays: parseIntOrNull(process.env.EXTERNAL_SERVICE_CALL_LOG_RETENTION_DAYS) ?? 30,
     gatewayUrl: process.env.SERVICE_GATEWAY_URL || 'http://opsiforce-backend:3001/api/gateway',
     runtimeProxyUrl: process.env.OPSIFORCE_RUNTIME_PROXY_URL || '',
-    externalServicesUrl:
-      process.env.EXTERNAL_SERVICES_URL || 'http://opsiforce-backend:3001/api/external-services/agent',
+    externalServicesHost: process.env.EXTERNAL_SERVICES_HOST || '',
+    externalServiceProxyControl: process.env.EXTERNAL_SERVICE_PROXY_CONTROL || '',
+    podCaBundleConfigMap: process.env.POD_CA_BUNDLE_CONFIGMAP || '',
     agentWorkspaceUpdateOnStartup: parseBooleanEnv(process.env.AGENT_WORKSPACE_UPDATE_ON_STARTUP, true),
     agentUpdateJobTimeoutMs: parseInt(process.env.AGENT_UPDATE_JOB_TIMEOUT_MS || '1800000', 10),
     // TODO: remove in the release after External Services v2 ships: mailgunApiKey, mailgunDomain, mailgunSender, mailgunUrl feed only the dead /api/gateway email provider; mailgunReceiveDomain, mailgunWebhookSigningKey, whapiApiUrl feed only the one-time v1 importers

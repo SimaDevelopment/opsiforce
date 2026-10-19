@@ -4,6 +4,7 @@ import { AgentService } from '../../agent/agent.service';
 import { ProjectService } from '../../project/project.service';
 import { EXTERNAL_SERVICE_CHAT_KIND } from '../../project/project.types';
 import { ServiceConsumers, type ServiceConsumer } from '../configuration/service-consumers';
+import { GateEviction } from '../gate/gate-eviction';
 import { ServiceSkillReach } from '../knowledge/service-skill-reach';
 import { RESERVED_SERVICE_SLUGS, SERVICE_SLUG_PATTERN } from '../registry/built-in-services';
 import { CustomServiceRefusal } from './custom-service-refusal';
@@ -57,7 +58,8 @@ export class CustomServices {
     private readonly agents: AgentService,
     private readonly consumers: ServiceConsumers,
     private readonly serviceSkillReach: ServiceSkillReach,
-    private readonly seeder: ServiceAppSeeder
+    private readonly seeder: ServiceAppSeeder,
+    private readonly gate: GateEviction
   ) {}
 
   async create(
@@ -73,22 +75,23 @@ export class CustomServices {
       throw new ServiceUnavailableException('The External Service Builder is not installed on this deployment');
     }
 
-    const chat = await this.projects.create({ title: name, agentId }, creator.tenantId, {
-      createdBy: creator.userId,
-      kind: EXTERNAL_SERVICE_CHAT_KIND,
-      configureBeforeDelivery: seed ? (chatId) => this.seeder.seed(chatId, seed) : null,
-    });
     const id = crypto.randomUUID();
     try {
-      await this.repository.insert({
-        id,
-        tenantId: creator.tenantId,
-        slug,
-        builderChatId: chat.id,
+      await this.projects.create({ title: name, agentId }, creator.tenantId, {
         createdBy: creator.userId,
+        kind: EXTERNAL_SERVICE_CHAT_KIND,
+        configureBeforeDelivery: async (chatId) => {
+          await this.repository.insert({
+            id,
+            tenantId: creator.tenantId,
+            slug,
+            builderChatId: chatId,
+            createdBy: creator.userId,
+          });
+          if (seed) await this.seeder.seed(chatId, seed);
+        },
       });
     } catch (error) {
-      await this.projects.discardHalfCreatedProject(chat.id);
       if (isCustomSlugTaken(error)) throw slugTaken(slug, 'custom');
       throw error;
     }
@@ -127,6 +130,15 @@ export class CustomServices {
     return this.consumers.of(id);
   }
 
+  async disconnect(tenantId: string, id: string, projectEnvironmentId: string): Promise<void> {
+    await this.requireService(tenantId, id);
+    const consumers = await this.consumers.of(id);
+    if (!consumers.some((consumer) => consumer.projectEnvironmentId === projectEnvironmentId)) {
+      throw new NotFoundException(`ProjectEnvironment ${projectEnvironmentId} is not connected to this service`);
+    }
+    await this.consumers.disconnect(id, projectEnvironmentId);
+  }
+
   async delete(tenantId: string, id: string, confirmSlug: unknown): Promise<void> {
     const service = await this.requireService(tenantId, id);
     if (confirmSlug !== service.slug) {
@@ -136,6 +148,7 @@ export class CustomServices {
     await this.serviceSkillReach.reachEnvironmentsAfter(service, () =>
       this.projects.remove(service.builderChatId, tenantId)
     );
+    await this.gate.evictService(tenantId, service.slug);
   }
 
   private async requireFreeSlug(tenantId: string, requested: unknown): Promise<string> {

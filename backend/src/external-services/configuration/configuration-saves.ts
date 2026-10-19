@@ -39,7 +39,6 @@ export class ConfigurationSaves {
   async service(
     service: RegisteredService,
     owner: ConfigurationOwner,
-    userId: string | null,
     save: () => Promise<ServiceConfigurationSave>
   ): Promise<SavedServiceConfiguration> {
     const reachesCallers = owner.environment === null;
@@ -48,17 +47,15 @@ export class ConfigurationSaves {
     if (reachesCallers && isAvailable(saved.current) !== wasAvailable) {
       await this.serviceSkillReach.reachEnvironmentsOf(service);
     }
-    const hookFailure = await this.serviceHooks.saved(
-      service,
-      owner,
-      { previous: saved.previous?.values ?? null, current: saved.current.values },
-      userId
-    );
+    const hookFailure = await this.serviceHooks.saved(service, owner, {
+      previous: saved.previous?.values ?? null,
+      current: saved.current.values,
+    });
     for (const cascaded of saved.cascaded) {
       this.logger.log(
         `Removed deleted ${service.slug} list items from the Project configuration of ${cascaded.projectEnvironmentId}`
       );
-      await this.projectHooks.saved(service, cascaded.projectEnvironmentId, cascaded, userId);
+      await this.projectHooks.saved(service, cascaded.projectEnvironmentId, cascaded);
     }
     return { ...saved, hookFailure };
   }
@@ -66,12 +63,11 @@ export class ConfigurationSaves {
   async project(
     service: RegisteredService,
     projectEnvironmentId: string,
-    userId: string | null,
     save: () => Promise<ProjectConfigurationSave>
   ): Promise<SavedProjectConfiguration> {
     const saved = await save();
     await this.deliverOnFirstSave(projectEnvironmentId, saved.previous);
-    const hookFailure = await this.projectHooks.saved(service, projectEnvironmentId, saved, userId);
+    const hookFailure = await this.projectHooks.saved(service, projectEnvironmentId, saved);
     return { ...saved, hookFailure };
   }
 
@@ -85,7 +81,6 @@ export class ConfigurationSaves {
     if (!carried) return null;
     await this.deliverOnFirstSave(targetEnvironmentId, carried.target.previous);
     await this.announceCarry(service, targetEnvironmentId, carried.target);
-    if (carried.receiveTurnedOff.length > 0) await this.announceCarry(service, sourceEnvironmentId, carried.source);
     return carried;
   }
 

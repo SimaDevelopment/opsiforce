@@ -11,6 +11,7 @@ export interface ProjectLifecycle {
   disabled(projectId: string): Promise<void>;
   enabled(projectId: string): Promise<void>;
   environmentRemoving(projectEnvironmentId: string): Promise<void>;
+  gatewayKeysRevoked(projectId: string, tokens: string[]): Promise<void>;
   removing(tx: DbExecutor, projectId: string): Promise<void>;
   neverSleeps(projectEnvironmentId: string): Promise<boolean>;
 }

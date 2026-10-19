@@ -52,7 +52,8 @@ export function DisableServiceDialog(props: {
         <DialogHeader>
           <DialogTitle>Disable {props.service.displayName}?</DialogTitle>
           <DialogDescription>
-            Its pods stop and every call answers that the service is disabled. Projects stop seeing it, and its webhooks
+            Its pods stop at once, cutting open streams, and the very next call is refused with "
+            {props.service.displayName} is turned off in this Organization." Projects stop seeing it, and its webhooks
             are refused. Every configuration is kept, so Enable brings it back as it was.
           </DialogDescription>
         </DialogHeader>

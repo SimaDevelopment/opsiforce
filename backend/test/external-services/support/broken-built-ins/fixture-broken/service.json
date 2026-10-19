@@ -1,14 +1,13 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "Fixture broken",
-  "description": "A built-in whose Operation is bound to a name the manifest never declares.",
+  "description": "A built-in that still declares an Operation.",
   "operations": {
     "read_thing": {
       "kind": "read",
       "description": "Read a thing.",
       "input": {
-        "type": "object",
-        "properties": { "thingId": { "type": "string", "boundTo": "thing" } }
+        "type": "object"
       }
     }
   }

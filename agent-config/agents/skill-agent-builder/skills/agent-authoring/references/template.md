@@ -89,8 +89,8 @@ and every real Project starts broken.
 Stop anything that writes into `template/`, then save. There is no body: the folder is the input.
 
 ```sh
-A=$(sh scripts/api.sh call get_me | jq -r .builderSubject.id)
-sh scripts/api.sh call save_agent_template "{\"id\":\"$A\"}" | jq '{hash, files: (.files | length), skipped, warnings}'
+A=$(sh scripts/api.sh GET /me | jq -r .builderSubject.id)
+sh scripts/api.sh PUT "/agents/$A/template" | jq '{hash, files: (.files | length), skipped, warnings}'
 ```
 
 - **200** — the `hash`, the saved `files` (path, size, executable), the `skipped` paths with reasons
@@ -100,7 +100,7 @@ sh scripts/api.sh call save_agent_template "{\"id\":\"$A\"}" | jq '{hash, files:
 - **409 `template-changed`** — `template/` changed during the copy. Stop what is writing and save again.
 
 Saving the same files again gives the same `hash`, so save whenever you are unsure what Development
-holds. `get_agent` shows `template: { hash }` (or `null`) on each profile; a Production hash
+holds. `GET /agents/<id>` shows `template: { hash }` (or `null`) on each profile; a Production hash
 that differs from Development's means Production is behind until someone publishes.
 
 ## When `template/` changed without you

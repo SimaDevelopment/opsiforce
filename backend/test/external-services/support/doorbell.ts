@@ -2,9 +2,9 @@ import type { INestApplication } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { Job } from 'bullmq';
-import { and, asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../../../db';
-import { externalServiceCalls, projectEnvironments } from '../../../db/schema';
+import { projectEnvironments } from '../../../db/schema';
 import { DoorbellProcessor } from '../../../src/external-services/doorbell/doorbell.processor';
 import { EXTERNAL_SERVICE_DOORBELL_QUEUE } from '../../../src/external-services/doorbell/doorbell.types';
 import { PodService } from '../../../src/pod/pod.service';
@@ -71,17 +71,4 @@ export function reportAppServing(app: NestFastifyApplication, environment: GateC
     headers: { authorization: `Bearer ${environment.key}` },
     payload: { serving: true },
   });
-}
-
-export function deliveryCalls(projectEnvironmentId: string) {
-  return db
-    .select()
-    .from(externalServiceCalls)
-    .where(
-      and(
-        eq(externalServiceCalls.kind, 'delivery'),
-        eq(externalServiceCalls.projectEnvironmentId, projectEnvironmentId)
-      )
-    )
-    .orderBy(asc(externalServiceCalls.createdAt), asc(externalServiceCalls.id));
 }

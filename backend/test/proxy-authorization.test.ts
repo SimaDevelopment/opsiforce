@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { configuration } from '../src/config/configuration';
-import { OperationSwitches } from '../src/external-services/configuration/operation-switches';
+import { PublicApiSettings } from '../src/external-services/configuration/public-api-settings';
 import { ProxyController } from '../src/proxy/proxy.controller';
 import { ProjectStatus } from '../src/project/project.types';
 import { PodService } from '../src/pod/pod.service';
@@ -41,7 +41,7 @@ const CONTROL_TOKEN = 'proxy-control-token-for-tests';
 /** Pod keys at the runtime proxy are covered by `external-services/runtime-proxy.test.ts`; these cases are people. */
 @Module({
   controllers: [ProxyController],
-  providers: [{ provide: OperationSwitches, useValue: { isOn: () => Promise.resolve(false) } }],
+  providers: [{ provide: PublicApiSettings, useValue: { of: () => Promise.resolve(null) } }],
 })
 class ProxyTestModule {}
 

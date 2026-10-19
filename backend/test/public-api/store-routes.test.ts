@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq } from 'drizzle-orm';
+import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { agents, skills } from '../../db/schema';
@@ -15,7 +16,7 @@ import {
   addMember,
   createTenant,
   createProject,
-  callTokenFor,
+  callerIdentityFor,
   stampProjectKind,
   type MemberFixture,
   type TenantFixture,
@@ -29,8 +30,8 @@ class InternalStoreModule {}
 
 const AUTHORING = [Perms.usePublicApi, Perms.manageSkills, Perms.manageAgents];
 
-function bearer(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}` };
+function asCaller(callerIdentity: string): Record<string, string> {
+  return { [callerIdentityHeader]: callerIdentity };
 }
 
 function skillName(): string {
@@ -416,7 +417,7 @@ describe('the Store routes seen by an Agent Caller', () => {
 
     chatProjectId = await createProject(app, tenant, { agentId, createdBy: creator.userId });
     await stampProjectKind(chatProjectId, 'agent_builder_chat');
-    chatKey = callTokenFor(app, tenant, chatProjectId);
+    chatKey = callerIdentityFor(app, tenant, chatProjectId);
   });
 
   afterAll(async () => {
@@ -428,7 +429,7 @@ describe('the Store routes seen by an Agent Caller', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/skills',
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { name, files: tree(name) },
     });
     expect(res.statusCode).toBe(201);
@@ -438,7 +439,7 @@ describe('the Store routes seen by an Agent Caller', () => {
   it("authors a Skill its Agent needs without making it the chat's subject", async () => {
     const skillId = await createSkillAsPod();
 
-    const res = await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) });
+    const res = await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: asCaller(chatKey) });
 
     expect(res.json()).toMatchObject({ createdBy: creator.userId, builderChatId: null });
   });
@@ -446,13 +447,13 @@ describe('the Store routes seen by an Agent Caller', () => {
   it('renames a Skill, keeps its name, and falls back to the name on null', async () => {
     const skillId = await createSkillAsPod();
     const name = (
-      await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) })
+      await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: asCaller(chatKey) })
     ).json().name;
 
     const renamed = await app.inject({
       method: 'PATCH',
       url: `/api/v1/skills/${skillId}`,
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { displayName: 'Release Notes' },
     });
     expect(renamed.statusCode).toBe(200);
@@ -461,7 +462,7 @@ describe('the Store routes seen by an Agent Caller', () => {
     const cleared = await app.inject({
       method: 'PATCH',
       url: `/api/v1/skills/${skillId}`,
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { displayName: null },
     });
     expect(cleared.json()).toMatchObject({ name, displayName: null });
@@ -469,7 +470,7 @@ describe('the Store routes seen by an Agent Caller', () => {
     const renamingTheName = await app.inject({
       method: 'PATCH',
       url: `/api/v1/skills/${skillId}`,
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { name: 'something-else' },
     });
     expect(renamingTheName.statusCode).toBe(400);
@@ -479,13 +480,13 @@ describe('the Store routes seen by an Agent Caller', () => {
     const subject = await seedLiveAgent(tenant.tenantId, creator.userId, { visibility: 'private' });
     await db.update(agents).set({ builderChatId: chatProjectId }).where(eq(agents.id, subject.id));
 
-    const me = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(chatKey) });
+    const me = await app.inject({ method: 'GET', url: '/api/v1/me', headers: asCaller(chatKey) });
     expect(me.json().builderSubject).toMatchObject({ type: 'agent', id: subject.id, name: subject.name });
 
     const described = await app.inject({
       method: 'PATCH',
       url: `/api/v1/agents/${subject.id}`,
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { description: 'Turns merged pull requests into release notes' },
     });
     expect(described.statusCode).toBe(200);
@@ -497,7 +498,7 @@ describe('the Store routes seen by an Agent Caller', () => {
     const renamed = await app.inject({
       method: 'PATCH',
       url: `/api/v1/agents/${subject.id}`,
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { displayName: 'Release Notes' },
     });
     expect(renamed.statusCode).toBe(200);
@@ -510,7 +511,7 @@ describe('the Store routes seen by an Agent Caller', () => {
     const blank = await app.inject({
       method: 'PATCH',
       url: `/api/v1/agents/${subject.id}`,
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { displayName: '  ' },
     });
     expect(blank.statusCode).toBe(400);
@@ -520,20 +521,20 @@ describe('the Store routes seen by an Agent Caller', () => {
     const skillId = await createSkillAsPod();
 
     const absent = await Promise.all([
-      app.inject({ method: 'DELETE', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) }),
-      app.inject({ method: 'POST', url: `/api/v1/skills/${skillId}/disable`, headers: bearer(chatKey) }),
+      app.inject({ method: 'DELETE', url: `/api/v1/skills/${skillId}`, headers: asCaller(chatKey) }),
+      app.inject({ method: 'POST', url: `/api/v1/skills/${skillId}/disable`, headers: asCaller(chatKey) }),
       app.inject({
         method: 'POST',
         url: `/api/v1/skills/${skillId}/visibility`,
-        headers: bearer(chatKey),
+        headers: asCaller(chatKey),
         payload: { visibility: 'public' },
       }),
-      app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/publish`, headers: bearer(chatKey) }),
-      app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/disable`, headers: bearer(chatKey) }),
+      app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/publish`, headers: asCaller(chatKey) }),
+      app.inject({ method: 'POST', url: `/api/v1/agents/${chatProjectId}/disable`, headers: asCaller(chatKey) }),
       app.inject({
         method: 'POST',
         url: `/api/v1/agents/${chatProjectId}/visibility`,
-        headers: bearer(chatKey),
+        headers: asCaller(chatKey),
         payload: { visibility: 'public' },
       }),
     ]);
@@ -547,10 +548,10 @@ describe('the Store routes seen by an Agent Caller', () => {
   it('cannot reach the internal Store surface, which wants identity headers it does not have', async () => {
     const skillId = await createSkillAsPod();
 
-    const internal = await app.inject({ method: 'DELETE', url: `/api/skills/${skillId}`, headers: bearer(chatKey) });
+    const internal = await app.inject({ method: 'DELETE', url: `/api/skills/${skillId}`, headers: asCaller(chatKey) });
 
     expect([401, 403]).toContain(internal.statusCode);
-    const still = await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: bearer(chatKey) });
+    const still = await app.inject({ method: 'GET', url: `/api/v1/skills/${skillId}`, headers: asCaller(chatKey) });
     expect(still.statusCode).toBe(200);
   });
 });

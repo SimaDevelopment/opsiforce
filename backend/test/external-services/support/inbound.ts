@@ -4,31 +4,21 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { and, desc, eq } from 'drizzle-orm';
+import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { db } from '../../../db';
-import { externalServiceCalls } from '../../../db/schema';
-import { gateCaller, saveProjectConfiguration, type CallRow, type GateCallerFixture } from './gate';
+import { resolvedWebhook } from './gate-proxy';
+import { gateCaller, saveProjectConfiguration, type GateCallerFixture } from './gate';
 
 export const inboundBuiltInsDir = resolve(__dirname, 'inbound-built-ins');
 export const INBOX_SERVICE = 'fixture-inbox';
 export const INBOX_SIGNING_KEY = 'inbox-signing-key-1';
-export const INBOX_WEBHOOK_PATH = `/api/external-services/webhooks/${INBOX_SERVICE}`;
 
 export interface ProviderEvent {
   type: string;
   key: string;
   occurredAt?: string;
   data: Record<string, unknown>;
-  files?: { name: string; mimeType: string; text: string; repeat?: number }[];
-  withUploads?: boolean;
-}
-
-export interface Upload {
-  filename: string;
-  mimeType: string;
-  text: string;
 }
 
 export function providerEvent(event: ProviderEvent): Required<Pick<ProviderEvent, 'occurredAt'>> & ProviderEvent {
@@ -39,39 +29,18 @@ export function signatureOf(body: string, key = INBOX_SIGNING_KEY): string {
   return createHmac('sha256', key).update(body).digest('hex');
 }
 
-export function sendWebhook(
-  app: NestFastifyApplication,
-  payload: unknown,
-  options: { path?: string; signature?: string } = {}
-) {
+export async function sendWebhook(app: NestFastifyApplication, payload: unknown, options: { signature?: string } = {}) {
   const body = JSON.stringify(payload);
+  const resolved = await resolvedWebhook(app, { service: INBOX_SERVICE });
   return app.inject({
     method: 'POST',
-    url: options.path ?? INBOX_WEBHOOK_PATH,
-    headers: { 'content-type': 'application/json', 'x-fixture-signature': options.signature ?? signatureOf(body) },
-    payload: body,
-  });
-}
-
-export function sendMultipartWebhook(app: NestFastifyApplication, payload: unknown, uploads: Upload[]) {
-  const boundary = `----fixture${crypto.randomUUID().replaceAll('-', '')}`;
-  const field = JSON.stringify(payload);
-  const parts = [
-    `--${boundary}\r\nContent-Disposition: form-data; name="payload"\r\n\r\n${field}\r\n`,
-    ...uploads.map(
-      (upload) =>
-        `--${boundary}\r\nContent-Disposition: form-data; name="attachment"; filename="${upload.filename}"\r\nContent-Type: ${upload.mimeType}\r\n\r\n${upload.text}\r\n`
-    ),
-    `--${boundary}--\r\n`,
-  ];
-  return app.inject({
-    method: 'POST',
-    url: INBOX_WEBHOOK_PATH,
+    url: `${resolved.upstream}/.well-known/opsiforce/webhook`,
     headers: {
-      'content-type': `multipart/form-data; boundary=${boundary}`,
-      'x-fixture-signature': signatureOf(field),
+      'content-type': 'application/json',
+      'x-fixture-signature': options.signature ?? signatureOf(body),
+      [callerIdentityHeader]: resolved.callerIdentity,
     },
-    payload: parts.join(''),
+    payload: body,
   });
 }
 
@@ -159,14 +128,4 @@ export async function environmentDatabase(
 export function fileOnDisk(storageRoot: string, projectEnvironmentId: string, podPath: string): Promise<string> {
   const relative = podPath.replace(/^\/workspace\//, '');
   return readFile(join(environmentDirectory(storageRoot, projectEnvironmentId), relative), 'utf8');
-}
-
-export async function latestInboundCall(slug = INBOX_SERVICE): Promise<CallRow | undefined> {
-  const [row] = await db
-    .select()
-    .from(externalServiceCalls)
-    .where(and(eq(externalServiceCalls.slug, slug), eq(externalServiceCalls.kind, 'inbound')))
-    .orderBy(desc(externalServiceCalls.createdAt))
-    .limit(1);
-  return row;
 }

@@ -17,7 +17,8 @@ import {
   platformOperator,
   type PersonFixture,
 } from './support/fixtures';
-import { askGate, configurePlatformService, READY_FIXTURE_CRM, type GateCallerFixture } from './support/gate';
+import { resolveCaller } from './support/gate-proxy';
+import { configurePlatformService, READY_FIXTURE_CRM, type GateCallerFixture } from './support/gate';
 import {
   consumerIn,
   publishCustomService,
@@ -86,16 +87,19 @@ describe("an Organization's Custom External Services next to the built-ins", () 
     });
 
     it("leaves the Organization's agents reaching its own service", async () => {
-      const own = await askGate(app, { key: consumer.key, path: FIXTURE_SERVICE });
-      const elsewhere = await askGate(app, {
-        key: (await consumerIn(app, (await tenantAdmin(app)).tenant)).key,
-        path: FIXTURE_SERVICE,
+      const own = await resolveCaller(app, { credential: `Bearer ${consumer.key}`, slug: FIXTURE_SERVICE });
+      const elsewhere = await resolveCaller(app, {
+        credential: `Bearer ${(await consumerIn(app, (await tenantAdmin(app)).tenant)).key}`,
+        slug: FIXTURE_SERVICE,
       });
 
       expect(own.statusCode, own.body).toBe(200);
-      expect(own.json()).toMatchObject({ service: FIXTURE_SERVICE, displayName: 'Fixture Boards' });
+      expect(own.json()).toMatchObject({ servedBy: 'pod', serviceId: service.id });
       expect(elsewhere.statusCode, elsewhere.body).toBe(200);
-      expect(elsewhere.json()).toMatchObject({ service: FIXTURE_SERVICE, displayName: 'Fixture CRM' });
+      expect(elsewhere.json()).toMatchObject({
+        servedBy: 'built-in',
+        serviceId: await builtInServiceId(FIXTURE_SERVICE),
+      });
     });
 
     it('hides the built-in in that Organization and flags its own service with a notice', async () => {
@@ -135,7 +139,7 @@ describe("an Organization's Custom External Services next to the built-ins", () 
         builderChatId: service.builderChatId,
         published: true,
         disabled: false,
-        sdkVersion: '1.0.0',
+        sdkVersion: '2.0.0',
         hidesBuiltIn: false,
         webhookUrl: `${PUBLIC_URL}/api/external-services/webhooks/${service.id}`,
         serviceConfiguration: { values: {}, missing: ['apiToken'] },
@@ -207,7 +211,7 @@ describe("an Organization's Custom External Services next to the built-ins", () 
       expect(saved.statusCode, saved.body).toBe(200);
       expect(saved.json()).toMatchObject({
         id: service.id,
-        projectConfiguration: { values: { boardIds: ['b2'] }, operations: { list_cards: true } },
+        projectConfiguration: { values: { boardIds: ['b2'] } },
       });
     });
   });

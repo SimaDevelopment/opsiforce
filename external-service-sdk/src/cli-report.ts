@@ -55,13 +55,12 @@ export async function report(args: string[]): Promise<number> {
     options: {
       from: { type: 'string' },
       out: { type: 'string', default: serviceTestReportPath },
-      'built-in': { type: 'boolean', default: false },
     },
   });
   if (values.from === undefined) throw new Error('report needs --from <lines.json> (or --from - for stdin)');
   const folder = resolve(positionals[0] ?? '.');
 
-  const read = await readServiceFolder(folder, { origin: values['built-in'] ? 'built_in' : 'custom' });
+  const read = await readServiceFolder(folder);
   if (!read.check.ok) {
     process.stdout.write(formatCheck(read.check));
     return 1;

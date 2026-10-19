@@ -8,9 +8,9 @@ export const MeSchema = z
     email: z.string().nullable(),
     displayName: z.string(),
     source: z
-      .enum(['idp-bearer', 'call-token'])
+      .enum(['idp-bearer', 'caller-identity'])
       .describe(
-        "How this call authenticated: an IdP bearer token, or the call token the Gate gave the `public-api` External Service for a pod's call acting for this user"
+        "How this call authenticated: an IdP bearer token, or the Caller identity a Project's Gateway Key got on public-api's Service host, acting for the human who created that Project"
       ),
     tenant: TenantRefSchema,
     tenants: z.array(TenantRefSchema),

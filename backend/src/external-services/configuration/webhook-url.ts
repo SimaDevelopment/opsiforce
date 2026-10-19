@@ -1,4 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
+import { eq } from 'drizzle-orm';
+import { db } from '../../../db';
+import { externalServices } from '../../../db/schema';
 import type { ServiceLane } from '../registry/custom-service-catalog';
 import type { RegisteredService } from '../registry/service-registry';
 
@@ -30,6 +33,28 @@ export function serviceWebhookUrl(config: ConfigService, service: WebhookTarget)
 
 export function webhookUrlOf(publicUrl: string, service: WebhookTarget): string {
   if (service.origin !== 'custom') return `${publicUrl}${SERVICE_WEBHOOKS_PATH}/${service.slug}`;
-  const lane = service.home?.lane === 'development' ? `/${DEVELOPMENT_WEBHOOK_SUFFIX}` : '';
-  return `${publicUrl}${SERVICE_WEBHOOKS_PATH}/${service.id}${lane}`;
+  return customServiceWebhookUrl(publicUrl, service.id, service.home?.lane ?? 'default');
+}
+
+function customServiceWebhookUrl(publicUrl: string, serviceId: string, lane: ServiceLane): string {
+  const suffix = lane === 'development' ? `/${DEVELOPMENT_WEBHOOK_SUFFIX}` : '';
+  return `${publicUrl}${SERVICE_WEBHOOKS_PATH}/${serviceId}${suffix}`;
+}
+
+export async function podWebhookUrl(
+  config: ConfigService,
+  environment: { projectId: string; isDefault: boolean }
+): Promise<string | undefined> {
+  const publicUrl = config.get<string>('opsiforcePublicUrl', '');
+  if (publicUrl.trim() === '') return undefined;
+  const [service] = await db
+    .select({ id: externalServices.id })
+    .from(externalServices)
+    .where(eq(externalServices.builderChatId, environment.projectId));
+  if (!service) return undefined;
+  return customServiceWebhookUrl(
+    publicUrlFrom(publicUrl),
+    service.id,
+    environment.isDefault ? 'development' : 'default'
+  );
 }

@@ -28,7 +28,6 @@ export const Perms = {
   manageSchedules: 'can_manage_schedules',
   viewPods: 'can_view_pods',
   manageExternalIntegration: 'can_manage_external_integration',
-  viewExternalServicesUsage: 'can_view_external_services_usage',
   managePlatformExternalServices: 'can_manage_platform_external_services',
   manageTenantExternalServices: 'can_manage_tenant_external_services',
   configureProjectExternalServices: 'can_configure_project_external_services',

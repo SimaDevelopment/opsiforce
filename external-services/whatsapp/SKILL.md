@@ -11,22 +11,22 @@ A WhatsApp number connected to the deployment can feed messages into an App. Mes
 
 ## Which chats this environment hears — you cannot change it
 
-Picking the number and the chats is the user's work, in **WhatsApp** under External services, below the chat: one item per number, its chats picked from a searchable list, and **receiving turned on**. Adding a number to the deployment is the platform operator's work. There is no endpoint that lets you do either.
+Picking the number and the chats is the user's work, in **WhatsApp** under External services, below the chat: one item per number, its chats picked from a searchable list. Adding a number to the deployment is the platform operator's work. There is no endpoint that lets you do either.
 
-Read what is wired from describe, never guess:
+Read what is wired from the service, never guess:
 
 ```bash
-curl -s "$EXTERNAL_SERVICES_URL/whatsapp" -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
+curl -s "https://whatsapp.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce" -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
 ```
 
-- `projectConfiguration.channels` lists each number (`channel`) with its `chats` (chat ids); `projectConfiguration._labels.chats` maps chat ids to names, and `channel` labels come from the number's label.
-- `receive["message.received"]` off, or no `channels`: nothing reaches this environment. Tell the user to open **WhatsApp** below the chat, pick the number and chats, turn on receiving and save.
+- `configuration.channels.value` lists each number (`channel`, the number's item id) with its `chats` (chat ids).
+- `403` with `Opsiforce-Outcome: not connected`, or no `channels`: nothing reaches this environment. Tell the user to open **WhatsApp** below the chat, pick the number and chats, and save.
 - The number the user means is not offered there: a platform operator has to add it. Say so plainly.
-- `503 service-not-configured` or `404 unknown-service`: WhatsApp is not set up on this deployment.
+- `404`: WhatsApp is not set up on this deployment.
 
 Everything below — the handler and the read code — you can build before any of that is done. Build it, then tell the user what is still missing.
 
-Publishing copies the numbers and chats to the published environment and turns receiving off in Development, so real messages go to the published App; the user turns it back on in Development to keep testing there.
+Publishing copies the numbers and chats to the published environment. Development keeps its own, so both hear those chats until the user removes them from Development.
 
 ## What a message looks like
 
@@ -80,7 +80,7 @@ sqlite3 -readonly -header -column /workspace/data/external-services.db \
      FROM events WHERE service = 'whatsapp' ORDER BY id DESC LIMIT 10;"
 ```
 
-- **No rows** → nothing reached this environment. Check describe: no `channels`, the chat missing from `chats`, or receiving off is the user's to fix in the WhatsApp dialog; a missing number is the platform operator's. Don't debug the handler.
+- **No rows** → nothing reached this environment. Check `/.well-known/opsiforce`: no `channels` or the chat missing from `chats` is the user's to fix in the WhatsApp dialog; a missing number is the platform operator's. Don't debug the handler.
 - **Rows from some chats but not the one the user means** → compare `projectConfiguration.channels[].chats` with what they expect and name the missing chat.
 - **Rows with `app_delivered_at` NULL** → stored, but the App was not rung successfully: the handler is missing (the template answers 501), it failed, or it is still being retried. Process them with the catch-up read.
 - **`media.stored` false** → the media fetch from WhatsApp's gateway failed; the text and metadata are intact.

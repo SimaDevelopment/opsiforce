@@ -150,6 +150,7 @@ function hashDir(dir) {
 // (e.g. after a branch update) actually installs new deps, rebuilds bumped images,
 // applies new migrations, and reconciles provider/value changes instead of skipping.
 const STEP_FINGERPRINTS = {
+  infra: () => sha256(`${hashFile(join(PACKAGE_ROOT, 'scripts', 'steps', 'infra.mjs'))}:${hashDir(join(PACKAGE_ROOT, 'helm', 'local-infra'))}`),
   install: () => hashFile(findUp('yarn.lock', PACKAGE_ROOT) ?? join(PACKAGE_ROOT, 'yarn.lock')),
   images: () => hashFile(join(PACKAGE_ROOT, 'agent-config', 'agent-image-version.json')),
   database: () => hashDir(join(PACKAGE_ROOT, 'backend', 'db', 'migrations')),

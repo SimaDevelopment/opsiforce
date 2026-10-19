@@ -1,4 +1,5 @@
 import { Match, Show, Switch, createEffect, createMemo, createSignal, on, type JSX } from 'solid-js';
+import { toast } from 'solid-sonner';
 import { ApiError } from '~/api/client';
 import { useEnvironments } from '~/api/environments';
 import {
@@ -25,11 +26,15 @@ import { Rocket } from '~/components/icons';
 import { PublishPreviewCard, PublishTargetList } from '~/components/publish-environments';
 import { CallersReachSetting, DefaultEnvironmentSwitch, type ServiceTarget } from './default-environment-switch';
 import {
-  CheckSection,
   createNewFieldsDraft,
+  DiffSection,
+  EventsSection,
+  FormChangesSection,
   ImpactSection,
   NewFieldsSection,
+  PublishNoteSection,
   TestReportSection,
+  TestWarningsSection,
 } from './publish-review';
 
 const SHORT_COMMIT = 7;
@@ -81,12 +86,6 @@ export function PublishServiceDialog(props: {
   const refresh = useRefreshAfterPublish(() => props.serviceId);
   const jobStatus = createMemo(() => job.data?.status);
 
-  createEffect(
-    on(jobStatus, (status) => {
-      if (status === 'done' || status === 'failed') refresh();
-    })
-  );
-
   const close = (open: boolean) => {
     if (!open) {
       setStarted(false);
@@ -95,6 +94,18 @@ export function PublishServiceDialog(props: {
     }
     props.onOpenChange(open);
   };
+
+  createEffect(
+    on(jobStatus, (status) => {
+      if (status !== 'done' && status !== 'failed') return;
+      refresh();
+      if (status === 'done') {
+        const environment = targets().find((candidate) => candidate.environmentId === target());
+        toast.success(`Published ${props.displayName}${environment ? ` to ${environment.name}` : ''}`);
+        close(false);
+      }
+    })
+  );
 
   return (
     <Dialog open={props.open} onOpenChange={close}>
@@ -204,7 +215,24 @@ function PublishReviewBody(props: {
   const fields = props.review.serviceConfiguration ? createNewFieldsDraft(props.review.serviceConfiguration) : null;
   const publish = usePublishService(() => props.serviceId);
   const [failure, setFailure] = createSignal<string | null>(null);
-  const ready = () => props.review.check.ok && fields !== null && fields.isValid();
+  const ready = () => !props.review.builtOnSdk1 && props.review.check.ok && fields !== null && fields.isValid();
+
+  const newFields = () => (
+    <Show when={fields}>
+      {(draft) => (
+        <NewFieldsSection
+          fields={draft()}
+          firstPublish={props.review.target.firstPublish}
+          callService={(route, name, request) =>
+            callDevelopmentServiceForm(props.serviceId, route, name, {
+              values: JSON.parse(JSON.stringify(draft().draft.values)),
+              ...request,
+            })
+          }
+        />
+      )}
+    </Show>
+  );
 
   const submit = () => {
     if (!fields) return;
@@ -225,24 +253,21 @@ function PublishReviewBody(props: {
   return (
     <>
       <PublishPreviewCard title={`What ${props.review.target.name} will receive`}>
-        <CheckSection check={props.review.check} changes={props.review.changes} impact={props.review.impact} />
+        <TestWarningsSection warnings={props.review.testWarnings} />
+        <PublishNoteSection note={props.review.publishNote} />
+        <Show when={props.review.formChanges}>{(changes) => <FormChangesSection changes={changes()} />}</Show>
+        <EventsSection check={props.review.check} changes={props.review.changes} />
         <ImpactSection impact={props.review.impact} callersStayOn={props.review.current} />
+        {newFields()}
         <TestReportSection report={props.review.testReport} />
-        <Show when={fields}>
-          {(draft) => (
-            <NewFieldsSection
-              fields={draft()}
-              firstPublish={props.review.target.firstPublish}
-              callService={(route, name, request) =>
-                callDevelopmentServiceForm(props.serviceId, route, name, {
-                  values: JSON.parse(JSON.stringify(draft().draft.values)),
-                  ...request,
-                })
-              }
-            />
-          )}
-        </Show>
+        <DiffSection title="Service skill" diff={props.review.skillDiff} open empty="The Service skill is unchanged." />
+        <DiffSection title="Code" diff={props.review.codeDiff} empty="app/ is unchanged." />
       </PublishPreviewCard>
+      <Show when={props.review.builtOnSdk1}>
+        <p class="text-xs text-destructive" role="alert">
+          Built on SDK 1: rebuild it on SDK 2 before publishing.
+        </p>
+      </Show>
       <Show when={failure()}>
         {(message) => (
           <p class="text-xs text-destructive" role="alert">

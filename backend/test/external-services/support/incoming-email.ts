@@ -8,13 +8,12 @@ import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { db } from '../../../db';
 import { externalServiceConfig } from '../../../db/schema';
+import { webhookThroughGate } from './gate-proxy';
 import { environmentDirectory } from './inbound';
 
 export const EMAIL_SERVICE = 'incoming-email';
-export const EMAIL_WEBHOOK_PATH = `/api/external-services/webhooks/${EMAIL_SERVICE}`;
 export const RECEIVING_DOMAIN = 'mail.example.test';
 export const MAILGUN_SIGNING_KEY = 'mailgun-signing-key-1';
-export const RECEIVING_EMAIL = { receive: { 'email.received': true } };
 
 export interface MailAttachment {
   filename: string;
@@ -53,7 +52,7 @@ function mailgunFields(mail: Mail): Record<string, string> {
   };
 }
 
-export function sendMail(app: NestFastifyApplication, mail: Mail) {
+export function sendMail(app: NestFastifyApplication, mail: Mail): Promise<Response> {
   const boundary = `----mailgun${crypto.randomUUID().replaceAll('-', '')}`;
   const parts = [
     ...Object.entries(mailgunFields(mail)).map(
@@ -65,11 +64,10 @@ export function sendMail(app: NestFastifyApplication, mail: Mail) {
     ),
     `--${boundary}--\r\n`,
   ];
-  return app.inject({
+  return webhookThroughGate(app, { service: EMAIL_SERVICE }, '', {
     method: 'POST',
-    url: EMAIL_WEBHOOK_PATH,
     headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
-    payload: parts.join(''),
+    body: parts.join(''),
   });
 }
 

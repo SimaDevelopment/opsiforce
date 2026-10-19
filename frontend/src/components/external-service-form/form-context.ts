@@ -45,6 +45,7 @@ export interface FormContext {
   revealed?: () => ReadonlyMap<string, string>;
   rotate?: (target: RotateTarget) => Promise<void>;
   pendingGeneratedText?: () => string;
+  focusedField?: string;
 }
 
 export function fixedOptionsOf(

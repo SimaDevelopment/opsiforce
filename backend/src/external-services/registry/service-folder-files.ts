@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { open, realpath, stat, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
-import { checkServiceManifest, type ManifestCheckOptions, type ManifestProblem } from '@opsiforce/external-service-sdk';
+import { checkServiceManifest, type ManifestProblem } from '@opsiforce/external-service-sdk';
 import { formatProblemPath, manifestLimits } from '@opsiforce/external-service-sdk/platform';
 import {
   manifestFileName,
@@ -102,10 +102,7 @@ async function iconProblems(folder: string, icon: string): Promise<string[] | 'r
   return read;
 }
 
-export async function readConfinedServiceFolder(
-  folder: string,
-  options: ManifestCheckOptions
-): Promise<ServiceFolderRead> {
+export async function readConfinedServiceFolder(folder: string): Promise<ServiceFolderRead> {
   const raw = await withFileInFolder(folder, manifestFileName, (handle) => handle.readFile('utf8'));
   if (raw === 'missing') return refusedRead([], `${manifestFileName} not found in ${folder}`);
   if (raw === 'refused') {
@@ -125,7 +122,7 @@ export async function readConfinedServiceFolder(
     );
   }
 
-  const check = checkServiceManifest(json, options);
+  const check = checkServiceManifest(json);
   const icon = check.manifest?.icon;
   if (icon === undefined) return { json, check };
 

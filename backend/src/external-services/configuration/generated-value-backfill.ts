@@ -6,7 +6,8 @@ import { ServiceRegistry, type RegisteredService } from '../registry/service-reg
 import { itemFieldsOf, type ConfigurationOwner } from './configuration-values';
 import { emptyGeneratedPaths } from './form-save';
 import { isGeneratedField } from './generated-values';
-import { ProjectConfigurationStore, storedShapeOf, waitsForReceive } from './project-configuration.store';
+import { PublishedDefaults } from './published-defaults';
+import { ProjectConfigurationStore, storedShapeOf } from './project-configuration.store';
 import { ServiceConfigurationStore } from './service-configuration.store';
 
 function generates(form: readonly Field[]): boolean {
@@ -26,11 +27,13 @@ export class GeneratedValueBackfill implements OnApplicationBootstrap {
   constructor(
     private readonly registry: ServiceRegistry,
     private readonly serviceConfigurations: ServiceConfigurationStore,
-    private readonly projectConfigurationStore: ProjectConfigurationStore
+    private readonly projectConfigurationStore: ProjectConfigurationStore,
+    private readonly publishedDefaults: PublishedDefaults
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     for (const service of this.registry.list()) {
+      await this.publishedDefaults.writeInto(service);
       if (generates(service.manifest.serviceForm ?? [])) await this.fillServiceConfigurations(service);
       if (generates(service.manifest.projectForm ?? [])) await this.fillProjectConfigurations(service);
     }
@@ -57,10 +60,10 @@ export class GeneratedValueBackfill implements OnApplicationBootstrap {
       service
     )) {
       const current = await this.projectConfigurationStore.read(service, projectEnvironmentId);
-      if (waitsForReceive(service, current.receive) || emptyGeneratedPaths(form, current.values).length === 0) continue;
+      if (emptyGeneratedPaths(form, current.values).length === 0) continue;
       try {
         await this.projectConfigurationStore.saveAndReport(service, projectEnvironmentId, storedShapeOf(current), {
-          keepSwitches: true,
+          keepLabels: true,
         });
       } catch (error) {
         this.logger.warn(

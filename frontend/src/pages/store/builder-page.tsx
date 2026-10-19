@@ -142,6 +142,7 @@ function BuilderStrip(props: { chat: BuilderChat; onChanged: () => void; onGone:
           onGone={props.onGone}
           onStatusEvent={props.onChanged}
           showSkillsAndServices={false}
+          servesApp={props.chat.subject.type !== 'external_service'}
           headerLabel={<span class="shrink-0 text-sm font-medium">{builderLabel(props.chat.subject.type)}</span>}
           footer={<ComposerNote chat={props.chat} />}
         />
@@ -183,23 +184,25 @@ function ComposerNote(props: { chat: BuilderChat }) {
 function ServiceComposerNote(props: { chat: BuilderChat }) {
   const unprompted = () => props.chat.lastPromptAt === null;
   const development = useDevelopmentService(() => props.chat.subject.id, unprompted);
-  const holdsOperations = () => Object.keys(development.data?.manifest.operations ?? {}).length > 0;
+  const holdsForms = () => {
+    const manifest = development.data?.manifest;
+    return (manifest?.serviceForm?.length ?? 0) + (manifest?.projectForm?.length ?? 0) > 0;
+  };
   return (
     <Show when={unprompted() && !development.isPending}>
       <p class="shrink-0 text-balance border-t border-border bg-background px-3 py-2 text-center text-xs text-muted-foreground">
         <Show
-          when={holdsOperations()}
+          when={holdsForms()}
           fallback={
             <>
               Tell the External Service Builder what {subjectLabel(props.chat.subject)} should connect to. It proposes
-              the service's forms and Operations for your approval, then writes and tests them here; publishing stays
-              with you on the service's page.
+              the service's forms and the requests it lets through for your approval, then writes and tests them here;
+              publishing stays with you on the service's page.
             </>
           }
         >
-          {subjectLabel(props.chat.subject)} already has its forms and Operations. Fill in its Development
-          configuration, then ask the External Service Builder to test it here; publishing stays with you on the
-          service's page.
+          {subjectLabel(props.chat.subject)} already has its forms. Fill in its Development configuration, then ask the
+          External Service Builder to test it here; publishing stays with you on the service's page.
         </Show>
       </p>
     </Show>

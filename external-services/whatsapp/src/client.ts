@@ -1,7 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { ServiceError, upstreamUnauthorized } from '@opsiforce/external-service-sdk';
-
 import type { ServiceConfiguration } from '../service.types.ts';
 
 export type Channel = NonNullable<ServiceConfiguration['channels']>[number];
@@ -73,11 +71,9 @@ export async function whapi<Body>(
   return (await response.json()) as Body;
 }
 
-export function asServiceError(error: unknown, channel: Channel): unknown {
+export function channelFailure(error: unknown, channel: Channel): unknown {
   if (!(error instanceof WhapiRefusal)) return error;
-  const detail = `${channel.label}: ${error.message}`;
-  if (error.status === 401 || error.status === 403) return upstreamUnauthorized(detail);
-  return new ServiceError({ status: 502, code: 'upstream-failed', detail });
+  return new Error(`${channel.label}: ${error.message}`, { cause: error });
 }
 
 export function channelOf(configuration: ServiceConfiguration, id: unknown): Channel | undefined {

@@ -4,8 +4,6 @@ export const SERVICE_SWITCH_DRAIN_MS = 'SERVICE_SWITCH_DRAIN_MS';
 
 export const SERVICE_SWITCH_DRAIN = 30_000;
 
-export const INBOUND_HOLD_WAIT_MS = 5_000;
-
 export type LaneEntry = 'entered' | 'held' | 'moved';
 
 @Injectable()
@@ -22,13 +20,6 @@ export class DefaultLaneHolds {
     if (switchedDefault !== undefined && switchedDefault !== environmentId) return 'moved';
     this.inFlight.set(serviceId, (this.inFlight.get(serviceId) ?? 0) + 1);
     return 'entered';
-  }
-
-  async enterWaiting(serviceId: string, environmentId: string, waitMs: number): Promise<LaneEntry> {
-    const entry = this.enter(serviceId, environmentId);
-    if (entry !== 'held' || waitMs <= 0) return entry;
-    await this.released(serviceId, waitMs);
-    return this.enter(serviceId, environmentId);
   }
 
   leave(serviceId: string): void {
@@ -56,6 +47,10 @@ export class DefaultLaneHolds {
     }
     this.holds.delete(serviceId);
     this.notify(this.releaseWaiters, serviceId);
+  }
+
+  isHeld(serviceId: string): boolean {
+    return this.holds.has(serviceId);
   }
 
   async released(serviceId: string, waitMs: number): Promise<boolean> {

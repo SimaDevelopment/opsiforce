@@ -23,14 +23,13 @@ import {
   configuringProject,
   platformServiceUrl,
   READY_KEYS,
-  RECEIVING,
   readProjectService,
   saveProjectService,
   saveServiceConfiguration,
   fixtureKeysEvolved,
-  type EvolvedKeys,
   type Revealed,
 } from './support/generating';
+import type { EvolvedBuiltIns } from './support/evolved-built-ins';
 import { Perms } from '../../src/permission/permission.constants';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createProject, createTenant } from '../support/project-fixtures';
@@ -117,15 +116,15 @@ describe('lists and generated values in a Service configuration', () => {
     const fresh = `fresh${crypto.randomUUID().replaceAll('-', '').slice(0, 11)}`;
     scriptGenerated('lowercaseAlphanumeric', [taken, taken, fresh]);
 
-    const firstSave = await saveProjectService(app, first, serviceId, RECEIVING);
-    const secondSave = await saveProjectService(app, second, serviceId, RECEIVING);
+    const firstSave = await saveProjectService(app, first, serviceId, {});
+    const secondSave = await saveProjectService(app, second, serviceId, {});
 
     expect(firstSave.statusCode, firstSave.body).toBe(200);
     expect(firstSave.json().projectConfiguration.values.localPart).toBe(taken);
     expect(secondSave.statusCode, secondSave.body).toBe(200);
     expect(secondSave.json().projectConfiguration.values.localPart).toBe(fresh);
 
-    const typed = await saveProjectService(app, second, serviceId, { ...RECEIVING, localPart: taken });
+    const typed = await saveProjectService(app, second, serviceId, { localPart: taken });
     expect(typed.statusCode).toBe(400);
     expect(typed.json()).toMatchObject({
       type: 'urn:opsiforce:error:invalid-configuration',
@@ -140,10 +139,10 @@ describe('lists and generated values in a Service configuration', () => {
     const second = await configuringProject(app);
     const shared = `shared${crypto.randomUUID().replaceAll('-', '').slice(0, 10)}`;
     scriptGenerated('lowercaseAlphanumeric', [shared]);
-    expect((await saveProjectService(app, first, serviceId, RECEIVING)).statusCode).toBe(200);
-    await storeProjectConfiguration(KEYS_SERVICE, second.projectEnvironmentId, { ...RECEIVING, localPart: shared });
+    expect((await saveProjectService(app, first, serviceId, {})).statusCode).toBe(200);
+    await storeProjectConfiguration(KEYS_SERVICE, second.projectEnvironmentId, { localPart: shared });
 
-    const res = await saveProjectService(app, second, serviceId, { ...RECEIVING, watched: [] });
+    const res = await saveProjectService(app, second, serviceId, { watched: [] });
 
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().projectConfiguration.values.localPart).toBe(shared);
@@ -156,7 +155,7 @@ describe('lists and generated values in a Service configuration', () => {
     const wanted = `both${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
 
     const saves = await Promise.all(
-      [first, second].map((project) => saveProjectService(app, project, serviceId, { ...RECEIVING, localPart: wanted }))
+      [first, second].map((project) => saveProjectService(app, project, serviceId, { localPart: wanted }))
     );
 
     expect(saves.map((save) => save.statusCode).toSorted()).toEqual([200, 400]);
@@ -184,20 +183,17 @@ describe('lists and generated values in a Service configuration', () => {
     await db.delete(externalServiceConfigs).where(eq(externalServiceConfigs.environment, 'development'));
   });
 
-  it('fills a Project form generated value only once the configuration receives an Event type', async () => {
+  it('fills a Project form generated value on the first save and keeps it on the next', async () => {
     await saveServiceConfiguration(app, operator, serviceId, READY_KEYS);
     const project = await configuringProject(app);
 
-    const quiet = await saveProjectService(app, project, serviceId, {});
-    expect(quiet.statusCode, quiet.body).toBe(200);
-    expect(quiet.json().projectConfiguration.values.localPart).toBeUndefined();
-
-    const receiving = await saveProjectService(app, project, serviceId, RECEIVING);
-    const localPart = receiving.json().projectConfiguration.values.localPart as string;
+    const first = await saveProjectService(app, project, serviceId, {});
+    expect(first.statusCode, first.body).toBe(200);
+    const localPart = first.json().projectConfiguration.values.localPart as string;
     expect(localPart).toMatch(/^[a-z0-9]{16}$/);
 
-    const off = await saveProjectService(app, project, serviceId, { receive: { 'message.received': false } });
-    expect(off.json().projectConfiguration.values.localPart).toBe(localPart);
+    const again = await saveProjectService(app, project, serviceId, { localPart });
+    expect(again.json().projectConfiguration.values.localPart).toBe(localPart);
   });
 
   it('refuses more list items than the list allows', async () => {
@@ -214,7 +210,7 @@ describe('lists and generated values in a Service configuration', () => {
     await saveServiceConfiguration(app, operator, serviceId, READY_KEYS);
     const development = await configuringProject(app);
     const production = { ...(await productionCaller(app, development)), configurer: development.configurer };
-    const developed = await saveProjectService(app, development, serviceId, RECEIVING);
+    const developed = await saveProjectService(app, development, serviceId, {});
     const developmentAddress = developed.json().projectConfiguration.values.localPart as string;
     const carry = () =>
       app.get(ProjectConfigurationCarry).carry(development.projectEnvironmentId, production.projectEnvironmentId);
@@ -226,7 +222,7 @@ describe('lists and generated values in a Service configuration', () => {
     expect(productionAddress).toMatch(/^[a-z0-9]{16}$/);
     expect(productionAddress).not.toBe(developmentAddress);
 
-    await saveProjectService(app, development, serviceId, RECEIVING);
+    await saveProjectService(app, development, serviceId, {});
     await carry();
     expect((await readProjectService(app, production, serviceId)).json().projectConfiguration.values.localPart).toBe(
       productionAddress
@@ -238,14 +234,13 @@ describe('lists and generated values in a Service configuration', () => {
 });
 
 describe('a Project that enables a service that generates Project form values', () => {
-  let evolved: EvolvedKeys;
+  let evolved: EvolvedBuiltIns;
   let harness: ExternalServicesTestApp;
   let app: NestFastifyApplication;
 
   beforeAll(async () => {
     evolved = await fixtureKeysEvolved((manifest) => {
       delete manifest.events;
-      delete (manifest.bounds as Record<string, unknown>).address;
     });
     harness = await createExternalServicesTestApp({ builtInsDir: evolved.dir });
     app = harness.app;

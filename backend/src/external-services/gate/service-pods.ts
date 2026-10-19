@@ -58,7 +58,7 @@ export class ServicePods {
     const { projectEnvironmentId } = home;
     const state = await this.waker.wake(projectEnvironmentId);
     if (state === 'disabled') throw new UnreachablePod('service-disabled', 'The service is disabled.');
-    if (state === 'failed') throw new UnreachablePod('service-failed', "The service's pod failed to start.");
+    if (state === 'failed') throw new UnreachablePod('service-failed', "The service couldn't start.");
     const podIp =
       state === 'starting'
         ? await this.servingPodIp(projectEnvironmentId)
@@ -74,7 +74,7 @@ export class ServicePods {
       const environment = await environmentOf(projectEnvironmentId);
       if (environment?.podIp) return environment.podIp;
       if (environment?.status === 'failed') {
-        throw new UnreachablePod('service-failed', "The service's pod failed to start.");
+        throw new UnreachablePod('service-failed', "The service couldn't start.");
       }
       await sleep(Math.min(STALE_READINESS_RECHECK_MS, Math.max(deadline - Date.now(), 0)));
     }

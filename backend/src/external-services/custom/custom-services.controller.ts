@@ -45,6 +45,16 @@ export class CustomServicesController {
     return this.services.consumersOf(tenant.tenantId, id);
   }
 
+  @Delete(':id/consumers/:projectEnvironmentId')
+  @HttpCode(204)
+  async disconnect(
+    @Param('id') id: string,
+    @Param('projectEnvironmentId') projectEnvironmentId: string,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<void> {
+    await this.services.disconnect(tenant.tenantId, id, projectEnvironmentId);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   delete(

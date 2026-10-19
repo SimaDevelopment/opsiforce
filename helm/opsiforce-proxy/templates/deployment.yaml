@@ -117,8 +117,6 @@ spec:
                 - --skip-auth-route=GET=^/api/v1/runtime/openapi.json$
                 - --skip-auth-route=GET=^/api/v1/docs(/.*)?$
                 - --api-route=^/api/(v1|proxy)/
-                - --skip-auth-route=POST=^/api/external-services/webhooks/.*$
-                - --skip-auth-route=HEAD=^/api/external-services/webhooks/.*$
                 - --cookie-refresh=4m
                 - --upstream-timeout=2m
                 {{- range .Values.oauth2Proxy.extraArgs }}

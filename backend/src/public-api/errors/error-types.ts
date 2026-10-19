@@ -28,6 +28,7 @@ export const ERROR_TYPES = {
   'test-project-exists': { status: HttpStatus.CONFLICT, title: 'The Builder chat already has a Test Project' },
   'limit-reached': { status: HttpStatus.CONFLICT, title: 'Tenant limit reached' },
   'chain-too-deep': { status: HttpStatus.CONFLICT, title: 'Project chain is too deep' },
+  'max-created-projects': { status: HttpStatus.CONFLICT, title: 'This Project created as many Projects as it may' },
   unexpected: { status: HttpStatus.INTERNAL_SERVER_ERROR, title: 'Unexpected error' },
   'bad-request': { status: HttpStatus.BAD_REQUEST, title: 'Bad request' },
   unauthorized: { status: HttpStatus.UNAUTHORIZED, title: 'Unauthorized' },

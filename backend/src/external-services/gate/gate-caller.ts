@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import type { CallerIdentity } from '@opsiforce/external-service-sdk';
 import { eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { environments, projectEnvironments, projects, type ProjectKindValue } from '../../../db/schema';
 import { GatewayKeyService } from '../../gateway/gateway-key.service';
+
+export const NO_TENANT_CLAIM = 'no-tenant';
+
+export function platformCallerOf(tenantId: string | null): CallerIdentity {
+  return { kind: 'platform', tenantId: tenantId ?? NO_TENANT_CLAIM };
+}
 
 export interface GateCaller {
   tenantId: string;

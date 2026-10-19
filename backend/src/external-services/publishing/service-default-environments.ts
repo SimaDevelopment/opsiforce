@@ -5,10 +5,12 @@ import { externalServices, projectEnvironments } from '../../../db/schema';
 import { errorMessage } from '../../common/error-message';
 import { callersOwner } from '../configuration/configuration-values';
 import { GeneratedValueBackfill } from '../configuration/generated-value-backfill';
+import { PublishedDefaults } from '../configuration/published-defaults';
 import { ServiceConfigurationSaveHooks } from '../configuration/service-configuration-save-hooks';
 import { ServiceSkillReach } from '../knowledge/service-skill-reach';
 import { CustomServiceRefusal } from '../custom/custom-service-refusal';
 import { ServiceStateFiles } from '../custom/service-state-files';
+import { GateEviction } from '../gate/gate-eviction';
 import { DefaultLaneHolds, SERVICE_SWITCH_DRAIN_MS } from '../gate/default-lane-holds';
 import { servableOrNone } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
@@ -25,9 +27,11 @@ export class ServiceDefaultEnvironments {
     private readonly registry: ServiceRegistry,
     private readonly serviceSkillReach: ServiceSkillReach,
     private readonly backfill: GeneratedValueBackfill,
+    private readonly publishedDefaults: PublishedDefaults,
     private readonly serviceSaveHooks: ServiceConfigurationSaveHooks,
     private readonly stateFiles: ServiceStateFiles,
     private readonly holds: DefaultLaneHolds,
+    private readonly gate: GateEviction,
     @Inject(SERVICE_SWITCH_DRAIN_MS) private readonly drainMs: number
   ) {}
 
@@ -61,7 +65,7 @@ export class ServiceDefaultEnvironments {
     let held = false;
     let switched = false;
     try {
-      await db.transaction(async (tx) => {
+      const moved = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`service-default-switch:${serviceId}`}))`);
         held = true;
         if (!(await this.holds.hold(serviceId, this.drainMs))) {
@@ -72,12 +76,16 @@ export class ServiceDefaultEnvironments {
           );
         }
         await this.stateFiles.copyDefaultTo(serviceId, environmentId);
-        await tx
+        return tx
           .update(externalServices)
           .set({ defaultEnvironmentId: environmentId, updatedAt: new Date() })
-          .where(eq(externalServices.id, serviceId));
+          .where(eq(externalServices.id, serviceId))
+          .returning({ tenantId: externalServices.tenantId, slug: externalServices.slug });
       });
       switched = true;
+      for (const row of moved) {
+        if (row.tenantId) await this.gate.evictService(row.tenantId, row.slug);
+      }
     } finally {
       if (held) this.holds.release(serviceId, switched ? environmentId : undefined);
     }
@@ -90,9 +98,10 @@ export class ServiceDefaultEnvironments {
   }
 
   private async becameDefault(service: RegisteredService): Promise<void> {
+    await this.publishedDefaults.writeInto(service);
     await this.backfill.fillServiceConfigurations(service);
     await this.backfill.fillProjectConfigurations(service);
-    const failure = await this.serviceSaveHooks.runPending(service, callersOwner(service), null).catch((error) => {
+    const failure = await this.serviceSaveHooks.runPending(service, callersOwner(service)).catch((error) => {
       this.logger.warn(`The ${service.slug} Service configuration hook could not run: ${errorMessage(error)}`);
       return null;
     });

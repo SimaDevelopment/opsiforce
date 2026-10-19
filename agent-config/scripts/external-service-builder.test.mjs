@@ -45,8 +45,9 @@ describe("the External Service Builder package", () => {
     const startup = readFileSync(path.join(app, "startup.sh"), "utf8")
 
     accessSync(path.join(app, "startup.sh"), constants.X_OK)
-    assert.match(startup, /yarn install --immutable\n\s*exec yarn serve/)
-    assert.match(startup, /exec yarn dev/)
+    assert.match(startup, /yarn install --immutable\n\s*guard service yarn serve &/)
+    assert.match(startup, /guard service yarn dev &/)
+    assert.match(startup, /\nwait -n\n$/)
   })
 
   it("ships the external-service-authoring skill its prompt loads, beside platform and sqlite", async () => {
@@ -66,17 +67,30 @@ describe("the External Service Builder package", () => {
       "manifest.md",
       "patterns.md",
       "review-stops.md",
+      "routes.md",
+      "service-skill.md",
+      "testing.md",
     ])
     assert.match(readFileSync(path.join(packageRoot, "agent.md"), "utf8"), /`external-service-authoring`/)
   })
 
-  it("lays an empty service whose generated types match its manifest", () => {
+  it("lays an SDK 2 service with no routes, so everything starts not supported", () => {
     const manifest = readJson(path.join(app, "service.json"))
     const types = readFileSync(path.join(app, "service.types.ts"), "utf8")
+    const service = readFileSync(path.join(app, "service.ts"), "utf8")
 
-    assert.equal(manifest.sdk, 1)
-    assert.deepEqual(manifest.operations, {})
+    assert.equal(manifest.sdk, 2)
     assert.match(types, /^export const manifestHash = '[0-9a-f]{64}';$/m)
-    assert.match(readFileSync(path.join(app, "handlers.ts"), "utf8"), /defineHandlers<Manifest>/)
+    assert.match(service, /defineService<Manifest>\(\{\s*manifest,\s*routes: \[\],\s*\}\)/)
+    assert.throws(() => accessSync(path.join(app, "handlers.ts")))
+  })
+
+  it("lays upstreams, groups, tests, the Service skill and a README", async () => {
+    for (const file of ["src/upstreams.ts", "test/service.test.ts", "SKILL.md", "README.md"]) {
+      accessSync(path.join(app, file))
+    }
+    assert.ok((await readdir(path.join(app, "src", "groups"))).length > 0)
+    assert.ok((await readdir(path.join(app, "test", "groups"))).length > 0)
+    assert.match(readFileSync(path.join(app, "test", "service.test.ts"), "utf8"), /testService\(service,/)
   })
 })

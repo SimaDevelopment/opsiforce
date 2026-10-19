@@ -1,5 +1,5 @@
 {
-  "sdk": 1,
+  "sdk": 2,
   "displayName": "WhatsApp",
   "description": "Receive WhatsApp messages, media included, from chosen chats of the numbers this deployment connects.",
   "icon": "icon.svg",
@@ -81,57 +81,7 @@
   "events": {
     "message.received": {
       "title": "Message received",
-      "description": "A WhatsApp message arrived in one of the chats this environment listens to, media as the Event's file.",
-      "data": { "$ref": "#/$defs/ReceivedMessage" }
-    }
-  },
-  "bounds": {
-    "channelItem": { "path": "channels[].channel" },
-    "chat": { "path": "channels[].chats", "where": { "channel": "/channel" } }
-  },
-  "$defs": {
-    "Media": {
-      "type": "object",
-      "properties": {
-        "id": { "type": "string", "description": "Whapi's media id." },
-        "mimeType": { "type": "string" },
-        "filename": { "type": "string" },
-        "size": { "type": "integer", "minimum": 0, "description": "The size Whapi announced, in bytes." },
-        "stored": {
-          "type": "boolean",
-          "description": "Whether the bytes were fetched and stored as this Event's file."
-        }
-      },
-      "required": ["id", "stored"]
-    },
-    "ReceivedMessage": {
-      "type": "object",
-      "properties": {
-        "channel": {
-          "type": "string",
-          "description": "The number's item id in the Service configuration.",
-          "boundTo": "channelItem"
-        },
-        "channelId": { "type": "string", "description": "The Whapi channel the message arrived on." },
-        "chatId": {
-          "type": "string",
-          "description": "The chat: `…@s.whatsapp.net` for an individual chat, `…@g.us` for a group.",
-          "boundTo": "chat"
-        },
-        "chatName": { "type": "string" },
-        "messageId": { "type": "string" },
-        "type": { "type": "string", "description": "text, image, document, voice, video, …" },
-        "from": { "type": "string", "description": "The sender's number; in a group, the member who wrote." },
-        "fromName": { "type": "string" },
-        "fromMe": { "type": "boolean", "description": "Sent from the connected number itself." },
-        "text": { "type": "string", "description": "The text, or a media message's caption." },
-        "caption": { "type": "string" },
-        "sentAt": { "type": "string", "format": "date-time" },
-        "source": { "type": "string", "description": "The sender's client." },
-        "media": { "$ref": "#/$defs/Media" },
-        "message": { "type": "object", "description": "The message exactly as Whapi sent it." }
-      },
-      "required": ["channel", "channelId", "chatId", "messageId", "type", "fromMe", "message"]
+      "description": "A WhatsApp message arrived in one of the chats this environment listens to, media as the Event's file; its data is described in the Service skill."
     }
   }
 }

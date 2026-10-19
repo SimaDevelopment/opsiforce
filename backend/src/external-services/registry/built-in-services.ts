@@ -1,21 +1,11 @@
 import { access, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { ServiceManifest } from '@opsiforce/external-service-sdk';
-import {
-  computeManifestHash,
-  createServiceRuntime,
-  type AnyServiceHandlers,
-  type ServiceRuntime,
-  unavailableServiceState,
-} from '@opsiforce/external-service-sdk/server';
+import type { DefinedService, ServiceManifest } from '@opsiforce/external-service-sdk';
+import { computeManifestHash, isDefinedService } from '@opsiforce/external-service-sdk/server';
 import { readServiceFolder } from '@opsiforce/external-service-sdk/service-folder';
 
 export const BUILT_IN_SERVICES_DIR = 'BUILT_IN_SERVICES_DIR';
-
-const BUILT_IN_STATE = unavailableServiceState(
-  'ctx.state is not available to built-in services: they run inside the platform, with no Project to keep it in'
-);
 
 export const SERVICE_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,30}$/;
 
@@ -28,12 +18,12 @@ export interface BuiltInServiceFolder {
   manifestHash: string;
   icon: string | null;
   serviceSkill: string | null;
-  runtime: ServiceRuntime;
+  defined: DefinedService;
 }
 
 export const SERVICE_SKILL_FILE = 'SKILL.md';
 
-const HANDLERS_FILE = 'handlers.ts';
+const SERVICE_FILE = 'service.ts';
 
 export function shippedBuiltInServicesDir(): string {
   return join(process.cwd(), '..', 'external-services');
@@ -73,43 +63,45 @@ async function readBuiltInService(dir: string, slug: string): Promise<BuiltInSer
   const folder = join(dir, slug);
   const nameProblem = slugProblem(slug);
   if (nameProblem) return [nameProblem];
-  const { json, check } = await readServiceFolder(folder, { origin: 'built_in' });
-  if (!check.ok || !check.manifest) {
-    return check.problems
-      .filter((problem) => problem.severity === 'error')
-      .map((problem) => `${problem.path}: ${problem.message}`);
-  }
-  const icon = check.manifest.icon ? await readFile(join(folder, check.manifest.icon), 'utf8') : null;
-  const serviceSkill = await readOptionalFile(join(folder, SERVICE_SKILL_FILE));
-  const runtime = await builtInRuntime(folder, json);
-  if (typeof runtime === 'string') return [runtime];
+  const { json, check } = await readServiceFolder(folder);
+  if (!check.ok || !check.manifest) return errorsOf(check.problems);
+  const defined = await definedService(folder, json);
+  if (typeof defined === 'string') return [defined];
   return {
     slug,
     folder,
     manifest: check.manifest,
-    manifestHash: computeManifestHash(json),
-    icon,
-    serviceSkill,
-    runtime,
+    manifestHash: defined.manifestHash,
+    icon: await iconOf(folder, check.manifest.icon),
+    serviceSkill: await readOptionalFile(join(folder, SERVICE_SKILL_FILE)),
+    defined,
   };
 }
 
-async function builtInRuntime(folder: string, json: unknown): Promise<ServiceRuntime | string> {
-  const handlersFile = join(folder, HANDLERS_FILE);
+function errorsOf(problems: readonly { severity: string; path: string; message: string }[]): string[] {
+  return problems
+    .filter((problem) => problem.severity === 'error')
+    .map((problem) => `${problem.path}: ${problem.message}`);
+}
+
+async function iconOf(folder: string, icon: string | undefined): Promise<string | null> {
+  return icon ? readFile(join(folder, icon), 'utf8') : null;
+}
+
+async function definedService(folder: string, json: unknown): Promise<DefinedService | string> {
+  const serviceFile = join(folder, SERVICE_FILE);
   try {
-    await access(handlersFile);
+    await access(serviceFile);
   } catch {
-    return `${HANDLERS_FILE} is missing`;
+    return `${SERVICE_FILE} is missing`;
   }
   try {
-    const loaded = (await import(pathToFileURL(handlersFile).href)) as { default?: AnyServiceHandlers };
-    if (!loaded.default) return `${HANDLERS_FILE} has no default export of defineHandlers(...)`;
-    return createServiceRuntime({
-      manifest: json,
-      handlers: loaded.default,
-      origin: 'built_in',
-      state: () => BUILT_IN_STATE,
-    });
+    const loaded = (await import(pathToFileURL(serviceFile).href)) as { default?: unknown };
+    if (!isDefinedService(loaded.default)) return `${SERVICE_FILE} has no default export of defineService(...)`;
+    if (loaded.default.manifestHash !== computeManifestHash(json)) {
+      return `${SERVICE_FILE} defines the service with a manifest other than service.json`;
+    }
+    return loaded.default;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -126,7 +118,7 @@ export async function readBuiltInServices(dir: string): Promise<BuiltInServiceFo
   if (failures.length > 0) {
     throw new Error(
       [
-        `A Built-in External Service in ${dir} failed to load; run external-service-cli check <folder> --built-in and external-service-cli types <folder> --built-in`,
+        `A Built-in External Service in ${dir} failed to load; run external-service-cli check <folder> and external-service-cli types <folder>`,
         ...failures,
       ].join('\n')
     );

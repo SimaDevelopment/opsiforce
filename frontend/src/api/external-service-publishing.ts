@@ -2,13 +2,7 @@ import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import type { Field, ServiceManifest } from '@opsiforce/external-service-sdk/forms';
 import { createAppQuery } from '~/lib/create-app-query';
 import { api } from './client';
-import {
-  externalServiceViewKeys,
-  PLATFORM_SERVICES,
-  TENANT_SERVICES,
-  type ConfigurationValues,
-  type ExternalServiceOrigin,
-} from './external-service-views';
+import { externalServiceViewKeys, TENANT_SERVICES, type ConfigurationValues } from './external-service-views';
 import type { PublishJob } from './publish';
 
 const JOB_POLL_MS = 2_000;
@@ -32,28 +26,15 @@ export interface CheckProblem {
   message: string;
 }
 
-export interface SchemaInput {
-  pointer: string;
-  bound: string | null;
-}
-
 export interface CheckReport {
   ok: boolean;
   problems: CheckProblem[];
-  operations: { name: string; kind: 'read' | 'write' | 'destructive'; title?: string; inputs: SchemaInput[] }[];
-  events: { type: string; title: string; inputs: SchemaInput[] }[];
+  events: { type: string; title: string }[];
 }
 
 export type ManifestChange = 'added' | 'changed' | 'removed' | 'unchanged';
 
-export type ChangedAspect = 'kind' | 'input' | 'bounds' | 'title' | 'description';
-
-export interface OperationChange {
-  name: string;
-  kind: 'read' | 'write' | 'destructive';
-  change: ManifestChange;
-  aspects: ChangedAspect[];
-}
+export type ChangedAspect = 'title' | 'description';
 
 export interface EventChange {
   type: string;
@@ -62,7 +43,6 @@ export interface EventChange {
 }
 
 export interface ManifestDiff {
-  operations: OperationChange[];
   events: EventChange[];
 }
 
@@ -74,7 +54,6 @@ export interface EnvironmentManifest extends NamedEnvironment {
   publishedCommitSha: string | null;
   manifest: ServiceManifest | null;
   changes: ManifestDiff | null;
-  removedInUse: { operation: string; configurations: number }[];
 }
 
 export interface FieldRename {
@@ -89,16 +68,20 @@ export interface ConsumerImpact {
   environmentName: string | null;
   renamed: FieldRename[];
   needsAttention: string[];
-  newOperationsOff: string[];
-  removedOperations: string[];
+  newDefaults: WrittenDefault[];
+}
+
+export interface WrittenDefault {
+  key: string;
+  label: string;
+  value: unknown;
 }
 
 export interface ConfigurationImpact {
   configurations: number;
   renamed: (FieldRename & { configurations: number })[];
   needsAttention: { field: string; configurations: number }[];
-  newOperationsOff: { operation: string; configurations: number }[];
-  removedOperations: { operation: string; configurations: number }[];
+  newDefaults: (WrittenDefault & { configurations: number })[];
   consumers: ConsumerImpact[];
 }
 
@@ -130,7 +113,36 @@ export interface ServiceConfigurationReview {
   fields: Field[];
   missing: string[];
   fromDevelopment: string[];
+  newDefaults: WrittenDefault[];
 }
+
+export type TestWarningCode = 'no-test-report' | 'changed-since-test' | 'upstream-never-called';
+
+export interface TestWarning {
+  code: TestWarningCode;
+  message: string;
+}
+
+export type FieldAspect = 'type' | 'default' | 'required' | 'options' | 'limits' | 'item fields';
+
+export interface FieldChange {
+  key: string;
+  label: string;
+  change: 'added' | 'removed' | 'renamed' | 'changed';
+  from?: string;
+  aspects: FieldAspect[];
+  default?: unknown;
+  itemChanges?: FieldChange[];
+}
+
+export interface FormChanges {
+  serviceForm: FieldChange[];
+  projectForm: FieldChange[];
+}
+
+export type FolderDiff =
+  | { state: 'present'; base: string | null; diff: string; truncated: boolean }
+  | { state: 'unavailable'; reason: string };
 
 export interface PublishReview {
   target: NamedEnvironment & { firstPublish: boolean; becomesDefault: boolean };
@@ -140,6 +152,12 @@ export interface PublishReview {
   impact: ConfigurationImpact | null;
   testReport: TestReport;
   serviceConfiguration: ServiceConfigurationReview | null;
+  builtOnSdk1: boolean;
+  testWarnings: TestWarning[];
+  publishNote: string | null;
+  formChanges: FormChanges | null;
+  codeDiff: FolderDiff;
+  skillDiff: FolderDiff;
 }
 
 export interface DefaultEnvironmentReview {
@@ -165,8 +183,6 @@ export const servicePublishingKeys = {
     [...externalServiceViewKeys.all, 'tenant', id, 'publish', environmentId, 'job'] as const,
   defaultEnvironmentReview: (id: string, environmentId: string) =>
     [...externalServiceViewKeys.all, 'tenant', id, 'default-environment', environmentId] as const,
-  openApi: (origin: ExternalServiceOrigin, id: string) =>
-    [...externalServiceViewKeys.all, origin, id, 'openapi'] as const,
 };
 
 function isFinished(job: PublishJob | null | undefined): boolean {
@@ -257,25 +273,12 @@ export function useSwitchDefaultEnvironment(id: () => string) {
   }));
 }
 
-export function useServiceOpenApi(origin: () => ExternalServiceOrigin, id: () => string, asOperator: () => boolean) {
-  return createAppQuery(() => ({
-    queryKey: servicePublishingKeys.openApi(origin(), id()),
-    queryFn: () =>
-      api.get<Record<string, unknown>>(
-        `${origin() === 'built_in' && asOperator() ? PLATFORM_SERVICES : TENANT_SERVICES}/${id()}/openapi.json`
-      ),
-    reconcile: false,
-    retry: false,
-  }));
-}
-
 export function useRefreshAfterPublish(id: () => string) {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: externalServiceViewKeys.tenantView(id()), exact: true });
     void qc.invalidateQueries({ queryKey: externalServiceViewKeys.tenantList(), exact: true });
     void qc.invalidateQueries({ queryKey: servicePublishingKeys.environments(id()) });
-    void qc.invalidateQueries({ queryKey: servicePublishingKeys.openApi('custom', id()) });
     void qc.invalidateQueries({ queryKey: servicePublishingKeys.manifests(id()) });
   };
 }

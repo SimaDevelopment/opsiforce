@@ -1,14 +1,12 @@
 import type { Logger } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
-import { problem, type ProblemDetails } from '@opsiforce/external-service-sdk';
-import { forwardedAnswerHeaders, problemMediaType } from '@opsiforce/external-service-sdk/platform';
-import type { ServiceResponse } from '@opsiforce/external-service-sdk/server';
+import { failureMessages } from '@opsiforce/external-service-sdk/platform';
+import { outcomeHeader } from '@opsiforce/external-service-sdk/server';
 import { SecretUnreadableError } from '../../sealing/secret-sealer';
-import { PROBLEM_CONTENT_TYPE } from '../http/problem-reply';
+import { PROBLEM_CONTENT_TYPE, problem, type ProblemDetails } from '../http/problem-reply';
 import type { RegisteredService } from '../registry/service-registry';
-import type { CallLog, CallRecord } from './call-log';
 import { GateRefusal, refuse, refuseDispatchFailure } from './gate-refusals';
-import { ServiceDispatchError } from './service-dispatcher';
+import { ServiceDispatchError, type ServiceResponse } from './service-dispatcher';
 
 export interface GateAnswer {
   callId: string;
@@ -29,31 +27,27 @@ export function problemAnswer(callId: string, body: ProblemDetails, headers: Rec
   };
 }
 
-export function forwardedAnswer(callId: string, response: ServiceResponse): GateAnswer {
-  return {
-    callId,
-    status: response.status,
-    headers: Object.fromEntries(
-      forwardedAnswerHeaders.flatMap((name) => {
-        const value = response.headers[name];
-        return value === undefined ? [] : [[name, value]];
-      })
-    ),
-    body: response.body,
-  };
-}
-
-export function answeredProblem(response: ServiceResponse): { code: string | null; detail: string | null } {
-  if (!response.headers['content-type']?.startsWith(problemMediaType)) return { code: null, detail: null };
+function answeredMessage(response: ServiceResponse): string | null {
   try {
     const body = JSON.parse(decoder.decode(response.body)) as Record<string, unknown>;
-    return {
-      code: typeof body.code === 'string' ? body.code : null,
-      detail: typeof body.detail === 'string' ? body.detail : null,
-    };
+    return typeof body.message === 'string' && body.message.trim() !== '' ? body.message : null;
   } catch {
-    return { code: null, detail: null };
+    return null;
   }
+}
+
+export function answeredProblem(
+  service: Pick<RegisteredService, 'manifest'>,
+  response: ServiceResponse
+): { code: string; detail: string } {
+  const outcome = response.headers[outcomeHeader];
+  const fallback =
+    outcome === 'not supported'
+      ? failureMessages.formOutOfDate()
+      : failureMessages.failed(service.manifest.displayName);
+  if (outcome === undefined) return { code: 'service-failed', detail: fallback };
+  const code = outcome === 'failed' ? 'service-failed' : outcome.replaceAll(' ', '-');
+  return { code, detail: answeredMessage(response) ?? fallback };
 }
 
 export function openedOrRefused<T>(logger: Logger, callId: string, service: RegisteredService, open: () => T): T {
@@ -67,7 +61,7 @@ export function openedOrRefused<T>(logger: Logger, callId: string, service: Regi
     refuse({
       status: 500,
       code: 'secret-unreadable',
-      detail: `A stored secret of "${service.slug}" cannot be read; save it again in its configuration.`,
+      detail: `A stored secret of ${service.manifest.displayName} can't be read; save it again in its configuration.`,
       service: service.slug,
     });
   }
@@ -85,69 +79,24 @@ export async function dispatchedOrRefused(
   }
 }
 
-function gateFailed(logger: Logger, callId: string, error: unknown): ProblemDetails {
-  logger.error(`External Service call ${callId} failed in the Gate`, (error as Error).stack);
-  return problem({ status: 500, code: 'gate-failed', detail: 'The platform failed while handling this call.' });
+export function platformFailed(logger: Logger, callId: string, error: unknown): ProblemDetails {
+  logger.error(`External Service call ${callId} failed in the platform`, (error as Error).stack);
+  return problem({ status: 500, code: 'platform-failed', detail: 'The platform failed while handling this call.' });
 }
 
-export interface CallAnswer<T> {
-  answer: T;
-  status: number;
-  outputBytes?: number;
-  unlogged?: boolean;
-}
-
-export interface LoggedAttempt<T> {
-  answer: () => Promise<CallAnswer<T>>;
-  refused: (refusal: ProblemDetails, headers: Record<string, string>, cause: GateRefusal | null) => CallAnswer<T>;
-  failed: (error: unknown) => ProblemDetails;
-}
-
-export async function answeredAndLogged<T>(callLog: CallLog, call: CallRecord, attempt: LoggedAttempt<T>): Promise<T> {
-  const started = performance.now();
-  let answered: CallAnswer<T>;
-  try {
-    answered = await attempt.answer();
-  } catch (error) {
-    const cause = error instanceof GateRefusal ? error : null;
-    const refusal = cause ? cause.refusal : attempt.failed(error);
-    call.code = refusal.code;
-    call.detail = refusal.detail ?? null;
-    answered = attempt.refused(refusal, cause?.headers ?? {}, cause);
-  }
-  if (answered.unlogged) return answered.answer;
-  call.status = answered.status;
-  if (answered.outputBytes !== undefined) call.outputBytes = answered.outputBytes;
-  call.durationMs = Math.round(performance.now() - started);
-  await callLog.record(call);
-  return answered.answer;
-}
-
-function withStatus(answered: GateAnswer): CallAnswer<GateAnswer> {
-  return { answer: answered, status: answered.status };
-}
-
-export function answeredOrProblemAndLogged(
+export async function answeredOrProblem(
   logger: Logger,
-  callLog: CallLog,
-  call: CallRecord,
+  callId: string,
   answer: () => Promise<GateAnswer>
 ): Promise<GateAnswer> {
-  return answeredAndLogged(callLog, call, {
-    answer: async () => withStatus(await answer()),
-    refused: (refusal, headers) => withStatus(problemAnswer(call.id, refusal, headers)),
-    failed: (error) => gateFailed(logger, call.id, error),
-  });
+  try {
+    return await answer();
+  } catch (error) {
+    if (error instanceof GateRefusal) return problemAnswer(callId, error.refusal, error.headers);
+    return problemAnswer(callId, platformFailed(logger, callId, error));
+  }
 }
 
-const answerSafetyHeaders = {
-  'x-content-type-options': 'nosniff',
-  'content-security-policy': "default-src 'none'; sandbox",
-};
-
 export async function sendGateAnswer(reply: FastifyReply, answer: GateAnswer): Promise<void> {
-  await reply
-    .status(answer.status)
-    .headers({ ...answer.headers, ...answerSafetyHeaders })
-    .send(Buffer.from(answer.body));
+  await reply.status(answer.status).headers(answer.headers).send(Buffer.from(answer.body));
 }

@@ -1,6 +1,6 @@
 ---
 name: platform
-description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, calling External Services and their errors, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
+description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, reaching External Services on their Service hosts and relaying their refusals, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
 ---
 
 # The Opsiforce platform
@@ -113,7 +113,7 @@ The platform's own values below are real environment variables: read those from 
 | `APP_LLM_API_KEY` | Key for that gateway |
 | `SERVICE_GATEWAY_URL` | Base URL of the platform's service gateway |
 | `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway and for External Services |
-| `EXTERNAL_SERVICES_URL` | Base URL for calling External Services (§External Services) |
+| `EXTERNAL_SERVICES_HOST` | The domain every External Service's host sits under: `<slug>.$EXTERNAL_SERVICES_HOST` (§External Services) |
 
 ## AI runs on the gateway — never locally
 
@@ -202,61 +202,58 @@ process-logs --since 15m <name>
 
 `created_at` is UTC, as are the log timestamps, so a failed request and the process lines around it line up. Date filters like `datetime('now','-N hours')` work, or compare `created_at` to an ISO string. Drop `-header -column` when piping.
 
-## External Services — `$EXTERNAL_SERVICES_URL`
+## External Services — `https://<slug>.$EXTERNAL_SERVICES_HOST`
 
-An External Service connects the project to an outside system: incoming email, WhatsApp, or a system the Organization added itself. Each one this project has arrives as its own `service-<slug>` skill with that service's concepts and gotchas; this section is how every one of them is called. Services this Organization offers but this project has not enabled are listed under External services in the chat bar; when a task needs one, tell the person to enable it there. The App calls a service exactly as you do, with the same key and the same checks, so code you try from the shell behaves the same at runtime.
+An External Service connects the project to an outside system: incoming email, WhatsApp, or a system the Organization added itself. Each one this project has arrives as its own `service-<slug>` skill: what the service is for, which outside API it passes through and where that API's docs are, how calling it here differs, how to set up your tools for it, and the `data` of each Event it delivers. This section is what every service shares. Services this Organization offers but this project has not connected are listed under External services in the chat bar; when a task needs one, tell the person to connect it there.
 
-| Request | What it answers |
-|---|---|
-| `GET $EXTERNAL_SERVICES_URL/<slug>` | Describe: which Operations are switched on here, the Project configuration with labels (secrets never shown), whether it is complete. Read it before you plan |
-| `GET $EXTERNAL_SERVICES_URL/<slug>/openapi.json` | Every Operation with its kind and input schema, built live from the service |
-| `POST $EXTERNAL_SERVICES_URL/<slug>/<operation>` | Calls one Operation; the input is the JSON body |
-| `GET $EXTERNAL_SERVICES_URL/<slug>/calls?limit=50` | This environment's recent Calls, the App's included — how you find out why last night's run failed |
+### The Service host and your key
 
-Every request carries `Authorization: Bearer $SERVICE_GATEWAY_API_KEY`. From the shell:
+Every service answers on its own host, `https://<slug>.$EXTERNAL_SERVICES_HOST`, and speaks its outside system's own API there. Point that system's own client — its CLI, its SDK, git, curl — at the Service host in place of the system's address, and use the system's own paths and docs. The service adds the outside system's credentials itself.
+
+Your credential is `$SERVICE_GATEWAY_API_KEY`, sent in a header and never in a URL:
 
 ```bash
-curl -s "$EXTERNAL_SERVICES_URL/<slug>" -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
+curl -s "https://<slug>.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce" \
+  -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
 ```
 
-In App code, use this helper rather than a client library; it marks the call as the App's and retries a service that is reloading or starting:
+Any header carries it, Basic auth included (the key as username or password), so a tool that only offers its own auth header works too. The Service skill says how to set up each of its tools to send the key on the first request without stopping at a password prompt. A URL lands in shell history, git remotes and logs, so give a tool the key through its header setting even where it would accept `https://user:key@…`.
 
-```js
-async function callService(slug, operation, input = {}) {
-  for (let attempt = 1; ; attempt += 1) {
-    const response = await fetch(`${process.env.EXTERNAL_SERVICES_URL}/${slug}/${operation}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${process.env.SERVICE_GATEWAY_API_KEY}`, 'content-type': 'application/json', 'x-opsiforce-via': 'app' },
-      body: JSON.stringify(input),
-    });
-    const retryAfter = Number(response.headers.get('retry-after'));
-    if (response.status === 503 && retryAfter > 0 && attempt < 4) { await new Promise((r) => setTimeout(r, retryAfter * 1000)); continue; }
-    const body = response.headers.get('content-type')?.includes('json') ? await response.json() : Buffer.from(await response.arrayBuffer());
-    if (!response.ok) throw Object.assign(new Error(body.detail ?? `${slug}/${operation} failed`), { status: response.status, problem: body });
-    return body;
-  }
-}
-```
+App code calls the same host with the same key, read from `process.env` on the App's server and kept out of the browser, so what you try from the shell behaves the same at runtime.
 
-A refusal is `application/problem+json` with a `code`. Act on the code, and when the user has to do something, tell them in one plain sentence — never the code, the URL or the JSON:
+The host holds a request for up to a minute while a sleeping service wakes, so a slow first answer is normal.
 
-| `code` | What to do | What the user hears |
-|---|---|---|
-| `operation-off` (403) | Don't retry; the Operation is switched off for this environment | "<Operation title> in <Service> is switched off for this project — turn it on under External services, below the chat." |
-| `out-of-bounds` (403) | The body names the `bound`, your `value` and the `allowed` values with labels; retry with an allowed one if the user's intent allows it | "I can only reach <allowed labels> here; <value> isn't one of them — add it under External services, below the chat." |
-| `configuration-incomplete` (409) | Don't retry; describe lists what is `missing` | "<Service> isn't fully set up for this project yet — open it under External services, below the chat, and fill in <missing>." |
-| `service-reloading`, `service-starting` (503) | Wait the `Retry-After` seconds and retry, silently | Nothing, unless it still fails after a few tries |
-| `service-failed` (502) | Don't retry blindly; the body carries a `callId`, and `/calls` shows the Call | "<Service> failed on that request (call <callId>); I can try again or look into it." |
-| `input-too-large` (413) | Split the input into smaller calls | "That's too large to send to <Service> in one go, so I'll send it in parts." |
-| `invalid-input` (400) | Your input does not match the schema; fix it from `openapi.json` and retry | Nothing |
+### Read `/.well-known/opsiforce` before you plan
 
-`service-not-configured` (503) and `unknown-service` (404) mean the service is not available here at all: say so instead of building around it.
+`GET https://<slug>.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce` is the service's live answer for this ProjectEnvironment. Read it before you plan work with a service, and again after the user changes a setting:
 
-Describe always answers for the environment you run in. In a Development chat that is Development: its switches and configuration are this environment's own, and Publish carries them to Production. Development changes go live on Publish, so never tell the user what Production can do from what you see here.
+- `upstreams` — each outside API the service passes through: `api` (name and version), its real `url`, and the `mount`, the path prefix on the Service host that stands for that `url`.
+- `routes` — what the service serves, in order, first match wins: the pattern, `action` (`proxy` passes the request to an upstream, `handle` is answered by the service itself as its skill describes, `refuse` is blocked), a `summary`, and `allowedBy`, the settings that govern it. A request no route matches is refused.
+- `configuration` — this Project's settings by field, with labels and secrets masked, and `settingsLink`, the page where they change.
+
+A summary says when a route filters an answer or changes a request: read it as a difference from the outside system's docs. Whether a request is allowed is decided from the request itself, so the answer holds no verdicts: plan from the settings and the `allowedBy` fields, then make the call.
+
+`/.well-known/opsiforce` answers for the environment you run in. In a Development chat that is Development's own configuration, which Publish carries to the published environment: Development changes go live on Publish, so never tell the user what Production can do from what you see here.
+
+### Relay a refusal
+
+The service refuses in your client's own format, so your tool prints it: a CLI's error, git's `remote:` lines, a JSON body. The message says what was refused and why, names the setting and links to it. Every answer the service makes itself carries an `Opsiforce-Outcome` header, plus `Opsiforce-Setting: <field>` when a setting governs it:
+
+- `not allowed` — the service's policy forbids the request: this Project's settings when `Opsiforce-Setting` names one, otherwise something only the person the message names can change, such as an Organization admin on the service's page. Stop and relay it. A *not allowed* is final: never retry it, and never reach the same result another way.
+- `not connected` — this Project has no connection to the service. Relay it: the user connects the service under External services in the chat bar.
+- `incomplete` — a required setting is empty. Relay it, naming the setting.
+- `not supported` — the service does not serve this request. Look for a route that does in `/.well-known/opsiforce`, or tell the user this service cannot do it.
+- `failed` — the service or the outside system failed. Retry once when the request is safe to repeat, then report it.
+
+To relay, tell the user in one or two plain sentences what you tried, why it was refused and which setting decides it, give the link from the message, and add whom to ask: the person the message names, or, when they can't change it there, someone who can configure this Project's External Services. Leave the status, headers and JSON out.
+
+The host answers some requests before any service sees them: `401` when no valid key was in a header or this Project is disabled; `404` when this Organization has no such service, or "<service> is turned off in this Organization", so say it is not available here instead of building around it; `502` or `504` when the service failed to start or did not start in time, so retry once a little later, then report it.
+
+In App code a refusal reaches the App's end users, who cannot open the settings link: the App shows its own "not available" message and logs the refusal's message for whoever maintains it. That includes the host's `404`, which has no `Opsiforce-Outcome`: trying again will not help, so only a `failed`, `502` or `504` invites the user to retry.
 
 ## Inbound Events — `/workspace/data/external-services.db`
 
-A second read-only SQLite file holding Events that arrived from outside through External Services the user switched receiving on for (an email, a WhatsApp message, a card moved in another tool). The platform backend is the only writer; never create tables, write, or run migrations against it. Its tables are created when the first Event arrives, so `no such table: events` means "nothing has arrived yet", not a broken setup. Every service shares the tables, so always filter by `service` (and `type`).
+A second read-only SQLite file holding Events that External Services delivered to this environment, as each service's own settings for this Project choose (an email, a WhatsApp message, a card moved in another tool). The platform backend is the only writer; never create tables, write, or run migrations against it. Its tables are created when the first Event arrives, so `no such table: events` means "nothing has arrived yet", not a broken setup. Every service shares the tables, so always filter by `service` (and `type`).
 
 - `events`: `id`, `service`, `type`, `key` (unique per service and type: a resent Event is not stored twice), `occurred_at`, `received_at`, `data` (JSON, read with `json_extract`; its shape is in the service's `service-<slug>` skill), `app_delivered_at`.
 - `event_files`: `event_id`, `name`, `mime_type`, `size_bytes`, `path` — the bytes are a file at `path`, read it with `fs`.
@@ -272,7 +269,7 @@ async myService(@Body() notification: DoorbellNotification): Promise<{ received:
 ```
 
 - The body carries ids only; read the rows from SQLite, so the live path and the catch-up path run the same code.
-- A 2xx stamps `app_delivered_at`. A 5xx or a timeout (10 s) is retried after 30 s, 2 min, 10 min, 1 h and 6 h. A 404 or 501 means "not wired": the platform stops ringing for that service until the App starts again.
+- A 2xx stamps `app_delivered_at`. A 5xx or a timeout (10 s) is retried after 30 s, 2 min, 10 min, 1 h and 6 h. A 404 or 501 means "not wired": the platform stops ringing for that service until the App starts again. Reloading the server under its watcher does not count, so when you wire a service that already has Events waiting, tell the user they arrive at the App's next start, or at once if they restart this environment.
 - Answer quickly and process idempotently: key the App's own records on the Event `id` (a `UNIQUE` column in `app.db`), because an id can arrive twice.
 - Catch up on boot and from a schedule: `SELECT id FROM events WHERE service = ? AND app_delivered_at IS NULL ORDER BY id`.
 

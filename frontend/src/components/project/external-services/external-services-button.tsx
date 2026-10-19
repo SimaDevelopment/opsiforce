@@ -11,6 +11,7 @@ import { ServiceIcon } from '~/components/external-service/service-marks';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { AlertTriangle, Cable, ChevronDown, ChevronRight } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
+import { cn } from '~/lib/cn';
 import { ProjectConfigurationDialog } from './project-configuration-dialog';
 import { STRIP_BUTTON_CLASS } from '~/components/composer-strip';
 
@@ -23,17 +24,9 @@ function OriginMark(props: { origin: string }) {
 }
 
 function configurationSummary(service: ProjectServiceSummary): string {
-  const { configuration } = service;
   if (service.state === 'needs-configuration') return 'Needs configuration';
   if (service.state === 'available') return 'Available · Click to enable';
-  const parts = ['Enabled'];
-  if (configuration.operationsTotal > 0) {
-    parts.push(`${configuration.operationsOn} of ${configuration.operationsTotal} Operations on`);
-  }
-  if (configuration.receiving > 0) {
-    parts.push(`receiving ${configuration.receiving} ${configuration.receiving === 1 ? 'Event' : 'Events'}`);
-  }
-  return parts.join(' · ');
+  return needsAttention(service.configuration) ? 'Needs attention' : 'Connected';
 }
 
 function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void }) {
@@ -50,11 +43,14 @@ function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void 
           <span class="truncate text-xs font-medium">{props.service.displayName}</span>
           <OriginMark origin={props.service.origin} />
         </div>
-        <span class="flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+        <span
+          class={cn(
+            'flex flex-wrap items-center gap-x-1 text-[11px]',
+            needsAttention(props.service.configuration) ? 'text-amber-700' : 'text-muted-foreground'
+          )}
+        >
           <Show when={needsAttention(props.service.configuration)}>
-            <span class="inline-flex items-center gap-1 text-amber-700">
-              <AlertTriangle class="h-3 w-3" aria-hidden="true" /> needs attention
-            </span>
+            <AlertTriangle class="h-3 w-3" aria-hidden="true" />
           </Show>
           <span>{configurationSummary(props.service)}</span>
         </span>

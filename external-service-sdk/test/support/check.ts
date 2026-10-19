@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { checkServiceManifest, type ManifestProblem, type ServiceOrigin } from '@opsiforce/external-service-sdk';
+import { checkServiceManifest, type ManifestProblem } from '@opsiforce/external-service-sdk';
 
-export function errorsOf(manifest: unknown, origin: ServiceOrigin = 'custom'): ManifestProblem[] {
-  return checkServiceManifest(manifest, { origin }).problems.filter((problem) => problem.severity === 'error');
-}
-
-export function warningsOf(manifest: unknown, origin: ServiceOrigin = 'custom'): ManifestProblem[] {
-  return checkServiceManifest(manifest, { origin }).problems.filter((problem) => problem.severity === 'warning');
+export function errorsOf(manifest: unknown): ManifestProblem[] {
+  return checkServiceManifest(manifest).problems.filter((problem) => problem.severity === 'error');
 }
 
 export function assertRefused(manifest: unknown, path: string, message: RegExp): void {
@@ -18,6 +14,6 @@ export function assertRefused(manifest: unknown, path: string, message: RegExp):
   );
 }
 
-export function assertAccepted(manifest: unknown, origin: ServiceOrigin = 'custom'): void {
-  assert.deepEqual(errorsOf(manifest, origin), []);
+export function assertAccepted(manifest: unknown): void {
+  assert.deepEqual(errorsOf(manifest), []);
 }

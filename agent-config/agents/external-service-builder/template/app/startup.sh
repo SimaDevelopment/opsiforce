@@ -4,8 +4,9 @@ cd "$(dirname "$0")"
 
 if [ "$OPSIFORCE_ENV" = "production" ]; then
   yarn install --immutable
-  exec yarn serve
+  guard service yarn serve &
 else
   yarn install
-  exec yarn dev
+  guard service yarn dev &
 fi
+wait -n
