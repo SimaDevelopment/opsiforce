@@ -376,7 +376,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
   }
 
   async editConnection(name: string, input: unknown): Promise<PlatformModelProvidersView> {
-    if (await this.isAzureConnection(name)) return this.editAzureConnection(name, input);
+    if (await this.isPlatformAzureConnection(name)) return this.editAzureConnection(name, input);
     const edit = this.connections.connectionEditOf(input);
     const fixed = await this.fixedBuiltInOfPlatformProvider(name);
     if (fixed && edit.movesBaseUrl) throw new BadRequestException(FIXED_URL_MESSAGE);
@@ -395,7 +395,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
   }
 
   async setModels(name: string, input: unknown): Promise<PlatformModelProvidersView> {
-    if (await this.isAzureConnection(name)) {
+    if (await this.isPlatformAzureConnection(name)) {
       const choice = this.azure.modelsOf(input);
       await this.azure.setModels(name, choice);
       await db.transaction(async (tx) => {
@@ -439,17 +439,23 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
       .onConflictDoNothing();
   }
 
-  private async isAzureConnection(name: string): Promise<boolean> {
+  private async isPlatformAzureConnection(name: string): Promise<boolean> {
     const [row] = await db
       .select({ id: modelProviders.id })
       .from(modelProviders)
-      .where(and(eq(modelProviders.bifrostProvider, AZURE_PROVIDER), eq(modelProviders.bifrostKey, name)))
+      .where(
+        and(
+          isNull(modelProviders.tenantId),
+          eq(modelProviders.bifrostProvider, AZURE_PROVIDER),
+          eq(modelProviders.bifrostKey, name)
+        )
+      )
       .limit(1);
     return row !== undefined;
   }
 
   async reenterKey(name: string, input: unknown): Promise<PlatformModelProvidersView> {
-    if (await this.isAzureConnection(name)) throw new BadRequestException(AZURE_EDITS_ITS_CONNECTION_MESSAGE);
+    if (await this.isPlatformAzureConnection(name)) throw new BadRequestException(AZURE_EDITS_ITS_CONNECTION_MESSAGE);
     const fixed = await this.fixedBuiltInOfPlatformProvider(name);
     if ((await platformLinkedAccountVendors(db)).has(name)) {
       throw new BadRequestException(LINKED_ACCOUNT_SIGNS_IN_MESSAGE);
@@ -469,7 +475,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
   async delete(name: string): Promise<PlatformModelProvidersView> {
     if (await this.fixedBuiltInOfPlatformProvider(name)) throw new BadRequestException(FIXED_UNDELETABLE_MESSAGE);
     if (!isOpsiforceProviderName(name)) throw new BadRequestException(OPSIFORCE_ONLY_MESSAGE);
-    const azureConnection = await this.isAzureConnection(name);
+    const azureConnection = await this.isPlatformAzureConnection(name);
     let affectedTenantIds: string[] = [];
     try {
       await db.transaction(async (tx) => {

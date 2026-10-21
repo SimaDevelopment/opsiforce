@@ -626,6 +626,28 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       ]);
     });
 
+    it('is out of reach of the platform routes, so it never becomes a Built-in', async () => {
+      const seeded = await seededTenant();
+      const other = await seededTenant();
+      expect((await createOwn(seeded)).statusCode).toBe(201);
+      const keyName = `${seeded.tenant.name}-own-foundry`;
+      await holdEveryProjectKey();
+
+      const models = await setPlatformModels(keyName, { models: ['gpt-5.6-sol'] });
+      const deleted = await app.inject({
+        method: 'DELETE',
+        url: `/api/platform-model-providers/${keyName}`,
+        headers: platformAdmin.headers,
+      });
+
+      expect(models.statusCode).toBe(404);
+      expect([400, 404]).toContain(deleted.statusCode);
+      expect(bifrost.azureKeyNamed(keyName)?.models).toEqual(['gpt-5.6-sol', 'claude-sonnet-5']);
+      expect((await platformRows()).map((row) => row.name)).not.toContain(keyName);
+      expect((await rowsOf(other)).map((row) => row.name)).not.toContain(keyName);
+      expect((await rowsOf(seeded)).filter((row) => row.name === 'own-foundry')).toHaveLength(2);
+    });
+
     it('is invisible to other Organizations', async () => {
       const seeded = await seededTenant();
       const other = await seededTenant();
