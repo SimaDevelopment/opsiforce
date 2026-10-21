@@ -11,8 +11,7 @@ import { agentConfigRoot, packageSkillNames } from '../store/skill-tree';
 import { SkillRepository } from '../store/skill.repository';
 import { defaultProfileModel, readMergedAgentRegistry } from './agent-config';
 import { AgentRepository } from './agent.repository';
-import { DEFAULT_AGENT_PROJECT_SETTINGS } from './agent-copy-settings';
-import { readAgentPodSettings, readWarmPoolSize } from './agent-pod-settings';
+import { readAgentProjectSettings } from './agent-pod-settings';
 import type { AgentRow } from './agent.types';
 import type { AgentBundle, AgentBundleProfile, AgentBundleSkillReference, AgentBundleTemplate } from './agent-bundle';
 
@@ -46,10 +45,7 @@ export class AgentBundleReader {
       },
       skills: await pinnedSkills(profile.id),
       template: template ? { hash: template.hash, sourceDir: template.directory } : null,
-      projectSettings: {
-        resources: await readAgentPodSettings(agent.id),
-        warmPoolSize: await readWarmPoolSize(agent.id),
-      },
+      projectSettings: await readAgentProjectSettings(agent.id),
     };
   }
 
@@ -66,7 +62,7 @@ export class AgentBundleReader {
       profile: { promptBody: readPromptBody(agent.name), ...registryModel(agent.name) },
       skills: [...byName.values()].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: await this.packageTemplate(agent.name),
-      projectSettings: DEFAULT_AGENT_PROJECT_SETTINGS,
+      projectSettings: await readAgentProjectSettings(agent.id),
     };
   }
 

@@ -1,5 +1,9 @@
+import { existsSync } from 'node:fs';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import path from 'node:path';
+import { db } from '../../db';
+import { lockProjectGit } from '../common/locks';
+import { GitService } from '../git/git.service';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { SkillRepository } from '../store/skill.repository';
 import { packageSkillNames } from '../store/skill-tree';
@@ -20,6 +24,8 @@ import { ServiceSkillSource, type ServiceSkill, type ServiceSkillAudience } from
 import { SkillSwitchRepository } from './skill-switch.repository';
 import { WorkspaceWriter } from './workspace-writer';
 
+const INITIAL_TEMPLATE_COMMIT = 'Initial template';
+
 export class DeliveryTargetMissing extends Error {
   constructor(projectEnvironmentId: string) {
     super(`Project environment ${projectEnvironmentId} has no agent to deliver`);
@@ -37,6 +43,7 @@ export class DeliveryService {
     private readonly writer: WorkspaceWriter,
     private readonly templates: AgentTemplateStore,
     private readonly switches: SkillSwitchRepository,
+    private readonly git: GitService,
     @Optional() private readonly serviceSkillSource?: ServiceSkillSource
   ) {}
 
@@ -147,10 +154,7 @@ export class DeliveryService {
 
   private async apply(plan: DeliveryPlan): Promise<void> {
     await this.writer.clearStaging(plan.directory);
-    if (plan.template) {
-      const { agentId, environmentId, intoDirectory } = plan.template;
-      await this.templates.layInto(agentId, environmentId, path.join(this.writer.root(plan.directory), intoDirectory));
-    }
+    if (plan.template) await this.layTemplate(plan.projectEnvironmentId, plan.directory, plan.template);
     await this.writer.setDefaultAgent(plan.directory, plan.runtimeAgentSlug);
     if (plan.agentFile) {
       await this.writer.writeAgentPrompt(plan.directory, plan.agentFile.slug, renderAgentFile(plan.agentFile));
@@ -170,6 +174,27 @@ export class DeliveryService {
     this.logger.log(
       `Delivered agent ${plan.runtimeAgentSlug} and ${plan.skills.length} skill(s) to ${plan.projectEnvironmentId}`
     );
+  }
+
+  /** A workspace whose pod already booted holds history, so the Template is committed on top of it (ADR-0093). */
+  private async layTemplate(
+    projectEnvironmentId: string,
+    directory: string,
+    template: NonNullable<DeliveryPlan['template']>
+  ): Promise<void> {
+    const workspace = this.writer.root(directory);
+    const hasHistory = existsSync(path.join(workspace, '.git'));
+    const laid = await this.templates.layInto(
+      template.agentId,
+      template.environmentId,
+      path.join(workspace, template.intoDirectory)
+    );
+    if (!hasHistory || !laid) return;
+    const paths = laid.paths.map((file) => path.posix.join(template.intoDirectory, file));
+    await db.transaction(async (tx) => {
+      await lockProjectGit(tx, projectEnvironmentId);
+      await this.git.commitPaths(workspace, paths, INITIAL_TEMPLATE_COMMIT);
+    });
   }
 
   private async serviceSkills(target: DeliveryTarget, environmentId: string | undefined): Promise<ServiceSkill[]> {

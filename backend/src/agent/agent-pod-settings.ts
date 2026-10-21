@@ -2,10 +2,11 @@ import { BadRequestException } from '@nestjs/common';
 import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentPodSettings, agentSettings } from '../../db/schema';
-import type { DbExecutor } from '../common/locks';
+import { lockTenantLimit, type DbExecutor } from '../common/locks';
 import { assertWithinLimit } from '../limit/limits';
 import { isDefaultPodSettings, resolvePodSettings, type PodSettings } from '../pod/pod-classes';
 import { podSettingsColumns } from '../pod/pod-settings-columns';
+import type { AgentProjectSettings } from './agent-copy-settings';
 
 export const MAX_WARM_POOL_SIZE = 3;
 
@@ -42,6 +43,10 @@ export async function writeAgentPodSettings(
     .onConflictDoUpdate({ target: agentPodSettings.agentId, set: settings });
 }
 
+export async function readAgentProjectSettings(agentId: string): Promise<AgentProjectSettings> {
+  return { resources: await readAgentPodSettings(agentId), warmPoolSize: await readWarmPoolSize(agentId) };
+}
+
 export async function readWarmPoolSize(agentId: string, executor: DbExecutor = db): Promise<number> {
   const [row] = await executor
     .select({ warmPoolSize: agentSettings.warmPoolSize })
@@ -57,6 +62,7 @@ export async function writeWarmPoolSize(
   agentId: string,
   warmPoolSize: number
 ): Promise<void> {
+  await lockTenantLimit(executor, tenantId, 'warm_pool');
   const current = await readWarmPoolSize(agentId, executor);
   await assertWithinLimit(executor, tenantId, 'warm_pool', warmPoolSize - current);
   await executor

@@ -7,7 +7,9 @@ import 'reflect-metadata';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { agentProfiles, agents, environments } from '../../db/schema';
+import { agentProfiles, agentSettings, agents, environments } from '../../db/schema';
+import { writeAgentPodSettings } from '../../src/agent/agent-pod-settings';
+import { podSettingsForSelection } from '../../src/pod/pod-classes';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
 import type { AgentCaller, AgentDetail } from '../../src/agent/agent.types';
 import type { BuilderChatCaller } from '../../src/builder/builder.types';
@@ -286,6 +288,28 @@ describe('duplicating a Built-in Agent', () => {
 
     const packageHash = await templateSourceHash(packageDirectory('app-builder', 'template'));
     expect(profile.template).toEqual({ hash: packageHash, damaged: false });
+  });
+
+  it('keeps the Resources and Ready Projects the Built-in Agent runs with, which the dialog showed', async () => {
+    const builtIn = await ensureBuiltInAgent('app-builder');
+    await writeAgentPodSettings(db, builtIn, podSettingsForSelection({ podClass: 'medium' }));
+    await db
+      .insert(agentSettings)
+      .values({ agentId: builtIn, warmPoolSize: 2 })
+      .onConflictDoUpdate({ target: agentSettings.agentId, set: { warmPoolSize: 2 } });
+    try {
+      const { agent: copy } = await harness.agents.duplicate(
+        author,
+        builtIn,
+        { displayName: uniqueName('Sized') },
+        { canConfigureProjects: true }
+      );
+
+      expect(copy).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+    } finally {
+      await writeAgentPodSettings(db, builtIn, podSettingsForSelection({ podClass: 'small' }));
+      await db.update(agentSettings).set({ warmPoolSize: 0 }).where(eq(agentSettings.agentId, builtIn));
+    }
   });
 
   it('leaves the Skills Makara doesn’t ship off a Makara copy', async () => {
