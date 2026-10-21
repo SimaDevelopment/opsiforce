@@ -177,8 +177,11 @@ export class ModelProviderCreationService {
     const format = baseFormatOf(provider ?? undefined);
     if (!provider || !format)
       throw new ConflictException(`The model gateway no longer has ${name}; re-enter its key first`);
-    await this.connections.setModels(bifrostName, BASE_FORMATS[format], input);
-    await this.modelProvidersService.lockAndRewriteTenantKeys(tenant.tenantId);
+    await db.transaction(async (tx) => {
+      await lockTenantModelProviders(tx, tenant.tenantId);
+      await this.connections.setModels(bifrostName, BASE_FORMATS[format], input);
+      await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
+    });
     return this.modelProvidersService.listTenantProviders(tenant);
   }
 
@@ -297,7 +300,12 @@ export class ModelProviderCreationService {
     }
     const current = this.connections.currentSpecOf(bifrostName, provider);
     if (!current) throw new BadRequestException(`${name} can't be edited here`);
-    await this.connections.replaceConnection(current, edit);
+    await this.connections.replaceConnection(current, edit, (write) =>
+      db.transaction(async (tx) => {
+        await lockTenantModelProviders(tx, tenant.tenantId);
+        await write();
+      })
+    );
     return this.modelProvidersService.listTenantProviders(tenant);
   }
 

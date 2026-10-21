@@ -289,23 +289,29 @@ export class ModelProviderConnectionsService {
     return bifrostName === TRANSCRIPTION_PROVIDER ? [TRANSCRIPTION_MODEL_ID] : [];
   }
 
-  async replaceConnection(current: BifrostProviderSpec, edit: ConnectionEdit): Promise<void> {
+  async replaceConnection(
+    current: BifrostProviderSpec,
+    edit: ConnectionEdit,
+    underLock: (write: () => Promise<void>) => Promise<void>
+  ): Promise<void> {
     if (current.kind === 'linked-account') throw new BadRequestException(LINKED_ACCOUNT_SIGNS_IN_MESSAGE);
-    const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(current.name));
-    const withModels: BifrostProviderSpec = { ...current, models: storedModelsOf(storedKey?.models) };
     const next: BifrostProviderSpec = edit.movesBaseUrl
-      ? { ...withModels, adminTypedBaseUrl: adminTypedBaseUrlFor(current.kind, edit.input) }
-      : withModels;
+      ? { ...current, adminTypedBaseUrl: adminTypedBaseUrlFor(current.kind, edit.input) }
+      : current;
     const moved = next.adminTypedBaseUrl !== current.adminTypedBaseUrl;
 
     if (moved) await this.updateInBifrost(next);
     try {
       await this.passConnectionTest(next, edit.key);
-      await this.bifrostCall(() =>
-        storedKey?.id
-          ? this.bifrostService.replaceProviderKey(current.name, storedKey.id, bifrostProviderKey(next, edit.key))
-          : this.bifrostService.addProviderKey(current.name, bifrostProviderKey(next, edit.key))
-      );
+      await underLock(async () => {
+        const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(current.name));
+        const key = bifrostProviderKey({ ...next, models: storedModelsOf(storedKey?.models) }, edit.key);
+        await this.bifrostCall(() =>
+          storedKey?.id
+            ? this.bifrostService.replaceProviderKey(current.name, storedKey.id, key)
+            : this.bifrostService.addProviderKey(current.name, key)
+        );
+      });
     } catch (err) {
       if (moved) await this.restoreInBifrost(current.name, bifrostProviderUpdatePayload(current));
       throw err;

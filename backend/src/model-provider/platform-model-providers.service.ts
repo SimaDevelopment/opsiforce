@@ -385,7 +385,12 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
     if (!provider) throw new ConflictException(`The model gateway no longer has ${name}; re-enter its key instead`);
     const current = fixed ? fixedSpec(name, fixed) : this.connections.currentSpecOf(name, provider);
     if (!current) throw new BadRequestException(`${name} can't be edited here`);
-    await this.connections.replaceConnection(current, edit);
+    await this.connections.replaceConnection(current, edit, (write) =>
+      db.transaction(async (tx) => {
+        await lockPlatformModelProviders(tx);
+        await write();
+      })
+    );
     return this.list();
   }
 
@@ -427,7 +432,10 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
       const format = baseFormatOf(provider ?? undefined) ?? fixedBuiltInOf(name)?.format;
       if (!provider || !format)
         throw new ConflictException(`The model gateway no longer has ${name}; re-enter its key first`);
-      await this.connections.setModels(name, BASE_FORMATS[format], input);
+      await db.transaction(async (tx) => {
+        await lockPlatformModelProviders(tx);
+        await this.connections.setModels(name, BASE_FORMATS[format], input);
+      });
     }
     const failed = await this.modelProvidersService.rewriteEveryTenantsKeys();
     if (failed.length > 0) {
