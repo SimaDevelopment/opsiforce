@@ -130,6 +130,7 @@ export function servingOf(
   if (!providerKeys || provider?.keyLess) return { models: wholeCatalog, keyIds: EVERY_KEY };
   const keyModels = keyModelsOf(providerKeys);
   if (keyModels.length === 0 || servesEveryModel(keyModels)) return { models: wholeCatalog, keyIds: EVERY_KEY };
+  if (!readsKeyModels(provider)) return { models: keyModels, keyIds: EVERY_KEY };
   return { models: familyModels(keyModels, format), keyIds: EVERY_KEY };
 }
 
@@ -137,8 +138,8 @@ export function servedSubsetOf(row: ProviderRowIdentity, serving: Serving, provi
   const format = rowFormatOf(row, providers);
   if (!serving.models || !format) return undefined;
   const catalog = servedModelsOf(BASE_FORMATS[format]);
-  const whole = catalog.every((model) => serving.models?.includes(model));
-  return whole ? undefined : serving.models;
+  const servedFromCatalog = serving.models.filter((model) => catalog.includes(model));
+  return catalog.every((model) => servedFromCatalog.includes(model)) ? undefined : servedFromCatalog;
 }
 
 export function providersReadForKeys(rows: ProviderRowIdentity[], providers: BifrostProvidersByName | null): string[] {
@@ -403,6 +404,20 @@ export class ModelProvidersService {
     const providers = await this.bifrostProvidersOrNull();
     if (!providers) throw new ServiceUnavailableException(BIFROST_UNREACHABLE_MESSAGE);
 
+    try {
+      await this.writeAvailability(tenantId, name, available, providers);
+    } catch (err) {
+      await this.restoreTenantKeys([tenantId]);
+      throw err;
+    }
+  }
+
+  private async writeAvailability(
+    tenantId: string,
+    name: string,
+    available: boolean,
+    providers: BifrostProvidersByName
+  ): Promise<void> {
     await db.transaction(async (tx) => {
       await lockPlatformModelProvidersShared(tx);
       await lockTenantModelProviders(tx, tenantId);

@@ -231,6 +231,25 @@ describe('withholding a Built-in model provider from an Organization', () => {
     expect(chatProvidersOf(seeded)).not.toContain('anthropic');
   });
 
+  it('puts the Organization’s keys back when one of them refuses an access change', async () => {
+    const seeded = await seededTenant();
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers: (await addMember(app, seeded.tenant)).headers,
+      payload: { title: 'Second', agentId },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    bifrost.refuseProviderConfigWrites(bifrost.chatKeyOf(second.json<{ id: string }>().id).id);
+
+    const refused = await setAccess(seeded, 'openai', { withheld: true });
+    bifrost.acceptProviderConfigWrites();
+
+    expect(refused.statusCode).toBeGreaterThanOrEqual(500);
+    expect(await accessOf(seeded)).toEqual([]);
+    expect(chatProvidersOf(seeded)).toContain('openai');
+  });
+
   it('withholds the platform Linked account before its first sign-in', async () => {
     const seeded = await seededTenant();
 

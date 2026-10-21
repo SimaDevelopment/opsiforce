@@ -31,6 +31,7 @@ import {
   type BifrostProviderSpec,
 } from './bifrost-provider-shape';
 import { testConnection } from './connection-test';
+import { TRANSCRIPTION_MODEL_ID, TRANSCRIPTION_PROVIDER } from '../transcription/transcription.constants';
 import { isHelmPlaceholder } from './key-model-formats';
 import { baseFormatOf } from './model-provider.service';
 import { BIFROST_UNREACHABLE_MESSAGE } from './model-provider.types';
@@ -272,7 +273,8 @@ export class ModelProviderConnectionsService {
   }
 
   async setModels(bifrostName: string, format: BaseFormat, input: unknown): Promise<void> {
-    const models = formatModelsOf(field(input, 'models'), format) ?? EVERY_MODEL;
+    const chosen = formatModelsOf(field(input, 'models'), format);
+    const models = chosen ? [...chosen, ...this.modelsAlwaysServedBy(bifrostName)] : EVERY_MODEL;
     const provider = await this.find(bifrostName);
     if (!provider) throw new ConflictException(NOT_IN_GATEWAY_MESSAGE);
     const keys = await this.bifrostCall(() => this.bifrostService.listProviderKeys(bifrostName));
@@ -281,6 +283,10 @@ export class ModelProviderConnectionsService {
     for (const key of ownKeys) {
       await this.bifrostCall(() => this.bifrostService.replaceProviderKey(bifrostName, key.id, { ...key, models }));
     }
+  }
+
+  private modelsAlwaysServedBy(bifrostName: string): string[] {
+    return bifrostName === TRANSCRIPTION_PROVIDER ? [TRANSCRIPTION_MODEL_ID] : [];
   }
 
   async replaceConnection(current: BifrostProviderSpec, edit: ConnectionEdit): Promise<void> {

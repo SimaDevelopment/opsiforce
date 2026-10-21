@@ -673,7 +673,7 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       });
     }
 
-    it('narrows openai for every Organization, keeping its key, and puts every model back', async () => {
+    it('narrows openai for every Organization, keeping its key and the transcription model, and puts every model back', async () => {
       giveOpenAiItsHelmKey();
       const seeded = await seededTenant();
       await holdEveryProjectKey();
@@ -687,10 +687,12 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
         expect.objectContaining({
           name: 'openai-primary',
           value: { value: '', ref: 'env.OPENAI_API_KEY', type: 'env' },
-          models: ['gpt-5.6-sol'],
+          models: ['gpt-5.6-sol', 'gpt-4o-mini-transcribe'],
         }),
       ]);
-      expect(openAiEntry()).toEqual(expect.objectContaining({ allowed_models: ['gpt-5.6-sol'] }));
+      expect(openAiEntry()).toEqual(
+        expect.objectContaining({ allowed_models: ['gpt-5.6-sol', 'gpt-4o-mini-transcribe'] })
+      );
       expect((await platformRows()).find((row) => row.name === 'openai')?.servedModels).toEqual(['gpt-5.6-sol']);
 
       const widened = await setPlatformModels('openai', { models: null });
