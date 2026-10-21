@@ -38,6 +38,32 @@ Backend ── Admin API (basic auth) ──▶ Bifrost ◀── LLM calls ─�
    └─ injects virtual keys into pod ─────┴── routes to ─▶ OpenAI / Anthropic / custom
 ```
 
+### PostgreSQL connections
+
+Hosted Bifrost connects directly to the CloudNativePG primary service,
+`postgres-cluster-rw.postgres.svc.cluster.local:5432`, using the existing
+`bifrost` database, `postgres` user and `opsiforce-bifrost-postgres` Secret.
+The service follows the primary on failover. Other applications retain their
+PgBouncer connections.
+
+Bifrost schema upgrades can invalidate prepared statements retained on
+PgBouncer backend connections, producing `cached plan must not change result type`
+and leaving governance unavailable even when the HTTP health check succeeds.
+Direct connections avoid reusing those PgBouncer sessions across Bifrost restarts.
+See [PgBouncer's prepared-statement guidance](https://www.pgbouncer.org/config#max_prepared_statements).
+
+Configuration and log storage each allow 10 open and 2 idle runtime connections:
+20 per pod, or 40 while two pods overlap during a rolling deployment. Migration
+connections are additional; allow headroom for them and other database clients
+within PostgreSQL's 100-connection limit. Revisit these limits before increasing
+replicas or enabling autoscaling, and monitor connection waits under load.
+
+After deployment, check the authenticated `/api/governance/virtual-keys?limit=1&offset=0`
+endpoint returns JSON with virtual keys, rather than accepting HTTP 200 alone
+(the UI fallback can return HTML with that status). Check startup logs for governance
+initialization errors. This connection change does not remove existing large log
+payloads or change log-content settings.
+
 ## Edge cases
 
 - Bifrost is active whenever `BIFROST_PROXY_URL` and admin credentials are set; without them, pods get a direct provider key only if the backend chart supplies one.
