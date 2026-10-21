@@ -411,20 +411,19 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
   async setModels(name: string, input: unknown): Promise<PlatformModelProvidersView> {
     if (await this.isPlatformAzureConnection(name)) {
       const choice = this.azure.modelsOf(input);
-      let putKeyBack: (() => Promise<void>) | undefined;
-      try {
-        await db.transaction(async (tx) => {
-          await lockPlatformModelProviders(tx);
-          if (!(await this.isPlatformAzureConnection(name, tx))) {
-            throw new NotFoundException(`${name} is not a Built-in model provider`);
-          }
-          putKeyBack = await this.azure.setModels(name, choice);
+      await db.transaction(async (tx) => {
+        await lockPlatformModelProviders(tx);
+        if (!(await this.isPlatformAzureConnection(name, tx))) {
+          throw new NotFoundException(`${name} is not a Built-in model provider`);
+        }
+        const putKeyBack = await this.azure.setModels(name, choice);
+        try {
           await this.keepAzureRowsFor(tx, name, formatsOfModels(choice.models));
-        });
-      } catch (err) {
-        await putKeyBack?.();
-        throw err;
-      }
+        } catch (err) {
+          await putKeyBack();
+          throw err;
+        }
+      });
     } else {
       if (!(await this.listedNames()).includes(name))
         throw new NotFoundException(`${name} is not a Built-in model provider`);

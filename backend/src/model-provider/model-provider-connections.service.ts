@@ -272,7 +272,7 @@ export class ModelProviderConnectionsService {
     return { key: requiredKey(input), movesBaseUrl: field(input, 'baseUrl') !== undefined, input };
   }
 
-  async setModels(bifrostName: string, format: BaseFormat, input: unknown): Promise<void> {
+  async setModels(bifrostName: string, format: BaseFormat, input: unknown): Promise<() => Promise<void>> {
     const chosen = formatModelsOf(field(input, 'models'), format);
     const models = chosen ? [...chosen, ...this.modelsAlwaysServedBy(bifrostName)] : EVERY_MODEL;
     const provider = await this.find(bifrostName);
@@ -280,9 +280,22 @@ export class ModelProviderConnectionsService {
     const keys = await this.bifrostCall(() => this.bifrostService.listProviderKeys(bifrostName));
     const ownKeys = keys.filter((key) => key.id && !isHelmPlaceholder(key));
     if (provider.keyLess || ownKeys.length === 0) throw new ConflictException(NO_KEY_FOR_MODELS_MESSAGE);
-    for (const key of ownKeys) {
-      await this.bifrostCall(() => this.bifrostService.replaceProviderKey(bifrostName, key.id, { ...key, models }));
+    const putKeysBack = async () => {
+      for (const key of ownKeys) {
+        await this.bifrostService.replaceProviderKey(bifrostName, key.id, key).catch((err: Error) => {
+          this.logger.error(`Key ${key.name ?? key.id} of ${bifrostName} could not be put back: ${err.message}`);
+        });
+      }
+    };
+    try {
+      for (const key of ownKeys) {
+        await this.bifrostCall(() => this.bifrostService.replaceProviderKey(bifrostName, key.id, { ...key, models }));
+      }
+    } catch (err) {
+      await putKeysBack();
+      throw err;
     }
+    return putKeysBack;
   }
 
   private modelsAlwaysServedBy(bifrostName: string): string[] {

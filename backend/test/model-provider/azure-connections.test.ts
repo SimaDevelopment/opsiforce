@@ -284,6 +284,39 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       expect((await rowsOf(seeded)).find((row) => row.name === 'only-sol')?.servedModels).toBeUndefined();
     });
 
+    it('puts a Custom provider’s key back when a Project key refuses its model change', async () => {
+      const seeded = await seededTenant();
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/model-providers',
+        headers: seeded.admin.headers,
+        payload: {
+          baseFormat: 'openai',
+          kind: 'official-api-key',
+          name: 'narrowing',
+          key: 'sk-n',
+          models: ['gpt-5.6-sol'],
+        },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      const custom = `${seeded.tenant.name}-narrowing`;
+
+      bifrost.refuseProviderConfigWrites(bifrost.chatKeyOf(seeded.projectId).id);
+      const refused = await app.inject({
+        method: 'PUT',
+        url: '/api/model-providers/narrowing/models',
+        headers: seeded.admin.headers,
+        payload: { models: ['gpt-6-astra'] },
+      });
+      bifrost.acceptProviderConfigWrites();
+
+      expect(refused.statusCode).toBeGreaterThanOrEqual(500);
+      expect(bifrost.providerNamed(custom)?.keys[0]?.models).toEqual(['gpt-5.6-sol']);
+      expect(bifrost.chatKeyOf(seeded.projectId).provider_configs).toContainEqual(
+        expect.objectContaining({ provider: custom, allowed_models: ['gpt-5.6-sol'] })
+      );
+    });
+
     it('refuses a model outside the catalog of the provider’s format', async () => {
       const seeded = await seededTenant();
 

@@ -153,36 +153,51 @@ export class ModelProviderCreationService {
     const azureName = customBifrostProviderName(tenant.tenantName, name);
     if (await this.ownAzureConnection(tenant, azureName)) {
       const choice = this.azure.modelsOf(input);
-      let putKeyBack: (() => Promise<void>) | undefined;
-      try {
-        await db.transaction(async (tx) => {
-          await lockTenantModelProviders(tx, tenant.tenantId);
-          if (!(await this.ownAzureConnection(tenant, azureName, tx))) {
-            throw new NotFoundException(`${name} is not a model provider of this organization`);
-          }
-          putKeyBack = await this.azure.setModels(azureName, choice);
-          await this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models));
-          await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
-        });
-      } catch (err) {
-        if (putKeyBack) {
-          await putKeyBack();
-          await this.modelProvidersService.restoreTenantKeys([tenant.tenantId]);
+      await this.changeKeyThenProject(tenant, async (tx) => {
+        if (!(await this.ownAzureConnection(tenant, azureName, tx))) {
+          throw new NotFoundException(`${name} is not a model provider of this organization`);
         }
-        throw err;
-      }
+        const putKeyBack = await this.azure.setModels(azureName, choice);
+        return {
+          putKeyBack,
+          afterKey: () => this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models)),
+        };
+      });
       return this.modelProvidersService.listTenantProviders(tenant);
     }
     const { bifrostName, provider } = await this.customProviderInBifrost(tenant, name);
     const format = baseFormatOf(provider ?? undefined);
     if (!provider || !format)
       throw new ConflictException(`The model gateway no longer has ${name}; re-enter its key first`);
-    await db.transaction(async (tx) => {
-      await lockTenantModelProviders(tx, tenant.tenantId);
-      await this.connections.setModels(bifrostName, BASE_FORMATS[format], input);
-      await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
-    });
+    await this.changeKeyThenProject(tenant, async () => ({
+      putKeyBack: await this.connections.setModels(bifrostName, BASE_FORMATS[format], input),
+      afterKey: async () => {},
+    }));
     return this.modelProvidersService.listTenantProviders(tenant);
+  }
+
+  private async changeKeyThenProject(
+    tenant: TenantContext,
+    changeKey: (tx: DbExecutor) => Promise<{ putKeyBack: () => Promise<void>; afterKey: () => Promise<void> }>
+  ): Promise<void> {
+    let changed = false;
+    try {
+      await db.transaction(async (tx) => {
+        await lockTenantModelProviders(tx, tenant.tenantId);
+        const { putKeyBack, afterKey } = await changeKey(tx);
+        changed = true;
+        try {
+          await afterKey();
+          await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
+        } catch (err) {
+          await putKeyBack();
+          throw err;
+        }
+      });
+    } catch (err) {
+      if (changed) await this.modelProvidersService.restoreTenantKeys([tenant.tenantId]);
+      throw err;
+    }
   }
 
   private async keepAzureRowsFor(
