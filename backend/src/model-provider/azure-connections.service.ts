@@ -154,7 +154,7 @@ export class AzureConnectionsService {
     );
   }
 
-  async setModels(name: string, choice: AzureModels): Promise<void> {
+  async setModels(name: string, choice: AzureModels): Promise<() => Promise<void>> {
     const stored = await this.find(name);
     if (!stored) throw new ConflictException(CONNECTION_GONE_MESSAGE);
     await this.bifrostCall(() =>
@@ -164,6 +164,10 @@ export class AzureConnectionsService {
         aliases: aliasesOf(choice.deployments) ?? {},
       })
     );
+    return () =>
+      this.bifrostService.replaceProviderKey(AZURE_PROVIDER, stored.id, stored).catch((err: Error) => {
+        this.logger.error(`Azure key ${name} could not be put back after a failed change: ${err.message}`);
+      });
   }
 
   async remove(name: string): Promise<void> {

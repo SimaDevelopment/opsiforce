@@ -144,15 +144,24 @@ export class ModelProviderCreationService {
     const azureName = customBifrostProviderName(tenant.tenantName, name);
     if (await this.ownAzureConnection(tenant, azureName)) {
       const choice = this.azure.modelsOf(input);
-      await db.transaction(async (tx) => {
-        await lockTenantModelProviders(tx, tenant.tenantId);
-        if (!(await this.ownAzureConnection(tenant, azureName, tx))) {
-          throw new NotFoundException(`${name} is not a model provider of this organization`);
+      let putKeyBack: (() => Promise<void>) | undefined;
+      try {
+        await db.transaction(async (tx) => {
+          await lockTenantModelProviders(tx, tenant.tenantId);
+          if (!(await this.ownAzureConnection(tenant, azureName, tx))) {
+            throw new NotFoundException(`${name} is not a model provider of this organization`);
+          }
+          putKeyBack = await this.azure.setModels(azureName, choice);
+          await this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models));
+          await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
+        });
+      } catch (err) {
+        if (putKeyBack) {
+          await putKeyBack();
+          await this.modelProvidersService.restoreTenantKeys([tenant.tenantId]);
         }
-        await this.azure.setModels(azureName, choice);
-        await this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models));
-        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
-      });
+        throw err;
+      }
       return this.modelProvidersService.listTenantProviders(tenant);
     }
     const { bifrostName, provider } = await this.customProviderInBifrost(tenant, name);

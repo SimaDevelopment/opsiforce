@@ -682,6 +682,30 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       expect((await rowsOf(seeded)).filter((row) => row.name === 'own-foundry')).toHaveLength(2);
     });
 
+    it('puts its key and the Project keys back when a Project key refuses the change', async () => {
+      const seeded = await seededTenant();
+      expect((await createOwn(seeded)).statusCode).toBe(201);
+      const keyName = `${seeded.tenant.name}-own-foundry`;
+      const chatKey = bifrost.chatKeyOf(seeded.projectId);
+
+      bifrost.refuseProviderConfigWrites(chatKey.id);
+      const refused = await app.inject({
+        method: 'PUT',
+        url: '/api/model-providers/own-foundry/models',
+        headers: seeded.admin.headers,
+        payload: { models: ['claude-sonnet-5'] },
+      });
+      bifrost.acceptProviderConfigWrites();
+
+      expect(refused.statusCode).toBeGreaterThanOrEqual(500);
+      expect(bifrost.azureKeyNamed(keyName)?.models).toEqual(['gpt-5.6-sol', 'claude-sonnet-5']);
+      expect((await rowsOf(seeded)).filter((row) => row.name === 'own-foundry').map((row) => row.baseFormat)).toEqual([
+        'anthropic',
+        'openai',
+      ]);
+      expect(azureEntriesOf(bifrost.chatKeyOf(seeded.projectId).provider_configs)).toHaveLength(2);
+    });
+
     it('is invisible to other Organizations', async () => {
       const seeded = await seededTenant();
       const other = await seededTenant();
