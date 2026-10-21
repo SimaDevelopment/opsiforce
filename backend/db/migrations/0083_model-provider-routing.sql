@@ -1,6 +1,3 @@
--- Each switch and weight pair is named after the Project key it routes: chat_* for the chat key (the Agent), backend_* for the backend key (the App's own AI features). enabled / weight become chat_enabled / chat_weight with their values kept.
--- The fixed openai and anthropic start on for the backend key at weight 1; every other provider starts off for it.
--- An Azure connection is one key on the native azure provider, named by bifrost_key, with one row per Base format it serves, each with its own switches and weights; every other row leaves bifrost_key and base_format NULL and reads its format from the provider in the gateway.
 ALTER TABLE "model_providers" RENAME COLUMN "enabled" TO "chat_enabled";--> statement-breakpoint
 ALTER TABLE "model_providers" RENAME COLUMN "weight" TO "chat_weight";--> statement-breakpoint
 ALTER TABLE "model_providers" RENAME CONSTRAINT "model_providers_weight_check" TO "model_providers_chat_weight_check";--> statement-breakpoint

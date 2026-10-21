@@ -45,11 +45,7 @@ const SHOWN_LABEL: Record<Shown, string> = {
   without: 'Without access',
 };
 
-export function OrganizationAccessDialog(props: {
-  name: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+export function TenantAccessDialog(props: { name: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const access = usePlatformModelProviderAccess();
   const setAccess = useSetModelProviderAccess();
   const setMode = useSetAvailabilityMode();

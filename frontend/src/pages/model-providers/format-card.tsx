@@ -28,7 +28,7 @@ import { BuiltInPlatformDetails, BuiltInPlatformPills, BuiltInRowMenu } from './
 import { TIPS } from './copy';
 import { CustomProviderMenu } from './custom-provider-menu';
 import { LinkedAccountSignIn, LinkedAccountStatus } from './linked-account-sign-in';
-import { useWithoutAccessHere } from './organization-access';
+import { useWithoutAccessHere } from './tenant-access';
 import {
   BuiltInPill,
   isCustomRow,

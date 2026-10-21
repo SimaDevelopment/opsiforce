@@ -125,11 +125,11 @@ export function servingOf(
   }
   const provider = providers?.get(row.bifrostProvider);
   if (!format) return { models: null, keyIds: EVERY_KEY };
-  const everyModel = readsKeyModels(provider) ? servedModelsOf(BASE_FORMATS[format]) : null;
+  const wholeCatalog = readsKeyModels(provider) ? servedModelsOf(BASE_FORMATS[format]) : null;
   const providerKeys = keys.get(row.bifrostProvider);
-  if (!providerKeys || provider?.keyLess) return { models: everyModel, keyIds: EVERY_KEY };
+  if (!providerKeys || provider?.keyLess) return { models: wholeCatalog, keyIds: EVERY_KEY };
   const keyModels = keyModelsOf(providerKeys);
-  if (keyModels.length === 0 || servesEveryModel(keyModels)) return { models: everyModel, keyIds: EVERY_KEY };
+  if (keyModels.length === 0 || servesEveryModel(keyModels)) return { models: wholeCatalog, keyIds: EVERY_KEY };
   return { models: familyModels(keyModels, format), keyIds: EVERY_KEY };
 }
 
@@ -452,7 +452,7 @@ export class ModelProvidersService {
     }
   }
 
-  async startAvailability(executor: DbExecutor, name: string, chosenTenantIds: string[] | null): Promise<void> {
+  async setInitialAvailability(executor: DbExecutor, name: string, chosenTenantIds: string[] | null): Promise<void> {
     if (!chosenTenantIds) return;
     await executor.insert(modelProviderAvailability).values({ name, mode: 'chosen' });
     if (chosenTenantIds.length > 0) {
@@ -465,10 +465,6 @@ export class ModelProvidersService {
   async forgetAvailability(executor: DbExecutor, name: string): Promise<void> {
     await executor.delete(modelProviderAvailabilityTenants).where(eq(modelProviderAvailabilityTenants.name, name));
     await executor.delete(modelProviderAvailability).where(eq(modelProviderAvailability.name, name));
-  }
-
-  async rewriteTenantKeys(tx: DbExecutor, tenantId: string): Promise<void> {
-    await this.writeTenantKeys(tx, tenantId);
   }
 
   async rewriteKeysOfTenantsUsing(tx: DbExecutor, name: string): Promise<void> {
@@ -498,9 +494,9 @@ export class ModelProvidersService {
   }
 
   async reachableModels(tenantId: string): Promise<string[]> {
-    const everyModel = BASE_FORMAT_IDS.flatMap(catalogModelRefsOf);
+    const catalogRefs = BASE_FORMAT_IDS.flatMap(catalogModelRefsOf);
     const providers = await this.bifrostProvidersOrNull();
-    if (!providers) return everyModel;
+    if (!providers) return catalogRefs;
     const rows = await this.effectiveRows(db, tenantId);
     const keys = await this.keysOrEmpty(providersReadForKeys(rows, providers));
     const served = new Set<string>();
@@ -510,7 +506,7 @@ export class ModelProvidersService {
       const models = servingOf(row, providers, keys).models ?? servedModelsOf(BASE_FORMATS[format]);
       for (const model of models) served.add(modelRefOf(format, model));
     }
-    return everyModel.filter((ref) => served.has(ref));
+    return catalogRefs.filter((ref) => served.has(ref));
   }
 
   async isProviderReachable(tenantId: string, bifrostProvider: string): Promise<boolean> {
@@ -551,7 +547,7 @@ export class ModelProvidersService {
     );
   }
 
-  private async writeTenantKeys(
+  async writeTenantKeys(
     tx: DbExecutor,
     tenantId: string,
     scope?: ProjectKeyScope,

@@ -74,17 +74,17 @@ function AddProviderDialog(
   const testGlobal = useTestModelProvider('platform');
   const createCustom = useCreateModelProvider('tenant');
   const createGlobal = useCreateModelProvider('platform');
-  const [audience, setAudience] = createSignal<Audience>('organization');
+  const [reach, setReach] = createSignal<Reach>('tenant');
   const [chosenTenantIds, setChosenTenantIds] = createSignal<string[]>([]);
   const [draft, setDraft] = createStore<ProviderDraft>({ ...EMPTY_DRAFT });
-  const global = () => audience() !== 'organization';
-  const audiences = (): Audience[] => [
-    ...(props.canAddCustom ? (['organization'] as const) : []),
+  const global = () => reach() !== 'tenant';
+  const reaches = (): Reach[] => [
+    ...(props.canAddCustom ? (['tenant'] as const) : []),
     ...(props.canAddGlobal ? (['every', 'chosen'] as const) : []),
   ];
   const availability = (): NewProviderAvailability | undefined => {
-    if (audience() === 'every') return { mode: 'every' };
-    if (audience() === 'chosen') return { mode: 'chosen', tenantIds: chosenTenantIds() };
+    if (reach() === 'every') return { mode: 'every' };
+    if (reach() === 'chosen') return { mode: 'chosen', tenantIds: chosenTenantIds() };
     return undefined;
   };
   const catalog = () => (global() ? globalRules.data : customRules.data)?.catalogModels;
@@ -107,14 +107,14 @@ function AddProviderDialog(
   const needsBaseUrl = () => draft.kind === 'compatible-endpoint';
   const linking = () => draft.kind === 'linked-account';
   const complete = () =>
-    isDraftComplete(draft, kinds(), nameMaxLength()) && (audience() !== 'chosen' || chosenTenantIds().length > 0);
+    isDraftComplete(draft, kinds(), nameMaxLength()) && (reach() !== 'chosen' || chosenTenantIds().length > 0);
   const provider = () => newProviderOf(props.format, draft, availability());
   const testProvider = () => (global() ? testGlobal : testCustom);
   const createProvider = () => (global() ? createGlobal : createCustom);
 
   createEffect(() => {
     if (props.open) {
-      setAudience(untrack(() => (props.canAddCustom ? 'organization' : 'every')));
+      setReach(untrack(() => (props.canAddCustom ? 'tenant' : 'every')));
       setChosenTenantIds([]);
       setDraft({ ...EMPTY_DRAFT });
       setResult(null);
@@ -138,8 +138,8 @@ function AddProviderDialog(
     change({ kind, models: null, deployments: {} });
   }
 
-  function chooseAudience(next: Audience) {
-    setAudience(next);
+  function chooseReach(next: Reach) {
+    setReach(next);
     setResult(null);
     setSaveError(null);
   }
@@ -180,7 +180,7 @@ function AddProviderDialog(
               <DialogDescription>
                 <Show
                   when={!global()}
-                  fallback={audience() === 'chosen' ? TIPS.chosenDescription : TIPS.globalDescription}
+                  fallback={reach() === 'chosen' ? TIPS.chosenDescription : TIPS.globalDescription}
                 >
                   <Show
                     when={linking()}
@@ -197,18 +197,18 @@ function AddProviderDialog(
                   </Show>
                 </Show>
               </DialogDescription>
-              <Show when={audiences().length > 1}>
+              <Show when={reaches().length > 1}>
                 <div class="mt-4 space-y-3">
                   <RadioChoice
                     label="Who can use it"
-                    options={audiences()}
-                    selected={audience()}
-                    onSelect={chooseAudience}
-                    title={(option) => AUDIENCE_TITLE[option]}
-                    hint={(option) => AUDIENCE_HINT[option]}
+                    options={reaches()}
+                    selected={reach()}
+                    onSelect={chooseReach}
+                    title={(option) => REACH_TITLE[option]}
+                    hint={(option) => REACH_HINT[option]}
                   />
-                  <Show when={audience() === 'chosen'}>
-                    <OrganizationPicker selected={chosenTenantIds()} onChange={setChosenTenantIds} />
+                  <Show when={reach() === 'chosen'}>
+                    <TenantPicker selected={chosenTenantIds()} onChange={setChosenTenantIds} />
                   </Show>
                 </div>
               </Show>
@@ -359,21 +359,21 @@ function AddProviderDialog(
   );
 }
 
-type Audience = 'organization' | 'every' | 'chosen';
+type Reach = 'tenant' | 'every' | 'chosen';
 
-const AUDIENCE_TITLE: Record<Audience, string> = {
-  organization: 'Only this organization',
+const REACH_TITLE: Record<Reach, string> = {
+  tenant: 'Only this organization',
   every: 'Every organization',
   chosen: 'Only organizations I choose',
 };
 
-const AUDIENCE_HINT: Record<Audience, string> = {
-  organization: 'A Custom model provider of this organization',
+const REACH_HINT: Record<Reach, string> = {
+  tenant: 'A Custom model provider of this organization',
   every: 'Built-in, including organizations added later',
   chosen: 'Built-in, for the organizations you choose below',
 };
 
-function OrganizationPicker(props: { selected: string[]; onChange: (tenantIds: string[]) => void }) {
+function TenantPicker(props: { selected: string[]; onChange: (tenantIds: string[]) => void }) {
   const access = usePlatformModelProviderAccess();
   const [query, setQuery] = createSignal('');
   const shown = createMemo(() => {

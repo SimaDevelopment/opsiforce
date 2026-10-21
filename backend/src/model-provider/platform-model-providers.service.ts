@@ -299,7 +299,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
           chatEnabled: false,
           chatWeight: STARTING_WEIGHT,
         });
-        await this.modelProvidersService.startAvailability(tx, draft.spec.name, chosenTenantIds);
+        await this.modelProvidersService.setInitialAvailability(tx, draft.spec.name, chosenTenantIds);
       })
     );
     return this.list();
@@ -325,7 +325,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
             chatWeight: STARTING_WEIGHT,
           }))
         );
-        await this.modelProvidersService.startAvailability(tx, name, chosenTenantIds);
+        await this.modelProvidersService.setInitialAvailability(tx, name, chosenTenantIds);
       })
     );
     return this.list();
@@ -369,7 +369,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
             .returning({ id: modelProviders.id });
           if (!row) throw new Error(`The platform row of ${bifrostName} was not created`);
           await insertAwaitingSignIn(tx, row.id, vendor, callerSecret);
-          await this.modelProvidersService.startAvailability(tx, bifrostName, chosenTenantIds);
+          await this.modelProvidersService.setInitialAvailability(tx, bifrostName, chosenTenantIds);
         })
     );
     return this.list();
@@ -487,7 +487,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
         }
         await this.modelProvidersService.forgetAvailability(tx, name);
         for (const tenantId of affectedTenantIds) {
-          await this.modelProvidersService.rewriteTenantKeys(tx, tenantId);
+          await this.modelProvidersService.writeTenantKeys(tx, tenantId);
         }
         if (azureConnection) await this.azure.remove(name);
         else await this.connections.remove(name);

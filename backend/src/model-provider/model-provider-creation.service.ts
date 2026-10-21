@@ -87,7 +87,7 @@ export class ModelProviderCreationService {
           backendEnabled: true,
           backendWeight: STARTING_WEIGHT,
         });
-        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
       })
     );
     return this.modelProvidersService.listTenantProviders(tenant);
@@ -112,7 +112,7 @@ export class ModelProviderCreationService {
             backendWeight: STARTING_WEIGHT,
           }))
         );
-        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
       })
     );
     return this.modelProvidersService.listTenantProviders(tenant);
@@ -144,7 +144,7 @@ export class ModelProviderCreationService {
       await db.transaction(async (tx) => {
         await lockTenantModelProviders(tx, tenant.tenantId);
         await this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models));
-        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
       });
       return this.modelProvidersService.listTenantProviders(tenant);
     }
@@ -196,7 +196,7 @@ export class ModelProviderCreationService {
         await tx
           .delete(modelProviders)
           .where(and(eq(modelProviders.tenantId, tenant.tenantId), eq(modelProviders.bifrostKey, bifrostName)));
-        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
         await this.azure.remove(bifrostName);
       });
     } catch (err) {
@@ -225,7 +225,7 @@ export class ModelProviderCreationService {
         }
         await this.vendors.revokeStoredSignIn(tx, row.id);
         await tx.delete(modelProviders).where(eq(modelProviders.id, row.id));
-        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
         await this.connections.remove(bifrostName);
       });
     } catch (err) {
@@ -287,7 +287,7 @@ export class ModelProviderCreationService {
     await this.connections.createDraft(draft, () =>
       db.transaction(async (tx) => {
         await lockTenantModelProviders(tx, tenant.tenantId);
-        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+        await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
       })
     );
     return this.modelProvidersService.listTenantProviders(tenant);

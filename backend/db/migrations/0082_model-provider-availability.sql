@@ -1,4 +1,3 @@
--- Who may use a Built-in model provider, by its name. Mode 'every' makes it available to every Organization, new ones included, except the Organizations listed; mode 'chosen' makes it available only to the Organizations listed. A provider with no availability row is available to every Organization.
 CREATE TABLE "model_provider_availability" (
 	"name" text PRIMARY KEY NOT NULL,
 	"mode" text NOT NULL,

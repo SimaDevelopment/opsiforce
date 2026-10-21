@@ -9,7 +9,6 @@ import {
   type ModelProviderKind,
   type ModelProviderScope,
 } from '~/api/model-providers';
-import { Info } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
@@ -22,7 +21,6 @@ export interface ModelsTarget {
   kind?: ModelProviderKind | null;
   servedModels?: string[];
   connection?: AzureConnection;
-  declaredInDeployment?: boolean;
 }
 
 function currentChoice(row: ModelsTarget): string[] | null {
@@ -127,15 +125,6 @@ export function ModelsDialog(props: {
           <Show when={props.scope === 'platform'}> This applies to every organization that uses it.</Show>
         </DialogDescription>
         <div class="mt-4 space-y-3">
-          <Show when={props.row.declaredInDeployment}>
-            <div class="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <Info class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                This model provider is also set up in the deployment configuration. If someone changes it there, that
-                setup replaces your choice.
-              </span>
-            </div>
-          </Show>
           <Show
             when={catalog()}
             fallback={

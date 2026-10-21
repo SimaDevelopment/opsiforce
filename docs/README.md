@@ -74,6 +74,8 @@
 - [Model provider](organization/model-provider.md) — where an Organization's model requests go, per Base format, and how a save reaches its Projects' keys, for Agents and for Apps
 - [Custom model provider](organization/custom-model-provider.md) — adding, testing, editing, re-entering and deleting an Organization's own providers
 - [Opsiforce model provider](organization/opsiforce-model-provider.md) — the platform providers every Organization gets, global `opsiforce-*` providers and the fresh-install seed
+- [Model provider access](organization/model-provider-access.md) — which Organizations get each Built-in, and the access dialog
+- [Azure connection](organization/azure-connection.md) — connecting an Azure AI Foundry resource as a model provider
 - [Linked account](organization/linked-account.md) — signing a ChatGPT account in as a Model provider, and what ends a sign-in
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
 - [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
