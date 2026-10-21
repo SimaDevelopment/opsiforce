@@ -74,7 +74,7 @@ export function bifrostProviderKey(spec: BifrostProviderSpec, key: string): Crea
   return {
     name: bifrostProviderKeyName(spec.name),
     value: { value: key, type: 'plain_text' },
-    models: spec.standard ? EVERY_MODEL : (spec.models ?? EVERY_MODEL),
+    models: spec.models ?? EVERY_MODEL,
     weight: 1,
     enabled: true,
   };

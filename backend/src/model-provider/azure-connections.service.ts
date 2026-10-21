@@ -21,23 +21,31 @@ const DEPLOYMENT_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 
 const ENTER_ENDPOINT_MESSAGE =
   'Enter the Azure AI Foundry endpoint, such as https://<resource>.services.ai.azure.com or https://<resource>.openai.azure.com';
-const CHOOSE_MODELS_MESSAGE = 'Choose at least one model it serves';
+const CHOOSE_MODELS_MESSAGE = 'Choose at least one model, or choose every model';
 const ENTER_KEY_MESSAGE = 'Enter the key';
 const CONNECTION_GONE_MESSAGE = 'The model gateway no longer has this Azure connection; delete it and add it again';
 const GATEWAY_KEPT_KEY_MESSAGE = 'The model gateway did not remove the Azure key it was asked to remove; try again';
 
-export interface AzureConnection {
-  endpoint: string;
-  key: string;
-  models: string[];
+export interface AzureModels {
+  models: string[] | null;
   deployments: Record<string, string>;
 }
+
+export interface AzureAccess {
+  endpoint: string;
+  key: string;
+}
+
+export type AzureConnection = AzureAccess & AzureModels;
+
+const EVERY_MODEL = ['*'];
 
 function familyOf(model: string): BaseFormatId | undefined {
   return BASE_FORMAT_IDS.find((format) => servedModelsOf(BASE_FORMATS[format]).includes(model));
 }
 
-export function formatsOfModels(models: string[]): BaseFormatId[] {
+export function formatsOfModels(models: string[] | null): BaseFormatId[] {
+  if (!models) return [...BASE_FORMAT_IDS];
   return BASE_FORMAT_IDS.filter((format) => models.some((model) => familyOf(model) === format));
 }
 
@@ -52,7 +60,8 @@ function parseEndpoint(input: unknown): string {
   return url.origin;
 }
 
-function parseModels(input: unknown): string[] {
+function parseModels(input: unknown): string[] | null {
+  if (input === undefined || input === null) return null;
   if (!Array.isArray(input) || input.length === 0) throw new BadRequestException(CHOOSE_MODELS_MESSAGE);
   const models = [...new Set(input)];
   for (const model of models) {
@@ -63,12 +72,13 @@ function parseModels(input: unknown): string[] {
   return models as string[];
 }
 
-function parseDeployments(input: unknown, models: string[]): Record<string, string> {
+function parseDeployments(input: unknown, models: string[] | null): Record<string, string> {
   if (input === undefined || input === null) return {};
   if (typeof input !== 'object' || Array.isArray(input)) throw new BadRequestException('deployments must be an object');
   const deployments: Record<string, string> = {};
   for (const [model, deployment] of Object.entries(input)) {
-    if (!models.includes(model)) throw new BadRequestException(`${model} is not one of the models it serves`);
+    const served = models ? models.includes(model) : familyOf(model) !== undefined;
+    if (!served) throw new BadRequestException(`${model} is not one of the models it serves`);
     if (typeof deployment !== 'string' || !DEPLOYMENT_NAME.test(deployment)) {
       throw new BadRequestException(`Enter the Azure deployment name for ${model}`);
     }
@@ -97,11 +107,19 @@ export class AzureConnectionsService {
   constructor(private readonly bifrostService: BifrostService) {}
 
   connectionOf(input: unknown): AzureConnection {
+    return { ...this.accessOf(input), ...this.modelsOf(input) };
+  }
+
+  accessOf(input: unknown): AzureAccess {
     const endpoint = parseEndpoint(field(input, 'endpoint'));
     const key = field(input, 'key');
     if (typeof key !== 'string' || key.trim() === '') throw new BadRequestException(ENTER_KEY_MESSAGE);
+    return { endpoint, key: key.trim() };
+  }
+
+  modelsOf(input: unknown): AzureModels {
     const models = parseModels(field(input, 'models'));
-    return { endpoint, key: key.trim(), models, deployments: parseDeployments(field(input, 'deployments'), models) };
+    return { models, deployments: parseDeployments(field(input, 'deployments'), models) };
   }
 
   async find(name: string): Promise<BifrostProviderKeySummary | undefined> {
@@ -123,12 +141,28 @@ export class AzureConnectionsService {
     }
   }
 
-  async replace(name: string, connection: AzureConnection): Promise<void> {
+  async replaceAccess(name: string, access: AzureAccess): Promise<void> {
     const stored = await this.find(name);
     if (!stored) throw new ConflictException(CONNECTION_GONE_MESSAGE);
-    await this.passConnectionTest(connection);
+    await this.passConnectionTest(access);
     await this.bifrostCall(() =>
-      this.bifrostService.replaceProviderKey(AZURE_PROVIDER, stored.id, this.keyPayload(name, connection))
+      this.bifrostService.replaceProviderKey(AZURE_PROVIDER, stored.id, {
+        ...stored,
+        value: { value: access.key, type: 'plain_text' },
+        azure_key_config: { endpoint: { value: access.endpoint, type: 'plain_text' } },
+      })
+    );
+  }
+
+  async setModels(name: string, choice: AzureModels): Promise<void> {
+    const stored = await this.find(name);
+    if (!stored) throw new ConflictException(CONNECTION_GONE_MESSAGE);
+    await this.bifrostCall(() =>
+      this.bifrostService.replaceProviderKey(AZURE_PROVIDER, stored.id, {
+        ...stored,
+        models: choice.models ?? EVERY_MODEL,
+        aliases: aliasesOf(choice.deployments) ?? {},
+      })
     );
   }
 
@@ -148,7 +182,7 @@ export class AzureConnectionsService {
     return {
       name,
       value: { value: connection.key, type: 'plain_text' },
-      models: connection.models,
+      models: connection.models ?? EVERY_MODEL,
       weight: 1,
       enabled: true,
       azure_key_config: { endpoint: { value: connection.endpoint, type: 'plain_text' } },
@@ -161,12 +195,12 @@ export class AzureConnectionsService {
     await this.bifrostCall(() => this.bifrostService.createProvider(standardProviderPayload(AZURE_PROVIDER)));
   }
 
-  async test(connection: AzureConnection): Promise<void> {
-    await this.passConnectionTest(connection);
+  async test(access: AzureAccess): Promise<void> {
+    await this.passConnectionTest(access);
   }
 
-  private async passConnectionTest(connection: AzureConnection): Promise<void> {
-    const outcome = await testConnectionWith(`${connection.endpoint}/openai/v1/models`, { 'api-key': connection.key });
+  private async passConnectionTest(access: AzureAccess): Promise<void> {
+    const outcome = await testConnectionWith(`${access.endpoint}/openai/v1/models`, { 'api-key': access.key });
     if (!outcome.passed) throw new UnprocessableEntityException(outcome.reason);
   }
 

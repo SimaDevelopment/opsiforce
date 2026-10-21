@@ -47,7 +47,7 @@ An Opsiforce model provider an Organization doesn't have, because a platform adm
 _Avoid_: Disabled, Hidden, Blocked (an Organization's own switch only turns a provider off)
 
 **Custom model provider**:
-A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint, a Linked account or an Azure connection, serves every model of its Base format or only the ones ticked for it, and its name and Base format are fixed once it exists, except an Azure connection's formats, which follow its models.
+A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint, a Linked account or an Azure connection, serves every model of its Base format or only the ones chosen for it, and its name and Base format are fixed once it exists, except an Azure connection's formats, which follow its models.
 _Avoid_: Own provider, BYOK provider
 
 **Official API key**:

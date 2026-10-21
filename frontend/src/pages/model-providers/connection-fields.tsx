@@ -77,7 +77,7 @@ export function isDraftComplete(draft: ProviderDraft, kinds: ModelProviderKind[]
     (draft.kind === 'linked-account' || draft.key.trim() !== '') &&
     kinds.includes(draft.kind) &&
     (draft.kind !== 'compatible-endpoint' || isHttpsUrl(draft.baseUrl)) &&
-    (draft.kind !== 'azure-foundry' || (isAzureEndpoint(draft.endpoint) && (draft.models?.length ?? 0) > 0)) &&
+    (draft.kind !== 'azure-foundry' || isAzureEndpoint(draft.endpoint)) &&
     (draft.models === null || draft.models.length > 0)
   );
 }
@@ -90,14 +90,14 @@ export function newProviderOf(
   const shared = { name: draft.name, ...(availability ? { availability } : {}) };
   if (draft.kind === 'linked-account') return { ...linkedAccountDraft(baseFormat, draft.name), ...shared };
   if (draft.kind === 'azure-foundry') {
-    const models = draft.models ?? [];
     return {
       baseFormat,
       kind: draft.kind,
       key: draft.key,
       endpoint: draft.endpoint.trim(),
-      models,
-      deployments: deploymentsToSend(models, draft.deployments),
+      ...(draft.models
+        ? { models: draft.models, deployments: deploymentsToSend(draft.models, draft.deployments) }
+        : {}),
       ...shared,
     };
   }
@@ -314,62 +314,120 @@ export function TestOutcome(props: { result: TestResult | null; idle: string; pa
   );
 }
 
-export function ModelsField(props: {
-  format: BaseFormatId;
-  catalog: string[];
+type ModelScope = 'every' | 'chosen';
+
+const MODEL_SCOPES: ModelScope[] = ['every', 'chosen'];
+
+export function ModelChoiceField(props: {
+  catalog: Partial<Record<BaseFormatId, string[]>>;
   selected: string[] | null;
-  onChange: (models: string[] | null) => void;
+  deployments?: Record<string, string>;
+  onChange: (selected: string[] | null, deployments: Record<string, string>) => void;
 }) {
-  const label = () => BASE_FORMAT_LABEL[props.format];
-  const toggle = (model: string, on: boolean) => {
-    const current = props.selected ?? [];
-    props.onChange(on ? [...current, model] : current.filter((entry) => entry !== model));
-  };
+  const formats = () => BASE_FORMAT_IDS.filter((format) => (props.catalog[format]?.length ?? 0) > 0);
+  const everyModel = () => formats().flatMap((format) => props.catalog[format] ?? []);
+  const namesDeployments = () => props.deployments !== undefined;
+  const deployments = () => props.deployments ?? {};
+  const scope = (): ModelScope => (props.selected === null ? 'every' : 'chosen');
+  const chosen = () => props.selected ?? [];
+
+  const choose = (next: ModelScope) =>
+    props.onChange(next === 'every' ? null : (props.selected ?? everyModel()), deployments());
+  const toggle = (model: string, on: boolean) =>
+    props.onChange(on ? [...chosen(), model] : chosen().filter((entry) => entry !== model), deployments());
+  const rename = (model: string, deployment: string) =>
+    props.onChange(props.selected, { ...deployments(), [model]: deployment });
+
   return (
-    <fieldset class="space-y-1.5">
-      <legend class="mb-1 text-xs text-muted-foreground">Models it serves</legend>
-      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        <label class="inline-flex cursor-pointer items-center gap-1.5">
-          <input
-            type="radio"
-            class="h-3.5 w-3.5 accent-primary"
-            checked={props.selected === null}
-            onChange={() => props.onChange(null)}
-          />
-          Every {label()} model, including ones added later
-        </label>
-        <label class="inline-flex cursor-pointer items-center gap-1.5">
-          <input
-            type="radio"
-            class="h-3.5 w-3.5 accent-primary"
-            checked={props.selected !== null}
-            onChange={() => props.onChange([...props.catalog])}
-          />
-          Only the ones I tick
-        </label>
-      </div>
-      <Show when={props.selected}>
-        {(selected) => (
-          <div class="grid gap-1 rounded-md border border-border p-2 sm:grid-cols-2">
-            <For each={props.catalog}>
-              {(model) => (
-                <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs">
-                  <input
-                    type="checkbox"
-                    class="h-3.5 w-3.5 accent-primary"
-                    checked={selected().includes(model)}
-                    onChange={(event) => toggle(model, event.currentTarget.checked)}
-                  />
-                  <span class="font-mono" translate="no">
-                    {model}
-                  </span>
-                </label>
+    <div class="space-y-2">
+      <RadioChoice
+        label="Models it serves"
+        options={MODEL_SCOPES}
+        selected={scope()}
+        onSelect={choose}
+        title={(option) => (option === 'every' ? 'Every model' : 'Only the models I choose')}
+        hint={(option) =>
+          option === 'every'
+            ? namesDeployments()
+              ? 'Each deployed under its own name, including models added later'
+              : 'Including models added later'
+            : 'Models added later don’t reach it until you choose them'
+        }
+      />
+      <Show when={scope() === 'chosen'}>
+        <div class="rounded-md border border-border">
+          <div class="flex items-center gap-3 border-b border-border px-3 py-1.5 text-xs">
+            <span class="mr-auto text-muted-foreground">
+              {chosen().length} of {everyModel().length} chosen
+            </span>
+            <button
+              type="button"
+              class="text-primary hover:underline disabled:opacity-50"
+              disabled={chosen().length === everyModel().length}
+              onClick={() => props.onChange(everyModel(), deployments())}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              class="text-primary hover:underline disabled:opacity-50"
+              disabled={chosen().length === 0}
+              onClick={() => props.onChange([], deployments())}
+            >
+              Clear
+            </button>
+          </div>
+          <div class="max-h-64 space-y-2 overflow-y-auto p-3">
+            <For each={formats()}>
+              {(format) => (
+                <div class="space-y-1">
+                  <Show when={formats().length > 1}>
+                    <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {BASE_FORMAT_LABEL[format]}
+                    </p>
+                  </Show>
+                  <For each={props.catalog[format] ?? []}>
+                    {(model) => {
+                      const ticked = () => chosen().includes(model);
+                      return (
+                        <div class="flex min-h-7 flex-wrap items-center gap-2 text-xs">
+                          <label class="inline-flex min-w-44 cursor-pointer items-center gap-2">
+                            <input
+                              type="checkbox"
+                              class="h-3.5 w-3.5 accent-primary"
+                              checked={ticked()}
+                              onChange={(event) => toggle(model, event.currentTarget.checked)}
+                            />
+                            <span class="font-mono" translate="no">
+                              {model}
+                            </span>
+                          </label>
+                          <Show when={namesDeployments() && ticked()}>
+                            <input
+                              type="text"
+                              aria-label={`Deployment name of ${model}`}
+                              autocomplete="off"
+                              spellcheck={false}
+                              class={cn(INPUT_CLASS, 'h-7 max-w-56 flex-1 font-mono placeholder:font-sans')}
+                              placeholder="Deployment name, if different"
+                              value={deployments()[model] ?? ''}
+                              onInput={(event) => rename(model, event.currentTarget.value)}
+                            />
+                          </Show>
+                        </div>
+                      );
+                    }}
+                  </For>
+                </div>
               )}
             </For>
           </div>
-        )}
+        </div>
+        <Show when={chosen().length === 0}>
+          <p class="text-xs text-destructive">Choose at least one model, or choose Every model.</p>
+        </Show>
       </Show>
-    </fieldset>
+    </div>
   );
 }
 
@@ -398,71 +456,5 @@ export function EndpointField(props: { value: string; onInput: (value: string) =
           : 'The resource address from the Azure AI Foundry portal, without a path.'}
       </p>
     </Field>
-  );
-}
-
-export function AzureModelsField(props: {
-  catalog: Record<BaseFormatId, string[]>;
-  selected: string[];
-  deployments: Record<string, string>;
-  onChange: (models: string[], deployments: Record<string, string>) => void;
-}) {
-  const toggle = (model: string, on: boolean) => {
-    const models = on ? [...props.selected, model] : props.selected.filter((entry) => entry !== model);
-    props.onChange(models, props.deployments);
-  };
-  const rename = (model: string, deployment: string) =>
-    props.onChange(props.selected, { ...props.deployments, [model]: deployment });
-  return (
-    <fieldset class="space-y-1.5">
-      <legend class="mb-1 text-xs text-muted-foreground">Models it serves, and their deployment names</legend>
-      <div class="space-y-2 rounded-md border border-border p-2">
-        <For each={BASE_FORMAT_IDS}>
-          {(format) => (
-            <div class="space-y-1">
-              <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {BASE_FORMAT_LABEL[format]}
-              </p>
-              <For each={props.catalog[format] ?? []}>
-                {(model) => {
-                  const ticked = () => props.selected.includes(model);
-                  return (
-                    <div class="flex flex-wrap items-center gap-2 text-xs">
-                      <label class="inline-flex min-w-40 cursor-pointer items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          class="h-3.5 w-3.5 accent-primary"
-                          checked={ticked()}
-                          onChange={(event) => toggle(model, event.currentTarget.checked)}
-                        />
-                        <span class="font-mono" translate="no">
-                          {model}
-                        </span>
-                      </label>
-                      <Show when={ticked()}>
-                        <input
-                          type="text"
-                          aria-label={`Azure deployment name for ${model}`}
-                          autocomplete="off"
-                          spellcheck={false}
-                          class={cn(INPUT_CLASS, 'h-7 max-w-56 flex-1 font-mono placeholder:font-sans')}
-                          placeholder={`Deployment, default ${model}`}
-                          value={props.deployments[model] ?? ''}
-                          onInput={(event) => rename(model, event.currentTarget.value)}
-                        />
-                      </Show>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-          )}
-        </For>
-      </div>
-      <p class="text-xs text-muted-foreground">
-        Leave a deployment name empty when the deployment is named after the model. Ticking Claude models puts it on the
-        Anthropic card too, with its own switches and weights.
-      </p>
-    </fieldset>
   );
 }

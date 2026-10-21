@@ -4,8 +4,21 @@ import { servedModelsOf } from './bifrost-provider-shape';
 
 const EVERY_MODEL = '*';
 
+export function isHelmPlaceholder(key: BifrostProviderKeySummary): boolean {
+  const value = key.value as { value?: unknown; ref?: unknown } | undefined;
+  return value?.value === '' && value.ref === undefined;
+}
+
+export function servingKeysOf(keys: BifrostProviderKeySummary[]): BifrostProviderKeySummary[] {
+  return keys.filter((key) => key.enabled !== false && !isHelmPlaceholder(key));
+}
+
 export function keyModelsOf(keys: BifrostProviderKeySummary[]): string[] {
-  return [...new Set(keys.filter((key) => key.enabled !== false).flatMap((key) => key.models ?? []))];
+  return [...new Set(servingKeysOf(keys).flatMap((key) => key.models ?? []))];
+}
+
+export function servesEveryModel(keyModels: string[]): boolean {
+  return keyModels.includes(EVERY_MODEL);
 }
 
 export function familyModels(keyModels: string[], format: BaseFormatId): string[] {

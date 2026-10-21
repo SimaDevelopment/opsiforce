@@ -24,7 +24,7 @@ import type { TenantContext } from '../tenant/tenant.decorator';
 import { agentsAffected, agentsUsingFormat } from './affected-agents';
 import { BASE_FORMATS, BASE_FORMAT_IDS, isBaseFormatId, type BaseFormatId } from './base-formats';
 import { isServedByLinkedAccountProxy, kindOf, servedModelsOf } from './bifrost-provider-shape';
-import { deploymentsOf, endpointOf, familyModels, keyModelsOf } from './key-model-formats';
+import { deploymentsOf, endpointOf, familyModels, keyModelsOf, servesEveryModel } from './key-model-formats';
 import {
   BIFROST_UNREACHABLE_MESSAGE,
   APP_WEIGHT_RULE_MESSAGE,
@@ -124,10 +124,13 @@ export function servingOf(
     return { models: familyModels(keyModelsOf([key]), format), keyIds: [key.id] };
   }
   const provider = providers?.get(row.bifrostProvider);
-  if (!format || !readsKeyModels(provider)) return { models: null, keyIds: EVERY_KEY };
+  if (!format) return { models: null, keyIds: EVERY_KEY };
+  const everyModel = readsKeyModels(provider) ? servedModelsOf(BASE_FORMATS[format]) : null;
   const providerKeys = keys.get(row.bifrostProvider);
-  if (!providerKeys || provider?.keyLess) return { models: servedModelsOf(BASE_FORMATS[format]), keyIds: EVERY_KEY };
-  return { models: familyModels(keyModelsOf(providerKeys), format), keyIds: EVERY_KEY };
+  if (!providerKeys || provider?.keyLess) return { models: everyModel, keyIds: EVERY_KEY };
+  const keyModels = keyModelsOf(providerKeys);
+  if (keyModels.length === 0 || servesEveryModel(keyModels)) return { models: everyModel, keyIds: EVERY_KEY };
+  return { models: familyModels(keyModels, format), keyIds: EVERY_KEY };
 }
 
 export function servedSubsetOf(row: ProviderRowIdentity, serving: Serving, providers: BifrostProvidersByName | null) {
@@ -135,17 +138,11 @@ export function servedSubsetOf(row: ProviderRowIdentity, serving: Serving, provi
   if (!serving.models || !format) return undefined;
   const catalog = servedModelsOf(BASE_FORMATS[format]);
   const whole = catalog.every((model) => serving.models?.includes(model));
-  return whole && !row.bifrostKey ? undefined : serving.models;
+  return whole ? undefined : serving.models;
 }
 
 export function providersReadForKeys(rows: ProviderRowIdentity[], providers: BifrostProvidersByName | null): string[] {
-  return [
-    ...new Set(
-      rows
-        .filter((row) => row.bifrostKey || readsKeyModels(providers?.get(row.bifrostProvider)))
-        .map((row) => row.bifrostProvider)
-    ),
-  ];
+  return [...new Set(rows.filter((row) => providers?.has(row.bifrostProvider)).map((row) => row.bifrostProvider))];
 }
 
 function modelRefOf(format: BaseFormatId, model: string): string {

@@ -13,7 +13,7 @@ import { lockTenantModelProviders, type DbExecutor } from '../common/locks';
 import { insertAwaitingSignIn, newCallerSecret } from '../linked-accounts/linked-account-rows';
 import { LinkedAccountVendorsService } from '../linked-accounts/linked-account-vendors.service';
 import type { TenantContext } from '../tenant/tenant.decorator';
-import { catalogModelsByFormat, creatableKindsByFormat } from './base-formats';
+import { BASE_FORMATS, catalogModelsByFormat, creatableKindsByFormat, type BaseFormatId } from './base-formats';
 import { servedModelsOf } from './bifrost-provider-shape';
 import {
   LINKED_ACCOUNT_SIGNS_IN_MESSAGE,
@@ -22,7 +22,7 @@ import {
   type NewProviderDraft,
 } from './model-provider-connections.service';
 import { AzureConnectionsService, formatsOfModels } from './azure-connections.service';
-import { AZURE_PROVIDER, ModelProvidersService, nameOfRow } from './model-provider.service';
+import { AZURE_PROVIDER, ModelProvidersService, baseFormatOf, nameOfRow } from './model-provider.service';
 import {
   CUSTOM_MODEL_PROVIDER_LIMIT,
   STARTING_WEIGHT,
@@ -132,38 +132,61 @@ export class ModelProviderCreationService {
     bifrostName: string,
     input: unknown
   ): Promise<TenantModelProvidersView> {
-    const connection = this.azure.connectionOf(input);
-    await this.azure.replace(bifrostName, connection);
-    const formats = formatsOfModels(connection.models);
-    await db.transaction(async (tx) => {
-      await lockTenantModelProviders(tx, tenant.tenantId);
-      await tx
-        .delete(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.tenantId, tenant.tenantId),
-            eq(modelProviders.bifrostKey, bifrostName),
-            notInArray(modelProviders.baseFormat, formats)
-          )
-        );
-      await tx
-        .insert(modelProviders)
-        .values(
-          formats.map((baseFormat) => ({
-            tenantId: tenant.tenantId,
-            bifrostProvider: AZURE_PROVIDER,
-            bifrostKey: bifrostName,
-            baseFormat,
-            chatEnabled: true,
-            chatWeight: STARTING_WEIGHT,
-            backendEnabled: true,
-            backendWeight: STARTING_WEIGHT,
-          }))
-        )
-        .onConflictDoNothing();
-      await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
-    });
+    await this.azure.replaceAccess(bifrostName, this.azure.accessOf(input));
     return this.modelProvidersService.listTenantProviders(tenant);
+  }
+
+  async setModels(tenant: TenantContext, name: string, input: unknown): Promise<TenantModelProvidersView> {
+    const azureName = customBifrostProviderName(tenant.tenantName, name);
+    if (await this.ownAzureConnection(tenant, azureName)) {
+      const choice = this.azure.modelsOf(input);
+      await this.azure.setModels(azureName, choice);
+      await db.transaction(async (tx) => {
+        await lockTenantModelProviders(tx, tenant.tenantId);
+        await this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models));
+        await this.modelProvidersService.rewriteTenantKeys(tx, tenant.tenantId);
+      });
+      return this.modelProvidersService.listTenantProviders(tenant);
+    }
+    const { bifrostName, provider } = await this.customProviderInBifrost(tenant, name);
+    const format = baseFormatOf(provider ?? undefined);
+    if (!provider || !format)
+      throw new ConflictException(`The model gateway no longer has ${name}; re-enter its key first`);
+    await this.connections.setModels(bifrostName, BASE_FORMATS[format], input);
+    await this.modelProvidersService.lockAndRewriteTenantKeys(tenant.tenantId);
+    return this.modelProvidersService.listTenantProviders(tenant);
+  }
+
+  private async keepAzureRowsFor(
+    tx: DbExecutor,
+    tenant: TenantContext,
+    bifrostName: string,
+    formats: BaseFormatId[]
+  ): Promise<void> {
+    await tx
+      .delete(modelProviders)
+      .where(
+        and(
+          eq(modelProviders.tenantId, tenant.tenantId),
+          eq(modelProviders.bifrostKey, bifrostName),
+          notInArray(modelProviders.baseFormat, formats)
+        )
+      );
+    await tx
+      .insert(modelProviders)
+      .values(
+        formats.map((baseFormat) => ({
+          tenantId: tenant.tenantId,
+          bifrostProvider: AZURE_PROVIDER,
+          bifrostKey: bifrostName,
+          baseFormat,
+          chatEnabled: true,
+          chatWeight: STARTING_WEIGHT,
+          backendEnabled: true,
+          backendWeight: STARTING_WEIGHT,
+        }))
+      )
+      .onConflictDoNothing();
   }
 
   private async deleteAzureConnection(tenant: TenantContext, bifrostName: string): Promise<TenantModelProvidersView> {

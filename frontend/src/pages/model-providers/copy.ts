@@ -26,7 +26,7 @@ export const TIPS = {
   applyToEveryOrganization:
     'Rewrites the model gateway keys of every Project in every organization from the switches and weights here. Every save already does this for its own organization; use it after model providers were changed outside this page, such as a Deployment config provider added to the database.',
   deploymentConfig:
-    'Its key and endpoint come from this deployment’s config, not from this page. Organizations switch and weigh it like any Built-in model provider.',
+    'Its key and endpoint come from this deployment’s configuration. Organizations switch and weigh it like any Built-in model provider.',
   chosenDescription:
     'Only the organizations you tick get it, switched off at weight 1; their admins turn it on. Organizations added later don’t get it until you tick them under Organization access.',
   globalDescription:

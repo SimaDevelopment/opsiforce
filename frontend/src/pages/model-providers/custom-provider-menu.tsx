@@ -11,8 +11,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import { MENU_TRIGGER_CLASS } from './built-in-row';
+import { MENU_TRIGGER_CLASS, ModelsItem } from './built-in-row';
 import { EditConnectionDialog } from './edit-connection-dialog';
+import { ModelsDialog } from './models-dialog';
 import { DisconnectDialog, LinkedAccountMenuItems, useLinkedAccountActions } from './linked-account-sign-in';
 import { ReenterKeyDialog } from './reenter-key-dialog';
 
@@ -40,6 +41,7 @@ export function CustomProviderMenu(props: { row: TenantModelProvider }) {
   const [confirming, setConfirming] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
   const [reentering, setReentering] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
   const deleteProvider = useDeleteModelProvider();
   const name = () => props.row.name;
   const linkedAccount = useLinkedAccountActions('tenant', name, () => isLinkedAccount(props.row));
@@ -79,6 +81,9 @@ export function CustomProviderMenu(props: { row: TenantModelProvider }) {
               </DropdownMenuItem>
             </Show>
           </Show>
+          <Show when={props.row.status !== 'missing' && props.row.baseFormat !== null}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
           <DropdownMenuItem
             class="text-destructive data-[highlighted]:text-destructive"
             onSelect={() => setConfirming(true)}
@@ -103,6 +108,16 @@ export function CustomProviderMenu(props: { row: TenantModelProvider }) {
       />
       <Show when={isEditable(props.row) && props.row}>
         {(row) => <EditConnectionDialog row={row()} open={editing()} onOpenChange={setEditing} />}
+      </Show>
+      <Show when={props.row.baseFormat}>
+        {(baseFormat) => (
+          <ModelsDialog
+            row={{ ...props.row, baseFormat: baseFormat() }}
+            scope="tenant"
+            open={modelsOpen()}
+            onOpenChange={setModelsOpen}
+          />
+        )}
       </Show>
       <ReenterKeyDialog name={name()} open={reentering()} onOpenChange={setReentering} />
       <DisconnectDialog scope="tenant" name={name()} actions={linkedAccount} />

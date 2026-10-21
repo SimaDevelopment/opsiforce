@@ -65,8 +65,11 @@ export interface NewModelProviderDto extends ModelProviderConnectionDto {
 export interface EditModelProviderConnectionDto {
   key: string;
   baseUrl?: string;
-  models?: string[];
   endpoint?: string;
+}
+
+export interface SetModelProviderModelsDto {
+  models: string[] | null;
   deployments?: Record<string, string>;
 }
 

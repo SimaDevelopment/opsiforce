@@ -8,6 +8,7 @@ import type {
   ConnectionTestPassed,
   KeysRewrite,
   EditModelProviderConnectionDto,
+  SetModelProviderModelsDto,
   ModelProviderConnectionDto,
   NewModelProviderDto,
   PlatformModelProviderAccessView,
@@ -79,6 +80,14 @@ export class PlatformModelProvidersController {
     @Body() body: EditModelProviderConnectionDto | undefined
   ): Promise<PlatformModelProvidersView> {
     return this.platformService.editConnection(name, body);
+  }
+
+  @Put(':name/models')
+  setModels(
+    @Param('name') name: string,
+    @Body() body: SetModelProviderModelsDto | undefined
+  ): Promise<PlatformModelProvidersView> {
+    return this.platformService.setModels(name, body);
   }
 
   @Post(':name/re-enter-key')

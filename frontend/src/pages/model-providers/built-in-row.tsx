@@ -7,7 +7,7 @@ import {
   type BaseFormatId,
   type PlatformModelProvider,
 } from '~/api/model-providers';
-import { EllipsisVertical, KeyRound, Lock, Pencil, Trash2, Users } from '~/components/icons';
+import { Boxes, EllipsisVertical, KeyRound, Lock, Pencil, Trash2, Users } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -23,6 +23,7 @@ import {
   LinkedAccountSignIn,
   useLinkedAccountActions,
 } from './linked-account-sign-in';
+import { ModelsDialog, type ModelsTarget } from './models-dialog';
 import { InfoTip, Tip } from './provider-widgets';
 import { OrganizationAccessDialog, OrganizationAccessPill } from './organization-access';
 import { ReenterKeyDialog } from './reenter-key-dialog';
@@ -128,31 +129,75 @@ function OrganizationAccessItem(props: { onSelect: () => void }) {
   return (
     <DropdownMenuItem onSelect={() => props.onSelect()}>
       <Users class="h-3.5 w-3.5" />
-      Organization access…
+      Organization access
     </DropdownMenuItem>
   );
 }
 
-function AccessOnlyMenu(props: { name: string }) {
+export function ModelsItem(props: { onSelect: () => void }) {
+  return (
+    <DropdownMenuItem onSelect={() => props.onSelect()}>
+      <Boxes class="h-3.5 w-3.5" />
+      Models it serves
+    </DropdownMenuItem>
+  );
+}
+
+function modelsTargetOf(row: PlatformModelProvider, baseFormat: BaseFormatId): ModelsTarget {
+  return {
+    name: row.name,
+    baseFormat,
+    kind: row.kind,
+    servedModels: row.servedModels,
+    connection: row.connection,
+    declaredInDeployment: row.fixed || row.deploymentManaged,
+  };
+}
+
+function PlatformModelsDialog(props: {
+  row: PlatformModelProvider;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Show when={builtInFormatOf(props.row)}>
+      {(baseFormat) => (
+        <ModelsDialog
+          row={modelsTargetOf(props.row, baseFormat())}
+          scope="platform"
+          open={props.open}
+          onOpenChange={props.onOpenChange}
+        />
+      )}
+    </Show>
+  );
+}
+
+function DeploymentManagedMenu(props: { row: PlatformModelProvider }) {
   const [accessOpen, setAccessOpen] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} aria-label={`${props.name} actions`}>
+        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} aria-label={`${props.row.name} actions`}>
           <EllipsisVertical class="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          <Show when={props.row.status !== 'missing'}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
           <OrganizationAccessItem onSelect={() => setAccessOpen(true)} />
         </DropdownMenuContent>
       </DropdownMenu>
-      <OrganizationAccessDialog name={props.name} open={accessOpen()} onOpenChange={setAccessOpen} />
+      <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
+      <OrganizationAccessDialog name={props.row.name} open={accessOpen()} onOpenChange={setAccessOpen} />
     </>
   );
 }
 
 export function BuiltInRowMenu(props: { row: PlatformModelProvider }) {
   return (
-    <Show when={!props.row.deploymentManaged} fallback={<AccessOnlyMenu name={props.row.name} />}>
+    <Show when={!props.row.deploymentManaged} fallback={<DeploymentManagedMenu row={props.row} />}>
       <ManagedOrLinkedMenu row={props.row} />
     </Show>
   );
@@ -164,7 +209,7 @@ function ManagedOrLinkedMenu(props: { row: PlatformModelProvider }) {
       when={managedRow(props.row)}
       fallback={
         <Show when={isLinkedAccountRow(props.row)}>
-          <LinkedAccountOnlyMenu name={props.row.name} />
+          <LinkedAccountOnlyMenu row={props.row} />
         </Show>
       }
     >
@@ -173,22 +218,28 @@ function ManagedOrLinkedMenu(props: { row: PlatformModelProvider }) {
   );
 }
 
-function LinkedAccountOnlyMenu(props: { name: string }) {
-  const actions = useLinkedAccountActions('platform', () => props.name);
+function LinkedAccountOnlyMenu(props: { row: PlatformModelProvider }) {
+  const name = () => props.row.name;
+  const actions = useLinkedAccountActions('platform', name);
   const [accessOpen, setAccessOpen] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
   return (
     <Show when={actions.connected() || !actions.signingIn()}>
       <DropdownMenu>
-        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} disabled={actions.busy()} aria-label={`${props.name} actions`}>
+        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} disabled={actions.busy()} aria-label={`${name()} actions`}>
           <EllipsisVertical class="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <LinkedAccountMenuItems actions={actions} />
+          <Show when={actions.connected()}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
           <OrganizationAccessItem onSelect={() => setAccessOpen(true)} />
         </DropdownMenuContent>
       </DropdownMenu>
-      <DisconnectDialog scope="platform" name={props.name} actions={actions} />
-      <OrganizationAccessDialog name={props.name} open={accessOpen()} onOpenChange={setAccessOpen} />
+      <DisconnectDialog scope="platform" name={name()} actions={actions} />
+      <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
+      <OrganizationAccessDialog name={name()} open={accessOpen()} onOpenChange={setAccessOpen} />
     </Show>
   );
 }
@@ -198,6 +249,7 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
   const [editing, setEditing] = createSignal(false);
   const [reentering, setReentering] = createSignal(false);
   const [accessOpen, setAccessOpen] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
   const rules = usePlatformModelProviderCreationRules();
   const deleteProvider = useDeleteModelProvider('platform');
   const name = () => props.row.name;
@@ -242,6 +294,9 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
               </DropdownMenuItem>
             </Show>
           </Show>
+          <Show when={props.row.status !== 'missing'}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
           <OrganizationAccessItem onSelect={() => setAccessOpen(true)} />
           <Show when={!props.row.fixed}>
             <DropdownMenuItem
@@ -264,14 +319,7 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
         onConfirm={remove}
       />
       <EditConnectionDialog
-        row={{
-          name: name(),
-          baseFormat: props.row.baseFormat,
-          kind: props.row.kind,
-          baseUrl: props.row.url,
-          servedModels: props.row.servedModels,
-          connection: props.row.connection,
-        }}
+        row={{ name: name(), baseFormat: props.row.baseFormat, kind: props.row.kind, baseUrl: props.row.url }}
         open={editing()}
         onOpenChange={setEditing}
         scope="platform"
@@ -286,6 +334,7 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
         fixedFormat={props.row.fixed ? props.row.baseFormat : undefined}
       />
       <DisconnectDialog scope="platform" name={name()} actions={linkedAccount} />
+      <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
       <OrganizationAccessDialog name={name()} open={accessOpen()} onOpenChange={setAccessOpen} />
     </>
   );

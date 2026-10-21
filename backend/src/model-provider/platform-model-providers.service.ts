@@ -31,7 +31,12 @@ import {
   type BaseFormatId,
   type ModelProviderKind,
 } from './base-formats';
-import { isServedByLinkedAccountProxy, kindOf, servedModelsOf, type BifrostProviderSpec } from './bifrost-provider-shape';
+import {
+  isServedByLinkedAccountProxy,
+  kindOf,
+  servedModelsOf,
+  type BifrostProviderSpec,
+} from './bifrost-provider-shape';
 import { AzureConnectionsService, formatsOfModels } from './azure-connections.service';
 import { deploymentsOf, endpointOf, keyModelsOf } from './key-model-formats';
 import {
@@ -207,7 +212,8 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
         const formats = entries
           .filter((entry) => nameOfRow(entry) === name)
           .map(
-            (entry) => entry.baseFormat ?? baseFormatOf(providers?.get(entry.bifrostProvider)) ?? fixedBuiltInOf(name)?.format
+            (entry) =>
+              entry.baseFormat ?? baseFormatOf(providers?.get(entry.bifrostProvider)) ?? fixedBuiltInOf(name)?.format
           )
           .filter((format): format is BaseFormatId => format !== null && format !== undefined);
         return { name, baseFormats: [...new Set(formats)], mode: availability.modes.get(name) ?? 'every' };
@@ -359,7 +365,8 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
     const unique = [...new Set(tenantIds as string[])];
     if (unique.length === 0) return [];
     const known = await db.select({ id: tenants.id }).from(tenants).where(inArray(tenants.id, unique));
-    if (known.length !== unique.length) throw new BadRequestException('An organization in availability.tenantIds does not exist');
+    if (known.length !== unique.length)
+      throw new BadRequestException('An organization in availability.tenantIds does not exist');
     return unique;
   }
 
@@ -404,34 +411,53 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
 
   private async editAzureConnection(name: string, input: unknown): Promise<PlatformModelProvidersView> {
     if (!isOpsiforceProviderName(name)) throw new BadRequestException(OPSIFORCE_ONLY_MESSAGE);
-    const connection = this.azure.connectionOf(input);
-    await this.azure.replace(name, connection);
-    const formats = formatsOfModels(connection.models);
-    await db.transaction(async (tx) => {
-      await lockPlatformModelProviders(tx);
-      await tx
-        .delete(modelProviders)
-        .where(and(eq(modelProviders.bifrostKey, name), notInArray(modelProviders.baseFormat, formats)));
-      const [existing] = await tx
-        .select({ chatEnabled: modelProviders.chatEnabled })
-        .from(modelProviders)
-        .where(and(isNull(modelProviders.tenantId), eq(modelProviders.bifrostKey, name)));
-      await tx
-        .insert(modelProviders)
-        .values(
-          formats.map((baseFormat) => ({
-            tenantId: null,
-            bifrostProvider: AZURE_PROVIDER,
-            bifrostKey: name,
-            baseFormat,
-            chatEnabled: existing?.chatEnabled ?? false,
-            chatWeight: STARTING_WEIGHT,
-          }))
-        )
-        .onConflictDoNothing();
-      await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, name);
-    });
+    await this.azure.replaceAccess(name, this.azure.accessOf(input));
     return this.list();
+  }
+
+  async setModels(name: string, input: unknown): Promise<PlatformModelProvidersView> {
+    if (await this.isAzureConnection(name)) {
+      const choice = this.azure.modelsOf(input);
+      await this.azure.setModels(name, choice);
+      await db.transaction(async (tx) => {
+        await lockPlatformModelProviders(tx);
+        await this.keepAzureRowsFor(tx, name, formatsOfModels(choice.models));
+      });
+    } else {
+      if (!(await this.listedNames()).includes(name))
+        throw new NotFoundException(`${name} is not a Built-in model provider`);
+      const provider = await this.connections.find(name);
+      const format = baseFormatOf(provider ?? undefined) ?? fixedBuiltInOf(name)?.format;
+      if (!provider || !format)
+        throw new ConflictException(`The model gateway no longer has ${name}; re-enter its key first`);
+      await this.connections.setModels(name, BASE_FORMATS[format], input);
+    }
+    const failed = await this.modelProvidersService.rewriteEveryTenantsKeys();
+    if (failed.length > 0) {
+      throw new BadGatewayException(
+        `${name} now serves the models you chose, but ${failed.length} organizations still route the old ones. Use Apply to every organization to retry.`
+      );
+    }
+    return this.list();
+  }
+
+  private async keepAzureRowsFor(tx: DbExecutor, name: string, formats: BaseFormatId[]): Promise<void> {
+    await tx
+      .delete(modelProviders)
+      .where(and(eq(modelProviders.bifrostKey, name), notInArray(modelProviders.baseFormat, formats)));
+    await tx
+      .insert(modelProviders)
+      .values(
+        formats.map((baseFormat) => ({
+          tenantId: null,
+          bifrostProvider: AZURE_PROVIDER,
+          bifrostKey: name,
+          baseFormat,
+          chatEnabled: false,
+          chatWeight: STARTING_WEIGHT,
+        }))
+      )
+      .onConflictDoNothing();
   }
 
   private async isAzureConnection(name: string): Promise<boolean> {

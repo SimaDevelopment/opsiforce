@@ -31,6 +31,7 @@ import {
   type BifrostProviderSpec,
 } from './bifrost-provider-shape';
 import { testConnection } from './connection-test';
+import { isHelmPlaceholder } from './key-model-formats';
 import { baseFormatOf } from './model-provider.service';
 import { BIFROST_UNREACHABLE_MESSAGE } from './model-provider.types';
 import { field } from './request-fields';
@@ -41,6 +42,9 @@ const ENTER_HTTPS_BASE_URL_MESSAGE = 'Enter an https:// base URL';
 const OFFICIAL_KEY_HAS_NO_BASE_URL_MESSAGE = 'An Official API key has no base URL';
 const FIXED_IDENTITY_MESSAGE = 'The name and Base format of a model provider are fixed';
 const FIXED_IDENTITY_FIELDS = ['name', 'baseFormat', 'kind'];
+const EVERY_MODEL = ['*'];
+const NOT_IN_GATEWAY_MESSAGE = 'The model gateway no longer has this model provider; re-enter its key first';
+const NO_KEY_FOR_MODELS_MESSAGE = 'Sign this model provider in first, then choose its models';
 export const LINKED_ACCOUNT_SIGNS_IN_MESSAGE = 'A Linked account connects by signing in, not with a key';
 const CHOOSE_VENDOR_MESSAGE = 'Choose which account to link';
 const GATEWAY_KEPT_PROVIDER_MESSAGE =
@@ -247,10 +251,12 @@ export class ModelProviderConnectionsService {
     await this.updateInBifrost(spec);
     try {
       const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(spec.name));
+      const ownKey = storedKey?.name === key.name;
+      const keepingModels = { ...key, models: (ownKey ? storedModelsOf(storedKey.models) : undefined) ?? key.models };
       await this.bifrostCall(() =>
         storedKey?.id
-          ? this.bifrostService.replaceProviderKey(spec.name, storedKey.id, key)
-          : this.bifrostService.addProviderKey(spec.name, key)
+          ? this.bifrostService.replaceProviderKey(spec.name, storedKey.id, keepingModels)
+          : this.bifrostService.addProviderKey(spec.name, keepingModels)
       );
     } catch (err) {
       await this.restoreInBifrost(spec.name, previous);
@@ -265,16 +271,22 @@ export class ModelProviderConnectionsService {
     return { key: requiredKey(input), movesBaseUrl: field(input, 'baseUrl') !== undefined, input };
   }
 
+  async setModels(bifrostName: string, format: BaseFormat, input: unknown): Promise<void> {
+    const models = formatModelsOf(field(input, 'models'), format) ?? EVERY_MODEL;
+    const provider = await this.find(bifrostName);
+    if (!provider) throw new ConflictException(NOT_IN_GATEWAY_MESSAGE);
+    const keys = await this.bifrostCall(() => this.bifrostService.listProviderKeys(bifrostName));
+    const ownKeys = keys.filter((key) => key.id && !isHelmPlaceholder(key));
+    if (provider.keyLess || ownKeys.length === 0) throw new ConflictException(NO_KEY_FOR_MODELS_MESSAGE);
+    for (const key of ownKeys) {
+      await this.bifrostCall(() => this.bifrostService.replaceProviderKey(bifrostName, key.id, { ...key, models }));
+    }
+  }
+
   async replaceConnection(current: BifrostProviderSpec, edit: ConnectionEdit): Promise<void> {
     if (current.kind === 'linked-account') throw new BadRequestException(LINKED_ACCOUNT_SIGNS_IN_MESSAGE);
     const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(current.name));
-    const choosesModels = field(edit.input, 'models') !== undefined;
-    const models = choosesModels
-      ? formatModelsOf(field(edit.input, 'models'), current.format)
-      : current.standard
-        ? undefined
-        : storedModelsOf(storedKey?.models);
-    const withModels: BifrostProviderSpec = { ...current, models };
+    const withModels: BifrostProviderSpec = { ...current, models: storedModelsOf(storedKey?.models) };
     const next: BifrostProviderSpec = edit.movesBaseUrl
       ? { ...withModels, adminTypedBaseUrl: adminTypedBaseUrlFor(current.kind, edit.input) }
       : withModels;

@@ -164,6 +164,15 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
     });
   }
 
+  function setPlatformModels(name: string, payload: Record<string, unknown>, member = platformAdmin) {
+    return app.inject({
+      method: 'PUT',
+      url: `/api/platform-model-providers/${name}/models`,
+      headers: member.headers,
+      payload,
+    });
+  }
+
   function createPlatformConnection(payload: Record<string, unknown>) {
     return app.inject({
       method: 'POST',
@@ -253,11 +262,20 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       );
       expect((await rowsOf(seeded)).find((row) => row.name === 'only-sol')?.servedModels).toEqual(['gpt-5.6-sol']);
 
-      const widened = await app.inject({
+      const edited = await app.inject({
         method: 'PATCH',
         url: '/api/model-providers/only-sol',
         headers: seeded.admin.headers,
-        payload: { key: 'sk-sol', models: servedModelsOf(BASE_FORMATS.openai) },
+        payload: { key: 'sk-sol-2' },
+      });
+      expect(edited.statusCode, edited.body).toBe(200);
+      expect(bifrost.providerNamed(custom)?.keys[0]?.models).toEqual(['gpt-5.6-sol']);
+
+      const widened = await app.inject({
+        method: 'PUT',
+        url: '/api/model-providers/only-sol/models',
+        headers: seeded.admin.headers,
+        payload: { models: null },
       });
 
       expect(widened.statusCode, widened.body).toBe(200);
@@ -532,22 +550,54 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       expect(bifrost.azureKeyNamed('opsiforce-foundry')).toBeUndefined();
     });
 
-    it('drops the family row whose models the edited connection no longer serves', async () => {
-      expect((await createPlatformConnection({})).statusCode).toBe(201);
-      await holdEveryProjectKey();
+    it('edits only the endpoint and key, keeping its models and deployments', async () => {
+      expect((await createPlatformConnection({ deployments: { 'claude-sonnet-5': 'my-sonnet' } })).statusCode).toBe(
+        201
+      );
 
       const edited = await app.inject({
         method: 'PATCH',
         url: '/api/platform-model-providers/opsiforce-foundry',
         headers: platformAdmin.headers,
-        payload: { key: 'az-key-2', endpoint: ENDPOINT, models: ['gpt-5.6-sol'] },
+        payload: { key: 'az-key-2', endpoint: ENDPOINT },
       });
 
       expect(edited.statusCode, edited.body).toBe(200);
-      expect(bifrost.azureKeyNamed('opsiforce-foundry')?.models).toEqual(['gpt-5.6-sol']);
-      expect(
-        (await platformRows()).filter((row) => row.name === 'opsiforce-foundry').map((row) => row.baseFormat)
-      ).toEqual(['openai']);
+      expect(bifrost.azureKeyNamed('opsiforce-foundry')).toEqual(
+        expect.objectContaining({
+          value: { value: 'az-key-2', type: 'plain_text' },
+          models: ['gpt-5.6-sol', 'claude-sonnet-5'],
+          aliases: { 'claude-sonnet-5': { model_id: 'my-sonnet', model_family: 'anthropic' } },
+        })
+      );
+    });
+
+    it('serves every model by default, and keeps one row per family its chosen models span', async () => {
+      expect((await createPlatformConnection({ models: undefined })).statusCode).toBe(201);
+      expect(bifrost.azureKeyNamed('opsiforce-foundry')?.models).toEqual(['*']);
+      const familiesOf = async () =>
+        (await platformRows()).filter((row) => row.name === 'opsiforce-foundry').map((row) => row.baseFormat);
+      expect(await familiesOf()).toEqual(['anthropic', 'openai']);
+      await holdEveryProjectKey();
+
+      const narrowed = await setPlatformModels('opsiforce-foundry', {
+        models: ['gpt-5.6-sol'],
+        deployments: { 'gpt-5.6-sol': 'sol-prod' },
+      });
+
+      expect(narrowed.statusCode, narrowed.body).toBe(200);
+      expect(bifrost.azureKeyNamed('opsiforce-foundry')).toEqual(
+        expect.objectContaining({ models: ['gpt-5.6-sol'], aliases: { 'gpt-5.6-sol': 'sol-prod' } })
+      );
+      expect(await familiesOf()).toEqual(['openai']);
+
+      const widened = await setPlatformModels('opsiforce-foundry', { models: null });
+
+      expect(widened.statusCode, widened.body).toBe(200);
+      expect(bifrost.azureKeyNamed('opsiforce-foundry')).toEqual(
+        expect.objectContaining({ models: ['*'], aliases: {} })
+      );
+      expect(await familiesOf()).toEqual(['anthropic', 'openai']);
     });
 
     it('removes its key and rows when deleted, leaving the azure provider’s other keys', async () => {
@@ -638,6 +688,69 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       expect(deleted.statusCode, deleted.body).toBe(200);
       expect(bifrost.azureKeyNamed(`${seeded.tenant.name}-own-foundry`)).toBeUndefined();
       expect(azureEntriesOf(bifrost.chatKeyOf(seeded.projectId).provider_configs)).toEqual([]);
+    });
+  });
+
+  describe('the models a Built-in serves', () => {
+    function giveOpenAiItsHelmKey() {
+      const openai = bifrost.providerNamed('openai');
+      if (!openai) throw new Error('The fake Bifrost has no openai');
+      openai.keys.push({
+        id: 'openai-primary-id',
+        name: 'openai-primary',
+        value: { value: '', ref: 'env.OPENAI_API_KEY', type: 'env' },
+        models: ['*'],
+        weight: 1,
+        enabled: true,
+      });
+    }
+
+    it('narrows openai for every Organization, keeping its key, and puts every model back', async () => {
+      giveOpenAiItsHelmKey();
+      const seeded = await seededTenant();
+      await holdEveryProjectKey();
+      const openAiEntry = () =>
+        bifrost.chatKeyOf(seeded.projectId).provider_configs.find((config) => config.provider === 'openai');
+
+      const narrowed = await setPlatformModels('openai', { models: ['gpt-5.6-sol'] });
+
+      expect(narrowed.statusCode, narrowed.body).toBe(200);
+      expect(bifrost.providerNamed('openai')?.keys).toEqual([
+        expect.objectContaining({
+          name: 'openai-primary',
+          value: { value: '', ref: 'env.OPENAI_API_KEY', type: 'env' },
+          models: ['gpt-5.6-sol'],
+        }),
+      ]);
+      expect(openAiEntry()).toEqual(expect.objectContaining({ allowed_models: ['gpt-5.6-sol'] }));
+      expect((await platformRows()).find((row) => row.name === 'openai')?.servedModels).toEqual(['gpt-5.6-sol']);
+
+      const widened = await setPlatformModels('openai', { models: null });
+
+      expect(widened.statusCode, widened.body).toBe(200);
+      expect(bifrost.providerNamed('openai')?.keys[0]?.models).toEqual(['*']);
+      expect(openAiEntry()).toEqual(expect.objectContaining({ allowed_models: ['*'] }));
+    });
+
+    it('refuses a model of the other format, a provider with no key, and an Organization admin', async () => {
+      giveOpenAiItsHelmKey();
+      const seeded = await seededTenant();
+
+      const otherFormat = await setPlatformModels('openai', { models: ['claude-sonnet-5'] });
+      const keyLess = await setPlatformModels('custom-openai-1', { models: ['gpt-5.6-sol'] });
+      const orgAdmin = await setPlatformModels('openai', { models: ['gpt-5.6-sol'] }, seeded.admin);
+      const orgRoute = await app.inject({
+        method: 'PUT',
+        url: '/api/model-providers/openai/models',
+        headers: seeded.admin.headers,
+        payload: { models: ['gpt-5.6-sol'] },
+      });
+
+      expect(otherFormat.statusCode).toBe(400);
+      expect(keyLess.statusCode).toBe(409);
+      expect(orgAdmin.statusCode).toBe(403);
+      expect(orgRoute.statusCode).toBe(400);
+      expect(bifrost.providerNamed('openai')?.keys[0]?.models).toEqual(['*']);
     });
   });
 });

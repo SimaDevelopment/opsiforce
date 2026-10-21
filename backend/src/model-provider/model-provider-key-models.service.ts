@@ -4,9 +4,10 @@ import { db } from '../../db';
 import { appliedModelCatalog, modelProviders } from '../../db/schema';
 import type { ModelCatalog } from '../agent/agent-models';
 import { BifrostService } from '../bifrost/bifrost.service';
-import type { BifrostProviderKeySummary, BifrostProviderSummary } from '../bifrost/bifrost.types';
+import type { BifrostProviderSummary } from '../bifrost/bifrost.types';
 import { BASE_FORMATS, BASE_FORMAT_IDS } from './base-formats';
 import { servedModelsOf } from './bifrost-provider-shape';
+import { isHelmPlaceholder } from './key-model-formats';
 import { ModelProvidersService, baseFormatOf } from './model-provider.service';
 
 const EVERY_MODEL = ['*'];
@@ -17,11 +18,6 @@ function coversCatalog(stored: string[] | undefined, served: string[]): boolean 
 
 function servedModelsByFormat(catalog: ModelCatalog): Record<string, string[]> {
   return Object.fromEntries(BASE_FORMAT_IDS.map((format) => [format, servedModelsOf(BASE_FORMATS[format], catalog)]));
-}
-
-function isHelmPlaceholder(key: BifrostProviderKeySummary): boolean {
-  const value = key.value as { value?: unknown; ref?: unknown } | undefined;
-  return value?.value === '' && value.ref === undefined;
 }
 
 @Injectable()

@@ -76,8 +76,11 @@ export interface NewModelProvider extends ModelProviderConnection {
 export interface ModelProviderConnectionEdit {
   key: string;
   baseUrl?: string;
-  models?: string[];
   endpoint?: string;
+}
+
+export interface ModelProviderModels {
+  models: string[] | null;
   deployments?: Record<string, string>;
 }
 
@@ -338,6 +341,18 @@ export function useEditModelProviderConnection(scope: ModelProviderScope = 'tena
       api.patch<TenantModelProviders | PlatformModelProviders>(
         `${SCOPE_PATH[scope]}/${encodeURIComponent(vars.name)}`,
         vars.edit
+      ),
+    onSuccess: applyView,
+  }));
+}
+
+export function useSetModelProviderModels(scope: ModelProviderScope = 'tenant') {
+  const applyView = useApplyView(scope);
+  return createMutation(() => ({
+    mutationFn: (vars: { name: string; choice: ModelProviderModels }) =>
+      api.put<TenantModelProviders | PlatformModelProviders>(
+        `${SCOPE_PATH[scope]}/${encodeURIComponent(vars.name)}/models`,
+        vars.choice
       ),
     onSuccess: applyView,
   }));

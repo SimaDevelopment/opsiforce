@@ -19,7 +19,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/compone
 import { cn } from '~/lib/cn';
 import {
   AZURE_KEY_PLACEHOLDER,
-  AzureModelsField,
   BaseUrlField,
   EMPTY_DRAFT,
   EndpointField,
@@ -28,7 +27,7 @@ import {
   KeyField,
   KindChoice,
   LinkedAccountNote,
-  ModelsField,
+  ModelChoiceField,
   RadioChoice,
   TestOutcome,
   errorMessage,
@@ -135,7 +134,7 @@ function AddProviderDialog(
   }
 
   function chooseKind(kind: ModelProviderKind) {
-    change({ kind, models: kind === 'azure-foundry' ? [] : null, deployments: {} });
+    change({ kind, models: null, deployments: {} });
   }
 
   function chooseAudience(next: Audience) {
@@ -294,24 +293,12 @@ function AddProviderDialog(
                     />
                     <Show when={catalog()}>
                       {(models) => (
-                        <Show
-                          when={azure()}
-                          fallback={
-                            <ModelsField
-                              format={props.format}
-                              catalog={models()[props.format]}
-                              selected={draft.models}
-                              onChange={(chosen) => change({ models: chosen })}
-                            />
-                          }
-                        >
-                          <AzureModelsField
-                            catalog={models()}
-                            selected={draft.models ?? []}
-                            deployments={draft.deployments}
-                            onChange={(chosen, deployments) => change({ models: chosen, deployments })}
-                          />
-                        </Show>
+                        <ModelChoiceField
+                          catalog={azure() ? models() : { [props.format]: models()[props.format] }}
+                          selected={draft.models}
+                          deployments={azure() ? draft.deployments : undefined}
+                          onChange={(chosen, deployments) => change({ models: chosen, deployments })}
+                        />
                       )}
                     </Show>
                   </Show>

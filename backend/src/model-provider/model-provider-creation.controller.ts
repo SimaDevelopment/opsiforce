@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
@@ -10,6 +10,7 @@ import type {
   ModelProviderConnectionDto,
   ModelProviderCreationRules,
   NewModelProviderDto,
+  SetModelProviderModelsDto,
   TenantModelProvidersView,
 } from './model-provider.types';
 
@@ -48,6 +49,15 @@ export class ModelProviderCreationController {
     @Body() body: EditModelProviderConnectionDto | undefined
   ): Promise<TenantModelProvidersView> {
     return this.creationService.editConnection(tenant, name, body);
+  }
+
+  @Put(':name/models')
+  setModels(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('name') name: string,
+    @Body() body: SetModelProviderModelsDto | undefined
+  ): Promise<TenantModelProvidersView> {
+    return this.creationService.setModels(tenant, name, body);
   }
 
   @Post(':name/re-enter-key')
