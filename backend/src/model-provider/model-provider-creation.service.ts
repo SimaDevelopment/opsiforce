@@ -118,8 +118,12 @@ export class ModelProviderCreationService {
     return this.modelProvidersService.listTenantProviders(tenant);
   }
 
-  private async ownAzureConnection(tenant: TenantContext, bifrostName: string): Promise<boolean> {
-    const [row] = await db
+  private async ownAzureConnection(
+    tenant: TenantContext,
+    bifrostName: string,
+    executor: DbExecutor = db
+  ): Promise<boolean> {
+    const [row] = await executor
       .select({ id: modelProviders.id })
       .from(modelProviders)
       .where(and(eq(modelProviders.tenantId, tenant.tenantId), eq(modelProviders.bifrostKey, bifrostName)))
@@ -140,9 +144,12 @@ export class ModelProviderCreationService {
     const azureName = customBifrostProviderName(tenant.tenantName, name);
     if (await this.ownAzureConnection(tenant, azureName)) {
       const choice = this.azure.modelsOf(input);
-      await this.azure.setModels(azureName, choice);
       await db.transaction(async (tx) => {
         await lockTenantModelProviders(tx, tenant.tenantId);
+        if (!(await this.ownAzureConnection(tenant, azureName, tx))) {
+          throw new NotFoundException(`${name} is not a model provider of this organization`);
+        }
+        await this.azure.setModels(azureName, choice);
         await this.keepAzureRowsFor(tx, tenant, azureName, formatsOfModels(choice.models));
         await this.modelProvidersService.writeTenantKeys(tx, tenant.tenantId);
       });

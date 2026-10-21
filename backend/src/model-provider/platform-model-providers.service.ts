@@ -397,9 +397,12 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
   async setModels(name: string, input: unknown): Promise<PlatformModelProvidersView> {
     if (await this.isPlatformAzureConnection(name)) {
       const choice = this.azure.modelsOf(input);
-      await this.azure.setModels(name, choice);
       await db.transaction(async (tx) => {
         await lockPlatformModelProviders(tx);
+        if (!(await this.isPlatformAzureConnection(name, tx))) {
+          throw new NotFoundException(`${name} is not a Built-in model provider`);
+        }
+        await this.azure.setModels(name, choice);
         await this.keepAzureRowsFor(tx, name, formatsOfModels(choice.models));
       });
     } else {
@@ -439,8 +442,8 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
       .onConflictDoNothing();
   }
 
-  private async isPlatformAzureConnection(name: string): Promise<boolean> {
-    const [row] = await db
+  private async isPlatformAzureConnection(name: string, executor: DbExecutor = db): Promise<boolean> {
+    const [row] = await executor
       .select({ id: modelProviders.id })
       .from(modelProviders)
       .where(
