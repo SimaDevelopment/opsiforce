@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { SessionMessageAssistantTool } from "@opencode/client/promise"
 import { currentToolError, currentToolInput, currentToolMetadata, currentToolOutput } from "./current-tool-state"
 
 const time = { created: 1 }
@@ -33,6 +33,7 @@ describe("current tool state", () => {
   test("preserves running input and metadata", () => {
     const input = { command: "bun test src/timeline" }
     const metadata = { background: true, output: "Running timeline tests..." }
+
     const tool = {
       type: "tool",
       id: "tool_running",

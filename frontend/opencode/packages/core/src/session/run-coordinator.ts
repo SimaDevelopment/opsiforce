@@ -17,7 +17,7 @@ export interface Coordinator<Key, E, Reason = never> {
    * Stops the active execution and clears its doorbell. No-op when idle. Resolves once the
    * interruption is accepted, not when cleanup settles: the execution fiber finishes its
    * finalizers and settled hook on its own time. Returns whether an active execution was
-   * interrupted. Compose with `awaitIdle` for settlement.
+   * interrupted.
    */
   readonly interrupt: (key: Key, reason?: Reason) => Effect.Effect<boolean>
   /** Resolves once no execution is active for the key. Returns immediately when already idle and never starts work. */

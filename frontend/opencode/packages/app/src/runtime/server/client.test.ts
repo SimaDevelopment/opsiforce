@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { OpenCodeEvent } from "@opencode-ai/client/promise"
+import type { OpenCodeEvent } from "@opencode/client/promise"
 import { createRoot } from "solid-js"
 import { createOpenCodeEventSource, createServerTransport } from "./client"
 
@@ -45,6 +45,7 @@ describe("server event stream", () => {
     const other: OpenCodeEvent[] = []
     const all: OpenCodeEvent[] = []
     let workspaceID: string | undefined
+
     const global = {
       id: "evt_connected",
       type: "server.connected",
@@ -87,34 +88,45 @@ describe("server event stream", () => {
 
 test("rotates HTTP and PTY clients together", async () => {
   const requests: Array<{ url: string; authorization: string | null }> = []
+
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init)
     requests.push({ url: request.url, authorization: request.headers.get("authorization") })
-    return Response.json({ healthy: true, version: "2.0.0-test", pid: 1 })
+
+    return Response.json({
+      version: "2.0.0-test",
+      pid: 1,
+      urls: [request.url],
+      paths: { tmp: "/tmp/opencode" },
+    })
   }) as typeof globalThis.fetch
+
   const transport = createServerTransport({
     http: { url: "http://127.0.0.1:4100", password: "first" },
     fetch,
   })
+
   const initialPty = transport.pty
 
-  await transport.api.health.get()
+  await transport.api.server.info()
+
   const replacement = transport.update({
     url: "http://127.0.0.1:4200",
     password: "second",
   })
-  await transport.api.health.get()
+
+  await transport.api.server.info()
 
   expect(replacement).toBe(transport.api)
   expect(transport.pty).not.toBe(initialPty)
   expect(transport.url).toBe("http://127.0.0.1:4200")
   expect(requests).toEqual([
     {
-      url: "http://127.0.0.1:4100/api/health",
+      url: "http://127.0.0.1:4100/api/info",
       authorization: `Basic ${btoa("opencode:first")}`,
     },
     {
-      url: "http://127.0.0.1:4200/api/health",
+      url: "http://127.0.0.1:4200/api/info",
       authorization: `Basic ${btoa("opencode:second")}`,
     },
   ])

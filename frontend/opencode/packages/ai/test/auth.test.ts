@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { ConfigProvider, Effect } from "effect"
-import { Headers } from "effect/unstable/http"
+import { Headers } from "effect/http"
 import { LLM } from "../src/index.js"
 import { Auth } from "../src/route/auth.js"
 import * as OpenAIChat from "../src/protocols/openai-chat.js"
@@ -89,6 +89,15 @@ describe("Auth", () => {
 
       expect(headers.authorization).toBe("Bearer supplied")
       expect(headers["x-existing"]).toBe("yes")
+    }),
+  )
+
+  it.effect("reports a missing config credential as Authentication naming the variable", () =>
+    Effect.gen(function* () {
+      const error = yield* Auth.toEffect(Auth.config("OPENAI_API_KEY").bearer())(input).pipe(withEnv({}), Effect.flip)
+
+      expect(error.reason._tag).toBe("Authentication")
+      expect(error.message).toContain("OPENAI_API_KEY is not set")
     }),
   )
 

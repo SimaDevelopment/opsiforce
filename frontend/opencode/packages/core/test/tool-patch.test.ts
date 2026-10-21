@@ -2,32 +2,46 @@ import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Layer, Schema } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Environment } from "@opencode-ai/core/environment/index"
-import { Formatter } from "@opencode-ai/core/formatter"
-import { FileMutation } from "@opencode-ai/core/file-mutation"
-import { Location } from "@opencode-ai/core/location"
-import { LocationMutation } from "@opencode-ai/core/location-mutation"
-import { Permission } from "@opencode-ai/core/permission"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { Tool } from "@opencode-ai/core/tool"
-import { PatchTool } from "@opencode-ai/core/tool/plugin/patch"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Environment } from "@opencode/core/environment/index"
+import { Formatter } from "@opencode/core/formatter"
+import { FileMutation } from "@opencode/core/file-mutation"
+import { Location } from "@opencode/core/location"
+import { FileAccess } from "@opencode/core/file-access"
+import { Model } from "@opencode/core/model"
+import { Permission } from "@opencode/core/permission"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { Tool } from "@opencode/core/tool"
+import { PatchTool } from "@opencode/core/tool/plugin/patch"
+import type { SessionHooks } from "@opencode/plugin/effect/session"
 import { transformEnvironmentFiles } from "./fixture/environment"
 import { location } from "./fixture/location"
 import { tmpdir } from "./fixture/tmpdir"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { testEffect } from "./lib/effect"
 import { permissionLayer } from "./lib/permission"
 import { toolIdentity, executeTool, registerToolPlugin, toolDefinitions } from "./lib/tool"
 
+const sessionHooks = new Map<string, (event: SessionHooks["context"]) => Effect.Effect<void>>()
 const patchToolNode = makeLocationNode({
   name: "test/patch-tool-plugin",
-  layer: Layer.effectDiscard(registerToolPlugin(PatchTool.Plugin)),
+  layer: Layer.effectDiscard(
+    registerToolPlugin(PatchTool.Plugin, {
+      session: {
+        hook: (name, callback) =>
+          Effect.sync(() => {
+            sessionHooks.set(name, callback as (event: SessionHooks["context"]) => Effect.Effect<void>)
+            return { dispose: Effect.void }
+          }),
+      },
+    }),
+  ),
   deps: [
     Tool.node,
-    LocationMutation.node,
+    FileAccess.node,
     FileMutation.node,
     Environment.node,
     Formatter.node,
@@ -99,7 +113,7 @@ const withTool = <A, E, R>(
     return yield* body(yield* Tool.Service)
   }).pipe(
     Effect.provide(
-      AppNodeBuilder.build(LayerNode.group([Tool.node, LocationMutation.node, FileMutation.node, patchToolNode]), [
+      AppNodeBuilder.build(LayerNode.group([Tool.node, FileAccess.node, FileMutation.node, patchToolNode]), [
         Environment.node.replace(
           transformEnvironmentFiles((files) => ({
             read: (target, range) =>
@@ -153,6 +167,34 @@ const withTempTool = <A, E, R>(body: (directory: string, registry: Tool.Interfac
   )
 
 describe("PatchTool", () => {
+  it.live("selects the same edit tools for compaction and generate requests as the agent loop", () =>
+    withTempTool(() =>
+      Effect.gen(function* () {
+        const event = (id: string): SessionHooks["context"] => ({
+          sessionID,
+          agent: toolIdentity.agent,
+          model: Model.Ref.make({ providerID: Provider.ID.make("test"), id: Model.ID.make(id) }),
+          system: [],
+          messages: [],
+          tools: Object.fromEntries(
+            ["patch", "edit", "write", "read"].map((name) => [name, { description: name, input: { type: "object" } }]),
+          ),
+          options: {},
+        })
+        for (const name of ["context", "compaction", "generate"]) {
+          const hook = sessionHooks.get(name)
+          expect(hook).toBeDefined()
+          const claude = event("claude-sonnet-4")
+          yield* hook!(claude)
+          expect(Object.keys(claude.tools)).toEqual(["edit", "write", "read"])
+          const gpt = event("gpt-5")
+          yield* hook!(gpt)
+          expect(Object.keys(gpt.tools)).toEqual(["patch", "read"])
+        }
+      }),
+    ),
+  )
+
   it.live("registers and sequentially applies add, update, and delete hunks", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

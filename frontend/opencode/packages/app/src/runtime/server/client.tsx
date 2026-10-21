@@ -1,11 +1,12 @@
-import type { OpenCodeEvent } from "@opencode-ai/client/promise"
-import { createClientConnection, createPtyClient, type ClientConnectionStatus } from "@opencode-ai/client/solid"
+import type { OpenCodeEvent } from "@opencode/client/promise"
+import { createClientConnection, createPtyClient, type ClientConnectionStatus } from "@opencode/client/solid"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { type Accessor, onCleanup } from "solid-js"
+import { type Accessor, createEffect, on, onCleanup } from "solid-js"
 import { createApiForServer, type ServerApi } from "@/runtime/server/api"
 import { usePlatform } from "@/runtime/platform/platform"
 import { ServerConnection } from "./registry"
 import { createRefCountMap } from "@/runtime/server/refcount"
+import { createRequestQueue } from "@/runtime/server/request-queue"
 import { ServerScope } from "@/runtime/server/scope"
 import { useServer } from "./current"
 
@@ -56,6 +57,7 @@ export function createOpenCodeEventSource() {
 }
 
 export type ServerConnectionStatus = ClientConnectionStatus
+
 type ServerSDKBase = {
   server: ServerConnection.Any
   scope: ServerScope
@@ -73,8 +75,19 @@ type ServerSDKBase = {
 function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerScope): ServerSDKBase {
   const platform = usePlatform()
   const transport = createServerTransport({ http: server.http, fetch: platform.fetch })
+
+  if (server.type === "extension") {
+    createEffect(
+      on(
+        () => `${server.http.url}\0${server.http.password ?? ""}`,
+        () => transport.update(server.http),
+        { defer: true },
+      ),
+    )
+  }
+
   const events = createOpenCodeEventSource()
-  const reconnect = server.type === "sidecar" && server.variant === "base" ? server.reconnect : undefined
+  const reconnect = server.type === "extension" || server.type === "sidecar" ? server.reconnect : undefined
 
   const connection = createClientConnection(transport.api, {
     reconnect: reconnect ? async (signal) => transport.update(await reconnect(signal)) : undefined,
@@ -114,14 +127,20 @@ export function createServerTransport(input: { http: ServerConnection.HttpBase; 
   readonly api: ServerApi
   readonly pty: ReturnType<typeof createPtyClient>
 } {
+  const queue = createRequestQueue({ fetch: input.fetch ?? globalThis.fetch })
+
   const build = (http: ServerConnection.HttpBase) => {
-    const api = createApiForServer({ server: http, fetch: input.fetch })
+    const api = createApiForServer({ server: http, fetch: queue.fetch })
+
     return { http, api, pty: createPtyClient(api, { url: http.url }) }
   }
+
   const state = { current: build(input.http) }
+
   return {
     update(http: ServerConnection.HttpBase) {
       state.current = build(http)
+
       return state.current.api
     },
     get url() {
@@ -142,6 +161,7 @@ export type ServerSDK = ServerSDKBase & {
 
 export function createServerSdkContext(server: ServerConnection.Any, scope: ServerScope): ServerSDK {
   const sdk = createServerSdkContextBase(server, scope)
+
   return Object.assign(sdk, {
     ensureDirSdkContext: createRefCountMap((dir) => createDirSdkContext(dir, sdk)),
   })
@@ -149,6 +169,7 @@ export function createServerSdkContext(server: ServerConnection.Any, scope: Serv
 
 export const useServerSDK = () => {
   const server = useServer()
+
   return server.ctx.sdk
 }
 

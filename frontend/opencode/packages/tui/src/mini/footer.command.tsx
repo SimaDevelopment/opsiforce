@@ -27,6 +27,7 @@ import type {
   RunInput,
   RunProvider,
 } from "./types"
+import { matchMiniVerbosity, verbosityChange, verbosityLabel } from "./verbosity"
 
 type PanelEntry = RunFooterMenuItem & {
   category: string
@@ -37,7 +38,6 @@ type CommandEntry =
   | (PanelEntry & { action: "agent" })
   | (PanelEntry & { action: "model" })
   | (PanelEntry & { action: "editor" })
-  | (PanelEntry & { action: "skill" })
   | (PanelEntry & { action: "queued" })
   | (PanelEntry & { action: "subagent" })
   | (PanelEntry & { action: "status" })
@@ -45,6 +45,7 @@ type CommandEntry =
   | (PanelEntry & { action: "variant.list" })
   | (PanelEntry & { action: "settings" })
   | (PanelEntry & { action: "slash"; name: string })
+  | (PanelEntry & { action: "clear" })
   | (PanelEntry & { action: "exit" })
 
 type ModelEntry = PanelEntry & {
@@ -64,10 +65,6 @@ type VariantEntry = PanelEntry & {
   current: boolean
 }
 
-type SkillEntry = PanelEntry & {
-  name: string
-}
-
 type QueuedPromptEntry = PanelEntry & {
   prompt: FooterQueuedPrompt
 }
@@ -78,7 +75,7 @@ type SubagentEntry = PanelEntry & {
 }
 
 type SettingEntry = PanelEntry & {
-  key: keyof MiniSettings
+  key: keyof MiniSettings | "verbosity"
 }
 
 const PANEL_PAD = 2
@@ -402,7 +399,6 @@ export function RunCommandMenuBody(props: {
   onAgent: () => void
   onModel: () => void
   onEditor: () => void
-  onSkill: () => void
   onSubagent: () => void
   onQueued: () => void
   onVariant: () => void
@@ -411,10 +407,11 @@ export function RunCommandMenuBody(props: {
   onSettings: () => void
   onCommand: (name: string) => void
   onNew: () => void
+  onClear?: () => void
   onExit: () => void
+  clearShortcut?: string
   mono?: boolean
 }) {
-  const skills = createMemo(() => (props.commands() ?? []).filter((item) => item.source === "skill"))
   const activeSubagentCount = createMemo(() => props.subagents().filter((item) => item.status === "running").length)
   const entries = createMemo<CommandEntry[]>(() => {
     const session: CommandEntry[] = [
@@ -463,20 +460,6 @@ export function RunCommandMenuBody(props: {
         keywords: "new session clear",
       },
     ]
-    const prompt: CommandEntry[] =
-      props.commands() === undefined || skills().length > 0
-        ? [
-            {
-              action: "skill" as const,
-              category: "Prompt",
-              display: "Skills",
-              footer: "/skills",
-              keywords: `skill skills ${skills()
-                .map((item) => `${item.name} ${item.description ?? ""}`)
-                .join(" ")}`.trim(),
-            },
-          ]
-        : []
     const agent: CommandEntry[] = [
       {
         action: "agent",
@@ -522,8 +505,14 @@ export function RunCommandMenuBody(props: {
     ]
     return [
       ...session,
-      ...prompt,
       ...agent,
+      {
+        action: "clear",
+        category: "System",
+        display: "Clear screen",
+        footer: props.clearShortcut,
+        keywords: "clear screen cls redraw",
+      },
       {
         action: "settings",
         category: "System",
@@ -547,11 +536,6 @@ export function RunCommandMenuBody(props: {
 
     if (item.action === "editor") {
       props.onEditor()
-      return
-    }
-
-    if (item.action === "skill") {
-      props.onSkill()
       return
     }
 
@@ -582,6 +566,11 @@ export function RunCommandMenuBody(props: {
 
     if (item.action === "settings") {
       props.onSettings()
+      return
+    }
+
+    if (item.action === "clear") {
+      props.onClear?.()
       return
     }
 
@@ -711,8 +700,16 @@ export function RunSettingsBody(props: {
   mono?: boolean
   animations?: boolean
 }) {
-  const [saving, setSaving] = createSignal<keyof MiniSettings>()
+  const [saving, setSaving] = createSignal<SettingEntry["key"]>()
   const entries = createMemo<SettingEntry[]>(() => [
+    {
+      category: "Transcript",
+      display: "Verbosity",
+      footer: saving() === "verbosity" ? "saving" : verbosityLabel(matchMiniVerbosity(props.settings())),
+      footerTone: saving() === "verbosity" ? "running" : "selection",
+      keywords: `verbosity quiet default everything custom noise ${verbosityLabel(matchMiniVerbosity(props.settings()))}`,
+      key: "verbosity",
+    },
     {
       category: "Transcript",
       display: "Thinking",
@@ -720,6 +717,14 @@ export function RunSettingsBody(props: {
       footerTone: saving() === "thinking" ? "running" : "selection",
       keywords: `thinking reasoning ${props.settings().thinking}`,
       key: "thinking",
+    },
+    {
+      category: "Transcript",
+      display: "Tools",
+      footer: saving() === "tools" ? "saving" : props.settings().tools,
+      footerTone: saving() === "tools" ? "running" : "selection",
+      keywords: `tools files skills activity work steps intermediate ${props.settings().tools}`,
+      key: "tools",
     },
     {
       category: "Transcript",
@@ -785,18 +790,21 @@ export function RunSettingsBody(props: {
   const change = (item: SettingEntry, direction = 1) => {
     if (saving()) return
     const spinners = Config.MiniWorkSpinner.literals
-    const next: MiniSettingChange =
-      item.key === "work_spinner"
-        ? {
-            key: "work_spinner",
-            value:
-              spinners[
-                (spinners.indexOf(props.settings().work_spinner) + direction + spinners.length) % spinners.length
-              ]!,
-          }
-        : item.key === "mono"
-          ? { key: "mono", value: !props.settings().mono }
-          : { key: item.key, value: props.settings()[item.key] === "show" ? "hide" : "show" }
+    const next: MiniSettingChange | undefined =
+      item.key === "verbosity"
+        ? verbosityChange(props.settings(), direction < 0 ? -1 : 1)
+        : item.key === "work_spinner"
+          ? {
+              key: "work_spinner",
+              value:
+                spinners[
+                  (spinners.indexOf(props.settings().work_spinner) + direction + spinners.length) % spinners.length
+                ]!,
+            }
+          : item.key === "mono"
+            ? { key: "mono", value: !props.settings().mono }
+            : { key: item.key, value: props.settings()[item.key] === "show" ? "hide" : "show" }
+    if (!next) return
     setSaving(item.key)
     void Promise.resolve(props.onChange(next))
       .catch(() => {})
@@ -940,6 +948,7 @@ export function RunQueuedPromptSelectBody(props: {
   prompts: Accessor<FooterQueuedPrompt[]>
   onClose: () => void
   onSelect: (prompt: FooterQueuedPrompt) => void
+  onUndo: (prompt: FooterQueuedPrompt) => void
   onDelete: (prompt: FooterQueuedPrompt) => void
   onRows?: (rows: number) => void
   mono?: boolean
@@ -961,10 +970,21 @@ export function RunQueuedPromptSelectBody(props: {
     onRows: props.onRows,
   })
   const shortcuts = Keymap.useShortcuts()
+  const undoShortcut = () => monoShortcut(shortcuts.get("queued_prompt.undo") ?? "", props.mono ?? false)
   const deleteShortcut = () => monoShortcut(shortcuts.get("queued_prompt.delete") ?? "", props.mono ?? false)
   Keymap.createLayer(() => ({
     priority: 1,
     commands: [
+      {
+        id: "queued_prompt.undo",
+        title: "Undo",
+        group: "Prompt",
+        run() {
+          const item = controller.items()[controller.menu.selected()]
+          if (!item) return false
+          props.onUndo(item.prompt)
+        },
+      },
       {
         id: "queued_prompt.delete",
         title: "Delete pending prompt",
@@ -992,6 +1012,7 @@ export function RunQueuedPromptSelectBody(props: {
       hint={[
         controller.items()[controller.menu.selected()]?.prompt.delivery === "steer" ? "enter queue" : "enter steer",
         deleteShortcut() ? `${deleteShortcut()} delete` : undefined,
+        undoShortcut() ? `${undoShortcut()} undo` : undefined,
       ]
         .filter(Boolean)
         .join(" · ")}
@@ -1006,65 +1027,6 @@ export function RunQueuedPromptSelectBody(props: {
         limit={controller.menu.limit()}
         compact={controller.layout().compact}
         empty="No pending prompts"
-        border={false}
-        paddingLeft={panelPad(props.mono)}
-        paddingRight={panelPad(props.mono)}
-        grouped={false}
-        background
-        mono={props.mono}
-      />
-    </PanelShell>
-  )
-}
-
-export function RunSkillSelectBody(props: {
-  theme: Accessor<RunFooterTheme>
-  commands: Accessor<RunCommand[] | undefined>
-  onClose: () => void
-  onSelect: (name: string) => void
-  mono?: boolean
-}) {
-  const entries = createMemo<SkillEntry[]>(() =>
-    (props.commands() ?? [])
-      .filter((item) => item.source === "skill")
-      .map((item) => ({
-        category: "",
-        display: item.name,
-        description: item.description?.replace(/\s+/g, " ").trim() || undefined,
-        keywords: `skill ${item.name} ${item.description ?? ""}`,
-        name: item.name,
-      }))
-      .sort((a, b) => a.display.localeCompare(b.display)),
-  )
-  const controller = createSearchablePanelController({
-    entries,
-    limit: PANEL_LIST_ROWS,
-    onClose: props.onClose,
-    onSelect: (item) => props.onSelect(item.name),
-  })
-
-  return (
-    <PanelShell
-      title="Skills"
-      layout={controller.layout()}
-      query={controller.query()}
-      count={controller.items().length}
-      total={entries().length}
-      placeholder="Search"
-      theme={props.theme}
-      inputRef={controller.inputRef}
-      onQuery={controller.setQuery}
-      mono={props.mono}
-    >
-      <RunFooterMenu
-        theme={props.theme}
-        items={controller.items}
-        selected={controller.menu.selected}
-        offset={controller.menu.offset}
-        rows={controller.menu.limit}
-        limit={controller.menu.limit()}
-        compact={controller.layout().compact}
-        empty={props.commands() ? "No skills found" : "Skills loading"}
         border={false}
         paddingLeft={panelPad(props.mono)}
         paddingRight={panelPad(props.mono)}

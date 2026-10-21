@@ -4,9 +4,13 @@ import { testRender } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { createSignal, onCleanup, onMount } from "solid-js"
+import { batch, createSignal, onCleanup, onMount } from "solid-js"
 import { dialogWidth } from "../../../src/ui/dialog"
-import { dialogSelectContentWidth, type DialogSelectOption } from "../../../src/ui/dialog-select"
+import {
+  dialogSelectContentWidth,
+  type DialogSelectOption,
+  type DialogSelectProps,
+} from "../../../src/ui/dialog-select"
 import { truncateFilePath } from "../../../src/ui/file-path"
 import { stringWidth } from "../../../src/util/string-width"
 import { emptyThemeSource, tmpdir } from "../../fixture/fixture"
@@ -82,12 +86,15 @@ async function renderSelect(
   return app
 }
 
-async function mountSelect(
+async function mountSelect<T>(
   root: string,
-  initial: DialogSelectOption<string>[],
-  current?: string,
+  initial: DialogSelectOption<T>[],
+  current?: T,
   focusCurrent?: boolean,
-  select?: { flat?: boolean },
+  select?: Pick<
+    DialogSelectProps<T>,
+    "flat" | "ref" | "onFilter" | "renderFilter" | "onCancel" | "focusTarget" | "search"
+  >,
 ) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
@@ -108,13 +115,16 @@ async function mountSelect(
     import("../../../src/ui/toast"),
   ])
 
-  const selected: string[] = []
-  const moved: string[] = []
-  let replaceOptions!: (options: DialogSelectOption<string>[]) => void
+  const selected: T[] = []
+  const moved: T[] = []
+  let replaceOptions!: (options: DialogSelectOption<T>[]) => void
+  let replaceCurrent!: (value: T | undefined) => void
 
   function Harness() {
     const [options, setOptions] = createSignal(initial)
     replaceOptions = setOptions
+    const [value, setCurrent] = createSignal(current)
+    replaceCurrent = (value) => setCurrent(() => value)
 
     function Fixture() {
       const dialog = useDialog()
@@ -123,9 +133,9 @@ async function mountSelect(
           <DialogSelect
             title="Mutable options"
             options={options()}
-            current={current}
+            current={value()}
             focusCurrent={focusCurrent}
-            flat={select?.flat}
+            {...select}
             onMove={(option) => moved.push(option.value)}
             onSelect={(option) => selected.push(option.value)}
           />
@@ -154,9 +164,82 @@ async function mountSelect(
   const app = await testRender(() => <Harness />, { width: 80, height: 24, kittyKeyboard: true })
   app.renderer.start()
   await app.waitForFrame((frame) => frame.includes("Mutable options"))
-  await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
-  return { app, moved, replaceOptions, selected }
+  if (select?.renderFilter !== false)
+    await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
+  return { app, moved, replaceOptions, replaceCurrent, selected }
 }
+
+test.each([true, false])("filter refs are ready when published with renderFilter=%s", async (renderFilter) => {
+  await using tmp = await tmpdir()
+  const queries: string[] = []
+  const select = await mountSelect(
+    tmp.path,
+    [
+      { title: "Alpha", value: "alpha" },
+      { title: "Beta", value: "beta" },
+    ],
+    undefined,
+    undefined,
+    {
+      renderFilter,
+      ref: (ref) => ref.setFilter("beta"),
+      onFilter: (query) => queries.push(query),
+    },
+  )
+  try {
+    expect(queries).toEqual(["beta"])
+    if (!renderFilter) return
+    expect(select.app.renderer.currentFocusedEditor?.plainText).toBe("beta")
+    expect(select.app.captureCharFrame()).not.toContain("Alpha")
+    select.app.mockInput.pressEnter()
+    await select.app.waitFor(() => select.selected.length === 1)
+    expect(select.selected).toEqual(["beta"])
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
+
+test("Escape clears text selection before invoking a custom back action", async () => {
+  await using tmp = await tmpdir()
+  let cancelled = 0
+  const select = await mountSelect(tmp.path, [{ title: "Alpha", value: "alpha" }], undefined, undefined, {
+    onCancel: () => cancelled++,
+  })
+  try {
+    const frame = select.app.captureCharFrame().split("\n")
+    const row = frame.findIndex((line) => line.includes("Alpha"))
+    const column = frame[row]!.indexOf("Alpha") + 1
+    await select.app.mockMouse.click(column, row)
+    await select.app.mockMouse.click(column, row)
+    await select.app.waitFor(() => select.app.renderer.getSelection()?.getSelectedText() === "Alpha")
+    select.app.mockInput.pressEscape()
+    await select.app.waitFor(() => !select.app.renderer.getSelection())
+    expect(cancelled).toBe(0)
+    select.app.mockInput.pressEscape()
+    await select.app.waitFor(() => cancelled === 1)
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
+
+test("reveals a focus target that arrives below the viewport", async () => {
+  await using tmp = await tmpdir()
+  const select = await mountSelect(tmp.path, [{ title: "Root", value: "root" }], undefined, true, {
+    focusTarget: "checkout-29",
+  })
+  try {
+    select.replaceOptions([
+      { title: "Root", value: "root" },
+      ...Array.from({ length: 30 }, (_, index) => ({ title: `Checkout ${index}`, value: `checkout-${index}` })),
+    ])
+    await select.app.waitForFrame((frame) => frame.includes("Checkout 29"))
+    select.app.mockInput.pressEnter()
+    await select.app.waitFor(() => select.selected.length === 1)
+    expect(select.selected).toEqual(["checkout-29"])
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
 
 test("budgets option content for constrained and full-width large dialogs", () => {
   expect(dialogSelectContentWidth(Math.min(dialogWidth("large"), 62 - 2)) - 7).toBe(41)
@@ -282,7 +365,7 @@ test("dialog actions run without options while row actions still require a selec
   )
 
   try {
-    app.mockInput.pressKey("m", { ctrl: true })
+    app.mockInput.pressKey("a", { ctrl: true })
     app.mockInput.pressKey("d", { ctrl: true })
 
     expect(global).toBe(1)
@@ -329,8 +412,9 @@ test("footer actions run when filtering leaves no selected row", async () => {
     await app.waitForFrame((frame) => frame.includes("No results found"))
 
     app.mockInput.pressKey("d", { ctrl: true })
-    app.mockInput.pressTab()
-    app.mockInput.pressEnter()
+    const frame = app.captureCharFrame().split("\n")
+    const row = frame.findIndex((line) => line.includes("new ctrl+a"))
+    await app.mockMouse.click(frame[row]!.indexOf("new ctrl+a") + 1, row)
 
     expect(global).toBe(1)
     expect(rows).toEqual([])
@@ -442,6 +526,79 @@ test("keeps the current option selected when options reorder", async () => {
   }
 })
 
+test("custom search follows a current change batched with reordered results", async () => {
+  await using tmp = await tmpdir()
+  const options = ["alpha", "beta", "gamma"].map((value) => ({ title: value, value }))
+  const [results, setResults] = createSignal(options)
+  const select = await mountSelect(tmp.path, options, "alpha", undefined, { search: () => results() })
+
+  try {
+    batch(() => {
+      select.replaceCurrent("gamma")
+      setResults(options.toReversed())
+    })
+    await select.app.waitForFrame((frame) => frame.indexOf("gamma") < frame.indexOf("alpha"))
+    select.app.mockInput.pressEnter()
+    await select.app.waitFor(() => select.selected.length === 1)
+
+    expect(select.selected).toEqual(["gamma"])
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
+
+test.each([false, 0, "", null, "current", undefined])("focuses current %p when it changes", async (current) => {
+  await using tmp = await tmpdir()
+  const select = await mountSelect<string | typeof current>(
+    tmp.path,
+    [
+      { title: "First", value: "first" },
+      { title: "Current", value: current === undefined ? "current" : current },
+    ],
+    "first",
+  )
+
+  try {
+    select.replaceCurrent(current)
+    await select.app.waitForVisualIdle()
+    select.app.mockInput.pressEnter()
+    await select.app.waitFor(() => select.selected.length === 1)
+
+    expect(select.selected).toEqual([current === undefined ? "first" : current])
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
+
+test.each([false, 0, "", null, "current", undefined])(
+  "restores current %p after clearing a filter",
+  async (current) => {
+    await using tmp = await tmpdir()
+    const select = await mountSelect<string | typeof current>(
+      tmp.path,
+      [
+        ...Array.from({ length: 6 }, (_, index) => ({ title: `Item-${index}`, value: `item-${index}` })),
+        { title: "Current", value: current === undefined ? "current" : current },
+      ],
+      current,
+    )
+
+    try {
+      await select.app.mockInput.typeText("Item-0")
+      await select.app.waitForFrame((frame) => frame.includes("Item-0") && !frame.includes("Item-1"))
+      select.app.mockInput.pressKey("c", { ctrl: true })
+      await select.app.waitForVisualIdle()
+      select.app.mockInput.pressEnter()
+      await select.app.waitFor(() => select.selected.length === 1)
+
+      expect(select.selected).toEqual([current === undefined ? "item-0" : current])
+      expect(select.app.captureCharFrame().includes("Current")).toBe(current !== undefined)
+    } finally {
+      select.app.renderer.destroy()
+    }
+  },
+)
+
 test("shows no-match and still closes after a flat filter goes empty", async () => {
   await using tmp = await tmpdir()
   const select = await mountSelect(
@@ -465,6 +622,25 @@ test("shows no-match and still closes after a flat filter goes empty", async () 
 
     select.app.mockInput.pressEscape()
     await select.app.waitForFrame((frame) => !frame.includes("Mutable options") && !frame.includes("No results found"))
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
+
+test("dialog rows do not add renderer resize listeners", async () => {
+  await using tmp = await tmpdir()
+  const options = ["first", "second", "third"].map((value) => ({ title: value, value }))
+  const select = await mountSelect(tmp.path, options)
+
+  try {
+    const count = () =>
+      (select.app.renderer as unknown as { listenerCount(event: string): number }).listenerCount("resize")
+    const before = count()
+    // Mounting 30 rows must not add one resize listener per row (Node warns
+    // past 10 listeners on one emitter).
+    select.replaceOptions(Array.from({ length: 30 }, (_, index) => ({ title: `Item ${index}`, value: `item-${index}` })))
+    await select.app.waitForVisualIdle()
+    expect(count()).toBe(before)
   } finally {
     select.app.renderer.destroy()
   }

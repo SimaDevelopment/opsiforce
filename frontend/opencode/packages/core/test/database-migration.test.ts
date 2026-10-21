@@ -3,24 +3,25 @@ import { $ } from "bun"
 import { fileURLToPath } from "url"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { EffectDrizzleSqlite } from "@opencode-ai/core/database/drizzle"
+import { EffectDrizzleSqlite } from "@opencode/core/database/drizzle"
 import { Deferred, Effect, Fiber, Layer } from "effect"
-import { Reactivity } from "effect/unstable/reactivity"
-import { SqlClient, Statement } from "effect/unstable/sql"
+import { Reactivity } from "effect/reactivity"
+import { SqlClient, Statement } from "effect/sql"
 import { sql } from "drizzle-orm"
-import { DatabaseMigration } from "@opencode-ai/core/database/migration"
-import { migrations } from "@opencode-ai/core/database/migration.gen"
-import workspaceNameMigration from "@opencode-ai/core/database/migration/20260410174513_workspace-name"
-import { Database } from "@opencode-ai/core/database/database"
+import { DatabaseMigration } from "@opencode/core/database/migration"
+import { migrations } from "@opencode/core/database/migration.gen"
+import workspaceNameMigration from "@opencode/core/database/migration/20260410174513_workspace-name"
+import { Database } from "@opencode/core/database/database"
 import { tmpdir } from "./fixture/tmpdir"
-import legacyCredentialsMigration from "@opencode-ai/core/database/migration/20260805200742_import_legacy_credentials"
-import worktreeMigration from "@opencode-ai/core/database/migration/20260812213948_worktree"
-import previousV2Migration from "@opencode-ai/core/database/migration/20260804233008_loose_psylocke"
-import workspaceMigration from "@opencode-ai/core/database/migration/20260808023530_workspace_domain"
-import executionClaimsMigration from "@opencode-ai/core/database/migration/20260811161259_execution_claim_attempts"
-import sessionInboxMigration from "@opencode-ai/core/database/migration/20260812181746_session_inbox"
-import sessionViewedStateMigration from "@opencode-ai/core/database/migration/20260819222447_session_viewed_state"
-import { Global } from "@opencode-ai/util/global"
+import legacyCredentialsMigration from "@opencode/core/database/migration/20260805200742_import_legacy_credentials"
+import worktreeMigration from "@opencode/core/database/migration/20260812213948_worktree"
+import previousV2Migration from "@opencode/core/database/migration/20260804233008_loose_psylocke"
+import workspaceMigration from "@opencode/core/database/migration/20260808023530_workspace_domain"
+import executionClaimsMigration from "@opencode/core/database/migration/20260811161259_execution_claim_attempts"
+import sessionInboxMigration from "@opencode/core/database/migration/20260812181746_session_inbox"
+import sessionViewedStateMigration from "@opencode/core/database/migration/20260819222447_session_viewed_state"
+import azureCliCredentialMigration from "@opencode/core/database/migration/20261007190000_azure_cli_external_credential"
+import { Global } from "@opencode/util/global"
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, SqlClient.SqlClient | Global.Service>,
@@ -528,6 +529,37 @@ describe("DatabaseMigration", () => {
         expect(yield* db.all(sql`SELECT id FROM credential`)).toEqual([])
       }),
       Global.make({ data: tmp.path }),
+    )
+  })
+
+  test("moves Azure CLI connections saved as OAuth credentials to external credentials", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* DatabaseMigration.apply(db)
+        const now = Date.now()
+        const oauth = { type: "oauth", methodID: "azure-cli", access: "token", refresh: "azure-cli", expires: 123 }
+        yield* db.run(sql`
+          INSERT INTO credential (id, integration_id, label, value, time_created, time_updated) VALUES
+            ('cli', 'azure', 'Azure CLI', ${JSON.stringify({ ...oauth, metadata: { resourceName: "my-models" } })}, ${now}, ${now}),
+            ('cli-configured', 'azure', 'Azure CLI', ${JSON.stringify(oauth)}, ${now}, ${now}),
+            ('key', 'azure', 'API key', ${JSON.stringify({ type: "key", key: "secret" })}, ${now}, ${now}),
+            ('other', 'openai', 'OAuth', ${JSON.stringify(oauth)}, ${now}, ${now})
+        `)
+
+        yield* db.run(sql`DELETE FROM migration WHERE id = ${azureCliCredentialMigration.id}`)
+        yield* DatabaseMigration.applyOnly(db, [azureCliCredentialMigration])
+
+        expect(yield* db.all(sql`SELECT id, value FROM credential ORDER BY id`)).toEqual([
+          {
+            id: "cli",
+            value: JSON.stringify({ type: "external", methodID: "azure-cli", metadata: { resourceName: "my-models" } }),
+          },
+          { id: "cli-configured", value: JSON.stringify({ type: "external", methodID: "azure-cli" }) },
+          { id: "key", value: JSON.stringify({ type: "key", key: "secret" }) },
+          { id: "other", value: JSON.stringify(oauth) },
+        ])
+      }),
     )
   })
 

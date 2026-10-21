@@ -65,7 +65,7 @@ export const ConnectionSchema = z
         baseUrl: '/api/proxy/aa5d8f0e-1c2b-4f77-9a6e-2f0b8d3c4e51',
         openapiUrl: '/api/proxy/aa5d8f0e-1c2b-4f77-9a6e-2f0b8d3c4e51/openapi.json',
         sessionId: 'ses_f6fd24757ffeaALWEb4AI7eXAf',
-        build: '0.0.0-beta-19059',
+        build: '2.1.2',
       },
     ],
   });

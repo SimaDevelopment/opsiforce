@@ -1,8 +1,8 @@
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginUpdate } from "@opencode-ai/core/plugin/update"
-import { InvalidRequestError, ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginUpdate } from "@opencode/core/plugin/update"
+import { InvalidRequestError, ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Cause, Effect, Exit } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"
 import { response } from "../location"
 
@@ -13,11 +13,9 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
         return yield* response(Plugin.Service.use((plugin) => plugin.list()))
       }),
     )
-    .handle("plugin.awaitActivation", () => Plugin.awaitActivation)
     .handle("plugin.check", (ctx) =>
       Effect.gen(function* () {
         const plugins = yield* Plugin.Service
-        yield* plugins.awaitActivation
         const inventory = yield* plugins.list()
         const targets = [
           ...new Set(inventory.flatMap((plugin) => (plugin.source.type === "package" ? [plugin.source.target] : []))),
@@ -57,7 +55,6 @@ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handler
     .handle("plugin.update", (ctx) =>
       Effect.gen(function* () {
         const plugins = yield* Plugin.Service
-        yield* plugins.awaitActivation
         const inventory = new Set(
           (yield* plugins.list()).flatMap((plugin) => (plugin.source.type === "package" ? [plugin.source.target] : [])),
         )

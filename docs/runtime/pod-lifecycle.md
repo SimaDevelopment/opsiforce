@@ -59,6 +59,7 @@ adrs: [0019]
 ### Suspension
 
 - Each environment has two Redis TTL keys, one per kind of [Keep-alive activity](../../GLOSSARY.md): agent activity and app activity. Each kind has its own idle timeout and the pod is suspended only once both have expired. The ProjectEnvironment serving a [Custom External Service](../../GLOSSARY.md) at its Default environment is never suspended for idleness ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
+- A Working Agent keeps the agent key alive: the backend touches it when a run starts, on each 60-second re-read while the environment is Working, and when it turns Idle, so the agent idle timeout counts from when the Agent goes Idle and a run driven from the Public API or a closed tab is never suspended mid-turn ([Agent Status](../agent-system/agent-status.md)). There is no cap on Working, ours or opencode's; a stuck level is cleared by the re-read, and a run waiting on a question or permission nobody answers holds the pod until someone answers or interrupts it.
 - Expiry is delivered by Redis keyspace notifications (`notify-keyspace-events Ex`, set in the Redis deployment); the listener suspends with the conditional update, deletes the pod, and is backstopped by a startup sweep for expiries missed while the backend was down.
 
 ## States

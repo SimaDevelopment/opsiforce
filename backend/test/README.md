@@ -94,8 +94,8 @@ verifies the paths the tests exercise and says nothing about the rest.
 ## The fake pod
 
 `startFakePod()` serves the opencode routes a connection and a probe need — the ordered, limited root
-list, session get, create and delete, `/api/health`, `session/active` — plus the prompt, message,
-wait, interrupt and inbox routes and the `/api/event` stream that native transport tests still use,
+list, session get, create and delete, `/api/info`, `session/active` — plus the prompt, message,
+experimental wait, interrupt and inbox routes and the `/api/event` stream that native transport tests still use,
 with in-memory state and the response envelopes from the vendored spec at
 `frontend/opencode/packages/protocol/openapi.json`. Anything else answers 404. Errors use opencode's
 own `_tag` envelopes, built by `podErrors` (`SessionNotFoundError`, `InvalidRequestError`,

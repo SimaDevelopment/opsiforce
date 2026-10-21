@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { Context, Effect, Layer, Option } from "effect"
-import { Node } from "@opencode-ai/util/effect/app-node"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Location } from "@opencode-ai/core/location"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import { buildLocationServiceMap } from "@opencode-ai/core/location-services"
-import { Project } from "@opencode-ai/core/project"
-import { AbsolutePath } from "@opencode-ai/core/schema"
+import { Node } from "@opencode/util/effect/app-node"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Location } from "@opencode/core/location"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import { buildLocationServiceMap } from "@opencode/core/location-services"
+import { Project } from "@opencode/core/project"
+import { AbsolutePath } from "@opencode/core/schema"
 import { tmpdir } from "../../fixture/tmpdir"
 import { testEffect } from "../../lib/effect"
 
@@ -100,6 +100,8 @@ describe("node build", () => {
         return Project.Service.of({
           list: () => Effect.succeed([]),
           update: () => Effect.die("not implemented"),
+          activate: () => Effect.void,
+          sweep: () => Effect.void,
           resolve: (directory) => Effect.succeed({ id: Project.ID.global, directory, canonical: directory }),
         })
       }),

@@ -64,6 +64,11 @@ endpoint returns JSON with virtual keys, rather than accepting HTTP 200 alone
 initialization errors. This connection change does not remove existing large log
 payloads or change log-content settings.
 
+### OpenAI turns go over HTTP
+
+- Both opencode configs (`agent-config/opencode.json` and `opencode.local.json`) set `providers.openai.settings.transport: "http"`, so opencode sends every OpenAI turn to Bifrost as an HTTP `POST /v1/responses`.
+- opencode ignores a setting it does not know, so after every opencode bump an OpenAI turn must still show a `POST /v1/responses` in Bifrost and no WebSocket session ([Upgrade opencode](../operations/upgrade-opencode.md)).
+
 ## Edge cases
 
 - Bifrost is active whenever `BIFROST_PROXY_URL` and admin credentials are set; without them, pods get a direct provider key only if the backend chart supplies one.

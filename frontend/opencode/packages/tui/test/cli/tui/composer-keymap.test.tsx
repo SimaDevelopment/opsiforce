@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { testRender } from "@opentui/solid"
-import { expect, test } from "bun:test"
-import { onMount } from "solid-js"
+import { afterAll, expect, test } from "bun:test"
+import { onMount, Show } from "solid-js"
 import { ConfigProvider } from "../../../src/config"
 import type { TuiKeybind } from "../../../src/config/keybind"
 import { ClientProvider } from "../../../src/context/client"
@@ -9,10 +9,13 @@ import { DataProvider, useData } from "../../../src/context/data"
 import { Keymap } from "../../../src/context/keymap"
 import { LocationProvider } from "../../../src/context/location"
 import { RouteProvider, useRoute } from "../../../src/context/route"
+import { TuiAppProvider } from "../../../src/context/runtime"
+import { StorageProvider } from "../../../src/context/storage"
 import { ThemeProvider } from "../../../src/context/theme"
 import { Composer } from "../../../src/routes/session/composer"
 import { DialogProvider } from "../../../src/ui/dialog"
 import { ToastProvider } from "../../../src/ui/toast"
+import { tmpdir } from "../../fixture/fixture"
 import { createApi, createEventStream, createFetch, directory, json } from "../../fixture/tui-client"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
@@ -21,9 +24,13 @@ const sessions = {
   parent: session("parent", "Parent"),
   "child-a": session("child-a", "First", "parent"),
   "child-b": session("child-b", "Second", "parent"),
+  "child-c": session("child-c", "Third", "parent"),
 }
 
-const shells = [shell("sh-a", "bun test"), shell("sh-b", "bun dev")]
+const state = await tmpdir()
+afterAll(() => state[Symbol.asyncDispose]())
+
+const shells = [shell("sh-a", "bun test"), shell("sh-b", "bun dev"), shell("sh-c", "python3 - <<'PY'\nimport json")]
 
 async function renderComposer(
   defaultTab: "subagents" | "shell",
@@ -78,6 +85,7 @@ async function renderComposer(
         data.session.sync("parent"),
         data.session.sync("child-a"),
         data.session.sync("child-b"),
+        data.session.sync("child-c"),
         data.shell.sync(),
       ])
         .then(() => wait(() => data.session.status("child-a") === "running"))
@@ -86,7 +94,12 @@ async function renderComposer(
     return (
       <>
         {focusedTextarea && <textarea focused={true} initialValue="draft" />}
-        <Composer sessionID="parent" open={true} defaultTab={defaultTab} onClose={() => closed++} />
+        {/* Mirrors the app, which keys the session route by sessionID and remounts it on navigation. */}
+        <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
+          {(sessionID) => (
+            <Composer sessionID={sessionID} open={true} defaultTab={defaultTab} onClose={() => closed++} />
+          )}
+        </Show>
       </>
     )
   }
@@ -102,27 +115,31 @@ async function renderComposer(
 
   const app = await testRender(
     () => (
-      <TestTuiContexts directory={directory}>
-        <ConfigProvider config={createTuiResolvedConfig({ keybinds, session: { terminal: false } })}>
-          <Keymap.Provider>
-            <ClientProvider api={createApi(calls.fetch)}>
-              <DataProvider directory={process.cwd()}>
-                <LocationProvider>
-                  <RouteProvider initialRoute={{ type: "session", sessionID: "parent" }}>
-                    <ThemeProvider mode="dark" source={{ discover: async () => ({}) }}>
-                      <ToastProvider>
-                        <DialogProvider>
-                          <Content />
-                        </DialogProvider>
-                      </ToastProvider>
-                    </ThemeProvider>
-                  </RouteProvider>
-                </LocationProvider>
-              </DataProvider>
-            </ClientProvider>
-            <AppExit />
-          </Keymap.Provider>
-        </ConfigProvider>
+      <TestTuiContexts directory={directory} paths={{ state: state.path }}>
+        <TuiAppProvider value={{ name: "test", version: "test", channel: "test" }}>
+          <StorageProvider>
+            <ConfigProvider config={createTuiResolvedConfig({ keybinds })}>
+              <Keymap.Provider>
+                <ClientProvider api={createApi(calls.fetch)}>
+                  <DataProvider directory={process.cwd()}>
+                    <LocationProvider>
+                      <RouteProvider initialRoute={{ type: "session", sessionID: "parent" }}>
+                        <ThemeProvider mode="dark" source={{ discover: async () => ({}) }}>
+                          <ToastProvider>
+                            <DialogProvider>
+                              <Content />
+                            </DialogProvider>
+                          </ToastProvider>
+                        </ThemeProvider>
+                      </RouteProvider>
+                    </LocationProvider>
+                  </DataProvider>
+                </ClientProvider>
+                <AppExit />
+              </Keymap.Provider>
+            </ConfigProvider>
+          </StorageProvider>
+        </TuiAppProvider>
       </TestTuiContexts>
     ),
     { width: 100, height: 20, kittyKeyboard: true },
@@ -165,6 +182,33 @@ test("disabled subagent bindings have no component fallbacks", async () => {
   }
 })
 
+test("the inactive subagent filter only changes with its toggle", async () => {
+  const composer = await renderComposer("subagents", {})
+  try {
+    expect(composer.app.captureCharFrame()).toContain("First")
+    expect(composer.app.captureCharFrame()).not.toContain("Third")
+
+    composer.app.mockInput.pressKey("a", { ctrl: true })
+    await composer.app.renderOnce()
+    expect(composer.app.captureCharFrame()).toContain("Third")
+    expect(composer.app.captureCharFrame()).not.toContain("First")
+
+    composer.app.mockInput.pressEnter()
+    expect(composer.route()).toMatchObject({ type: "session", sessionID: "child-c" })
+    await composer.app.renderOnce()
+    expect(composer.app.captureCharFrame()).toContain("Third")
+    expect(composer.app.captureCharFrame()).toContain("show active")
+    expect(composer.app.captureCharFrame()).not.toContain("First")
+
+    composer.app.mockInput.pressKey("a", { ctrl: true })
+    await composer.app.renderOnce()
+    expect(composer.app.captureCharFrame()).toContain("First")
+    expect(composer.app.captureCharFrame()).not.toContain("Third")
+  } finally {
+    composer.app.renderer.destroy()
+  }
+})
+
 test("disabled shell bindings have no component fallbacks", async () => {
   const composer = await renderComposer("shell", {
     "composer.shell.up": "none",
@@ -186,6 +230,17 @@ test("disabled shell bindings have no component fallbacks", async () => {
     composer.dispatch("composer.shell.kill")
     await wait(() => composer.removed.length === 1)
     expect(composer.removed).toEqual(["sh-a"])
+  } finally {
+    composer.app.renderer.destroy()
+  }
+})
+
+test("shell list shows one line per command", async () => {
+  const composer = await renderComposer("shell", {})
+  try {
+    const frame = composer.app.captureCharFrame()
+    expect(frame).toContain("python3 - <<'PY'")
+    expect(frame).not.toContain("import json")
   } finally {
     composer.app.renderer.destroy()
   }

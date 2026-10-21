@@ -23,13 +23,13 @@ test("assistant terminal diagnostics remain optional and round trip", () => {
         ...assistant,
         finish: "content-filter",
         rawFinish: "SAFETY",
-        providerState: { promptFeedback: { blockReason: "SAFETY" } },
+        native: { promptFeedback: { blockReason: "SAFETY" } },
       }),
     ),
   ).toMatchObject({
     finish: "content-filter",
     rawFinish: "SAFETY",
-    providerState: { promptFeedback: { blockReason: "SAFETY" } },
+    native: { promptFeedback: { blockReason: "SAFETY" } },
   })
 })
 

@@ -33,13 +33,18 @@ for (const orientation of ["horizontal", "vertical"] as const) {
     const [status, setStatus] = createSignal<SessionTabsStatus>(EMPTY_SESSION_TAB_STATUS)
     const [active, setActive] = createSignal("second")
     const [newTab, setNewTab] = createSignal(false)
-    const [preview, setPreview] = createSignal(false)
-    const settings: Info = { tabs: { enabled: true } }
+    const settings: Info = { tabs: { mode: "on" } }
+    const copied: string[] = []
+    const reopened: string[] = []
+    const [closed, setClosed] = createSignal([
+      { sessionID: "closed-new", title: "Most recently closed" },
+      { sessionID: "closed-old", title: "Earlier session" },
+    ])
     let config!: ReturnType<typeof useConfig>
     let theme!: ReturnType<typeof useTheme>
     function Colors() {
       config = useConfig()
-      theme = orientation === "vertical" ? useTheme("elevated") : useTheme()
+      theme = orientation === "vertical" ? useTheme() : useTheme()
       return null
     }
     const controller = {
@@ -57,16 +62,21 @@ for (const orientation of ["horizontal", "vertical"] as const) {
       },
       close() {},
       move() {},
-      isPreview: (sessionID: string) => sessionID === "first" && preview(),
-      promote(sessionID: string) {
-        if (sessionID === "first") setPreview(false)
+      add() {},
+      recentlyClosed: closed,
+      reopen(sessionID?: string) {
+        if (sessionID) reopened.push(sessionID)
+        setClosed((tabs) => tabs.filter((tab) => tab.sessionID !== sessionID))
       },
       detail: () => "project",
       status: (sessionID: string) => (sessionID === "first" ? status() : EMPTY_SESSION_TAB_STATUS),
     } satisfies SessionTabsController
     const app = await testRender(
       () => (
-        <TestTuiContexts paths={{ state: temporary.path }}>
+        <TestTuiContexts
+          paths={{ state: temporary.path }}
+          clipboard={{ read: async () => undefined, write: async (text) => void copied.push(text) }}
+        >
           <TuiAppProvider value={{ name: "test", version: "test", channel: "test" }}>
             <StorageProvider>
               <ConfigProvider
@@ -144,7 +154,7 @@ for (const orientation of ["horizontal", "vertical"] as const) {
             .captureSpans()
             .lines.flatMap((line) => line.spans)
             .find((span) => span.text.trim() === (attention === "question" ? "?" : "!"))?.fg
-        expect(indicatorColor()?.toInts()).toEqual(theme.text.status[attention].toInts())
+        expect(indicatorColor()?.toInts()).toEqual(theme.hue.accent[200].toInts())
         const glow = () => {
           const colors = app
             .captureSpans()
@@ -161,7 +171,7 @@ for (const orientation of ["horizontal", "vertical"] as const) {
         expect(full).toBeGreaterThan(0)
         setActive("first")
         await app.renderOnce()
-        expect(indicatorColor()?.toInts()).toEqual(theme.text.status[attention].toInts())
+        expect(indicatorColor()?.toInts()).toEqual(theme.hue.accent[200].toInts())
         const dim = glow()
         expect(dim).toBeGreaterThan(0)
         expect(dim).toBeLessThan(full)
@@ -177,7 +187,7 @@ for (const orientation of ["horizontal", "vertical"] as const) {
           .lines.flatMap((line) => line.spans)
           .find((span) => span.text.trim() === glyph)?.fg
         expect(color?.toInts()).toEqual(
-          (unread === "error" ? theme.text.feedback.error.default : theme.text.status.unread).toInts(),
+          (unread === "error" ? theme.text.feedback.error.base : theme.hue.accent[200]).toInts(),
         )
         await app.mockMouse.click(1, orientation === "vertical" ? 1 : 0)
         await app.renderOnce()
@@ -206,39 +216,45 @@ for (const orientation of ["horizontal", "vertical"] as const) {
       const column = rows[row]!.indexOf("First")
       await app.mockMouse.click(column, row, MouseButton.RIGHT)
       await app.waitForFrame((frame) => frame.includes("Rename"))
-      expect(app.captureCharFrame().split("\n")[row + 1]!.indexOf("Rename")).toBe(column + 1)
+      expect(app.captureCharFrame().split("\n")[row + 2]!.indexOf("Rename")).toBe(column + 1)
+      expect(app.captureCharFrame()).toContain("Copy session ID")
       expect(app.captureCharFrame()).toContain("Close")
       expect(app.captureCharFrame()).not.toContain("Keep open")
       expect(active()).toBe("second")
-      app.mockInput.pressKey("c", { ctrl: true })
+      await app.mockMouse.click(column + 1, row + 3)
+      expect(copied).toEqual(["first"])
       await app.waitForFrame((frame) => !frame.includes("Rename"))
-
-      setPreview(true)
-      await app.mockMouse.click(column, row, MouseButton.RIGHT)
-      await app.waitForFrame((frame) => frame.includes("Keep open"))
-      expect(app.captureCharFrame()).toContain("Rename")
-      expect(app.captureCharFrame()).toContain("Close")
-      expect(active()).toBe("second")
-      for (const size of [
-        { width: 18, height: 4, row: 1, column: 3 },
-        { width: 60, height: 10, row: row + 1, column: column + 1 },
-      ]) {
-        app.resize(size.width, size.height)
-        await app.waitForFrame((frame) => frame.split("\n")[0]?.length === size.width && frame.includes("Keep open"))
-        const rows = app.captureCharFrame().split("\n")
-        expect(rows[size.row]?.indexOf("Keep open")).toBe(size.column)
-        expect(rows[size.row + 1]?.indexOf("Rename")).toBe(size.column)
-        expect(rows[size.row + 2]?.indexOf("Close")).toBe(size.column)
-      }
-      const menu = app.captureCharFrame().split("\n")
-      const keepOpen = menu.findIndex((line) => line.includes("Keep open"))
-      await app.mockMouse.click(menu[keepOpen]!.indexOf("Keep open"), keepOpen)
-      await app.waitForFrame((frame) => !frame.includes("Rename"))
-      expect(preview()).toBe(false)
-      expect(active()).toBe("second")
 
       setNewTab(true)
       await app.waitForFrame((frame) => frame.includes("+ New session"))
+      for (const width of [60, 35]) {
+        app.renderer.resize(width, 10)
+        await app.renderOnce()
+        const rows = app.captureCharFrame().split("\n")
+        const row = rows.findIndex((line) => line.includes("+ New session"))
+        await app.mockMouse.click(rows[row]!.indexOf("+ New session") + 2, row, MouseButton.RIGHT)
+        await app.waitForFrame((frame) => frame.includes("Recently closed tabs"))
+        expect(app.captureCharFrame()).not.toContain("New tab")
+        const menu = app.captureCharFrame().split("\n")
+        expect(menu.some((line) => line.trim() === "New session")).toBe(false)
+        const earlier = menu.findIndex((line) => line.includes("Earlier session"))
+        expect(earlier).toBeGreaterThan(menu.findIndex((line) => line.includes("Most recently closed")))
+        await app.mockMouse.click(menu[earlier]!.indexOf("Earlier session"), earlier)
+        expect(reopened.at(-1)).toBe("closed-old")
+        await app.waitForFrame((frame) => !frame.includes("Recently closed tabs"))
+        setClosed([
+          { sessionID: "closed-new", title: "Most recently closed" },
+          { sessionID: "closed-old", title: "Earlier session" },
+        ])
+      }
+      app.renderer.resize(60, 20)
+      setClosed(Array.from({ length: 11 }, (_, index) => ({ sessionID: `closed-${index}`, title: `History ${index + 1}` })))
+      await app.renderOnce()
+      const historyRows = app.captureCharFrame().split("\n")
+      const newRow = historyRows.findIndex((line) => line.includes("+ New session"))
+      await app.mockMouse.click(historyRows[newRow]!.indexOf("+ New session") + 2, newRow, MouseButton.RIGHT)
+      await app.waitForFrame((frame) => frame.includes("History 10"))
+      expect(app.captureCharFrame()).not.toContain("History 11")
     } finally {
       app.renderer.destroy()
     }

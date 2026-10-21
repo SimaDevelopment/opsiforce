@@ -1,15 +1,18 @@
 export * as SessionRunnerRetry from "./retry.js"
 
-import { AIError } from "@opencode-ai/ai"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Model } from "@opencode-ai/schema/model"
-import { SessionError } from "@opencode-ai/schema/session-error"
-import { Clock, Duration, Effect, Pull, Schedule } from "effect"
+import { AIError, isRetryable } from "@opencode/ai"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { SessionError } from "@opencode/schema/session-error"
+import { Clock, Duration, Effect } from "effect"
 import { Bus } from "../../bus.js"
+import { ModelRetry } from "../../model-retry.js"
 import type { PluginHooks } from "../../plugin/hooks.js"
 import { SessionEvent } from "../event.js"
 import { SessionMessage } from "../message.js"
 import { SessionSchema } from "../schema.js"
+
+export { isRetryable }
 
 interface Input {
   readonly cause: AIError
@@ -26,84 +29,34 @@ export interface Decision {
   readonly delay: number
 }
 
-export function isRetryable(error: AIError) {
-  const override = error.reason.http?.headers["x-should-retry"]
-  if (override === "true") return true
-  if (override === "false") return false
-  switch (error.reason._tag) {
-    case "RateLimit":
-    case "ProviderInternal":
-      return true
-    case "Transport":
-      return error.reason.delivery === undefined || error.reason.delivery === "not-sent"
-    case "InvalidProviderOutput":
-      return error.reason.classification === "incomplete-stream"
-    // Unrecognized failures retry: classification records affirmative
-    // deterministic evidence, and transient failures are exactly the ones
-    // that arrive in shapes no classifier anticipates.
-    case "UnknownProvider":
-      return true
-    case "Authentication":
-    case "QuotaExceeded":
-    case "ContentPolicy":
-    case "InvalidRequest":
-    case "UnsupportedOperation":
-    case "NoRoute":
-      return false
-    default: {
-      const exhaustive: never = error.reason
-      return exhaustive
-    }
-  }
-}
-
-/** Bound provider-requested delays so a hostile or buggy retry-after cannot stall a session for hours. */
-const RETRY_AFTER_MAX = Duration.toMillis("15 minutes")
-
-const retryAfter = (input: Input) => {
-  if (input.cause.reason._tag === "RateLimit" || input.cause.reason._tag === "ProviderInternal")
-    return input.cause.reason.retryAfterMs === undefined
-      ? undefined
-      : Math.min(input.cause.reason.retryAfterMs, RETRY_AFTER_MAX)
-  return undefined
-}
-
-const schedule = Schedule.max([Schedule.exponential("2 seconds"), Schedule.recurs(4)]).pipe(
-  Schedule.jittered,
-  Schedule.setInputType<Input>(),
-  Schedule.modifyDelay(({ input, duration: delay }) => {
-    const minimum = retryAfter(input)
-    const duration = minimum === undefined ? delay : Duration.max(delay, Duration.millis(minimum))
-    return Effect.succeed(Duration.millis(Math.ceil(Duration.toMillis(duration))))
-  }),
-)
-
-export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
+export const policy = (sessionID: SessionSchema.ID) =>
   Effect.gen(function* () {
-    const step = yield* Schedule.toStep(schedule)
-    let attempt = 1
-    const decide = (input: Input) =>
+    const decide = yield* ModelRetry.policy
+    return (input: Input) =>
       Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis
-        const next = yield* step(now, input).pipe(Pull.catchDone(() => Effect.succeed(undefined)))
+        const next = yield* decide(input)
         if (!next) return { retry: false as const }
-        const [, duration] = next
-        attempt++
-        const delay = Math.ceil(Duration.toMillis(duration))
         const event: PluginHooks.Domains["session"]["retry"] = {
           sessionID,
           agent: input.agent,
           model: input.model,
           error: input.error,
-          attempt,
-          decision: input.retry ? { retry: true, delay } : { retry: false },
+          attempt: next.attempt,
+          decision: next.retry ? { retry: true, delay: next.delay } : { retry: false },
         }
         yield* input.hook(event)
         if (!event.decision.retry) return event.decision
         const normalized =
-          Number.isFinite(event.decision.delay) && event.decision.delay >= 0 ? Math.ceil(event.decision.delay) : delay
-        return { retry: true as const, attempt, delay: normalized }
+          Number.isFinite(event.decision.delay) && event.decision.delay >= 0
+            ? Math.ceil(event.decision.delay)
+            : next.delay
+        return { retry: true as const, attempt: next.attempt, delay: normalized }
       })
+  })
+
+export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
+  Effect.gen(function* () {
+    const decide = yield* policy(sessionID)
     const wait = (input: {
       readonly decision: Decision
       readonly assistantMessageID: SessionMessage.ID

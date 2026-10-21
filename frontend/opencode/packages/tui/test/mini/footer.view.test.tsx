@@ -1,10 +1,17 @@
 /** @jsxImportSource @opentui/solid */
-import { expect, test } from "bun:test"
-import { BoxRenderable, ImageRenderable, RGBA, type CliRenderer, type RootRenderable } from "@opentui/core"
+import { afterAll, expect, test } from "bun:test"
+import {
+  BoxRenderable,
+  ImageRenderable,
+  RGBA,
+  TextareaRenderable,
+  type CliRenderer,
+  type RootRenderable,
+} from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
-import type { FormInfo } from "@opencode-ai/client/promise"
+import type { FormInfo } from "@opencode/client/promise"
 import { Keymap } from "../../src/context/keymap"
 import type { ClipboardContent, ClipboardService } from "../../src/context/clipboard"
 import {
@@ -14,7 +21,6 @@ import {
   RunCommandMenuBody,
   RunModelSelectBody,
   RunSettingsBody,
-  RunSkillSelectBody,
   RunSubagentSelectBody,
   RunVariantSelectBody,
 } from "../../src/mini/footer.command"
@@ -24,6 +30,7 @@ import { RunEntryContent } from "../../src/mini/scrollback.writer"
 import { RUN_THEME_FALLBACK, RUN_THEME_FALLBACK_LIGHT, resolveRunTheme, type RunTheme } from "../../src/mini/theme"
 import { BLOCK_SOFT_SLIDE, SEED_MONO, WORK_SPINNERS } from "../../src/ui/one-cell-motion"
 import { resolveMiniSettings } from "../../src/mini/runtime.boot"
+import { applyMiniSettingChange } from "../../src/mini/verbosity"
 import type {
   FooterQueuedPrompt,
   FooterState,
@@ -48,15 +55,21 @@ import { tmpdir } from "../fixture/fixture"
 import { diffImageFixture } from "../fixture/diff-image"
 
 const tuiConfig = createTuiResolvedConfig()
+const themeRenderer = await createTestRenderer({})
+afterAll(async () => {
+  themeRenderer.renderer.destroy()
+  await themeRenderer.renderer.closed
+})
 
 async function nativeLightTheme() {
   await using tmp = await tmpdir()
-  await Bun.write(`${tmp.path}/themes/mini-native-light.json`, JSON.stringify({ version: 2, light: {} }))
+  await Bun.write(`${tmp.path}/themes/mini-native-light.json`, JSON.stringify({ light: {} }))
   const previous = process.env.OPENCODE_CONFIG_DIR
   process.env.OPENCODE_CONFIG_DIR = tmp.path
   try {
     return await resolveRunTheme(
       {
+        nativeScene: themeRenderer.renderer.nativeScene,
         themeMode: "light",
         getPalette: async (): ReturnType<CliRenderer["getPalette"]> => {
           throw new Error("Palette unavailable")
@@ -224,7 +237,7 @@ async function renderFooter(
         <Harness />
       </box>
     ),
-    { width: input.width ?? 100, height: input.height ?? 8, kittyKeyboard: true },
+    { width: input.width ?? 100, height: input.height ?? 8, kittyKeyboard: true, exitOnCtrlC: false },
   )
 
   return {
@@ -407,6 +420,37 @@ test("mini retains ordinary paste ANSI stripping and newline normalization", asy
   }
 })
 
+test("mini places a mention and the cursor at measured offsets after wide text", async () => {
+  const sent = Promise.withResolvers<RunPrompt>()
+  const app = await renderFooter({
+    agents: ["helper", "助手"].map((id) => ({ id, name: id, mode: "subagent" as const, hidden: false })),
+    onSubmit: (prompt) => {
+      sent.resolve(prompt)
+      return true
+    },
+  })
+  try {
+    await app.renderOnce()
+    await app.mockInput.pasteBracketedText("\t👨‍👩‍👧நி @助")
+    await app.waitForFrame((frame) => frame.includes("@助手") && !frame.includes("@helper"))
+    app.mockInput.pressEnter()
+    // Down on the last row moves the cursor to the end of the text.
+    app.mockInput.pressArrow("left")
+    app.mockInput.pressArrow("down")
+    await app.mockInput.typeText("x")
+    expect(app.renderer.currentFocusedEditor?.plainText).toBe("\t👨‍👩‍👧நி @助手 x")
+    app.mockInput.pressEnter()
+    const buffer = app.renderer.currentFocusedEditor!.editBuffer
+    const [start, value] = [buffer.measureText("\t👨‍👩‍👧நி "), "@助手"]
+    expect(await sent.promise).toMatchObject({
+      text: "\t👨‍👩‍👧நி @助手 x",
+      parts: [{ type: "agent", name: "助手", source: { start, end: start + buffer.measureText(value), value } }],
+    })
+  } finally {
+    app.cleanup()
+  }
+})
+
 test("a failed clipboard read cancels a waiting submit without losing the draft", async () => {
   const pending = Promise.withResolvers<ClipboardContent | undefined>()
   const submitted: RunPrompt[] = []
@@ -584,8 +628,8 @@ test("direct footer preserves a partial multi-field form draft across permission
     "api".split("").forEach((key) => app.mockInput.pressKey(key))
     app.mockInput.pressEnter()
     await app.renderOnce()
-    "keep this draft".split("").forEach((key) => app.mockInput.pressKey(key))
-    expect(app.renderer.currentFocusedEditor?.plainText).toBe("keep this draft")
+    "keep this 草稿".split("").forEach((key) => app.mockInput.pressKey(key))
+    expect(app.renderer.currentFocusedEditor?.plainText).toBe("keep this 草稿")
 
     app.setView({
       type: "permission",
@@ -602,7 +646,8 @@ test("direct footer preserves a partial multi-field form draft across permission
     app.setView({ type: "form", request })
     await app.renderOnce()
     expect(app.captureCharFrame()).toContain("2/2")
-    expect(app.renderer.currentFocusedEditor?.plainText).toBe("keep this draft")
+    app.mockInput.pressKey("!")
+    expect(app.renderer.currentFocusedEditor?.plainText).toBe("keep this 草稿!")
 
     app.setView({ type: "prompt" })
     await app.renderOnce()
@@ -835,7 +880,6 @@ test("direct command panel renders grouped actions without catalog commands", as
   const [commands] = createSignal<RunCommand[] | undefined>([
     command({ name: "review", description: "Review code" }),
     command({ name: "deploy", description: "Deploy prompt", source: "mcp" }),
-    command({ name: "internal", description: "Skill command", source: "skill" }),
   ])
   const [subagents] = createSignal([])
   const [variants] = createSignal(["high", "minimal"])
@@ -855,7 +899,6 @@ test("direct command panel renders grouped actions without catalog commands", as
           onAgent={() => {}}
           onModel={() => {}}
           onEditor={() => {}}
-          onSkill={() => {}}
           onSubagent={() => {}}
           onQueued={() => {}}
           onVariant={() => {}}
@@ -883,14 +926,11 @@ test("direct command panel renders grouped actions without catalog commands", as
     expect(frame).toContain("Search")
     expect(frame).toContain("Session")
     expect(frame).toContain("Agent")
-    expect(frame).toContain("Prompt")
     expect(frame).toContain("Open editor")
     expect(frame).toContain("/editor")
     expect(frame).toContain("Show status")
     expect(frame).toContain("Compact session")
     expect(frame).toContain("/compact")
-    expect(frame).toContain("Skills")
-    expect(frame).toContain("/skills")
     expect(frame.match(/\bAgent\b/g)?.length).toBe(1)
     expect(frame).not.toContain("┌")
     expect(frame).not.toContain("┃")
@@ -936,7 +976,7 @@ test.each([false, true])("settings change preferences and preview the work spinn
           settings={settings}
           onClose={() => {}}
           onChange={(change) => {
-            setSettings((current) => ({ ...current, [change.key]: change.value }))
+            setSettings((current) => applyMiniSettingChange(current, change))
           }}
           mono={mono}
           animations={animations()}
@@ -951,7 +991,9 @@ test.each([false, true])("settings change preferences and preview the work spinn
     const frame = app.captureCharFrame()
     expect(frame).toContain("Settings")
     expect(frame).toMatch(/^ +Settings/m)
+    expect(frame).toContain("Verbosity")
     expect(frame).toContain("Thinking")
+    expect(frame).toContain("Tools")
     expect(frame).toContain("Shell")
     expect(frame).toContain("Turn summary")
     expect(frame).toContain("Footer details")
@@ -962,12 +1004,35 @@ test.each([false, true])("settings change preferences and preview the work spinn
 
     app.mockInput.pressKey("ARROW_RIGHT")
     await app.renderOnce()
+    expect(settings()).toEqual(applyMiniSettingChange(resolveMiniSettings(), { key: "verbosity", value: "everything" }))
+
+    app.mockInput.pressKey("ARROW_LEFT")
+    await app.renderOnce()
+    expect(settings()).toEqual(resolveMiniSettings())
+
+    app.mockInput.pressKey("ARROW_LEFT")
+    await app.renderOnce()
+    expect(settings()).toEqual(applyMiniSettingChange(resolveMiniSettings(), { key: "verbosity", value: "quiet" }))
+
+    app.mockInput.pressKey("ARROW_LEFT")
+    await app.renderOnce()
+    expect(settings()).toEqual(applyMiniSettingChange(resolveMiniSettings(), { key: "verbosity", value: "quiet" }))
+
+    app.mockInput.pressKey("ARROW_RIGHT")
+    await app.renderOnce()
+    expect(settings()).toEqual(resolveMiniSettings())
+
+    app.mockInput.pressKey("ARROW_DOWN")
+    app.mockInput.pressKey("ARROW_RIGHT")
+    await app.renderOnce()
 
     expect(settings()).toEqual({
       ...resolveMiniSettings(),
-      thinking: "show",
+      thinking: "hide",
     })
+    expect(app.captureCharFrame()).toContain("Custom")
 
+    app.mockInput.pressKey("ARROW_DOWN")
     app.mockInput.pressKey("ARROW_DOWN")
     app.mockInput.pressKey("ARROW_DOWN")
     app.mockInput.pressKey("ARROW_RIGHT")
@@ -975,7 +1040,7 @@ test.each([false, true])("settings change preferences and preview the work spinn
 
     expect(settings()).toEqual({
       ...resolveMiniSettings(),
-      thinking: "show",
+      thinking: "hide",
       turn_summary: "hide",
     })
 
@@ -1028,93 +1093,6 @@ test.each([false, true])("settings change preferences and preview the work spinn
   }
 })
 
-test("direct skill panel renders searchable skill list", async () => {
-  const [commands] = createSignal<RunCommand[] | undefined>([
-    command({ name: "review", description: "Review code" }),
-    command({ name: "internal", description: "Skill command", source: "skill" }),
-    command({ name: "formatter", description: "Apply formatter fixes", source: "skill" }),
-  ])
-  const selected: string[] = []
-
-  const app = await testRender(
-    () => (
-      <box width={100} height={RUN_COMMAND_PANEL_ROWS}>
-        <RunSkillSelectBody
-          theme={() => RUN_THEME_FALLBACK.footer}
-          commands={commands}
-          onClose={() => {}}
-          onSelect={(name) => {
-            selected.push(name)
-          }}
-        />
-      </box>
-    ),
-    {
-      width: 100,
-      height: RUN_COMMAND_PANEL_ROWS,
-    },
-  )
-
-  try {
-    await app.renderOnce()
-    const frame = app.captureCharFrame()
-
-    expect(frame).toContain("Skills")
-    expect(frame).toContain("Search")
-    expect(frame).toContain("internal")
-    expect(frame).not.toContain("/internal")
-    expect(frame).toContain("formatter")
-    expect(frame).toContain("Apply formatter fixes")
-    expect(frame).not.toContain("review")
-    await app.mockInput.typeText("format")
-    await app.renderOnce()
-    expect(app.captureCharFrame()).not.toContain("internal")
-    app.mockInput.pressEnter()
-    expect(selected).toEqual(["formatter"])
-  } finally {
-    app.renderer.destroy()
-  }
-})
-
-test("direct skill panel truncates long descriptions from the end", async () => {
-  const [commands] = createSignal<RunCommand[] | undefined>([
-    command({
-      name: "terminal-control",
-      description:
-        "Control and test terminal applications, REPLs, interactive CLIs, shell processes, OpenTUI applications, or other terminal-backed workflows.",
-      source: "skill",
-    }),
-  ])
-
-  const app = await testRender(
-    () => (
-      <box width={100} height={RUN_COMMAND_PANEL_ROWS}>
-        <RunSkillSelectBody
-          theme={() => RUN_THEME_FALLBACK.footer}
-          commands={commands}
-          onClose={() => {}}
-          onSelect={() => {}}
-        />
-      </box>
-    ),
-    {
-      width: 100,
-      height: RUN_COMMAND_PANEL_ROWS,
-    },
-  )
-
-  try {
-    await app.renderOnce()
-    const frame = app.captureCharFrame()
-
-    expect(frame).toContain("terminal-control")
-    expect(frame).toContain("Control and test terminal applications")
-    expect(frame).not.toMatch(/application(?:…|\.\.\.)ocess/)
-  } finally {
-    app.renderer.destroy()
-  }
-})
-
 test("direct command panel shows subagent entry when available", async () => {
   const [commands] = createSignal<RunCommand[] | undefined>([])
   const [subagents] = createSignal([subagent({ sessionID: "s-1", label: "Explore", description: "Inspect auth flow" })])
@@ -1134,7 +1112,6 @@ test("direct command panel shows subagent entry when available", async () => {
           onAgent={() => {}}
           onModel={() => {}}
           onEditor={() => {}}
-          onSkill={() => {}}
           onSubagent={() => {}}
           onQueued={() => {}}
           onVariant={() => {}}
@@ -1185,7 +1162,6 @@ test("direct command panel keeps completed subagents available", async () => {
           onAgent={() => {}}
           onModel={() => {}}
           onEditor={() => {}}
-          onSkill={() => {}}
           onSubagent={() => {}}
           onQueued={() => {}}
           onVariant={() => {}}
@@ -1337,7 +1313,7 @@ test.each(["queue", "steer"] as const)("direct footer toggles and deletes pendin
     expect(frame).toContain("Pending prompts")
     expect(frame).toContain("follow up")
     expect(frame).toContain(delivery === "queue" ? "queued" : "steering")
-    expect(frame).toContain(`enter ${delivery === "queue" ? "steer" : "queue"} · ctrl+d delete`)
+    expect(frame).toContain(`enter ${delivery === "queue" ? "steer" : "queue"} · ctrl+d delete · ctrl+u undo`)
     expect(frame).not.toContain("┌")
     expect(frame).not.toContain("┃")
     expectPaletteList(list, 0)
@@ -1358,6 +1334,139 @@ test.each(["queue", "steer"] as const)("direct footer toggles and deletes pendin
     expect(actions.at(-1)).toBe("cancel:m-1")
     expect(app.captureCharFrame()).not.toContain("Pending prompts")
     expect(app.captureCharFrame()).not.toContain("1 pending")
+  } finally {
+    app.cleanup()
+  }
+})
+
+test("undo appends a pending prompt to the draft", async () => {
+  const actions: string[] = []
+  const submitted: RunPrompt[] = []
+  const queued: FooterQueuedPrompt = {
+    messageID: "m-1",
+    prompt: {
+      messageID: "m-1",
+      text: "look at main.ts",
+      parts: [],
+    },
+    delivery: "queue",
+  }
+  const app = await renderFooter({
+    queuedPrompts: [queued],
+    onSubmit: (prompt) => {
+      submitted.push(prompt)
+      return true
+    },
+    onQueuedPromptAction: async (action, inboxID) => {
+      actions.push(`${action}:${inboxID}`)
+      app.setQueuedPrompts([])
+    },
+  })
+  try {
+    await app.renderOnce()
+    await app.mockInput.typeText("existing draft")
+    app.mockInput.pressKey("x", { ctrl: true })
+    app.mockInput.pressKey("q")
+    await app.renderOnce()
+    app.mockInput.pressKey("u", { ctrl: true })
+    await Bun.sleep(0)
+    await app.renderOnce()
+    expect(actions).toEqual(["cancel:m-1"])
+    expect(app.captureCharFrame()).toContain("existing draft")
+    expect(app.captureCharFrame()).toContain("look at main.ts")
+    expect(app.captureCharFrame()).not.toContain("Pending prompts")
+    await app.waitFor(() => app.renderer.currentFocusedEditor instanceof TextareaRenderable)
+    app.mockInput.pressEnter()
+    await Bun.sleep(0)
+    await app.renderOnce()
+    expect(submitted).toMatchObject([{ text: "existing draft\n\nlook at main.ts" }])
+    expect(submitted[0].messageID).toBeUndefined()
+  } finally {
+    app.cleanup()
+  }
+})
+
+test("undo leaves the queue and input alone when cancellation fails", async () => {
+  const statuses: string[] = []
+  const app = await renderFooter({
+    queuedPrompts: [{ messageID: "m-1", prompt: { text: "still queued", parts: [] }, delivery: "queue" }],
+    onStatus: (status) => statuses.push(status),
+    onQueuedPromptAction: async () => {
+      throw new Error("cancel failed")
+    },
+  })
+  try {
+    await app.renderOnce()
+    app.mockInput.pressKey("x", { ctrl: true })
+    app.mockInput.pressKey("q")
+    await app.renderOnce()
+    app.mockInput.pressKey("u", { ctrl: true })
+    await Bun.sleep(0)
+    await app.renderOnce()
+    expect(statuses.at(-1)).toContain("failed to undo pending prompt: cancel failed")
+    expect(app.captureCharFrame()).toContain("Pending prompts")
+    app.mockInput.pressKey("ESCAPE")
+    await app.renderOnce()
+    expect(app.captureCharFrame()).not.toContain("still queued")
+  } finally {
+    app.cleanup()
+  }
+})
+
+test("undo retains mentioned files when the prompt is sent again", async () => {
+  const submitted: RunPrompt[] = []
+  const app = await renderFooter({
+    queuedPrompts: [
+      {
+        messageID: "m-1",
+        delivery: "queue",
+        prompt: {
+          messageID: "m-1",
+          text: "inspect @src/main.ts please",
+          parts: [
+            {
+              type: "file",
+              url: "file:///src/main.ts",
+              filename: "main.ts",
+              source: { type: "file", path: "src/main.ts", text: { start: 8, end: 20, value: "@src/main.ts" } },
+            },
+          ],
+        },
+      },
+    ],
+    onQueuedPromptAction: async () => {
+      // A permission can unmount the composer while the cancellation is in flight.
+      app.setView({
+        type: "permission",
+        request: { id: "per_undo", sessionID: "ses_child", action: "read", resources: ["src/index.ts"] },
+      })
+      app.setQueuedPrompts([])
+    },
+    onSubmit: (prompt) => {
+      submitted.push(prompt)
+      return true
+    },
+  })
+  try {
+    await app.renderOnce()
+    await app.mockInput.pasteBracketedText("\t👨‍👩‍👧நி\f")
+    await Bun.sleep(0)
+    app.mockInput.pressKey("x", { ctrl: true })
+    app.mockInput.pressKey("q")
+    await app.renderOnce()
+    app.mockInput.pressKey("u", { ctrl: true })
+    await Bun.sleep(0)
+    app.setView({ type: "prompt" })
+    await Bun.sleep(0)
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("inspect @src/main.ts please")
+    await app.mockInput.typeText("!")
+    app.mockInput.pressEnter()
+    await Bun.sleep(0)
+    expect(submitted).toMatchObject([
+      { text: "\t👨‍👩‍👧நி\f\n\ninspect @src/main.ts please!", parts: [{ type: "file", url: "file:///src/main.ts" }] },
+    ])
+    expect(submitted[0].messageID).toBeUndefined()
   } finally {
     app.cleanup()
   }
@@ -1601,35 +1710,6 @@ test("direct footer submits slash autocomplete selections without dispatching sh
   }
 })
 
-test("direct footer slash autocomplete keeps a real skills command", async () => {
-  const submits: RunPrompt[] = []
-  const app = await renderFooter({
-    commands: [
-      command({ name: "skills", description: "Run the real skills command" }),
-      command({ name: "formatter", description: "Apply formatter fixes", source: "skill" }),
-    ],
-    onSubmit(prompt) {
-      submits.push(prompt)
-      return true
-    },
-  })
-
-  try {
-    await app.renderOnce()
-    "/skills".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits).toEqual([
-      { text: "/skills ", parts: [], command: { name: "skills", arguments: "" }, delivery: "steer" },
-    ])
-    expect(app.captureCharFrame()).not.toContain("Apply formatter fixes")
-  } finally {
-    app.cleanup()
-  }
-})
-
 test("direct footer closes settings with ctrl-c instead of arming exit", async () => {
   const app = await renderFooter({ height: 20 })
 
@@ -1651,188 +1731,11 @@ test("direct footer closes settings with ctrl-c instead of arming exit", async (
 })
 
 test("selectedCommand validates the bound command and refreshes its arguments", () => {
-  expect(selectedCommand("/opencode-ts", { name: "opencode-ts", arguments: "", source: "skill" })).toEqual({
-    name: "opencode-ts",
-    arguments: "",
-    source: "skill",
-  })
   expect(selectedCommand("/deploy prod", { name: "deploy", arguments: "" })).toEqual({
     name: "deploy",
     arguments: "prod",
   })
   expect(selectedCommand("/other", { name: "deploy", arguments: "" })).toBeUndefined()
-})
-
-test("direct footer tags skill slash submissions with their catalog source", async () => {
-  const submits: RunPrompt[] = []
-  const app = await renderFooter({
-    commands: [command({ name: "formatter", description: "Apply formatter fixes", source: "skill" })],
-    onSubmit(prompt) {
-      submits.push(prompt)
-      return true
-    },
-  })
-
-  try {
-    await app.renderOnce()
-    "/formatter src".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits).toEqual([
-      {
-        text: "/formatter src",
-        parts: [],
-        command: { name: "formatter", arguments: "src", source: "skill" },
-        delivery: "steer",
-      },
-    ])
-  } finally {
-    app.cleanup()
-  }
-})
-
-test("direct footer submits a selected leading skill as a prompt attachment", async () => {
-  const submits: RunPrompt[] = []
-  const app = await renderFooter({
-    commands: [command({ name: "formatter", description: "Apply formatter fixes", source: "skill" })],
-    onSubmit(prompt) {
-      submits.push(prompt)
-      return true
-    },
-  })
-
-  try {
-    await app.renderOnce()
-    "/forma".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-    "src".split("").forEach((key) => app.mockInput.pressKey(key))
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits).toEqual([
-      {
-        text: "/formatter src",
-        parts: [
-          {
-            type: "skill",
-            id: "formatter",
-            source: { start: 0, end: 10, value: "/formatter" },
-          },
-        ],
-        delivery: "steer",
-      },
-    ])
-  } finally {
-    app.cleanup()
-  }
-})
-
-test("direct footer preserves a selected skill after wide text", async () => {
-  const submits: RunPrompt[] = []
-  const app = await renderFooter({
-    commands: [command({ name: "formatter", description: "Apply formatter fixes", source: "skill" })],
-    onSubmit(prompt) {
-      submits.push(prompt)
-      return true
-    },
-  })
-
-  try {
-    await app.renderOnce()
-    "中 /forma".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits[0]?.parts).toEqual([
-      {
-        type: "skill",
-        id: "formatter",
-        source: { start: 3, end: 13, value: "/formatter" },
-      },
-    ])
-  } finally {
-    app.cleanup()
-  }
-})
-
-// OpenTUI currently segfaults Bun while tearing down this composer-to-skill-panel transition.
-// Re-enable after the upstream renderer teardown fix lands.
-test.skip("direct footer skill picker inserts an editable bound skill command", async () => {
-  const submits: RunPrompt[] = []
-  const app = await renderFooter({
-    commands: [command({ name: "new", description: "Skill named new", source: "skill" })],
-    onSubmit(prompt) {
-      submits.push(prompt)
-      return true
-    },
-  })
-
-  try {
-    await app.renderOnce()
-    "/skills".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(app.captureCharFrame()).toContain("Skill named new")
-
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits).toEqual([])
-    expect(app.captureCharFrame()).toContain("/new")
-
-    "task".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits).toEqual([
-      { text: "/new task", parts: [], command: { name: "new", arguments: "task", source: "skill" } },
-    ])
-  } finally {
-    app.cleanup()
-  }
-})
-
-// OpenTUI currently segfaults Bun while tearing down this skill-panel close transition.
-// Re-enable after the upstream renderer teardown fix lands.
-test.skip("direct footer clears the synthetic skills draft when the panel closes", async () => {
-  const submits: RunPrompt[] = []
-  const app = await renderFooter({
-    commands: [command({ name: "formatter", description: "Apply formatter fixes", source: "skill" })],
-    onSubmit(prompt) {
-      submits.push(prompt)
-      return true
-    },
-  })
-
-  try {
-    await app.renderOnce()
-    "/skills".split("").forEach((key) => app.mockInput.pressKey(key))
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(app.captureCharFrame()).toContain("Apply formatter fixes")
-
-    app.mockInput.pressKey("c", { ctrl: true })
-    await app.renderOnce()
-    app.mockInput.pressEnter()
-    await app.renderOnce()
-
-    expect(submits).toEqual([])
-    expect(app.captureCharFrame()).not.toContain("/skills")
-  } finally {
-    app.cleanup()
-  }
 })
 
 test("direct footer counts queued and steering work while running", async () => {
@@ -1987,6 +1890,7 @@ test.each([8, 12])("production footer grows for wrapped instructions in %i rows"
     miniSettings: {
       current: {
         thinking: "hide",
+        tools: "show",
         shell_output: "hide",
         turn_summary: "show",
         footer: "show",
@@ -2054,6 +1958,7 @@ test.each(["ctrl+i", "none"])("takeovers preserve configured shortcuts with hidd
     state: { phase: "running", interrupt: 1 },
     miniSettings: {
       thinking: "hide",
+      tools: "show",
       shell_output: "hide",
       turn_summary: "show",
       footer: "hide",
@@ -2371,6 +2276,7 @@ test("direct footer hides routine activity and shows explicit notices", async ()
     currentAgent: "Plan",
     miniSettings: {
       thinking: "hide",
+      tools: "show",
       shell_output: "hide",
       turn_summary: "show",
       footer: "hide",
@@ -2425,7 +2331,7 @@ test("direct permission rejection submits through keymap return binding", async 
       <Keymap.Provider config={tuiConfig}>
         <RejectField
           theme={RUN_THEME_FALLBACK.footer}
-          text=""
+          text={"中\t"}
           disabled={false}
           onChange={(input) => {
             text = input
@@ -2455,7 +2361,7 @@ test("direct permission rejection submits through keymap return binding", async 
     expect(app.captureCharFrame()).toContain("retry")
     app.mockInput.pressEnter()
     await app.renderOnce()
-    expect(submits).toEqual(["retry"])
+    expect(submits).toEqual(["中\tretry"])
   } finally {
     app.renderer.currentFocusedRenderable?.blur()
     app.renderer.currentFocusedEditor?.blur()

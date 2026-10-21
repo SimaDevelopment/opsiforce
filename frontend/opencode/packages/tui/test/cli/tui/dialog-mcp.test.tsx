@@ -22,6 +22,7 @@ test.each(["enter", "space"])("starts OAuth with %s for an MCP server requiring 
 
   try {
     await fixture.app.waitForFrame((frame) => frame.includes("Sign in required"))
+    expect(fixture.app.captureCharFrame()).not.toContain("view error")
     if (key === "enter") fixture.app.mockInput.pressEnter()
     else fixture.app.mockInput.pressKey(" ")
     await fixture.app.waitForFrame((frame) => frame.includes("Waiting for authorization"))
@@ -39,8 +40,9 @@ test("opens an investigation draft for a failed MCP server at its originating lo
 
   try {
     await fixture.app.waitForFrame((frame) => frame.includes("Failed !"))
+    expect(fixture.app.captureCharFrame()).toContain("view error enter")
     fixture.app.mockInput.pressEnter()
-    await fixture.app.waitForFrame((frame) => frame.includes("i investigate"))
+    await fixture.app.waitForFrame((frame) => frame.includes("investigate i"))
     fixture.app.mockInput.pressKey("i")
     await fixture.app.waitForFrame((frame) => !frame.includes("MCP server: linear"))
 
@@ -79,7 +81,7 @@ async function renderMcp(options?: { failed?: boolean; location?: { directory: s
             name: "linear",
             status: options?.failed
               ? { status: "failed", error: "MCP error -32000: Connection closed" }
-              : { status: "needs_auth" },
+              : { status: "needs_auth", error: "Authentication required" },
             integrationID: "mcp_linear",
           },
         ],
@@ -112,7 +114,7 @@ async function renderMcp(options?: { failed?: boolean; location?: { directory: s
       if (request.method === "DELETE") return new Response(null, { status: 204 })
       return json({ location, data: { status: "pending" } })
     }
-    if (url.pathname === "/api/mcp/linear/connect" && request.method === "POST") {
+    if (url.pathname === "/api/experimental/mcp/linear/connect" && request.method === "POST") {
       connect++
       return new Response(null, { status: 204 })
     }

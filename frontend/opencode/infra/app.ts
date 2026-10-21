@@ -1,5 +1,4 @@
 import { domain } from "./stage"
-import { createWebApp } from "./webapp"
 
 const GITHUB_APP_ID = new sst.Secret("GITHUB_APP_ID")
 const GITHUB_APP_PRIVATE_KEY = new sst.Secret("GITHUB_APP_PRIVATE_KEY")
@@ -9,17 +8,12 @@ const DISCORD_SUPPORT_BOT_TOKEN = new sst.Secret("DISCORD_SUPPORT_BOT_TOKEN")
 const DISCORD_SUPPORT_CHANNEL_ID = new sst.Secret("DISCORD_SUPPORT_CHANNEL_ID")
 const FEISHU_APP_ID = new sst.Secret("FEISHU_APP_ID")
 const FEISHU_APP_SECRET = new sst.Secret("FEISHU_APP_SECRET")
-const bucket = new sst.cloudflare.Bucket("Bucket")
 
 export const api = new sst.cloudflare.Worker("Api", {
   domain: `api.${domain}`,
   handler: "packages/function/src/api.ts",
-  environment: {
-    WEB_DOMAIN: domain,
-  },
   url: true,
   link: [
-    bucket,
     GITHUB_APP_ID,
     GITHUB_APP_PRIVATE_KEY,
     ADMIN_SECRET,
@@ -32,19 +26,11 @@ export const api = new sst.cloudflare.Worker("Api", {
     worker: (args) => {
       args.logpush = true
       if ($app.stage === "vimtor" || $app.stage === "adam") return
-      args.bindings = $resolve(args.bindings).apply((bindings) => [
-        ...bindings,
-        {
-          name: "SYNC_SERVER",
-          type: "durable_object_namespace",
-          className: "SyncServer",
-        },
-      ])
+      // Deleting the class erases every SyncServer Durable Object and its stored share data.
       args.migrations = {
-        // Note: when releasing the next tag, make sure all stages use tag v2
-        oldTag: $app.stage === "production" || $app.stage === "thdxr" ? "" : "v1",
-        newTag: $app.stage === "production" || $app.stage === "thdxr" ? "" : "v1",
-        //newSqliteClasses: ["SyncServer"],
+        oldTag: $app.stage === "production" || $app.stage === "thdxr" ? undefined : "v1",
+        newTag: "v2",
+        deletedClasses: ["SyncServer"],
       }
     },
   },
@@ -59,5 +45,3 @@ new sst.cloudflare.x.Astro("Web", {
     VITE_API_URL: api.url.apply((url) => url!),
   },
 })
-
-createWebApp("app." + domain)

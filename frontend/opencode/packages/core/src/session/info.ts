@@ -1,15 +1,15 @@
 import { DateTime, Schema } from "effect"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Location } from "@opencode-ai/schema/location"
-import { Model } from "@opencode-ai/schema/model"
-import { Project } from "@opencode-ai/schema/project"
-import { Provider } from "@opencode-ai/schema/provider"
+import { Agent } from "@opencode/schema/agent"
+import { Location } from "@opencode/schema/location"
+import { Model } from "@opencode/schema/model"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
 import { AbsolutePath, RelativePath } from "../schema.js"
-import { Workspace } from "@opencode-ai/schema/workspace"
+import { Workspace } from "@opencode/schema/workspace"
 import { SessionSchema } from "./schema.js"
 import type { SessionTable } from "./sql.js"
-import { PersistedRevert } from "@opencode-ai/schema/session-revert"
-import { Money } from "@opencode-ai/schema/money"
+import { PersistedRevert } from "@opencode/schema/session-revert"
+import { Money } from "@opencode/schema/money"
 
 const decodeRevert = Schema.decodeUnknownSync(PersistedRevert)
 
@@ -50,6 +50,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     }),
     subpath: row.path ? RelativePath.make(row.path) : undefined,
     metadata: row.metadata ?? undefined,
+    permissions: row.permission ?? undefined,
     revert: row.revert ? decodeRevert(row.revert) : undefined,
     outcome: row.idle_outcome ?? undefined,
     time: {
@@ -57,7 +58,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
       updated: DateTime.makeUnsafe(row.time_updated),
       idle: row.time_idle === null ? undefined : DateTime.makeUnsafe(row.time_idle),
       viewed: row.time_viewed === null ? undefined : DateTime.makeUnsafe(row.time_viewed),
-      archived: row.time_archived ? DateTime.makeUnsafe(row.time_archived) : undefined,
+      archived: row.time_archived === null ? undefined : DateTime.makeUnsafe(row.time_archived),
     },
   })
 }

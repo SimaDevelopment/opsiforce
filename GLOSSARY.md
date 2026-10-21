@@ -238,8 +238,8 @@ The three things the platform needs from an App to run it in any stack: an execu
 _Avoid_: Start command (startup.sh already is one); Health check route (no route is required); Manifest (the meta file holds a name and description only)
 
 **Agent Status**:
-Whether an Agent is **Working** — processing a run it was prompted to do, including any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. Distinct from Keep-alive's *agent activity*, which is the user's traffic touching the pod — not the Agent thinking.
-_Avoid_: Agent activity (a Keep-alive kind — user-driven traffic, a different concept); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
+Whether an Agent is **Working** — processing a run it was prompted to do, including the runs of sub-agents it started, even after its own run has ended, and any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. A Working Agent counts as Keep-alive's *Agent activity*, so it keeps its pod up; Agent activity is wider than Working (it also covers the user's own traffic).
+_Avoid_: Agent activity (the Keep-alive kind that Working feeds, not a synonym for it); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
 
 **Prompt**:
 The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project. A Prompt sent while the Agent is already working is either _steered_ (folded into the running turn) or _queued_ (starts the next turn once the Agent is idle); a queued Prompt waits until a new turn begins.
@@ -512,8 +512,8 @@ What one supervised process in a pod printed, with its lifecycle events (started
 _Avoid_: Observability database (process output is in no database); container logs (what Kubernetes keeps, gone with the pod)
 
 **Keep-alive activity**:
-The traffic that keeps a ProjectEnvironment's pod running, of two kinds: **agent activity** — the user working through the agent (chat, the code editor, the database viewer, file uploads) — and **app activity** — the running App's own traffic (its public and preview URLs, and scheduled runs). Each kind has its own idle timeout; the pod is suspended only once both kinds have been idle past their timeouts. "Why a pod is still alive" is always one of these two, never a finer reason.
-_Avoid_: Chat (one input to agent activity, not a category of its own); Heartbeat, Ping (non-canonical)
+The traffic that keeps a ProjectEnvironment's pod running, of two kinds: **Agent activity** — the user working through the Agent (chat, the code editor, the database viewer, file uploads), and the Agent itself while its Agent Status is Working — and **App activity** — the running App's own traffic (its public and preview URLs, and scheduled runs). Each kind has its own idle timeout, and an Agent's idle timeout counts from when it goes Idle; the pod is suspended only once both kinds have been idle past their timeouts. "Why a pod is still alive" is always one of these two, never a finer reason.
+_Avoid_: Chat (one input to Agent activity, not a category of its own); Heartbeat, Ping (non-canonical)
 
 ### Administration
 

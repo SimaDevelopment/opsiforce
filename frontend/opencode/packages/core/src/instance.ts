@@ -1,23 +1,26 @@
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { Agent } from "./agent.js"
 import { AISDK } from "./aisdk.js"
-import { Catalog } from "./catalog.js"
+import { Model } from "./model.js"
+import { Provider } from "./provider.js"
 import { Command } from "./command.js"
 import { Config } from "./config.js"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Node } from "@opencode-ai/util/effect/app-node"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Node } from "@opencode/util/effect/app-node"
 import { FileMutation } from "./file-mutation.js"
 import { Environment } from "./environment/index.js"
 import { Formatter } from "./formatter.js"
 import { FileSystem } from "./filesystem.js"
 import { FileSystemSearch } from "./filesystem/search.js"
 import { Generate } from "./generate.js"
+import { Voice } from "./voice.js"
 import { Form } from "./form.js"
 import { Image } from "./image.js"
 import { LocationWatcher } from "./filesystem/location-watcher.js"
 import { Integration } from "./integration.js"
 import { Location } from "./location.js"
-import { LocationMutation } from "./location-mutation.js"
+import { LocationLifecycle } from "./location-lifecycle.js"
+import { FileAccess } from "./file-access.js"
 import { ModelResolver } from "./model-resolver.js"
 import { Mcp } from "./mcp/index.js"
 import { Permission } from "./permission.js"
@@ -25,7 +28,7 @@ import { Plugin } from "./plugin.js"
 import { PluginHooks } from "./plugin/hooks.js"
 import { InstancePlugins } from "./plugin/instance.js"
 import { PluginSupervisor } from "./plugin/supervisor.js"
-import { Worktree } from "./worktree.js"
+import { WorktreeStrategies } from "./worktree/strategies.js"
 import { Pty } from "./pty.js"
 import { Shell } from "./shell.js"
 import { ShellSelect } from "./shell/select.js"
@@ -56,6 +59,7 @@ export { Service, node, type Interface } from "./instance/service.js"
 
 const nodes = [
   Location.node,
+  LocationLifecycle.node,
   Environment.node,
   Config.node,
   Agent.node,
@@ -64,14 +68,15 @@ const nodes = [
   Rpc.node,
   WebSearch.node,
   Integration.node,
-  Catalog.node,
+  Provider.node,
+  Model.node,
   ModelResolver.node,
   AISDK.node,
   Plugin.node,
   PluginHooks.node,
   InstancePlugins.node,
   PluginSupervisor.node,
-  Worktree.refreshNode,
+  WorktreeStrategies.node,
   FileSystemSearch.node,
   FileSystem.node,
   ShellSelect.node,
@@ -80,7 +85,7 @@ const nodes = [
   Skill.node,
   InstructionBuiltIns.node,
   InstructionDiscovery.node,
-  LocationMutation.node,
+  FileAccess.node,
   FileMutation.node,
   Formatter.node,
   Mcp.node,
@@ -93,6 +98,7 @@ const nodes = [
   InstructionEntry.node,
   Form.node,
   Generate.node,
+  Voice.node,
   ReadToolFileSystem.node,
   McpTool.node,
   SessionInstructions.node,
@@ -110,7 +116,7 @@ const nodes = [
 export const graph = LayerNode.group(nodes)
 
 export type Services = LayerNode.Output<typeof graph>
-export type Error = Layer.Error<ReturnType<typeof layer>>
+export type Error = FileSystem.DirectoryNotFoundError
 
 export interface Options {
   // Plugins this instance is born with; empty and absent are equivalent.
@@ -141,20 +147,31 @@ const vanillaReplacements: LayerNode.Replacements = [
 ]
 
 // One instance is one compiled, fresh copy of the graph standing on a directory.
-export function layer(ref: Location.Ref, options: Options = {}): Layer.Layer<Services> {
+export function layer(ref: Location.Ref, options: Options = {}): Layer.Layer<Services, Error> {
   const startedAt = performance.now()
   // Ordered: vanilla defaults, then caller replacements (which win over the
   // defaults), then instance bindings (which win over everything).
   const replacements: LayerNode.Replacements = [
     ...(options.discovery === false ? vanillaReplacements : []),
     ...(options.replacements ?? []),
-    Location.node.replace(Location.boundNode(ref, { discovery: options.discovery })),
+    Location.node.replace(Location.boundNode(ref)),
     InstancePlugins.node.replace(InstancePlugins.bound(options.plugins ?? [])),
   ]
 
   return LayerNode.compile(graph, { replacements, shared: Node.tags.values.global }).pipe(
-    // Instance boot failures are defects; provided operations retain their typed errors.
-    Layer.orDie,
+    // A missing directory is expected; other instance boot failures remain defects.
+    Layer.catchCause(
+      (cause): Layer.Layer<Services, Error> =>
+        Layer.unwrap(
+          Effect.failCause(cause).pipe(
+            Effect.catch(
+              (error): Effect.Effect<never, Error> =>
+                error instanceof FileSystem.DirectoryNotFoundError ? Effect.fail(error) : Effect.die(error),
+            ),
+          ),
+        ),
+    ),
+    Layer.tap((context) => Effect.addFinalizer(() => Context.get(context, LocationLifecycle.Service).shutdown)),
     Layer.tap(() =>
       Effect.logInfo("location services booted", {
         directory: ref.directory,

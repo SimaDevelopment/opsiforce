@@ -1,12 +1,13 @@
 import type { ProviderPackage } from "../provider-package.js"
-import { OpenAICompatibleChat } from "../protocols/openai-compatible-chat.js"
+import { OpenAIChat } from "../protocols/openai-chat.js"
 import { AuthOptions, type ProviderAuthOption } from "../route/auth-options.js"
-import type { RouteDefaultsInput } from "../route/client.js"
+import { Route, type RouteDefaultsInput } from "../route/client.js"
+import { Endpoint } from "../route/endpoint.js"
 import { ProviderID, type ModelID } from "../schema/index.js"
-import { profiles } from "./openai-compatible-profile.js"
 import type { OpenAIProviderOptionsInput } from "./openai-options.js"
 
 export const id = ProviderID.make("deepinfra")
+const baseURL = "https://api.deepinfra.com/v1/openai"
 
 export type LanguageModelOptions = Omit<RouteDefaultsInput, "providerOptions"> &
   ProviderAuthOption<"optional"> & {
@@ -14,27 +15,30 @@ export type LanguageModelOptions = Omit<RouteDefaultsInput, "providerOptions"> &
     readonly providerOptions?: OpenAIProviderOptionsInput
   }
 
-export interface Settings extends ProviderPackage.Settings {
-  readonly apiKey?: string
-  readonly baseURL?: string
-  readonly providerOptions?: OpenAIProviderOptionsInput
-}
+export type Settings = ProviderPackage.Settings &
+  OpenAIProviderOptionsInput & {
+    readonly apiKey?: string
+    readonly baseURL?: string
+  }
 
-export const route = OpenAICompatibleChat.route.with({
+export const route = Route.make({
   id: "deepinfra-chat",
   provider: id,
-  endpoint: { baseURL: profiles.deepinfra.baseURL },
+  providerMetadataKey: "deepinfra",
+  protocol: OpenAIChat.protocol,
+  endpoint: Endpoint.path("/chat/completions", { baseURL }),
+  framing: OpenAIChat.framing,
 })
 
 export const routes = [route]
 
 export const configure = (input: LanguageModelOptions = {}) => {
-  const { apiKey: _apiKey, auth: _auth, baseURL, ...defaults } = input
-  const root = baseURL?.replace(/\/+$/, "")
+  const { apiKey: _apiKey, auth: _auth, baseURL: endpoint, ...defaults } = input
+  const root = endpoint?.replace(/\/+$/, "")
   const configured = route.with({
     ...defaults,
     endpoint: {
-      baseURL: root === undefined ? profiles.deepinfra.baseURL : root.endsWith("/openai") ? root : `${root}/openai`,
+      baseURL: root === undefined ? baseURL : root.endsWith("/openai") ? root : `${root}/openai`,
     },
     auth: AuthOptions.bearer(input, "DEEPINFRA_API_KEY"),
   })
@@ -43,7 +47,11 @@ export const configure = (input: LanguageModelOptions = {}) => {
     model: (modelID: string | ModelID) =>
       configured.model<OpenAIProviderOptionsInput>({
         id: modelID,
-        compatibility: { maxTokensField: "max_tokens", reasoningField: "reasoning_content", supportsStore: false },
+        compatibility: {
+          maxTokensField: "max_tokens",
+          reasoningField: "reasoning_content",
+          supportsPromptCacheKey: true,
+        },
       }),
     configure,
   }
@@ -51,11 +59,14 @@ export const configure = (input: LanguageModelOptions = {}) => {
 
 export const provider = configure()
 
-export const model: ProviderPackage.Definition<Settings, OpenAIProviderOptionsInput>["model"] = (modelID, settings) =>
+export const model: ProviderPackage.Definition<Settings, OpenAIProviderOptionsInput>["model"] = (
+  modelID,
+  { apiKey, baseURL, body, headers, ...providerOptions },
+) =>
   configure({
-    apiKey: settings.apiKey,
-    baseURL: settings.baseURL,
-    headers: settings.headers === undefined ? undefined : { ...settings.headers },
-    http: settings.body === undefined ? undefined : { body: { ...settings.body } },
-    providerOptions: settings.providerOptions,
+    apiKey,
+    baseURL,
+    headers,
+    http: body === undefined ? undefined : { body },
+    providerOptions,
   }).model(modelID)

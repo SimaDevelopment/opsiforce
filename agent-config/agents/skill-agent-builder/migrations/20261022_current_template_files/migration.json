@@ -1,0 +1,114 @@
+{
+  "id": "20261022_current_template_files",
+  "requiresPodRecreate": false,
+  "operations": [
+    {
+      "type": "copy",
+      "source": "../../template/scratch/README.md",
+      "target": "scratch/README.md",
+      "managedChecksums": [
+        "22e3ad5640185eec4e9fe7b5b43fc8b9b7a98f276ada6a8c519526d775f1e8b1",
+        "4b6a664fc86976ce9439c43d902de6cc66637b5dab38b563450a11ba065779d0",
+        "4b6aaedcb61273c12a45dc8cd6fe47ab62d4e4c880025895b28863ce34db70cb",
+        "7667d89a83526a377de2f44f2efcc9c8fe67898e883a159839130420ab04ed02",
+        "8077c70996e61578374e479dc78b01f5e9c2990d302fcd4bf3d00b13f505ebf3",
+        "946cd48af2081dd1e315cd787d3639d059af74125f834c5ca0819e9c78840c66",
+        "99915cc7d689f53f4dfa214b330f4b550c8e199a25180160c2aec142eedaedd2",
+        "a90a5cb4a5ad87401e563d50585ee01366e7bd88b7fe9ac313774b03b8096b21",
+        "bb978344df8eedf2445f05e1352a2e8cf6d7de28c2e6d56d0d8aa45f0d8ce7ca",
+        "e1e480adf9f7f79a8d9d91c17e0d97b7da1cbd06027f14b51d10af69ace4af9f"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/api.sh",
+      "target": "scripts/api.sh",
+      "managedChecksums": [
+        "8ec16491949289f96faa2a2bc446d1a1a9c6ca918e6b30b03147426a5985505d",
+        "a086ee29d99eaf0e1e6a746f945003bfd2c16d454731f85ceb52ccabe93015ea",
+        "a9fdae225e8e1d8301803c6dce150e6058ed3f737a4745e57e41e7c7bce2a552",
+        "ab447750b7bdb1d6747ac260bfbc845fb2ff5ea5b7ea1de4895747fbfd0b2a70",
+        "e08fbd5aa801e8f824c722172755c495d5935c06b2bc43d5c4dfbad6be81a925",
+        "f2e6b145d1a574d1d61d3a19d104181dc245480e58fc6e7f93c72bd223034f30",
+        "fb4bb5206aff7c35b2652818e5354df24c4ef75217a5395981d715e9a512c994",
+        "fe8802b15450373f756e190ceeecf0ec1c758e5739ee7cc9b101655f3d8255b7"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/check-expectations.mjs",
+      "target": "scripts/check-expectations.mjs",
+      "managedChecksums": [
+        "1f725caa49aee5c629fcb74c7c18c7eef1546908ea9faf2660a739f6104dd216"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/check-template.sh",
+      "target": "scripts/check-template.sh",
+      "managedChecksums": [
+        "c613293cfb7d23f8300ce7dc77fbd6b19b5b72808cc8ef8aa705a61f9bae4ec0",
+        "e207e945777786275ecb9a8b33bf189a44f9b4df48f5990ac906b33a8934e65c",
+        "feca813df784cefd9c19a3d7975dced9b70519237dedc7ad0db42a21cc06d3b0"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/evidence.sh",
+      "target": "scripts/evidence.sh",
+      "managedChecksums": [
+        "5eff4ca2d1978a24363154be4bab5bf299f86ce7fb93553afeae8dec48f8c85c",
+        "ae9289625c4a879c33587e3be2660d087efaf361f7bab50a36acd0ca88f19f70"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/pack-skill.mjs",
+      "target": "scripts/pack-skill.mjs",
+      "managedChecksums": [
+        "3e2a500c9dfd08e0a8fe59afb975a87c4bb8f60a5bf1b2df77567dd4d32f23f2",
+        "88aaaf8c8996eb3ab90ed11601f3d97eea3ae134be4ca13b9655147be4ff7f76",
+        "bc2cc96ec06b2403ff27c83597d2238bad232ec6cfed2decea50d4aa09619913",
+        "e2fc7439b2183f91ad7b68f0747cc0ebd5eddc49ee8a72ea297531a1f1ffedea"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/template-snapshot.sh",
+      "target": "scripts/template-snapshot.sh",
+      "managedChecksums": [
+        "17481377618512c62d054ef0f294777610af893b0bb511ea27aba150823f33b6"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/tp.sh",
+      "target": "scripts/tp.sh",
+      "managedChecksums": [
+        "26250f538e899e55b1714d0d6a67f2473579da9ba05b83dbb56065c1818fcbbe",
+        "6ded32cf425f55a5c9aed0c330ad7ba690b2d62c77fd2c4378157cffa1f4f007",
+        "7b08d9f855cccefc8e77c6356e89e95f9db4d5da11c49156ef0f92c9764cb177"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/turn.sh",
+      "target": "scripts/turn.sh",
+      "managedChecksums": [
+        "0f295cd0c10da4cc4b36cb91cdb9836aa53aca69b509a5148ad7166f5d2a8c2f",
+        "861433f814e0ee71b87daa532dee74782131fb6e12bb6de7106de3e074e1d11c"
+      ]
+    },
+    {
+      "type": "copy",
+      "source": "../../template/scripts/validate-skill.mjs",
+      "target": "scripts/validate-skill.mjs",
+      "managedChecksums": [
+        "1af60e9be4b2cfd2bbc6cfc20358ad6caed85f765f5edd31be3dadc2aa633894",
+        "4a28fd8ff89b9a90c2c5498fecb7099cb545f7f6bd5feade06c29a47573042a2",
+        "9c45522b9307afa62f9a8907de6a77c1a1479fc3d0cf33ace07d836e93517c8b",
+        "befe87863392e7688cc413eb596eaead530067d542027af09d043e32dfc4eb3d"
+      ]
+    }
+  ]
+}

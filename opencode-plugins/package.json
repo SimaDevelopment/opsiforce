@@ -1,0 +1,16 @@
+{
+  "name": "@opsiforce/opencode-plugins",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Opsiforce's opencode server plugins, built into the agent image.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test 'test/**/*.test.ts'",
+    "ts": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.1.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  }
+}

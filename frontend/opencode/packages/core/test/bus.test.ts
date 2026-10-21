@@ -1,16 +1,16 @@
 import { describe, expect } from "bun:test"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Ref, Schema, Stream } from "effect"
-import { Bus } from "@opencode-ai/core/bus"
-import { Event } from "@opencode-ai/schema/event"
-import { Session } from "@opencode-ai/schema/session"
-import { SessionEvent } from "@opencode-ai/schema/session-event"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql"
-import { Location } from "@opencode-ai/core/location"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Workspace } from "@opencode-ai/core/workspace"
+import { Bus } from "@opencode/core/bus"
+import { Event } from "@opencode/schema/event"
+import { Session } from "@opencode/schema/session"
+import { SessionEvent } from "@opencode/schema/session-event"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { EventSequenceTable, EventTable } from "@opencode/core/event/sql"
+import { Location } from "@opencode/core/location"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Workspace } from "@opencode/core/workspace"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -734,6 +734,25 @@ describe("Bus", () => {
 
       expect(received[0]?.type).toBe(DurableMessage.type)
       expect(received[0]?.data).toEqual(durableData(aggregateID, "hello"))
+    }),
+  )
+
+  it.effect("replays compaction events stored before v2.1 with recent, reading them without it", () =>
+    Effect.gen(function* () {
+      const bus = yield* Bus.Service
+      const old = Session.ID.create()
+      const event = {
+        id: Event.ID.create(),
+        created: 1,
+        type: Bus.versionedType(SessionEvent.Compaction.Ended.type, 1),
+        seq: 0,
+        aggregateID: old,
+        data: { sessionID: old, reason: "auto", text: "summary", recent: "[User]: kept" },
+      }
+      yield* bus.replay(event)
+      yield* bus.replay(event)
+      const logged = Array.from(yield* bus.log({ aggregateID: old }).pipe(Stream.runCollect))
+      expect(logged.find((item) => item.type === SessionEvent.Compaction.Ended.type)).not.toHaveProperty("data.recent")
     }),
   )
 

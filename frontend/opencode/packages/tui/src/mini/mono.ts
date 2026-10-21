@@ -93,6 +93,11 @@ function monoCode(renderable: CodeRenderable): void {
   const onChunks = renderable.onChunks
   renderable.onChunks = async (chunks, context) => monoChunks((await onChunks?.(chunks, context)) ?? chunks)
   renderable.treeSitterClient = monoTreeSitter(renderable.treeSitterClient)
+  // Streaming markdown writes the preview buffer here, skipping the setters below.
+  const updateStreamingPreview = renderable.updateStreamingPreview.bind(renderable)
+  renderable.updateStreamingPreview = (content, initialStyledText) => {
+    updateStreamingPreview(content, monoStyledText(initialStyledText))
+  }
 
   const initialDescriptor = Object.getOwnPropertyDescriptor(CodeRenderable.prototype, "initialStyledText")
   const contentDescriptor = Object.getOwnPropertyDescriptor(CodeRenderable.prototype, "content")
@@ -100,6 +105,7 @@ function monoCode(renderable: CodeRenderable): void {
   const initialSetter = initialDescriptor.set.bind(renderable)
   const contentGetter = contentDescriptor.get.bind(renderable)
   const contentSetter = contentDescriptor.set.bind(renderable)
+  // oxlint-disable-next-line no-restricted-globals -- OpenTUI does not expose its eager styled-text cache publicly.
   const initial = Reflect.get(renderable, "_initialStyledText")
   Object.defineProperty(renderable, "initialStyledText", {
     configurable: true,
@@ -111,6 +117,7 @@ function monoCode(renderable: CodeRenderable): void {
     configurable: true,
     get: contentGetter,
     set(value: string) {
+      // oxlint-disable-next-line no-restricted-globals -- OpenTUI does not expose its eager styled-text cache publicly.
       if (renderable.filetype !== "markdown" || !isStyledText(Reflect.get(renderable, "_initialStyledText"))) {
         renderable.drawUnstyledText = true
         renderable.initialStyledText = stringToStyledText(value)
@@ -137,6 +144,7 @@ function monoCode(renderable: CodeRenderable): void {
 function monoTreeSitter(client: TreeSitterClient): TreeSitterClient {
   return new Proxy(client, {
     get(target, property) {
+      // oxlint-disable-next-line no-restricted-globals -- Proxy forwarding requires receiver-aware property access.
       if (property !== "highlightOnce") return Reflect.get(target, property, target)
       // Keep parser failures on the chunk path instead of OpenTUI's raw-text fallback.
       return (...args: Parameters<TreeSitterClient["highlightOnce"]>) =>
@@ -185,21 +193,22 @@ function monoText(value: string): string {
 }
 
 export function monoSnapshot(event: CliRendererExternalOutputEvent): void {
-  const buffers = event.snapshot.buffers
-  const chars = buffers.char
-  for (let index = 0; index < chars.length; index += 1) {
-    const point = chars[index]
-    if (point <= 0x7f) continue
-    const offset = index * 4
-    event.snapshot.setCell(
-      index % event.snapshot.width,
-      Math.floor(index / event.snapshot.width),
-      monoCell(point),
-      RGBA.fromArray(buffers.fg.subarray(offset, offset + 4)),
-      RGBA.fromArray(buffers.bg.subarray(offset, offset + 4)),
-      buffers.attributes[index],
-    )
-  }
+  event.snapshot.withBuffers((buffers) => {
+    const chars = buffers.char
+    for (let index = 0; index < chars.length; index += 1) {
+      const point = chars[index]
+      if (point <= 0x7f) continue
+      const offset = index * 4
+      event.snapshot.setCell(
+        index % event.snapshot.width,
+        Math.floor(index / event.snapshot.width),
+        monoCell(point),
+        RGBA.fromArray(buffers.fg.subarray(offset, offset + 4)),
+        RGBA.fromArray(buffers.bg.subarray(offset, offset + 4)),
+        buffers.attributes[index],
+      )
+    }
+  })
 }
 
 function monoCell(point: number): string {
@@ -244,12 +253,4 @@ export function monoTruncate(value: string, width: number, mono: boolean): strin
   if (!mono || value.length <= width) return value
   if (width <= 3) return ".".repeat(Math.max(0, width))
   return value.slice(0, width - 3) + "..."
-}
-
-export function monoTruncateMiddle(value: string, width: number, mono: boolean): string {
-  if (!mono || value.length <= width) return value
-  if (width <= 3) return ".".repeat(Math.max(0, width))
-  const available = width - 3
-  const left = Math.ceil(available / 2)
-  return value.slice(0, left) + "..." + value.slice(value.length - (available - left))
 }

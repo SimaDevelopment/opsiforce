@@ -7,6 +7,7 @@ export type { RpcApi, RpcCallOptions, RpcClient, RpcEventPayload } from "./rpc.j
 export type AgentApi = Client["agent"]
 export type CommandApi = Client["command"]
 export type ConfigApi = Client["config"]
+export type CredentialApi = Client["credential"]
 export type EventApi = Client["event"]
 export type GenerateApi = Client["generate"]
 export type IntegrationApi = Client["integration"]
@@ -20,8 +21,4 @@ export type WebSearchApi = Client["websearch"]
 export type SessionApi = Client["session"]
 export type SkillApi = Client["skill"]
 export type VcsApi = Client["vcs"]
-
-export interface CatalogApi {
-  readonly provider: ProviderApi
-  readonly model: ModelApi
-}
+export type WorktreeApi = Client["worktree"]

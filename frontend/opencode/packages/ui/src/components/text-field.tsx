@@ -2,9 +2,9 @@ import { TextField as Kobalte } from "@kobalte/core/text-field"
 import { createSignal, Show, splitProps } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { useI18n } from "../context/i18n"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon } from "@opencode-ai/ui/icon"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Icon } from "@opencode/ui/icon"
+import { Tooltip } from "@opencode/ui/tooltip"
 
 export interface TextFieldProps
   extends ComponentProps<typeof Kobalte.Input>,
@@ -34,6 +34,7 @@ export interface TextFieldProps
 
 export function TextField(props: TextFieldProps) {
   const i18n = useI18n()
+
   const [local, others] = splitProps(props, [
     "name",
     "defaultValue",
@@ -54,17 +55,22 @@ export function TextField(props: TextFieldProps) {
     "copyKind",
     "multiline",
   ])
+
   const [copied, setCopied] = createSignal(false)
 
   const label = () => {
     if (copied()) return i18n.t("ui.textField.copied")
+
     if (local.copyKind === "link") return i18n.t("ui.textField.copyLink")
+
     return i18n.t("ui.textField.copyToClipboard")
   }
 
   const icon = () => {
     if (copied()) return "check"
+
     if (local.copyKind === "link") return "link"
+
     return "copy"
   }
 

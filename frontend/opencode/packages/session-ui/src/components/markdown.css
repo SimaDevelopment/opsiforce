@@ -15,12 +15,15 @@
   font-family: var(--font-family-sans);
   font-size: var(--font-size-base); /* 14px */
   line-height: 160%;
+  /* Shells such as the app's turn off selection for chrome; Markdown is content, so it stays selectable. */
+  -webkit-user-select: text;
+  user-select: text;
 
   [data-markdown-word] {
     display: inline;
   }
 
-  [data-markdown-word][data-markdown-enter] {
+  :is([data-markdown-word], code)[data-markdown-enter] {
     animation: markdown-word-enter 180ms ease-out both;
   }
 
@@ -36,6 +39,11 @@
   }
   > [data-markdown-block]:last-child > *:last-child {
     margin-bottom: 0;
+  }
+
+  /* Pretty wrapping would move settled words as each token arrives, so the growing block stays greedy until it completes. */
+  &[data-streaming] > [data-markdown-block]:last-child {
+    text-wrap-style: auto;
   }
 
   /* Headings: Sized by level, distinguished by color and spacing */
@@ -81,7 +89,7 @@
   strong,
   b {
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-bold);
   }
 
   /* Paragraphs */
@@ -98,6 +106,89 @@
 
   a:hover {
     text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  a.external-link:is(
+      [href="https://github.com" i],
+      [href^="https://github.com/" i],
+      [href="http://github.com" i],
+      [href^="http://github.com/" i]
+    ):not(:has(img))::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-inline-end: 4px;
+    vertical-align: -0.125em;
+    background: currentColor;
+    mask: url("./markdown-github.svg") center / contain no-repeat;
+  }
+
+  .markdown-link-favicon {
+    position: relative;
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-inline-end: 4px;
+    vertical-align: -0.125em;
+  }
+
+  .markdown-link-favicon::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    mask: url("./markdown-globe.svg") center / contain no-repeat;
+  }
+
+  .markdown-link-favicon img {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    border-radius: 2px;
+    cursor: inherit;
+    opacity: 0;
+  }
+
+  .markdown-link-favicon img[data-loaded] {
+    opacity: 1;
+  }
+
+  a[data-local-link] {
+    cursor: pointer;
+  }
+
+  .markdown-session-link {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-interactive-base);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .markdown-session-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .markdown-session-link:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  &[data-local-links] :not(pre) > code[data-inline-code-kind="path"]:not(a > code) {
+    cursor: pointer;
+  }
+
+  &[data-local-links] :not(pre) > code[data-inline-code-kind="path"]:not(a > code):hover {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklch, var(--markdown-inline-code-path-color) 40%, transparent);
     text-underline-offset: 2px;
   }
 
@@ -329,6 +420,7 @@
 
   /* Images */
   img {
+    cursor: zoom-in;
     max-width: 100%;
     height: auto;
     border-radius: 4px;
@@ -347,7 +439,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="markdown"] [data-markdown-word][data-markdown-enter] {
+  [data-component="markdown"] :is([data-markdown-word], code)[data-markdown-enter] {
     animation: none;
   }
 }

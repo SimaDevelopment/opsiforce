@@ -2,22 +2,24 @@ import fs from "fs/promises"
 import path from "path"
 import { describe, expect, test } from "bun:test"
 import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
-import { Config } from "@opencode-ai/core/config"
-import { AgentsDirectory, ClaudeDirectory, Directory, Document, type Entry, Info } from "@opencode-ai/schema/config"
-import { ConfigSkillPlugin } from "@opencode-ai/core/config/plugin/skill"
-import { SkillFile } from "@opencode-ai/core/config/plugin/skill-file"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Watcher } from "@opencode-ai/core/filesystem/watcher"
-import { Bus } from "@opencode-ai/core/bus"
-import { Credential } from "@opencode-ai/core/credential"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Location } from "@opencode-ai/core/location"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Skill } from "@opencode-ai/core/skill"
-import { SkillDiscovery } from "@opencode-ai/core/skill/discovery"
-import { WellKnown } from "@opencode-ai/core/wellknown"
+import { Config } from "@opencode/core/config"
+import { Directory, Document, type Entry, Info } from "@opencode/schema/config"
+import { ConfigSkillPlugin } from "@opencode/core/config/plugin/skill"
+import { ConfigCompatibilityPlugin } from "@opencode/core/config/plugin/compatibility"
+import { SkillFile } from "@opencode/core/config/plugin/skill-file"
+import { SkillScan } from "@opencode/core/config/plugin/skill-scan"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Watcher } from "@opencode/core/filesystem/watcher"
+import { Bus } from "@opencode/core/bus"
+import { Credential } from "@opencode/core/credential"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Location } from "@opencode/core/location"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Skill } from "@opencode/core/skill"
+import { SkillDiscovery } from "@opencode/core/skill/discovery"
+import { WellKnown } from "@opencode/core/wellknown"
 import { emptyCredentialNode, emptyWellknownNode } from "../fixture/config-nodes"
 import { tmpdir } from "../fixture/tmpdir"
 import { location } from "../fixture/location"
@@ -47,18 +49,26 @@ const startEntries = Effect.fnUntraced(function* (
   directory: string,
   home = directory,
   discovery = emptyDiscovery,
+  compatibility: { readonly claude: readonly AbsolutePath[]; readonly agents: readonly AbsolutePath[] } = {
+    claude: [],
+    agents: [],
+  },
 ) {
   const service = yield* Skill.Service
+  const pluginHost = host({
+    skill: {
+      list: () => Effect.die("unused skill.list"),
+      transform: service.transform,
+      reload: service.reload,
+    },
+  })
+  yield* ConfigCompatibilityPlugin.Plugin.effect(pluginHost).pipe(
+    Effect.provide(Config.testLayer(entries, compatibility)),
+  )
   yield* ConfigSkillPlugin.Plugin.effect(
-    host({
-      skill: {
-        list: () => Effect.die("unused skill.list"),
-        transform: service.transform,
-        reload: service.reload,
-      },
-    }),
+    pluginHost,
   ).pipe(
-    Effect.provide(Config.testLayer(entries)),
+    Effect.provide(Config.testLayer(entries, compatibility)),
     Effect.provideService(SkillDiscovery.Service, discovery),
     Effect.provideService(Global.Service, Global.Service.of({ ...Global.make(), home })),
     Effect.provideService(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(directory) }))),
@@ -82,7 +92,7 @@ const start = (skills: string[], directory: string, discovery = emptyDiscovery) 
 const discover = (directory: string, global: string) =>
   Effect.gen(function* () {
     const config = yield* Config.Service
-    return yield* config.entries()
+    return { entries: yield* config.entries(), compatibility: yield* config.compatibility!() }
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(LayerNode.group([Config.node, Bus.node]), [
@@ -114,6 +124,18 @@ function emitAndWait(update: Watcher.Update) {
 }
 
 describe("SkillFile.parse", () => {
+  test("reads disable-model-invocation as autoinvoke", () => {
+    const parse = (frontmatter: string) =>
+      SkillFile.parse("/repo/skills", "/repo/skills/deploy/SKILL.md", `---\n${frontmatter}\n---\n# deploy`)
+    expect(parse("disable-model-invocation: true")).toMatchObject({ skill: { autoinvoke: false } })
+    expect(parse("disable-model-invocation: yes")).toMatchObject({ skill: { autoinvoke: false } })
+    expect(parse("disable-model-invocation: false")).not.toMatchObject({ skill: { autoinvoke: expect.anything() } })
+    expect(parse("disable-model-invocation: maybe")).not.toMatchObject({ skill: { autoinvoke: expect.anything() } })
+    expect(
+      parse("disable-model-invocation: true\nmetadata:\n  opencode/autoinvoke: true"),
+    ).toMatchObject({ skill: { autoinvoke: true } })
+  })
+
   test("parses root and nested skill ids and metadata flags", () => {
     const directory = "/repo/skills"
     expect(
@@ -124,7 +146,6 @@ describe("SkillFile.parse", () => {
 name: Manual
 description: Manual only
 metadata:
-  opencode/slash: "true"
   opencode/autoinvoke: false
 ---
 # manual`,
@@ -135,13 +156,12 @@ metadata:
         id: Skill.ID.make("manual"),
         name: Skill.Name.make("Manual"),
         description: "Manual only",
-        slash: true,
         autoinvoke: false,
-        location: AbsolutePath.make("/repo/skills/manual/SKILL.md"),
+        path: AbsolutePath.make("/repo/skills/manual/SKILL.md"),
         content: "# manual",
       },
     })
-    expect(SkillFile.parse(directory, "/repo/skills/foo.md", "---\nslash: true\n---\n# foo")).toMatchObject({
+    expect(SkillFile.parse(directory, "/repo/skills/foo.md", "# foo")).toMatchObject({
       _tag: "Parsed",
       skill: { id: Skill.ID.make("foo") },
     })
@@ -152,11 +172,6 @@ metadata:
     expect(
       SkillFile.parse(directory, "/repo/skills/broken.md", "---\ndescription: foo: bar\nmetadata: [\n---\n# broken"),
     ).toEqual({ _tag: "Skipped", reason: "markdown" })
-    expect(SkillFile.parse(directory, "/repo/skills/broken.md", "---\nslash: nope\n---\n# broken")).toMatchObject({
-      _tag: "Skipped",
-      reason: "frontmatter",
-      issue: expect.anything(),
-    })
   })
 })
 
@@ -182,16 +197,16 @@ describe("ConfigSkillPlugin.Plugin", () => {
 
           yield* startEntries(
             [
-              new ClaudeDirectory({ type: "claude", path: AbsolutePath.make(claude) }),
-              new AgentsDirectory({ type: "agents", path: AbsolutePath.make(agents) }),
               new Directory({ type: "directory", path: AbsolutePath.make(opencode) }),
               new Document({ type: "document", info: decode({ skills: ["~/shared", "./relative"] }) }),
             ],
             directory,
             home,
+            emptyDiscovery,
+            { claude: [AbsolutePath.make(claude)], agents: [AbsolutePath.make(agents)] },
           )
           const watcher = yield* Watcher.Test
-          expect(yield* watcher.subscriptions()).toEqual(expected.map((item) => ({ path: item, type: "directory" })))
+          expect(yield* watcher.subscriptions()).toEqual(expected.map((item) => ({ path: item, type: "directory", ignore: SkillScan.ignore.toSorted() })))
         }),
       ),
     ),
@@ -252,12 +267,18 @@ describe("ConfigSkillPlugin.Plugin", () => {
             await write(worktreeSkills, "review", "Worktree")
           })
 
-          const entries = yield* discover(worktree, path.join(tmp.path, "global"))
-          const skill = yield* startEntries(entries, worktree)
+          const discovered = yield* discover(worktree, path.join(tmp.path, "global"))
+          const skill = yield* startEntries(
+            discovered.entries,
+            worktree,
+            worktree,
+            emptyDiscovery,
+            discovered.compatibility,
+          )
           const review = (yield* skill.list()).find((item) => item.id === "review")
 
           expect(review?.description).toBe("Worktree")
-          expect(review?.location).toBe(AbsolutePath.make(path.join(worktreeSkills, "review", "SKILL.md")))
+          expect(review?.path).toBe(AbsolutePath.make(path.join(worktreeSkills, "review", "SKILL.md")))
         }),
       ),
     ),
@@ -315,7 +336,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
     ),
   )
 
-  it.live("watches canonical directories behind symlinked skills", () =>
+  it.live("watches canonical files behind symlinked skills", () =>
     Effect.acquireDisposable(Effect.promise(() => tmpdir())).pipe(
       Effect.flatMap((tmp) =>
         Effect.gen(function* () {
@@ -332,7 +353,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
           const skill = yield* start([source], tmp.path)
           const watcher = yield* Watcher.Test
           expect((yield* skill.list()).find((item) => item.id === "bro")?.description).toBe("Initial")
-          expect(yield* watcher.subscriptions()).toContainEqual({ path: target, type: "directory" })
+          expect(yield* watcher.subscriptions()).toContainEqual({ path: file, type: "file" })
 
           yield* Effect.promise(() => fs.writeFile(file, "---\nname: bro\ndescription: Updated\n---\n# bro"))
           yield* emitAndWait({ type: "update", path: file })
@@ -361,7 +382,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
           const watcher = yield* Watcher.Test
           expect((yield* skill.list()).find((item) => item.id === "bro")?.description).toBe("First")
           expect(yield* watcher.subscriptions()).toEqual([
-            { path: first, type: "directory" },
+            { path: first, type: "directory", ignore: SkillScan.ignore.toSorted() },
             { path: source, type: "file" },
           ])
 
@@ -373,9 +394,9 @@ describe("ConfigSkillPlugin.Plugin", () => {
 
           expect((yield* skill.list()).find((item) => item.id === "bro")?.description).toBe("Second")
           expect(yield* watcher.subscriptions()).toEqual([
-            { path: first, type: "directory" },
+            { path: first, type: "directory", ignore: SkillScan.ignore.toSorted() },
             { path: source, type: "file" },
-            { path: second, type: "directory" },
+            { path: second, type: "directory", ignore: SkillScan.ignore.toSorted() },
             { path: source, type: "file" },
           ])
         }),

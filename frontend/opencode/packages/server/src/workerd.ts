@@ -1,18 +1,18 @@
 export * as ServerWorkerd from "./workerd"
 
 import { Effect, Layer } from "effect"
-import { ConfigPluginSource } from "@opencode-ai/core/config/plugin/source"
-import { Database } from "@opencode-ai/core/database/database"
-import { sqliteLayer } from "@opencode-ai/core/database/sqlite.workerd"
-import type { DurableObjectStorage } from "@opencode-ai/core/database/sqlite.workerd"
-import { EnvironmentUnavailable } from "@opencode-ai/core/environment/unavailable"
-import { FileSystem } from "@opencode-ai/core/filesystem"
-import { FileSystemSearch } from "@opencode-ai/core/filesystem/search"
-import { Pty } from "@opencode-ai/core/pty"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { Vcs } from "@opencode-ai/core/vcs"
-import { CrossSpawnSpawner } from "@opencode-ai/util/cross-spawn-spawner"
-import type { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { ConfigPluginSource } from "@opencode/core/config/plugin/source"
+import { Database } from "@opencode/core/database/database"
+import { sqliteLayer } from "@opencode/core/database/sqlite.workerd"
+import type { DurableObjectStorage } from "@opencode/core/database/sqlite.workerd"
+import { EnvironmentUnavailable } from "@opencode/core/environment/unavailable"
+import { FileSystem } from "@opencode/core/filesystem"
+import { FileSystemSearch } from "@opencode/core/filesystem/search"
+import { Pty } from "@opencode/core/pty"
+import { Snapshot } from "@opencode/core/snapshot"
+import { Vcs } from "@opencode/core/vcs"
+import { CrossSpawnSpawner } from "@opencode/util/cross-spawn-spawner"
+import type { LayerNode } from "@opencode/util/effect/layer-node"
 import { ServerFetch } from "./fetch"
 import type { ServerOptions } from "./options"
 
@@ -23,8 +23,8 @@ import type { ServerOptions } from "./options"
  *
  * - Database runs on the injected `DurableObjectStorage` SQLite.
  * - Watcher and fff are disabled through their existing option flags; pty, fff,
- *   shell-parser, photon, and process-lock native modules resolve to inert
- *   stubs under the `workerd` bundle condition.
+ *   shell-parser, and photon native modules resolve to inert stubs under the
+ *   `workerd` bundle condition.
  * - Bare locations use a typed no-execution-plane process spawner; FileSystem,
  *   FileSystemSearch, and Pty fail with a clear defect until a remote sandbox
  *   backs them; Snapshot and Vcs degrade to no-op results.
@@ -96,6 +96,7 @@ const vcsLayer = Layer.succeed(
   Vcs.Service,
   Vcs.Service.of({
     base: () => Effect.succeed(null),
+    initialize: () => Effect.fail(new Vcs.InitializeError({ kind: "unsupported" })),
     transform: () => Effect.succeed({ dispose: Effect.void }),
     reload: () => Effect.void,
     info: () => Effect.succeed({ branch: {} }),
@@ -113,6 +114,7 @@ const fileSystemLayer = Layer.succeed(
     read: () => unavailable("FileSystem.read"),
     list: () => unavailable("FileSystem.list"),
     find: () => unavailable("FileSystem.find"),
+    write: () => unavailable("FileSystem.write"),
   }),
 )
 

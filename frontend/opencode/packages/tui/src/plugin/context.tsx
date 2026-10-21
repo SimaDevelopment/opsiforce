@@ -1,5 +1,5 @@
-import type { PluginInfo } from "@opencode-ai/client"
-import type { Plugin } from "@opencode-ai/plugin/tui"
+import type { PluginInfo } from "@opencode/client"
+import type { Plugin } from "@opencode/plugin/tui"
 import type { MarkdownCodeBlockRenderer, MarkdownOptions } from "@opentui/core"
 import {
   batch,
@@ -14,11 +14,10 @@ import {
   type ParentProps,
 } from "solid-js"
 import path from "path"
-import { readFile, stat } from "fs/promises"
+import { stat } from "fs/promises"
 import { fileURLToPath } from "url"
-import type { Page } from "@opencode-ai/plugin/tui/context"
-import { Hash } from "@opencode-ai/util/hash"
-import { Host } from "@opencode-ai/plugin/host"
+import type { Page } from "@opencode/plugin/tui/context"
+import { Host } from "@opencode/plugin/host"
 import { resolveSlots, type Claim } from "./structure"
 import { createStore, produce, reconcile as reconcileStore, unwrap } from "solid-js/store"
 import { isDeepEqual } from "remeda"
@@ -28,12 +27,13 @@ import { useTuiLifecycle } from "../context/runtime"
 import { useClient } from "../context/client"
 import { useData } from "../context/data"
 import { errorMessage } from "../util/error"
-import { builtins } from "./builtins"
 import { createPluginContext, usePluginHost, type Dispose, type RegisteredSlot, type SlotRender } from "./api"
 import { createSourceWatcher } from "./watch"
-import { discoverPluginTargets, freshSpecifier, localSource } from "./discovery"
+import { discoverPluginTargets, localSource, mergePluginTargets } from "./discovery"
+import { createPluginSources } from "./source"
 import { isMissingPath } from "../util/config-directories"
 import { createMarkdownRenderer } from "./markdown"
+import { useLog, type LogTags } from "../context/log"
 
 export interface PackageSource {
   readonly prepare: (spec: string, install?: boolean) => Promise<Host.Target>
@@ -81,12 +81,13 @@ type Registration = {
 
 // One entry of the desired plugin generation produced by the resolve phase.
 type Desired = Pick<Registration, "plugin" | "source" | "target" | "version" | "options"> & { enabled: boolean }
+type Trace = <T>(stage: string, tags: LogTags, task: () => Promise<T>) => Promise<T>
 
 const PluginContext = createContext<Value>()
-let sourceVersion = Date.now()
 
 export function PluginProvider(props: ParentProps<{ packages: PackageSource; directories: string[] }>) {
   const host = usePluginHost()
+  const log = useLog({ component: "plugin" })
   const config = useConfig()
   const lifecycle = useTuiLifecycle()
   const client = useClient()
@@ -109,14 +110,33 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // One save can emit several watch events. Remember setup failures so those
   // events do not repeatedly tear down and restore the last good generation.
   const setupFailures = new Map<string, { version: string; options: Registration["options"]; error: string }>()
-  const sourceVersions = new Map<string, { digest: string; generation: number }>()
-  const sourceGeneration = async (entrypoint: string) => {
-    const digest = Hash.sha256(await readFile(new URL(entrypoint)))
-    const previous = sourceVersions.get(entrypoint)
-    if (previous?.digest === digest) return previous.generation
-    const generation = ++sourceVersion
-    sourceVersions.set(entrypoint, { digest, generation })
-    return generation
+  let operationID = 0
+  const trace: Trace = (stage, tags, task) => {
+    const id = ++operationID
+    const started = Date.now()
+    log.debug("plugin operation started", { id, stage, ...tags })
+    const stalled = setTimeout(
+      () => log.warn("plugin operation stalled", { id, stage, elapsedMs: Date.now() - started, ...tags }),
+      5_000,
+    )
+    return task()
+      .then(
+        (value) => {
+          log.debug("plugin operation completed", { id, stage, durationMs: Date.now() - started, ...tags })
+          return value
+        },
+        (error) => {
+          log.warn("plugin operation failed", {
+            id,
+            stage,
+            durationMs: Date.now() - started,
+            error: errorMessage(error),
+            ...tags,
+          })
+          throw error
+        },
+      )
+      .finally(() => clearTimeout(stalled))
   }
   const markdown = createMarkdownRenderer(() =>
     Object.values(store.registrations).flatMap((registration) => (registration.active ? [registration.markdown] : [])),
@@ -159,7 +179,9 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
         active: () => Boolean(store.registrations[id]?.active),
       },
     })
-    const cleanup = await setup(item.plugin, context, owned).catch((error) => {
+    const cleanup = await trace("setup", { plugin: id, target: item.target }, () =>
+      setup(item.plugin, context, owned),
+    ).catch((error) => {
       clearContributions(id)
       if (item.target)
         setupFailures.set(item.target, {
@@ -191,7 +213,9 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       setStore("registrations", id, "active", false)
       setStore("registrations", id, "cleanups", [])
     })
-    await disposeAll(cleanups).finally(() =>
+    await trace("cleanup", { plugin: id, target: item.target, cleanups: cleanups.length }, () =>
+      disposeAll(cleanups),
+    ).finally(() =>
       batch(() => {
         if (store.registrations[id]) {
           clearContributions(id)
@@ -241,6 +265,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
     clearTimeout(pending)
     watcher.dispose()
   }
+  const sources = createPluginSources(watcher.wait)
   onCleanup(stopWatching)
 
   // Rebuild the plugin generation as resolve → compare → swap, mirroring the
@@ -252,24 +277,40 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
   // Package resolution failures would otherwise retry a full npm install on
   // every watch event; remember them until the configuration changes.
   const npmFailures = new Map<string, string>()
+  let reconciliationID = 0
   const reconcile = async () => {
-    await Promise.all(props.directories.map(watcher.wait))
-    const entries = [
-      ...(await discoverPluginTargets(props.directories)).map((entry) => ({
-        entry,
-        install: true,
-        optional: true,
-      })),
-      ...serverTuiPlugins().map((plugin) => ({
-        entry: plugin.source.type === "package" ? plugin.source.target : path.dirname(plugin.source.path),
-        install: false,
-        optional: true,
-      })),
-      ...(config.data.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
-    ]
+    const id = ++reconciliationID
+    const started = Date.now()
+    log.info("plugin reconciliation started", { id })
+    await trace("watch", { reconciliation: id, directories: props.directories }, () =>
+      Promise.all(props.directories.map(watcher.wait)).then(() => undefined),
+    )
+    // Discovery admits TUI-only plugins while server inventory carries combined plugins.
+    // Their overlap is intentional; explicit configuration remains the final authority.
+    const entries = mergePluginTargets(
+      [
+        ...(
+          await trace("discover", { reconciliation: id, directories: props.directories }, () =>
+            discoverPluginTargets(props.directories),
+          )
+        ).map((entry) => ({
+          entry,
+          install: true,
+          optional: true,
+        })),
+        ...serverTuiPlugins().map((plugin) => ({
+          entry: plugin.source.type === "package" ? plugin.source.target : path.dirname(plugin.source.path),
+          install: false,
+          optional: true,
+        })),
+        ...(config.data.plugins ?? []).map((entry) => ({ entry, install: true, optional: false })),
+      ],
+      directory,
+    )
 
     // Resolve: fold entries into one desired generation. A source that fails
     // to import keeps its running previous version and only reports failure.
+    const { builtins } = await import("./builtins")
     const desired = new Map<string, Desired>()
     for (const plugin of builtins)
       desired.set(plugin.id, { plugin, source: "builtin", version: "builtin", enabled: true })
@@ -304,12 +345,20 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
       const memo = local ? undefined : npmFailures.get(target)
       const resolved = memo
         ? { status: "failed" as const, error: memo }
-        : await resolvePlugin(target, local, options, previous, props.packages, source.install, sourceGeneration).catch(
-            (error) => ({
-              status: "failed" as const,
-              error: errorMessage(error),
-            }),
-          )
+        : await resolvePlugin(
+            target,
+            local,
+            options,
+            previous,
+            props.packages,
+            source.install,
+            sources.read,
+            trace,
+            id,
+          ).catch((error) => ({
+            status: "failed" as const,
+            error: errorMessage(error),
+          }))
       if (resolved.status === "unsupported") {
         if (source.optional) continue
         failures.push({ target, status: "unsupported" })
@@ -435,6 +484,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
           action: { label: "Open plugins", run: () => host.keymap.dispatch("plugins.list") },
         })
     setStore("states", reconcileStore(states))
+    log.info("plugin reconciliation completed", { id, durationMs: Date.now() - started, plugins: desired.size })
   }
   const slotItems = new WeakMap<SlotRender, Claim<SlotRender>>()
   // The mounted slot tree: path -> live <Slot> instance count. Reference
@@ -533,6 +583,7 @@ export function PluginProvider(props: ParentProps<{ packages: PackageSource; dir
           ),
         )
         .then(() => setStore("registrations", reconcileStore({})))
+        .finally(sources.dispose)
       return disposing
     }
     const unregister = lifecycle.add(dispose)
@@ -605,29 +656,38 @@ async function resolvePlugin(
   previous: Registration | undefined,
   packages: PackageSource,
   install: boolean,
-  sourceGeneration: (entrypoint: string) => Promise<number>,
+  readSource: ReturnType<typeof createPluginSources>["read"],
+  trace: Trace,
+  reconciliation: number,
 ) {
   // Package entrypoints never change within a session, so a loaded previous
   // version needs no re-resolution (which could otherwise hit npm).
   if (!local && previous && sameOptions(previous.options, options))
     return { status: "unchanged" as const, plugin: previous.plugin, version: previous.version }
-  const target = local ? { directory: fileURLToPath(local) } : await packages.prepare(spec, install)
+  const target = local
+    ? { directory: fileURLToPath(local) }
+    : await trace("prepare", { reconciliation, target: spec, install }, () => packages.prepare(spec, install))
   const entrypoint = Host.resolve(target).tui
   if (!entrypoint) return { status: "unsupported" as const }
   // Content remains stable across the several mtimes one save may expose to
   // filesystem watchers, while the generation keeps reverted modules fresh.
-  let generation = local ? await sourceGeneration(entrypoint) : undefined
+  let source = local
+    ? await trace("read", { reconciliation, target: spec, entrypoint }, () => readSource(entrypoint))
+    : {
+        version: entrypoint,
+        module: await trace("load", { reconciliation, target: spec, entrypoint }, () => Host.load(entrypoint)),
+      }
   while (true) {
-    const version = generation === undefined ? entrypoint : freshSpecifier(entrypoint, generation)
+    const version = source.version
     if (previous && previous.version === version && sameOptions(previous.options, options))
       return { status: "unchanged" as const, plugin: previous.plugin, version }
-    const mod = await Host.load(version)
-    if (generation !== undefined) {
-      const observed = await sourceGeneration(entrypoint)
+    const mod = source.module
+    if (local) {
+      const observed = await readSource(entrypoint)
       // In-place saves can change the file between hashing and import. Retry
       // so setup always runs under the generation of the imported bytes.
-      if (generation !== observed) {
-        generation = observed
+      if (version !== observed.version) {
+        source = observed
         continue
       }
     }

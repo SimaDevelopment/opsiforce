@@ -1,5 +1,5 @@
 import type { FileNode } from "@/runtime/server/types"
-import type { OpenCodeEvent } from "@opencode-ai/client/promise"
+import type { OpenCodeEvent } from "@opencode/client/promise"
 
 type WatcherEvent = Extract<OpenCodeEvent, { type: "filesystem.changed" }>
 
@@ -15,7 +15,9 @@ type WatcherOps = {
 
 export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
   const path = ops.normalize(event.data.file)
+
   if (!path) return
+
   if (path.startsWith(".git/")) return
 
   if (ops.hasFile(path) || ops.isOpen?.(path)) {
@@ -24,11 +26,15 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
 
   if (event.data.event === "change") {
     if (ops.node(path)?.type !== "directory") return
+
     if (!ops.isDirLoaded(path)) return
     ops.refreshDir(path)
+
     return
   }
+
   const parent = path.split("/").slice(0, -1).join("/")
+
   if (!ops.isDirLoaded(parent)) return
 
   ops.refreshDir(parent)

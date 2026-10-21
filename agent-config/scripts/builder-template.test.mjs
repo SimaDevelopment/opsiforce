@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { createServer } from "node:http"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test, { after, before, describe } from "node:test"
 import { fileURLToPath } from "node:url"
+import { createContext, createSummary, provisionWorkspace, reconcileContent } from "./agent-workspace-migrate.mjs"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.join(here, "..", "agents", "skill-agent-builder")
@@ -1210,5 +1212,78 @@ describe("check-expectations.mjs", () => {
 
     assert.equal(result.status, 1)
     assert.match(result.stdout, /scratch\/expectations\.md: missing/)
+  })
+})
+
+describe("the template files migration", () => {
+  const templateDir = path.join(packageRoot, "template")
+  const migrationDir = path.join(packageRoot, "migrations", "20261022_current_template_files")
+  const migration = JSON.parse(readFileSync(path.join(migrationDir, "migration.json"), "utf8"))
+  const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest("hex")
+
+  function templateFiles(directory, prefix = "") {
+    const found = []
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) found.push(...templateFiles(path.join(directory, entry.name), relative))
+      else found.push(relative)
+    }
+    return found.toSorted()
+  }
+
+  function provisionedChat(t) {
+    const root = mkdtempSync(path.join(tmpdir(), "builder-chat-"))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    const opencodeRoot = path.join(root, "opencode")
+    mkdirSync(opencodeRoot)
+    writeFileSync(path.join(opencodeRoot, "opencode.json"), "{}")
+    const context = createContext({
+      AGENT_NAME: "skill-agent-builder",
+      WORKSPACE: path.join(root, "workspace"),
+      AGENTS_ROOT: path.dirname(packageRoot),
+      OPENCODE_ROOT: opencodeRoot,
+      AGENT_IMAGE_VERSION: "test",
+    })
+    mkdirSync(context.workspace)
+    return context
+  }
+
+  test("refreshes every template file and accepts its current content, so a chat created today migrates cleanly", () => {
+    assert.deepEqual(migration.operations.map((operation) => operation.target), templateFiles(templateDir))
+    for (const operation of migration.operations) {
+      assert.equal(operation.type, "copy")
+      assert.equal(path.join(migrationDir, operation.source), path.join(templateDir, operation.target))
+      assert.ok(
+        operation.managedChecksums.includes(sha256(path.join(templateDir, operation.target))),
+        `${operation.target} changed: add its new sha256 to managedChecksums and ship a new migration for chats behind it`,
+      )
+    }
+  })
+
+  test("brings back a missing file, keeps an edited one as a conflict, and asks for no pod recreate", async (t) => {
+    const context = provisionedChat(t)
+    await provisionWorkspace(context, createSummary(context))
+    rmSync(path.join(context.workspace, "scripts", "tp.sh"))
+    writeFileSync(path.join(context.workspace, "scripts", "api.sh"), "# edited in this chat\n")
+
+    const summary = await reconcileContent(context, createSummary(context), { withMigrations: true })
+
+    assert.equal(summary.status, "conflict")
+    assert.deepEqual(summary.conflicts, [
+      { migrationId: migration.id, path: "scripts/api.sh", reason: "checksum mismatch" },
+    ])
+    assert.equal(summary.requiresPodRecreate, false)
+    assert.equal(readFileSync(path.join(context.workspace, "scripts", "api.sh"), "utf8"), "# edited in this chat\n")
+    assert.equal(sha256(path.join(context.workspace, "scripts", "tp.sh")), sha256(path.join(templateDir, "scripts", "tp.sh")))
+  })
+
+  test("applies on a chat laid from the current template", async (t) => {
+    const context = provisionedChat(t)
+    await provisionWorkspace(context, createSummary(context))
+
+    const summary = await reconcileContent(context, createSummary(context), { withMigrations: true })
+
+    assert.equal(summary.status, "applied")
+    assert.ok(summary.appliedMigrations.includes(migration.id))
   })
 })

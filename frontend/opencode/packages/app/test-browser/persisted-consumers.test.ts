@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { ModelSelectionSchema } from "@/providers/models/selection"
+import { flushPersisted } from "@/runtime/persistence/persist"
 import { persisted } from "@/runtime/persistence/storage"
 
 test("persisted model selection hydrates, updates and serializes the schema shape", () => {
@@ -22,9 +23,11 @@ test("persisted model selection hydrates, updates and serializes the schema shap
           notify: async () => {},
         },
       )
+
       expect(state.session.session1?.agent).toBe("plan")
       setState("session", "session1", { agent: "build", variant: null })
       expect(state.session.session1?.agent).toBe("build")
+      flushPersisted()
       expect(JSON.parse(localStorage.getItem(key) ?? "null")).toEqual({
         session: { session1: { agent: "build", variant: null } },
       })

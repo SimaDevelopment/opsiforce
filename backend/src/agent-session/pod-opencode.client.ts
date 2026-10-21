@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { OpencodeErrorBody, PodResponded, PodTimeout, PodUnreachable } from './agent-session.errors';
 import type { JsonObject } from '../common/json';
-import type { RuntimeHealth, SessionInfo } from './agent-session.types';
+import type { RuntimeInfo, SessionInfo } from './agent-session.types';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_SESSION_LIST_PAGES = 100;
@@ -100,8 +100,8 @@ export class PodOpencodeClient {
     }
   }
 
-  async health(upstream: string, options: CallOptions = {}): Promise<RuntimeHealth> {
-    return this.call<RuntimeHealth>(upstream, '/api/health', options);
+  async info(upstream: string, options: CallOptions = {}): Promise<RuntimeInfo> {
+    return this.call<RuntimeInfo>(upstream, '/api/info', options);
   }
 
   /**

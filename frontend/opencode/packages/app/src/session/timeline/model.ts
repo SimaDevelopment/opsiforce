@@ -1,27 +1,24 @@
 import { createMemo, createResource, type Accessor } from "solid-js"
-import type { SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionMessageInfo } from "@opencode/client/promise"
 import { useData } from "@/runtime/server/current"
+import { getSessionMessageHandoff } from "@/session/handoff"
 import type { SessionModel } from "../model"
 
 const leadingTurnPageDelay = 200
+
 const leadingTurnPageLimit = 3
 
-export {
-  selectSessionUserMessages as selectUserMessages,
-  selectVisibleSessionUserMessages as selectVisibleUserMessages,
-} from "../session-domain"
-
-export function createTimelineModel(input: { session: Pick<SessionModel, "identity" | "history"> }) {
+export function createTimelineModel(input: { session: Pick<SessionModel, "identity" | "history" | "ownership"> }) {
   const data = useData()
 
   const [resource] = createResource(
     () => input.session.identity.sessionID(),
     async (id) => {
       if (!id) return
-      const key = input.session.identity.sessionKey()
+      const owner = input.session.ownership.capture()
       await Promise.all([data.session.message.sync(id), data.session.pending.sync(id)])
       await enrichLeadingTurn({
-        current: () => input.session.identity.sessionKey() === key,
+        current: owner.current,
         messages: () => data.session.message.list(id),
         more: () => data.session.message.more(id),
         loading: () => data.session.message.loading(id),
@@ -29,21 +26,36 @@ export function createTimelineModel(input: { session: Pick<SessionModel, "identi
         pause: () => new Promise((resolve) => setTimeout(resolve, leadingTurnPageDelay)),
         maxPages: leadingTurnPageLimit,
       }).catch(() => undefined)
+
+      return id
     },
   )
+
   const ready = createMemo(() => {
     const id = input.session.identity.sessionID()
-    // Enrich the partial leading group without withholding the already loaded tail.
-    return !id || data.session.message.list(id).length > 0 || !resource.loading
+
+    if (!id || (!resource.loading && resource.latest === id)) return true
+
+    // Enrich the partial leading group without withholding the already loaded tail. Undelivered inbox rows
+    // load with the inbox, not the transcript, so alone they are no tail; a first prompt shows through its handoff.
+    return (
+      data.session.message.list(id).some((message) => !data.session.input.has(id, message.id)) ||
+      !!getSessionMessageHandoff(input.session.identity.sessionKey())
+    )
   })
+
   const more = () => {
     const id = input.session.identity.sessionID()
+
     return id ? data.session.message.more(id) : false
   }
+
   const loading = () => {
     const id = input.session.identity.sessionID()
+
     return id ? data.session.message.loading(id) : false
   }
+
   const loadOlder = async (options?: { before?: () => void; after?: (done: boolean) => void }) => {
     return loadOlderTimeline({
       sessionID: input.session.identity.sessionID,
@@ -78,18 +90,24 @@ export async function enrichLeadingTurn(input: {
     if (!input.current() || pages >= input.maxPages || !leadingTurnNeedsParent(input.messages()) || !input.more())
       return
     await input.pause()
+
     if (!input.current() || !leadingTurnNeedsParent(input.messages()) || !input.more()) return
+
     if (input.loading()) return load(pages)
     await input.loadMore()
+
     return load(pages + 1)
   }
+
   return load(0)
 }
 
-export function leadingTurnNeedsParent(messages: SessionMessageInfo[]) {
+function leadingTurnNeedsParent(messages: SessionMessageInfo[]) {
   const assistant = messages.findIndex((message) => message.type === "assistant")
+
   if (assistant === -1) return false
   const boundary = messages.findIndex((message) => message.type === "user" || message.type === "shell")
+
   return boundary === -1 || assistant < boundary
 }
 
@@ -102,6 +120,7 @@ export async function loadOlderTimeline(input: {
   after?: (done: boolean) => void
 }) {
   const id = input.sessionID()
+
   if (!id || !input.more() || input.loading()) return
 
   input.before?.()
@@ -109,6 +128,7 @@ export async function loadOlderTimeline(input: {
     if (input.sessionID() === id) input.after?.(true)
     throw error
   })
+
   if (input.sessionID() !== id) return
   input.after?.(true)
 }

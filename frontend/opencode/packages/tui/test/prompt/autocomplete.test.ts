@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { measureEditText } from "@opentui/core"
 import path from "path"
-import type { KeymapCommand } from "@opencode-ai/plugin/tui/context"
+import type { KeymapCommand } from "@opencode/plugin/tui/context"
 import {
   directoryAutocomplete,
   directoryAutocompleteExactValue,
@@ -12,14 +13,17 @@ import {
 } from "../../src/prompt/directory-completion"
 
 describe("directoryAutocomplete", () => {
-  test("lists parents and siblings through the current workspace without changing location", async () => {
-    const location = { directory: "/project/current", workspace: "workspace_1" }
+  test("lists parents and siblings without changing location", async () => {
+    const location = { directory: "/project/current" }
     const calls: unknown[] = []
     const file = {
       list: async (input: unknown) => {
         calls.push(input)
         return {
-          location: { directory: location.directory, workspaceID: location.workspace },
+          location: {
+            directory: location.directory,
+            project: { id: "proj_test", directory: "/project", canonical: "/project" },
+          },
           data: [
             { path: "./", type: "directory" },
             { path: "../sibling/", type: "directory" },
@@ -44,13 +48,16 @@ describe("directoryAutocomplete", () => {
   })
 
   test("resolves home and nested sibling completions against the current location", async () => {
-    const location = { directory: "/project/current", workspace: "workspace_1" }
+    const location = { directory: "/project/current" }
     const calls: unknown[] = []
     const file = {
       list: async (input: unknown) => {
         calls.push(input)
         return {
-          location: { directory: location.directory },
+          location: {
+            directory: location.directory,
+            project: { id: "proj_test", directory: "/project", canonical: "/project" },
+          },
           data: [{ path: "../sibling/src/", type: "directory" }],
         }
       },
@@ -81,27 +88,21 @@ const argumentAutocomplete = (command: KeymapCommand) =>
   command.id === "session.cd" ? ("directory" as const) : undefined
 
 describe("slashArgumentAutocomplete", () => {
-  test("starts after the command separator", () => {
-    expect(slashArgumentAutocomplete("/cd ", 4, commands, argumentAutocomplete)).toEqual({
+  test.each([
+    ["/cd ", "/cd "],
+    ["/cd src", "/cd "],
+    ["/chdir src", "/chdir "],
+    ["/cd\t中文", "/cd\t"],
+  ])("starts %j after the command separator", (beforeCursor, head) => {
+    expect(slashArgumentAutocomplete(beforeCursor, "unicode", commands, argumentAutocomplete)).toEqual({
       type: "directory",
-      index: 4,
-    })
-    expect(slashArgumentAutocomplete("/cd src", 7, commands, argumentAutocomplete)).toEqual({
-      type: "directory",
-      index: 4,
-    })
-  })
-
-  test("supports aliases", () => {
-    expect(slashArgumentAutocomplete("/chdir src", 10, commands, argumentAutocomplete)).toEqual({
-      type: "directory",
-      index: 7,
+      index: measureEditText(head, { widthMethod: "unicode" }),
     })
   })
 
   test("does not complete the command token", () => {
-    expect(slashArgumentAutocomplete("/cd", 3, commands, argumentAutocomplete)).toBeUndefined()
-    expect(slashArgumentAutocomplete("/other ", 7, commands, argumentAutocomplete)).toBeUndefined()
+    expect(slashArgumentAutocomplete("/cd", "unicode", commands, argumentAutocomplete)).toBeUndefined()
+    expect(slashArgumentAutocomplete("/other ", "unicode", commands, argumentAutocomplete)).toBeUndefined()
   })
 })
 

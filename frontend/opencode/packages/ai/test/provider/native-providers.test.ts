@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigProvider, Effect } from "effect"
-import { HttpClientRequest } from "effect/unstable/http"
+import { HttpClientRequest } from "effect/http"
 import { LLM, Message, ToolDefinition } from "../../src/index.js"
 import {
   AmazonBedrock,
@@ -8,10 +8,13 @@ import {
   Anthropic,
   AnthropicCompatible,
   Azure,
+  Baseten,
   Cerebras,
   CloudflareAIGateway,
   CloudflareWorkersAI,
   DeepInfra,
+  DeepSeek,
+  Fireworks,
   Google,
   GoogleVertex,
   GoogleVertexChat,
@@ -40,12 +43,13 @@ describe("native OpenAI-compatible providers", () => {
       [Azure.configure({ resourceName: "resource", apiKey: "test" }).responses("model"), "azure"],
       [AmazonBedrock.configure({ apiKey: "test" }).model("model"), "bedrock"],
       [AmazonBedrockMantle.configure({ apiKey: "test" }).chat("model"), "mantle"],
+      [AmazonBedrockMantle.configure({ apiKey: "test" }).messages("model"), "mantle"],
       [AmazonBedrockMantle.configure({ apiKey: "test" }).responses("model"), "mantle"],
       [Google.configure({ apiKey: "test" }).model("model"), "google"],
       [GoogleVertex.configure(vertex).model("model"), "vertex"],
       [GoogleVertexChat.configure(vertex).model("model"), "vertex"],
       [GoogleVertexResponses.configure(vertex).model("model"), "vertex"],
-      [GoogleVertexMessages.configure(vertex).model("model"), "anthropic"],
+      [GoogleVertexMessages.configure(vertex).model("model"), "vertex"],
       [Anthropic.configure({ apiKey: "test" }).model("model"), "anthropic"],
       [
         AnthropicCompatible.configure({ baseURL: "https://example.test/v1", provider: "minimax" }).model("model"),
@@ -57,7 +61,11 @@ describe("native OpenAI-compatible providers", () => {
         "custom",
       ],
       [Cerebras.configure({ apiKey: "test" }).model("model"), "cerebras"],
+      [Baseten.configure({ apiKey: "test" }).model("model"), "baseten"],
+      [DeepSeek.configure({ apiKey: "test" }).model("model"), "deepseek"],
+      [Fireworks.configure({ apiKey: "test" }).model("model"), "fireworks"],
       [DeepInfra.configure({ apiKey: "test" }).model("model"), "deepinfra"],
+      [Groq.configure({ apiKey: "test" }).model("model"), "groq"],
       [TogetherAI.configure({ apiKey: "test" }).model("model"), "togetherai"],
       [CloudflareAIGateway.configure({ accountId: "account" }).model("model"), "cloudflare-ai-gateway"],
       [CloudflareWorkersAI.configure({ accountId: "account" }).model("model"), "cloudflare-workers-ai"],
@@ -75,23 +83,53 @@ describe("native OpenAI-compatible providers", () => {
 
     expect(together).toMatchObject({
       provider: "togetherai",
-      compatibility: { maxTokensField: "max_tokens", supportsStore: false, supportsStrictMode: false },
+      compatibility: { maxTokensField: "max_tokens", supportsStrictMode: false },
       route: { id: "togetherai-chat", protocol: "openai-chat" },
     })
     expect(together.route.endpoint.baseURL).toBe("https://api.together.xyz/v1")
     expect(cerebras).toMatchObject({
       provider: "cerebras",
-      compatibility: { maxTokensField: "max_tokens", reasoningField: "reasoning", supportsStore: false },
+      compatibility: { maxTokensField: "max_tokens", reasoningField: "reasoning" },
       route: { id: "cerebras-chat", protocol: "openai-chat" },
     })
     expect(cerebras.route.endpoint.baseURL).toBe("https://api.cerebras.ai/v1")
   })
 
+  it.effect("preserves extracted providers' Chat requests and identity through custom endpoints", () =>
+    Effect.gen(function* () {
+      for (const provider of [Baseten, DeepSeek, Fireworks]) {
+        const settings = {
+          apiKey: "fixture",
+          baseURL: "https://gateway.example/v1",
+          reasoningEffort: "high",
+        }
+        const selected = provider.configure(settings).model("test-model")
+        expect(selected.provider).toBe(provider.id)
+        expect(selected.route.id).toBe(`${provider.id}-chat`)
+        expect(selected.route.protocol).toBe("openai-chat")
+        expect(selected.route.endpoint.baseURL).toBe(settings.baseURL)
+        const input = {
+          prompt: "Use a tool.",
+          generation: { maxTokens: 48 },
+          tools: [ToolDefinition.make({ name: "lookup", description: "Lookup data", inputSchema: { type: "object" } })],
+        }
+        const native = yield* compileRequest(LLM.request({ ...input, model: selected }))
+        const generic = yield* compileRequest(
+          LLM.request({
+            ...input,
+            model: OpenAICompatible.configure({ ...settings, provider: provider.id }).model("test-model"),
+          }),
+        )
+        expect(native.body).toEqual(generic.body)
+      }
+    }),
+  )
+
   test("preserves native DeepInfra provider and route identity", () => {
     const deepinfra = DeepInfra.configure({ apiKey: "fixture" }).model("google/gemma-3-27b-it")
     expect(deepinfra).toMatchObject({
       provider: "deepinfra",
-      compatibility: { maxTokensField: "max_tokens", reasoningField: "reasoning_content", supportsStore: false },
+      compatibility: { maxTokensField: "max_tokens", reasoningField: "reasoning_content" },
       route: { id: "deepinfra-chat", protocol: "openai-chat" },
     })
     expect(deepinfra.route.endpoint.baseURL).toBe("https://api.deepinfra.com/v1/openai")
@@ -107,7 +145,7 @@ describe("native OpenAI-compatible providers", () => {
           tools: [
             ToolDefinition.make({ name: "lookup", description: "Look up data", inputSchema: { type: "object" } }),
           ],
-          providerOptions: { store: true },
+          store: true,
         }),
       )
 
@@ -132,7 +170,7 @@ describe("native OpenAI-compatible providers", () => {
             ]),
             Message.user("Continue."),
           ],
-          providerOptions: { store: true },
+          store: true,
         }),
       )
 
@@ -164,13 +202,13 @@ describe("native OpenAI-compatible providers", () => {
   })
 
   test("maps package settings onto native executable models", () => {
-    for (const native of [TogetherAI, Cerebras]) {
+    for (const native of [Baseten, Cerebras, DeepSeek, Fireworks, TogetherAI]) {
       const selected = native.model("provider-model", {
         apiKey: "fixture",
         baseURL: "https://gateway.example/v1",
         headers: { "x-application": "opencode" },
         body: { service_tier: "priority" },
-        providerOptions: { reasoningEffort: "high" },
+        reasoningEffort: "high",
       })
 
       expect(selected.route.endpoint.baseURL).toBe("https://gateway.example/v1")
@@ -183,6 +221,24 @@ describe("native OpenAI-compatible providers", () => {
   it.effect("resolves provider environment credentials and preserves deprecated Together credentials", () =>
     Effect.gen(function* () {
       const scenarios = [
+        {
+          model: Baseten.configure().model("model"),
+          env: { BASETEN_API_KEY: "baseten-secret" },
+          token: "baseten-secret",
+          url: "https://inference.baseten.co/v1/chat/completions",
+        },
+        {
+          model: DeepSeek.configure().model("deepseek-chat"),
+          env: { DEEPSEEK_API_KEY: "deepseek-secret" },
+          token: "deepseek-secret",
+          url: "https://api.deepseek.com/v1/chat/completions",
+        },
+        {
+          model: Fireworks.configure().model("model"),
+          env: { FIREWORKS_API_KEY: "fireworks-secret" },
+          token: "fireworks-secret",
+          url: "https://api.fireworks.ai/inference/v1/chat/completions",
+        },
         {
           model: TogetherAI.configure().model("llama"),
           env: { TOGETHER_API_KEY: "together-primary", TOGETHER_AI_API_KEY: "together-legacy" },

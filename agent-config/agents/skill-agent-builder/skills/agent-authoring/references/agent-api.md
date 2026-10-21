@@ -1,8 +1,7 @@
 # The Agent calls, exactly
 
-Every call is an Opsiforce Public API v1 path through `scripts/api.sh <METHOD> <path> [json]`, which
-sends the service key to `https://public-api.$EXTERNAL_SERVICES_HOST/api/v1<path>`; the Agent's id goes
-in the path, the fields in the JSON body.
+Every call is `scripts/api.sh <METHOD> <path> [json]`, on the terms `service-public-api` sets; the
+Agent's id goes in the path, the fields in the JSON body.
 
 ## What this chat may call
 
@@ -55,7 +54,7 @@ is `{hash}` or `null`, so a Production hash that differs from Development's mean
 
 ## Failures worth recognising
 
-A refusal is `application/problem+json` whose `type` ends in the slug below.
+Beside the refusals `service-public-api` lists, an Agent call answers these `type` slugs:
 
 | `type` slug | Meaning |
 |---|---|
@@ -65,4 +64,3 @@ A refusal is `application/problem+json` whose `type` ends in the slug below.
 | `validation-error` | the body itself is malformed |
 | `template-refused` | every refused Template path is listed in `errors[]` with its reason; nothing was saved |
 | `template-changed` | `template/` changed during the copy: stop whatever writes into it and save again |
-| `permission-denied` with `Opsiforce-Outcome: not allowed` | this chat's Opsiforce Public API configuration has the setting named in `Opsiforce-Setting` off; the `detail` names it and links to it. Tell the author, and do not retry |

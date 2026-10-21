@@ -1,8 +1,8 @@
 export * as Form from "./form.js"
 
-import { Form } from "@opencode-ai/schema/form"
+import { Form } from "@opencode/schema/form"
 import { Cache, Context, Deferred, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Bus } from "./bus.js"
 
 const RETENTION = Duration.minutes(10)
@@ -32,7 +32,7 @@ export type Answer = typeof Answer.Type
 export const Reply = Form.Reply
 export type Reply = typeof Reply.Type
 
-export { Event } from "@opencode-ai/schema/form"
+export { Event } from "@opencode/schema/form"
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Form.NotFoundError", {
   id: ID,
@@ -74,18 +74,23 @@ export interface ReplyInput {
   readonly answer: Answer
 }
 
+export interface CancelOptions {
+  readonly message?: string
+}
+
 export interface ListInput {
   readonly sessionID?: Form.Info["sessionID"]
 }
 
 export interface Interface {
+  readonly close: Effect.Effect<void>
   readonly create: (input: CreateInput) => Effect.Effect<Info, AlreadyExistsError | InvalidFormError>
   readonly ask: (input: CreateInput) => Effect.Effect<TerminalState, AlreadyExistsError | InvalidFormError>
   readonly get: (id: ID) => Effect.Effect<Info, NotFoundError>
   readonly list: (input?: ListInput) => Effect.Effect<ReadonlyArray<Info>>
   readonly state: (id: ID) => Effect.Effect<State, NotFoundError>
   readonly reply: (input: ReplyInput) => Effect.Effect<void, AlreadySettledError | InvalidAnswerError | NotFoundError>
-  readonly cancel: (id: ID) => Effect.Effect<void, AlreadySettledError | NotFoundError>
+  readonly cancel: (id: ID, options?: CancelOptions) => Effect.Effect<void, AlreadySettledError | NotFoundError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Form") {}
@@ -100,6 +105,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
+    let closed = false
     const forms = yield* Cache.makeWith<ID, Entry>(
       () => Effect.die(new Error("Form cache must be used via set/getSuccess, never get")),
       {
@@ -137,6 +143,7 @@ export const layer = Layer.effect(
           }
           yield* Cache.set(forms, id, entry)
           yield* bus.publish(Form.Event.Created, { form }).pipe(Effect.onError(() => Cache.invalidate(forms, id)))
+          if (closed) yield* cancel(id).pipe(Effect.orDie)
           return form
         }),
       ),
@@ -189,12 +196,15 @@ export const layer = Layer.effect(
       ),
     )
 
-    const cancel = Effect.fn("Form.cancel")((id: ID) =>
+    const cancel = Effect.fn("Form.cancel")((id: ID, options?: CancelOptions) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
           const entry = yield* requireEntry(id)
           if (entry.state.status !== "pending") return yield* new AlreadySettledError({ id })
-          const next: TerminalState = { status: "cancelled" }
+          const next: TerminalState = {
+            status: "cancelled",
+            ...(options?.message === undefined ? {} : { message: options.message }),
+          }
           yield* bus.publish(Form.Event.Cancelled, { id, sessionID: entry.form.sessionID })
           yield* Cache.set(forms, id, { ...entry, state: next })
           yield* Deferred.succeed(entry.deferred, next)
@@ -202,19 +212,21 @@ export const layer = Layer.effect(
       ),
     )
 
-    yield* Effect.addFinalizer(() =>
-      Cache.values(forms).pipe(
-        Effect.flatMap((entries) =>
-          Effect.forEach(
-            Array.from(entries).filter((entry) => entry.state.status === "pending"),
-            (entry) => cancel(entry.form.id).pipe(Effect.ignore),
-            { discard: true },
-          ),
+    const close = Effect.sync(() => {
+      closed = true
+    }).pipe(
+      Effect.andThen(Cache.values(forms)),
+      Effect.flatMap((entries) =>
+        Effect.forEach(
+          Array.from(entries).filter((entry) => entry.state.status === "pending"),
+          (entry) => cancel(entry.form.id).pipe(Effect.ignore),
+          { discard: true },
         ),
       ),
     )
+    yield* Effect.addFinalizer(() => close)
 
-    return Service.of({ create, ask, get, list, state, reply, cancel })
+    return Service.of({ create, ask, get, list, state, reply, cancel, close })
   }),
 )
 

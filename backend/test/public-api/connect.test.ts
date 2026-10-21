@@ -52,7 +52,7 @@ describe('connecting to an environment', () => {
   beforeEach(() => {
     pod.sessions.clear();
     pod.clearScripts();
-    pod.setHealth({ status: 200, body: { healthy: true, version: '1.18.4', pid: 1 } });
+    pod.setInfo({ status: 200, body: { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } } });
   });
 
   async function runningProject(options: { workspaceId?: string | null } = {}): Promise<string> {
@@ -121,13 +121,13 @@ describe('connecting to an environment', () => {
         baseUrl: `/api/proxy/${projectId}`,
         openapiUrl: `/api/proxy/${projectId}/openapi.json`,
         sessionId: expect.stringMatching(/^ses_/),
-        build: '1.18.4',
+        build: '2.1.2',
       });
     });
 
     it('reports a null build when the runtime identifies none', async () => {
       const projectId = await runningProject();
-      pod.setHealth({ status: 200, body: { healthy: true, pid: 1 } });
+      pod.setInfo({ status: 200, body: { pid: 1, urls: [], paths: { tmp: '/tmp' } } });
 
       expect((await connect(projectId, projectId)).json().build).toBeNull();
     });

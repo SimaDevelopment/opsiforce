@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { ephemeral, inventory } from "./event.js"
 import { optional } from "./schema.js"
 
-export const ID = Schema.String.pipe(Schema.brand("WebSearch.ID"))
+export const ID = Schema.String.pipe(Schema.brand("WebSearch.ID"), Schema.annotate({ identifier: "WebSearch.ID" }))
 export type ID = typeof ID.Type
 
 export interface Provider extends Schema.Schema.Type<typeof Provider> {}
@@ -26,7 +26,9 @@ export const Result = Schema.Struct({
   title: Schema.String.pipe(optional),
   content: Schema.String.pipe(optional),
   time: Schema.Struct({
-    published: Schema.Finite.pipe(optional),
+    published: Schema.Finite.pipe(optional).annotate({
+      description: "Publication time in milliseconds since the Unix epoch",
+    }),
   }),
 }).annotate({ identifier: "WebSearch.Result" })
 

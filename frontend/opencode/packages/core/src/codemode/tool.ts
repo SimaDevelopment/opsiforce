@@ -1,18 +1,19 @@
 export * as CodeModeTool from "./tool.js"
 
-import { CodeMode, Namespace, Tool, toolError } from "@opencode-ai/codemode"
+import { CodeMode, Namespace, Tool } from "@opencode/codemode"
 import type {
   Content,
-  Context,
+  Context as ToolContext,
   Error,
   Info,
   Metadata,
   Namespace as ToolNamespace,
   Result,
-} from "@opencode-ai/schema/tool"
-import { Effect, Ref, Schema, Semaphore } from "effect"
+} from "@opencode/schema/tool"
+import { Context, Effect, Ref, Schema, Semaphore } from "effect"
 import { definition, normalizedName } from "../tool/runtime.js"
 import { CodeModeCatalog } from "./catalog.js"
+import { CodeModeWeb } from "./web.js"
 
 const ExecuteFile = Schema.Struct({
   data: Schema.String,
@@ -46,11 +47,20 @@ type Node<T> = {
   readonly children: Map<string, Node<T>>
 }
 
-type ToolNode = Node<Tool.Tool<never>>
+type ToolNode = Node<Tool.Tool<Run>>
 
 type Tools = {
-  [name: string]: Tool.Tool<never> | Namespace.Namespace<never> | Tools
+  [name: string]: Tool.Tool<Run> | Namespace.Namespace<Run> | Tools
 }
+
+// Per-execution parts of a runtime shared by every execution against the same inventory.
+class Run extends Context.Service<
+  Run,
+  {
+    readonly executeTool: (name: string, tool: Info, input: unknown) => Effect.Effect<unknown, unknown>
+    readonly hooks: CodeMode.Hooks
+  }
+>()("@opencode/CodeModeTool/Run") {}
 
 export type Inventory = {
   readonly tools: ReadonlyMap<string, Info>
@@ -59,17 +69,17 @@ export type Inventory = {
 
 // Invariant model-facing guidance; the changing tool catalog is delivered through Instructions.
 const description = [
-  "Run JavaScript in a confined Code Mode runtime to orchestrate tool calls and compose their results.",
-  "Imports, direct filesystem access, and timers are unavailable. Do not use `fetch`; all external access goes through `tools`.",
-  "Within `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by `search`. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.",
+  "Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.",
+  "`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable; all other external access goes through `tools`.",
+  "Within `{ code }`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Inside `{ code }`, ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.",
   'Call tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>["tool-name"](input)`.',
   "Prefer an explicit `return`; if omitted, the final top-level expression becomes the result.",
-  "Await every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.all`.",
+  "Await every call whose completion matters; pending calls are interrupted when execution ends. Run independent calls concurrently with `Promise.allSettled`.",
 ].join("\n")
 
 export const create = (
   inventory: Inventory,
-  executeTool: (name: string, tool: Info, input: unknown, context: Context) => Effect.Effect<Result, Error>,
+  executeTool: (name: string, tool: Info, input: unknown, context: ToolContext) => Effect.Effect<Result, Error>,
 ) => {
   return {
     name: "execute",
@@ -82,49 +92,32 @@ export const create = (
         const files = yield* Ref.make<Array<CollectedFiles>>([])
         const calls = yield* Ref.make<Array<ExecuteCall>>([])
         const lock = Semaphore.makeUnsafe(1)
-        const updateCalls = (update: (items: Array<ExecuteCall>) => Array<ExecuteCall>) =>
+        const record = (update: (items: Array<ExecuteCall>) => Array<ExecuteCall>) =>
           lock.withPermit(
-            Ref.updateAndGet(calls, update).pipe(Effect.flatMap((toolCalls) => context.progress({ toolCalls }))),
+            Ref.updateAndGet(calls, update).pipe(Effect.tap((toolCalls) => context.progress({ toolCalls }))),
           )
-        const result = yield* runtime(
-          inventory,
-          (name, tool, input) =>
-            Effect.gen(function* () {
-              const index = yield* Ref.getAndUpdate(callIndex, (index) => index + 1)
-              const executed = yield* executeTool(name, tool, input, context)
-              const content =
-                typeof executed.content === "string"
-                  ? [{ type: "text" as const, text: executed.content }]
-                  : (executed.content ?? [])
-              const outputFileParts = outputFiles(content)
-              if (outputFileParts.length > 0)
-                yield* Ref.update(files, (items) => [...items, { index, files: outputFileParts }])
-              if (executed.output !== undefined) return executed.output
-              const text = content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
-              return text === "" ? null : text
+        const result = yield* runtime(inventory)
+          .execute(code)
+          .pipe(
+            Effect.provideService(Run, {
+              executeTool: (name, tool, input) =>
+                Effect.gen(function* () {
+                  const index = yield* Ref.getAndUpdate(callIndex, (index) => index + 1)
+                  const executed = yield* executeTool(name, tool, input, context)
+                  const content =
+                    typeof executed.content === "string"
+                      ? [{ type: "text" as const, text: executed.content }]
+                      : (executed.content ?? [])
+                  const outputFileParts = outputFiles(content)
+                  if (outputFileParts.length > 0)
+                    yield* Ref.update(files, (items) => [...items, { index, files: outputFileParts }])
+                  if (executed.output !== undefined) return executed.output
+                  const text = content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+                  return text === "" ? null : text
+                }),
+              hooks: progressHooks(record),
             }),
-          {
-            onToolCallStart: ({ index, name, input }) => {
-              const shown = displayInput(input)
-              return updateCalls((items) => {
-                const next = [...items]
-                next[index] = { tool: name, status: "running", ...(shown ? { input: shown } : {}) }
-                return next
-              })
-            },
-            onToolCallEnd: ({ index, name, input, outcome }) => {
-              const shown = displayInput(input)
-              return updateCalls((items) => {
-                const next = [...items]
-                next[index] = {
-                  ...(items[index] ?? { tool: name, ...(shown ? { input: shown } : {}) }),
-                  status: outcome === "success" ? "completed" : "error",
-                }
-                return next
-              })
-            },
-          },
-        ).execute(code)
+          )
         const toolCalls = yield* Ref.get(calls)
         const collected = (yield* Ref.get(files))
           .toSorted((left, right) => left.index - right.index)
@@ -158,6 +151,42 @@ export const create = (
   } satisfies Info
 }
 
+// Rows appear in start order; the same call object arrives at both hooks, so a call finds its row again.
+function progressHooks(record: (update: (items: Array<ExecuteCall>) => Array<ExecuteCall>) => Effect.Effect<unknown>) {
+  const rows = new WeakMap<object, number>()
+  const start = (call: object, entry: ExecuteCall) =>
+    record((items) => {
+      rows.set(call, items.length)
+      return [...items, entry]
+    })
+  const settle = (call: object, result: CodeMode.CallResult) => {
+    const index = rows.get(call)
+    if (index === undefined) return Effect.void
+    return record((items) => {
+      const next = [...items]
+      next[index] = { ...items[index], status: result.status === "success" ? "completed" : "error" }
+      return next
+    })
+  }
+  return {
+    "tool.before": (call) => {
+      const shown = displayInput(call.input)
+      return start(call, { tool: call.name, status: "running", ...(shown ? { input: shown } : {}) })
+    },
+    "tool.after": settle,
+    // Only listed extension functions get a row; anything else stays out of the TUI.
+    "extension.before": (call) => {
+      switch (call.name) {
+        case "fetch":
+          return start(call, { tool: call.name, status: "running", input: CodeModeWeb.display(call.args) })
+        default:
+          return Effect.void
+      }
+    },
+    "extension.after": settle,
+  } satisfies CodeMode.Hooks
+}
+
 export const catalog = (inventory: Inventory) => {
   const pinned = new Set(
     Array.from(inventory.tools.values())
@@ -166,7 +195,7 @@ export const catalog = (inventory: Inventory) => {
   )
   const root: CatalogNode = { children: new Map() }
   for (const namespace of inventory.namespaces?.values() ?? []) getNode(root, namespace.name).namespace = namespace
-  for (const tool of runtime(inventory, () => Effect.fail(toolError("Execute context is unavailable"))).catalog())
+  for (const tool of runtime(inventory).catalog)
     getNode(root, tool.path).tool = {
       type: "tool",
       name: tool.path.split(".").at(-1) ?? tool.path,
@@ -201,11 +230,13 @@ function renderCatalog(root: CatalogNode): ReadonlyArray<CodeModeCatalog.Tool | 
     })
 }
 
-function runtime(
-  inventory: Inventory,
-  executeTool: (name: string, tool: Info, input: unknown) => Effect.Effect<unknown, unknown>,
-  hooks?: CodeMode.ToolCallHooks,
-) {
+// Inventories are immutable snapshots, so tool definitions, schemas, and the search index are built
+// once per inventory and shared by its catalog and every execution.
+const runtimes = new WeakMap<Inventory, CodeMode.Runtime<Run>>()
+
+function runtime(inventory: Inventory) {
+  const cached = runtimes.get(inventory)
+  if (cached) return cached
   // A path may carry namespace metadata, a callable tool, child tools, or all three.
   const root: ToolNode = { children: new Map() }
   for (const namespace of inventory.namespaces?.values() ?? []) getNode(root, namespace.name).namespace = namespace
@@ -215,12 +246,21 @@ function runtime(
       description: child.description,
       input: child.inputSchema,
       output: child.outputSchema ?? Schema.NullOr(Schema.String),
-      execute: (input) => executeTool(name, registration, input),
+      execute: (input) => Run.use((run) => run.executeTool(name, registration, input)),
     })
   }
   const tools = renderTools(root)
-  return CodeMode.make<typeof tools>({ tools, ...hooks })
+  const created = CodeMode.make<typeof tools>({ tools, extensions: [CodeModeWeb.extension], hooks: runHooks })
+  runtimes.set(inventory, created)
+  return created
 }
+
+const runHooks = {
+  "tool.before": (call) => Run.use((run) => run.hooks["tool.before"]?.(call) ?? Effect.void),
+  "tool.after": (call, result) => Run.use((run) => run.hooks["tool.after"]?.(call, result) ?? Effect.void),
+  "extension.before": (call) => Run.use((run) => run.hooks["extension.before"]?.(call) ?? Effect.void),
+  "extension.after": (call, result) => Run.use((run) => run.hooks["extension.after"]?.(call, result) ?? Effect.void),
+} satisfies CodeMode.Hooks<Run>
 
 function getNode<T>(root: Node<T>, path: string) {
   return path.split(".").reduce((parent, name) => {
@@ -231,13 +271,13 @@ function getNode<T>(root: Node<T>, path: string) {
 }
 
 function renderTools(root: ToolNode) {
-  const callables = new Map<string, Tool.Tool<never>>()
+  const callables = new Map<string, Tool.Tool<Run>>()
   const tools = renderChildren(root, [], callables)
   for (const [path, tool] of callables) tools[path] = tool
   return tools
 }
 
-function renderChildren(node: ToolNode, path: ReadonlyArray<string>, callables: Map<string, Tool.Tool<never>>): Tools {
+function renderChildren(node: ToolNode, path: ReadonlyArray<string>, callables: Map<string, Tool.Tool<Run>>): Tools {
   return Object.fromEntries(
     Array.from(node.children).flatMap(([name, child]) => {
       const next = [...path, name]
@@ -255,7 +295,7 @@ function renderChildren(node: ToolNode, path: ReadonlyArray<string>, callables: 
 function renderEntry(
   node: ToolNode,
   path: ReadonlyArray<string>,
-  callables: Map<string, Tool.Tool<never>>,
+  callables: Map<string, Tool.Tool<Run>>,
 ): Tools[string] {
   const tools = renderChildren(node, path, callables)
   // CodeMode merges this dotted tool path with the nested namespace entry.

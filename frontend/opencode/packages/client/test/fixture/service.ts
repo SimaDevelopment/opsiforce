@@ -1,4 +1,4 @@
-import { appendFile, rename, writeFile } from "node:fs/promises"
+import { appendFile, rename, rm, writeFile } from "node:fs/promises"
 
 const [registration, mode, delay] = process.argv.slice(2)
 if (registration === undefined || mode === undefined) throw new Error("Missing service fixture arguments")
@@ -16,6 +16,18 @@ if (mode === "environment") {
   await writeFile(registration + ".handoff", process.env.OPENCODE_PTY_HANDOFF ?? "null")
 }
 if (mode === "signal") process.kill(process.pid, process.platform === "win32" ? "SIGTERM" : "SIGKILL")
+
+let controlled = ""
+if (mode === "controlled") {
+  await appendFile(registration + ".starts", process.pid + "\n")
+  const release = registration + `.release-${process.pid}`
+  while (!(await Bun.file(release).exists())) await Bun.sleep(5)
+  controlled = await Bun.file(release).text()
+  if (controlled === "fail") {
+    process.stderr.write("actionable startup failure: storage initialization denied\n")
+    process.exit(23)
+  }
+}
 
 if (mode === "delayed" || mode === "delayed-failed" || mode === "coordinated" || mode === "coordinated-failed-loser") {
   await appendFile(registration + ".starts", process.pid + "\n")
@@ -44,18 +56,26 @@ const handoff = {
 }
 const server = Bun.serve({
   port: 0,
-  async fetch(request) {
+  async fetch(request): Promise<Response> {
     const pathname = new URL(request.url).pathname
+    if (mode === "protocol" && pathname === "/api/experimental/persistent-pty/handoff") {
+      await writeFile(registration + ".handoff-request", "")
+      return Response.json({ handoff: null })
+    }
     if (pathname === "/api/experimental/persistent-pty/handoff" && mode === "handoff") {
       if (request.method !== "POST" || request.headers.get("authorization") !== "Basic " + btoa("opencode:private"))
         return new Response(null, { status: 401 })
       await writeFile(registration + ".prepared", JSON.stringify(handoff))
       return Response.json({ handoff })
     }
-    if (pathname !== "/api/health") return new Response(null, { status: 404 })
+    if (pathname === "/api/experimental/persistent-pty/handoff" && mode === "handoff-broken")
+      return new Response(null, { status: 500 })
+    if (pathname !== "/api/info") return new Response(null, { status: 404 })
+    if (mode === "protocol" && (await Bun.file(registration + ".missing-health").exists()))
+      return new Response(null, { status: 404 })
     requests += 1
-    if (mode === "starting") await writeFile(registration + ".health-request", "")
-    if (mode === "hanging") {
+    if (mode === "starting") await writeFile(registration + ".status-request", "")
+    if (mode === "hanging" || controlled === "hang") {
       await appendFile(registration + ".requests", process.pid + "\n")
       return new Promise<Response>(() => {})
     }
@@ -64,20 +84,36 @@ const server = Bun.serve({
       while (!(await Bun.file(registration + ".release").exists())) await Bun.sleep(5)
       return new Response(null, { status: 503 })
     }
-    if (mode === "legacy") return Response.json({ healthy: true })
     if (mode === "starting" && !(await Bun.file(registration + ".release").exists()))
-      return Response.json({ healthy: true, version, pid: process.pid }, { status: 503 })
-    if (mode === "failed-owner") return Response.json({ healthy: true, version, pid: process.pid }, { status: 500 })
-    if (mode === "starting" || mode === "graceful") return Response.json({ healthy: true, version, pid: process.pid })
-    return Response.json({ healthy: true, version, pid: process.pid })
+      return Response.json(
+        { version, pid: process.pid, urls: [server.url.toString()], paths: { tmp: "/tmp/opencode" } },
+        { status: 503 },
+      )
+    if (mode === "failed-owner")
+      return Response.json(
+        { version, pid: process.pid, urls: [server.url.toString()], paths: { tmp: "/tmp/opencode" } },
+        { status: 500 },
+      )
+    return Response.json({
+      version,
+      pid: process.pid,
+      urls: [server.url.toString()],
+      paths: { tmp: "/tmp/opencode" },
+    })
   },
 })
+
+// Install handlers before publishing: a test may signal as soon as the registration appears.
+if (controlled !== "hang") {
+  process.on("SIGTERM", () => void shutdown("SIGTERM"))
+  process.on("SIGINT", () => void shutdown("SIGINT"))
+}
 
 await writeFile(
   registration + ".tmp",
   JSON.stringify({
     id,
-    version: mode === "legacy" ? undefined : version,
+    version,
     url: server.url.toString(),
     pid: process.pid,
     password: "private",
@@ -88,8 +124,12 @@ await rename(registration + ".tmp", registration)
 
 async function shutdown(signal?: NodeJS.Signals) {
   if (signal !== undefined) await writeFile(registration + ".signal", signal)
+  // A lingering server unregisters on SIGTERM but keeps running, and holds its port, until killed.
+  if (mode === "lingering") {
+    await rm(registration, { force: true })
+    await writeFile(registration + ".unregistered", "")
+    await Bun.sleep(Number(delay))
+  }
   server.stop(true)
   process.exit()
 }
-process.on("SIGTERM", () => void shutdown("SIGTERM"))
-process.on("SIGINT", () => void shutdown("SIGINT"))

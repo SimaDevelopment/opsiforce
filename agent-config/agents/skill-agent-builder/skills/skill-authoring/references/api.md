@@ -1,9 +1,7 @@
 # The Skill calls, exactly
 
-Every call below is an Opsiforce Public API v1 path on its Service host:
-`scripts/api.sh <METHOD> <path> [json]` calls `https://public-api.$EXTERNAL_SERVICES_HOST/api/v1<path>`
-with `Authorization: Bearer $SERVICE_GATEWAY_API_KEY`. Ids go in the path, filters in the query, the
-rest in the JSON body. The full reference is at `/api/v1/docs` on the main host.
+Every call below is `scripts/api.sh <METHOD> <path> [json]`, on the terms `service-public-api` sets.
+Ids go in the path, filters in the query, the rest in the JSON body.
 
 ## What this chat may call
 
@@ -59,8 +57,7 @@ for the executable bit. `--json` sets both for you.
 
 ## Failures worth recognising
 
-A refusal is `application/problem+json` whose `type` ends in the slug below, with a `detail` that
-says what to change.
+Beside the refusals `service-public-api` lists, a Skill call answers these `type` slugs:
 
 | `type` slug | Meaning |
 |---|---|
@@ -68,7 +65,6 @@ says what to change.
 | `name-unavailable` | the name is taken in this Organization, or the image ships it: choose a name that adds the Agent's slug, and tell the author the name you used. The same holds for a Duplicate's `name` |
 | `not-found` | no such Skill, or it is not visible to you |
 | `forbidden`, `permission-denied` | a Skill you may see but not write: the author may not edit it, or it is neither this chat's Skill nor one this chat created — Duplicate it and change the copy |
-| `permission-denied` with `Opsiforce-Outcome: not allowed` | this chat's Opsiforce Public API configuration has the setting named in `Opsiforce-Setting` off; the `detail` names it and links to it. Tell the author, and do not retry |
 | `validation-error` | the body itself is malformed, before any gate ran |
 
 A `validation-failed` is a work list, not a dead end: fix what it names and resubmit. Run the local

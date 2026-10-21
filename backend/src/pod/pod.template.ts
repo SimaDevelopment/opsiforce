@@ -189,7 +189,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
             : volumeMounts,
           readinessProbe: {
             httpGet: {
-              path: '/api/health',
+              path: '/api/info',
               port: options.agentPort,
             },
             initialDelaySeconds: 5,

@@ -4,9 +4,9 @@ import path from "path"
 import { readFile } from "fs/promises"
 import { statSync } from "fs"
 import { Context, Effect, Layer, Schema } from "effect"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
 import { State } from "../state.js"
 import { which } from "../util/which.js"
 
@@ -47,6 +47,7 @@ export type ResolveInput = {
 
 export interface Interface extends State.Transformable<Editor> {
   readonly resolve: (input: ResolveInput) => Effect.Effect<string>
+  readonly list?: () => Effect.Effect<Item[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ShellSelect") {}
@@ -214,6 +215,7 @@ const layer = (options?: Options) =>
         transform: state.transform,
         reload: state.reload,
         resolve: (input) => Effect.sync(() => resolve(input, state.get().shell, options, global.bin)),
+        list: () => Effect.promise(() => list(options, global.bin)),
       })
     }),
   )

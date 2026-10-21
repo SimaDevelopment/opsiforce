@@ -1,13 +1,13 @@
-import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { SegmentedControlItem, SegmentedControl } from "@opencode-ai/ui/segmented-control"
-import { TextInput } from "@opencode-ai/ui/text-input"
-import { Keybind } from "@opencode-ai/ui/keybind"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { useI18n } from "@opencode/ui/context/i18n"
+import { SegmentedControlItem, SegmentedControl } from "@opencode/ui/segmented-control"
+import { TextInput } from "@opencode/ui/text-input"
+import { Keybind } from "@opencode/ui/keybind"
+import { Icon } from "@opencode/ui/icon"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Tooltip } from "@opencode/ui/tooltip"
 import type { SessionReviewDiffStyle } from "../../components/session-review"
-import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { ResizeHandle } from "@opencode/ui/resize-handle"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import { useLocale } from "@kobalte/core/i18n"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Show, createEffect, createMemo, createSignal, type JSX } from "solid-js"
@@ -15,7 +15,9 @@ import { getWorkerPool } from "../../pierre/worker"
 import { SessionFilePanelV2, SessionFilePanelV2Empty } from "./session-file-panel-v2"
 
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_DEFAULT = 240
+
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN = 200
+
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX = 480
 
 export type SessionReviewExpandMode = "expand" | "collapse"
@@ -26,10 +28,12 @@ export type SessionReviewV2Props = {
   empty?: JSX.Element
   sidebarOpen?: boolean
   sidebar?: JSX.Element
+  sidebarToggle?: JSX.Element
   activeFile?: string
   files: string[]
   onSelectFile: (file: string) => void
   diffStyle: SessionReviewDiffStyle
+  toolbarAction?: JSX.Element
   onDiffStyleChange?: (style: SessionReviewDiffStyle) => void
   expandMode: SessionReviewExpandMode
   onExpandModeChange: (mode: SessionReviewExpandMode) => void
@@ -124,6 +128,7 @@ export function SessionReviewV2Sidebar(props: SessionReviewV2SidebarProps) {
           <ScrollView
             data-slot="session-review-v2-sidebar-tree"
             class="group/file-tree-v2"
+            orientation="both"
             thumbVisibility="scroll"
             viewportRef={props.viewportRef}
           >
@@ -157,21 +162,26 @@ export function SessionReviewV2(props: SessionReviewV2Props) {
 
   const fileIndex = () => {
     const files = props.files
+
     if (files.length === 0) return -1
 
     const active = props.activeFile
     const i = active ? files.indexOf(active) : -1
+
     if (i >= 0) return i
+
     return 0
   }
 
   const prev = () => {
     if (!canCycle()) return
+
     return props.files[(fileIndex() - 1 + props.files.length) % props.files.length]
   }
 
   const next = () => {
     if (!canCycle()) return
+
     return props.files[(fileIndex() + 1) % props.files.length]
   }
 
@@ -192,11 +202,15 @@ export function SessionReviewV2(props: SessionReviewV2Props) {
   // pane is mounted, but never while typing in an input or comment editor.
   makeEventListener(document, "keydown", (event) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return
+
     if (event.key !== previousKey() && event.key !== nextKey()) return
     const target = event.target
+
     if (target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select"))) return
+
     if (!props.hasDiffs || !canCycle()) return
     const file = event.key === previousKey() ? prev() : next()
+
     if (!file) return
     event.preventDefault()
     cycle(file)
@@ -264,6 +278,7 @@ export function SessionReviewV2(props: SessionReviewV2Props) {
 
   const toolbarEnd = () => (
     <>
+      {props.toolbarAction}
       <SegmentedControl
         value={props.expandMode}
         onChange={(value) => {
@@ -312,7 +327,9 @@ export function SessionReviewV2(props: SessionReviewV2Props) {
   return (
     <SessionFilePanelV2
       sidebar={props.sidebar}
-      toolbar={props.hasDiffs}
+      sidebarToggle={props.sidebarToggle}
+      sidebarCollapsed={props.sidebarOpen === false}
+      toolbar={props.hasDiffs || props.sidebarOpen === false}
       toolbarStart={toolbarStart()}
       toolbarEnd={toolbarEnd()}
     >

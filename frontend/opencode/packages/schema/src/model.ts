@@ -3,10 +3,15 @@ export * as Model from "./model.js"
 import { Schema } from "effect"
 import { optional, statics } from "./schema.js"
 import { Provider } from "./provider.js"
+import { Compatibility, MaxTokensField, ReasoningField } from "./model-compatibility.js"
 import { Money } from "./money.js"
+import { ephemeral, inventory } from "./event.js"
 
 export const ID = Schema.String.pipe(Schema.brand("Model.ID"))
 export type ID = typeof ID.Type
+
+const Updated = ephemeral({ type: "model.updated", schema: {} })
+export const Event = { Updated, Definitions: inventory(Updated) }
 
 export const VariantID = Schema.String.pipe(Schema.brand("Model.VariantID"))
 export type VariantID = typeof VariantID.Type
@@ -38,36 +43,34 @@ export const Ref = Schema.Struct({
   )
 export interface Ref extends Schema.Schema.Type<typeof Ref> {}
 
+export { Compatibility, MaxTokensField, ReasoningField }
+
 export const Family = Schema.String.pipe(Schema.brand("Model.Family"))
 export type Family = typeof Family.Type
 
-export type ReasoningField = "reasoning" | "reasoning_content" | "reasoning_text" | (string & {})
-export const ReasoningField: Schema.Codec<ReasoningField> = Schema.Union([
-  Schema.Literals(["reasoning", "reasoning_content", "reasoning_text"]),
-  Schema.String,
-]).annotate({ identifier: "Model.ReasoningField" })
+export const Settings = Schema.StructWithRest(
+  Schema.Struct({
+    compaction: Provider.Compaction.pipe(optional),
+    encoding: Provider.Encoding.pipe(optional),
+  }),
+  // Provider packages may define arbitrary model-level options beyond OpenCode's shared compaction policy.
+  [Schema.Record(Schema.String, Schema.Any)],
+).annotate({ identifier: "Model.Settings" })
+export type Settings = typeof Settings.Type
 
-export const MaxTokensField = Schema.Literals(["max_completion_tokens", "max_tokens"]).annotate({
-  identifier: "Model.MaxTokensField",
-})
-export type MaxTokensField = typeof MaxTokensField.Type
-
-export interface Compatibility extends Schema.Schema.Type<typeof Compatibility> {}
-export const Compatibility = Schema.Struct({
-  reasoningField: ReasoningField.pipe(optional),
-  /** Require every assistant message to include its reasoning field, even when empty. */
-  requireReasoning: Schema.Boolean.pipe(optional),
-  maxTokensField: MaxTokensField.pipe(optional),
-  requireFinishReason: Schema.Boolean.pipe(optional),
-  requireAssistantAfterTool: Schema.Boolean.pipe(optional),
-}).annotate({ identifier: "Model.Compatibility" })
+export const Overlays = {
+  settings: Settings.pipe(optional),
+  headers: Schema.Record(Schema.String, Schema.String).pipe(optional),
+  body: Schema.Record(Schema.String, Schema.Any).pipe(optional),
+}
 
 export interface Capabilities extends Schema.Schema.Type<typeof Capabilities> {}
 export const Capabilities = Schema.Struct({
   tools: Schema.Boolean,
   input: Schema.Array(Schema.String),
   output: Schema.Array(Schema.String),
-  responsesWebsockets: Schema.Boolean.pipe(optional),
+  /** Whether the model accepts a sampling temperature. Unknown when unset. */
+  temperature: Schema.Boolean.pipe(optional),
 })
   .annotate({ identifier: "Model.Capabilities" })
   .pipe(
@@ -93,7 +96,7 @@ export const Cost = Schema.Struct({
 export interface Variant extends Schema.Schema.Type<typeof Variant> {}
 export const Variant = Schema.Struct({
   id: VariantID,
-  ...Provider.Overlays,
+  ...Overlays,
 }).annotate({ identifier: "Model.Variant" })
 
 export interface Info extends Schema.Schema.Type<typeof Info> {}
@@ -106,7 +109,7 @@ export const Info = Schema.Struct({
   name: Schema.String,
   compatibility: Compatibility.pipe(optional),
   package: Provider.Package.pipe(optional),
-  ...Provider.Overlays,
+  ...Overlays,
   capabilities: Capabilities,
   variants: Schema.Array(Variant),
   time: Schema.Struct({

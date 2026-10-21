@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { SessionInfo } from "@opencode-ai/client/promise"
+import type { SessionInfo } from "@opencode/client/promise"
 import { createSessionMutations } from "./data"
 
 const session = { id: "ses_test" } as SessionInfo
@@ -20,6 +20,7 @@ test("keeps a successful removal applied until its event arrives", async () => {
 
 test("rolls back a failed removal", async () => {
   const release = Promise.withResolvers<void>()
+
   const mutation = createSessionMutations(async () => {
     await release.promise
     throw new Error("offline")

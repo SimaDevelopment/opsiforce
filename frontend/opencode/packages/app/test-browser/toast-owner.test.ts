@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createSignal, type JSX } from "solid-js"
-import { showToast, toaster } from "@opencode-ai/ui/toast"
+import { showToast, toaster } from "@opencode/ui/toast"
 
 describe("showToast", () => {
   // The toast registry is module state, so each test starts from an empty stack.
@@ -44,9 +44,11 @@ describe("showToast", () => {
   test("creates no reactive computations at call time", () => {
     const [tick, setTick] = createSignal(0)
     let reads = 0
+
     const icon = (() => {
       reads++
       tick()
+
       return undefined
     }) as unknown as JSX.Element
 

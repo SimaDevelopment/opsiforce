@@ -1,11 +1,22 @@
-import { FileDiff } from "@opencode-ai/schema/file-diff"
-import { Location } from "@opencode-ai/schema/location"
-import { NonNegativeInt, PositiveInt, optional } from "@opencode-ai/schema/schema"
-import { Vcs } from "@opencode-ai/schema/vcs"
+import { FileDiff } from "@opencode/schema/file-diff"
+import { Location } from "@opencode/schema/location"
+import { NonNegativeInt, PositiveInt, optional } from "@opencode/schema/schema"
+import { Vcs } from "@opencode/schema/vcs"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { LocationQuery, locationQueryOpenApi } from "./location.js"
-import { ServiceUnavailableError } from "../errors.js"
+import { ConflictError, InvalidRequestError, ServiceUnavailableError } from "../errors.js"
+
+const InitQuery = Schema.Struct({
+  ...LocationQuery.fields,
+  provider: Schema.optional(Schema.String),
+})
+
+export class VcsInitNotSupportedError extends Schema.TaggedError<VcsInitNotSupportedError>()(
+  "VcsInitNotSupportedError",
+  { providerID: Schema.String, message: Schema.String },
+  { httpApiStatus: 501 },
+) {}
 
 const BranchesQuery = Schema.Struct({
   ...LocationQuery.fields,
@@ -22,6 +33,22 @@ const DiffQuery = Schema.Struct({
 
 export const VcsGroup = HttpApiGroup.make("server.vcs")
   .add(
+    HttpApiEndpoint.post("vcs.init", "/api/vcs/init", {
+      query: InitQuery,
+      success: HttpApiSchema.NoContent,
+      error: [ConflictError, InvalidRequestError, VcsInitNotSupportedError, ServiceUnavailableError],
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "vcs.init",
+          summary: "Initialize VCS repository",
+          description:
+            "Initialize a repository using the selected VCS provider in a markerless project's directory and refresh its location services. Omitting provider defaults to git; built-in git and hg providers support initialization. An unknown provider returns 400; a registered provider without init returns 501.",
+        }),
+      ),
+  )
+  .add(
     HttpApiEndpoint.get("vcs.get", "/api/vcs", {
       query: LocationQuery,
       success: Location.response(Vcs.Info),
@@ -29,7 +56,7 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.vcs.get",
+          identifier: "vcs.get",
           summary: "VCS info",
           description: "Get current and default branch information for the requested location.",
         }),
@@ -44,7 +71,7 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.vcs.base",
+          identifier: "vcs.base",
           summary: "VCS review base",
           description:
             "Infer a local review base from named branch creation history, or the repository default only when currently on that branch. Returns null before the first commit or when the provider lacks base metadata; ambiguous Git history requires an explicit base on diff requests.",
@@ -59,21 +86,21 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.vcs.status",
+          identifier: "vcs.status",
           summary: "VCS status",
           description: "List uncommitted working-copy changes relative to the requested location.",
         }),
       ),
   )
   .add(
-    HttpApiEndpoint.get("vcs.branches", "/api/vcs/branches", {
+    HttpApiEndpoint.get("vcs.branch.list", "/api/vcs/branch", {
       query: BranchesQuery,
       success: Location.response(Vcs.BranchList),
     })
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.vcs.branches",
+          identifier: "vcs.branch.list",
           summary: "VCS branches",
           description: "List local and remote branches available at the requested location.",
         }),
@@ -88,7 +115,7 @@ export const VcsGroup = HttpApiGroup.make("server.vcs")
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.vcs.diff",
+          identifier: "vcs.diff",
           summary: "VCS diff",
           description:
             "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), or the base merge-base to HEAD (committed). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it.",

@@ -57,12 +57,33 @@ export class AgentStatusStreamController {
     };
 
     const lastSent = new Map<string, AgentStatus>();
-    const send = (projectId: string) => {
-      if (closed) return;
+    const sendProject = (projectId: string) => {
       const agentStatus = this.agentStatusService.statusOf(projectId);
       if (lastSent.get(projectId) === agentStatus) return;
       lastSent.set(projectId, agentStatus);
       reply.raw.write(`data: ${JSON.stringify({ projectId, agentStatus })}\n\n`);
+    };
+
+    const sentWorkingEnvironments = new Map<string, Set<string>>();
+    const sendEnvironment = (projectId: string, environmentId: string, agentStatus: AgentStatus) => {
+      reply.raw.write(`event: environment\ndata: ${JSON.stringify({ projectId, environmentId, agentStatus })}\n\n`);
+    };
+    const sendEnvironments = (projectId: string) => {
+      const working = this.agentStatusService.workingEnvironmentsOf(projectId);
+      const sentWorking = sentWorkingEnvironments.get(projectId) ?? new Set<string>();
+      for (const environmentId of working) {
+        if (!sentWorking.has(environmentId)) sendEnvironment(projectId, environmentId, AgentStatus.Working);
+      }
+      for (const environmentId of sentWorking) {
+        if (!working.has(environmentId)) sendEnvironment(projectId, environmentId, AgentStatus.Idle);
+      }
+      sentWorkingEnvironments.set(projectId, working);
+    };
+
+    const send = (projectId: string) => {
+      if (closed) return;
+      sendProject(projectId);
+      sendEnvironments(projectId);
     };
 
     for (const projectId of visibleIds) {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/codemode",
-  "version": "1.18.4",
+  "name": "@opencode/codemode",
+  "version": "2.1.2",
   "description": "Effect-native confined code execution over schema-described tools",
   "type": "module",
   "license": "MIT",
@@ -19,25 +19,18 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "imports": {
-    "#transpile": {
-      "workerd": "./src/interpreter/transpile.workerd.ts",
-      "default": "./src/interpreter/transpile.node.ts"
-    }
-  },
   "scripts": {
     "build": "bun run script/build.ts",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "acorn": "8.15.0",
-    "effect": "catalog:",
-    "typescript": "catalog:"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@typescript/native": "catalog:"
   }
 }

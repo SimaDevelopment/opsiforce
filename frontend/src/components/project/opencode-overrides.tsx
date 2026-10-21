@@ -1,9 +1,9 @@
 import { createEffect, onMount, untrack } from 'solid-js';
-import { useTheme } from '@opencode-ai/ui/theme/context';
-import { useSettings } from '@opencode-ai/app/settings/model';
-import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
-import type { ServerConnection } from '@opencode-ai/app';
-import { timelinePresets, type TimelineDetail } from '@opencode-ai/session-ui/timeline/detail';
+import { useTheme } from '@opencode/ui/theme/context';
+import { useSettings } from '@opencode/app/settings/model';
+import { useGlobal } from '@opencode/app/runtime/server/runtime';
+import type { ServerConnection } from '@opencode/app';
+import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
 import { BASE_FORMAT_IDS } from '~/api/model-providers';
 
 const detailedPreset = timelinePresets.find((preset) => preset.id === 'detailed');
@@ -64,7 +64,6 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
     settings.general.setTimelineDetail(activityTimeline);
-    settings.general.setReleaseNotes(false);
   });
 
   pinModelVisibilityToCatalog(

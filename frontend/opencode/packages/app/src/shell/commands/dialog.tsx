@@ -1,11 +1,11 @@
-import { getDirectory, getFilename } from "@opencode-ai/util/path"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import { Dialog, DialogBody } from "@opencode-ai/ui/dialog"
-import { Icon } from "@opencode-ai/ui/icon"
-import { Keybind } from "@opencode-ai/ui/keybind"
-import { TextInput } from "@opencode-ai/ui/text-input"
-import { createEffect, createMemo, For, Match, Show, Switch } from "solid-js"
+import { getDirectory, getFilename } from "@opencode/util/path"
+import { FileIcon } from "@opencode/ui/file-icon"
+import { ScrollView } from "@opencode/ui/scroll-view"
+import { Dialog, DialogBody } from "@opencode/ui/dialog"
+import { Icon } from "@opencode/ui/icon"
+import { Keybind } from "@opencode/ui/keybind"
+import { TextInput } from "@opencode/ui/text-input"
+import { createEffect, createMemo, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { formatKeybindParts } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -18,19 +18,24 @@ import "./dialog.css"
 
 function groups(entries: CommandPaletteEntry[]) {
   const map = new Map<string, CommandPaletteEntry[]>()
+
   for (const entry of entries) map.set(entry.category, [...(map.get(entry.category) ?? []), entry])
+
   return Array.from(map.entries()).map(([category, entries]) => ({ category, entries }))
 }
 
 export function matchesCommandPaletteEntry(entry: CommandPaletteEntry, query: string) {
   const value = query.toLowerCase()
+
   return [entry.title, entry.description, entry.category].some((text) => text?.toLowerCase().includes(value))
 }
 
 export function DialogCommandPalette(props: { onOpenFile?: (path: string) => void }) {
   const palette = createCommandPaletteModel(props)
+
   const items = (q: string) => {
     if (!q) return [...palette.preferredCommandEntries(), ...palette.recentFileEntries()]
+
     return palette.commandEntries().filter((entry) => matchesCommandPaletteEntry(entry, q))
   }
 
@@ -44,6 +49,7 @@ export function DialogCommandPalette(props: { onOpenFile?: (path: string) => voi
           if (!query) return []
           const files = await palette.file.searchFiles(query, { signal })
           const category = palette.language.t("palette.group.files")
+
           return files.map((path) => createCommandPaletteFileEntry(path, category))
         },
       ]}
@@ -64,24 +70,20 @@ export function CommandPaletteView(props: {
 }) {
   const language = useLanguage()
   const tabs = useTabs()
-  const [store, setStore] = createStore({ query: "", active: undefined as string | undefined })
+  const [store, setStore] = createStore<{ query: string; active?: string }>({ query: "" })
 
   const search = createCommandPaletteSearch({ query: () => store.query, items: props.items, sources: props.sources })
   const visibleEntries = search.items
   const groupedEntries = createMemo(() => groups(visibleEntries()))
-  // Keep keyboard selection stable when another search source adds results.
+
+  // Follow the first result until the user explicitly chooses a row.
   const activeEntry = createMemo(
     () => visibleEntries().find((entry) => entry.id === store.active) ?? visibleEntries()[0],
   )
+
   const openSessions = createMemo(
     () => new Set(tabs.store.flatMap((tab) => (tab.type === "session" ? [`${tab.server}\0${tab.sessionId}`] : []))),
   )
-
-  createEffect(() => {
-    // Pin automatic selection too: a later source can insert rows before it.
-    const id = activeEntry()?.id
-    if (store.active !== id) setStore("active", id)
-  })
 
   createEffect(() => {
     props.highlight(activeEntry())
@@ -89,32 +91,49 @@ export function CommandPaletteView(props: {
 
   let resultsRef: HTMLDivElement | undefined
 
+  createEffect(() => {
+    // Incoming results can move an explicitly selected row below the viewport.
+    visibleEntries()
+
+    if (!activeEntry()) return
+
+    const frame = requestAnimationFrame(() => {
+      resultsRef?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" })
+    })
+
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
+
   const move = (delta: -1 | 1) => {
     const count = visibleEntries().length
+
     if (count === 0) return
     const index = visibleEntries().findIndex((entry) => entry.id === activeEntry()?.id)
     setStore("active", visibleEntries()[(index + delta + count) % count].id)
-    requestAnimationFrame(() => {
-      resultsRef?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" })
-    })
   }
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "ArrowDown") {
       event.preventDefault()
       move(1)
+
       return
     }
+
     if (event.key === "ArrowUp") {
       event.preventDefault()
       move(-1)
+
       return
     }
+
     if (event.key === "Enter") {
       event.preventDefault()
       props.select(activeEntry())
+
       return
     }
+
     if (event.key === "Escape") {
       event.preventDefault()
       props.close()

@@ -38,7 +38,8 @@ import { ForwardedIdentityService } from '../../src/identity/forwarded-identity.
 import { PermissionGuard } from '../../src/permission/permission.guard';
 import { AppReadinessService } from '../../src/project/app-readiness.service';
 import { AppService } from '../../src/project/app.service';
-import { AgentStatusService } from '../../src/project/agent-status.service';
+import { AgentObservationsService } from '../../src/project/agent-observations.service';
+import { AGENT_STATUS_TIMER, AgentStatusService } from '../../src/project/agent-status.service';
 import { ProjectAuthService } from '../../src/project/project-auth.service';
 import { ProjectEventsService } from '../../src/project/project-events.service';
 import { ProjectProvenanceRepository } from '../../src/project/project-provenance.repository';
@@ -75,6 +76,7 @@ import {
   FakeQueue,
   FakeScheduleService,
   FakeTimeoutService,
+  fakeTimer,
 } from './infra-fakes';
 
 const REAL_SERVICES = [
@@ -83,6 +85,7 @@ const REAL_SERVICES = [
   AgentConnectionService,
   AgentExportService,
   AgentImportService,
+  AgentObservationsService,
   AgentProfileService,
   AgentReconcilerService,
   AgentRepository,
@@ -147,11 +150,15 @@ const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: getQueueToken(EXTERNAL_SERVICE_DOORBELL_QUEUE), useClass: FakeCoalescingQueue },
 ];
 
-export const DOMAIN_TEST_PROVIDERS: Provider[] = [...REAL_SERVICES, ...FAKED_SERVICES];
+export const DOMAIN_TEST_PROVIDERS: Provider[] = [
+  ...REAL_SERVICES,
+  ...FAKED_SERVICES,
+  { provide: AGENT_STATUS_TIMER, useFactory: fakeTimer },
+];
 
 @Global()
 @Module({
   providers: DOMAIN_TEST_PROVIDERS,
-  exports: [...REAL_SERVICES, ...FAKED_SERVICES.map(({ provide }) => provide)],
+  exports: [...REAL_SERVICES, ...FAKED_SERVICES.map(({ provide }) => provide), AGENT_STATUS_TIMER],
 })
 export class DomainTestModule {}

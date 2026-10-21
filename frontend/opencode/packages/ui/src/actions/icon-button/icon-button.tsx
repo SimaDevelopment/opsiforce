@@ -8,12 +8,13 @@ export interface IconButtonProps
     Pick<ComponentProps<"button">, "class" | "classList"> {
   icon?: JSX.Element
   size?: "small" | "normal" | "large"
-  variant?: "neutral" | "contrast" | "ghost" | "ghost-muted"
+  variant?: "neutral" | "contrast" | "submit" | "ghost" | "ghost-muted"
   state?: "rest" | "hover" | "pressed"
 }
 
 export function IconButton(props: ComponentProps<"button"> & IconButtonProps) {
   const [local, rest] = splitProps(props, ["variant", "size", "icon", "class", "classList", "state"])
+
   return (
     <Root
       {...rest}

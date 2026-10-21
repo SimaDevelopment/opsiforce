@@ -1,5 +1,5 @@
 import { Match, Show, Switch } from 'solid-js';
-import { Markdown } from '@opencode-ai/session-ui/components/markdown';
+import { Markdown } from '@opencode/session-ui/components/markdown';
 import { FileDownloadCard } from './file-download-card';
 import { createFileFetch, type FileFetchState } from './file-fetch';
 import { FilePreviewNotice } from './file-preview-notice';

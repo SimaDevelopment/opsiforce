@@ -26,6 +26,10 @@
       "rules": { "import/no-default-export": "off" }
     },
     {
+      "files": ["**/opencode-plugins/*/index.ts"],
+      "rules": { "import/no-default-export": "off" }
+    },
+    {
       "files": [
         "**/external-service-sdk/test/fixtures/*/handlers.ts",
         "**/external-service-sdk/test/fixtures/*/service.ts",

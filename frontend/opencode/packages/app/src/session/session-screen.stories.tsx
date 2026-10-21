@@ -13,19 +13,22 @@ import {
   STORY_TIME,
   subagentDocument,
   terminalPassedDocument,
-} from "@opencode-ai/session-ui/storybook"
+} from "@opencode/session-ui/storybook"
 import { SessionPreview } from "./story-model"
 
 const description = "opencode · modular-session-ui"
+
 const retryAfterInterruption = {
   ...retryDocument,
   messages: [
     ...compactionDocument.messages,
     ...retryDocument.messages.map((message, index) => {
       const created = STORY_TIME + 70_000 + index * 1_000
+
       if (message.type !== "assistant" || !message.retry) {
         return { ...message, time: { ...message.time, created } }
       }
+
       return {
         ...message,
         time: { ...message.time, created },
@@ -34,6 +37,7 @@ const retryAfterInterruption = {
     }),
   ],
 }
+
 const implementAndVerify = () => (
   <SessionPreview
     title="Update active Session status"
@@ -134,6 +138,49 @@ export const QuestionRequest = {
       description={description}
       document={questionPendingDocument}
       request={{ type: "question", value: activeQuestionRequest }}
+    />
+  ),
+}
+
+export const QuestionAnswerCounts = {
+  render: () => (
+    <SessionPreview
+      title="Choose supporting surfaces"
+      description={description}
+      document={questionPendingDocument}
+      request={{
+        type: "question",
+        value: {
+          ...activeQuestionRequest,
+          fields: [
+            activeQuestionRequest.fields[0],
+            {
+              ...activeQuestionRequest.fields[1],
+              options: [...activeQuestionRequest.fields[1].options, { value: "diagnostics", label: "Diagnostics" }],
+            },
+          ],
+        },
+      }}
+    />
+  ),
+}
+
+export const WebSearchRequest = {
+  render: () => (
+    <SessionPreview
+      title="Search for current documentation"
+      description={description}
+      document={questionPendingDocument}
+      request={{
+        type: "websearch",
+        value: {
+          id: "frm_websearch_preview",
+          sessionID: "ses_websearch_preview",
+          title: "Web Search",
+          metadata: { kind: "websearch.provider" },
+          fields: [{ key: "choice", type: "string", required: true, custom: false }],
+        },
+      }}
     />
   ),
 }

@@ -2,16 +2,34 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, fo
 import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { TimeoutService } from '../timeout/timeout.service';
 import { ProjectEventsService } from './project-events.service';
 import { AgentStatus, ProjectStatus } from './project.types';
 
 const RECONCILE_RETRY_BASE_MS = 5 * 1000;
 const RECONCILE_RETRY_MAX_MS = 60 * 1000;
+const AGENT_STATUS_REREAD_MS = 60 * 1000;
+
+export const AGENT_STATUS_TIMER = 'AGENT_STATUS_TIMER';
+export type StartTimer = (task: () => Promise<void>, delayMs: number) => () => void;
+
+export const unrefTimer: StartTimer = (task, delayMs) => {
+  const timer = setTimeout(() => void task(), delayMs);
+  timer.unref();
+  return () => clearTimeout(timer);
+};
+
+interface WorkingEnvironment {
+  projectId: string;
+  runningSessions: Set<string>;
+  observations: number;
+  cancelReread: (() => void) | null;
+}
 
 @Injectable()
 export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(AgentStatusService.name);
-  private readonly workingByProject = new Map<string, Set<string>>();
+  private readonly workingEnvironments = new Map<string, WorkingEnvironment>();
   private readonly reconcileRetries = new Map<string, number>();
   private readonly reconcileTimers = new Map<string, NodeJS.Timeout>();
 
@@ -19,7 +37,9 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
     private readonly projectEvents: ProjectEventsService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     @Inject(forwardRef(() => AgentSessionGateway))
-    private readonly agentSessions: AgentSessionGateway
+    private readonly agentSessions: AgentSessionGateway,
+    @Inject(AGENT_STATUS_TIMER) private readonly startTimer: StartTimer,
+    private readonly timeouts: TimeoutService
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -34,6 +54,105 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
     }
     this.reconcileTimers.clear();
     this.reconcileRetries.clear();
+    for (const working of this.workingEnvironments.values()) {
+      working.cancelReread?.();
+    }
+    this.workingEnvironments.clear();
+  }
+
+  runStarted(projectId: string, environmentId: string, sessionId: string): void {
+    this.holdPod(environmentId);
+    const working = this.workingEnvironments.get(environmentId);
+    if (working) {
+      working.observations += 1;
+      working.runningSessions.add(sessionId);
+      return;
+    }
+    this.replaceRunningSessions(projectId, environmentId, [sessionId]);
+  }
+
+  runEnded(projectId: string, environmentId: string, sessionId: string): void {
+    const working = this.workingEnvironments.get(environmentId);
+    if (!working?.runningSessions.has(sessionId)) return;
+    working.observations += 1;
+    working.runningSessions.delete(sessionId);
+    if (working.runningSessions.size > 0) return;
+    this.replaceRunningSessions(projectId, environmentId, []);
+    this.holdPod(environmentId);
+  }
+
+  clear(projectId: string, environmentId: string): void {
+    this.replaceRunningSessions(projectId, environmentId, []);
+  }
+
+  statusOf(projectId: string): AgentStatus {
+    return this.workingEnvironmentsOf(projectId).size > 0 ? AgentStatus.Working : AgentStatus.Idle;
+  }
+
+  workingEnvironmentsOf(projectId: string): Set<string> {
+    const environments = new Set<string>();
+    for (const [environmentId, working] of this.workingEnvironments) {
+      if (working.projectId === projectId) environments.add(environmentId);
+    }
+    return environments;
+  }
+
+  private replaceRunningSessions(projectId: string, environmentId: string, sessionIds: string[]): void {
+    const previous = this.workingEnvironments.get(environmentId);
+    previous?.cancelReread?.();
+    this.workingEnvironments.delete(environmentId);
+
+    if (sessionIds.length > 0) {
+      const working: WorkingEnvironment = {
+        projectId,
+        runningSessions: new Set(sessionIds),
+        observations: 0,
+        cancelReread: null,
+      };
+      this.workingEnvironments.set(environmentId, working);
+      this.scheduleReread(environmentId, working);
+    }
+
+    const wasWorking = previous !== undefined;
+    const isWorking = sessionIds.length > 0;
+    if (wasWorking !== isWorking) {
+      void this.projectEvents.publish(projectId);
+    }
+  }
+
+  private scheduleReread(environmentId: string, working: WorkingEnvironment): void {
+    working.cancelReread = this.startTimer(() => this.reread(environmentId, working), AGENT_STATUS_REREAD_MS);
+  }
+
+  private async reread(environmentId: string, working: WorkingEnvironment): Promise<void> {
+    working.cancelReread = null;
+    const observationsBefore = working.observations;
+    const env = await this.projectEnvironmentService.findByIdOrNull(environmentId).catch(() => null);
+    const runningSessions = env ? await this.readRunningSessions(env) : [];
+
+    if (this.workingEnvironments.get(environmentId) !== working) return;
+    if (env && hasRunningPod(env)) this.holdPod(environmentId);
+    if (working.observations !== observationsBefore) {
+      this.scheduleReread(environmentId, working);
+      return;
+    }
+    this.replaceRunningSessions(working.projectId, environmentId, runningSessions);
+  }
+
+  private holdPod(environmentId: string): void {
+    this.timeouts.touch(environmentId).catch((err) => {
+      this.logger.warn(`Agent keep-alive touch of ${environmentId} failed: ${(err as Error).message}`);
+    });
+  }
+
+  private async readRunningSessions(env: ProjectEnvironmentContext): Promise<string[]> {
+    if (!hasRunningPod(env)) return [];
+    try {
+      return (await this.agentSessions.activeSessions(env)).sessionIds;
+    } catch (err) {
+      this.logger.warn(`Agent status re-read of ${env.id} found no reachable pod: ${(err as Error).message}`);
+      return [];
+    }
   }
 
   private async reconcile(): Promise<void> {
@@ -54,8 +173,8 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async reconcileEnvironment(env: ProjectEnvironmentContext): Promise<boolean> {
-    const { busy } = await this.agentSessions.activeSessions(env);
-    if (busy) this.setWorking(env.projectId, env.id, true);
+    const { sessionIds, busy } = await this.agentSessions.activeSessions(env);
+    if (busy) this.replaceRunningSessions(env.projectId, env.id, sessionIds);
     return busy;
   }
 
@@ -86,32 +205,8 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
       this.scheduleReconcileRetry(envId);
     }
   }
+}
 
-  setWorking(projectId: string, environmentId: string, isWorking: boolean): void {
-    const before = this.statusOf(projectId);
-
-    if (isWorking) {
-      const keys = this.workingByProject.get(projectId) ?? new Set<string>();
-      keys.add(environmentId);
-      this.workingByProject.set(projectId, keys);
-    } else {
-      const keys = this.workingByProject.get(projectId);
-      if (keys) {
-        keys.delete(environmentId);
-        if (keys.size === 0) this.workingByProject.delete(projectId);
-      }
-    }
-
-    if (this.statusOf(projectId) !== before) {
-      void this.projectEvents.publish(projectId);
-    }
-  }
-
-  clear(projectId: string, environmentId: string): void {
-    this.setWorking(projectId, environmentId, false);
-  }
-
-  statusOf(projectId: string): AgentStatus {
-    return (this.workingByProject.get(projectId)?.size ?? 0) > 0 ? AgentStatus.Working : AgentStatus.Idle;
-  }
+function hasRunningPod(env: ProjectEnvironmentContext): boolean {
+  return !env.disabled && env.status === ProjectStatus.Active && !!env.podIp;
 }

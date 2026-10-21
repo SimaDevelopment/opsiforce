@@ -79,7 +79,17 @@ describe('public api openapi document', () => {
     expect(description).toContain('/api/session/{sessionId}/prompt');
     expect(description).toContain('/api/event');
     expect(description).toContain('openapiUrl');
-    expect(description).toContain('@opencode-ai/client');
+    expect(description).toContain('@opencode/client');
+    expect(description).not.toContain('@opencode-ai/client');
+  });
+
+  it('teaches the event recipe for a turn outcome, with wait only as an experimental shortcut', () => {
+    const description = document.info.description ?? '';
+
+    expect(description).toContain('session.inbox.delivered');
+    expect(description).toContain('session.execution.succeeded');
+    expect(description).toContain('/api/experimental/session/{sessionId}/wait');
+    expect(description).not.toContain('{baseUrl}/api/session/{sessionId}/wait');
   });
 
   it('shows a worked connection rather than bare types', () => {
