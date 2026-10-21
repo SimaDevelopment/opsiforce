@@ -65,6 +65,7 @@ bifrost:
   client:
     dropExcessRequests: true
     enableLogging: true
+    disableContentLogging: true
     logRetentionDays: 7
     allowDirectKeys: false
     enforceAuthOnInference: true
