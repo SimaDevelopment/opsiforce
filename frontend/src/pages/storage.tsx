@@ -704,7 +704,7 @@ function MeasurementError(props: { label: string }) {
 function SizeBar(props: { bytes: number; max: number }) {
   const width = () => (props.max <= 0 ? 0 : Math.max((props.bytes / props.max) * 100, 1));
   return (
-    <div class="h-1.5 rounded-full bg-muted overflow-hidden max-w-40">
+    <div class="h-1.5 w-full rounded-full bg-muted overflow-hidden max-w-40">
       <div class="h-full rounded-full bg-indigo-500/70" style={{ width: `${width()}%` }} />
     </div>
   );
