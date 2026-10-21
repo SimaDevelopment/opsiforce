@@ -254,7 +254,7 @@ export function LinkedAccountStatus(props: {
   const actions = useLinkedAccountActions(props.scope, () => props.name);
   const offersSignIn = () => props.editable && SIGNED_OUT_STATUSES.has(props.status) && !actions.signingIn();
   return (
-    <div class="flex items-center gap-1.5 whitespace-nowrap">
+    <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       <StatusBadge status={props.status} />
       <Show when={offersSignIn()}>
         <Button
