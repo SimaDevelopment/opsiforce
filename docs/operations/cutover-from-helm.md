@@ -12,7 +12,7 @@ The Bifrost Helm values keep declaring the platform's `openai`, `anthropic` and,
 
 - An environment that already runs Opsiforce, with Organizations in its database. A fresh install skips this page: its backend adopts the Helm-declared `openai` and `anthropic` at first boot ([LLM Gateway](../gateways/llm-gateway.md)).
 - `kubectl` pointed at the environment's cluster, with read access to its Secrets and permission to port-forward, plus `curl` and Node 24.
-- The environment's Bifrost running the image pinned in `helm/bifrost/values.{prod,local,azure}.yaml` (`v2.3.0`), with `opsiforce-bifrost-admin-auth` and `opsiforce-bifrost-provider-keys` in its namespace.
+- The environment's Bifrost running the image pinned in `helm/bifrost/values.{prod,local,azure}.yaml` (`v2.3.2`), with `opsiforce-bifrost-admin-auth` and `opsiforce-bifrost-provider-keys` in its namespace.
 - For step 5, a user holding `can_manage_platform_model_providers` (the Keycloak group `opsiforce_manage_platform_model_providers`) and the ChatGPT account `custom-openai-1` serves today.
 
 ## Steps

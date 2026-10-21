@@ -69,7 +69,7 @@ The authoritative image inventory is the official [`k3s-images.txt`](https://git
 ```text
 docker.io/library/postgres:16-alpine
 docker.io/valkey/valkey:9.0.1
-docker.io/maximhq/bifrost:v2.3.0
+docker.io/maximhq/bifrost:v2.3.2
 docker.io/traefik:v3.6.13
 docker.io/alpine/git:2.49.1
 docker.io/library/nginx:1.30.1

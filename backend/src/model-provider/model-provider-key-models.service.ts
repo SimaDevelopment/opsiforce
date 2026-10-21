@@ -35,7 +35,13 @@ export class ModelProviderKeyModelsService {
 
   async applyModelCatalog(catalog: ModelCatalog): Promise<void> {
     await this.reconcileKeyModels(catalog);
-    await this.rewriteKeysForChangedCatalog(catalog);
+    try {
+      await this.rewriteKeysForChangedCatalog(catalog);
+    } catch (err) {
+      this.logger.warn(
+        `The model catalog did not reach every organization's keys; retried at next boot: ${(err as Error).message}`
+      );
+    }
   }
 
   async rewriteKeysForChangedCatalog(catalog: ModelCatalog): Promise<void> {

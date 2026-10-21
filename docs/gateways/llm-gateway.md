@@ -45,7 +45,7 @@ Backend ── Admin API (basic auth) ──▶ Bifrost ◀── LLM calls ─�
 - When a Helm-declared provider's entry in the values changes, or a Bifrost upgrade changes how the entry hashes, the file's key reference and URL overwrite what Settings wrote for that provider at the next restart, and only a Connected Linked account such as `custom-openai-1` is pointed back at the proxy, by the backend at its next boot ([Linked account](../organization/linked-account.md)).
 - When a Helm-declared provider is removed from the values, it stays in Bifrost's database, and so stays live, until it is deleted through the Admin API.
 - A key replaced on Settings for `openai` or `anthropic` is stored as a `plain_text` value in Bifrost's database, while the values keep the `env.*` reference; the Secret's value is then unused until the entry changes.
-- The running image is pinned in the Bifrost Helm values (`v2.3.0`, chart `2.1.45`), with `forceReasoningOnlyModelsToResponses` off so reasoning-only models stay on chat completions as before 2.3; the Admin API payload shapes follow that pin, so verify the running pod image before relying on payload behaviour and back up the `bifrost` database before an upgrade.
+- The running image is pinned in the Bifrost Helm values (`v2.3.2`, chart `2.1.45`), with `forceReasoningOnlyModelsToResponses` off so reasoning-only models stay on chat completions as before 2.3; the Admin API payload shapes follow that pin, so verify the running pod image before relying on payload behaviour and back up the `bifrost` database before an upgrade.
 
 ## Code
 
