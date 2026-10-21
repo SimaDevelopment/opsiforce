@@ -5,7 +5,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
   type OnApplicationBootstrap,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -58,11 +57,9 @@ import {
   type ProviderRowIdentity,
 } from './model-provider.service';
 import {
-  BIFROST_UNREACHABLE_MESSAGE,
   STARTING_WEIGHT,
   type AvailabilityMode,
   type ConnectionTestPassed,
-  type KeysRewrite,
   type PlatformModelProviderAccessView,
   type PlatformModelProviderCreationRules,
   type PlatformModelProviderView,
@@ -183,7 +180,6 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
           status: rowStatusOf(entry, providers, keys, this.connections.linkedAccountProxyUrl, signIns.get(name)),
           fixed: fixed !== undefined,
           notMetered: !connection && isOpsiforceProviderName(name),
-          deploymentManaged: connection && !isOpsiforceProviderName(name),
         };
         const servedModels = servedSubsetOf(entry, servingOf(entry, providers, keys), providers);
         if (servedModels) view.servedModels = servedModels;
@@ -223,23 +219,6 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
         withheld: names.filter((name) => !isAvailable(availability, name, tenant.tenantId)),
       })),
     };
-  }
-
-  async rewriteKeys(): Promise<KeysRewrite> {
-    if (!(await this.modelProvidersService.bifrostProvidersOrNull())) {
-      throw new ServiceUnavailableException(BIFROST_UNREACHABLE_MESSAGE);
-    }
-    const [{ organizations }] = await db.select({ organizations: sql<number>`count(*)::int` }).from(tenants);
-    const failedIds = await this.modelProvidersService.rewriteEveryTenantsKeys();
-    const failed =
-      failedIds.length === 0
-        ? []
-        : await db
-            .select({ tenantId: tenants.id, displayName: tenants.displayName })
-            .from(tenants)
-            .where(inArray(tenants.id, failedIds))
-            .orderBy(asc(tenants.displayName));
-    return { organizations, failed };
   }
 
   async setAccess(name: string, tenantId: string, input: unknown): Promise<PlatformModelProviderAccessView> {
@@ -435,7 +414,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
     const failed = await this.modelProvidersService.rewriteEveryTenantsKeys();
     if (failed.length > 0) {
       throw new BadGatewayException(
-        `${name} now serves the models you chose, but ${failed.length} organizations still route the old ones. Use Apply to every organization to retry.`
+        `${name} now serves the models you chose, but ${failed.length} organizations still route the old ones. Save again to retry.`
       );
     }
     return this.list();

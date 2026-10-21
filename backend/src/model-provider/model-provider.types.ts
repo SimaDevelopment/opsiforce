@@ -93,7 +93,6 @@ export interface PlatformModelProviderView {
   status: ModelProviderStatus;
   fixed: boolean;
   notMetered: boolean;
-  deploymentManaged: boolean;
   servedModels?: string[];
   connection?: AzureConnectionView;
   linkedAccountVendor?: VendorId;
@@ -131,16 +130,6 @@ export interface TenantModelProviderAccess {
 export interface PlatformModelProviderAccessView {
   providers: ModelProviderAccessProvider[];
   tenants: TenantModelProviderAccess[];
-}
-
-export interface OrganizationRef {
-  tenantId: string;
-  displayName: string;
-}
-
-export interface KeysRewrite {
-  organizations: number;
-  failed: OrganizationRef[];
 }
 
 export interface SetModelProviderAccessDto {

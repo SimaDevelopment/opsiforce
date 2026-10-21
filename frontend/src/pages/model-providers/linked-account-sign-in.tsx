@@ -11,8 +11,7 @@ import {
 } from '~/api/model-providers';
 import { ClipboardPaste, Copy, ExternalLink, LoaderCircle, LogIn, LogOut, RefreshCw } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import { ConfirmDialog } from '~/components/ui/confirm-dialog';
-import { DialogDescription, DialogTitle } from '~/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
 import { DropdownMenuItem } from '~/components/ui/dropdown-menu';
 import { INPUT_CLASS, errorMessage } from './connection-fields';
 import { LinkedAccountUsage } from './linked-account-usage';
@@ -32,7 +31,7 @@ const DISCONNECT_DESCRIPTION: Record<ModelProviderScope, string> = {
   tenant:
     'The sign-in is revoked at OpenAI and removed. This provider stops taking requests until someone signs in again; the format’s other providers that are on take over.',
   platform:
-    'The sign-in is revoked at OpenAI and removed. This provider stops taking requests in every organization it serves until you sign in again.',
+    'The sign-in is revoked at OpenAI and removed. This provider stops taking requests in every organization it serves until you sign in again. Updating every organization can take a few seconds.',
 };
 
 const CONNECTED_TIP: Record<ModelProviderScope, string> = {
@@ -194,6 +193,7 @@ export function useLinkedAccountActions(
     connected: () => linked() && account.data?.state === 'connected',
     signingIn: () => account.data?.signIn?.state === 'pending',
     busy: () => startSignIn.isPending || disconnect.isPending,
+    disconnectPending: () => disconnect.isPending,
     disconnecting,
     setDisconnecting,
     signIn: () => {
@@ -205,7 +205,10 @@ export function useLinkedAccountActions(
     pasteToken: () => setPastingTokenFor(accountKey(scope, name())),
     disconnect: () =>
       disconnect.mutate(name(), {
-        onSuccess: () => toast.success(`${name()} disconnected`),
+        onSuccess: () => {
+          setDisconnecting(false);
+          toast.success(`${name()} disconnected`);
+        },
         onError: (err) => toast.error(err instanceof ApiError ? err.message : `${name()} could not be disconnected`),
       }),
   };
@@ -271,15 +274,33 @@ export function LinkedAccountStatus(props: {
 
 export function DisconnectDialog(props: { scope: ModelProviderScope; name: string; actions: LinkedAccountActions }) {
   return (
-    <ConfirmDialog
+    <Dialog
       open={props.actions.disconnecting()}
-      onOpenChange={props.actions.setDisconnecting}
-      title={`Disconnect ${props.name}`}
-      description={DISCONNECT_DESCRIPTION[props.scope]}
-      confirmLabel="Disconnect"
-      variant="destructive"
-      onConfirm={() => props.actions.disconnect()}
-    />
+      onOpenChange={(open) => !props.actions.disconnectPending() && props.actions.setDisconnecting(open)}
+    >
+      <DialogContent class="max-w-sm">
+        <DialogTitle>Disconnect {props.name}</DialogTitle>
+        <DialogDescription>{DISCONNECT_DESCRIPTION[props.scope]}</DialogDescription>
+        <DialogFooter>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={props.actions.disconnectPending()}
+            onClick={() => props.actions.setDisconnecting(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            loading={props.actions.disconnectPending()}
+            onClick={() => props.actions.disconnect()}
+          >
+            Disconnect
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -7,7 +7,7 @@ import {
   type BaseFormatId,
   type PlatformModelProvider,
 } from '~/api/model-providers';
-import { Boxes, EllipsisVertical, KeyRound, Lock, Pencil, Trash2, Users } from '~/components/icons';
+import { Boxes, EllipsisVertical, KeyRound, Pencil, Trash2, Users } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -25,7 +25,7 @@ import {
 } from './linked-account-sign-in';
 import { ModelsDialog, type ModelsTarget } from './models-dialog';
 import { InfoTip, Tip } from './provider-widgets';
-import { OrganizationAccessDialog, OrganizationAccessPill } from './organization-access';
+import { OrganizationAccessDialog } from './organization-access';
 import { ReenterKeyDialog } from './reenter-key-dialog';
 
 export const MENU_TRIGGER_CLASS =
@@ -67,40 +67,13 @@ export function BuiltInPlatformPills(props: { row: PlatformModelProvider }) {
       <Show when={props.row.notMetered}>
         <NotMeteredPill />
       </Show>
-      <Show when={props.row.deploymentManaged}>
-        <Tip content={TIPS.deploymentConfig}>
-          <span class="inline-flex items-center gap-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
-            <Lock class="h-2.5 w-2.5" aria-hidden="true" />
-            Deployment config
-          </span>
-        </Tip>
-      </Show>
     </>
-  );
-}
-
-export function ServedModelsNote(props: { models: string[] | undefined }) {
-  return (
-    <Show when={props.models}>
-      {(models) => (
-        <p class="mt-0.5 text-[11px] text-muted-foreground">
-          <Show when={models().length > 0} fallback="Serves none of this format’s models">
-            Serves only{' '}
-            <span class="font-mono" translate="no">
-              {models().join(', ')}
-            </span>
-            ; requests for other models skip it.
-          </Show>
-        </p>
-      )}
-    </Show>
   );
 }
 
 export function BuiltInPlatformDetails(props: { row: PlatformModelProvider; editable: boolean }) {
   return (
     <>
-      <ServedModelsNote models={props.row.servedModels} />
       <Show when={props.row.url}>
         {(url) => (
           <p class="mt-0.5 break-all font-mono text-[11px] text-muted-foreground" translate="no">
@@ -118,9 +91,6 @@ export function BuiltInPlatformDetails(props: { row: PlatformModelProvider; edit
           />
         </div>
       </Show>
-      <div>
-        <OrganizationAccessPill name={props.row.name} />
-      </div>
     </>
   );
 }
@@ -138,7 +108,7 @@ export function ModelsItem(props: { onSelect: () => void }) {
   return (
     <DropdownMenuItem onSelect={() => props.onSelect()}>
       <Boxes class="h-3.5 w-3.5" />
-      Models it serves
+      Choose models
     </DropdownMenuItem>
   );
 }
@@ -150,7 +120,7 @@ function modelsTargetOf(row: PlatformModelProvider, baseFormat: BaseFormatId): M
     kind: row.kind,
     servedModels: row.servedModels,
     connection: row.connection,
-    declaredInDeployment: row.fixed || row.deploymentManaged,
+    declaredInDeployment: row.fixed,
   };
 }
 
@@ -173,7 +143,22 @@ function PlatformModelsDialog(props: {
   );
 }
 
-function DeploymentManagedMenu(props: { row: PlatformModelProvider }) {
+export function BuiltInRowMenu(props: { row: PlatformModelProvider }) {
+  return (
+    <Show
+      when={managedRow(props.row)}
+      fallback={
+        <Show when={isLinkedAccountRow(props.row)} fallback={<AccessOnlyMenu row={props.row} />}>
+          <LinkedAccountOnlyMenu row={props.row} />
+        </Show>
+      }
+    >
+      {(managed) => <ManagedBuiltInMenu row={managed()} />}
+    </Show>
+  );
+}
+
+function AccessOnlyMenu(props: { row: PlatformModelProvider }) {
   const [accessOpen, setAccessOpen] = createSignal(false);
   const [modelsOpen, setModelsOpen] = createSignal(false);
   return (
@@ -183,7 +168,7 @@ function DeploymentManagedMenu(props: { row: PlatformModelProvider }) {
           <EllipsisVertical class="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          <Show when={props.row.status !== 'missing'}>
+          <Show when={props.row.status !== 'missing' && builtInFormatOf(props.row)}>
             <ModelsItem onSelect={() => setModelsOpen(true)} />
           </Show>
           <OrganizationAccessItem onSelect={() => setAccessOpen(true)} />
@@ -192,29 +177,6 @@ function DeploymentManagedMenu(props: { row: PlatformModelProvider }) {
       <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
       <OrganizationAccessDialog name={props.row.name} open={accessOpen()} onOpenChange={setAccessOpen} />
     </>
-  );
-}
-
-export function BuiltInRowMenu(props: { row: PlatformModelProvider }) {
-  return (
-    <Show when={!props.row.deploymentManaged} fallback={<DeploymentManagedMenu row={props.row} />}>
-      <ManagedOrLinkedMenu row={props.row} />
-    </Show>
-  );
-}
-
-function ManagedOrLinkedMenu(props: { row: PlatformModelProvider }) {
-  return (
-    <Show
-      when={managedRow(props.row)}
-      fallback={
-        <Show when={isLinkedAccountRow(props.row)}>
-          <LinkedAccountOnlyMenu row={props.row} />
-        </Show>
-      }
-    >
-      {(managed) => <ManagedBuiltInMenu row={managed()} />}
-    </Show>
   );
 }
 

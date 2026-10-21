@@ -362,7 +362,7 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       expect(azureEntriesOf(bifrost.chatKeyOf(seeded.projectId).provider_configs)).toEqual([]);
     });
 
-    it('lists each family row to platform admins as managed by the deployment, with its models', async () => {
+    it('lists each family row to platform admins with its models', async () => {
       await declareHelmKey(['gpt-5.6-sol', 'claude-sonnet-5'], [GPT, CLAUDE]);
 
       expect((await platformRows()).filter((row) => row.name === 'azure-foundry')).toEqual([
@@ -370,14 +370,12 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
           baseFormat: 'anthropic',
           kind: 'azure-foundry',
           url: null,
-          deploymentManaged: true,
           servedModels: ['claude-sonnet-5'],
         }),
         expect.objectContaining({
           baseFormat: 'openai',
           kind: 'azure-foundry',
           url: null,
-          deploymentManaged: true,
           servedModels: ['gpt-5.6-sol'],
         }),
       ]);
@@ -399,35 +397,6 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       const reachable = res.json<string[]>();
       expect(reachable.filter((ref) => ref.startsWith('anthropic/'))).toEqual(['anthropic/claude-sonnet-5']);
       expect(reachable).toContain('openai/gpt-6-astra');
-    });
-
-    it('reaches every Organization’s keys once a platform admin applies rows changed outside the page', async () => {
-      const seeded = await seededTenant();
-      const keyId = bifrost.addAzureKey('azure-foundry', ['gpt-5.6-sol']).id;
-      await db
-        .insert(modelProviders)
-        .values({ tenantId: null, bifrostProvider: 'azure', bifrostKey: 'azure-foundry', ...GPT });
-      expect(azureEntriesOf(bifrost.chatKeyOf(seeded.projectId).provider_configs)).toEqual([]);
-
-      const refused = await app.inject({
-        method: 'POST',
-        url: '/api/platform-model-providers/rewrite-keys',
-        headers: seeded.admin.headers,
-      });
-      expect(refused.statusCode).toBe(403);
-
-      const applied = await app.inject({
-        method: 'POST',
-        url: '/api/platform-model-providers/rewrite-keys',
-        headers: platformAdmin.headers,
-      });
-
-      expect(applied.statusCode, applied.body).toBe(200);
-      const failed = applied.json<{ failed: { tenantId: string }[] }>().failed.map((tenant) => tenant.tenantId);
-      expect(failed).not.toContain(seeded.tenant.tenantId);
-      expect(azureEntriesOf(bifrost.chatKeyOf(seeded.projectId).provider_configs)).toEqual([
-        { provider: 'azure', weight: 2, allowed_models: ['gpt-5.6-sol'], key_ids: [keyId] },
-      ]);
     });
 
     it('is never edited or deleted through the platform routes', async () => {
@@ -474,7 +443,6 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
           baseFormat: 'anthropic',
           kind: 'azure-foundry',
           url: ENDPOINT,
-          deploymentManaged: false,
           notMetered: false,
           connection: { models: ['gpt-5.6-sol', 'claude-sonnet-5'], deployments: { 'claude-sonnet-5': 'my-sonnet' } },
         }),

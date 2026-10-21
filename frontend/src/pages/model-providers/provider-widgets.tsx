@@ -2,7 +2,7 @@ import { For, Match, Show, Switch as SolidSwitch, type JSX } from 'solid-js';
 import type { ModelProviderKind, ModelProviderStatus, TenantModelProvider } from '~/api/model-providers';
 import { Info } from '~/components/icons';
 import { Badge } from '~/components/ui/badge';
-import { Switch, SwitchControl, SwitchThumb } from '~/components/ui/switch';
+import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from '~/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/cn';
 import { KIND_LABEL, STATUS_LABEL, TIPS } from './copy';
@@ -167,6 +167,26 @@ export function OnOffSwitch(props: {
         <SwitchThumb />
       </SwitchControl>
     </Switch>
+  );
+}
+
+export function LabelledSwitch(props: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div class="space-y-1">
+      <Switch checked={props.checked} onChange={props.onChange} disabled={props.disabled} class="gap-2.5">
+        <SwitchControl>
+          <SwitchThumb />
+        </SwitchControl>
+        <SwitchLabel class="mr-0 cursor-pointer text-xs font-normal">{props.label}</SwitchLabel>
+      </Switch>
+      <Show when={props.hint}>{(hint) => <p class="pl-[2.875rem] text-xs text-muted-foreground">{hint()}</p>}</Show>
+    </div>
   );
 }
 

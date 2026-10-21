@@ -15,7 +15,7 @@ import {
 import { SearchInput } from '~/components/store/store-list';
 import { AlertTriangle, Plus } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
 import { cn } from '~/lib/cn';
 import {
   AZURE_KEY_PLACEHOLDER,
@@ -30,6 +30,7 @@ import {
   ModelChoiceField,
   RadioChoice,
   TestOutcome,
+  FormError,
   errorMessage,
   isDraftComplete,
   newProviderOf,
@@ -197,7 +198,7 @@ function AddProviderDialog(
                 </Show>
               </DialogDescription>
               <Show when={audiences().length > 1}>
-                <div class="mt-4 space-y-2">
+                <div class="mt-4 space-y-3">
                   <RadioChoice
                     label="Who can use it"
                     options={audiences()}
@@ -241,7 +242,7 @@ function AddProviderDialog(
                         autocomplete="off"
                         spellcheck={false}
                         class={cn(INPUT_CLASS, 'font-mono placeholder:font-sans', prefix() && 'rounded-l-none')}
-                        placeholder={global() ? 'e.g. capacity…' : 'e.g. team-openai…'}
+                        placeholder={global() ? 'e.g. capacity' : 'e.g. team-openai'}
                         value={draft.name}
                         onInput={(event) => change({ name: event.currentTarget.value })}
                       />
@@ -326,14 +327,10 @@ function AddProviderDialog(
                       />
                     </div>
                   </Show>
-                  <Show when={saveError()}>
-                    <p class="break-words text-xs text-destructive" role="alert">
-                      {saveError()}
-                    </p>
-                  </Show>
+                  <FormError message={saveError()} />
                 </div>
               </Show>
-              <div class="mt-4 flex justify-end gap-2">
+              <DialogFooter>
                 <Button size="sm" variant="outline" onClick={() => props.onOpenChange(false)}>
                   Cancel
                 </Button>
@@ -345,7 +342,7 @@ function AddProviderDialog(
                 >
                   {linking() ? 'Add and sign in' : 'Add model provider'}
                 </Button>
-              </div>
+              </DialogFooter>
             </>
           }
         >
@@ -367,13 +364,13 @@ type Audience = 'organization' | 'every' | 'chosen';
 const AUDIENCE_TITLE: Record<Audience, string> = {
   organization: 'Only this organization',
   every: 'Every organization',
-  chosen: 'Chosen organizations',
+  chosen: 'Only organizations I choose',
 };
 
 const AUDIENCE_HINT: Record<Audience, string> = {
   organization: 'A Custom model provider of this organization',
   every: 'Built-in, including organizations added later',
-  chosen: 'Built-in, only for the ones you tick',
+  chosen: 'Built-in, for the organizations you choose below',
 };
 
 function OrganizationPicker(props: { selected: string[]; onChange: (tenantIds: string[]) => void }) {
@@ -409,7 +406,7 @@ function OrganizationPicker(props: { selected: string[]; onChange: (tenantIds: s
         </For>
       </ul>
       <p class="text-xs text-muted-foreground">
-        {props.selected.length} chosen. Organizations added later don’t get it until you tick them.
+        {props.selected.length} chosen. Organizations added later get access only when you give it to them.
       </p>
     </div>
   );

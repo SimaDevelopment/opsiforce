@@ -39,11 +39,11 @@ A Model provider the platform gives every Organization rather than one the Organ
 _Avoid_: Platform provider (the platform's own row that new Organizations start from), Shared provider
 
 **Azure connection**:
-A Model provider that reaches one Azure AI Foundry resource, serving only the catalog models chosen for it, from either Base format, with its own switches and weights for each format it serves. The platform's are Opsiforce model providers and an Organization's own are Custom model providers; one the deployment declares, which the UI labels Deployment config, Opsiforce never edits or deletes.
+A Model provider that reaches one Azure AI Foundry resource, serving only the catalog models chosen for it, from either Base format, with its own switches and weights for each format it serves. The platform's are Opsiforce model providers and an Organization's own are Custom model providers; both are added from Settings.
 _Avoid_: Deployment-managed model provider, Azure provider (the gateway has one, which every Azure connection shares), Azure deployment (one model on the resource)
 
 **Withheld**:
-An Opsiforce model provider an Organization doesn't have, because a platform admin unticked it there, or because it is offered only to chosen Organizations and that one isn't among them: it carries none of that Organization's traffic and its admin doesn't see it. An Organization added later gets a provider offered to every Organization and is withheld from one offered to chosen ones.
+An Opsiforce model provider an Organization doesn't have, because a platform admin removed its access there, or because it is offered only to chosen Organizations and that one isn't among them: it carries none of that Organization's traffic and its admin doesn't see it. An Organization added later gets a provider offered to every Organization and is withheld from one offered to chosen ones.
 _Avoid_: Disabled, Hidden, Blocked (an Organization's own switch only turns a provider off)
 
 **Custom model provider**:

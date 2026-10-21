@@ -36,7 +36,6 @@ interface BuiltInRow {
   status: string;
   fixed: boolean;
   notMetered: boolean;
-  deploymentManaged: boolean;
   linkedAccountVendor?: string;
 }
 
@@ -53,7 +52,6 @@ const FIXED_OPENAI: BuiltInRow = {
   status: 'working',
   fixed: true,
   notMetered: false,
-  deploymentManaged: false,
 };
 
 const FIXED_ANTHROPIC: BuiltInRow = {
@@ -64,7 +62,6 @@ const FIXED_ANTHROPIC: BuiltInRow = {
   status: 'working',
   fixed: true,
   notMetered: false,
-  deploymentManaged: false,
 };
 
 const DOCK: BuiltInRow = {
@@ -75,7 +72,6 @@ const DOCK: BuiltInRow = {
   status: 'working',
   fixed: false,
   notMetered: false,
-  deploymentManaged: false,
   linkedAccountVendor: 'chatgpt',
 };
 
@@ -426,7 +422,6 @@ describe('Built-in model providers managed by a platform admin', () => {
         status: 'working',
         fixed: false,
         notMetered: true,
-        deploymentManaged: false,
       });
       expect(bifrost.providerNamed('opsiforce-extra')?.created).toMatchObject({
         provider: 'opsiforce-extra',
@@ -466,7 +461,6 @@ describe('Built-in model providers managed by a platform admin', () => {
         status: 'working',
         fixed: false,
         notMetered: true,
-        deploymentManaged: false,
       });
       expect(bifrost.providerNamed('opsiforce-gateway')?.keys).toMatchObject([
         { value: { value: 'sk-gateway-2', type: 'plain_text' }, models: ['*'] },

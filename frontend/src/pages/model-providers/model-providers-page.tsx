@@ -30,10 +30,9 @@ import {
 } from './audience';
 import { BASE_FORMAT_LABEL, carriesTraffic } from './traffic-split';
 import { FormatCard } from './format-card';
-import { ApplyToEveryOrganization } from './organization-access';
 import { CustomProviderMenu, ReenterKeyButton } from './custom-provider-menu';
 import { LinkedAccountSignIn, LinkedAccountStatus } from './linked-account-sign-in';
-import { BuiltInPill, LabelWithTip, ProviderPill, StatusBadge, isCustomRow } from './provider-widgets';
+import { BuiltInPill, InfoTip, LabelWithTip, ProviderPill, StatusBadge, isCustomRow } from './provider-widgets';
 
 interface Access {
   canSwitch: boolean;
@@ -123,28 +122,20 @@ function ModelProviderCards(props: Access) {
       </Match>
       <Match when={true}>
         <div class="space-y-4">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <Show when={props.canSwitch}>
-              <AudienceSwitch
-                value={audience()}
-                onChange={setAudience}
-                dirty={dirtyAudience}
-                appsMissing={formatsAppsCantUse()}
-              />
-            </Show>
-            <Show when={props.managesPlatform}>
-              <div class="ml-auto">
-                <ApplyToEveryOrganization />
-              </div>
-            </Show>
-          </div>
+          <Show when={props.canSwitch}>
+            <AudienceSwitch
+              value={audience()}
+              onChange={setAudience}
+              dirty={dirtyAudience}
+              appsMissing={formatsAppsCantUse()}
+            />
+          </Show>
           <For each={formats()}>
             {(format) => (
               <FormatCard
                 format={format}
                 audience={audience()}
                 rows={rows().filter((row) => row.baseFormat === format)}
-                catalog={tenantView.data?.catalogModels[format] ?? []}
                 builtIns={builtInsOf(format)}
                 canSwitch={props.canSwitch}
                 managesPlatform={props.managesPlatform}
@@ -202,6 +193,7 @@ function AudienceSwitch(props: {
           )}
         </For>
       </div>
+      <InfoTip content={TIPS.routing} label="How requests are split between model providers" />
       <p class="basis-full text-xs text-muted-foreground" aria-live="polite">
         {AUDIENCE_DESCRIPTION[props.value]} Saving a card saves its Agent and App routing together.
       </p>

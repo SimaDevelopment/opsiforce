@@ -607,7 +607,6 @@ describe('an Organization signs in its own Linked account', () => {
         status: 'not-signed-in',
         fixed: false,
         notMetered: true,
-        deploymentManaged: false,
         linkedAccountVendor: 'chatgpt',
       });
       expect((await rowsOf(seeded.admin)).find((row) => row.name === 'opsiforce-capacity')?.status).toBe(

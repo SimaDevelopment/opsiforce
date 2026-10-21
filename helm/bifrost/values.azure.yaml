@@ -109,24 +109,6 @@ bifrost:
           image_edit_stream: false
           image_variation: false
           count_tokens: true
-    azure:
-      keys:
-        - name: azure-foundry
-          value: env.AZURE_FOUNDRY_API_KEY
-          weight: 1
-          models:
-            - gpt-5.6-sol
-          azure_key_config:
-            endpoint: env.AZURE_FOUNDRY_ENDPOINT
-  providerSecrets:
-    azure-api-key:
-      existingSecret: opsiforce-bifrost-provider-keys
-      key: azure-api-key
-      envVar: AZURE_FOUNDRY_API_KEY
-    azure-endpoint:
-      existingSecret: opsiforce-bifrost-provider-keys
-      key: azure-endpoint
-      envVar: AZURE_FOUNDRY_ENDPOINT
   plugins:
     governance:
       enabled: true

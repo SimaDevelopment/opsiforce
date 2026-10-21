@@ -228,7 +228,6 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         status: 'working',
         fixed: false,
         notMetered: false,
-        deploymentManaged: false,
         linkedAccountVendor: 'chatgpt',
       });
       expect(res.body).not.toContain(PROXY_URL);

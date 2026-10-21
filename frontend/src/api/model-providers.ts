@@ -92,7 +92,6 @@ export interface PlatformModelProvider {
   status: ModelProviderStatus;
   fixed: boolean;
   notMetered: boolean;
-  deploymentManaged: boolean;
   servedModels?: string[];
   connection?: AzureConnection;
   linkedAccountVendor?: LinkedAccountVendor;
@@ -272,19 +271,6 @@ export function useSetAvailabilityMode() {
         mode: vars.mode,
       }),
     onSuccess: (view: PlatformModelProviderAccess) => qc.setQueryData(platformAccessKey, view),
-  }));
-}
-
-export interface KeysRewrite {
-  organizations: number;
-  failed: { tenantId: string; displayName: string }[];
-}
-
-export function useRewriteEveryOrganizationsKeys() {
-  const qc = useQueryClient();
-  return createMutation(() => ({
-    mutationFn: () => api.post<KeysRewrite>('/platform-model-providers/rewrite-keys', {}),
-    onSuccess: () => invalidateReachability(qc),
   }));
 }
 

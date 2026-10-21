@@ -1,9 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { toast } from 'solid-sonner';
-import { ApiError } from '~/api/client';
 import {
   usePlatformModelProviderAccess,
-  useRewriteEveryOrganizationsKeys,
   useSetAvailabilityMode,
   useSetModelProviderAccess,
   type AvailabilityMode,
@@ -12,18 +10,18 @@ import {
 } from '~/api/model-providers';
 import { Pager, createOffsetPages } from '~/components/pager';
 import { SearchInput } from '~/components/store/store-list';
-import { Building2, Users } from '~/components/icons';
+import { Building2 } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
-import { cn } from '~/lib/cn';
-import { TIPS } from './copy';
-import { InfoTip } from './provider-widgets';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
+import { errorMessage } from './connection-fields';
+import { LabelledSwitch, OnOffSwitch } from './provider-widgets';
 
 const DIALOG_PAGE_SIZE = 8;
 
-type Shown = 'all' | 'withheld';
+type Shown = 'all' | 'without';
 
-function isWithheld(tenant: TenantModelProviderAccess, name: string): boolean {
+function hasNoAccess(tenant: TenantModelProviderAccess, name: string): boolean {
   return tenant.withheld.includes(name);
 }
 
@@ -35,38 +33,10 @@ function organizations(count: number): string {
   return count === 1 ? '1 organization' : `${count} organizations`;
 }
 
-function pillText(available: number, total: number, mode: AvailabilityMode): string {
-  if (mode === 'chosen') return `Available to ${available} chosen of ${organizations(total)}`;
-  return available === total
-    ? `Available to all ${organizations(total)}`
-    : `Available to ${available} of ${total} organizations`;
-}
-
-export function OrganizationAccessPill(props: { name: string }) {
-  const access = usePlatformModelProviderAccess();
-  const [open, setOpen] = createSignal(false);
-  const tenants = () => access.data?.tenants ?? [];
-  const available = () => tenants().filter((tenant) => !isWithheld(tenant, props.name)).length;
-  const mode = () => modeOf(access.data, props.name);
-  const everyone = () => available() === tenants().length && mode() === 'every';
-
-  return (
-    <Show when={access.data}>
-      <button
-        type="button"
-        class={cn(
-          'mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          everyone() ? 'bg-muted text-muted-foreground' : 'bg-amber-500/15 text-amber-800'
-        )}
-        onClick={() => setOpen(true)}
-      >
-        <Users class="h-3 w-3" aria-hidden="true" />
-        {pillText(available(), tenants().length, mode())}
-      </button>
-      <OrganizationAccessDialog name={props.name} open={open()} onOpenChange={setOpen} />
-    </Show>
-  );
-}
+const SHOWN_LABEL: Record<Shown, string> = {
+  all: 'All',
+  without: 'Without access',
+};
 
 export function OrganizationAccessDialog(props: {
   name: string;
@@ -78,28 +48,37 @@ export function OrganizationAccessDialog(props: {
   const [query, setQuery] = createSignal('');
   const [shown, setShown] = createSignal<Shown>('all');
   const [busy, setBusy] = createSignal(false);
-  const [confirmingUntickAll, setConfirmingUntickAll] = createSignal(false);
+  const [confirmingRemoveAll, setConfirmingRemoveAll] = createSignal(false);
   const tenants = () => access.data?.tenants ?? [];
   const filtered = createMemo(() => {
     const needle = query().trim().toLowerCase();
     return tenants().filter(
       (tenant) =>
-        tenant.displayName.toLowerCase().includes(needle) && (shown() === 'all' || isWithheld(tenant, props.name))
+        tenant.displayName.toLowerCase().includes(needle) && (shown() === 'all' || hasNoAccess(tenant, props.name))
     );
   });
   const pages = createOffsetPages(filtered, DIALOG_PAGE_SIZE);
-  const withheldCount = () => tenants().filter((tenant) => isWithheld(tenant, props.name)).length;
+  const withoutCount = () => tenants().filter((tenant) => hasNoAccess(tenant, props.name)).length;
+
+  function show(next: Shown) {
+    setShown(next);
+    pages.toFirst();
+  }
 
   async function apply(targets: TenantModelProviderAccess[], withheld: boolean) {
-    const changing = targets.filter((tenant) => isWithheld(tenant, props.name) !== withheld);
+    const changing = targets.filter((tenant) => hasNoAccess(tenant, props.name) !== withheld);
     if (changing.length === 0) return;
     setBusy(true);
     try {
       for (const tenant of changing) {
         await setAccess.mutateAsync({ name: props.name, tenantId: tenant.tenantId, withheld });
       }
+      const who = changing.length === 1 ? changing[0].displayName : organizations(changing.length);
+      toast.success(
+        withheld ? `${who} no longer has access to ${props.name}` : `${who} now has access to ${props.name}`
+      );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'The access could not be changed');
+      toast.error(errorMessage(err, 'The access could not be changed'));
     } finally {
       setBusy(false);
     }
@@ -115,11 +94,11 @@ export function OrganizationAccessDialog(props: {
           </span>
         </DialogTitle>
         <DialogDescription>
-          An unticked organization doesn’t see {props.name} and sends it nothing, and its admin can’t switch it back on.
-          Ticking it again restores the organization’s own switch and weight.
+          An organization without access doesn’t see {props.name} and sends it no requests. Giving access back restores
+          the organization’s own switch and weight.
         </DialogDescription>
-        <div class="mt-3 space-y-2">
-          <NewOrganizationsChoice name={props.name} mode={modeOf(access.data, props.name)} />
+        <div class="mt-4 space-y-3">
+          <NewOrganizationsSwitch name={props.name} mode={modeOf(access.data, props.name)} />
           <div class="flex flex-wrap items-center gap-2">
             <div class="min-w-48 flex-1">
               <SearchInput
@@ -132,97 +111,59 @@ export function OrganizationAccessDialog(props: {
               />
             </div>
             <div role="group" aria-label="Organizations shown" class="inline-flex rounded-md bg-muted p-0.5 text-xs">
-              <button
-                type="button"
-                aria-pressed={shown() === 'all'}
-                class="rounded px-2 py-1 aria-pressed:bg-background aria-pressed:shadow-sm"
-                onClick={() => {
-                  setShown('all');
-                  pages.toFirst();
-                }}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                aria-pressed={shown() === 'withheld'}
-                class="rounded px-2 py-1 aria-pressed:bg-background aria-pressed:shadow-sm"
-                onClick={() => {
-                  setShown('withheld');
-                  pages.toFirst();
-                }}
-              >
-                Withheld ({withheldCount()})
-              </button>
+              <For each={['all', 'without'] as const}>
+                {(option) => (
+                  <button
+                    type="button"
+                    aria-pressed={shown() === option}
+                    class="rounded px-2 py-1 aria-pressed:bg-background aria-pressed:shadow-sm"
+                    onClick={() => show(option)}
+                  >
+                    {SHOWN_LABEL[option]}
+                    <Show when={option === 'without'}> ({withoutCount()})</Show>
+                  </button>
+                )}
+              </For>
             </div>
           </div>
-          <Show
-            when={!confirmingUntickAll()}
-            fallback={
-              <div class="flex flex-wrap items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs">
-                <span class="flex-1">
-                  Withhold {props.name} from the {filtered().length} organizations shown? Their Agents stop using it at
-                  once.
-                </span>
-                <Button size="sm" variant="ghost" class="h-7 text-xs" onClick={() => setConfirmingUntickAll(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  class="h-7 text-xs"
-                  onClick={() => {
-                    setConfirmingUntickAll(false);
-                    void apply(filtered(), true);
-                  }}
-                >
-                  Withhold
-                </Button>
-              </div>
-            }
-          >
-            <div class="flex gap-3 text-xs">
-              <button
-                type="button"
-                class="text-primary hover:underline disabled:opacity-50"
-                disabled={busy()}
-                onClick={() => void apply(filtered(), false)}
-              >
-                Tick all shown
-              </button>
-              <button
-                type="button"
-                class="text-primary hover:underline disabled:opacity-50"
-                disabled={busy()}
-                onClick={() => setConfirmingUntickAll(true)}
-              >
-                Untick all shown
-              </button>
-            </div>
-          </Show>
+          <div class="flex gap-3 text-xs">
+            <button
+              type="button"
+              class="text-primary hover:underline disabled:opacity-50"
+              disabled={busy() || filtered().length === 0}
+              onClick={() => void apply(filtered(), false)}
+            >
+              Give access to all shown
+            </button>
+            <button
+              type="button"
+              class="text-primary hover:underline disabled:opacity-50"
+              disabled={busy() || filtered().length === 0}
+              onClick={() => setConfirmingRemoveAll(true)}
+            >
+              Remove access from all shown
+            </button>
+          </div>
           <ul class="divide-y divide-border rounded-md border border-border">
             <For
               each={pages.page()}
               fallback={<li class="px-3 py-4 text-center text-xs text-muted-foreground">No organizations</li>}
             >
               {(tenant) => (
-                <li>
-                  <label class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-accent/40">
-                    <input
-                      type="checkbox"
-                      class="h-3.5 w-3.5 accent-primary"
-                      checked={!isWithheld(tenant, props.name)}
-                      disabled={busy()}
-                      onChange={(event) => void apply([tenant], !event.currentTarget.checked)}
-                    />
-                    <Building2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span class="min-w-0 flex-1 truncate" title={tenant.displayName}>
-                      {tenant.displayName}
-                    </span>
-                    <Show when={isWithheld(tenant, props.name)}>
-                      <span class="text-[11px] text-muted-foreground">Withheld</span>
-                    </Show>
-                  </label>
+                <li class="flex items-center gap-2 px-3 py-2 text-sm">
+                  <Building2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span class="min-w-0 flex-1 truncate" title={tenant.displayName}>
+                    {tenant.displayName}
+                  </span>
+                  <span class="text-[11px] text-muted-foreground">
+                    {hasNoAccess(tenant, props.name) ? 'No access' : 'Has access'}
+                  </span>
+                  <OnOffSwitch
+                    checked={!hasNoAccess(tenant, props.name)}
+                    disabled={busy()}
+                    label={`${tenant.displayName} has access`}
+                    onChange={(on) => void apply([tenant], !on)}
+                  />
                 </li>
               )}
             </For>
@@ -231,83 +172,52 @@ export function OrganizationAccessDialog(props: {
             <Pager {...pages.pagerProps()} />
           </Show>
         </div>
-        <div class="mt-4 flex justify-end">
+        <DialogFooter>
           <Button size="sm" onClick={() => props.onOpenChange(false)}>
             Done
           </Button>
-        </div>
+        </DialogFooter>
+        <ConfirmDialog
+          open={confirmingRemoveAll()}
+          onOpenChange={setConfirmingRemoveAll}
+          title={`Remove access to ${props.name}`}
+          description={`The ${organizations(filtered().length)} shown stop using ${props.name} at once, for Agents and Apps.`}
+          confirmLabel="Remove access"
+          variant="destructive"
+          onConfirm={() => void apply(filtered(), true)}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
-const NEW_ORGANIZATIONS_LABEL: Record<AvailabilityMode, string> = {
-  every: 'Get it automatically',
-  chosen: 'Only once ticked here',
-};
-
-function NewOrganizationsChoice(props: { name: string; mode: AvailabilityMode }) {
+function NewOrganizationsSwitch(props: { name: string; mode: AvailabilityMode }) {
   const setMode = useSetAvailabilityMode();
 
-  function choose(mode: AvailabilityMode) {
+  function change(automatic: boolean) {
+    const mode: AvailabilityMode = automatic ? 'every' : 'chosen';
     if (mode === props.mode) return;
     setMode.mutate(
       { name: props.name, mode },
-      { onError: (err) => toast.error(err instanceof ApiError ? err.message : 'The setting could not be changed') }
+      {
+        onSuccess: () =>
+          toast.success(
+            automatic
+              ? `Organizations added later get access to ${props.name} automatically`
+              : `Organizations added later get access to ${props.name} only when you give it`
+          ),
+        onError: (err) => toast.error(errorMessage(err, 'The setting could not be saved')),
+      }
     );
   }
 
   return (
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <span class="text-muted-foreground">Organizations added later</span>
-      <div role="group" aria-label="Organizations added later" class="inline-flex rounded-md bg-muted p-0.5">
-        <For each={['every', 'chosen'] as const}>
-          {(mode) => (
-            <button
-              type="button"
-              aria-pressed={props.mode === mode}
-              disabled={setMode.isPending}
-              class="rounded px-2 py-1 aria-pressed:bg-background aria-pressed:shadow-sm disabled:opacity-50"
-              onClick={() => choose(mode)}
-            >
-              {NEW_ORGANIZATIONS_LABEL[mode]}
-            </button>
-          )}
-        </For>
-      </div>
-      <InfoTip content={TIPS.newOrganizations} label="What happens to organizations added later" />
-    </div>
-  );
-}
-
-export function ApplyToEveryOrganization() {
-  const rewriteKeys = useRewriteEveryOrganizationsKeys();
-
-  function apply() {
-    rewriteKeys.mutate(undefined, {
-      onSuccess: (result) => {
-        if (result.failed.length === 0) {
-          toast.success(`Model gateway keys of ${result.organizations} organizations follow these settings`);
-          return;
-        }
-        toast.error(`${result.failed.map((tenant) => tenant.displayName).join(', ')} could not be updated; try again`);
-      },
-      onError: (err) => toast.error(err instanceof ApiError ? err.message : 'The keys could not be updated'),
-    });
-  }
-
-  return (
-    <div class="flex items-center gap-1.5">
-      <Button
-        variant="outline"
-        size="sm"
-        loading={rewriteKeys.isPending}
-        disabled={rewriteKeys.isPending}
-        onClick={apply}
-      >
-        Apply to every organization
-      </Button>
-      <InfoTip content={TIPS.applyToEveryOrganization} label="What Apply to every organization does" />
-    </div>
+    <LabelledSwitch
+      checked={props.mode === 'every'}
+      disabled={setMode.isPending}
+      onChange={change}
+      label="Give organizations added later access automatically"
+      hint="Changing this doesn’t change the access of existing organizations."
+    />
   );
 }

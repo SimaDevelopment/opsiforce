@@ -19,20 +19,12 @@ export const TIPS = {
     'Not metered: the model gateway prices this provider’s requests at $0, so they count for nothing against any organization’s or project’s budget.',
   fixedBuiltIn:
     'Every organization has it and transcription depends on it, so it always points at the vendor’s API and can’t be deleted. Only its key can be replaced.',
-  modelSplit:
-    'A request for a model goes only to the model providers that serve it, split by their weights. A model provider that serves only some models takes no requests for the others.',
-  newOrganizations:
-    'Changing this keeps every organization’s current access as it is; it only decides whether an organization added later gets it.',
-  applyToEveryOrganization:
-    'Rewrites the model gateway keys of every Project in every organization from the switches and weights here. Every save already does this for its own organization; use it after model providers were changed outside this page, such as a Deployment config provider added to the database.',
-  deploymentConfig:
-    'Its key and endpoint come from this deployment’s configuration. Organizations switch and weigh it like any Built-in model provider.',
   chosenDescription:
-    'Only the organizations you tick get it, switched off at weight 1; their admins turn it on. Organizations added later don’t get it until you tick them under Organization access.',
+    'Only the organizations you choose get it, switched off at weight 1, and their admins turn it on. To give it to more organizations later, use Organization access in its menu.',
   globalDescription:
     'Every organization gets it switched off at weight 1, and only its own admin can turn it on. Deleting it removes it from every organization.',
-  format: (label: string) =>
-    `Every ${label} model request goes to one of the model providers below that is on, chosen by weight. If it fails, it is retried on the others that are on.`,
+  routing:
+    'Each model request goes to one model provider of its format that is on, picked by weight. If the request fails, it is retried on the other providers of that format that are on.',
   status: {
     working: 'The model gateway reports this provider as working.',
     failing:

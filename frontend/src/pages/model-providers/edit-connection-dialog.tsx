@@ -9,13 +9,14 @@ import {
   type ModelProviderScope,
 } from '~/api/model-providers';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
 import {
   AZURE_KEY_PLACEHOLDER,
   BaseUrlField,
   EndpointField,
   FixedValue,
   KeyField,
+  FormError,
   errorMessage,
   isAzureEndpoint,
   isHttpsUrl,
@@ -86,8 +87,8 @@ export function EditConnectionDialog(props: {
       <DialogContent class="max-w-lg" align="top">
         <DialogTitle>{props.keyOnly ? 'Replace key' : 'Edit connection'}</DialogTitle>
         <DialogDescription>
-          We test the connection with the key you enter before saving anything. If the test fails, nothing changes. The
-          models it serves stay as they are.
+          We test the connection with the key you enter before saving anything. If the test fails, nothing changes. Its
+          models stay as they are.
         </DialogDescription>
         <div class="mt-4 space-y-3">
           <div class={azure() ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3 sm:grid-cols-3'}>
@@ -114,20 +115,16 @@ export function EditConnectionDialog(props: {
             hint="The current key is never shown. The key you enter replaces it."
             placeholder={azure() ? AZURE_KEY_PLACEHOLDER : undefined}
           />
-          <Show when={error()}>
-            <p class="break-words text-xs text-destructive" role="alert">
-              {error()}
-            </p>
-          </Show>
+          <FormError message={error()} />
         </div>
-        <div class="mt-4 flex justify-end gap-2">
+        <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
           <Button size="sm" disabled={!complete()} loading={editConnection.isPending} onClick={save}>
             Test and save
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

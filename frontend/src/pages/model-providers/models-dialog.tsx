@@ -11,8 +11,8 @@ import {
 } from '~/api/model-providers';
 import { Info } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
-import { ModelChoiceField, deploymentsToSend, errorMessage } from './connection-fields';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
+import { FormError, ModelChoiceField, deploymentsToSend, errorMessage } from './connection-fields';
 import { BASE_FORMAT_LABEL } from './traffic-split';
 
 export interface ModelsTarget {
@@ -106,11 +106,10 @@ export function ModelsDialog(props: {
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent class="max-w-lg" align="top">
         <DialogTitle>
-          Models{' '}
+          Choose models for{' '}
           <span class="font-mono" translate="no">
             {props.row.name}
-          </span>{' '}
-          serves
+          </span>
         </DialogTitle>
         <DialogDescription>
           <Show
@@ -146,13 +145,9 @@ export function ModelsDialog(props: {
               />
             )}
           </Show>
-          <Show when={error()}>
-            <p class="break-words text-xs text-destructive" role="alert">
-              {error()}
-            </p>
-          </Show>
+          <FormError message={error()} />
         </div>
-        <div class="mt-4 flex justify-end gap-2">
+        <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
@@ -164,7 +159,7 @@ export function ModelsDialog(props: {
           >
             Save
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

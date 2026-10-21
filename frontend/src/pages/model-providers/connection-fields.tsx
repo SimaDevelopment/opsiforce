@@ -1,4 +1,4 @@
-import { For, Show, createUniqueId, type JSX } from 'solid-js';
+import { For, Show, createSignal, createUniqueId, untrack, type JSX } from 'solid-js';
 import { ApiError } from '~/api/client';
 import {
   BASE_FORMAT_IDS,
@@ -11,6 +11,7 @@ import {
 import { AlertTriangle, Check } from '~/components/icons';
 import { cn } from '~/lib/cn';
 import { BASE_URL_HINT, BASE_URL_PLACEHOLDER, KIND_HINT, KIND_LABEL } from './copy';
+import { LabelledSwitch } from './provider-widgets';
 import { BASE_FORMAT_LABEL } from './traffic-split';
 
 export const INPUT_CLASS =
@@ -123,6 +124,16 @@ export function LinkedAccountNote(props: { servedBy: string }) {
   );
 }
 
+export function FormError(props: { message: string | null }) {
+  return (
+    <Show when={props.message}>
+      <p class="break-words text-xs text-destructive" role="alert">
+        {props.message}
+      </p>
+    </Show>
+  );
+}
+
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
@@ -195,7 +206,7 @@ export function RadioChoice<T extends string>(props: {
                 onChange={() => props.onSelect(option)}
               />
               <span class="min-w-0">
-                <span class="block whitespace-nowrap font-medium leading-4 text-foreground">{props.title(option)}</span>
+                <span class="block font-medium leading-4 text-foreground">{props.title(option)}</span>
                 <Show when={props.hint}>
                   {(hint) => (
                     <span class="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{hint()(option)}</span>
@@ -330,6 +341,9 @@ export function ModelChoiceField(props: {
   const deployments = () => props.deployments ?? {};
   const scope = (): ModelScope => (props.selected === null ? 'every' : 'chosen');
   const chosen = () => props.selected ?? [];
+  const [renaming, setRenaming] = createSignal(
+    Object.keys(deploymentsToSend(untrack(chosen), untrack(deployments))).length > 0
+  );
 
   const choose = (next: ModelScope) =>
     props.onChange(next === 'every' ? null : (props.selected ?? everyModel()), deployments());
@@ -337,11 +351,15 @@ export function ModelChoiceField(props: {
     props.onChange(on ? [...chosen(), model] : chosen().filter((entry) => entry !== model), deployments());
   const rename = (model: string, deployment: string) =>
     props.onChange(props.selected, { ...deployments(), [model]: deployment });
+  const switchRenaming = (on: boolean) => {
+    setRenaming(on);
+    if (!on) props.onChange(props.selected, {});
+  };
 
   return (
     <div class="space-y-2">
       <RadioChoice
-        label="Models it serves"
+        label="Models"
         options={MODEL_SCOPES}
         selected={scope()}
         onSelect={choose}
@@ -355,6 +373,18 @@ export function ModelChoiceField(props: {
         }
       />
       <Show when={scope() === 'chosen'}>
+        <Show when={namesDeployments()}>
+          <LabelledSwitch
+            checked={renaming()}
+            onChange={switchRenaming}
+            label="Some deployments have different names"
+            hint={
+              renaming()
+                ? 'Enter the Azure deployment name beside each model whose deployment is named differently.'
+                : 'Each model is deployed under its own name.'
+            }
+          />
+        </Show>
         <div class="rounded-md border border-border">
           <div class="flex items-center gap-3 border-b border-border px-3 py-1.5 text-xs">
             <span class="mr-auto text-muted-foreground">
@@ -388,28 +418,28 @@ export function ModelChoiceField(props: {
                   </Show>
                   <For each={props.catalog[format] ?? []}>
                     {(model) => {
-                      const ticked = () => chosen().includes(model);
+                      const isChosen = () => chosen().includes(model);
                       return (
                         <div class="flex min-h-7 flex-wrap items-center gap-2 text-xs">
                           <label class="inline-flex min-w-44 cursor-pointer items-center gap-2">
                             <input
                               type="checkbox"
                               class="h-3.5 w-3.5 accent-primary"
-                              checked={ticked()}
+                              checked={isChosen()}
                               onChange={(event) => toggle(model, event.currentTarget.checked)}
                             />
                             <span class="font-mono" translate="no">
                               {model}
                             </span>
                           </label>
-                          <Show when={namesDeployments() && ticked()}>
+                          <Show when={namesDeployments() && renaming() && isChosen()}>
                             <input
                               type="text"
                               aria-label={`Deployment name of ${model}`}
                               autocomplete="off"
                               spellcheck={false}
-                              class={cn(INPUT_CLASS, 'h-7 max-w-56 flex-1 font-mono placeholder:font-sans')}
-                              placeholder="Deployment name, if different"
+                              class={cn(INPUT_CLASS, 'h-7 max-w-56 flex-1 font-mono')}
+                              placeholder="Deployment name"
                               value={deployments()[model] ?? ''}
                               onInput={(event) => rename(model, event.currentTarget.value)}
                             />

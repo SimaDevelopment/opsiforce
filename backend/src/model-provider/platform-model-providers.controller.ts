@@ -6,7 +6,6 @@ import { AgentCallerRefusalGuard } from './agent-caller-refusal.guard';
 import { PlatformModelProvidersService } from './platform-model-providers.service';
 import type {
   ConnectionTestPassed,
-  KeysRewrite,
   EditModelProviderConnectionDto,
   SetModelProviderModelsDto,
   ModelProviderConnectionDto,
@@ -33,12 +32,6 @@ export class PlatformModelProvidersController {
   @Get('creation-rules')
   rules(): PlatformModelProviderCreationRules {
     return this.platformService.rules();
-  }
-
-  @Post('rewrite-keys')
-  @HttpCode(200)
-  rewriteKeys(): Promise<KeysRewrite> {
-    return this.platformService.rewriteKeys();
   }
 
   @Get('access')

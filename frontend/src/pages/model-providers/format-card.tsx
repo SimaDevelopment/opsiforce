@@ -24,13 +24,12 @@ import {
   type DirtyAudiences,
   type Routing,
 } from './audience';
-import { BuiltInPlatformDetails, BuiltInPlatformPills, BuiltInRowMenu, ServedModelsNote } from './built-in-row';
+import { BuiltInPlatformDetails, BuiltInPlatformPills, BuiltInRowMenu } from './built-in-row';
 import { TIPS } from './copy';
 import { CustomProviderMenu } from './custom-provider-menu';
 import { LinkedAccountSignIn, LinkedAccountStatus } from './linked-account-sign-in';
 import {
   BuiltInPill,
-  InfoTip,
   isCustomRow,
   LabelWithTip,
   OnOffSwitch,
@@ -41,15 +40,7 @@ import {
   WeightInput,
 } from './provider-widgets';
 import { SwitchOffWarningDialog } from './switch-off-warning-dialog';
-import {
-  BASE_FORMAT_LABEL,
-  carriesTraffic,
-  formatShare,
-  retryTargetsOf,
-  shareOf,
-  splitError,
-  type SplitRow,
-} from './traffic-split';
+import { BASE_FORMAT_LABEL, carriesTraffic, retryTargetsOf, splitError, type SplitRow } from './traffic-split';
 
 type Draft = Record<string, Routing>;
 
@@ -57,7 +48,6 @@ export interface FormatCardProps {
   format: BaseFormatId;
   audience: Audience;
   rows: TenantModelProvider[];
-  catalog: string[];
   builtIns: PlatformModelProvider[];
   canSwitch: boolean;
   managesPlatform: boolean;
@@ -142,7 +132,6 @@ export function FormatCard(props: FormatCardProps) {
             <span class="font-normal text-muted-foreground"> · {AUDIENCE_LABEL[props.audience]}</span>
           </Show>
         </h2>
-        <InfoTip content={TIPS.format(label())} label={`How ${label()} requests are split`} />
         <Show when={noneInTraffic()}>
           <span class="text-xs text-destructive">
             <Show
@@ -193,7 +182,7 @@ export function FormatCard(props: FormatCardProps) {
                     <ProviderPill row={row} />
                     <Show when={builtInOf(row.name)}>{(builtIn) => <BuiltInPlatformPills row={builtIn()} />}</Show>
                   </div>
-                  <Show when={builtInOf(row.name)} fallback={<ServedModelsNote models={row.servedModels} />}>
+                  <Show when={builtInOf(row.name)}>
                     {(builtIn) => <BuiltInPlatformDetails row={builtIn()} editable />}
                   </Show>
                   <Show when={row.kind === 'linked-account'}>
@@ -289,9 +278,6 @@ export function FormatCard(props: FormatCardProps) {
           </For>
         </TableBody>
       </Table>
-      <Show when={props.canSwitch && props.rows.some((row) => row.servedModels)}>
-        <ModelSplit catalog={props.catalog} rows={props.rows} drafted={drafted} />
-      </Show>
       <Show when={props.canSwitch}>
         <FormatCardFooter
           error={error()}
@@ -307,58 +293,6 @@ export function FormatCard(props: FormatCardProps) {
         onClose={() => setAffectedAgents(null)}
         onSaveAnyway={() => save(true)}
       />
-    </div>
-  );
-}
-
-function servesModel(row: TenantModelProvider, model: string): boolean {
-  return !row.servedModels || row.servedModels.includes(model);
-}
-
-function ModelSplit(props: {
-  catalog: string[];
-  rows: TenantModelProvider[];
-  drafted: (row: TenantModelProvider) => SplitRow;
-}) {
-  const sharesOf = (model: string) => {
-    const serving = props.rows.filter((row) => servesModel(row, model)).map(props.drafted);
-    return serving.filter(carriesTraffic).map((row) => ({ name: row.name, share: shareOf(row, serving) }));
-  };
-  return (
-    <div class="space-y-1.5 rounded-md bg-muted/40 p-3">
-      <div class="flex items-center gap-1.5">
-        <h3 class="text-xs font-medium text-foreground">How each model is split</h3>
-        <InfoTip content={TIPS.modelSplit} label="How each model is split" />
-      </div>
-      <ul class="space-y-1">
-        <For each={props.catalog}>
-          {(model) => (
-            <li class="flex flex-wrap items-baseline gap-x-2 text-xs">
-              <span class="min-w-40 font-mono" translate="no">
-                {model}
-              </span>
-              <Show
-                when={sharesOf(model).length > 0}
-                fallback={<span class="text-destructive">No model provider on serves it, so its requests fail</span>}
-              >
-                <span class="text-muted-foreground">
-                  <For each={sharesOf(model)}>
-                    {(entry, index) => (
-                      <>
-                        <Show when={index() > 0}> · </Show>
-                        <span class="font-mono" translate="no">
-                          {entry.name}
-                        </span>{' '}
-                        {entry.share > 0 ? formatShare(entry.share) : 'backup'}
-                      </>
-                    )}
-                  </For>
-                </span>
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
     </div>
   );
 }
