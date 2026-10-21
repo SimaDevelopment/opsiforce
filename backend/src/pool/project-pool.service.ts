@@ -97,6 +97,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   private readonly logger = new Logger(ProjectPoolService.name);
   private readonly platformVersion: string;
   private readonly gatewayUrl: string;
+  private readonly runtimeProxyUrl: string;
   private readonly storageMountPath: string;
   private readonly poolSizeOverride: number | null;
   private pooledAgents = new Map<string, PooledAgent>();
@@ -123,6 +124,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   ) {
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
+    this.runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.poolSizeOverride = this.configService.get<number | null>('poolSizeOverride', null);
   }
@@ -646,6 +648,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         resources: toK8sResources(agent.resources),
         gatewayApiKey: gatewayApiKey ?? undefined,
         gatewayUrl: this.gatewayUrl,
+        runtimeProxyUrl: this.runtimeProxyUrl,
         controlToken: crypto.randomBytes(32).toString('hex'),
       });
 

@@ -190,6 +190,8 @@ const lifecycle: ProjectLifecycle = {
   neverSleeps: vi.fn(async () => false),
 };
 
+const RUNTIME_PROXY_URL = 'http://runtime-proxy.test';
+
 @Global()
 @Module({ providers: [{ provide: PROJECT_LIFECYCLE, useValue: lifecycle }], exports: [PROJECT_LIFECYCLE] })
 class RecordedLifecycleModule {}
@@ -207,7 +209,7 @@ describe('a pooled Project takes the Organization’s Model providers when it is
     agentId = await createAgent();
     await suspendEarlierPoolRows(agentId);
     harness = await createPublicApiTestApp(
-      { ...bifrost.env, POOL_SIZE_OVERRIDE: '1' },
+      { ...bifrost.env, POOL_SIZE_OVERRIDE: '1', OPSIFORCE_RUNTIME_PROXY_URL: RUNTIME_PROXY_URL },
       [RecordedLifecycleModule],
       [BifrostService, ProjectPoolService]
     );
@@ -284,6 +286,14 @@ describe('a pooled Project takes the Organization’s Model providers when it is
       { provider: 'openai', weight: 0, ...CATALOG_WIDE },
     ]);
     expect(bifrost.backendKeyOf(slotId).provider_configs).toEqual([{ provider: 'openai', weight: 1, ...CATALOG_WIDE }]);
+  });
+
+  it('starts its pod with the runtime proxy endpoint a directly created pod gets', async () => {
+    const slotId = await provisionPoolSlot();
+
+    const created = pods.callsTo('createAssignedPod').find((call) => call.args.environmentId === slotId);
+    expect(created?.args.runtimeProxyUrl).toBe(RUNTIME_PROXY_URL);
+    await createProject(await addMember(app, await createTenant(app)));
   });
 
   it('starts the configurations the claimed Project inherited, as a direct create does', async () => {
