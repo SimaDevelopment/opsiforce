@@ -232,35 +232,46 @@ describe('a managed model provider serves the models the catalog lists', () => {
       return bifrost.chatKeyOf(res.json<{ id: string }>().id).id;
     }
 
-    it('rewrites the keys once for a catalog they were not written from, and not again for the same one', async () => {
+    it('only records the catalog on the first boot, since the keys were just written from it', async () => {
       const chatKeyId = await chatKeyOfNewProject();
-      const writes = () => bifrost.providerConfigWritesTo(chatKeyId).length;
+      const before = bifrost.providerConfigWritesTo(chatKeyId).length;
 
-      const before = writes();
-      await applyToKeys(NEXT_CATALOG);
-      const afterNew = writes();
-      await applyToKeys(NEXT_CATALOG);
-      const afterSame = writes();
       await applyToKeys(readModelCatalog());
 
-      expect(afterNew).toBeGreaterThan(before);
-      expect(afterSame).toBe(afterNew);
-      expect(writes()).toBeGreaterThan(afterSame);
+      expect(bifrost.providerConfigWritesTo(chatKeyId)).toHaveLength(before);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
         { servedModels: { openai: OPENAI_CATALOG_IDS, anthropic: expect.any(Array) } },
       ]);
     });
 
-    it('keeps the catalog unapplied while an Organization’s keys refuse it, so the next boot tries again', async () => {
+    it('rewrites the keys once for a catalog that changed since, and not again for the same one', async () => {
       const chatKeyId = await chatKeyOfNewProject();
+      const writes = () => bifrost.providerConfigWritesTo(chatKeyId).length;
+      await applyToKeys(readModelCatalog());
+
+      const before = writes();
+      await applyToKeys(NEXT_CATALOG);
+      const afterChange = writes();
+      await applyToKeys(NEXT_CATALOG);
+
+      expect(afterChange).toBeGreaterThan(before);
+      expect(writes()).toBe(afterChange);
+      expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
+        { servedModels: { openai: NEXT_OPENAI_IDS, anthropic: ['claude-opus-6'] } },
+      ]);
+    });
+
+    it('keeps the old catalog recorded while an Organization’s keys refuse the new one, so the next boot tries again', async () => {
+      const chatKeyId = await chatKeyOfNewProject();
+      await applyToKeys(readModelCatalog());
 
       bifrost.refuseProviderConfigWrites(chatKeyId);
       await applyToKeys(NEXT_CATALOG);
       bifrost.acceptProviderConfigWrites();
-      const unapplied = await db.select().from(appliedModelCatalog);
+      const stillOld = await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog);
       await applyToKeys(NEXT_CATALOG);
 
-      expect(unapplied).toEqual([]);
+      expect(stillOld).toEqual([{ servedModels: { openai: OPENAI_CATALOG_IDS, anthropic: expect.any(Array) } }]);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
         { servedModels: { openai: NEXT_OPENAI_IDS, anthropic: ['claude-opus-6'] } },
       ]);

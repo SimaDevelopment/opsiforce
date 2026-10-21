@@ -44,7 +44,11 @@ export class ModelProviderKeyModelsService {
     if (!this.bifrostService.isEnabled()) return;
     const servedModels = servedModelsByFormat(catalog);
     const [applied] = await db.select().from(appliedModelCatalog).limit(1);
-    if (applied && isDeepStrictEqual(applied.servedModels, servedModels)) return;
+    if (!applied) {
+      await this.recordAppliedCatalog(servedModels);
+      return;
+    }
+    if (isDeepStrictEqual(applied.servedModels, servedModels)) return;
     const failed = await this.modelProvidersService.rewriteEveryTenantsKeys();
     if (failed.length > 0) {
       this.logger.warn(
@@ -52,11 +56,15 @@ export class ModelProviderKeyModelsService {
       );
       return;
     }
+    await this.recordAppliedCatalog(servedModels);
+    this.logger.log("Every organization's keys now follow the model catalog");
+  }
+
+  private async recordAppliedCatalog(servedModels: Record<string, string[]>): Promise<void> {
     await db
       .insert(appliedModelCatalog)
       .values({ id: true, servedModels })
       .onConflictDoUpdate({ target: appliedModelCatalog.id, set: { servedModels, appliedAt: new Date() } });
-    this.logger.log("Every organization's keys now follow the model catalog");
   }
 
   async reconcileKeyModels(catalog: ModelCatalog): Promise<void> {
