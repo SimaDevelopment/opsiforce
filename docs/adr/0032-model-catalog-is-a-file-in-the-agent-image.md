@@ -16,7 +16,7 @@ Verified live on 2026-09-04 with a second opencode instance in a pod: the catalo
 
 ## Consequences
 
-- The file is the same for every Organization; what differs is which of its formats an Organization can reach. The backend serves the Agent Profile picker only the catalog entries of the caller's Organization's reachable Base formats, and the chat's model picker hides the others through the embed's existing model-visibility override, fed by the Organization's reachable formats. Neither the file nor the pod's catalog changes per Organization, so vendored opencode stays untouched and a switch takes effect without a pod recreate.
+- The file is the same for every Organization; what differs is which of its models an Organization can reach. The backend serves the Agent Profile picker only the catalog entries the caller's Organization can reach, and the chat's model picker hides the others through the embed's existing model-visibility override, fed by the Organization's reachable models. Neither the file nor the pod's catalog changes per Organization, so vendored opencode stays untouched and a switch takes effect without a pod recreate.
 - Adding a model is one record in `models.json` plus its variants in `opencode.json`. The standalone quickstart appends a minimal record itself.
 - Metadata changes only when someone edits the file, and the diff shows exactly what moved.
 - Environment changes ride the pod recreate an image change already requires.

@@ -4,6 +4,7 @@ import { useSettings } from '@opencode-ai/app/settings/model';
 import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
 import type { ServerConnection } from '@opencode-ai/app';
 import { timelinePresets, type TimelineDetail } from '@opencode-ai/session-ui/timeline/detail';
+import { BASE_FORMAT_IDS } from '~/api/model-providers';
 
 const detailedPreset = timelinePresets.find((preset) => preset.id === 'detailed');
 if (!detailedPreset) throw new Error('opencode timeline presets no longer include "detailed"');
@@ -17,17 +18,23 @@ const activityTimeline: TimelineDetail = {
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
 
+type ReachableModels = ReadonlySet<string> | undefined;
+
+const ROUTED_PROVIDERS: ReadonlySet<string> = new Set(BASE_FORMAT_IDS);
+
 const visibilityKey = (model: ModelKey) => `${model.providerID}:${model.modelID}`;
 
-const desiredVisibility = (model: ModelKey, hiddenProviders: ReadonlySet<string>): Visibility =>
-  hiddenProviders.has(model.providerID) ? 'hide' : 'show';
+const desiredVisibility = (model: ModelKey, reachable: ReachableModels): Visibility =>
+  reachable && ROUTED_PROVIDERS.has(model.providerID) && !reachable.has(`${model.providerID}/${model.modelID}`)
+    ? 'hide'
+    : 'show';
 
-const pinnedEntry = (model: ModelKey, hiddenProviders: ReadonlySet<string>) => ({
+const pinnedEntry = (model: ModelKey, reachable: ReachableModels) => ({
   ...model,
-  visibility: desiredVisibility(model, hiddenProviders),
+  visibility: desiredVisibility(model, reachable),
 });
 
-function pinModelVisibilityToCatalog(server: ServerConnection.Any, hiddenProviders: () => ReadonlySet<string>) {
+function pinModelVisibilityToCatalog(server: ServerConnection.Any, reachableModels: () => ReachableModels) {
   const global = useGlobal();
   const ctx = global.ensureServerCtx(server);
 
@@ -35,11 +42,11 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any, hiddenProvide
     const location = ctx.data.location.default();
     const served = location ? ctx.data.location.model.list(location) : undefined;
     if (!served) return;
-    const hidden = hiddenProviders();
+    const reachable = reachableModels();
     const current = new Map(global.models.store.user.map((entry) => [visibilityKey(entry), entry.visibility]));
     const changes = served
       .filter((model) => model.status !== 'deprecated')
-      .map((model) => pinnedEntry({ providerID: model.providerID, modelID: model.id }, hidden))
+      .map((model) => pinnedEntry({ providerID: model.providerID, modelID: model.id }, reachable))
       .filter((model) => current.get(visibilityKey(model)) !== model.visibility);
     if (changes.length === 0) return;
     const changed = new Set(changes.map(visibilityKey));
@@ -47,7 +54,7 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any, hiddenProvide
   });
 }
 
-export function OpencodeOverrides(props: { server: ServerConnection.Any; hiddenProviders: () => ReadonlySet<string> }) {
+export function OpencodeOverrides(props: { server: ServerConnection.Any; reachableModels: () => ReachableModels }) {
   const theme = useTheme();
   const settings = useSettings();
 
@@ -62,7 +69,7 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; hiddenP
 
   pinModelVisibilityToCatalog(
     untrack(() => props.server),
-    () => props.hiddenProviders()
+    () => props.reachableModels()
   );
 
   return null;

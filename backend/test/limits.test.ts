@@ -177,9 +177,9 @@ describe('project limit', () => {
     const [source] = await createProjects(tenantId, 1);
     const bifrostEnabled = vi.spyOn(harness.fakes.bifrost, 'isEnabled').mockReturnValue(true);
     const chatKeyWrite = vi
-      .spyOn(harness.moduleRef.get(ModelProvidersService), 'writeProjectChatKey')
+      .spyOn(harness.moduleRef.get(ModelProvidersService), 'writeProjectKeys')
       .mockResolvedValue(false);
-    const provisioningFailure = "Could not give the Project's chat key the Organization's model providers";
+    const provisioningFailure = "Could not give the Project's keys the Organization's model providers";
 
     await expect(harness.projects.create({}, tenantId)).rejects.toThrow(provisioningFailure);
     await expect(harness.projects.duplicate(source, tenantId, undefined, null)).rejects.toThrow(provisioningFailure);

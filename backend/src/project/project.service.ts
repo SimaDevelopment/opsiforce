@@ -1900,10 +1900,8 @@ export class ProjectService implements OnApplicationBootstrap {
       this.logger.warn(`Failed to create Bifrost resources for project ${projectId}: ${(err as Error).message}`);
       return;
     }
-    if (!(await this.modelProviders.writeProjectChatKey(tenantId, projectId))) {
-      throw new InternalServerErrorException(
-        "Could not give the Project's chat key the Organization's model providers"
-      );
+    if (!(await this.modelProviders.writeProjectKeys(tenantId, projectId))) {
+      throw new InternalServerErrorException("Could not give the Project's keys the Organization's model providers");
     }
   }
 

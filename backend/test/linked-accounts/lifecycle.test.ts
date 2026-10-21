@@ -1,5 +1,4 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { linkedAccounts, projectVirtualKeys } from '../../db/schema';
@@ -83,7 +82,7 @@ describe('the lifecycle of a Linked account', () => {
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
     chatgpt.signInAs(FIRST_ACCOUNT);
-    await holdEveryChatKey();
+    await holdEveryProjectKey();
   });
 
   afterEach(() => {
@@ -115,11 +114,8 @@ describe('the lifecycle of a Linked account', () => {
     return res.json<{ id: string }>().id;
   }
 
-  async function holdEveryChatKey(): Promise<void> {
-    const keys = await db
-      .select({ id: projectVirtualKeys.bifrostKeyId })
-      .from(projectVirtualKeys)
-      .where(eq(projectVirtualKeys.keyType, 'chat'));
+  async function holdEveryProjectKey(): Promise<void> {
+    const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
     bifrost.holdVirtualKeys(keys.map((key) => key.id));
   }
 

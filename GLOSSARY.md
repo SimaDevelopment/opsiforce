@@ -31,15 +31,23 @@ The most of one kind of thing an Organization may hold at once. An Organization 
 _Avoid_: Quota, Cap, Plan limit (non-canonical); Default (a Limit is enforced on every create, not copied into new entities)
 
 **Model provider**:
-One upstream an Organization's Agents may send model traffic to, switched on or off and weighted within its Base format. Its key, URL and Base format live only in the LLM gateway; the platform keeps the ones new Organizations start with.
+One upstream an Organization's Agents and Apps may send model traffic to, switched on or off and weighted within its Base format, separately for Agents and for Apps. Its key, URL and Base format live only in the LLM gateway; the platform keeps the ones new Organizations start with.
 _Avoid_: Provider slot, Organization provider setting
 
 **Opsiforce model provider**:
 A Model provider the platform gives every Organization rather than one the Organization added. The Organization switches and weights it but never sees how it connects. The UI labels it Built-in.
 _Avoid_: Platform provider (the platform's own row that new Organizations start from), Shared provider
 
+**Azure connection**:
+A Model provider that reaches one Azure AI Foundry resource, serving only the catalog models chosen for it, from either Base format, with its own switches and weights for each format it serves. The platform's are Opsiforce model providers and an Organization's own are Custom model providers; one the deployment declares, which the UI labels Deployment config, Opsiforce never edits or deletes.
+_Avoid_: Deployment-managed model provider, Azure provider (the gateway has one, which every Azure connection shares), Azure deployment (one model on the resource)
+
+**Withheld**:
+An Opsiforce model provider an Organization doesn't have, because a platform admin unticked it there, or because it is offered only to chosen Organizations and that one isn't among them: it carries none of that Organization's traffic and its admin doesn't see it. An Organization added later gets a provider offered to every Organization and is withheld from one offered to chosen ones.
+_Avoid_: Disabled, Hidden, Blocked (an Organization's own switch only turns a provider off)
+
 **Custom model provider**:
-A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint or a Linked account, and its name and Base format are fixed once it exists.
+A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint, a Linked account or an Azure connection, serves every model of its Base format or only the ones ticked for it, and its name and Base format are fixed once it exists, except an Azure connection's formats, which follow its models.
 _Avoid_: Own provider, BYOK provider
 
 **Official API key**:

@@ -4,8 +4,9 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { modelProviders, projectVirtualKeys, tenants } from '../../db/schema';
-import { catalogModelIdsOf } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { Perms } from '../../src/permission/permission.constants';
 import { TenantController } from '../../src/tenant/tenant.controller';
@@ -26,8 +27,6 @@ import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/sup
 
 const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
-const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
-const ANTHROPIC_CATALOG_IDS = catalogModelIdsOf('anthropic');
 
 interface BuiltInRow {
   name: string;
@@ -37,6 +36,7 @@ interface BuiltInRow {
   status: string;
   fixed: boolean;
   notMetered: boolean;
+  deploymentManaged: boolean;
   linkedAccountVendor?: string;
 }
 
@@ -53,6 +53,7 @@ const FIXED_OPENAI: BuiltInRow = {
   status: 'working',
   fixed: true,
   notMetered: false,
+  deploymentManaged: false,
 };
 
 const FIXED_ANTHROPIC: BuiltInRow = {
@@ -63,6 +64,7 @@ const FIXED_ANTHROPIC: BuiltInRow = {
   status: 'working',
   fixed: true,
   notMetered: false,
+  deploymentManaged: false,
 };
 
 const DOCK: BuiltInRow = {
@@ -73,6 +75,7 @@ const DOCK: BuiltInRow = {
   status: 'working',
   fixed: false,
   notMetered: false,
+  deploymentManaged: false,
   linkedAccountVendor: 'chatgpt',
 };
 
@@ -80,11 +83,8 @@ function officialKey(overrides: Record<string, unknown> = {}) {
   return { baseFormat: 'openai', kind: 'official-api-key', name: 'extra', key: 'sk-extra', ...overrides };
 }
 
-async function everyChatKeyId(): Promise<string[]> {
-  const keys = await db
-    .select({ id: projectVirtualKeys.bifrostKeyId })
-    .from(projectVirtualKeys)
-    .where(eq(projectVirtualKeys.keyType, 'chat'));
+async function everyProjectKeyId(): Promise<string[]> {
+  const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
   return keys.map((key) => key.id);
 }
 
@@ -149,16 +149,16 @@ describe('Built-in model providers managed by a platform admin', () => {
       method: 'PUT',
       url: '/api/model-providers/formats/anthropic',
       headers: admin.headers,
-      payload: { providers: [{ name: 'anthropic', enabled: true, weight }] },
+      payload: { providers: [{ name: 'anthropic', chatEnabled: true, chatWeight: weight }] },
     });
   }
 
-  async function anthropicOf(admin: MemberFixture): Promise<{ enabled: boolean; weight: number } | undefined> {
+  async function anthropicOf(admin: MemberFixture): Promise<{ chatEnabled: boolean; chatWeight: number } | undefined> {
     const page = await app.inject({ method: 'GET', url: '/api/model-providers', headers: admin.headers });
     const row = page
-      .json<{ providers: Array<{ name: string; enabled: boolean; weight: number }> }>()
+      .json<{ providers: Array<{ name: string; chatEnabled: boolean; chatWeight: number }> }>()
       .providers.find((provider) => provider.name === 'anthropic');
-    return row && { enabled: row.enabled, weight: row.weight };
+    return row && { chatEnabled: row.chatEnabled, chatWeight: row.chatWeight };
   }
 
   async function ownRowsOf(tenant: TenantFixture) {
@@ -228,7 +228,7 @@ describe('Built-in model providers managed by a platform admin', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
         headers: orgAdmin.headers,
-        payload: { providers: [{ name: 'openai', enabled: true, weight: 0 }] },
+        payload: { providers: [{ name: 'openai', chatEnabled: true, chatWeight: 0 }] },
       });
 
       expect(saved.statusCode, saved.body).toBe(200);
@@ -299,7 +299,7 @@ describe('Built-in model providers managed by a platform admin', () => {
       const admin = await platformAdmin();
       const { tenant } = await member([]);
       const projectId = await projectOf(tenant);
-      bifrost.holdVirtualKeys(await everyChatKeyId());
+      bifrost.holdVirtualKeys(await everyProjectKeyId());
       bifrost.loseProvider('anthropic');
       expect(bifrost.chatKeyOf(projectId).provider_configs.map((config) => config.provider)).not.toContain('anthropic');
 
@@ -363,7 +363,7 @@ describe('Built-in model providers managed by a platform admin', () => {
 
   describe('opsiforce-* providers', () => {
     async function create(admin: MemberFixture, payload: Record<string, unknown>) {
-      bifrost.holdVirtualKeys(await everyChatKeyId());
+      bifrost.holdVirtualKeys(await everyProjectKeyId());
       return app.inject({ method: 'POST', url: '/api/platform-model-providers', headers: admin.headers, payload });
     }
 
@@ -392,8 +392,12 @@ describe('Built-in model providers managed by a platform admin', () => {
         namePrefix: 'opsiforce-',
         nameMaxLength: 40,
         kindsByFormat: {
-          openai: ['official-api-key', 'compatible-endpoint', 'linked-account'],
-          anthropic: ['official-api-key', 'compatible-endpoint'],
+          openai: ['official-api-key', 'compatible-endpoint', 'linked-account', 'azure-foundry'],
+          anthropic: ['official-api-key', 'compatible-endpoint', 'azure-foundry'],
+        },
+        catalogModels: {
+          openai: servedModelsOf(BASE_FORMATS.openai),
+          anthropic: servedModelsOf(BASE_FORMATS.anthropic),
         },
       });
     });
@@ -422,13 +426,14 @@ describe('Built-in model providers managed by a platform admin', () => {
         status: 'working',
         fixed: false,
         notMetered: true,
+        deploymentManaged: false,
       });
       expect(bifrost.providerNamed('opsiforce-extra')?.created).toMatchObject({
         provider: 'opsiforce-extra',
         custom_provider_config: { base_provider_type: 'openai', allowed_requests: { list_models: false } },
       });
       expect(bifrost.providerNamed('opsiforce-extra')?.keys).toMatchObject([
-        { value: { value: 'sk-extra', type: 'plain_text' }, models: OPENAI_CATALOG_IDS },
+        { value: { value: 'sk-extra', type: 'plain_text' }, models: ['*'] },
       ]);
       const { tenant: later } = await member([]);
       expect(await tenantRowNames(existing)).toContain('opsiforce-extra');
@@ -461,9 +466,10 @@ describe('Built-in model providers managed by a platform admin', () => {
         status: 'working',
         fixed: false,
         notMetered: true,
+        deploymentManaged: false,
       });
       expect(bifrost.providerNamed('opsiforce-gateway')?.keys).toMatchObject([
-        { value: { value: 'sk-gateway-2', type: 'plain_text' }, models: ANTHROPIC_CATALOG_IDS },
+        { value: { value: 'sk-gateway-2', type: 'plain_text' }, models: ['*'] },
       ]);
       expect(vendor.requests.at(-1)?.headers['x-api-key']).toBe('sk-gateway-2');
       await remove(admin, 'opsiforce-gateway');
@@ -562,20 +568,20 @@ describe('Built-in model providers managed by a platform admin', () => {
       expect(saved.statusCode, saved.body).toBe(200);
       await db
         .update(modelProviders)
-        .set({ weight: 3 })
+        .set({ chatWeight: 3 })
         .where(and(isNull(modelProviders.tenantId), eq(modelProviders.bifrostProvider, 'anthropic')));
 
       try {
         expect((await editConnection(admin, 'anthropic', { key: 'sk-ant-rotated' })).statusCode).toBe(200);
         const { member: later } = await orgAdmin();
 
-        expect(await anthropicOf(chose)).toEqual({ enabled: true, weight: 7 });
-        expect(await anthropicOf(neverChose)).toEqual({ enabled: true, weight: 3 });
-        expect(await anthropicOf(later)).toEqual({ enabled: true, weight: 3 });
+        expect(await anthropicOf(chose)).toEqual({ chatEnabled: true, chatWeight: 7 });
+        expect(await anthropicOf(neverChose)).toEqual({ chatEnabled: true, chatWeight: 3 });
+        expect(await anthropicOf(later)).toEqual({ chatEnabled: true, chatWeight: 3 });
       } finally {
         await db
           .update(modelProviders)
-          .set({ weight: 1 })
+          .set({ chatWeight: 1 })
           .where(and(isNull(modelProviders.tenantId), eq(modelProviders.bifrostProvider, 'anthropic')));
       }
     });
@@ -591,7 +597,7 @@ describe('Built-in model providers managed by a platform admin', () => {
 
       expect((await saveAnthropic(admin, 1)).statusCode).toBe(200);
       expect(await ownRowsOf(tenant)).toEqual([]);
-      expect(await anthropicOf(admin)).toEqual({ enabled: true, weight: 1 });
+      expect(await anthropicOf(admin)).toEqual({ chatEnabled: true, chatWeight: 1 });
     });
   });
 

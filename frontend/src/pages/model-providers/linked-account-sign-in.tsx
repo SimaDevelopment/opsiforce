@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createSignal, createUniqueId, onCleanup } from 'solid-js';
+import { Match, Show, Switch, createEffect, createSignal, createUniqueId, on, onCleanup, onMount } from 'solid-js';
 import { toast } from 'solid-sonner';
 import { ApiError } from '~/api/client';
 import {
@@ -12,6 +12,7 @@ import {
 import { ClipboardPaste, Copy, ExternalLink, LoaderCircle, LogIn, LogOut, RefreshCw } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
+import { DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { DropdownMenuItem } from '~/components/ui/dropdown-menu';
 import { INPUT_CLASS, errorMessage } from './connection-fields';
 import { LinkedAccountUsage } from './linked-account-usage';
@@ -121,7 +122,7 @@ function DeviceCodePanel(props: { userCode: string; verificationUrl: string; exp
   );
 }
 
-function PasteAccessTokenForm(props: { scope: ModelProviderScope; name: string; onDone: () => void }) {
+function PasteAccessTokenForm(props: { scope: ModelProviderScope; name: string; onDone: () => void; quiet?: boolean }) {
   const [accessToken, setAccessToken] = createSignal('');
   const paste = usePasteAccessToken(props.scope);
   const inputId = createUniqueId();
@@ -133,7 +134,7 @@ function PasteAccessTokenForm(props: { scope: ModelProviderScope; name: string; 
       { name: props.name, accessToken: accessToken().trim() },
       {
         onSuccess: () => {
-          toast.success(`${props.name} connected`);
+          if (!props.quiet) toast.success(`${props.name} connected`);
           props.onDone();
         },
       }
@@ -357,5 +358,98 @@ export function LinkedAccountSignIn(props: {
         </div>
       )}
     </Show>
+  );
+}
+
+export function LinkedAccountSignInStep(props: { scope: ModelProviderScope; name: string; onClose: () => void }) {
+  const account = useLinkedAccount(props.scope, () => props.name);
+  const actions = useLinkedAccountActions(props.scope, () => props.name);
+  const [pasting, setPasting] = createSignal(false);
+  const pending = () => {
+    const signIn = account.data?.signIn;
+    return signIn?.state === 'pending' ? signIn : null;
+  };
+  const failure = () => {
+    const signIn = account.data?.signIn;
+    return signIn?.state === 'failed' ? signIn.message : null;
+  };
+  const connected = () => account.data?.state === 'connected';
+  const startingCode = () => actions.busy() || account.isPending;
+
+  onMount(() => actions.signIn());
+
+  createEffect(
+    on(
+      connected,
+      (isConnected) => {
+        if (!isConnected) return;
+        const signedInAs = account.data?.signedInAs;
+        toast.success(signedInAs ? `${props.name} is signed in as ${signedInAs}` : `${props.name} is signed in`);
+        props.onClose();
+      },
+      { defer: true }
+    )
+  );
+
+  return (
+    <>
+      <DialogTitle>Sign in {props.name} with ChatGPT</DialogTitle>
+      <DialogDescription>
+        <span translate="no">{props.name}</span> is added. It takes requests once a ChatGPT account is signed in.
+      </DialogDescription>
+      <div class="mt-4 space-y-3 text-xs" aria-live="polite">
+        <Switch>
+          <Match when={pasting()}>
+            <PasteAccessTokenForm scope={props.scope} name={props.name} quiet onDone={() => setPasting(false)} />
+          </Match>
+          <Match when={pending()}>
+            {(signIn) => (
+              <DeviceCodePanel
+                userCode={signIn().userCode}
+                verificationUrl={signIn().verificationUrl}
+                expiresAt={signIn().expiresAt}
+              />
+            )}
+          </Match>
+          <Match when={startingCode()}>
+            <output class="flex items-center gap-1.5 text-muted-foreground">
+              <LoaderCircle class="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              Getting a sign-in code…
+            </output>
+          </Match>
+          <Match when={true}>
+            <div class="space-y-2">
+              <p
+                class={failure() ? 'text-destructive' : 'text-muted-foreground'}
+                role={failure() ? 'alert' : undefined}
+              >
+                {failure() ?? 'The sign-in code expired before it was approved.'}
+              </p>
+              <Button size="sm" variant="outline" class="h-7" onClick={() => actions.signIn()}>
+                <RefreshCw class="h-3 w-3" aria-hidden="true" />
+                Get a new code
+              </Button>
+            </div>
+          </Match>
+        </Switch>
+        <Show when={!pasting()}>
+          <Button
+            size="sm"
+            variant="link"
+            class="h-5 px-0 text-xs text-muted-foreground"
+            onClick={() => setPasting(true)}
+          >
+            <ClipboardPaste class="h-3 w-3" aria-hidden="true" />
+            Use a Codex access token instead
+          </Button>
+        </Show>
+      </div>
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <span class="mr-auto text-xs text-muted-foreground">You can also sign in later from its row.</span>
+        <Button size="sm" variant="outline" onClick={() => props.onClose()}>
+          Finish later
+        </Button>
+      </div>
+    </>
   );
 }

@@ -21,8 +21,8 @@ const STANDARD_PROVIDER_NETWORK_CONFIG = {
 
 interface TenantRow {
   name: string;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
 }
 
 describe('the fresh-install seed of the built-in model providers', () => {
@@ -72,7 +72,7 @@ describe('the fresh-install seed of the built-in model providers', () => {
     expect(res.statusCode, res.body).toBe(200);
     return res
       .json<{ providers: TenantRow[] }>()
-      .providers.map(({ name, enabled, weight }) => ({ name, enabled, weight }));
+      .providers.map(({ name, chatEnabled, chatWeight }) => ({ name, chatEnabled, chatWeight }));
   }
 
   function providerCreations(): string[] {
@@ -104,8 +104,8 @@ describe('the fresh-install seed of the built-in model providers', () => {
     expect(vendor.requests.some((request) => request.headers['x-api-key'] === 'sk-ant-seed')).toBe(true);
     expect(bifrost.providerNamed('custom-openai-1')).toBeUndefined();
     expect(await newTenantRows(booted)).toEqual([
-      { name: 'anthropic', enabled: true, weight: 1 },
-      { name: 'openai', enabled: true, weight: 1 },
+      { name: 'anthropic', chatEnabled: true, chatWeight: 1 },
+      { name: 'openai', chatEnabled: true, chatWeight: 1 },
     ]);
   });
 
@@ -136,7 +136,7 @@ describe('the fresh-install seed of the built-in model providers', () => {
     const booted = await boot({ ANTHROPIC_API_KEY: 'sk-ant-only' });
 
     expect(bifrost.providerNamed('openai')).toBeUndefined();
-    expect(await newTenantRows(booted)).toEqual([{ name: 'anthropic', enabled: true, weight: 1 }]);
+    expect(await newTenantRows(booted)).toEqual([{ name: 'anthropic', chatEnabled: true, chatWeight: 1 }]);
   });
 
   it('adopts the openai and anthropic that Helm already declares in Bifrost, leaving their keys alone', async () => {
@@ -149,8 +149,8 @@ describe('the fresh-install seed of the built-in model providers', () => {
     expect(providerWrites()).toHaveLength(providerWritesBefore);
     expect(vendor.requests).toHaveLength(vendorRequestsBefore);
     expect(await newTenantRows(booted)).toEqual([
-      { name: 'anthropic', enabled: true, weight: 1 },
-      { name: 'openai', enabled: true, weight: 1 },
+      { name: 'anthropic', chatEnabled: true, chatWeight: 1 },
+      { name: 'openai', chatEnabled: true, chatWeight: 1 },
     ]);
   });
 
@@ -163,8 +163,8 @@ describe('the fresh-install seed of the built-in model providers', () => {
     expect(providerCreations().slice(creationsBefore)).toEqual(['anthropic']);
     expect(bifrost.providerNamed('openai')?.keys).toEqual([]);
     expect(await newTenantRows(booted)).toEqual([
-      { name: 'anthropic', enabled: true, weight: 1 },
-      { name: 'openai', enabled: true, weight: 1 },
+      { name: 'anthropic', chatEnabled: true, chatWeight: 1 },
+      { name: 'openai', chatEnabled: true, chatWeight: 1 },
     ]);
   });
 
@@ -179,6 +179,6 @@ describe('the fresh-install seed of the built-in model providers', () => {
     const booted = await boot({ OPENAI_API_KEY: 'sk-seed-right' });
 
     expect(bifrost.providerNamed('openai')?.keys).toMatchObject([{ value: { value: 'sk-seed-right' } }]);
-    expect(await newTenantRows(booted)).toEqual([{ name: 'openai', enabled: true, weight: 1 }]);
+    expect(await newTenantRows(booted)).toEqual([{ name: 'openai', chatEnabled: true, chatWeight: 1 }]);
   });
 });

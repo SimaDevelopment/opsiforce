@@ -8,9 +8,10 @@ import { BASE_FORMATS } from './base-formats';
 import { servedModelsOf } from './bifrost-provider-shape';
 import { baseFormatOf } from './model-provider.service';
 
-function sameModels(stored: string[] | undefined, served: string[]): boolean {
-  const storedSet = new Set(stored ?? []);
-  return storedSet.size === served.length && served.every((model) => storedSet.has(model));
+const EVERY_MODEL = ['*'];
+
+function coversCatalog(stored: string[] | undefined, served: string[]): boolean {
+  return served.every((model) => stored?.includes(model));
 }
 
 function isHelmPlaceholder(key: BifrostProviderKeySummary): boolean {
@@ -62,13 +63,9 @@ export class ModelProviderKeyModelsService {
     const keys = await this.bifrostService.listProviderKeys(provider.name);
     for (const key of keys) {
       if (!key.id || key.models?.includes('*') || isHelmPlaceholder(key)) continue;
-      if (sameModels(key.models, served)) continue;
-      await this.rewriteModels(provider.name, key, served);
+      if (!coversCatalog(key.models, served)) continue;
+      await this.bifrostService.replaceProviderKey(provider.name, key.id, { ...key, models: EVERY_MODEL });
+      this.logger.log(`Key ${key.name ?? key.id} of ${provider.name} now serves every catalog model as it grows`);
     }
-  }
-
-  private async rewriteModels(providerName: string, key: BifrostProviderKeySummary, served: string[]): Promise<void> {
-    await this.bifrostService.replaceProviderKey(providerName, key.id, { ...key, models: served });
-    this.logger.log(`Key ${key.name ?? key.id} of ${providerName} now serves ${served.join(', ')}`);
   }
 }

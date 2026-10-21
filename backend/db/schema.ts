@@ -1183,13 +1183,41 @@ export const modelProviders = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
     bifrostProvider: text("bifrost_provider").notNull(),
-    enabled: boolean("enabled").notNull(),
-    weight: integer("weight").notNull(),
+    bifrostKey: text("bifrost_key"),
+    baseFormat: text("base_format").$type<"openai" | "anthropic">(),
+    chatEnabled: boolean("chat_enabled").notNull(),
+    chatWeight: integer("chat_weight").notNull(),
+    backendEnabled: boolean("backend_enabled").default(false).notNull(),
+    backendWeight: integer("backend_weight").default(1).notNull(),
   },
   (table) => [
-    unique("model_providers_tenant_id_bifrost_provider_unique").on(table.tenantId, table.bifrostProvider).nullsNotDistinct(),
-    check("model_providers_weight_check", sql`${table.weight} between 0 and 100`),
+    unique("model_providers_tenant_id_bifrost_provider_bifrost_key_base_format_unique")
+      .on(table.tenantId, table.bifrostProvider, table.bifrostKey, table.baseFormat)
+      .nullsNotDistinct(),
+    check("model_providers_chat_weight_check", sql`${table.chatWeight} between 0 and 100`),
+    check("model_providers_backend_weight_check", sql`${table.backendWeight} between 0 and 100`),
+    check("model_providers_base_format_check", sql`${table.baseFormat} in ('openai', 'anthropic')`),
   ],
+)
+
+export const modelProviderAvailability = pgTable(
+  "model_provider_availability",
+  {
+    name: text("name").primaryKey(),
+    mode: text("mode").$type<"every" | "chosen">().notNull(),
+  },
+  (table) => [check("model_provider_availability_mode_check", sql`${table.mode} in ('every', 'chosen')`)],
+)
+
+export const modelProviderAvailabilityTenants = pgTable(
+  "model_provider_availability_tenants",
+  {
+    name: text("name").notNull(),
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.name, table.tenantId] })],
 )
 
 export const linkedAccounts = pgTable("linked_accounts", {

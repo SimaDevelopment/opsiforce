@@ -2,7 +2,7 @@ import type { BifrostAllowedRequests, BifrostRequestPathOverrides } from '../bif
 
 export type BaseFormatId = 'openai' | 'anthropic';
 
-export type ModelProviderKind = 'official-api-key' | 'compatible-endpoint' | 'linked-account';
+export type ModelProviderKind = 'official-api-key' | 'compatible-endpoint' | 'linked-account' | 'azure-foundry';
 
 export interface ConnectionTest {
   path: string;
@@ -97,11 +97,20 @@ const CREATABLE_KINDS = new Set<ModelProviderKind>(['official-api-key', 'compati
 const KEYED_KINDS = new Set<ModelProviderKind>(['official-api-key', 'compatible-endpoint']);
 
 export function creatableKinds(format: BaseFormat): ModelProviderKind[] {
-  return allowedKinds(format).filter((kind) => CREATABLE_KINDS.has(kind));
+  return [...allowedKinds(format).filter((kind) => CREATABLE_KINDS.has(kind)), 'azure-foundry'];
 }
 
 export function keyedKinds(format: BaseFormat): ModelProviderKind[] {
-  return creatableKinds(format).filter((kind) => KEYED_KINDS.has(kind));
+  return allowedKinds(format).filter((kind) => KEYED_KINDS.has(kind));
+}
+
+export function catalogModelsByFormat(
+  modelsOf: (format: BaseFormat) => string[]
+): Record<BaseFormatId, string[]> {
+  return Object.fromEntries(BASE_FORMAT_IDS.map((id) => [id, modelsOf(BASE_FORMATS[id])])) as Record<
+    BaseFormatId,
+    string[]
+  >;
 }
 
 export function creatableKindsByFormat(): Record<BaseFormatId, ModelProviderKind[]> {

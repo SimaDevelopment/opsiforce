@@ -29,6 +29,8 @@ export interface FakeProviderKey {
   models: string[];
   weight: number | null;
   enabled: boolean;
+  azure_key_config?: JsonValue;
+  aliases?: JsonValue;
 }
 
 export interface FakeProvider {
@@ -55,6 +57,8 @@ export interface FakeBifrost {
   requests: RecordedBifrostWrite[];
   setProviders: (names: string[]) => void;
   addProvider: (name: string) => void;
+  addAzureKey: (name: string, models: string[]) => FakeProviderKey;
+  azureKeyNamed: (name: string) => FakeProviderKey | undefined;
   providerNamed: (name: string) => FakeProvider | undefined;
   loseProvider: (name: string) => void;
   restoreHelmEntry: (name: string) => void;
@@ -84,6 +88,13 @@ const KEYLESS_REFUSALS: Record<string, string> = {
   PUT: 'Cannot update keys on a keyless provider',
   DELETE: 'Cannot delete keys on a keyless provider',
 };
+
+function azureFieldsOf(body: JsonObject): Pick<FakeProviderKey, 'azure_key_config' | 'aliases'> {
+  return {
+    ...(body.azure_key_config !== undefined ? { azure_key_config: body.azure_key_config } : {}),
+    ...(body.aliases !== undefined ? { aliases: body.aliases } : {}),
+  };
+}
 
 function isEmptyKeyValue(value: JsonValue | undefined): boolean {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -127,13 +138,22 @@ function baseUrlRefusal(baseUrl: string, allowPrivateNetwork: boolean): string |
   return null;
 }
 
+function allowedRequestsOf(provider: FakeProvider): JsonValue {
+  const written = (provider.updated ?? provider.created)?.custom_provider_config as JsonObject | undefined;
+  return written?.allowed_requests ?? null;
+}
+
 function providerResponse(provider: FakeProvider): JsonObject {
   return {
     name: provider.name,
     provider_status: provider.status,
     network_config: { base_url: provider.baseUrl ?? '' },
     custom_provider_config: provider.baseProviderType
-      ? { base_provider_type: provider.baseProviderType, is_key_less: provider.keyLess }
+      ? {
+          base_provider_type: provider.baseProviderType,
+          is_key_less: provider.keyLess,
+          allowed_requests: allowedRequestsOf(provider),
+        }
       : null,
   };
 }
@@ -319,6 +339,7 @@ export async function startFakeBifrost(): Promise<FakeBifrost> {
         models: (body.models as string[] | undefined) ?? [],
         weight: typeof body.weight === 'number' ? body.weight : null,
         enabled: body.enabled !== false,
+        ...azureFieldsOf(body),
       };
       provider.keys.push(key);
       return send(res, 200, { ...key, value: { value: 'redacted', type: 'plain_text' } } as unknown as JsonObject);
@@ -338,6 +359,7 @@ export async function startFakeBifrost(): Promise<FakeBifrost> {
         models: (body.models as string[] | undefined) ?? [],
         weight: typeof body.weight === 'number' ? body.weight : null,
         enabled: body.enabled !== false,
+        ...azureFieldsOf(body),
       };
       provider.keys = provider.keys.map((candidate) => (candidate === key ? replacement : candidate));
       return send(res, 200, {
@@ -443,6 +465,22 @@ export async function startFakeBifrost(): Promise<FakeBifrost> {
     addProvider: (name) => {
       providers.set(name, helmProviderNamed(name));
     },
+    addAzureKey: (name, models) => {
+      const azure = providers.get('azure') ?? declaredProvider('azure', null, null);
+      providers.set('azure', azure);
+      const key: FakeProviderKey = {
+        id: randomUUID(),
+        name,
+        value: { value: 'env.AZURE_API_KEY', type: 'env' },
+        models,
+        weight: 1,
+        enabled: true,
+        azure_key_config: { endpoint: { value: 'env.AZURE_ENDPOINT', type: 'env' } },
+      };
+      azure.keys.push(key);
+      return key;
+    },
+    azureKeyNamed: (name) => providers.get('azure')?.keys.find((key) => key.name === name),
     providerNamed: (name) => providers.get(name),
     loseProvider: removeProvider,
     restoreHelmEntry: (name) => {

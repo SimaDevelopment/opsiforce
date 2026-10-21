@@ -4,7 +4,7 @@ service:
 fullnameOverride: opsiforce-bifrost
 
 image:
-  tag: "v2.0.0"
+  tag: "v2.3.0"
 
 replicaCount: 1
 
@@ -47,7 +47,7 @@ postgresql:
     passwordKey: password
 
 bifrost:
-  sourceOfTruth: "config.json"
+  sourceOfTruth: "split"
   encryptionKeySecret:
     name: opsiforce-bifrost-encryption
     key: key
@@ -62,6 +62,8 @@ bifrost:
     logRetentionDays: 7
     allowDirectKeys: false
     enforceAuthOnInference: true
+    compat:
+      forceReasoningOnlyModelsToResponses: false
   providers:
     custom-openai-1:
       keys:

@@ -201,10 +201,8 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       return null;
     }
 
-    if (!(await this.modelProviders.writeProjectChatKey(claim.tenantId, reserved.id))) {
-      this.logger.warn(
-        `Reverting claim ${reserved.id}: its chat key could not take the Organization's model providers`
-      );
+    if (!(await this.modelProviders.writeProjectKeys(claim.tenantId, reserved.id))) {
+      this.logger.warn(`Reverting claim ${reserved.id}: its keys could not take the Organization's model providers`);
       await this.revertReservation(reserved.id);
       return null;
     }
@@ -715,7 +713,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
           await this.destroyAndReplenish(row.id, 'recovery: bifrost patch failed permanently');
           continue;
         }
-        if (!(await this.modelProviders.writeProjectChatKey(row.tenantId, row.id))) {
+        if (!(await this.modelProviders.writeProjectKeys(row.tenantId, row.id))) {
           await this.destroyAndReplenish(row.id, 'recovery: model provider sync failed permanently');
           continue;
         }

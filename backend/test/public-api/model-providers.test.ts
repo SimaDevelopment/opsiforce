@@ -46,9 +46,18 @@ describe('chat keys follow the Organization’s Model provider rows', () => {
     return res.json<{ id: string }>().id;
   }
 
-  async function setRow(tenantId: string, bifrostProvider: string, change: { enabled?: boolean; weight?: number }) {
+  async function setRow(
+    tenantId: string,
+    bifrostProvider: string,
+    change: { chatEnabled?: boolean; chatWeight?: number; backendEnabled?: boolean; backendWeight?: number }
+  ) {
     const [current] = await db
-      .select({ enabled: modelProviders.enabled, weight: modelProviders.weight })
+      .select({
+        chatEnabled: modelProviders.chatEnabled,
+        chatWeight: modelProviders.chatWeight,
+        backendEnabled: modelProviders.backendEnabled,
+        backendWeight: modelProviders.backendWeight,
+      })
       .from(modelProviders)
       .where(
         and(
@@ -62,7 +71,15 @@ describe('chat keys follow the Organization’s Model provider rows', () => {
     await db
       .insert(modelProviders)
       .values({ tenantId, bifrostProvider, ...row })
-      .onConflictDoUpdate({ target: [modelProviders.tenantId, modelProviders.bifrostProvider], set: row });
+      .onConflictDoUpdate({
+        target: [
+          modelProviders.tenantId,
+          modelProviders.bifrostProvider,
+          modelProviders.bifrostKey,
+          modelProviders.baseFormat,
+        ],
+        set: row,
+      });
   }
 
   it('gives a new Organization’s first chat key the platform’s enabled providers at their platform weights', async () => {
@@ -76,11 +93,11 @@ describe('chat keys follow the Organization’s Model provider rows', () => {
     ]);
   });
 
-  it('writes only enabled rows that exist in Bifrost, weights as they are, and leaves the backend key alone', async () => {
+  it('writes only enabled rows that exist in Bifrost, weights as they are, and routes the backend key by the App switches', async () => {
     const tenant = await createTenant(app);
     const member = await addMember(app, tenant);
-    await setRow(tenant.tenantId, 'anthropic', { weight: 7 });
-    await setRow(tenant.tenantId, 'openai', { enabled: false });
+    await setRow(tenant.tenantId, 'anthropic', { chatWeight: 7, backendWeight: 2 });
+    await setRow(tenant.tenantId, 'openai', { chatEnabled: false });
     bifrost.setProviders(['openai', 'anthropic']);
     try {
       const projectId = await createProject(member);
@@ -89,15 +106,15 @@ describe('chat keys follow the Organization’s Model provider rows', () => {
         { provider: 'anthropic', weight: 7, ...CATALOG_WIDE },
       ]);
       expect(bifrost.backendKeyOf(projectId).provider_configs).toEqual([
+        { provider: 'anthropic', weight: 2, ...CATALOG_WIDE },
         { provider: 'openai', weight: 1, ...CATALOG_WIDE },
-        { provider: 'anthropic', weight: 1, ...CATALOG_WIDE },
       ]);
     } finally {
       bifrost.setProviders(HELM_PROVIDERS);
     }
   });
 
-  it('rewrites every chat key of the Organization and no other Organization’s keys', async () => {
+  it('rewrites every chat and backend key of the Organization and no other Organization’s keys', async () => {
     const tenant = await createTenant(app);
     const member = await addMember(app, tenant);
     const first = await createProject(member);
@@ -106,9 +123,9 @@ describe('chat keys follow the Organization’s Model provider rows', () => {
     const neighbourConfigs = bifrost.chatKeyOf(neighbour).provider_configs;
     const neighbourWrites = bifrost.providerConfigWritesTo(bifrost.chatKeyOf(neighbour).id).length;
 
-    await setRow(tenant.tenantId, 'openai', { weight: 5 });
-    await setRow(tenant.tenantId, 'anthropic', { enabled: false });
-    await app.get(ModelProvidersService).lockAndRewriteTenantChatKeys(tenant.tenantId);
+    await setRow(tenant.tenantId, 'openai', { chatWeight: 5 });
+    await setRow(tenant.tenantId, 'anthropic', { chatEnabled: false });
+    await app.get(ModelProvidersService).lockAndRewriteTenantKeys(tenant.tenantId);
 
     const expected = [
       { provider: 'custom-openai-1', weight: 1, ...CATALOG_WIDE },
@@ -118,7 +135,10 @@ describe('chat keys follow the Organization’s Model provider rows', () => {
     expect(bifrost.chatKeyOf(second).provider_configs).toEqual(expected);
     expect(bifrost.chatKeyOf(neighbour).provider_configs).toEqual(neighbourConfigs);
     expect(bifrost.providerConfigWritesTo(bifrost.chatKeyOf(neighbour).id)).toHaveLength(neighbourWrites);
-    expect(bifrost.providerConfigWritesTo(bifrost.backendKeyOf(first).id)).toHaveLength(0);
+    expect(bifrost.backendKeyOf(first).provider_configs).toEqual([
+      { provider: 'anthropic', weight: 1, ...CATALOG_WIDE },
+      { provider: 'openai', weight: 1, ...CATALOG_WIDE },
+    ]);
   });
 
   it('fails the Project create when its chat key cannot take the Organization’s providers', async () => {
@@ -224,10 +244,16 @@ describe('a pooled Project takes the Organization’s Model providers when it is
   it('writes the claiming Organization’s rows to the slot’s chat key', async () => {
     const slotId = await provisionPoolSlot();
     expect(bifrost.chatKeyOf(slotId).provider_configs).toEqual([]);
+    expect(bifrost.backendKeyOf(slotId).provider_configs).toEqual([]);
     const tenant = await createTenant(app);
-    await db
-      .insert(modelProviders)
-      .values({ tenantId: tenant.tenantId, bifrostProvider: 'anthropic', enabled: true, weight: 3 });
+    await db.insert(modelProviders).values({
+      tenantId: tenant.tenantId,
+      bifrostProvider: 'anthropic',
+      chatEnabled: true,
+      chatWeight: 3,
+      backendEnabled: false,
+      backendWeight: 1,
+    });
 
     const projectId = await createProject(await addMember(app, tenant));
 
@@ -237,10 +263,7 @@ describe('a pooled Project takes the Organization’s Model providers when it is
       { provider: 'custom-openai-1', weight: 1, ...CATALOG_WIDE },
       { provider: 'openai', weight: 0, ...CATALOG_WIDE },
     ]);
-    expect(bifrost.backendKeyOf(slotId).provider_configs).toEqual([
-      { provider: 'openai', weight: 1, ...CATALOG_WIDE },
-      { provider: 'anthropic', weight: 1, ...CATALOG_WIDE },
-    ]);
+    expect(bifrost.backendKeyOf(slotId).provider_configs).toEqual([{ provider: 'openai', weight: 1, ...CATALOG_WIDE }]);
   });
 
   it('creates the Project the slow way when the slot’s chat key keeps refusing the rows', async () => {

@@ -3,7 +3,6 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
-import { catalogModelIdsOf } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { LinkedAccountsService } from '../../src/linked-accounts/linked-accounts.service';
@@ -19,13 +18,15 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 
 const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
 const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'a'.repeat(64);
-const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
+const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -78,7 +79,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
-    await holdEveryChatKey();
+    await holdEveryProjectKey();
   });
 
   afterEach(async () => {
@@ -151,11 +152,8 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
     return res.json<{ id: string }>().id;
   }
 
-  async function holdEveryChatKey(): Promise<void> {
-    const keys = await db
-      .select({ id: projectVirtualKeys.bifrostKeyId })
-      .from(projectVirtualKeys)
-      .where(eq(projectVirtualKeys.keyType, 'chat'));
+  async function holdEveryProjectKey(): Promise<void> {
+    const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
     bifrost.holdVirtualKeys(keys.map((key) => key.id));
   }
 
@@ -206,7 +204,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           id: expect.any(String),
           name: 'custom-openai-1-key',
           value: { value: expect.stringMatching(/^lap_[A-Za-z0-9_-]{40,}$/), type: 'plain_text' },
-          models: OPENAI_CATALOG_IDS,
+          models: ['*'],
           weight: 1,
           enabled: true,
         },
@@ -230,6 +228,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         status: 'working',
         fixed: false,
         notMetered: false,
+        deploymentManaged: false,
         linkedAccountVendor: 'chatgpt',
       });
       expect(res.body).not.toContain(PROXY_URL);
@@ -310,13 +309,13 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           custom_provider_config: { base_provider_type: 'openai', allowed_requests: { list_models: false } },
         });
         expect(bifrost.providerNamed('custom-openai-1')?.keys).toMatchObject([
-          { value: { value: expect.stringMatching(/^lap_/), type: 'plain_text' }, models: OPENAI_CATALOG_IDS },
+          { value: { value: expect.stringMatching(/^lap_/), type: 'plain_text' }, models: ['*'] },
         ]);
         const rows = await db
-          .select({ enabled: modelProviders.enabled, weight: modelProviders.weight })
+          .select({ chatEnabled: modelProviders.chatEnabled, chatWeight: modelProviders.chatWeight })
           .from(modelProviders)
           .where(and(isNull(modelProviders.tenantId), eq(modelProviders.bifrostProvider, 'custom-openai-1')));
-        expect(rows).toEqual([{ enabled: true, weight: 1 }]);
+        expect(rows).toEqual([{ chatEnabled: true, chatWeight: 1 }]);
       } finally {
         await db.delete(modelProviders).where(eq(modelProviders.bifrostProvider, 'custom-openai-1'));
         if (platformRow) await db.insert(modelProviders).values(platformRow);
@@ -343,11 +342,11 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
           provider: 'custom-openai-1',
           weight: 1,
-          ...CATALOG_WIDE,
+          ...OPENAI_FAMILY,
         });
         const page = await app.inject({ method: 'GET', url: '/api/model-providers', headers: orgAdmin.headers });
         expect(page.json<{ providers: unknown[] }>().providers).toContainEqual(
-          expect.objectContaining({ name: 'custom-openai-1', enabled: true, weight: 1 })
+          expect.objectContaining({ name: 'custom-openai-1', chatEnabled: true, chatWeight: 1 })
         );
       } finally {
         await db.delete(modelProviders).where(eq(modelProviders.bifrostProvider, 'custom-openai-1'));
@@ -462,7 +461,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
         headers: orgAdmin.headers,
-        payload: { providers: [{ name: 'custom-openai-1', enabled: true, weight: 2 }] },
+        payload: { providers: [{ name: 'custom-openai-1', chatEnabled: true, chatWeight: 2 }] },
       });
 
       expect(saved.statusCode, saved.body).toBe(200);
@@ -488,7 +487,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
           provider: 'custom-openai-1',
           weight: 1,
-          ...CATALOG_WIDE,
+          ...OPENAI_FAMILY,
         });
       }
 
@@ -498,7 +497,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
         headers: orgAdmin.headers,
-        payload: { providers: [{ name: 'openai', enabled: true, weight: 0 }] },
+        payload: { providers: [{ name: 'openai', chatEnabled: true, chatWeight: 0 }] },
       });
       expect(saved.statusCode, saved.body).toBe(200);
       expect(chatProvidersOf(firstProject)).not.toContain('custom-openai-1');
@@ -617,7 +616,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           id: expect.any(String),
           name: 'custom-openai-1-key',
           value: { value: expect.stringMatching(/^lap_[A-Za-z0-9_-]{40,}$/), type: 'plain_text' },
-          models: OPENAI_CATALOG_IDS,
+          models: ['*'],
           weight: 1,
           enabled: true,
         },

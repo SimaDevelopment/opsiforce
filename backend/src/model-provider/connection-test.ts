@@ -14,12 +14,16 @@ function failureReason(status: number): string {
   return `The test failed with HTTP ${status}`;
 }
 
-export async function testConnection(url: string, format: BaseFormat, key: string): Promise<ConnectionTestOutcome> {
+export function testConnection(url: string, format: BaseFormat, key: string): Promise<ConnectionTestOutcome> {
+  return testConnectionWith(url, format.connectionTest.headers(key));
+}
+
+export async function testConnectionWith(url: string, headers: Record<string, string>): Promise<ConnectionTestOutcome> {
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'GET',
-      headers: format.connectionTest.headers(key),
+      headers,
       redirect: 'manual',
       signal: AbortSignal.timeout(CONNECTION_TEST_TIMEOUT_MS),
     });

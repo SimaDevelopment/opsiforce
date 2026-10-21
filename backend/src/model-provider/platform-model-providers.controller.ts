@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { PlatformScope } from '../tenant/tenant.decorator';
@@ -6,11 +6,15 @@ import { AgentCallerRefusalGuard } from './agent-caller-refusal.guard';
 import { PlatformModelProvidersService } from './platform-model-providers.service';
 import type {
   ConnectionTestPassed,
+  KeysRewrite,
   EditModelProviderConnectionDto,
   ModelProviderConnectionDto,
   NewModelProviderDto,
+  PlatformModelProviderAccessView,
   PlatformModelProviderCreationRules,
   PlatformModelProvidersView,
+  SetModelProviderAccessDto,
+  SetModelProviderAvailabilityModeDto,
 } from './model-provider.types';
 
 @Controller('platform-model-providers')
@@ -28,6 +32,34 @@ export class PlatformModelProvidersController {
   @Get('creation-rules')
   rules(): PlatformModelProviderCreationRules {
     return this.platformService.rules();
+  }
+
+  @Post('rewrite-keys')
+  @HttpCode(200)
+  rewriteKeys(): Promise<KeysRewrite> {
+    return this.platformService.rewriteKeys();
+  }
+
+  @Get('access')
+  access(): Promise<PlatformModelProviderAccessView> {
+    return this.platformService.access();
+  }
+
+  @Put(':name/availability')
+  setAvailabilityMode(
+    @Param('name') name: string,
+    @Body() body: SetModelProviderAvailabilityModeDto | undefined
+  ): Promise<PlatformModelProviderAccessView> {
+    return this.platformService.setAvailabilityMode(name, body);
+  }
+
+  @Put(':name/access/:tenantId')
+  setAccess(
+    @Param('name') name: string,
+    @Param('tenantId') tenantId: string,
+    @Body() body: SetModelProviderAccessDto | undefined
+  ): Promise<PlatformModelProviderAccessView> {
+    return this.platformService.setAccess(name, tenantId, body);
   }
 
   @Post('test')

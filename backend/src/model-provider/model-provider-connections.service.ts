@@ -27,6 +27,7 @@ import {
   bifrostProviderUpdatePayload,
   isServedByLinkedAccountProxy,
   kindOf,
+  servedModelsOf,
   type BifrostProviderSpec,
 } from './bifrost-provider-shape';
 import { testConnection } from './connection-test';
@@ -86,6 +87,23 @@ function adminTypedBaseUrlFor(kind: ModelProviderKind, input: unknown): string |
   return null;
 }
 
+export function formatModelsOf(input: unknown, format: BaseFormat): string[] | undefined {
+  if (input === undefined || input === null) return undefined;
+  const catalog = servedModelsOf(format);
+  if (!Array.isArray(input) || input.length === 0) throw new BadRequestException('Choose at least one model it serves');
+  const models = [...new Set(input)];
+  for (const model of models) {
+    if (typeof model !== 'string' || !catalog.includes(model)) {
+      throw new BadRequestException(`${String(model)} is not a ${format.id} model of the catalog`);
+    }
+  }
+  return catalog.every((model) => models.includes(model)) ? undefined : (models as string[]);
+}
+
+function storedModelsOf(models: string[] | undefined): string[] | undefined {
+  return !models || models.includes('*') ? undefined : models;
+}
+
 function formatOf(input: unknown): BaseFormat {
   const baseFormat = field(input, 'baseFormat');
   if (typeof baseFormat !== 'string' || !isBaseFormatId(baseFormat)) {
@@ -119,7 +137,11 @@ export class ModelProviderConnectionsService {
     }
     const key = requiredKey(input);
     const adminTypedBaseUrl = adminTypedBaseUrlFor(kind as ModelProviderKind, input);
-    return { spec: { format, kind: kind as ModelProviderKind, adminTypedBaseUrl }, key } satisfies ProviderConnection;
+    const models = formatModelsOf(field(input, 'models'), format);
+    return {
+      spec: { format, kind: kind as ModelProviderKind, adminTypedBaseUrl, ...(models ? { models } : {}) },
+      key,
+    } satisfies ProviderConnection;
   }
 
   draftOf(name: string, input: unknown): NewProviderDraft {
@@ -245,12 +267,19 @@ export class ModelProviderConnectionsService {
 
   async replaceConnection(current: BifrostProviderSpec, edit: ConnectionEdit): Promise<void> {
     if (current.kind === 'linked-account') throw new BadRequestException(LINKED_ACCOUNT_SIGNS_IN_MESSAGE);
+    const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(current.name));
+    const choosesModels = field(edit.input, 'models') !== undefined;
+    const models = choosesModels
+      ? formatModelsOf(field(edit.input, 'models'), current.format)
+      : current.standard
+        ? undefined
+        : storedModelsOf(storedKey?.models);
+    const withModels: BifrostProviderSpec = { ...current, models };
     const next: BifrostProviderSpec = edit.movesBaseUrl
-      ? { ...current, adminTypedBaseUrl: adminTypedBaseUrlFor(current.kind, edit.input) }
-      : current;
+      ? { ...withModels, adminTypedBaseUrl: adminTypedBaseUrlFor(current.kind, edit.input) }
+      : withModels;
     const moved = next.adminTypedBaseUrl !== current.adminTypedBaseUrl;
 
-    const [storedKey] = await this.bifrostCall(() => this.bifrostService.listProviderKeys(current.name));
     if (moved) await this.updateInBifrost(next);
     try {
       await this.passConnectionTest(next, edit.key);

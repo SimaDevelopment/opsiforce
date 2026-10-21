@@ -16,8 +16,8 @@ import { EditConnectionDialog } from './edit-connection-dialog';
 import { DisconnectDialog, LinkedAccountMenuItems, useLinkedAccountActions } from './linked-account-sign-in';
 import { ReenterKeyDialog } from './reenter-key-dialog';
 
-function isInGateway(row: TenantModelProvider): row is TenantModelProvider & { baseFormat: BaseFormatId } {
-  return row.status !== 'missing' && row.baseFormat !== null;
+function isEditable(row: TenantModelProvider): row is TenantModelProvider & { baseFormat: BaseFormatId } {
+  return (row.status !== 'missing' || row.kind === 'azure-foundry') && row.baseFormat !== null;
 }
 
 function isLinkedAccount(row: TenantModelProvider): boolean {
@@ -65,7 +65,7 @@ export function CustomProviderMenu(props: { row: TenantModelProvider }) {
           <LinkedAccountMenuItems actions={linkedAccount} linked={isLinkedAccount(props.row)} />
           <Show when={!isLinkedAccount(props.row)}>
             <Show
-              when={isInGateway(props.row)}
+              when={isEditable(props.row)}
               fallback={
                 <DropdownMenuItem onSelect={() => setReentering(true)}>
                   <KeyRound class="h-3.5 w-3.5" />
@@ -101,7 +101,7 @@ export function CustomProviderMenu(props: { row: TenantModelProvider }) {
         variant="destructive"
         onConfirm={remove}
       />
-      <Show when={isInGateway(props.row) && props.row}>
+      <Show when={isEditable(props.row) && props.row}>
         {(row) => <EditConnectionDialog row={row()} open={editing()} onOpenChange={setEditing} />}
       </Show>
       <ReenterKeyDialog name={name()} open={reentering()} onOpenChange={setReentering} />
