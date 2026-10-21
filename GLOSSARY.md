@@ -168,7 +168,7 @@ An opt-in App Auth setting, available only in manual mode, that passes the signe
 _Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
 
 **Resources**:
-The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike).
+The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources — from the agent image for a Built-in Agent (Small unless it declares otherwise), set per Custom Agent — copied once and the Project's own from then on.
 _Avoid_: Pod class (the internal identifier — never user-facing); Environment size (collides with Environment); Tier, Machine size, Compute (non-canonical — say Resources)
 
 ### Agents
@@ -204,6 +204,10 @@ _Avoid_: Deploy, Release, Promote (reserved against the environment vocabulary);
 **Default environment (Agent)**:
 The Environment a Custom Agent's new Projects are created from — their Agent Profile and Template both — one per Agent, set by a holder of `can_manage_agents`. It is never Development: a new Custom Agent defaults to Production, so it reaches the picker only after its first Publish (Agent). Until the Agent has an Agent Profile there, the Agent is not offered in the picker at all.
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
+
+**Ready Projects**:
+The Projects an Agent keeps already running, so creating one hands back a live environment instead of starting a pod; the UI sets their number as "Keep N ready". A Custom Agent keeps 0 to 3, set beside its Resources and kept only while the Agent can start Projects; a Built-in Agent's number comes from the agent image and is shared by every Organization. Each Ready Project holds a pod at the Agent's Resources and belongs to no Organization until claimed, and an Organization's Custom Agents together stay within its Ready Projects Limit. A copy of the Agent keeps the number unless the person copying changes it. Its technical name is **warm pool** — the `warm_pool` Limit key, the `warm_pool_size` column, the code and the API — which must never surface in user-facing copy.
+_Avoid_: Warm pool, warm pods (internal names only — never user-facing); Pool size; Pre-warmed Projects, Standby Projects
 
 **Disable (Agent)**:
 An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Agent enabled that new Projects can start on — a Built-in Agent, or a public Custom Agent published to its Default environment — and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
@@ -542,7 +546,7 @@ Disk usage on the shared volume that belongs to no Organization: the **pool** (l
 _Avoid_: Platform storage (reads as "all storage on the platform", which this is not); System storage (non-canonical); Orphaned (one bucket within, not the whole)
 
 **Pods**:
-The view of an Organization's running environment pods — one row per running ProjectEnvironment, grouped by Project — showing each pod's status, age, Resources, configured timeouts, and live Keep-alive activity (when it was last kept alive and by which kind). Read-only; the first page within Admin.
+The view of an Organization's running environment pods — one row per running ProjectEnvironment, grouped by Project — showing each pod's status, age, Resources, configured timeouts, and live Keep-alive activity (when it was last kept alive and by which kind) — and, separately, the Ready Projects its Custom Agents keep. Read-only; the first page within Admin.
 _Avoid_: Pod class (the Resources identifier — a different thing); Resources (the size policy, not the running instances); Instances (non-canonical)
 
 **Deployment branding**:

@@ -29,3 +29,27 @@ export function formatCores(millicores: number): string {
 export function formatGib(mib: number): string {
   return `${trimNumber(mibToGib(mib))} GiB`;
 }
+
+const POD_CLASS_TITLES: Record<string, string> = {
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  custom: 'Custom',
+};
+
+export function podClassTitle(podClass: string): string {
+  return POD_CLASS_TITLES[podClass] ?? podClass;
+}
+
+export function describePodSettings(settings: {
+  podClass: string;
+  cpuMillicores: number;
+  memoryRequestMib: number;
+  memoryLimitMib: number;
+}): string {
+  return `${podClassTitle(settings.podClass)} · ${formatCores(settings.cpuMillicores)} · ${formatGib(settings.memoryRequestMib)} / ${formatGib(settings.memoryLimitMib)}`;
+}
+
+export function describeReadyProjects(size: number): string {
+  return size === 0 ? 'none ready' : `${size} ready`;
+}

@@ -70,7 +70,7 @@ Each graded expectation is a pass or a fail with exactly one source: *mine* (che
 
 ## Considered options
 
-- **A Test Project per eval prompt.** Rejected. It buys isolation from a contamination that is the realistic condition, and pays a cold create for each prompt: a Custom Agent keeps no warm pool ([ADR-0041](0041-new-projects-are-claimed-from-a-pool-of-pending-projects.md)).
+- **A Test Project per eval prompt.** Rejected. It buys isolation from a contamination that is the realistic condition, and pays a cold create for each prompt: an Agent under test rarely keeps Ready Projects, which need a Profile at its Default environment ([ADR-0041](0041-new-projects-are-claimed-from-a-pool-of-pending-projects.md)).
 - **A fresh opencode session per prompt in one Test Project.** Rejected. Those sessions are invisible to the status watcher and to the 1:1 Project↔session model, for a fresh context the Project boundary already gives.
 - **In-pod testing only** (the `subagent` tool, the pod's own `:4096` API, or `opencode run`). Rejected, though far cheaper. The child would share the Builder's workspace and write over its files, and it would test a prompt rather than a delivered agent: the skills folder, the App contract and delivery would go unexercised.
 - **Checking a Template only statically before saving, and letting the Test Project's first boot be the real check.** Rejected. The child repairs what it finds broken, so the test passes while every real Project gets the broken files.

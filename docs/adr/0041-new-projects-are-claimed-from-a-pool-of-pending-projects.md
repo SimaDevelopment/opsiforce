@@ -8,6 +8,7 @@ Creating a Project from scratch runs init containers, seeds a workspace, creates
 
 ## Consequences
 
-- Pool rows live in `projects` with `tenant_id = NULL` and `status = 'pending'`, so every listing must exclude them and Unattributed storage counts them as the pool bucket.
-- An integrity job, at boot and on an interval, recovers rows stuck in `claiming`, recycles slots whose pod is missing, terminating, failing its image pull or not ready after a grace period, or whose workspace is behind the agent's version, and replenishes each agent's pool to its declared size.
+- Pool rows live in `projects` with `tenant_id = NULL` and `status = 'pending'`, so every listing must exclude them and Unattributed storage counts them as the Ready Projects bucket.
+- An integrity job, at boot and on an interval, recovers rows stuck in `claiming`, recycles slots whose pod is missing, terminating, failing its image pull or not ready after a grace period, whose workspace is behind the agent's version, whose Resources are not the agent's, or that sit above the agent's pool size, and replenishes each agent's pool to its declared size.
 - No LLM call happens before a claim, so cost attribution is meaningful from the claim onward.
+- A Custom Agent's slots can only be claimed by its own Organization; its author opts into them at a capped size ([ADR-0093](0093-an-agent-sets-the-resources-and-ready-projects-of-the-projects-created-from-it.md)).

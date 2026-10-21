@@ -33,7 +33,7 @@ const bytea = customType<{ data: Buffer; default: false }>({
 
 export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "external_service_builder_chat" | "test"
 
-export type LimitKeyValue = "projects"
+export type LimitKeyValue = "projects" | "warm_pool"
 
 export const projectStatusEnum = pgEnum("project_status", [
   "starting",
@@ -128,6 +128,7 @@ export const agents = pgTable(
     version: text("version"),
     model: text("model"),
     variant: text("variant"),
+    // TODO: remove in the release after agent_settings.pool_size ships: unread; kept so backends of the previous release keep working during the rollout
     poolSize: integer("pool_size").notNull().default(0),
     builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, {
       onDelete: "set null",
@@ -925,7 +926,7 @@ export const globalLimits = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects')`),
+    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
     check("global_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -942,7 +943,7 @@ export const tenantLimits = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.limitKey] }),
-    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects')`),
+    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
     check("tenant_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -956,7 +957,18 @@ export const agentSettings = pgTable("agent_settings", {
   }),
   // TODO: remove in the release after External Services v2 ships: unread; kept so backends of the previous release keep working during the rollout
   platformApi: boolean("platform_api").notNull().default(false),
+  warmPoolSize: integer("warm_pool_size").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const agentPodSettings = pgTable("agent_pod_settings", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  podClass: podClassEnum("pod_class").notNull().default("small"),
+  cpuMillicores: integer("cpu_millicores").notNull(),
+  memoryRequestMib: integer("memory_request_mib").notNull(),
+  memoryLimitMib: integer("memory_limit_mib").notNull(),
 })
 
 export const agentProfiles = pgTable(

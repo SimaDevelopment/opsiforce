@@ -2,7 +2,18 @@ import { For, Match, Show, Switch, createSignal } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import { ApiError } from '~/api/client';
-import { useImportAgent, type AgentDetail, type AgentImportNote, type AgentImportProblem } from '~/api/agents';
+import {
+  inspectAgentImport,
+  useImportAgent,
+  type AgentDetail,
+  type AgentImportNote,
+  type AgentImportProblem,
+} from '~/api/agents';
+import {
+  ProjectSettingsChoiceField,
+  createProjectSettingsChoice,
+  isDefaultProjectSettings,
+} from '~/components/resources/project-settings-choice';
 import { cancelImportUploadSession, createImportUploadSession, uploadImportChunks } from '~/api/import';
 import { Button } from '~/components/ui/button';
 import {
@@ -35,6 +46,8 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
   const [problems, setProblems] = createSignal<AgentImportProblem[]>([]);
   const [unavailableSlug, setUnavailableSlug] = createSignal<string | null>(null);
   const [imported, setImported] = createSignal<{ agent: AgentDetail; notes: AgentImportNote[] } | null>(null);
+  const [inspectedUploadId, setInspectedUploadId] = createSignal<string | null>(null);
+  const projectSettings = createProjectSettingsChoice();
   let uploaded: UploadedFile | null = null;
   let upload: AbortController | null = null;
   let attempt = 0;
@@ -45,7 +58,7 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
   const busy = () => phase() === 'uploading' || phase() === 'importing';
   const closable = () => phase() !== 'importing';
   const nameInvalid = () => trimmed().length > 0 && slug().length === 0;
-  const canSubmit = () => file() !== null && !busy() && !unavailable() && !nameInvalid();
+  const canSubmit = () => file() !== null && !busy() && !unavailable() && !nameInvalid() && !projectSettings.invalid();
   const percent = () => {
     const size = file()?.size ?? 0;
     return size > 0 ? Math.min(100, Math.round((bytesSent() / size) * 100)) : 0;
@@ -68,6 +81,8 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
     setProblems([]);
     setUnavailableSlug(null);
     setImported(null);
+    setInspectedUploadId(null);
+    projectSettings.clear();
   };
 
   const close = () => {
@@ -144,8 +159,22 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
     try {
       const uploadId = await uploadOnce(chosen, current);
       if (uploadId === null) return;
+      if (inspectedUploadId() !== uploadId) {
+        const inspection = await inspectAgentImport(uploadId);
+        if (current !== attempt) return;
+        setInspectedUploadId(uploadId);
+        if (!isDefaultProjectSettings(inspection.projectSettings)) {
+          projectSettings.reset(inspection.projectSettings, inspection.maxWarmPoolSize);
+          setPhase('form');
+          return;
+        }
+      }
       setPhase('importing');
-      const result = await importAgent.mutateAsync({ uploadId, displayName: trimmed() || null });
+      const result = await importAgent.mutateAsync({
+        uploadId,
+        displayName: trimmed() || null,
+        ...projectSettings.toChoice(),
+      });
       uploaded = null;
       toast.success(`Imported ${result.agent.displayName ?? result.agent.name}`);
       if (result.notes.length === 0) {
@@ -169,7 +198,7 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
         else if (closable()) close();
       }}
     >
-      <DialogContent hideClose={!closable()}>
+      <DialogContent hideClose={!closable()} class="max-h-[85vh] max-w-xl overflow-y-auto" align="top">
         <Switch>
           <Match when={phase() === 'notes' && imported()}>
             {(result) => (
@@ -220,6 +249,8 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
                     disabled={busy()}
                     onChange={(event) => {
                       setFile(event.currentTarget.files?.[0] ?? null);
+                      setInspectedUploadId(null);
+                      projectSettings.clear();
                       setError(null);
                       setProblems([]);
                       setUnavailableSlug(null);
@@ -241,6 +272,8 @@ export function ImportAgentDialog(props: { open: boolean; onOpenChange: (open: b
                     }}
                   />
                 </div>
+
+                <ProjectSettingsChoiceField choice={projectSettings} sourceLabel="The export" disabled={busy()} />
 
                 <Show when={phase() === 'uploading'}>
                   <div aria-live="polite">

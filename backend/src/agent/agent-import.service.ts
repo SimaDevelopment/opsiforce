@@ -49,12 +49,21 @@ import {
   importRefused,
   notAnAgentExport,
   serviceSettingsLeftOut,
+  type AgentImportInspection,
   type AgentImportNote,
   type AgentImportProblem,
   type AgentImportResult,
 } from './agent-import';
 import { AgentService } from './agent.service';
-import type { AgentCaller } from './agent.types';
+import type { AgentCaller, AgentCopyGrants } from './agent.types';
+import {
+  DEFAULT_AGENT_PROJECT_SETTINGS,
+  settingsForCopy,
+  type AgentProjectSettings,
+  type AgentProjectSettingsChoice,
+} from './agent-copy-settings';
+import { MAX_WARM_POOL_SIZE } from './agent-pod-settings';
+import { podSettingsFromRequest } from '../pod/pod-class-request';
 
 const TEMPLATE_PREFIX = `${AGENT_EXPORT_TEMPLATE_DIR}/`;
 const SKILLS_PREFIX = `${AGENT_EXPORT_SKILLS_DIR}/`;
@@ -70,12 +79,13 @@ interface ArchiveContents {
 
 type SkillWrite = { name: string; tree: SkillTree } & ({ into: 'new' } | { into: 'existing'; skill: SkillRow });
 
-interface ServiceGrants {
-  canConfigureProjects: boolean;
+export interface AgentImportRequest {
+  displayName: string | null;
+  projectSettings: AgentProjectSettingsChoice;
 }
 
 interface ImportPlan {
-  grants: ServiceGrants;
+  grants: AgentCopyGrants;
   displayName: string;
   bundle: AgentBundle;
   pins: SkillPin[];
@@ -104,8 +114,8 @@ export class AgentImportService {
   async import(
     caller: AgentCaller,
     archivePath: string,
-    displayName: string | null,
-    grants: ServiceGrants
+    request: AgentImportRequest,
+    grants: AgentCopyGrants
   ): Promise<AgentImportResult> {
     const manifest = await readAgentManifest(archivePath);
     const workDir = join(this.importsRoot, `.agent-import-${randomUUID()}`);
@@ -115,7 +125,7 @@ export class AgentImportService {
         join(workDir, AGENT_EXPORT_TEMPLATE_DIR),
         customSkillNames(manifest)
       );
-      const plan = await this.resolve(caller, manifest, contents, displayName, grants);
+      const plan = await this.resolve(caller, manifest, contents, request, grants);
       if (plan.problems.length > 0) throw importRefused(plan.problems, nameFromFile(manifest));
 
       const agentId = await this.writer.write(caller, {
@@ -124,22 +134,33 @@ export class AgentImportService {
         pins: plan.pins,
         writeSkills: (tx) => this.writeSkills(caller, plan.skillWrites, tx),
       });
+      if (plan.bundle.projectSettings.warmPoolSize > 0) await this.agents.reconcilePool(agentId);
       return { agent: await this.agents.findOne(caller, agentId), notes: plan.notes };
     } finally {
       await rm(workDir, { recursive: true, force: true });
     }
   }
 
+  async inspect(archivePath: string): Promise<AgentImportInspection> {
+    const manifest = await readAgentManifest(archivePath);
+    return {
+      displayName: manifest.agent.displayName,
+      slug: manifest.agent.slug,
+      projectSettings: manifestProjectSettings(manifest),
+      maxWarmPoolSize: MAX_WARM_POOL_SIZE,
+    };
+  }
+
   private async resolve(
     caller: AgentCaller,
     manifest: AgentExportManifest,
     contents: ArchiveContents,
-    requestedName: string | null,
-    grants: ServiceGrants
+    request: AgentImportRequest,
+    grants: AgentCopyGrants
   ): Promise<ImportPlan> {
     const plan: ImportPlan = {
       grants,
-      displayName: requestedName?.trim() || nameFromFile(manifest),
+      displayName: request.displayName?.trim() || nameFromFile(manifest),
       bundle: {
         identity: {
           displayName: manifest.agent.displayName,
@@ -148,6 +169,7 @@ export class AgentImportService {
         profile: manifest.profile,
         skills: [],
         template: null,
+        projectSettings: settingsForCopy(manifestProjectSettings(manifest), request.projectSettings),
       },
       pins: [],
       skillWrites: [],
@@ -473,9 +495,31 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
         (skill.origin === 'built_in' || skill.origin === 'custom' || skill.origin === 'service') &&
         (skill.serviceSettings === undefined || isAgentServiceSettings(skill.serviceSettings))
     ) &&
-    (template === null || typeof template?.hash === 'string');
+    (template === null || typeof template?.hash === 'string') &&
+    (manifest.projectSettings === undefined || isAgentProjectSettings(manifest.projectSettings));
   if (!wellFormed) throw notAnAgentExport('manifest.json is malformed');
   return manifest as AgentExportManifest;
+}
+
+function isAgentProjectSettings(value: unknown): boolean {
+  const settings = value as Partial<AgentProjectSettings> | null;
+  const resources = settings?.resources;
+  return (
+    typeof settings?.warmPoolSize === 'number' &&
+    typeof resources?.podClass === 'string' &&
+    typeof resources.cpuMillicores === 'number' &&
+    typeof resources.memoryRequestMib === 'number' &&
+    typeof resources.memoryLimitMib === 'number'
+  );
+}
+
+function manifestProjectSettings(manifest: AgentExportManifest): AgentProjectSettings {
+  const carried = manifest.projectSettings;
+  if (!carried) return DEFAULT_AGENT_PROJECT_SETTINGS;
+  return {
+    resources: podSettingsFromRequest(carried.resources),
+    warmPoolSize: Math.min(Math.max(Math.trunc(carried.warmPoolSize), 0), MAX_WARM_POOL_SIZE),
+  };
 }
 
 function isOptionalString(value: unknown): boolean {

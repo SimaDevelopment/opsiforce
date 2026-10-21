@@ -168,6 +168,14 @@ export class FakeProjectPoolService extends RecordingFake {
     this.record('claimPending', { agentId });
     return null;
   }
+
+  async reconcileAgent(agentId: string): Promise<void> {
+    this.record('reconcileAgent', { agentId });
+  }
+
+  async releaseAgentSlots(agentId: string): Promise<void> {
+    this.record('releaseAgentSlots', { agentId });
+  }
 }
 
 export class FakeScheduleService extends RecordingFake {

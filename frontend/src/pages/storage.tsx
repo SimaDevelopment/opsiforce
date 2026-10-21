@@ -80,7 +80,7 @@ interface BucketRow {
 
 function bucketRows(buckets: PlatformStorageBuckets): BucketRow[] {
   return [
-    { label: 'Pool (unclaimed projects)', bytes: buckets.pool.bytes, error: buckets.pool.error, icon: Inbox },
+    { label: 'Ready Projects (not yet claimed)', bytes: buckets.pool.bytes, error: buckets.pool.error, icon: Inbox },
     {
       label: 'Tombstoned (deleted pool projects)',
       bytes: buckets.tombstoned.bytes,

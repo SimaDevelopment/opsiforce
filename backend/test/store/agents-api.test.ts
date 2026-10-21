@@ -8,17 +8,20 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, assert, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import {
+  agentPodSettings,
+  tenantLimits,
   agentProfileSkills,
   agentProfiles,
   agentSettings,
   agents,
   environments,
+  projectPodSettings,
   projects,
   skillVersions,
   skills,
 } from '../../db/schema';
 import { AgentController } from '../../src/agent/agent.controller';
-import { BUILDER_AGENT_SLUG, liveBuiltInSlugs } from '../../src/agent/agent-visibility';
+import { BUILDER_AGENT_SLUG, liveBuiltInSlugs, warmPooledCustomAgentsWhere } from '../../src/agent/agent-visibility';
 import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
 import { Perms } from '../../src/permission/permission.constants';
 import { RELAXED_PERMISSION_KEY } from '../../src/permission/permission.guard';
@@ -129,7 +132,7 @@ describe('creating a custom agent', () => {
       createdBy: author.userId,
       projectCount: 0,
     });
-    expect(created.settings).toEqual({ defaultEnvironmentId: productionId });
+    expect(created.settings).toMatchObject({ defaultEnvironmentId: productionId });
 
     const development = created.profiles.find((profile) => profile.environmentId === developmentId);
     expect(development).toMatchObject({ promptBody: '', ...defaultProfileModel() });
@@ -595,7 +598,7 @@ describe('agent lifecycle', () => {
 
     const updated = await service.updateSettings(author, agent.id, { defaultEnvironmentId: productionId });
 
-    expect(updated.settings).toEqual({ defaultEnvironmentId: productionId });
+    expect(updated.settings).toMatchObject({ defaultEnvironmentId: productionId });
     const foreign = await defaultEnvironmentId(otherTenantId);
     expect(await code(service.updateSettings(author, agent.id, { defaultEnvironmentId: foreign }))).toContain(
       'NotFoundException'
@@ -621,6 +624,173 @@ describe('agent lifecycle', () => {
     const kept = await service.updateSettings(author, agent.id, {});
 
     expect(kept).toMatchObject({ live: true, settings: { defaultEnvironmentId: developmentId } });
+  });
+});
+
+describe('what new projects of an agent start with', () => {
+  const copyGrants = { canConfigureProjects: true };
+
+  beforeAll(async () => {
+    await db.insert(tenantLimits).values({ tenantId, limitKey: 'warm_pool', value: null }).onConflictDoNothing();
+  });
+
+  async function freshCaller(): Promise<AgentCaller> {
+    const id = await createTenantRow();
+    await harness.environments.ensureDefaultForTenant(id);
+    return { tenantId: id, userId: await createUserRow(), canManageAgents: true };
+  }
+
+  async function sizedAgent(caller: AgentCaller = author) {
+    const agent = await service.create(caller, { displayName: agentName() });
+    await service.updatePodClass(caller, agent.id, { podClass: 'medium' });
+    return service.updateSettings(caller, agent.id, { warmPoolSize: 2 });
+  }
+
+  it('keeps the source’s pod settings and Ready Projects on a Duplicate unless another choice is sent', async () => {
+    const source = await sizedAgent();
+
+    const kept = await service.duplicate(author, source.id, { displayName: agentName() }, copyGrants);
+    const changed = await service.duplicate(
+      author,
+      source.id,
+      { displayName: agentName(), resources: { podClass: 'small' }, warmPoolSize: 0 },
+      copyGrants
+    );
+
+    expect(kept.agent).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+    expect(changed.agent).toMatchObject({ podSettings: { podClass: 'small' }, settings: { warmPoolSize: 0 } });
+    expect(await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, changed.agent.id))).toHaveLength(
+      0
+    );
+  });
+
+  it('holds an Organization’s Ready Projects to its Ready Projects limit across agents', async () => {
+    const caller = await freshCaller();
+    await db.insert(tenantLimits).values({ tenantId: caller.tenantId, limitKey: 'warm_pool', value: 3 });
+    const first = await sizedAgent(caller);
+    const second = await service.create(caller, { displayName: agentName() });
+
+    expect(await code(service.updateSettings(caller, second.id, { warmPoolSize: 2 }))).toBe('limit_reached');
+    await service.updateSettings(caller, second.id, { warmPoolSize: 1 });
+    expect(await code(service.duplicate(caller, first.id, { displayName: agentName() }, copyGrants))).toBe(
+      'limit_reached'
+    );
+    await service.updateSettings(caller, first.id, { warmPoolSize: 1 });
+    await service.updateSettings(caller, first.id, { warmPoolSize: 2 });
+    expect((await service.findOne(caller, first.id)).settings.warmPoolSize).toBe(2);
+  });
+
+  it('starts every agent at Small with no Ready Projects', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    expect(agent.podSettings).toEqual({
+      podClass: 'small',
+      cpuMillicores: 100,
+      memoryRequestMib: 2048,
+      memoryLimitMib: 4096,
+    });
+    expect(agent.settings).toMatchObject({ warmPoolSize: 0, maxWarmPoolSize: 3 });
+    expect(await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, agent.id))).toHaveLength(0);
+  });
+
+  it('stores the pod class in agent_pod_settings and the Ready Projects count in agent_settings, reconciling the pool', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    await service.updatePodClass(author, agent.id, { podClass: 'medium' });
+    const updated = await service.updateSettings(author, agent.id, { warmPoolSize: 2 });
+
+    expect(updated.podSettings).toEqual({
+      podClass: 'medium',
+      cpuMillicores: 1000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 8192,
+    });
+    expect(updated.settings.warmPoolSize).toBe(2);
+    const [settingsRow] = await db.select().from(agentSettings).where(eq(agentSettings.agentId, agent.id));
+    expect(settingsRow?.warmPoolSize).toBe(2);
+    expect(harness.fakes.pool.callsTo('reconcileAgent').filter((call) => call.args.agentId === agent.id)).toHaveLength(
+      2
+    );
+  });
+
+  it('clamps a Custom pod class to the platform bounds', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    const custom = await service.updatePodClass(author, agent.id, {
+      podClass: 'custom',
+      cpuMillicores: 99_000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 1024,
+    });
+
+    expect(custom.podSettings).toEqual({
+      podClass: 'custom',
+      cpuMillicores: 4000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 4096,
+    });
+  });
+
+  it('refuses a Ready Projects count outside 0–3 and a missing pod class', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    for (const warmPoolSize of [4, -1, 1.5]) {
+      expect(await code(service.updateSettings(author, agent.id, { warmPoolSize }))).toBe('bad_request');
+    }
+    expect(await code(service.updatePodClass(author, agent.id, null as never))).toBe('bad_request');
+    expect(await service.findOne(author, agent.id)).toMatchObject({
+      podSettings: { podClass: 'small' },
+      settings: { warmPoolSize: 0 },
+    });
+  });
+
+  it('copies the pod settings into a project created from the agent, which keeps them after the agent changes', async () => {
+    const agent = await seedLiveAgent(tenantId, author.userId);
+    await service.updatePodClass(author, agent.id, { podClass: 'large' });
+
+    const project = await harness.projects.create({ title: 'inherits', agentId: agent.id }, tenantId, {
+      createdBy: author.userId,
+    });
+    await service.updatePodClass(author, agent.id, { podClass: 'small' });
+
+    const [row] = await db.select().from(projectPodSettings).where(eq(projectPodSettings.projectId, project.id));
+    expect(row).toMatchObject({
+      podClass: 'large',
+      cpuMillicores: 2000,
+      memoryRequestMib: 8192,
+      memoryLimitMib: 16384,
+    });
+  });
+
+  it('keeps warm slots only for an enabled agent with a Default environment profile', async () => {
+    const pooled = await seedLiveAgent(tenantId, author.userId);
+    const disabled = await seedLiveAgent(tenantId, author.userId, { disabled: true });
+    const unpublished = await seedLiveAgent(tenantId, author.userId, { withProfile: false });
+    const unpooled = await seedLiveAgent(tenantId, author.userId);
+    const seeded = [pooled.id, disabled.id, unpublished.id, unpooled.id];
+    await db
+      .update(agentSettings)
+      .set({ warmPoolSize: 2 })
+      .where(inArray(agentSettings.agentId, [pooled.id, disabled.id, unpublished.id]));
+
+    const rows = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(inArray(agents.id, seeded), warmPooledCustomAgentsWhere()));
+
+    expect(rows.map((row) => row.id)).toEqual([pooled.id]);
+  });
+
+  it('releases the warm slots before deleting the agent', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+    await service.updateSettings(author, agent.id, { warmPoolSize: 3 });
+
+    await service.remove(author, agent.id, noTestProjects);
+
+    expect(harness.fakes.pool.callsTo('releaseAgentSlots')).toContainEqual({
+      method: 'releaseAgentSlots',
+      args: { agentId: agent.id },
+    });
   });
 });
 

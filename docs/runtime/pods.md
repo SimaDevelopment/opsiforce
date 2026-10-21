@@ -17,7 +17,7 @@ adrs: [0013]
 - Kubernetes drives the row set: the agent-pod informer cache intersected with the selected Organization's Projects. Postgres supplies names, timeout and Resources policy and tenant attribution; Redis supplies keep-alive, read live from the two keys whose value is the last touch and whose TTL is the countdown ([ADR-0013](../adr/0013-pods-view-reads-live-keepalive-from-redis.md)).
 - A row also carries a "Delivery pending" or "Delivery failed" badge when the Organization's [Skills](../../GLOSSARY.md) have not landed in that workspace: it reads the same per-ProjectEnvironment delivery state the Store reads through `GET /agents/:id/delivery`, and a workspace with no state row has never had a delivery pending ([ADR-0060](../adr/0060-agent-files-are-laid-once-and-shared-with-the-backend-by-ownership-list.md), [Agent Updates](../agent-system/agent-updates.md)).
 - Because Kubernetes drives the row set, drift (a pod running while its environment is marked suspended, disabled or failed) is flagged inline and a ghost (an environment marked active with no pod) is a per-Project footnote.
-- Pending-pool pods are excluded; they belong to no Organization.
+- A **Ready Projects** section below lists the selected Organization's Custom Agents that keep [Ready Projects](../../GLOSSARY.md) or still hold their pods: per Agent, how many of them are up, the Resources they run at, and whether the pool is paused (the Agent disabled or not published to its Default environment) or capped by the platform; per Ready Project, its pod's status and age, or that it is being claimed. Built-in Agents' Ready Projects serve every Organization and appear in no Organization's view ([Pending Project Pools](pending-project-pools.md)).
 - Gated by `can_view_pods` ([Permissions](../organization/permissions.md)) and scoped to the selected Organization; the only action is a deep link to the Project.
 
 ## Code
@@ -26,6 +26,7 @@ adrs: [0013]
 - `backend/src/timeout/` — the batched keep-alive read.
 - `backend/src/delivery/skill-delivery.repository.ts` — the delivery state the badge reads.
 - `frontend/src/pages/pods.tsx` — the page, mounted under the Admin routes.
+- `frontend/src/components/pods/warm-pool-table.tsx` — the Ready Projects section.
 
 ## Related
 

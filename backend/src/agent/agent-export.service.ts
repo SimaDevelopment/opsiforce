@@ -130,6 +130,7 @@ export class AgentExportService {
         ...(skill.serviceSettings ? { serviceSettings: skill.serviceSettings } : {}),
       })),
       template: bundle.template ? { hash: bundle.template.hash } : null,
+      projectSettings: bundle.projectSettings,
     };
   }
 }

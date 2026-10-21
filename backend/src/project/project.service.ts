@@ -104,6 +104,9 @@ import {
   type PodClassCatalog,
   type PodResources,
 } from '../pod/pod-classes';
+import { readAgentPodSettings } from '../agent/agent-pod-settings';
+import { podSettingsFromRequest } from '../pod/pod-class-request';
+import { podSettingsColumns } from '../pod/pod-settings-columns';
 
 const APP_NAME_MIN_LENGTH = 1;
 const APP_NAME_MAX_LENGTH = 80;
@@ -226,10 +229,7 @@ const projectSelectFields = {
   timezone: projectSettings.timezone,
   requestLogMode: projectSettings.requestLogMode,
   requestLogBodyLimit: projectSettings.requestLogBodyLimit,
-  podClass: projectPodSettings.podClass,
-  cpuMillicores: projectPodSettings.cpuMillicores,
-  memoryRequestMib: projectPodSettings.memoryRequestMib,
-  memoryLimitMib: projectPodSettings.memoryLimitMib,
+  ...podSettingsColumns(projectPodSettings),
   hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`.as('has_app'),
   appName: projectApps.name,
   appDescription: projectApps.description,
@@ -540,6 +540,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
+    const podSettings = await readAgentPodSettings(agentId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, kind);
@@ -564,11 +565,7 @@ export class ProjectService implements OnApplicationBootstrap {
         timezone: dto?.timezone || 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({
-        projectId: id,
-        podClass: 'small',
-        ...resolvePreset('small'),
-      });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...podSettings });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -774,7 +771,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
-    const podResources = this.resolveImportedResources(resources);
+    const podResources = await this.resolveImportedResources(resources, agentId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId);
@@ -854,10 +851,10 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.findOne(id, tenantId);
   }
 
-  private resolveImportedResources(resources: ExportManifestResources | null): {
-    podClass: PodClass;
-    resources: PodResources;
-  } {
+  private async resolveImportedResources(
+    resources: ExportManifestResources | null,
+    agentId: string
+  ): Promise<{ podClass: PodClass; resources: PodResources }> {
     if (resources?.podClass === 'custom') {
       return {
         podClass: 'custom',
@@ -871,7 +868,8 @@ export class ProjectService implements OnApplicationBootstrap {
     if (resources && isPreset(resources.podClass)) {
       return { podClass: resources.podClass, resources: resolvePreset(resources.podClass) };
     }
-    return { podClass: 'small', resources: resolvePreset('small') };
+    const { podClass, ...agentResources } = await readAgentPodSettings(agentId);
+    return { podClass, resources: agentResources };
   }
 
   async getSchedulesForExport(projectEnvironmentId: string): Promise<ExportManifestSchedule[]> {
@@ -1155,47 +1153,17 @@ export class ProjectService implements OnApplicationBootstrap {
 
   async updatePodClass(id: string, dto: UpdateProjectPodClassDto, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
-    const resources = this.resolvePodClassResources(dto);
-
     await db
       .update(projectPodSettings)
-      .set({ podClass: dto.podClass, ...resources })
+      .set(podSettingsFromRequest(dto))
       .where(eq(projectPodSettings.projectId, project.id));
 
     return this.findOne(id, tenantId);
   }
 
-  private resolvePodClassResources(dto: UpdateProjectPodClassDto): PodResources {
-    if (dto.podClass === 'custom') {
-      if (
-        typeof dto.cpuMillicores !== 'number' ||
-        typeof dto.memoryRequestMib !== 'number' ||
-        typeof dto.memoryLimitMib !== 'number'
-      ) {
-        throw new BadRequestException(
-          'Custom pod class requires numeric cpuMillicores, memoryRequestMib, and memoryLimitMib'
-        );
-      }
-      return clampCustom({
-        cpuMillicores: dto.cpuMillicores,
-        memoryRequestMib: dto.memoryRequestMib,
-        memoryLimitMib: dto.memoryLimitMib,
-      });
-    }
-    if (!isPreset(dto.podClass)) {
-      throw new BadRequestException(`Unknown pod class: ${String(dto.podClass)}`);
-    }
-    return resolvePreset(dto.podClass);
-  }
-
   private async podResourcesForProject(projectId: string): Promise<K8sResourceRequirements> {
     const [row] = await db
-      .select({
-        podClass: projectPodSettings.podClass,
-        cpuMillicores: projectPodSettings.cpuMillicores,
-        memoryRequestMib: projectPodSettings.memoryRequestMib,
-        memoryLimitMib: projectPodSettings.memoryLimitMib,
-      })
+      .select(podSettingsColumns(projectPodSettings))
       .from(projectPodSettings)
       .where(eq(projectPodSettings.projectId, projectId));
     return toK8sResources(resolveStoredPodResources(row));

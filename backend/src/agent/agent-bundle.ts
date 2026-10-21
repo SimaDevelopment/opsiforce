@@ -1,4 +1,5 @@
 import type { AgentServiceSettings } from '../../db/schema';
+import type { AgentProjectSettings } from './agent-copy-settings';
 
 export interface AgentBundleIdentity {
   displayName: string | null;
@@ -30,6 +31,7 @@ export interface AgentBundle {
   profile: AgentBundleProfile;
   skills: AgentBundleSkillReference[];
   template: AgentBundleTemplate | null;
+  projectSettings: AgentProjectSettings;
 }
 
 export interface SkillPin {

@@ -640,7 +640,7 @@ describe('kind gating', () => {
 
     const agentSide = await app
       .get(AgentImportService)
-      .import(caller, archivePath, null, { canConfigureProjects: true })
+      .import(caller, archivePath, { displayName: null, projectSettings: {} }, { canConfigureProjects: true })
       .catch((error: { getResponse: () => unknown }) => error.getResponse());
     expect(agentSide).toMatchObject({
       code: 'not_an_agent_export',

@@ -63,7 +63,6 @@ export async function seedLiveAgent(
     origin: 'custom',
     visibility,
     createdBy: userId,
-    poolSize: 0,
     ...(createdAt ? { createdAt } : {}),
   });
   if (disabled) await db.insert(tenantDisabledAgents).values({ tenantId, agentId: id });

@@ -172,8 +172,7 @@ describe('duplicating a Custom Agent', () => {
       sourcePins.toSorted()
     );
     expect(await productionProfileCount(copy.id)).toBe(0);
-    const [row] = await db.select({ poolSize: agents.poolSize }).from(agents).where(eq(agents.id, copy.id));
-    expect(row.poolSize).toBe(0);
+    expect(copy).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { podClass: 'small' } });
   });
 
   it('keeps the source’s platform Version when a newer one has shipped since', async () => {
