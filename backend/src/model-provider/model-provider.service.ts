@@ -513,7 +513,8 @@ export class ModelProvidersService {
     const providers = await this.bifrostProvidersOrNull();
     if (!providers) return catalogRefs;
     const rows = await this.effectiveRows(db, tenantId);
-    const keys = await this.keysOrEmpty(providersReadForKeys(rows, providers));
+    const keys = await this.keysOrNull(providersReadForKeys(rows, providers));
+    if (!keys) return catalogRefs;
     const served = new Set<string>();
     for (const row of this.reachableRows(rows, providers, keys)) {
       const format = rowFormatOf(row, providers);
@@ -622,12 +623,16 @@ export class ModelProvidersService {
   }
 
   async keysOrEmpty(names: string[]): Promise<KeysByProvider> {
+    return (await this.keysOrNull(names)) ?? new Map();
+  }
+
+  async keysOrNull(names: string[]): Promise<KeysByProvider | null> {
     if (names.length === 0 || !this.bifrostService.isEnabled()) return new Map();
     try {
       return await this.keys(names);
     } catch (err) {
       this.logger.warn(`The model gateway's provider keys could not be read: ${(err as Error).message}`);
-      return new Map();
+      return null;
     }
   }
 

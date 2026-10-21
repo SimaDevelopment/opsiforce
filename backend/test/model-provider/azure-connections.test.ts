@@ -481,6 +481,40 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
       );
     });
 
+    it('keeps every catalog model reachable while the gateway can’t read provider keys', async () => {
+      const seeded = await seededTenant();
+      expect((await createPlatformConnection({ models: ['gpt-5.6-sol'] })).statusCode).toBe(201);
+      const openAiRows = (await rowsOf(seeded)).filter((row) => row.baseFormat === 'openai');
+      const onlyAzure = await saveCard(
+        seeded,
+        'openai',
+        openAiRows.map((row) =>
+          row.name === 'opsiforce-foundry'
+            ? { name: row.name, chatEnabled: true, chatWeight: 1 }
+            : { name: row.name, chatEnabled: false }
+        )
+      );
+      expect(onlyAzure.statusCode, onlyAzure.body).toBe(200);
+      const reachable = async () => {
+        const res = await app.inject({
+          method: 'GET',
+          url: '/api/model-providers/reachable-models',
+          headers: seeded.admin.headers,
+        });
+        expect(res.statusCode, res.body).toBe(200);
+        return res.json<string[]>();
+      };
+
+      expect((await reachable()).filter((ref) => ref.startsWith('openai/'))).toEqual(['openai/gpt-5.6-sol']);
+
+      bifrost.refuseKeyReadsOf('azure');
+      try {
+        expect(await reachable()).toContain('openai/gpt-6-astra');
+      } finally {
+        bifrost.refuseKeyReadsOf(null);
+      }
+    });
+
     it('is offered only to the chosen Organizations', async () => {
       const chosen = await seededTenant();
       const other = await seededTenant();

@@ -76,6 +76,7 @@ export interface FakeBifrost {
   refuseProviderConfigWrites: (keyId?: string) => void;
   acceptProviderConfigWrites: () => void;
   refuseKeyWritesTo: (provider: string | null) => void;
+  refuseKeyReadsOf: (provider: string | null) => void;
   close: () => Promise<void>;
 }
 
@@ -171,6 +172,7 @@ export async function startFakeBifrost(): Promise<FakeBifrost> {
   const refusedProviderConfigKeys = new Set<string>();
   let refuseEveryProviderConfigWrite = false;
   let keyWritesRefusedTo: string | null = null;
+  let keyReadsRefusedOf: string | null = null;
 
   function send(res: ServerResponse, status: number, body: JsonValue): void {
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -311,6 +313,9 @@ export async function startFakeBifrost(): Promise<FakeBifrost> {
     body: JsonObject,
     res: ServerResponse
   ): void {
+    if (method === 'GET' && provider.name === keyReadsRefusedOf) {
+      return send(res, 500, { error: { message: 'key read refused' } });
+    }
     if (!keyId && method === 'GET') {
       const keyedByHelm = keyedProviders.has(provider.name) ? [{ value: { value: 'sk-fake' }, enabled: true }] : [];
       const keys = [...keyedByHelm, ...(provider.keys as unknown as JsonObject[])];
@@ -541,6 +546,9 @@ export async function startFakeBifrost(): Promise<FakeBifrost> {
     },
     refuseKeyWritesTo: (name) => {
       keyWritesRefusedTo = name;
+    },
+    refuseKeyReadsOf: (name) => {
+      keyReadsRefusedOf = name;
     },
     close: () =>
       new Promise<void>((resolve, reject) => {
