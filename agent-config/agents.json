@@ -27,7 +27,7 @@
       "description": "Author a Custom External Service by conversation: an outside API passed through under the settings you agree, with its tests.",
       "default": false,
       "port": 3000,
-      "version": "1.5.0",
+      "version": "1.6.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
       "poolSize": 0,
