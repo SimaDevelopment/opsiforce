@@ -1209,6 +1209,16 @@ export const modelProviderAvailability = pgTable(
   (table) => [check("model_provider_availability_mode_check", sql`${table.mode} in ('every', 'chosen')`)],
 )
 
+export const appliedModelCatalog = pgTable(
+  "applied_model_catalog",
+  {
+    id: boolean("id").primaryKey().default(true),
+    servedModels: jsonb("served_models").$type<Record<string, string[]>>().notNull(),
+    appliedAt: timestamp("applied_at").defaultNow().notNull(),
+  },
+  (table) => [check("applied_model_catalog_single_row_check", sql`${table.id}`)],
+)
+
 export const modelProviderAvailabilityTenants = pgTable(
   "model_provider_availability_tenants",
   {

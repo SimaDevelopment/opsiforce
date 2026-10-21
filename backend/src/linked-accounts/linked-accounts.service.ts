@@ -128,7 +128,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     await this.resealUnplacedSignIns();
-    void this.repointConnectedAccounts().then(() => this.keyModels.reconcileKeyModels(readModelCatalog()));
+    void this.repointConnectedAccounts().then(() => this.keyModels.applyModelCatalog(readModelCatalog()));
   }
 
   private async resealUnplacedSignIns(): Promise<void> {

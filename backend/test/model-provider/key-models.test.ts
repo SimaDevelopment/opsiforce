@@ -1,14 +1,20 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { modelProviders } from '../../db/schema';
-import { catalogModelIdsOf, type ModelCatalog } from '../../src/agent/agent-models';
+import { appliedModelCatalog, modelProviders, projectVirtualKeys } from '../../db/schema';
+import { catalogModelIdsOf, readModelCatalog, type ModelCatalog } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost, type FakeProviderKey } from '../support/fake-bifrost';
-import { addMember, createTenant, type MemberFixture } from '../support/project-fixtures';
+import {
+  addMember,
+  createAgent,
+  createTenant,
+  type MemberFixture,
+  type TenantFixture,
+} from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
 import { startFakeVendorApi, type FakeVendorApi } from './support/fake-vendor-api';
 
@@ -41,6 +47,7 @@ describe('a managed model provider serves the models the catalog lists', () => {
   let harness: PublicApiTestApp;
   let app: NestFastifyApplication;
   let admin: MemberFixture;
+  let tenant: TenantFixture;
   let tenantName: string;
 
   beforeAll(async () => {
@@ -55,7 +62,7 @@ describe('a managed model provider serves the models the catalog lists', () => {
       [BifrostService]
     );
     app = harness.app;
-    const tenant = await createTenant(app);
+    tenant = await createTenant(app);
     tenantName = tenant.name;
     admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
   });
@@ -201,5 +208,62 @@ describe('a managed model provider serves the models the catalog lists', () => {
 
     await reconcile(NEXT_CATALOG);
     expect(bifrost.providerNamed(bifrostName)?.keys[0]?.models).toEqual(['*']);
+  });
+
+  describe('a changed catalog reaching every Organization’s keys', () => {
+    beforeEach(async () => {
+      await db.delete(appliedModelCatalog);
+    });
+
+    function applyToKeys(catalog: ModelCatalog): Promise<void> {
+      return app.get(ModelProviderKeyModelsService).rewriteKeysForChangedCatalog(catalog);
+    }
+
+    async function chatKeyOfNewProject(): Promise<string> {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers: (await addMember(app, tenant)).headers,
+        payload: { title: 'Catalog', agentId: await createAgent() },
+      });
+      expect(res.statusCode, res.body).toBe(201);
+      const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
+      bifrost.holdVirtualKeys(keys.map((key) => key.id));
+      return bifrost.chatKeyOf(res.json<{ id: string }>().id).id;
+    }
+
+    it('rewrites the keys once for a catalog they were not written from, and not again for the same one', async () => {
+      const chatKeyId = await chatKeyOfNewProject();
+      const writes = () => bifrost.providerConfigWritesTo(chatKeyId).length;
+
+      const before = writes();
+      await applyToKeys(NEXT_CATALOG);
+      const afterNew = writes();
+      await applyToKeys(NEXT_CATALOG);
+      const afterSame = writes();
+      await applyToKeys(readModelCatalog());
+
+      expect(afterNew).toBeGreaterThan(before);
+      expect(afterSame).toBe(afterNew);
+      expect(writes()).toBeGreaterThan(afterSame);
+      expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
+        { servedModels: { openai: OPENAI_CATALOG_IDS, anthropic: expect.any(Array) } },
+      ]);
+    });
+
+    it('keeps the catalog unapplied while an Organization’s keys refuse it, so the next boot tries again', async () => {
+      const chatKeyId = await chatKeyOfNewProject();
+
+      bifrost.refuseProviderConfigWrites(chatKeyId);
+      await applyToKeys(NEXT_CATALOG);
+      bifrost.acceptProviderConfigWrites();
+      const unapplied = await db.select().from(appliedModelCatalog);
+      await applyToKeys(NEXT_CATALOG);
+
+      expect(unapplied).toEqual([]);
+      expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
+        { servedModels: { openai: NEXT_OPENAI_IDS, anthropic: ['claude-opus-6'] } },
+      ]);
+    });
   });
 });

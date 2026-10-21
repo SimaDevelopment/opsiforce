@@ -1,17 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import { db } from '../../db';
-import { modelProviders } from '../../db/schema';
+import { appliedModelCatalog, modelProviders } from '../../db/schema';
 import type { ModelCatalog } from '../agent/agent-models';
 import { BifrostService } from '../bifrost/bifrost.service';
 import type { BifrostProviderKeySummary, BifrostProviderSummary } from '../bifrost/bifrost.types';
-import { BASE_FORMATS } from './base-formats';
+import { BASE_FORMATS, BASE_FORMAT_IDS } from './base-formats';
 import { servedModelsOf } from './bifrost-provider-shape';
-import { baseFormatOf } from './model-provider.service';
+import { ModelProvidersService, baseFormatOf } from './model-provider.service';
 
 const EVERY_MODEL = ['*'];
 
 function coversCatalog(stored: string[] | undefined, served: string[]): boolean {
   return served.every((model) => stored?.includes(model));
+}
+
+function servedModelsByFormat(catalog: ModelCatalog): Record<string, string[]> {
+  return Object.fromEntries(BASE_FORMAT_IDS.map((format) => [format, servedModelsOf(BASE_FORMATS[format], catalog)]));
 }
 
 function isHelmPlaceholder(key: BifrostProviderKeySummary): boolean {
@@ -23,7 +28,34 @@ function isHelmPlaceholder(key: BifrostProviderKeySummary): boolean {
 export class ModelProviderKeyModelsService {
   private readonly logger = new Logger(ModelProviderKeyModelsService.name);
 
-  constructor(private readonly bifrostService: BifrostService) {}
+  constructor(
+    private readonly bifrostService: BifrostService,
+    private readonly modelProvidersService: ModelProvidersService
+  ) {}
+
+  async applyModelCatalog(catalog: ModelCatalog): Promise<void> {
+    await this.reconcileKeyModels(catalog);
+    await this.rewriteKeysForChangedCatalog(catalog);
+  }
+
+  async rewriteKeysForChangedCatalog(catalog: ModelCatalog): Promise<void> {
+    if (!this.bifrostService.isEnabled()) return;
+    const servedModels = servedModelsByFormat(catalog);
+    const [applied] = await db.select().from(appliedModelCatalog).limit(1);
+    if (applied && isDeepStrictEqual(applied.servedModels, servedModels)) return;
+    const failed = await this.modelProvidersService.rewriteEveryTenantsKeys();
+    if (failed.length > 0) {
+      this.logger.warn(
+        `The model catalog reached the keys of all but ${failed.length} organizations; retried at next boot`
+      );
+      return;
+    }
+    await db
+      .insert(appliedModelCatalog)
+      .values({ id: true, servedModels })
+      .onConflictDoUpdate({ target: appliedModelCatalog.id, set: { servedModels, appliedAt: new Date() } });
+    this.logger.log("Every organization's keys now follow the model catalog");
+  }
 
   async reconcileKeyModels(catalog: ModelCatalog): Promise<void> {
     if (!this.bifrostService.isEnabled()) return;
