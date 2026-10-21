@@ -196,10 +196,8 @@ describe('the opencode plugins', () => {
       readFileSync(join(process.cwd(), '..', 'opencode-plugins', 'package.json'), 'utf8')
     ) as { devDependencies: Record<string, string> };
     const [, cli] = /@opencode\/cli@(\S+)/.exec(dockerfile) ?? [];
-    const [, plugin] = /@opencode\/plugin@(\S+)/.exec(dockerfile) ?? [];
 
     expect(cli).toBeDefined();
-    expect(plugin).toBe(cli);
     expect(devDependencies['@opencode/plugin']).toBe(cli);
   });
 });

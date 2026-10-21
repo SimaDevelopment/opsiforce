@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "@opencode/plugin": "2.1.2",
-    "@types/node": "^22.0.0",
-    "typescript": "^6.0.0"
+    "@types/node": "22.19.15",
+    "typescript": "6.0.3"
   }
 }
