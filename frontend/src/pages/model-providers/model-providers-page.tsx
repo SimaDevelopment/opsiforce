@@ -118,7 +118,7 @@ function ModelProviderCards(props: Access) {
         </div>
       </Match>
       <Match when={!reachable()}>
-        <UnreachableGateway rows={rows()} builtIns={props.canSwitch ? [] : builtIns()} canSwitch={props.canSwitch} />
+        <UnreachableGateway />
       </Match>
       <Match when={true}>
         <div class="space-y-4">
@@ -238,21 +238,14 @@ function UnsavedChangesGuard(props: { dirty: () => boolean }) {
   );
 }
 
-function UnreachableGateway(props: {
-  rows: TenantModelProvider[];
-  builtIns: PlatformModelProvider[];
-  canSwitch: boolean;
-}) {
+function UnreachableGateway() {
   return (
-    <div class="space-y-4">
-      <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span>
-          The model gateway can’t be reached, so statuses are Unknown and changes can’t be saved until it is back.
-        </span>
-      </div>
-      <ReadOnlyProviders rows={props.rows} builtIns={[]} extraBuiltIns={props.builtIns} canSwitch={props.canSwitch} />
-    </div>
+    <output class="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border py-10 text-center">
+      <Spinner label="Connecting to the model gateway…" />
+      <span class="max-w-sm text-xs text-muted-foreground">
+        Model providers show here as soon as the gateway answers. This page checks again every 10 seconds.
+      </span>
+    </output>
   );
 }
 
