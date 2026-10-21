@@ -145,6 +145,24 @@ export class ProjectImportUploadService {
     }
   }
 
+  /** Assembles a claimed session into `destPath` for `use` and keeps the upload for the import that follows; a 400 consumes it. */
+  async peekUpload<T>(ref: UploadSessionRef, destPath: string, use: () => Promise<T>): Promise<T> {
+    const claimDir = await this.claimSession(ref);
+    try {
+      await this.assembleUpload({ claimDir, destPath });
+      const result = await use();
+      await this.releaseClaim(ref, claimDir);
+      return result;
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === 400) {
+        await this.deleteClaim(claimDir).catch(() => {});
+      } else {
+        await this.releaseClaim(ref, claimDir);
+      }
+      throw err;
+    }
+  }
+
   async releaseClaim(ref: UploadSessionRef, claimDir: string): Promise<void> {
     const stagingDir = this.stagingDir({ tenantId: ref.tenantId, uploadId: assertUploadId(ref.uploadId) });
     await rename(claimDir, stagingDir).catch(() => {});

@@ -113,6 +113,11 @@ export class PodOpencodeClient {
     return (listed.data ?? []).flatMap((skill) => (skill.id === undefined ? [] : [skill.id]));
   }
 
+  async agentIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
+    const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/agent', options);
+    return (listed.data ?? []).flatMap((agent) => (agent.id === undefined ? [] : [agent.id]));
+  }
+
   async activeSessions(upstream: string, timeoutMs: number): Promise<string[]> {
     const snapshot = await this.call<{ data?: Record<string, unknown> }>(upstream, '/api/session/active', {
       timeoutMs,

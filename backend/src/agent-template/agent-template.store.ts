@@ -121,13 +121,12 @@ export class AgentTemplateStore {
     }
   }
 
-  /** Lays the version an Environment links to into `targetDir`; no link lays nothing and answers null. */
-  async layInto(agentId: string, environmentId: string, targetDir: string): Promise<string | null> {
-    const laid = await this.placeVersion(agentId, environmentId, targetDir, moveEntries);
-    return laid?.hash ?? null;
+  /** Lays the version an Environment links to into `targetDir`, over what a running pod already made there; no link lays nothing and answers null. */
+  async layInto(agentId: string, environmentId: string, targetDir: string): Promise<TemplateOverlay | null> {
+    return this.placeVersion(agentId, environmentId, targetDir, overlayEntries);
   }
 
-  /** Like `layInto`, but overwrites and adds over what `targetDir` already holds, deleting only a path whose file/directory kind the Template changed. */
+  /** Overwrites and adds over what `targetDir` already holds, deleting only a path whose file/directory kind the Template changed. */
   async overlayInto(agentId: string, environmentId: string, targetDir: string): Promise<TemplateOverlay | null> {
     return this.placeVersion(agentId, environmentId, targetDir, overlayEntries);
   }
@@ -361,12 +360,6 @@ async function listVersionFiles(root: string, relative = ''): Promise<{ path: st
     }
   }
   return files.toSorted((a, b) => compareSkillPaths(a.path, b.path));
-}
-
-async function moveEntries(from: string, into: string): Promise<void> {
-  for (const name of await readdir(from)) {
-    await rename(join(from, name), join(into, name));
-  }
 }
 
 async function overlayEntries(from: string, into: string): Promise<void> {

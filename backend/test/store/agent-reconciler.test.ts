@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { agents, tenants, users } from '../../db/schema';
+import { agentPodSettings, agentSettings, agents, tenants, users } from '../../db/schema';
 import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service';
 import type { AgentRegistry, AgentRegistryEntry } from '../../src/agent/agent-config';
 
@@ -31,8 +31,18 @@ async function globalRow(name: string) {
   return row;
 }
 
+async function podClassOf(agentId: string): Promise<string | undefined> {
+  const [row] = await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, agentId));
+  return row?.podClass;
+}
+
+async function poolSizeOf(agentId: string): Promise<number | undefined> {
+  const [row] = await db.select().from(agentSettings).where(eq(agentSettings.agentId, agentId));
+  return row?.warmPoolSize;
+}
+
 describe('the agent reconciler', () => {
-  it('stamps the registry fields on the global row', async () => {
+  it('stamps the registry fields on the global row and its pool size on the agent settings', async () => {
     const slug = `agent-${randomUUID()}`;
     await reconciler.reconcile(
       registryOf(slug, {
@@ -52,9 +62,9 @@ describe('the agent reconciler', () => {
       version: '1.2.0',
       model: 'openai/gpt-5.6-sol',
       variant: 'high',
-      poolSize: 3,
       tenantId: null,
     });
+    expect(await poolSizeOf((await globalRow(slug)).id)).toBe(3);
   });
 
   it('keeps the row id across boots and mirrors an edited pool size back', async () => {
@@ -63,12 +73,12 @@ describe('the agent reconciler', () => {
     await reconciler.reconcile(registryOf(slug, entry));
     const first = await globalRow(slug);
 
-    await db.update(agents).set({ poolSize: 99 }).where(eq(agents.id, first.id));
+    await db.update(agentSettings).set({ warmPoolSize: 99 }).where(eq(agentSettings.agentId, first.id));
     await reconciler.reconcile(registryOf(slug, entry));
 
     const second = await globalRow(slug);
     expect(second.id).toBe(first.id);
-    expect(second.poolSize).toBe(2);
+    expect(await poolSizeOf(second.id)).toBe(2);
   });
 
   it('leaves a tenant row with the same slug untouched and adds a global row beside it', async () => {
@@ -80,15 +90,18 @@ describe('the agent reconciler', () => {
       tenantId,
       origin: 'custom',
       createdBy: author,
-      poolSize: 7,
       version: '9.9.9',
     });
+    await db.insert(agentSettings).values({ agentId: tenantRowId, warmPoolSize: 1 });
 
     await reconciler.reconcile(registryOf(slug, { name: 'Builder', version: '1.0.0', poolSize: 2 }));
 
     const [tenantRow] = await db.select().from(agents).where(eq(agents.id, tenantRowId));
-    expect(tenantRow).toMatchObject({ poolSize: 7, version: '9.9.9', origin: 'custom' });
-    expect(await globalRow(slug)).toMatchObject({ poolSize: 2, version: '1.0.0' });
+    expect(tenantRow).toMatchObject({ version: '9.9.9', origin: 'custom' });
+    expect(await poolSizeOf(tenantRowId)).toBe(1);
+    const global = await globalRow(slug);
+    expect(global).toMatchObject({ version: '1.0.0' });
+    expect(await poolSizeOf(global.id)).toBe(2);
   });
 
   it('leaves a slug absent from the registry in place', async () => {
@@ -98,5 +111,20 @@ describe('the agent reconciler', () => {
     await reconciler.reconcile(registryOf(`agent-${randomUUID()}`, { name: 'Fresh' }));
 
     expect(await globalRow(retired)).toBeDefined();
+  });
+
+  it('mirrors the registry pod class onto the agent, back to Small when it is dropped or unknown', async () => {
+    const slug = `agent-${randomUUID()}`;
+
+    await reconciler.reconcile(registryOf(slug, { name: 'Builder', podClass: 'medium' }));
+    const { id } = await globalRow(slug);
+    expect(await podClassOf(id)).toBe('medium');
+
+    await reconciler.reconcile(registryOf(slug, { name: 'Builder', podClass: 'huge' }));
+    expect(await podClassOf(id)).toBeUndefined();
+
+    await reconciler.reconcile(registryOf(slug, { name: 'Builder', podClass: 'large' }));
+    await reconciler.reconcile(registryOf(slug, { name: 'Builder' }));
+    expect(await podClassOf(id)).toBeUndefined();
   });
 });

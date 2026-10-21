@@ -268,7 +268,9 @@ describe("a Custom Agent's service settings", () => {
     }
 
     function importAs(caller: AgentCaller, archive: string, canConfigureProjects = true) {
-      return app.get(AgentImportService).import(caller, archive, null, { canConfigureProjects });
+      return app
+        .get(AgentImportService)
+        .import(caller, archive, { displayName: null, projectSettings: {} }, { canConfigureProjects });
     }
 
     it("drops a service that isn't Available in the importing Organization, saying so", async () => {

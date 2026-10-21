@@ -1,7 +1,7 @@
 import { For, type JSX } from 'solid-js';
 import type { ProjectAuthMode } from '~/api/client';
 import { config } from '~/config/config';
-import { cn } from '~/lib/cn';
+import { OptionCard, OptionCardGroup } from '~/components/ui/option-card';
 import { Globe, Lock, ShieldCheck } from '~/components/icons';
 
 interface ModeOption {
@@ -46,32 +46,22 @@ export interface AuthModeSelectorProps {
 export function AuthModeSelector(props: AuthModeSelectorProps) {
   const opts = options();
   return (
-    <div role="radiogroup" class={cn('grid gap-2', opts.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+    <OptionCardGroup label="Access" class={opts.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}>
       <For each={opts}>
-        {(opt) => {
-          const selected = () => props.value === opt.value;
-          return (
-            <button
-              type="button"
-              role="radio"
-              aria-checked={selected()}
-              disabled={props.disabled}
-              onClick={() => props.onChange(opt.value)}
-              class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              classList={{
-                'border-primary bg-primary/5': selected(),
-                'border-border hover:bg-accent/40': !selected(),
-              }}
-            >
-              <div class="flex items-center gap-1.5">
-                <opt.icon class="w-3.5 h-3.5" />
-                <span class="text-xs font-medium">{opt.title}</span>
-              </div>
-              <p class="text-xs text-muted-foreground leading-snug">{opt.description}</p>
-            </button>
-          );
-        }}
+        {(opt) => (
+          <OptionCard
+            selected={props.value === opt.value}
+            disabled={props.disabled}
+            onSelect={() => props.onChange(opt.value)}
+          >
+            <div class="flex items-center gap-1.5">
+              <opt.icon class="w-3.5 h-3.5" />
+              <span class="text-xs font-medium">{opt.title}</span>
+            </div>
+            <p class="text-xs text-muted-foreground leading-snug">{opt.description}</p>
+          </OptionCard>
+        )}
       </For>
-    </div>
+    </OptionCardGroup>
   );
 }

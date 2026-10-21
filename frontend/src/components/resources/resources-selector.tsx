@@ -1,5 +1,7 @@
 import { For, Show } from 'solid-js';
-import type { PodClass, PodClassCatalog, PodResources } from '~/api/client';
+import type { PodClassCatalog, PodResources } from '~/api/client';
+import { OptionCard, OptionCardGroup } from '~/components/ui/option-card';
+import type { ResourcesDraft } from './resources-draft';
 import { SlidersHorizontal } from '~/components/icons';
 import {
   NumberField,
@@ -18,15 +20,7 @@ const PRESET_META: Record<string, { title: string; description: string }> = {
 
 export interface ResourcesSelectorProps {
   catalog: PodClassCatalog | undefined;
-  selectedClass: PodClass;
-  cpuCores: string;
-  memRequestGib: string;
-  memLimitGib: string;
-  limitError: boolean;
-  onSelectClass: (podClass: PodClass) => void;
-  onCpuChange: (value: string) => void;
-  onMemRequestChange: (value: string) => void;
-  onMemLimitChange: (value: string) => void;
+  draft: ResourcesDraft;
   disabled?: boolean;
 }
 
@@ -50,8 +44,8 @@ export function ResourcesSelector(props: ResourcesSelectorProps) {
       step: 0.25,
       minValue: millicoresToCores(bounds.min.cpuMillicores),
       maxValue: millicoresToCores(bounds.max.cpuMillicores),
-      value: props.cpuCores,
-      onChange: props.onCpuChange,
+      value: props.draft.cpuCores(),
+      onChange: props.draft.setCpuCores,
     },
     {
       label: 'Memory request',
@@ -60,8 +54,8 @@ export function ResourcesSelector(props: ResourcesSelectorProps) {
       step: 0.5,
       minValue: mibToGib(bounds.min.memoryRequestMib),
       maxValue: mibToGib(bounds.max.memoryRequestMib),
-      value: props.memRequestGib,
-      onChange: props.onMemRequestChange,
+      value: props.draft.memRequestGib(),
+      onChange: props.draft.setMemRequestGib,
     },
     {
       label: 'Memory limit',
@@ -70,30 +64,22 @@ export function ResourcesSelector(props: ResourcesSelectorProps) {
       step: 0.5,
       minValue: mibToGib(bounds.min.memoryLimitMib),
       maxValue: mibToGib(bounds.max.memoryLimitMib),
-      value: props.memLimitGib,
-      onChange: props.onMemLimitChange,
+      value: props.draft.memLimitGib(),
+      onChange: props.draft.setMemLimitGib,
     },
   ];
 
   return (
     <div class="space-y-3">
-      <div role="radiogroup" class="grid grid-cols-2 gap-2">
+      <OptionCardGroup label="Resources" class="grid-cols-2">
         <For each={props.catalog?.presets ?? []}>
           {(preset) => {
-            const selected = () => props.selectedClass === preset.podClass;
             const meta = PRESET_META[preset.podClass];
             return (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected()}
+              <OptionCard
+                selected={props.draft.podClass() === preset.podClass}
                 disabled={props.disabled}
-                onClick={() => props.onSelectClass(preset.podClass)}
-                class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                classList={{
-                  'border-primary bg-primary/5': selected(),
-                  'border-border hover:bg-accent/40': !selected(),
-                }}
+                onSelect={() => props.draft.selectClass(preset.podClass)}
               >
                 <span class="text-xs font-medium">{meta?.title ?? preset.podClass}</span>
                 <span class="text-xs text-muted-foreground tabular-nums">
@@ -103,31 +89,24 @@ export function ResourcesSelector(props: ResourcesSelectorProps) {
                 <Show when={meta?.description}>
                   <p class="text-xs text-muted-foreground/70 leading-snug">{meta?.description}</p>
                 </Show>
-              </button>
+              </OptionCard>
             );
           }}
         </For>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={props.selectedClass === 'custom'}
+        <OptionCard
+          selected={props.draft.podClass() === 'custom'}
           disabled={props.disabled}
-          onClick={() => props.onSelectClass('custom')}
-          class="flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-          classList={{
-            'border-primary bg-primary/5': props.selectedClass === 'custom',
-            'border-border hover:bg-accent/40': props.selectedClass !== 'custom',
-          }}
+          onSelect={() => props.draft.selectClass('custom')}
         >
           <div class="flex items-center gap-1.5">
             <SlidersHorizontal class="w-3.5 h-3.5" />
             <span class="text-xs font-medium">Custom</span>
           </div>
           <p class="text-xs text-muted-foreground/70 leading-snug">Pick exact CPU and memory.</p>
-        </button>
-      </div>
+        </OptionCard>
+      </OptionCardGroup>
 
-      <Show when={props.selectedClass === 'custom' && props.catalog}>
+      <Show when={props.draft.podClass() === 'custom' && props.catalog}>
         {(catalog) => (
           <div class="rounded-lg border border-border p-3 space-y-2">
             <div class="grid grid-cols-3 gap-2">
@@ -158,7 +137,7 @@ export function ResourcesSelector(props: ResourcesSelectorProps) {
                 )}
               </For>
             </div>
-            <Show when={props.limitError}>
+            <Show when={props.draft.limitError()}>
               <p class="text-xs text-destructive">Memory limit must be greater than or equal to memory request.</p>
             </Show>
           </div>

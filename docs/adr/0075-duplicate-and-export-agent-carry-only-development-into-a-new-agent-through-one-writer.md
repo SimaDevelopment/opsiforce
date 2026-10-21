@@ -15,7 +15,8 @@ An Organization copies an Agent to re-brand it or build on it, and moves a Custo
 | Development Template | written again under `agent-templates/<newId>/`, with the same content hash |
 | Builder chat, Test Project | never; the first open claims a fresh chat, and the first test creates the Test Project |
 | Default environment (Agent) | Production, with no Production Profile |
-| Visibility, Disable state, `pool_size`, `created_by`, other Environments | private, enabled, 0, the person copying, none |
+| Resources and Ready Projects for new Projects | the source's unless the person copying chooses others ([ADR-0093](0093-an-agent-sets-the-resources-and-ready-projects-of-the-projects-created-from-it.md)) |
+| Visibility, Disable state, `created_by`, other Environments | private, enabled, the person copying, none |
 
 - The new Agent is the same as one made with New agent. It reaches the Agent picker after its first Publish (Agent), and nothing here publishes.
 - Its first Builder chat opens with the Template already in `template/` ([ADR-0073](0073-a-custom-agents-template-is-a-folder-per-environment-copied-into-every-new-project.md)).

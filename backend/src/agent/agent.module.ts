@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { ModelProvidersModule } from '../model-provider/model-provider.module';
+import { ProjectPoolModule } from '../pool/project-pool.module';
 import { ProjectModule } from '../project/project.module';
 import { AgentBundleReader } from './agent-bundle.reader';
 import { AgentBundleWriter } from './agent-bundle.writer';
@@ -14,7 +15,7 @@ import { AgentService } from './agent.service';
 
 @Global()
 @Module({
-  imports: [ProjectModule, ModelProvidersModule],
+  imports: [ProjectModule, ProjectPoolModule, ModelProvidersModule],
   controllers: [AgentController],
   providers: [
     AgentRepository,

@@ -1,10 +1,22 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { Perms } from '../permission/permission.constants';
 import type { AgentDetail } from './agent.types';
+import type { AgentProjectSettings, AgentProjectSettingsChoice } from './agent-copy-settings';
 
-export interface ImportAgentDto {
+export interface ImportAgentDto extends AgentProjectSettingsChoice {
   uploadId?: string;
   displayName?: string | null;
+}
+
+export interface InspectAgentImportDto {
+  uploadId?: string;
+}
+
+export interface AgentImportInspection {
+  displayName: string | null;
+  slug: string;
+  projectSettings: AgentProjectSettings;
+  maxWarmPoolSize: number;
 }
 
 export type AgentImportNoteKind = 'model' | 'skill' | 'template';

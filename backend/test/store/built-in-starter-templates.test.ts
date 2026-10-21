@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import 'reflect-metadata';
@@ -41,7 +41,25 @@ describe.each(SHIPPED_STARTERS)('the %s package template through the Template wr
     expect(written.hash).toBe(await store.hashSource(sourceDir));
 
     const laid = join(storage, 'laid', agentId);
-    expect(await store.layInto(agentId, developmentId, laid)).toBe(written.hash);
+    expect((await store.layInto(agentId, developmentId, laid))?.hash).toBe(written.hash);
     expect(await store.hashSource(laid)).toBe(written.hash);
+  });
+});
+
+describe('laying a Template into a running pod’s workspace', () => {
+  it('merges into the directories the pod already made, keeping its data', async () => {
+    const sourceDir = join(agentConfigRoot(), 'agents', 'app-builder', 'template');
+    const agentId = randomUUID();
+    const developmentId = randomUUID();
+    await store.writeUnlocked(agentId, developmentId, sourceDir);
+    const workspace = join(storage, 'running', agentId);
+    await mkdir(join(workspace, 'app', 'data'), { recursive: true });
+    await writeFile(join(workspace, 'app', 'data', 'app.db'), 'kept');
+
+    const laid = await store.layInto(agentId, developmentId, workspace);
+
+    expect(laid?.paths.some((path) => path.startsWith('app/'))).toBe(true);
+    for (const path of laid?.paths ?? []) expect(existsSync(join(workspace, path)), path).toBe(true);
+    expect(await readFile(join(workspace, 'app', 'data', 'app.db'), 'utf8')).toBe('kept');
   });
 });

@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as k8s from '@kubernetes/client-node';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { ConfigService } from '@nestjs/config';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db';
 import {
+  agentSettings,
+  agents,
   environments,
   projectAgentUpdates,
   projectEnvironments,
@@ -16,6 +19,7 @@ import { PodService } from '../pod/pod.service';
 import { TimeoutService, type EnvironmentKeepAlive } from '../timeout/timeout.service';
 import type { PodClass } from '../pod/pod-classes';
 import type { ProjectStatus } from '../project/project.types';
+import { podSettingsColumns } from '../pod/pod-settings-columns';
 import type {
   PodAgentUpdateView,
   PodPhase,
@@ -24,7 +28,12 @@ import type {
   PodStatusView,
   PodsView,
   PodProjectGroupView,
+  WarmPoolAgentView,
+  WarmPoolPause,
 } from './pods-overview.types';
+import { agentDisabledIn, customAgentHasDefaultProfile } from '../agent/agent-visibility';
+import { MAX_WARM_POOL_SIZE, readAgentPodSettingsFor } from '../agent/agent-pod-settings';
+import { resolvePodSettings } from '../pod/pod-classes';
 
 const AGENT_POD_SELECTOR = 'app=opsiforce-agent';
 const ENVIRONMENT_ID_LABEL = 'opsiforce.io/environment-id';
@@ -56,11 +65,16 @@ interface TenantEnvRow {
 
 @Injectable()
 export class PodsOverviewService {
+  private readonly poolSizeOverride: number | null;
+
   constructor(
     private readonly podService: PodService,
     private readonly timeoutService: TimeoutService,
-    private readonly skillDeliveries: SkillDeliveryRepository
-  ) {}
+    private readonly skillDeliveries: SkillDeliveryRepository,
+    configService: ConfigService
+  ) {
+    this.poolSizeOverride = configService.get<number | null>('poolSizeOverride', null);
+  }
 
   async listForTenant(tenantId: string): Promise<PodsView> {
     const [pods, envRows] = await Promise.all([
@@ -120,7 +134,73 @@ export class PodsOverviewService {
       ghostCount: group.ghostCount,
     }));
 
-    return { projects: projectGroups };
+    return { projects: projectGroups, warmPool: await this.loadWarmPool(tenantId, podByEnvId, now) };
+  }
+
+  private async loadWarmPool(
+    tenantId: string,
+    podByEnvId: Map<string, k8s.V1Pod>,
+    now: number
+  ): Promise<WarmPoolAgentView[]> {
+    const agentRows = await db
+      .select({
+        id: agents.id,
+        name: agents.name,
+        displayName: agents.displayName,
+        warmPoolSize: sql<number>`coalesce(${agentSettings.warmPoolSize}, 0)`,
+        disabled: agentDisabledIn(tenantId),
+        published: sql<boolean>`${customAgentHasDefaultProfile()}`,
+      })
+      .from(agents)
+      .leftJoin(agentSettings, eq(agentSettings.agentId, agents.id))
+      .where(and(eq(agents.tenantId, tenantId), eq(agents.origin, 'custom')))
+      .orderBy(asc(agents.name));
+    if (agentRows.length === 0) return [];
+
+    const slotRows = await db
+      .select({ id: projects.id, agentId: projects.agentId, status: projectEnvironments.status })
+      .from(projects)
+      .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
+      .where(
+        and(
+          inArray(
+            projects.agentId,
+            agentRows.map((row) => row.id)
+          ),
+          inArray(projectEnvironments.status, [...POOL_STATUSES])
+        )
+      )
+      .orderBy(asc(projects.createdAt));
+    const podSettingsByAgent = await readAgentPodSettingsFor(agentRows.map((row) => row.id));
+
+    return agentRows
+      .map((agent) => {
+        const paused: WarmPoolPause | null = agent.disabled ? 'disabled' : agent.published ? null : 'not_published';
+        const capped = Math.min(agent.warmPoolSize, MAX_WARM_POOL_SIZE, this.poolSizeOverride ?? Infinity);
+        const slots = slotRows
+          .filter((slot) => slot.agentId === agent.id)
+          .map((slot) => {
+            const pod = podByEnvId.get(slot.id);
+            return {
+              projectId: slot.id,
+              podName: pod?.metadata?.name ?? this.podService.assignedPodName(slot.id),
+              status: pod ? this.deriveStatus(pod) : null,
+              ageMs: pod ? this.podService.podAgeMs(pod, now) : null,
+              claiming: slot.status === 'claiming',
+            };
+          });
+        return {
+          agentId: agent.id,
+          agentName: agent.name,
+          displayName: agent.displayName,
+          warmPoolSize: agent.warmPoolSize,
+          effectiveSize: paused ? 0 : capped,
+          paused,
+          resources: podSettingsByAgent.get(agent.id) ?? resolvePodSettings(),
+          slots,
+        };
+      })
+      .filter((agent) => agent.warmPoolSize > 0 || agent.slots.length > 0);
   }
 
   private async loadOutstandingAgentUpdates(envIds: string[]): Promise<Map<string, PodAgentUpdateView>> {
@@ -230,10 +310,7 @@ export class PodsOverviewService {
         projectTitle: projects.title,
         timeoutIdle: projectSettings.timeoutIdle,
         appTimeoutIdle: projectSettings.appTimeoutIdle,
-        podClass: projectPodSettings.podClass,
-        cpuMillicores: projectPodSettings.cpuMillicores,
-        memoryRequestMib: projectPodSettings.memoryRequestMib,
-        memoryLimitMib: projectPodSettings.memoryLimitMib,
+        ...podSettingsColumns(projectPodSettings),
       })
       .from(projectEnvironments)
       .innerJoin(projects, eq(projects.id, projectEnvironments.projectId))

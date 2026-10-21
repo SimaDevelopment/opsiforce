@@ -2,7 +2,7 @@ import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { api, ApiError } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
 
-export type LimitKey = 'projects';
+export type LimitKey = 'projects' | 'warm_pool';
 
 export interface LimitUsage {
   key: LimitKey;

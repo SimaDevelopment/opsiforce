@@ -1,12 +1,16 @@
+import { Global, Module } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { modelProviders, projectEnvironments, projects } from '../../db/schema';
+import { modelProviders, projectEnvironments, projectPodSettings, projects } from '../../db/schema';
+import { writeAgentPodSettings } from '../../src/agent/agent-pod-settings';
+import { resolvePodSettings } from '../../src/pod/pod-classes';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
+import { PROJECT_LIFECYCLE, type ProjectLifecycle } from '../../src/project/project-lifecycle';
 import { ProjectStatus } from '../../src/project/project.types';
 import type { FakePodService } from '../support/infra-fakes';
 import { waitFor } from '../support/wait-for';
@@ -174,6 +178,26 @@ async function suspendEarlierPoolRows(agentId: string): Promise<void> {
     );
 }
 
+const lifecycle: ProjectLifecycle = {
+  created: vi.fn(async () => {}),
+  delivered: vi.fn(async () => {}),
+  copied: vi.fn(async () => {}),
+  updated: vi.fn(async () => {}),
+  resetting: vi.fn(async () => {}),
+  disabled: vi.fn(async () => {}),
+  enabled: vi.fn(async () => {}),
+  environmentRemoving: vi.fn(async () => {}),
+  gatewayKeysRevoked: vi.fn(async () => {}),
+  removing: vi.fn(async () => {}),
+  neverSleeps: vi.fn(async () => false),
+};
+
+const RUNTIME_PROXY_URL = 'http://runtime-proxy.test';
+
+@Global()
+@Module({ providers: [{ provide: PROJECT_LIFECYCLE, useValue: lifecycle }], exports: [PROJECT_LIFECYCLE] })
+class RecordedLifecycleModule {}
+
 describe('a pooled Project takes the Organization’s Model providers when it is claimed', () => {
   let bifrost: FakeBifrost;
   let harness: PublicApiTestApp;
@@ -187,8 +211,8 @@ describe('a pooled Project takes the Organization’s Model providers when it is
     agentId = await createAgent();
     await suspendEarlierPoolRows(agentId);
     harness = await createPublicApiTestApp(
-      { ...bifrost.env, POOL_SIZE_OVERRIDE: '1' },
-      [],
+      { ...bifrost.env, POOL_SIZE_OVERRIDE: '1', OPSIFORCE_RUNTIME_PROXY_URL: RUNTIME_PROXY_URL },
+      [RecordedLifecycleModule],
       [BifrostService, ProjectPoolService]
     );
     app = harness.app;
@@ -264,6 +288,59 @@ describe('a pooled Project takes the Organization’s Model providers when it is
       { provider: 'openai', weight: 0, ...CATALOG_WIDE },
     ]);
     expect(bifrost.backendKeyOf(slotId).provider_configs).toEqual([{ provider: 'openai', weight: 1, ...CATALOG_WIDE }]);
+  });
+
+  it('starts its pod with the runtime proxy endpoint a directly created pod gets', async () => {
+    const slotId = await provisionPoolSlot();
+
+    const created = pods.callsTo('createAssignedPod').find((call) => call.args.environmentId === slotId);
+    expect(created?.args.runtimeProxyUrl).toBe(RUNTIME_PROXY_URL);
+    await createProject(await addMember(app, await createTenant(app)));
+  });
+
+  it('records the Agent’s current Resources selection on the claimed Project, not the slot’s', async () => {
+    const slotId = await provisionPoolSlot();
+    await writeAgentPodSettings(db, agentId, {
+      podClass: 'custom',
+      cpuMillicores: 100,
+      memoryRequestMib: 2048,
+      memoryLimitMib: 4096,
+    });
+    try {
+      const projectId = await createProject(await addMember(app, await createTenant(app)));
+
+      expect(projectId).toBe(slotId);
+      const [row] = await db.select().from(projectPodSettings).where(eq(projectPodSettings.projectId, slotId));
+      expect(row.podClass).toBe('custom');
+    } finally {
+      await writeAgentPodSettings(db, agentId, resolvePodSettings());
+    }
+  });
+
+  it('starts the configurations the claimed Project inherited, as a direct create does', async () => {
+    const slotId = await provisionPoolSlot();
+    const projectId = await createProject(await addMember(app, await createTenant(app)));
+
+    expect(projectId).toBe(slotId);
+    expect(lifecycle.delivered).toHaveBeenCalledWith(slotId);
+  });
+
+  it('confirms delivery and starts the inherited configurations when it recovers a claim left mid-way', async () => {
+    const slotId = await provisionPoolSlot();
+    const tenant = await createTenant(app);
+    await db.update(projects).set({ tenantId: tenant.tenantId }).where(eq(projects.id, slotId));
+    await db
+      .update(projectEnvironments)
+      .set({ status: ProjectStatus.Claiming, updatedAt: new Date(Date.now() - 60 * 60 * 1000) })
+      .where(eq(projectEnvironments.id, slotId));
+    await pool.runIntegrityJob('interval');
+
+    expect(lifecycle.delivered).toHaveBeenCalledWith(slotId);
+    const [row] = await db
+      .select({ status: projectEnvironments.status })
+      .from(projectEnvironments)
+      .where(eq(projectEnvironments.id, slotId));
+    expect(row.status).toBe(ProjectStatus.Active);
   });
 
   it('creates the Project the slow way when the slot’s chat key keeps refusing the rows', async () => {

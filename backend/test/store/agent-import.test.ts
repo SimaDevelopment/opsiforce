@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { agentProfiles, agents, externalServices, skillVersions, skills } from '../../db/schema';
+import { agentProfiles, agents, externalServices, skillVersions, skills, tenantLimits } from '../../db/schema';
 import { slugifyAgentName } from '../../src/agent/agent-bundle.writer';
 import type { AgentExportManifest } from '../../src/agent/agent-export';
 import type { AgentExportService } from '../../src/agent/agent-export.service';
@@ -188,7 +188,12 @@ async function archiveFile(archive: Buffer): Promise<string> {
 }
 
 async function runImport(archive: Buffer, displayName: string | null = null, caller: AgentCaller = target) {
-  return importer.import(caller, await archiveFile(archive), displayName, { canConfigureProjects: true });
+  return importer.import(
+    caller,
+    await archiveFile(archive),
+    { displayName, projectSettings: {} },
+    { canConfigureProjects: true }
+  );
 }
 
 function byJoinedText(a: (string | null)[], b: (string | null)[]): number {
@@ -292,7 +297,8 @@ describe('importing an Agent export into another Organization', () => {
       description: 'Notes.',
     });
     const [row] = await db.select().from(agents).where(eq(agents.id, agent.id));
-    expect(row).toMatchObject({ tenantId: target.tenantId, createdBy: target.userId, poolSize: 0 });
+    expect(row).toMatchObject({ tenantId: target.tenantId, createdBy: target.userId });
+    expect(agent).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { podClass: 'small' } });
 
     const [profile] = await db
       .select()
@@ -423,6 +429,67 @@ describe('importing an Agent export into another Organization', () => {
     await expect(runImport(archive, uniqueName('Other stamp'))).resolves.toMatchObject({
       agent: { origin: 'custom' },
     });
+  });
+});
+
+describe('the Resources and Ready Projects an import starts with', () => {
+  async function sizedSource(): Promise<string> {
+    const agent = await harness.agents.create(author, { displayName: uniqueName('Analyst') });
+    await harness.agents.updatePodClass(author, agent.id, { podClass: 'medium' });
+    await harness.agents.updateSettings(author, agent.id, { warmPoolSize: 2 });
+    return agent.id;
+  }
+
+  function importAs(
+    caller: AgentCaller,
+    archive: string,
+    projectSettings: { resources?: unknown; warmPoolSize?: unknown }
+  ) {
+    return importer.import(caller, archive, { displayName: null, projectSettings }, { canConfigureProjects: true });
+  }
+
+  it('carries them in the export, reports them on inspection and keeps them by default', async () => {
+    const archive = await archiveFile(await exportOf(await sizedSource()));
+
+    expect((await importer.inspect(archive)).projectSettings).toEqual({
+      resources: { podClass: 'medium', cpuMillicores: 1000, memoryRequestMib: 4096, memoryLimitMib: 8192 },
+      warmPoolSize: 2,
+    });
+    const { agent } = await importAs(await newTenant(), archive, {});
+
+    expect(agent).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+  });
+
+  it('applies what the importer chose instead', async () => {
+    const archive = await archiveFile(await exportOf(await sizedSource()));
+
+    const { agent } = await importAs(await newTenant(), archive, { resources: { podClass: 'large' }, warmPoolSize: 0 });
+
+    expect(agent).toMatchObject({ podSettings: { podClass: 'large' }, settings: { warmPoolSize: 0 } });
+  });
+
+  it('starts an export that predates them at Small with no Ready Projects', async () => {
+    const archive = await archiveFile(
+      await rewrite(await exportOf(await sizedSource()), (written) => {
+        delete written.projectSettings;
+      })
+    );
+
+    const { agent } = await importAs(await newTenant(), archive, {});
+
+    expect(agent).toMatchObject({ podSettings: { podClass: 'small' }, settings: { warmPoolSize: 0 } });
+  });
+
+  it('refuses Ready Projects beyond the importing Organization’s limit and writes nothing', async () => {
+    const importing = await newTenant();
+    await db.insert(tenantLimits).values({ tenantId: importing.tenantId, limitKey: 'warm_pool', value: 3 });
+    const kept = await harness.agents.create(importing, { displayName: uniqueName('Kept') });
+    await harness.agents.updateSettings(importing, kept.id, { warmPoolSize: 2 });
+    const archive = await archiveFile(await exportOf(await sizedSource()));
+
+    await expect(importAs(importing, archive, {})).rejects.toMatchObject({ response: { code: 'limit_reached' } });
+    const rows = await db.select({ id: agents.id }).from(agents).where(eq(agents.tenantId, importing.tenantId));
+    expect(rows.map((row) => row.id)).toEqual([kept.id]);
   });
 });
 

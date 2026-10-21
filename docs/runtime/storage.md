@@ -15,7 +15,7 @@ adrs: [0028]
 - [Storage](../../GLOSSARY.md) measures one leaf, the [ProjectEnvironment](../../GLOSSARY.md) directory, and rolls it up into [Project](../../GLOSSARY.md) and [Organization](../../GLOSSARY.md) totals.
 - Each Organization also carries [Pending deletion](../../GLOSSARY.md): its tombstoned directories still inside the retention window ([Persistence](persistence.md)), counted as one bytes-plus-count aggregate inside the Organization's total.
 - Each Organization also carries its Agents' [Templates](../../GLOSSARY.md): every `agent-templates/<agentId>/` folder is measured whole and attributed through `agents.tenant_id`, so a version several Environments link to is counted once, and the bytes-plus-Agent-count aggregate sits inside the Organization's total ([Template](../agent-system/template.md)).
-- [Unattributed storage](../../GLOSSARY.md) buckets sit at the volume root: pool slots, tenant-less tombstones, orphaned directories, Template folders with no Organization (an Agent row already gone, awaiting the sweep), and the export and import staging areas.
+- [Unattributed storage](../../GLOSSARY.md) buckets sit at the volume root: [Ready Projects](../../GLOSSARY.md) not yet claimed, tenant-less tombstones, orphaned directories, Template folders with no Organization (an Agent row already gone, awaiting the sweep), and the export and import staging areas.
 - The snapshot reconciles: unaccounted is the claim's used bytes minus everything attributed, signed on the wire because a negative residual means the filesystem's recursive statistics lag recent writes.
 
 ### Measurement
@@ -48,4 +48,4 @@ adrs: [0028]
 
 - [Persistence](persistence.md) — the volume being measured and the tombstone cycle behind Pending deletion.
 - [Pods](pods.md) — the sibling Admin view, scoped to one Organization.
-- [Pending project pools](pending-project-pools.md) — the pool bucket.
+- [Pending project pools](pending-project-pools.md) — the Ready Projects bucket.

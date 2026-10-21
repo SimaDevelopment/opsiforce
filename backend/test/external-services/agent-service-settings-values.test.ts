@@ -231,7 +231,7 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
 
       const imported = await app
         .get(AgentImportService)
-        .import(importer.caller, archive, null, { canConfigureProjects: true });
+        .import(importer.caller, archive, { displayName: null, projectSettings: {} }, { canConfigureProjects: true });
 
       expect(settingsOf(imported.agent, importer.skillId)).toEqual({ pullRequests: true });
       expect(imported.notes).toContainEqual(
@@ -246,7 +246,7 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
 
       const imported = await app
         .get(AgentImportService)
-        .import(importer.caller, archive, null, { canConfigureProjects: false });
+        .import(importer.caller, archive, { displayName: null, projectSettings: {} }, { canConfigureProjects: false });
 
       expect(settingsOf(imported.agent, importer.skillId)).toBeNull();
       expect(imported.notes).toContainEqual(settingsLeftOut);

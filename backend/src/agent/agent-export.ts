@@ -1,6 +1,7 @@
 import type { AgentServiceSettings } from '../../db/schema';
 import type { TemplatePathNote } from '../agent-template/agent-template.types';
 import type { ExportManifestStamp } from '../export/project-export.types';
+import type { AgentProjectSettings } from './agent-copy-settings';
 
 export const AGENT_EXPORT_KIND = 'agent';
 export const AGENT_EXPORT_FORMAT_VERSION = 1;
@@ -36,6 +37,7 @@ export interface AgentExportManifest {
   profile: AgentExportManifestProfile;
   skills: AgentExportManifestSkill[];
   template: { hash: string } | null;
+  projectSettings?: AgentProjectSettings;
 }
 
 export interface AgentExportFile {

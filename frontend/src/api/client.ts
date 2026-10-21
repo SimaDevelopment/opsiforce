@@ -127,7 +127,9 @@ export interface PodClassCatalog {
   customBounds: { min: PodResources; max: PodResources };
 }
 
-export interface UpdateProjectPodClassDto {
+export type PodSettings = PodResources & { podClass: PodClass };
+
+export interface UpdatePodClassDto {
   podClass: PodClass;
   cpuMillicores?: number;
   memoryRequestMib?: number;
@@ -171,8 +173,7 @@ export interface Project {
 
 export const podClassApi = {
   catalog: () => api.get<PodClassCatalog>('/pod-classes'),
-  update: (projectId: string, dto: UpdateProjectPodClassDto) =>
-    api.put<Project>(`/projects/${projectId}/pod-class`, dto),
+  update: (projectId: string, dto: UpdatePodClassDto) => api.put<Project>(`/projects/${projectId}/pod-class`, dto),
 };
 
 export interface ProjectState {

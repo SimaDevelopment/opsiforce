@@ -14,6 +14,7 @@ import {
 } from '../../db/schema';
 import { TEST_PROJECT_KIND } from '../project/project.types';
 import type { AgentProfileRow } from '../store/agent-profile.repository';
+import { MAX_WARM_POOL_SIZE } from './agent-pod-settings';
 import { agentColumnsIn, tenantStartableAgentsWhere } from './agent-visibility';
 
 const STARTABLE_AGENT_LOCK = 'startable-agent:';
@@ -64,7 +65,11 @@ export class AgentRepository {
 
   async settings(agentId: string): Promise<AgentSettingsResponse> {
     const [row] = await db.select().from(agentSettings).where(eq(agentSettings.agentId, agentId)).limit(1);
-    return { defaultEnvironmentId: row?.defaultEnvironmentId ?? null };
+    return {
+      defaultEnvironmentId: row?.defaultEnvironmentId ?? null,
+      warmPoolSize: row?.warmPoolSize ?? 0,
+      maxWarmPoolSize: MAX_WARM_POOL_SIZE,
+    };
   }
 
   async projectCount(agentId: string, tenantId: string): Promise<number> {

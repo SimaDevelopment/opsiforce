@@ -11,6 +11,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
 import { KeepAliveCell } from '~/components/pods/keep-alive-cell';
 import { PodStatusCell } from '~/components/pods/pod-status-cell';
+import { WarmPoolTable } from '~/components/pods/warm-pool-table';
 import { AlertTriangle, Boxes, ChevronRight, ExternalLink, FolderKanban, RefreshCw } from '~/components/icons';
 
 const COLUMN_COUNT = 7;
@@ -25,6 +26,7 @@ export function PodsPage() {
   const dataUpdatedAt = () => pods.dataUpdatedAt;
 
   const groups = createMemo(() => pods.data?.projects ?? []);
+  const warmPool = createMemo(() => pods.data?.warmPool ?? []);
   const totalRunning = createMemo(() => groups().reduce((sum, group) => sum + group.environments.length, 0));
 
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
@@ -89,7 +91,7 @@ export function PodsPage() {
         <ErrorState onRetry={() => pods.refetch()} />
       </Show>
 
-      <Show when={!pods.isPending && !pods.isError && groups().length === 0}>
+      <Show when={!pods.isPending && !pods.isError && groups().length === 0 && warmPool().length === 0}>
         <EmptyState />
       </Show>
 
@@ -178,6 +180,10 @@ export function PodsPage() {
             </TableBody>
           </Table>
         </div>
+      </Show>
+
+      <Show when={!pods.isPending && !pods.isError && warmPool().length > 0}>
+        <WarmPoolTable agents={warmPool()} />
       </Show>
     </div>
   );
