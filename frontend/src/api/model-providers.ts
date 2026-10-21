@@ -192,11 +192,18 @@ const SCOPE_PATH: Record<ModelProviderScope, string> = {
   platform: '/platform-model-providers',
 };
 
+const UNREACHABLE_GATEWAY_RECHECK_MS = 10_000;
+
+function recheckWhileUnreachable(query: { state: { data?: { bifrostReachable: boolean } } }): number | false {
+  return query.state.data?.bifrostReachable === false ? UNREACHABLE_GATEWAY_RECHECK_MS : false;
+}
+
 export function useTenantModelProviders(enabled: () => boolean = () => true) {
   return createAppQuery(() => ({
     queryKey: tenantModelProvidersKey,
     queryFn: () => api.get<TenantModelProviders>('/model-providers'),
     enabled: enabled(),
+    refetchInterval: recheckWhileUnreachable,
   }));
 }
 
@@ -245,6 +252,7 @@ export function usePlatformModelProviders(enabled: () => boolean = () => true) {
     queryKey: platformModelProvidersKey,
     queryFn: () => api.get<PlatformModelProviders>('/platform-model-providers'),
     enabled: enabled(),
+    refetchInterval: recheckWhileUnreachable,
   }));
 }
 

@@ -25,7 +25,7 @@ adrs: [0077]
 
 ## Edge cases
 
-- When Bifrost cannot be reached, every status reads Unknown, the page shows the rows read-only, and every save answers 503.
+- When Bifrost cannot be reached, the page shows that it is connecting to the model gateway instead of the cards and checks again every 10 seconds until it is back, and every save answers 503.
 - When Bifrost is not configured or cannot be read, every catalog model counts as reachable, so the pickers keep their models.
 - When a Model provider is missing from Bifrost, it gets no traffic and no card, and its switch and weight are kept.
 
