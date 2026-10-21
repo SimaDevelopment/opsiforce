@@ -19,7 +19,7 @@ export function DialogContent(props: DialogContentProps) {
       />
       <div
         class={cn(
-          'fixed inset-0 z-50 flex justify-center',
+          'fixed inset-0 z-50 flex justify-center p-3 sm:p-4',
           local.align === 'top' ? 'items-start pt-[8vh]' : 'items-center'
         )}
       >

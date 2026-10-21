@@ -81,7 +81,7 @@ function HomePage() {
     <>
       <div class="h-full overflow-y-auto">
         <div
-          class="flex flex-col items-center px-6 pb-16 min-h-full"
+          class="flex flex-col items-center px-4 sm:px-6 pb-16 min-h-full"
           style={{
             background: 'radial-gradient(ellipse 80% 40% at 50% 0%, hsl(var(--primary)/0.035) 0%, transparent 100%)',
             'padding-top': 'clamp(2.5rem, 8vh, 5rem)',
@@ -96,7 +96,7 @@ function HomePage() {
                 </div>
               </div>
               <div class="flex flex-col gap-2">
-                <h1 class="text-3xl font-semibold tracking-tight text-foreground leading-tight">
+                <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground leading-tight">
                   What do you want to automate?
                 </h1>
                 <p class="text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
@@ -169,7 +169,7 @@ function HomePage() {
                 </span>
                 <div class="flex-1 h-px bg-border/60" />
               </div>
-              <div class="grid grid-cols-2 gap-2.5">
+              <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <For each={EXAMPLES}>
                   {(ex) => (
                     <ExampleCard

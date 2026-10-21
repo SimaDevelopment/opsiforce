@@ -159,7 +159,7 @@ export function FormatCard(props: FormatCardProps) {
         </span>
         <AddProviderButton format={props.format} canAddCustom={props.canSwitch} canAddGlobal={props.managesPlatform} />
       </div>
-      <Table>
+      <Table layout="responsive">
         <TableHeader>
           <TableRow>
             <TableHead>Model provider</TableHead>
@@ -216,7 +216,7 @@ export function FormatCard(props: FormatCardProps) {
                     <RetryNote targets={retryTargetsOf(drafted(row), draftedRows())} />
                   </Show>
                 </TableCell>
-                <TableCell class="align-top">
+                <TableCell label="Status" class="align-top">
                   <Show
                     when={row.kind === 'linked-account'}
                     fallback={
@@ -233,7 +233,7 @@ export function FormatCard(props: FormatCardProps) {
                     <LinkedAccountStatus scope="tenant" name={row.name} status={row.status} editable />
                   </Show>
                 </TableCell>
-                <TableCell class="align-top">
+                <TableCell label="Weight" class="align-top">
                   <WeightInput
                     value={drafted(row).weight}
                     disabled={!drafted(row).enabled}
@@ -241,10 +241,10 @@ export function FormatCard(props: FormatCardProps) {
                     onChange={(weight) => change(row, { weight })}
                   />
                 </TableCell>
-                <TableCell class="align-top text-right">
+                <TableCell label="Share" class="align-top text-right">
                   <ShareText row={drafted(row)} rows={draftedRows()} />
                 </TableCell>
-                <TableCell class="align-top">
+                <TableCell label="On" class="align-top">
                   <OnOffSwitch
                     checked={drafted(row).enabled}
                     label={`${row.name} on for ${AUDIENCE_LABEL[props.audience]}`}
@@ -312,7 +312,7 @@ function BuiltInOnlyRow(props: { builtIn: PlatformModelProvider; canSwitch: bool
         </div>
         <BuiltInPlatformDetails row={props.builtIn} editable />
       </TableCell>
-      <TableCell class={cn('align-top', props.faded && 'opacity-60')}>
+      <TableCell label="Status" class={cn('align-top', props.faded && 'opacity-60')}>
         <Show when={props.builtIn.linkedAccountVendor} fallback={<StatusBadge status={props.builtIn.status} />}>
           <LinkedAccountStatus scope="platform" name={props.builtIn.name} status={props.builtIn.status} editable />
         </Show>
@@ -337,7 +337,7 @@ function FormatCardFooter(props: {
   onSave: () => void;
 }) {
   return (
-    <div class="flex items-center justify-end gap-2 pt-1">
+    <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
       <span class="mr-auto text-xs text-destructive" aria-live="polite">
         {props.error}
       </span>

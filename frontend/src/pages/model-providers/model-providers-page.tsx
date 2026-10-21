@@ -286,7 +286,7 @@ function ReadOnlyProviders(props: {
   const builtInOf = (name: string) => props.builtIns.find((builtIn) => builtIn.name === name);
 
   return (
-    <Table>
+    <Table layout="responsive">
       <TableHeader>
         <TableRow>
           <TableHead>Model provider</TableHead>
@@ -319,7 +319,7 @@ function ReadOnlyProviders(props: {
                   </div>
                 </Show>
               </TableCell>
-              <TableCell>
+              <TableCell label="Status">
                 <Show when={row.kind === 'linked-account'} fallback={<StatusBadge status={row.status} />}>
                   <LinkedAccountStatus
                     scope="tenant"
@@ -329,8 +329,12 @@ function ReadOnlyProviders(props: {
                   />
                 </Show>
               </TableCell>
-              <TableCell class="text-xs tabular-nums">{row.chatWeight}</TableCell>
-              <TableCell class="text-xs">{row.chatEnabled ? 'On' : 'Off'}</TableCell>
+              <TableCell label="Weight" class="text-xs tabular-nums">
+                {row.chatWeight}
+              </TableCell>
+              <TableCell label="On" class="text-xs">
+                {row.chatEnabled ? 'On' : 'Off'}
+              </TableCell>
               <TableCell>
                 <Show when={props.actionable}>
                   <Show
@@ -362,7 +366,7 @@ function ReadOnlyProviders(props: {
                 </div>
                 <BuiltInPlatformDetails row={builtIn} editable={props.actionable === true} />
               </TableCell>
-              <TableCell>
+              <TableCell label="Status">
                 <Show when={builtIn.linkedAccountVendor} fallback={<StatusBadge status={builtIn.status} />}>
                   <LinkedAccountStatus
                     scope="platform"

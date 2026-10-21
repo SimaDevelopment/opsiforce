@@ -1,6 +1,6 @@
-import { Show, createEffect, createSignal, on, type Accessor } from 'solid-js';
+import { Show, createEffect, createSignal, on, onMount, type Accessor } from 'solid-js';
 import { MarkedProvider } from '@opencode-ai/ui/context/marked';
-import { PanelRightOpen } from '~/components/icons';
+import { ChevronLeft, PanelRightOpen } from '~/components/icons';
 import { ResizeHandle } from '~/components/ui/resize-handle';
 import { createElementWidth } from '~/lib/create-element-width';
 import { createResizablePanel } from '~/lib/create-resizable-panel';
@@ -23,6 +23,8 @@ export interface ProjectPreviewPanelProps {
   previewRequest: FilePreviewRequest | null;
   onClosePreview: () => void;
   onReloadRef?: (reload: () => void) => void;
+  onCloseOverlayRef?: (close: () => void) => void;
+  overlayBackLabel: string;
   column?: PreviewColumn;
 }
 
@@ -37,7 +39,8 @@ const MIN_CONTENT_WIDTH = 320;
 export const PROJECT_PANE_MIN_WIDTH = MIN_PREVIEW_WIDTH + MIN_CONTENT_WIDTH;
 
 export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
-  const [open, setOpen] = createSignal(true);
+  const [docked, setDocked] = createSignal(true);
+  const [overlaid, setOverlaid] = createSignal(false);
   const [mode, setMode] = createSignal<PreviewMode>('app');
 
   let anchor: HTMLSpanElement | undefined;
@@ -65,12 +68,20 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
 
   const previewPath = () => props.previewRequest?.path ?? null;
 
+  const fitsBesideContent = () => column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH;
+  const open = () => (fitsBesideContent() ? docked() : overlaid());
+  const setOpen = (next: boolean) => (fitsBesideContent() ? setDocked(next) : setOverlaid(next));
+
+  createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
+  onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
+
   createEffect(
     on(
       () => props.previewRequest,
       (request) => {
         if (request === null) {
           setMode('app');
+          setOverlaid(false);
           return;
         }
         setMode('file');
@@ -79,12 +90,7 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     )
   );
 
-  const fitsBesideContent = () => column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH;
-
-  const collapsedLabel = () => {
-    if (!fitsBesideContent()) return 'Widen this pane to show the preview';
-    return props.hasApp ? 'Show app preview' : 'Open panel';
-  };
+  const collapsedLabel = () => (props.hasApp ? 'Show app preview' : 'Open panel');
 
   const fileMode = () => mode() === 'file' && previewPath() !== null;
   const switcher = () => (
@@ -97,13 +103,12 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     <MarkedProvider>
       <span ref={anchor} hidden />
       <Show
-        when={open() && fitsBesideContent()}
+        when={open()}
         fallback={
           <button
             onClick={() => setOpen(true)}
-            disabled={!fitsBesideContent()}
             class={cn(
-              'shrink-0 w-9 bg-sidebar border-l border-border flex flex-col items-center justify-center gap-2 hover:bg-accent transition-colors disabled:cursor-default disabled:hover:bg-sidebar',
+              'shrink-0 w-9 bg-sidebar border-l border-border flex flex-col items-center justify-center gap-2 hover:bg-accent transition-colors',
               column && 'snap-start'
             )}
             title={collapsedLabel()}
@@ -118,18 +123,34 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
       >
         <div
           class={cn(
-            'shrink-0 border-l border-border flex flex-col bg-background relative',
-            column ? 'snap-start pr-2' : 'pl-2'
+            'flex flex-col bg-background',
+            !fitsBesideContent()
+              ? 'absolute inset-0 z-20'
+              : cn('relative shrink-0 border-l border-border', column ? 'snap-start pr-2' : 'pl-2')
           )}
-          style={{ width: `${panel.width()}px` }}
+          style={fitsBesideContent() ? { width: `${panel.width()}px` } : undefined}
         >
-          <ResizeHandle
-            onPointerDown={panel.startResize}
-            resizing={panel.resizing()}
-            position={column ? 'right' : 'left'}
-            panel={panel}
-            label="Resize the preview"
-          />
+          <Show
+            when={fitsBesideContent()}
+            fallback={
+              <button
+                type="button"
+                onClick={() => setOverlaid(false)}
+                class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
+                <ChevronLeft class="h-4 w-4" />
+                {props.overlayBackLabel}
+              </button>
+            }
+          >
+            <ResizeHandle
+              onPointerDown={panel.startResize}
+              resizing={panel.resizing()}
+              position={column ? 'right' : 'left'}
+              panel={panel}
+              label="Resize the preview"
+            />
+          </Show>
 
           <Show when={props.hasApp}>
             <div class="flex-1 min-h-0 flex flex-col" style={{ display: fileMode() ? 'none' : 'flex' }}>
@@ -139,7 +160,7 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
                 environmentSlug={props.environmentSlug}
                 appName={props.appName}
                 switcher={switcher()}
-                onCollapse={() => setOpen(false)}
+                onCollapse={fitsBesideContent() ? () => setDocked(false) : undefined}
                 onReloadRef={props.onReloadRef}
               />
             </div>

@@ -63,6 +63,7 @@ function CountCells(props: { counters: UsageCounter[]; values: UsageValues; stro
         const value = () => props.values[counter.name] ?? 0;
         return (
           <TableCell
+            label={counter.label}
             class={cn(
               'text-right font-mono text-xs tabular-nums',
               value() === 0 && 'text-muted-foreground/60',
@@ -220,7 +221,7 @@ export function ServiceUsage(props: { serviceId: string; showCopy: boolean }) {
             >
               <div class="overflow-hidden rounded-lg border border-border bg-card">
                 <div class="overflow-x-auto">
-                  <Table>
+                  <Table layout="responsive">
                     <TableHeader>
                       <TableRow>
                         <TableHead class="min-w-56">Project · environment</TableHead>
