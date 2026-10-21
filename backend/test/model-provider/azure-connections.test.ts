@@ -173,7 +173,8 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
     });
   }
 
-  function createPlatformConnection(payload: Record<string, unknown>) {
+  async function createPlatformConnection(payload: Record<string, unknown>) {
+    await holdEveryProjectKey();
     return app.inject({
       method: 'POST',
       url: '/api/platform-model-providers',
@@ -621,7 +622,8 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
   });
 
   describe('an Organization’s own Azure connection', () => {
-    function createOwn(seeded: SeededTenant) {
+    async function createOwn(seeded: SeededTenant) {
+      await holdEveryProjectKey();
       return app.inject({
         method: 'POST',
         url: '/api/model-providers',
@@ -704,6 +706,22 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
         'openai',
       ]);
       expect(azureEntriesOf(bifrost.chatKeyOf(seeded.projectId).provider_configs)).toHaveLength(2);
+    });
+
+    it('first pins every Organization’s old azure entries to their own key, so none can reach the new one', async () => {
+      const seeded = await seededTenant();
+      const other = await seededTenant();
+      const otherChat = bifrost.chatKeyOf(other.projectId);
+      otherChat.provider_configs.push({
+        provider: 'azure',
+        weight: 0,
+        allowed_models: ['gpt-5.6-sol'],
+        key_ids: ['*'],
+      });
+
+      expect((await createOwn(seeded)).statusCode).toBe(201);
+
+      expect(azureEntriesOf(bifrost.chatKeyOf(other.projectId).provider_configs)).toEqual([]);
     });
 
     it('is invisible to other Organizations', async () => {

@@ -141,10 +141,9 @@ export class AzureConnectionsService {
     }
   }
 
-  async replaceAccess(name: string, access: AzureAccess): Promise<void> {
+  async writeAccess(name: string, access: AzureAccess): Promise<void> {
     const stored = await this.find(name);
     if (!stored) throw new ConflictException(CONNECTION_GONE_MESSAGE);
-    await this.passConnectionTest(access);
     await this.bifrostCall(() =>
       this.bifrostService.replaceProviderKey(AZURE_PROVIDER, stored.id, {
         ...stored,

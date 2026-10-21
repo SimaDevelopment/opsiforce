@@ -96,6 +96,7 @@ export class ModelProviderCreationService {
   private async createAzureConnection(tenant: TenantContext, input: unknown): Promise<TenantModelProvidersView> {
     const bifrostName = await this.preparedName(tenant, input);
     const connection = this.azure.connectionOf(input);
+    await this.modelProvidersService.pinEveryTenantsAzureEntries();
     await this.azure.create(bifrostName, connection, () =>
       db.transaction(async (tx) => {
         await lockTenantModelProviders(tx, tenant.tenantId);
@@ -136,7 +137,15 @@ export class ModelProviderCreationService {
     bifrostName: string,
     input: unknown
   ): Promise<TenantModelProvidersView> {
-    await this.azure.replaceAccess(bifrostName, this.azure.accessOf(input));
+    const access = this.azure.accessOf(input);
+    await this.azure.test(access);
+    await db.transaction(async (tx) => {
+      await lockTenantModelProviders(tx, tenant.tenantId);
+      if (!(await this.ownAzureConnection(tenant, bifrostName, tx))) {
+        throw new NotFoundException(`${bifrostName} is not a model provider of this organization`);
+      }
+      await this.azure.writeAccess(bifrostName, access);
+    });
     return this.modelProvidersService.listTenantProviders(tenant);
   }
 

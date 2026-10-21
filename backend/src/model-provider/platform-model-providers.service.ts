@@ -311,6 +311,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
   ): Promise<PlatformModelProvidersView> {
     const name = await this.preparedName(input);
     const connection = this.azure.connectionOf(input);
+    await this.modelProvidersService.pinEveryTenantsAzureEntries();
     await this.azure.create(name, connection, () =>
       db.transaction(async (tx) => {
         await lockPlatformModelProviders(tx);
@@ -390,7 +391,15 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
 
   private async editAzureConnection(name: string, input: unknown): Promise<PlatformModelProvidersView> {
     if (!isOpsiforceProviderName(name)) throw new BadRequestException(OPSIFORCE_ONLY_MESSAGE);
-    await this.azure.replaceAccess(name, this.azure.accessOf(input));
+    const access = this.azure.accessOf(input);
+    await this.azure.test(access);
+    await db.transaction(async (tx) => {
+      await lockPlatformModelProviders(tx);
+      if (!(await this.isPlatformAzureConnection(name, tx))) {
+        throw new NotFoundException(`${name} is not a Built-in model provider`);
+      }
+      await this.azure.writeAccess(name, access);
+    });
     return this.list();
   }
 

@@ -547,6 +547,15 @@ export class ModelProvidersService {
     return failed;
   }
 
+  async pinEveryTenantsAzureEntries(): Promise<void> {
+    const failed = await this.rewriteEveryTenantsKeys();
+    if (failed.length > 0) {
+      throw new ServiceUnavailableException(
+        `The model gateway keys of ${failed.length} organizations couldn't be updated first, so the Azure connection wasn't added. Try again.`
+      );
+    }
+  }
+
   async restoreTenantKeys(tenantIds: string[]): Promise<void> {
     for (const tenantId of tenantIds) {
       try {
