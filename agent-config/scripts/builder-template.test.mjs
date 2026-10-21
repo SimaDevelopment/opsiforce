@@ -1260,7 +1260,7 @@ describe("the template files migration", () => {
     }
   })
 
-  test("brings back a missing file, keeps an edited one as a conflict, and asks for no pod recreate", async (t) => {
+  test("brings back a missing file and keeps an edited one as a conflict, which holds back the pod recreate", async (t) => {
     const context = provisionedChat(t)
     await provisionWorkspace(context, createSummary(context))
     rmSync(path.join(context.workspace, "scripts", "tp.sh"))
@@ -1277,7 +1277,7 @@ describe("the template files migration", () => {
     assert.equal(sha256(path.join(context.workspace, "scripts", "tp.sh")), sha256(path.join(templateDir, "scripts", "tp.sh")))
   })
 
-  test("applies on a chat laid from the current template", async (t) => {
+  test("applies on a chat laid from the current template and recreates its pod", async (t) => {
     const context = provisionedChat(t)
     await provisionWorkspace(context, createSummary(context))
 
@@ -1285,5 +1285,6 @@ describe("the template files migration", () => {
 
     assert.equal(summary.status, "applied")
     assert.ok(summary.appliedMigrations.includes(migration.id))
+    assert.equal(summary.requiresPodRecreate, true)
   })
 })

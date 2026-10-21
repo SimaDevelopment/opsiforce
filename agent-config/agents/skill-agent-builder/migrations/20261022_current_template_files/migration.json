@@ -1,6 +1,6 @@
 {
   "id": "20261022_current_template_files",
-  "requiresPodRecreate": false,
+  "requiresPodRecreate": true,
   "operations": [
     {
       "type": "copy",
