@@ -238,6 +238,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       await this.requestReplenish(reserved.agentId);
       return null;
     }
+    await this.announceDelivered(reserved.id);
 
     const finalized = await this.finalizeClaim(reserved.id, claim, livePodIp).catch(() => false);
     if (!finalized) {
@@ -374,6 +375,12 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       const current = await this.countPoolSlots(agentId);
       if (current < target) await this.enqueueReplenish(agentId);
     }
+  }
+
+  private async announceDelivered(projectId: string): Promise<void> {
+    await this.lifecycle?.delivered(projectId).catch((err: Error) => {
+      this.logger.warn(`Claim ${projectId} could not start the configurations it inherited: ${err.message}`);
+    });
   }
 
   /** The slot's opencode is already running, and a write from another node raises no file event in its pod. */
@@ -750,7 +757,13 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
           await this.destroyAndReplenish(row.id, 'recovery: model provider sync failed permanently');
           continue;
         }
-        await this.deliveryService.deliverAtCreate(row.id);
+        const plan = await this.deliveryService.deliverAtCreate(row.id);
+        const podIp = await this.readReadyPodIp(row.id);
+        if (!podIp || !(await this.announceToLivePod(plan, podIp))) {
+          await this.destroyAndReplenish(row.id, 'recovery: the pod did not serve what was delivered');
+          continue;
+        }
+        await this.announceDelivered(row.id);
         const finalized = await this.finalizeRecoveredClaim(row.id, row.tenantId);
         if (finalized) {
           await this.timeoutService.touch(row.id).catch((err) => {

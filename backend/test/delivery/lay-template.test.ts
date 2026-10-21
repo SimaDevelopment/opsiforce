@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import 'reflect-metadata';
 import { and, eq } from 'drizzle-orm';
@@ -8,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { agentProfiles, agentSettings, agents, environments, projects } from '../../db/schema';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
+import { withPlatformIgnores } from '../../src/delivery/platform-ignores';
 import { DEFAULT_AGENT_NAME, type AgentCaller } from '../../src/agent/agent.types';
 import type { BuilderChatCaller } from '../../src/builder/builder.types';
 import { TEST_PROJECT_KIND } from '../../src/project/project.types';
@@ -157,6 +159,43 @@ describe('laying a Custom Agent’s Template at Project create (ADR-0073)', () =
         .map((file) => file.path)
         .toSorted()
     ).toEqual([`${agent.name}.md`]);
+  });
+});
+
+describe('laying a Template into a workspace a booted pod already holds', () => {
+  function git(workspace: string, args: string[]): string {
+    return execFileSync('git', ['-C', workspace, '-c', 'user.email=pod@test', '-c', 'user.name=Pod', ...args], {
+      encoding: 'utf8',
+    });
+  }
+
+  it('merges over the pod’s folders, keeps the platform ignores and commits on top of its history', async () => {
+    const agent = await agentOnProduction();
+    await linkProduction(
+      agent.id,
+      await saveDevelopmentTemplate(agent.id, { '.gitignore': 'dist/\n', 'app/startup.sh': '#!/bin/sh\necho ready\n' })
+    );
+    const project = await createProject(agent.id);
+    const workspace = workspaceDir(project.id);
+    await rm(join(workspace, 'app'), { recursive: true, force: true });
+    await writeFile(join(workspace, '.gitignore'), withPlatformIgnores(''));
+    await mkdir(join(workspace, 'app', 'data'), { recursive: true });
+    await writeFile(join(workspace, 'app', 'data', 'app.db'), 'kept');
+    git(workspace, ['init', '-q']);
+    git(workspace, ['add', '-A']);
+    git(workspace, ['commit', '-q', '-m', 'Initial workspace']);
+
+    await harness.delivery.deliverAtCreate(project.id);
+
+    const gitignore = await readFile(join(workspace, '.gitignore'), 'utf8');
+    expect(gitignore).toContain('dist/');
+    expect(gitignore).toBe(withPlatformIgnores(gitignore));
+    expect(await readFile(join(workspace, 'app', 'data', 'app.db'), 'utf8')).toBe('kept');
+    expect(git(workspace, ['log', '--format=%s']).trim().split('\n')).toEqual([
+      'Initial template',
+      'Initial workspace',
+    ]);
+    expect(git(workspace, ['status', '--porcelain'])).toBe('');
   });
 });
 

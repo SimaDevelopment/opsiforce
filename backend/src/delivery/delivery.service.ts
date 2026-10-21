@@ -191,6 +191,7 @@ export class DeliveryService {
     );
     if (!hasHistory || !laid) return;
     const paths = laid.paths.map((file) => path.posix.join(template.intoDirectory, file));
+    if (paths.includes(WORKSPACE_GITIGNORE)) await this.writer.keepPlatformIgnores(directory);
     await db.transaction(async (tx) => {
       await lockProjectGit(tx, projectEnvironmentId);
       await this.git.commitPaths(workspace, paths, INITIAL_TEMPLATE_COMMIT);
