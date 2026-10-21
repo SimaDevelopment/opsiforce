@@ -102,28 +102,29 @@ export function StatusBadge(props: { status: ModelProviderStatus }) {
   );
 }
 
+function ShareLabel(props: { label: string; tip: string; muted?: boolean }) {
+  return (
+    <span class={cn('inline-flex items-center gap-1 text-xs', props.muted ? 'text-muted-foreground' : 'tabular-nums')}>
+      {props.label}
+      <InfoTip content={props.tip} label={`About ${props.label}`} />
+    </span>
+  );
+}
+
 export function ShareText(props: { row: SplitRow; rows: SplitRow[] }) {
   return (
     <SolidSwitch>
       <Match when={!props.row.enabled}>
-        <Tip content={TIPS.off} class="text-xs text-muted-foreground">
-          Off
-        </Tip>
+        <ShareLabel label="Off" tip={TIPS.off} muted />
       </Match>
       <Match when={!carriesTraffic(props.row)}>
-        <Tip content={TIPS.notInTraffic} class="text-xs text-muted-foreground">
-          None
-        </Tip>
+        <ShareLabel label="None" tip={TIPS.notInTraffic} muted />
       </Match>
       <Match when={props.row.weight === 0 && shareOf(props.row, props.rows) === 1}>
-        <Tip content={TIPS.onlyInTraffic} class="text-xs tabular-nums">
-          {formatShare(1)}
-        </Tip>
+        <ShareLabel label={formatShare(1)} tip={TIPS.onlyInTraffic} />
       </Match>
       <Match when={props.row.weight === 0}>
-        <Tip content={TIPS.backup} class="text-xs text-muted-foreground underline decoration-dotted underline-offset-2">
-          Backup
-        </Tip>
+        <ShareLabel label="Backup" tip={TIPS.backup} muted />
       </Match>
       <Match when={true}>
         <Tip content={TIPS.share} class="text-xs tabular-nums">

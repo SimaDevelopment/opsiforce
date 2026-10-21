@@ -85,6 +85,13 @@ export function FormatCard(props: FormatCardProps) {
   const builtInsWithoutRow = () =>
     props.builtIns.filter((builtIn) => !props.rows.some((row) => row.name === builtIn.name));
 
+  const sortedRows = () =>
+    [...props.rows].sort((a, b) => {
+      const left = splitRowOf(a, routingOf(a), props.audience);
+      const right = splitRowOf(b, routingOf(b), props.audience);
+      return Number(right.enabled) - Number(left.enabled) || right.weight - left.weight || a.name.localeCompare(b.name);
+    });
+
   const empty = () => props.rows.length === 0 && builtInsWithoutRow().length === 0;
   const columnCount = () => (props.canSwitch ? 6 : 3);
 
@@ -171,7 +178,7 @@ export function FormatCard(props: FormatCardProps) {
               </TableCell>
             </TableRow>
           </Show>
-          <For each={props.rows}>
+          <For each={sortedRows()}>
             {(row) => (
               <TableRow class={cn(!drafted(row).enabled && 'text-muted-foreground')}>
                 <TableCell class="align-top">
