@@ -87,7 +87,7 @@ interface PendingRow {
 type TeamPatchResult = 'patched' | 'clean-failed' | 'dirty';
 
 interface PooledAgent extends WorkspaceTarget {
-  packageName: string;
+  name: string;
   poolSize: number;
   resources: PodSettings;
 }
@@ -98,6 +98,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   private readonly platformVersion: string;
   private readonly gatewayUrl: string;
   private readonly runtimeProxyUrl: string;
+  private readonly agentImageVersion: string;
   private readonly storageMountPath: string;
   private readonly poolSizeOverride: number | null;
   private pooledAgents = new Map<string, PooledAgent>();
@@ -125,6 +126,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
     this.runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
+    this.agentImageVersion = this.configService.getOrThrow<string>('agentImageVersion');
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.poolSizeOverride = this.configService.get<number | null>('poolSizeOverride', null);
   }
@@ -957,8 +959,8 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         packageName: builtIn ? row.name : CUSTOM_AGENT_PACKAGE,
         poolSize: builtIn ? poolSize : Math.min(poolSize, MAX_WARM_POOL_SIZE),
         resources: podSettingsByAgent.get(row.id) ?? resolvePodSettings(),
-        builtInVersion: builtIn ? row.version : null,
-        builtInModelSelection:
+        contentVersion: builtIn ? row.version : this.agentImageVersion,
+        modelSelection:
           builtIn && row.model ? { model: row.model, ...(row.variant ? { variant: row.variant } : {}) } : null,
       });
     }

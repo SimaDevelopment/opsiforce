@@ -8,9 +8,9 @@ let agent: WorkspaceTarget;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'pool-model-'));
   agent = {
-    name: 'app-builder',
-    builtInVersion: '0.5.0',
-    builtInModelSelection: { model: 'openai/test', variant: 'high' },
+    packageName: 'app-builder',
+    contentVersion: '0.5.0',
+    modelSelection: { model: 'openai/test', variant: 'high' },
   };
   await mkdir(join(root, '.opsiforce/agents'), { recursive: true });
   await mkdir(join(root, '.opencode'), { recursive: true });
@@ -38,7 +38,7 @@ it.each([
   expect(await workspaceAtTarget(root, agent)).toBe(false);
 });
 it('accepts bare references when no variant is configured', async () => {
-  agent.builtInModelSelection = { model: 'openai/test' };
+  agent.modelSelection = { model: 'openai/test' };
   await config('openai/test');
   expect(await workspaceAtTarget(root, agent)).toBe(true);
   await config('openai/test#high');
@@ -46,8 +46,15 @@ it('accepts bare references when no variant is configured', async () => {
 });
 it('still rejects old templates and missing files', async () => {
   await config('openai/test#high');
-  agent.builtInVersion = '0.6.0';
+  agent.contentVersion = '0.6.0';
   expect(await workspaceAtTarget(root, agent)).toBe(false);
   await rm(join(root, '.opsiforce/agents/app-builder.json'));
   expect(await workspaceAtTarget(root, agent)).toBe(false);
+});
+it('holds a Custom Agent slot to the agent image version its custom package ledger records', async () => {
+  const custom: WorkspaceTarget = { packageName: 'custom', contentVersion: '0.42.0', modelSelection: null };
+  await writeFile(join(root, '.opsiforce/agents/custom.json'), JSON.stringify({ contentVersion: '0.42.0' }));
+  expect(await workspaceAtTarget(root, custom)).toBe(true);
+  await writeFile(join(root, '.opsiforce/agents/custom.json'), JSON.stringify({ contentVersion: '0.41.0' }));
+  expect(await workspaceAtTarget(root, custom)).toBe(false);
 });

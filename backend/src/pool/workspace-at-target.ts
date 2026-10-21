@@ -4,16 +4,16 @@ import type { AgentModelSelection } from '../agent/agent-config';
 import { modelReference } from '../delivery/delivery.types';
 
 export interface WorkspaceTarget {
-  name: string;
-  builtInVersion: string | null;
-  builtInModelSelection: AgentModelSelection | null;
+  packageName: string;
+  contentVersion: string | null;
+  modelSelection: AgentModelSelection | null;
 }
 
-export async function workspaceAtTarget(workspaceRoot: string, agent: WorkspaceTarget): Promise<boolean> {
-  const { name: agentName, builtInVersion: targetVersion, builtInModelSelection: modelSelection } = agent;
+export async function workspaceAtTarget(workspaceRoot: string, target: WorkspaceTarget): Promise<boolean> {
+  const { packageName, contentVersion: targetVersion, modelSelection } = target;
   if (!targetVersion && !modelSelection) return true;
   if (targetVersion) {
-    const ledgerPath = join(workspaceRoot, '.opsiforce', 'agents', `${agentName}.json`);
+    const ledgerPath = join(workspaceRoot, '.opsiforce', 'agents', `${packageName}.json`);
     try {
       const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as { contentVersion?: string };
       if (ledger.contentVersion !== targetVersion) return false;
@@ -30,7 +30,7 @@ export async function workspaceAtTarget(workspaceRoot: string, agent: WorkspaceT
       agents?: Record<string, { model?: string } | undefined>;
     };
     const expected = modelReference(modelSelection.model, modelSelection.variant ?? null);
-    return config.model === expected && config.agents?.[agentName]?.model === expected;
+    return config.model === expected && config.agents?.[packageName]?.model === expected;
   } catch {
     return false;
   }
