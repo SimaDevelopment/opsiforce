@@ -1,5 +1,4 @@
 import { Show, createSignal } from 'solid-js';
-import { branding } from '~/lib/branding';
 import { toast } from 'solid-sonner';
 import { useNavigate } from '@tanstack/solid-router';
 import { useAgents } from '~/api/agents';
@@ -31,6 +30,7 @@ import {
 } from '~/components/ui/dropdown-menu';
 import { Button } from '~/components/ui/button';
 import { TenantSelector } from '~/components/tenant-selector';
+import { BrandMark } from './brand-mark';
 import { ProjectSidebar } from './project-sidebar';
 import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
 import { CreateMenu } from './create-menu';
@@ -92,16 +92,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader class="gap-3 pb-0">
         <div class="flex items-center gap-2 px-1 py-0.5 group-data-[collapsible=icon]/sidebar:justify-center group-data-[collapsible=icon]/sidebar:px-0">
-          <div
-            class="w-7 h-7 shrink-0 rounded-lg bg-foreground/5 border border-foreground/10 flex items-center justify-center cursor-pointer hover:bg-foreground/10 transition-colors"
-            onClick={() => navigate({ to: '/' })}
-            title="Home"
-          >
-            <img alt={branding.name} src={branding.icon} class="w-4 h-4" />
-          </div>
-          <span class="font-semibold text-sm text-sidebar-foreground truncate group-data-[collapsible=icon]/sidebar:hidden">
-            {branding.name}
-          </span>
+          <BrandMark nameClass="text-sidebar-foreground group-data-[collapsible=icon]/sidebar:hidden" />
           <div class="ml-auto group-data-[collapsible=icon]/sidebar:hidden">
             <SidebarTrigger />
           </div>

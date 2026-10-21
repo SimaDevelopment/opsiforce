@@ -157,7 +157,7 @@ function TenantsTable(props: { view: PlatformLimitsView }) {
   return (
     <>
       <div class="rounded-lg border border-border overflow-hidden bg-card">
-        <Table>
+        <Table layout="responsive" layoutPreferenceKey="opsiforce:settings:limits-layout">
           <TableHeader>
             <TableRow>
               <TableHead class="min-w-56">Organization</TableHead>
@@ -209,7 +209,7 @@ function UsageCell(props: { limit: TenantLimit }) {
   const reached = () => props.limit.limit !== null && props.limit.used >= props.limit.limit;
 
   return (
-    <TableCell>
+    <TableCell label={LIMIT_LABELS[props.limit.key]}>
       <span class="text-sm tabular-nums" classList={{ 'text-amber-600 dark:text-amber-500': reached() }}>
         {props.limit.used} / {formatLimit(props.limit.limit)}
       </span>

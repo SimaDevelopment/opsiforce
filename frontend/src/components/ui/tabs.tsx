@@ -12,7 +12,7 @@ function TabsList(props: ParentProps<ComponentProps<typeof Kobalte.List>>) {
   return (
     <Kobalte.List
       class={cn(
-        'inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground w-full',
+        'inline-flex h-9 items-center justify-start overflow-x-auto [scrollbar-width:none] rounded-lg bg-muted p-1 text-muted-foreground w-full',
         local.class
       )}
       {...rest}

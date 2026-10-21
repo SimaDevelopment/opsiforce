@@ -184,7 +184,7 @@ export function BillingPage() {
               }
             >
               <div class="rounded-lg border border-border overflow-hidden bg-card">
-                <Table>
+                <Table layout="responsive">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
@@ -242,7 +242,7 @@ function ProjectRow(props: { project: Project; canSeeSettings: boolean; onSettin
   return (
     <TableRow>
       <TableCell class="text-xs font-medium">{name()}</TableCell>
-      <TableCell class="text-right text-xs tabular-nums text-muted-foreground">
+      <TableCell label="Usage" class="text-right text-xs tabular-nums text-muted-foreground">
         ${currentUsage().toFixed(2)}
         <Show when={hasBudget()}>
           {' / $'}

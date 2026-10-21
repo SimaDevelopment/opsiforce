@@ -37,7 +37,7 @@ export const FileUpload: Component<{
   return (
     <>
       <div class="shrink-0 border-t border-border bg-background px-2 py-2">
-        <div class="w-full px-3 md:mx-auto md:max-w-[1000px]">
+        <div class="w-full px-1 sm:px-3 md:mx-auto md:max-w-[1000px]">
           <Show
             when={!upload.uploading()}
             fallback={
@@ -73,7 +73,7 @@ export const FileUpload: Component<{
               </div>
             }
           >
-            <div class="flex min-h-7 flex-wrap items-center gap-2">
+            <div class="flex min-h-7 items-center gap-2 overflow-x-auto [scrollbar-width:none] sm:flex-wrap sm:overflow-visible">
               <DropdownMenu>
                 <DropdownMenuTrigger class={STRIP_BUTTON_CLASS}>
                   <Upload class="h-3.5 w-3.5" />

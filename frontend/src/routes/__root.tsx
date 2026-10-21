@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { For, Show, createEffect, on } from 'solid-js';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { Outlet, createRootRoute, useRouter, useLocation } from '@tanstack/solid-router';
 import { TanStackDevtools } from '@tanstack/solid-devtools';
@@ -6,6 +6,7 @@ import { SolidQueryDevtoolsPanel } from '@tanstack/solid-query-devtools';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/solid-router-devtools';
 import { ApiError } from '~/api/client';
 import { AppSidebar } from '~/components/sidebar/app-sidebar';
+import { BrandMark } from '~/components/sidebar/brand-mark';
 import { JobDockHost } from '~/components/project/jobs/job-dock-host';
 import { useSidebar } from '~/components/ui/sidebar';
 import { Button } from '~/components/ui/button';
@@ -32,17 +33,27 @@ function MobileHeader() {
 
   return (
     <Show when={isMobile()}>
-      <header class="flex items-center h-10 px-3 shrink-0 bg-background border-b border-border">
-        <Button variant="ghost" size="icon" class="h-8 w-8" onClick={toggleSidebar}>
+      <header class="flex items-center gap-1.5 h-11 px-3 shrink-0 bg-background border-b border-border">
+        <Button variant="ghost" size="icon" class="h-8 w-8" onClick={toggleSidebar} aria-label="Open sidebar">
           <Menu class="h-5 w-5" />
         </Button>
+        <BrandMark nameClass="text-foreground" />
       </header>
     </Show>
   );
 }
 
 function SidebarLayout() {
-  const { sidebarResize } = useSidebar();
+  const { sidebarResize, setOpenMobile } = useSidebar();
+  const location = useLocation();
+
+  createEffect(
+    on(
+      () => location().pathname,
+      () => setOpenMobile(false),
+      { defer: true }
+    )
+  );
 
   return (
     <JobDockHost>

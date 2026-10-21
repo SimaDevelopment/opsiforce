@@ -1,0 +1,63 @@
+.oc-chat-only header[data-slot='titlebar-v2'],
+.oc-chat-only button[aria-label='More options'],
+.oc-chat-only div[data-session-title] h1,
+.oc-chat-only [data-slot='session-project-trigger'],
+.oc-chat-only [data-slot='session-review-toggle'],
+.oc-chat-only [data-slot='session-mobile-view-navigation'],
+.oc-chat-only [data-slot='session-chat-panel'] .h-12 > .shrink-0.flex.items-center.gap-2 > button,
+.oc-chat-only [data-action='composer-attach'],
+.oc-chat-only [data-slot='session-side-panel-presence'],
+[data-option-key='action:manage'] {
+  display: none !important;
+}
+
+.oc-chat-only
+  [data-slot='session-chat-panel']
+  .h-12
+  > .shrink-0.flex.items-center.gap-2
+  [data-component='tooltip-v2-trigger']
+  > button {
+  pointer-events: none;
+}
+
+.oc-chat-only [data-slot='session-chat-panel'] {
+  width: 100% !important;
+  flex: 1 1 auto !important;
+}
+
+.oc-chat-only main {
+  border-top: none !important;
+}
+
+.oc-chat-only {
+  overflow: hidden !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) {
+  overflow: hidden;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) > div {
+  min-width: 0;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) > div > button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.oc-chat-only [data-component='composer'] div:has(+ div > [data-action='composer-model']) {
+  flex-shrink: 3;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> [data-action='composer-model']) + div {
+  flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  .oc-chat-only [data-action='composer-model'] [data-component='provider-icon'] {
+    display: none;
+  }
+}

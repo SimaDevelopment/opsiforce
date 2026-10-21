@@ -174,7 +174,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     <>
       <Popover open={open()} onOpenChange={setOpen} placement="bottom-start">
         <PopoverTrigger
-          class="flex h-8 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs transition-colors hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
+          class="flex h-8 min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs transition-colors hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
           aria-label="Environments"
         >
           <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}>

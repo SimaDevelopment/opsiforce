@@ -80,3 +80,5 @@ export { default as PanelLeftOpen } from 'lucide-solid/icons/panel-left-open';
 export { default as Waypoints } from 'lucide-solid/icons/waypoints';
 export { default as LogIn } from 'lucide-solid/icons/log-in';
 export { default as ClipboardPaste } from 'lucide-solid/icons/clipboard-paste';
+export { default as Table } from 'lucide-solid/icons/table';
+export { default as LayoutList } from 'lucide-solid/icons/layout-list';

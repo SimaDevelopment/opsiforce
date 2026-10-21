@@ -196,7 +196,7 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
           >
             <div class="overflow-hidden rounded-lg border border-border bg-card">
               <div class="overflow-x-auto">
-                <Table>
+                <Table layout="responsive">
                   <TableHeader>
                     <TableRow>
                       <TableHead class="w-36">Time</TableHead>
@@ -231,28 +231,38 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                             {formatDateTime(call.time)}
                           </TableCell>
                           <Show when={props.showProject}>
-                            <TableCell class="max-w-40 truncate whitespace-nowrap text-xs" title={callerText(call)}>
+                            <TableCell
+                              label="Caller"
+                              class="max-w-40 truncate whitespace-nowrap text-xs"
+                              title={callerText(call)}
+                            >
                               {callerText(call)}
                             </TableCell>
                           </Show>
                           <TableCell
+                            label="Request"
                             class="whitespace-nowrap font-mono text-[11px]"
                             title={`${call.method} ${call.path}`}
                           >
-                            <span class="mr-1.5 text-muted-foreground">{call.method}</span>
-                            {middleTruncated(call.path, props.compact ? 32 : REQUEST_LENGTH)}
+                            <span>
+                              <span class="mr-1.5 text-muted-foreground">{call.method}</span>
+                              {middleTruncated(call.path, props.compact ? 32 : REQUEST_LENGTH)}
+                            </span>
                           </TableCell>
-                          <TableCell class="max-w-56 text-xs">
-                            <OutcomeChip outcome={call.outcome} />
-                            <Show when={call.reason}>
-                              {(reason) => (
-                                <div class="mt-0.5 truncate text-[11px] text-muted-foreground" title={reason()}>
-                                  {reason()}
-                                </div>
-                              )}
-                            </Show>
+                          <TableCell label="Outcome" class="max-w-56 text-xs">
+                            <div>
+                              <OutcomeChip outcome={call.outcome} />
+                              <Show when={call.reason}>
+                                {(reason) => (
+                                  <div class="mt-0.5 truncate text-[11px] text-muted-foreground" title={reason()}>
+                                    {reason()}
+                                  </div>
+                                )}
+                              </Show>
+                            </div>
                           </TableCell>
                           <TableCell
+                            label="Status"
                             class={cn(
                               'text-right font-mono text-[11px] tabular-nums',
                               call.status >= 400 && 'text-red-700'
@@ -261,10 +271,13 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                             {call.status}
                           </TableCell>
                           <Show when={!props.compact}>
-                            <TableCell class="text-right font-mono text-[11px] tabular-nums">
+                            <TableCell label="Duration" class="text-right font-mono text-[11px] tabular-nums">
                               {durationText(call.durationMs)}
                             </TableCell>
-                            <TableCell class="whitespace-nowrap text-right font-mono text-[11px] tabular-nums">
+                            <TableCell
+                              label="Size in → out"
+                              class="whitespace-nowrap text-right font-mono text-[11px] tabular-nums"
+                            >
                               {formatBytes(call.bytesIn)} → {formatBytes(call.bytesOut)}
                             </TableCell>
                           </Show>

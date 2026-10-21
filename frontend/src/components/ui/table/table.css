@@ -1,0 +1,67 @@
+[data-table-layout='cards'] {
+  & table,
+  & tbody,
+  & tfoot,
+  & tr {
+    display: block;
+  }
+
+  & thead {
+    display: none;
+  }
+
+  & tr {
+    position: relative;
+    padding: 0.5rem 0.75rem;
+  }
+
+  & tr:has(> td[colspan]:only-child) {
+    padding: 0;
+  }
+
+  & td[colspan]:only-child {
+    padding: 0.5rem 0.75rem;
+  }
+
+  & tr:has(> td:last-child:not([data-label], :first-child)) > td:first-child {
+    padding-right: 2.75rem;
+  }
+
+  & td:last-child:not([data-label], :first-child) {
+    position: absolute;
+    top: 0.375rem;
+    right: 0.5rem;
+    padding: 0;
+  }
+
+  & td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-width: 0;
+    max-width: none;
+    padding: 0.25rem 0;
+    text-align: left;
+  }
+
+  & td:not([data-label]) {
+    display: block;
+  }
+
+  & td:empty {
+    display: none;
+  }
+
+  & td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+  }
+
+  & td[data-label] > * {
+    min-width: 0;
+    text-align: right;
+  }
+}

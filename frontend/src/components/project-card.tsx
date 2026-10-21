@@ -110,7 +110,7 @@ export function ProjectCard(props: {
             onDeleted={props.onDeleted}
             triggerClass={cn(
               'inline-flex items-center justify-center rounded-md w-6 h-6 shrink-0 text-sidebar-muted-foreground transition-colors',
-              'opacity-0 group-hover:opacity-100',
+              'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100',
               'hover:text-sidebar-foreground hover:bg-sidebar-accent',
               props.isActive && 'opacity-100'
             )}
