@@ -3,7 +3,9 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { modelProviders, projectEnvironments, projects } from '../../db/schema';
+import { modelProviders, projectEnvironments, projectPodSettings, projects } from '../../db/schema';
+import { writeAgentPodSettings } from '../../src/agent/agent-pod-settings';
+import { resolvePodSettings } from '../../src/pod/pod-classes';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { PodService } from '../../src/pod/pod.service';
@@ -294,6 +296,25 @@ describe('a pooled Project takes the Organization’s Model providers when it is
     const created = pods.callsTo('createAssignedPod').find((call) => call.args.environmentId === slotId);
     expect(created?.args.runtimeProxyUrl).toBe(RUNTIME_PROXY_URL);
     await createProject(await addMember(app, await createTenant(app)));
+  });
+
+  it('records the Agent’s current Resources selection on the claimed Project, not the slot’s', async () => {
+    const slotId = await provisionPoolSlot();
+    await writeAgentPodSettings(db, agentId, {
+      podClass: 'custom',
+      cpuMillicores: 100,
+      memoryRequestMib: 2048,
+      memoryLimitMib: 4096,
+    });
+    try {
+      const projectId = await createProject(await addMember(app, await createTenant(app)));
+
+      expect(projectId).toBe(slotId);
+      const [row] = await db.select().from(projectPodSettings).where(eq(projectPodSettings.projectId, slotId));
+      expect(row.podClass).toBe('custom');
+    } finally {
+      await writeAgentPodSettings(db, agentId, resolvePodSettings());
+    }
   });
 
   it('starts the configurations the claimed Project inherited, as a direct create does', async () => {

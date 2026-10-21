@@ -441,6 +441,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       const row = reserved[0];
       if (!row) return null;
 
+      await tx.update(projectPodSettings).set(resources).where(eq(projectPodSettings.projectId, row.id));
       await tx
         .update(projects)
         .set({
