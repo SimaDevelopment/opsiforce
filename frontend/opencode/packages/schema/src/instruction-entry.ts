@@ -7,7 +7,7 @@ import { Schema } from "effect"
  * derives the namespaced Instructions key as `api/<key>`, keeping the
  * `api/*` namespace enforced by construction.
  */
-export const Key = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9._-]*$/)).annotate({
+export const Key = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9._-]*$/u)).annotate({
   identifier: "InstructionEntry.Key",
   description: "Instruction entry key (lowercase alphanumerics plus . _ -)",
 })
@@ -27,7 +27,7 @@ export const Snapshot = Schema.Array(
 ).annotate({ identifier: "InstructionEntry.Snapshot" })
 export type Snapshot = typeof Snapshot.Type
 
-export const MaxValueBytes = 8 * 1024
+export const MaxValueBytes = 256 * 1024
 
 export class ValueTooLargeError extends Schema.TaggedError<ValueTooLargeError>()(
   "InstructionEntryValueTooLargeError",

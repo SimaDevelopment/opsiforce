@@ -15,7 +15,7 @@ adrs: [0009]
 - Each guard writes its command's output and lifecycle events to that process's [Process Log](../../GLOSSARY.md) under `/workspace/data/logs/` ([Process Log](process-log.md)).
 - `guard` restarts its command whenever it exits, a clean exit included, with exponential backoff (2 s doubling to 60 s, back to 2 s after a run of 30 s or more), until the guard itself is signalled or it gives up after 50 restarts. Every guarded process is meant to run for good, so a service stopped gracefully (by the App restart, say) comes back like a crashed one.
 - The App's guard waits for an executable `/workspace/app/startup.sh` instead of running it straight away, so a workspace with no App yet idles quietly rather than crash-looping to `gave_up` ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)).
-- agent-control is the in-pod control process: it restarts the App's processes on request from the backend over the control port so the guards revive them with new values ([ADR-0009](../adr/0009-in-pod-control-process.md)), pushes [Go-live](../../GLOSSARY.md) and [Agent Status](../../GLOSSARY.md) to the backend, and fronts OpenCode with injected auth ([OpenCode Embed](../frontend/opencode-embed.md)).
+- agent-control is the in-pod control process: it restarts the App's processes on request from the backend over the control port so the guards revive them with new values ([ADR-0009](../adr/0009-in-pod-control-process.md)), pushes [Go-live](../../GLOSSARY.md) to the backend, and fronts OpenCode with injected auth ([OpenCode Embed](../frontend/opencode-embed.md)).
 - Chat, Code and DB are lazy-loaded iframe tabs in the project view; once mounted a tab stays in the DOM, so switching never reloads it.
 
 ### Routing
@@ -42,7 +42,7 @@ adrs: [0009]
 ## Code
 
 - `agent-config/scripts/entrypoint.sh` — the five guard-wrapped processes and the database seeding.
-- `proxy/cmd/agent-control/` — the control port, status and readiness pushes, the OpenCode front proxy.
+- `proxy/cmd/agent-control/` — the control port, the readiness push, the OpenCode front proxy.
 - `proxy/cmd/opsiforce-proxy/` — the single runtime-proxy binary and its vscode and db modes.
 - `agent-config/datasette-metadata.yml` — per-database access.
 - `frontend/src/components/project/` — the Chat, Code and DB tabs.

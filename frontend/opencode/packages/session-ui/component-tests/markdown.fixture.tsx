@@ -1,9 +1,10 @@
 import { createSignal, Show } from "solid-js"
 import { render } from "solid-js/web"
+import { DialogProvider } from "@opencode/ui/context/dialog"
 import { Markdown } from "../src/components/markdown"
 import { preloadMarkdown } from "../src/components/markdown-cache"
 import { MarkdownProvider } from "../src/context/markdown"
-import { OpenCode } from "@opencode-ai/client/promise"
+import { OpenCode } from "@opencode/client/promise"
 import { readLocalImage } from "../../app/src/runtime/server/image"
 
 export {
@@ -12,9 +13,15 @@ export {
   sanitizeMarkdown,
   touchCachedMarkdown,
 } from "../src/components/markdown-cache"
+
 export { renderMermaidSvg } from "../src/components/markdown-mermaid"
+
 export { MarkdownWorkerDisposedError } from "../src/components/markdown-worker"
+
 export { preloadMarkdown }
+
+// Inline code naming one of these is a file link; any other path stays plain code.
+const existingFiles = new Set(["src/file.ts", "new/file.ts"])
 
 export async function mountMarkdown(options: {
   text: string
@@ -31,11 +38,13 @@ export async function mountMarkdown(options: {
       baseUrl: location.origin,
       headers: { Authorization: `Basic ${btoa("opencode:fixture")}` },
     })
+
     const [text, setText] = createSignal(options.text)
     const [streaming, setStreaming] = createSignal(options.streaming ?? false)
     const [visible, setVisible] = createSignal(true)
+
     return (
-      <>
+      <DialogProvider>
         <textarea aria-label="Markdown text" value={text()} onInput={(event) => setText(event.currentTarget.value)} />
         <input
           aria-label="Streaming"
@@ -48,6 +57,7 @@ export async function mountMarkdown(options: {
           readImage={(path, signal) =>
             options.images ? readLocalImage(api, "C:/project", path, signal) : Promise.resolve(undefined)
           }
+          localFileExists={(path) => Promise.resolve(existingFiles.has(path))}
         >
           <Show when={visible()}>
             <Markdown
@@ -58,7 +68,7 @@ export async function mountMarkdown(options: {
             />
           </Show>
         </MarkdownProvider>
-      </>
+      </DialogProvider>
     )
   }, host)
 }

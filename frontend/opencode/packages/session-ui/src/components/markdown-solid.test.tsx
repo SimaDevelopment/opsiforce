@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { parseMarkdownNodes } from "./markdown-solid"
 
 beforeAll(() => GlobalRegistrator.register())
+
 afterAll(() => GlobalRegistrator.unregister())
 
 test("assigns stable paths to elements and individual words", () => {
@@ -37,6 +38,32 @@ test("keeps completed block text compact", () => {
       tag: "p",
       attributes: {},
       children: [{ key: "0.0", type: "text", text: "Hello world" }],
+    },
+  ])
+})
+
+test("marks streamed inline code for animation", () => {
+  expect(parseMarkdownNodes("<p><code>file.ts:29-43</code></p>", true, true)).toEqual([
+    {
+      key: "0",
+      type: "element",
+      tag: "p",
+      attributes: {},
+      children: [
+        {
+          key: "0.0",
+          type: "element",
+          tag: "code",
+          attributes: {},
+          children: Array.from("file.ts:29-43", (text, index) => ({
+            key: `0.0.0:${index}`,
+            type: "word",
+            text,
+            animate: true,
+          })),
+          animate: true,
+        },
+      ],
     },
   ])
 })

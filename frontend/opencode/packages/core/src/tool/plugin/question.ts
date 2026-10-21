@@ -1,11 +1,11 @@
 export * as QuestionTool from "./question.js"
 
-import type { Context } from "@opencode-ai/plugin/effect/plugin"
-import { ToolFailure } from "@opencode-ai/ai"
+import type { Context } from "@opencode/plugin/effect/plugin"
+import { ToolFailure } from "@opencode/ai"
 import { Effect, Schema } from "effect"
 import { Form } from "../../form.js"
 import { Permission } from "../../permission.js"
-import { Question } from "@opencode-ai/schema/question"
+import { Question } from "@opencode/schema/question"
 
 export const name = "question"
 
@@ -90,6 +90,10 @@ export const Plugin = {
                   // Deliberate defect tunnel (see Permission.assert): a dismissal must dodge
                   // leaf `mapError` blankets so it never becomes model-facing tool output; it
                   // resurfaces as a typed failure at SessionModelRequest.executeTool.
+                  // A dismissal with a message (e.g. from a non-interactive client) is ordinary
+                  // model-facing feedback: the model continues instead of the step ending.
+                  if (state.status === "cancelled" && state.message !== undefined)
+                    return Effect.fail(new ToolFailure({ message: state.message }))
                   if (state.status === "cancelled") return Effect.die(new CancelledError())
                   const output = {
                     answers: input.questions.map((_, index): Question.Answer => {

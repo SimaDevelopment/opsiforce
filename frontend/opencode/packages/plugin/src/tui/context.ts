@@ -1,9 +1,9 @@
 import type {
   AgentInfo,
   CommandInfo,
-  FormCancelInput,
+  SessionFormCancelInput,
   FormInfo,
-  FormReplyInput,
+  SessionFormReplyInput,
   IntegrationInfo,
   LocationRef,
   McpResource,
@@ -22,8 +22,8 @@ import type {
   ShellInfo,
   SkillInfo,
   VcsInfo,
-} from "@opencode-ai/client"
-import type { ResolvedTheme } from "@opencode-ai/theme/tui"
+} from "@opencode/client"
+import type { ResolvedTheme } from "@opencode/theme/tui"
 import type { CliRenderer, KeyEvent, MarkdownCodeBlockRenderer, Renderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type { Store } from "solid-js/store"
@@ -95,8 +95,8 @@ export interface Data {
       list(sessionID: string, location?: LocationRef): Array<FormInfo & { readonly location?: LocationRef }> | undefined
       sync(sessionID: string, location?: LocationRef): Promise<void>
       invalidate(sessionID: string, location?: LocationRef): void
-      reply(input: FormReplyInput, location?: LocationRef): Promise<void>
-      cancel(input: FormCancelInput, location?: LocationRef): Promise<void>
+      reply(input: SessionFormReplyInput, location?: LocationRef): Promise<void>
+      cancel(input: SessionFormCancelInput, location?: LocationRef): Promise<void>
     }
   }
   readonly project: {
@@ -162,6 +162,21 @@ type PromptFooterInput = {
   readonly showDetails: boolean
 }
 
+export type PanelPresentation = "panel" | "fullscreen"
+
+/** Client-local state of the selected session panel. The host owns its layout and input scope. */
+export interface PanelInput {
+  /** Selected content name, set by ui.panel.open. Contributions decide whether to render it. */
+  readonly name: string
+  readonly sessionID: string
+  readonly width: number
+  readonly presentation: PanelPresentation
+  readonly focused: boolean
+  readonly focus: () => void
+  readonly close: () => void
+  readonly toggleFullscreen: () => void
+}
+
 /**
  * The host UI's slot tree. Every path is one slot: a named boundary a plugin
  * may render around, inside, or take over. Paths are absolute and
@@ -176,10 +191,12 @@ type PromptFooterInput = {
 export interface SlotMap {
   readonly app: Readonly<Record<string, never>>
   readonly "home.footer": Readonly<Record<string, never>>
+  readonly "home.footer.status": Readonly<Record<string, never>>
   readonly "prompt.footer": PromptFooterInput
   readonly "prompt.footer.status": PromptFooterInput
   readonly "prompt.footer.file": PromptFooterInput
   readonly "session.composer.top": { readonly sessionID: string }
+  readonly "session.panel": PanelInput
   readonly "sidebar.content": { readonly sessionID: string }
   readonly "sidebar.footer": { readonly sessionID: string }
 }
@@ -256,6 +273,8 @@ export interface ToastOptions {
   readonly message: string
   readonly variant?: ToastVariant
   readonly duration?: number
+  /** When this session's family is not open, the title defaults to the session title and the toast offers to open it. */
+  readonly sessionID?: string
 }
 
 export interface Toast {
@@ -337,15 +356,39 @@ export interface DialogSelectOption<Value> {
   readonly title: string
   readonly value: Value
   readonly description?: string
+  readonly footer?: string
   readonly category?: string
   readonly disabled?: boolean
 }
+
+export type DialogSelectAction<Value> = {
+  readonly bind: string
+  readonly title: string
+  readonly side?: "left" | "right"
+} & (
+  | {
+      /** Unavailable while no option is selected. */
+      readonly selection?: "required"
+      readonly onTrigger: (value: Value) => void
+    }
+  | {
+      readonly selection: "none"
+      readonly onTrigger: () => void
+    }
+)
 
 export interface DialogSelectOptions<Value> {
   readonly title: string
   readonly placeholder?: string
   readonly options: readonly DialogSelectOption<Value>[]
   readonly current?: Value
+  /** Returns matching options in display order, including for an empty query. Receives only enabled options. Results are listed flat. */
+  readonly search?: (
+    query: string,
+    options: readonly DialogSelectOption<Value>[],
+  ) => readonly DialogSelectOption<Value>[]
+  /** Footer actions, also triggered by their bindings. Triggering one does not close the dialog. */
+  readonly actions?: readonly DialogSelectAction<Value>[]
 }
 
 export interface Dialog {
@@ -418,8 +461,13 @@ export interface KeymapActive {
 }
 
 export interface Keymap {
-  /** Creates a reactive keymap layer owned by the calling component. */
-  layer(input: () => KeymapLayer): void
+  /**
+   * Creates a reactive keymap layer. It is removed when the plugin deactivates, or earlier when the component or reactive
+   * computation that created it is disposed. The factory must be pure. It runs once untracked for initial command-shape
+   * validation, then reactively. Initial command-shape errors throw synchronously. OpenTUI handles binding-parse errors.
+   * Errors from later reactive updates follow Solid's error handling.
+   */
+  layer(factory: () => KeymapLayer): void
   /** Dispatches a reachable command by ID. */
   dispatch(id: string, input?: string): void
   /** Returns every formatted shortcut for a registered command. */
@@ -450,6 +498,14 @@ export interface UI {
     navigate(destination: Destination): void
     current(): Route
   }
+  readonly panel: {
+    /** Opens the session.panel slot in the current session. */
+    open(name: string, options?: { readonly presentation?: PanelPresentation }): boolean
+    /** Closes this plugin's active panel. Other plugins' panels are unaffected. */
+    close(): void
+    /** This plugin's active panel, if any. Reactive when read in a Solid computation. */
+    current(): { readonly name: string; readonly sessionID: string } | undefined
+  }
   readonly tabs: {
     /** Returns whether session tabs are enabled for this TUI. */
     enabled(): boolean
@@ -462,12 +518,24 @@ export interface UI {
       readonly attention: boolean
       readonly unread?: "activity" | "error"
     }[]
-    /** Opens (or focuses) a tab for a session, adding it when not already open. Returns false when tabs are disabled. */
+    /** Opens a tab for a session without focusing it. Returns false when tabs are disabled. */
     open(sessionID: string): boolean
-    /** Focuses an already-open tab and returns false when it is not open. */
+    /** Opens a tab when needed, then focuses it. Returns false when tabs are disabled. */
     focus(sessionID: string): boolean
+    /** Moves an open tab to an index and returns false when it is not open. */
+    move(sessionID: string, index: number): boolean
     /** Closes an open tab, or the active tab when omitted, and returns false when no tab matched. */
     close(sessionID?: string): boolean
+  }
+  readonly model: {
+    /** The prompt's selected model; variant is undefined for the model default. Reactive when read in a Solid computation. */
+    current(): { readonly providerID: string; readonly modelID: string; readonly variant?: string } | undefined
+    readonly variant: {
+      /** Variant IDs of the selected model. Reactive when read in a Solid computation. */
+      list(): readonly string[]
+      /** Selects a variant of the selected model, or the model default when undefined. Returns false when no model is selected or the variant is unavailable. */
+      set(variant: string | undefined): boolean
+    }
   }
   /** Claims a place in the slot tree; see SlotClaim. */
   readonly slot: (claim: SlotClaim) => () => void

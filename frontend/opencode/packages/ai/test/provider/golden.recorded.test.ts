@@ -1,7 +1,13 @@
 import * as Anthropic from "../../src/providers/anthropic.js"
 import * as AnthropicCompatible from "../../src/providers/anthropic-compatible.js"
-import { Cerebras, DeepInfra, TogetherAI } from "../../src/providers/index.js"
-import { CloudflareAIGateway, CloudflareWorkersAI } from "../../src/providers/cloudflare.js"
+import {
+  Cerebras,
+  CloudflareAIGateway,
+  CloudflareWorkersAI,
+  DeepInfra,
+  DeepSeek,
+  TogetherAI,
+} from "../../src/providers/index.js"
 import * as Google from "../../src/providers/google.js"
 import * as OpenAI from "../../src/providers/openai.js"
 import * as OpenAICompatible from "../../src/providers/openai-compatible.js"
@@ -43,18 +49,22 @@ const cloudflareWorkers = CloudflareWorkersAI.configure({
 })
 const cloudflareAIGatewayWorkers = cloudflareAIGateway.model("workers-ai/@cf/meta/llama-3.1-8b-instruct")
 const cloudflareAIGatewayWorkersTools = cloudflareAIGateway.model("workers-ai/@cf/openai/gpt-oss-20b")
+const cloudflareAIGatewayClaude = cloudflareAIGateway.model("anthropic/claude-haiku-4.5")
+const cloudflareAIGatewayOpenAI = cloudflareAIGateway.model("openai/gpt-5-nano")
 const cloudflareWorkersAI = cloudflareWorkers.model("@cf/meta/llama-3.1-8b-instruct")
 const cloudflareWorkersAITools = cloudflareWorkers.model("@cf/openai/gpt-oss-20b")
-const deepseek = OpenAICompatible.deepseek
-  .configure({ apiKey: process.env.DEEPSEEK_API_KEY ?? "fixture" })
-  .model("deepseek-chat")
+const deepseek = DeepSeek.configure({ apiKey: process.env.DEEPSEEK_API_KEY ?? "fixture" }).model("deepseek-chat")
 const together = TogetherAI.configure({
   apiKey: process.env.TOGETHER_API_KEY ?? process.env.TOGETHER_AI_API_KEY ?? "fixture",
 }).model("meta-llama/Llama-3.3-70B-Instruct-Turbo")
 const cerebras = Cerebras.configure({ apiKey: process.env.CEREBRAS_API_KEY ?? "fixture" }).model("gpt-oss-120b")
-const groq = OpenAICompatible.groq
-  .configure({ apiKey: process.env.GROQ_API_KEY ?? "fixture" })
-  .model("llama-3.3-70b-versatile")
+// These older cassettes exercise generic Chat compatibility. Native Groq request
+// shaping and reasoning are covered by groq.recorded.test.ts.
+const groq = OpenAICompatible.configure({
+  provider: "groq",
+  baseURL: "https://api.groq.com/openai/v1",
+  apiKey: process.env.GROQ_API_KEY ?? "fixture",
+}).model("llama-3.3-70b-versatile")
 const deepInfra = DeepInfra.configure({ apiKey: process.env.DEEPINFRA_API_KEY ?? "fixture" }).model(
   "meta-llama/Llama-3.3-70B-Instruct-Turbo",
 )
@@ -68,7 +78,7 @@ const openrouterOpus = OpenRouter.configure({
 const redactCloudflareURL = (url: string) =>
   url
     .replace(/\/client\/v4\/accounts\/[^/]+\/ai\/v1\//, "/client/v4/accounts/{account}/ai/v1/")
-    .replace(/\/v1\/[^/]+\/[^/]+\/compat\//, "/v1/{account}/{gateway}/compat/")
+    .replace(/\/v1\/[^/]+\/[^/]+\/(anthropic|openai)\//, "/v1/{account}/{gateway}/$1/")
 
 const cloudflareOptions = {
   redact: { url: redactCloudflareURL },
@@ -168,6 +178,25 @@ describeRecordedGoldenScenarios([
     requires: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
     options: cloudflareOptions,
     scenarios: [{ id: "tool-call", maxTokens: 120 }],
+  },
+  {
+    name: "Cloudflare AI Gateway Claude Haiku 4.5",
+    prefix: "cloudflare-ai-gateway",
+    model: cloudflareAIGatewayClaude,
+    requires: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
+    options: { redact: { url: redactCloudflareURL, allowRequestHeaders: ["anthropic-version"] } },
+    scenarios: ["text", "tool-loop"],
+  },
+  {
+    name: "Cloudflare AI Gateway OpenAI GPT-5 Nano",
+    prefix: "cloudflare-ai-gateway",
+    model: cloudflareAIGatewayOpenAI,
+    requires: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
+    options: cloudflareOptions,
+    scenarios: [
+      { id: "text", temperature: false, maxTokens: 2000 },
+      { id: "tool-loop", temperature: false, maxTokens: 2000, timeout: 30_000 },
+    ],
   },
   {
     name: "Cloudflare Workers AI Llama 3.1 8B",

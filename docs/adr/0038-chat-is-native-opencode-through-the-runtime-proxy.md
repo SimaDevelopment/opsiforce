@@ -35,7 +35,7 @@ Session ids are descending-encoded, so a newer Session sorts lower as a string. 
 ## Consequences — accepted costs
 
 - **No platform-owned chat schema stability.** The conversation is the protocol of the deployed build. A bump can change bodies, kinds and defaults, and the platform will not absorb that for consumers.
-- **No per-prompt outcome.** Native `wait` means the Session went idle, not that a particular prompt succeeded. Consumers read the outcome from messages or events.
+- **No platform-owned per-prompt outcome.** The platform adds no outcome call; a consumer reads the outcome from opencode's events, and native `wait` is experimental and means only that the Session went idle.
 - **The delivery default is native `steer`.** A program that wants its second prompt to wait for the next turn sends `queue` itself.
 - **Interrupt is native.** It stops the turn; parked inbox items are the caller's business.
 - **Events are opencode's stream as it is**, unfiltered and not re-framed.
@@ -45,5 +45,5 @@ Session ids are descending-encoded, so a newer Session sorts lower as a string. 
 
 ## Consequences — what improves
 
-- The verified opencode client works against a Project, with a documented fetch adapter for the upstream root-relative URL bug (anomalyco/opencode#46498).
+- The verified opencode client works against a Project as it is.
 - One connection operation serves both the app and programs, so the browser and a program bind the same Session by construction.

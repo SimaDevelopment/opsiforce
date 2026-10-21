@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import type { ShellInfo } from "@opencode-ai/client"
+import type { ShellInfo } from "@opencode/client"
 import { expect, test } from "bun:test"
 import { createSignal, onMount } from "solid-js"
 import { ConfigProvider } from "../../src/config"
@@ -9,6 +9,8 @@ import { ClientProvider } from "../../src/context/client"
 import { DataProvider, useData } from "../../src/context/data"
 import { Keymap } from "../../src/context/keymap"
 import { RouteProvider } from "../../src/context/route"
+import { TuiAppProvider } from "../../src/context/runtime"
+import { StorageProvider } from "../../src/context/storage"
 import { ThemeProvider } from "../../src/context/theme"
 import { Composer } from "../../src/routes/session/composer"
 import { DialogProvider } from "../../src/ui/dialog"
@@ -20,7 +22,7 @@ import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 
 async function setup(width: number, output = "") {
   const temporary = await tmpdir()
-  const location = { directory: `${temporary.path}/original`, workspaceID: "workspace_fixture" }
+  const location = { directory: `${temporary.path}/original` }
   const shell: ShellInfo = {
     id: "sh_fixture",
     command: "render-scene --quality high",
@@ -66,23 +68,27 @@ async function setup(width: number, output = "") {
   const app = await testRender(
     () => (
       <TestTuiContexts directory={temporary.path} paths={{ state: temporary.path }}>
-        <ConfigProvider config={createTuiResolvedConfig({ session: { terminal: false } })}>
-          <RouteProvider initialRoute={{ type: "session", sessionID: "ses_fixture" }}>
-            <ClientProvider api={api}>
-              <DataProvider directory={temporary.path}>
-                <ThemeProvider mode={width === 40 ? "light" : "dark"} source={emptyThemeSource}>
-                  <Keymap.Provider>
-                    <ToastProvider>
-                      <DialogProvider>
-                        <Shells />
-                      </DialogProvider>
-                    </ToastProvider>
-                  </Keymap.Provider>
-                </ThemeProvider>
-              </DataProvider>
-            </ClientProvider>
-          </RouteProvider>
-        </ConfigProvider>
+        <TuiAppProvider value={{ name: "test", version: "test", channel: "test" }}>
+          <StorageProvider>
+            <ConfigProvider config={createTuiResolvedConfig()}>
+              <RouteProvider initialRoute={{ type: "session", sessionID: "ses_fixture" }}>
+                <ClientProvider api={api}>
+                  <DataProvider directory={temporary.path}>
+                    <ThemeProvider mode={width === 40 ? "light" : "dark"} source={emptyThemeSource}>
+                      <Keymap.Provider>
+                        <ToastProvider>
+                          <DialogProvider>
+                            <Shells />
+                          </DialogProvider>
+                        </ToastProvider>
+                      </Keymap.Provider>
+                    </ThemeProvider>
+                  </DataProvider>
+                </ClientProvider>
+              </RouteProvider>
+            </ConfigProvider>
+          </StorageProvider>
+        </TuiAppProvider>
       </TestTuiContexts>
     ),
     { width, height: 30, kittyKeyboard: true },
@@ -149,9 +155,7 @@ test.each([40, 100])("shell output opens, follows, scrolls, and survives exit at
   expect(reads.every((request) => request.url.searchParams.get("location[directory]") === app.location.directory)).toBe(
     true,
   )
-  expect(
-    reads.every((request) => request.url.searchParams.get("location[workspace]") === app.location.workspaceID),
-  ).toBe(true)
+  expect(reads.every((request) => request.url.searchParams.has("location[workspace]") === false)).toBe(true)
 
   app.mockInput.pressEscape()
   await app.waitForFrame((frame) => !frame.includes("Shell output") && frame.includes("No shell commands"))

@@ -1,21 +1,21 @@
 import { Schema } from "effect"
-import { LLM } from "@opencode-ai/schema/llm"
+import { LLM } from "@opencode/schema/llm"
 import { ContentBlockID, ToolCallID } from "./ids.js"
 import {
   Message,
   CompactionPart,
-  ProviderMetadata,
   ToolCallPart,
   ToolOutput,
   ToolResultPart,
   ToolResultValue,
   type ContentPart,
 } from "./messages.js"
+import { ProviderMetadata } from "./options.js"
 import { ProviderFailureClassification } from "./errors.js"
+import { Media } from "../media.js"
 
 export const FinishReason = LLM.FinishReason
 export type FinishReason = Schema.Schema.Type<typeof FinishReason>
-export { ProviderMetadata } from "./messages.js"
 
 /**
  * Token usage reported by an LLM provider.
@@ -91,9 +91,45 @@ export class Usage extends Schema.Class<Usage>("AI.Usage")({
 
 export type UsageInput = Usage | ConstructorParameters<typeof Usage>[0]
 
+/**
+ * Usage reported by media routes. Providers bill images, video, speech, and transcription in different units, so
+ * each response carries the unit it was actually metered in instead of forcing everything into tokens.
+ */
+export const MediaUsage = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("tokens"),
+    input: Schema.optional(Schema.Number),
+    output: Schema.optional(Schema.Number),
+    total: Schema.optional(Schema.Number),
+    details: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  }),
+  Schema.Struct({ type: Schema.Literal("seconds"), seconds: Schema.Number }),
+  Schema.Struct({ type: Schema.Literal("characters"), characters: Schema.Number }),
+  Schema.Struct({ type: Schema.Literal("credits"), credits: Schema.Number }),
+  Schema.Struct({ type: Schema.Literal("compute"), seconds: Schema.Number }),
+])
+  .pipe(Schema.toTaggedUnion("type"))
+  .annotate({ identifier: "AI.MediaUsage" })
+export type MediaUsage = Schema.Schema.Type<typeof MediaUsage>
+
 /** A replacement context window, not an assistant message to append to prior history. */
 export class CompactionResponse extends Schema.Class<CompactionResponse>("LLM.CompactionResponse")({
   replacement: Schema.Array(Message),
+  usage: Schema.optional(Usage),
+}) {}
+
+/** A checkpoint only; retained history and replacement-window construction belong to the caller. */
+export class CompactionCheckpointResponse extends Schema.Class<CompactionCheckpointResponse>(
+  "LLM.CompactionCheckpointResponse",
+)({
+  checkpoint: CompactionPart.pipe(
+    Schema.refine(
+      (part): part is CompactionPart & { readonly encrypted: string; readonly text?: never } =>
+        part.encrypted !== undefined && part.encrypted.length > 0,
+      { message: "A checkpoint response requires encrypted compaction content" },
+    ),
+  ),
+  responseID: Schema.String.check(Schema.isPattern(/\S/)),
   usage: Schema.optional(Usage),
 }) {}
 
@@ -155,6 +191,7 @@ export const ToolInputStart = Schema.Struct({
   type: Schema.tag("tool-input-start"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   providerExecuted: Schema.optional(Schema.Boolean),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.ToolInputStart" })
@@ -164,6 +201,7 @@ export const ToolInputDelta = Schema.Struct({
   type: Schema.tag("tool-input-delta"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   text: Schema.String,
   /** Best-effort parse of all input fragments received through this delta. */
   input: Schema.optional(Schema.Unknown),
@@ -174,6 +212,7 @@ export const ToolInputEnd = Schema.Struct({
   type: Schema.tag("tool-input-end"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.ToolInputEnd" })
 export type ToolInputEnd = Schema.Schema.Type<typeof ToolInputEnd>
@@ -183,6 +222,7 @@ export const ToolInputError = Schema.Struct({
   type: Schema.tag("tool-input-error"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   raw: Schema.String,
 }).annotate({ identifier: "LLM.Event.ToolInputError" })
 export type ToolInputError = Schema.Schema.Type<typeof ToolInputError>
@@ -191,6 +231,7 @@ export const ToolCall = Schema.Struct({
   type: Schema.tag("tool-call"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   input: Schema.Unknown,
   providerExecuted: Schema.optional(Schema.Boolean),
   providerMetadata: Schema.optional(ProviderMetadata),
@@ -201,6 +242,7 @@ export const ToolResult = Schema.Struct({
   type: Schema.tag("tool-result"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   result: ToolResultValue,
   output: Schema.optional(ToolOutput),
   providerExecuted: Schema.optional(Schema.Boolean),
@@ -212,6 +254,7 @@ export const ToolError = Schema.Struct({
   type: Schema.tag("tool-error"),
   id: ToolCallID,
   name: Schema.String,
+  namespace: Schema.optional(Schema.String),
   message: Schema.String,
   error: Schema.optional(Schema.Defect()),
   providerMetadata: Schema.optional(ProviderMetadata),
@@ -221,6 +264,10 @@ export type ToolError = Schema.Schema.Type<typeof ToolError>
 export const FinishReasonDetails = Schema.Struct({
   normalized: FinishReason,
   raw: Schema.optional(Schema.String),
+  /** The provider's policy area for a content-filter finish, such as `cyber`. */
+  category: Schema.optional(Schema.String),
+  /** The provider's human-readable reason for a content-filter finish. */
+  explanation: Schema.optional(Schema.String),
 }).annotate({ identifier: "LLM.FinishReasonDetails" })
 export type FinishReasonDetails = Schema.Schema.Type<typeof FinishReasonDetails>
 
@@ -240,6 +287,14 @@ export const Finish = Schema.Struct({
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.Finish" })
 export type Finish = Schema.Schema.Type<typeof Finish>
+
+/** A generated media asset (image, audio, …) emitted by the model as first-class output rather than a tool result. */
+export const MediaEvent = Schema.Struct({
+  type: Schema.tag("media"),
+  media: Media.AssetSchema,
+  providerMetadata: Schema.optional(ProviderMetadata),
+}).annotate({ identifier: "LLM.Event.Media" })
+export type MediaEvent = Schema.Schema.Type<typeof MediaEvent>
 
 export const ProviderErrorEvent = Schema.Struct({
   type: Schema.tag("provider-error"),
@@ -265,6 +320,7 @@ const llmEventTagged = Schema.Union([
   ToolCall,
   ToolResult,
   ToolError,
+  MediaEvent,
   StepFinish,
   Finish,
   ProviderErrorEvent,
@@ -310,6 +366,7 @@ export const LLMEvent = Object.assign(llmEventTagged, {
       output: input.output === undefined ? undefined : ToolOutput.make(input.output.structured, input.output.content),
     }),
   toolError: (input: WithID<ToolError, ToolCallID>) => ToolError.make({ ...input, id: toolCallID(input.id) }),
+  media: MediaEvent.make,
   stepFinish: (input: WithUsage<StepFinish>) =>
     StepFinish.make({
       ...input,
@@ -337,6 +394,7 @@ export const LLMEvent = Object.assign(llmEventTagged, {
     toolCall: llmEventTagged.guards["tool-call"],
     toolResult: llmEventTagged.guards["tool-result"],
     toolError: llmEventTagged.guards["tool-error"],
+    media: llmEventTagged.guards.media,
     stepFinish: llmEventTagged.guards["step-finish"],
     finish: llmEventTagged.guards.finish,
     providerError: llmEventTagged.guards["provider-error"],
@@ -385,6 +443,7 @@ interface ContentAssembly {
 
 interface ToolInputAssembly {
   readonly name: string
+  readonly namespace?: string
   readonly text: string
   readonly providerMetadata?: ProviderMetadata
 }
@@ -522,12 +581,17 @@ const reduceToolInputStart = (state: ResponseState, event: ToolInputStart): Resp
   ...state,
   toolInputs: {
     ...state.toolInputs,
-    [event.id]: { name: event.name, text: "", providerMetadata: event.providerMetadata },
+    [event.id]: {
+      name: event.name,
+      namespace: event.namespace,
+      text: "",
+      providerMetadata: event.providerMetadata,
+    },
   },
 })
 
 const reduceToolInputDelta = (state: ResponseState, event: ToolInputDelta): ResponseState => {
-  const current = state.toolInputs[event.id] ?? { name: event.name, text: "" }
+  const current = state.toolInputs[event.id] ?? { name: event.name, namespace: event.namespace, text: "" }
   return {
     ...state,
     toolInputs: { ...state.toolInputs, [event.id]: { ...current, text: current.text + event.text } },
@@ -535,7 +599,7 @@ const reduceToolInputDelta = (state: ResponseState, event: ToolInputDelta): Resp
 }
 
 const reduceToolInputEnd = (state: ResponseState, event: ToolInputEnd): ResponseState => {
-  const current = state.toolInputs[event.id] ?? { name: event.name, text: "" }
+  const current = state.toolInputs[event.id] ?? { name: event.name, namespace: event.namespace, text: "" }
   return {
     ...state,
     toolInputs: {
@@ -543,6 +607,7 @@ const reduceToolInputEnd = (state: ResponseState, event: ToolInputEnd): Response
       [event.id]: {
         ...current,
         name: event.name,
+        namespace: event.namespace,
         providerMetadata: event.providerMetadata ?? current.providerMetadata,
       },
     },
@@ -553,6 +618,7 @@ const toolCallContent = (event: ToolCall): ContentPart =>
   ToolCallPart.make({
     id: event.id,
     name: event.name,
+    namespace: event.namespace,
     input: event.input,
     ...(event.providerExecuted === undefined ? {} : { providerExecuted: event.providerExecuted }),
     ...(event.providerMetadata === undefined ? {} : { providerMetadata: event.providerMetadata }),
@@ -562,6 +628,7 @@ const toolResultContent = (event: ToolResult): ContentPart =>
   ToolResultPart.make({
     id: event.id,
     name: event.name,
+    namespace: event.namespace,
     result: event.result,
     ...(event.providerExecuted === undefined ? {} : { providerExecuted: event.providerExecuted }),
     ...(event.providerMetadata === undefined ? {} : { providerMetadata: event.providerMetadata }),
@@ -603,6 +670,13 @@ const reduceResponseState = (state: ResponseState, event: LLMEvent): ResponseSta
       return reduceToolCall(next, event)
     case "tool-result":
       return appendContent(next, toolResultContent(event))
+    case "media":
+      return appendContent(
+        next,
+        event.providerMetadata === undefined
+          ? { type: "media", media: event.media }
+          : { type: "media", media: event.media, providerMetadata: event.providerMetadata },
+      )
     default:
       return next
   }

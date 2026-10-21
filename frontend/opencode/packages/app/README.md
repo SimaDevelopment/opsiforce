@@ -39,7 +39,7 @@ bun run test:e2e:local
 bun run test:e2e:local -- --grep "settings"
 ```
 
-CI builds the app once and runs the same suite against Vite preview, serving production assets from `dist`. Managed built runs never reuse an existing server, so a running dev server cannot silently replace the production build. To run this mode locally:
+CI builds the app once and runs the same suite against a static Bun server (`e2e/utils/serve.ts`) that serves the production assets in `dist` with Vite preview's SPA fallback rules. Managed built runs never reuse an existing server, so a running dev server cannot silently replace the production build. To run this mode locally:
 
 ```bash
 bun run test:e2e:built
@@ -64,27 +64,58 @@ Compiled CLI startup and service lifecycle coverage runs separately in CI via `p
 
 Environment options:
 
-- `PLAYWRIGHT_BUILD=1` (build and preview locally; always enabled when `CI` is set)
+- `PLAYWRIGHT_BUILD=1` (build and serve `dist` locally; always enabled when `CI` is set)
 - `PLAYWRIGHT_SERVER_HOST` / `PLAYWRIGHT_SERVER_PORT` (dev fixture API address, default: `127.0.0.1:4096`; built runs use the app's origin, matching production)
-- `PLAYWRIGHT_PORT` (managed dev or preview server port, default: `3000`)
+- `PLAYWRIGHT_PORT` (managed dev or static server port, default: `3000`)
 - `PLAYWRIGHT_BASE_URL` (use an externally managed app instead of starting a server; otherwise defaults to `http://127.0.0.1:<PLAYWRIGHT_PORT>`)
 
 ## Deployment
 
-The `deploy` GitHub Actions workflow uses SST to deploy the web app from these branches in `anomalyco/opencode`:
+The `deploy` GitHub Actions workflow uses SST to deploy the web app to `beta.opencode.ai` on every push to the
+`beta` branch in `anomalyco/opencode`. The `dev` and `production` stages do not deploy the web app.
 
-| Branch       | Site                  |
-| ------------ | --------------------- |
-| `dev`        | `app.dev.opencode.ai` |
-| `production` | `app.opencode.ai`     |
-| `beta`       | `beta.opencode.ai`    |
+`beta` is the team's dogfooding branch: `dev` merged in by hand, plus commits pushed directly to it. Do not rebase or
+force-push it. Each push also runs the `publish` workflow, which ships the same commit as the OpenCode Beta desktop app
+(see `packages/desktop/README.md`).
 
-Changes merged into `v2` reach the beta site when they are promoted to `beta`. The beta SST stage deploys
-only the web app, using the same `WebApp` StaticSite definition as production. It sets the build channel
-and Sentry environment to `beta` without deploying the API, console, database, or billing infrastructure.
+The beta SST stage deploys only the web app, using the `WebApp` StaticSite definition in `infra/webapp.ts`. It sets
+the build channel and Sentry environment to `beta` without deploying the API, console, database, or billing
+infrastructure.
 
-The hosted app defaults to `http://localhost:49374`, matching the managed V2 service. Saved server selections
-override this default. Connecting still requires the service's credentials.
+`VITE_OPENCODE_SERVER_MODE` controls which server the web build provides at startup:
+
+| Mode               | Initial server                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| `none`             | No initial server. The beta deployment uses this mode.                               |
+| `origin` (default) | The current page's origin. CLI builds explicitly use this mode for `opencode serve`. |
+
+In Vite development mode, `origin` uses `VITE_OPENCODE_SERVER_HOST` / `VITE_OPENCODE_SERVER_PORT`
+(default: `http://localhost:4096`) instead of the frontend origin. Both modes restore user-added servers
+from storage. Desktop provides the local server it discovers or starts through native initialization.
+
+With no configured servers, or when the only server rejects the saved credentials, the app shows a full-screen
+connection form. Enter a server address and password, paste a link from `opencode pair`, or choose
+**Scan QR code** to read its QR code. Pairing links are single-use; the app exchanges them for a session token
+and immediately attempts to connect. Failed connections leave the details available
+to edit and retry with **Connect**. Credentials are checked before saving the server. Camera access requires
+HTTPS (or localhost) and browser permission. Saved offline servers continue to use the normal app UI.
+
+When the service is exposed through an HTTPS reverse proxy, advertise its external address at runtime:
+
+```bash
+opencode pair --url https://opencode.example.com
+```
+
+This replaces the addresses in the printed links and QR code.
+The proxy URL must reach the OpenCode API, not just the frontend. For separate frontend and API processes,
+route `/api` to the service while preserving the `/api` prefix. No machine-specific app or CLI build is required.
+
+When an HTTPS page fails to connect to a non-loopback HTTP server, the connection forms show a specific
+HTTPS-to-HTTP error instead of the generic connection failure. HTTP servers on `localhost`, `*.localhost`,
+`127.0.0.0/8`, or `::1` are treated as trustworthy loopback targets. Connection attempts still run, since
+browser local-network permissions can allow some HTTP LAN connections.
+QR scanning is enabled only in a browser-reported secure context with camera support and an available
+video input; insecure pages and unavailable cameras show an explanation beside the disabled action.
 
 The workflow reuses the repository's `CLOUDFLARE_API_TOKEN` and web Sentry settings. The Cloudflare token
 must cover SST's R2 state storage, KV assets, Workers, and custom-domain management in the account that

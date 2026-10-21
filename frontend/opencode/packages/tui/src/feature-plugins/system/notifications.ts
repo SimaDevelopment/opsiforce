@@ -1,5 +1,5 @@
-import { Plugin } from "@opencode-ai/plugin/tui"
-import type { AttentionSoundName } from "@opencode-ai/plugin/tui/context"
+import { Plugin } from "@opencode/plugin/tui"
+import type { AttentionSoundName } from "@opencode/plugin/tui/context"
 
 function notify(
   context: Plugin.Context,
@@ -66,10 +66,15 @@ export default Plugin.define({
           return
         }
         errored.add(sessionID)
-        notify(context, sessionID, event.data.error.message, "error")
-        const route = context.ui.router.current()
-        if (route.type === "session" && route.sessionID === sessionID)
-          context.ui.toast.show({ title: "Session failed", message: event.data.error.message, variant: "error" })
+        if (event.data.error.type !== "provider.free-limit") {
+          notify(context, sessionID, event.data.error.message, "error")
+          context.ui.toast.show({
+            sessionID,
+            title: "Session failed",
+            message: event.data.error.message,
+            variant: "error",
+          })
+        }
         ended(sessionID)
       }),
     ]

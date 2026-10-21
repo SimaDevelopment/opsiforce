@@ -259,12 +259,3 @@ func (c *Client) TouchActivity(ctx context.Context, environmentID string, surfac
 	_, err = c.postControl(ctx, fmt.Sprintf("/api/internal/proxy/projects/%s/activity", environmentID), payload)
 	return err
 }
-
-// StampPrompt records that a user sent a Prompt to the given project
-// environment, moving its Project to the top of the sidebar. It is a
-// best-effort control-plane signal: callers fire it and forget, never
-// blocking the proxied chat request on its outcome.
-func (c *Client) StampPrompt(ctx context.Context, environmentID string) error {
-	_, err := c.postControl(ctx, fmt.Sprintf("/api/internal/proxy/projects/%s/prompt", environmentID), nil)
-	return err
-}

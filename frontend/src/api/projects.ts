@@ -4,7 +4,6 @@ import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { ApiError, api, type Project, type ProjectState } from './client';
 import { environmentKeys } from './environments';
 import { detectTimezone } from '~/lib/timezone';
-import { isMeaningfulSessionTitle } from '~/lib/session-title';
 
 export const projectKeys = {
   all: ['projects'] as const,
@@ -131,21 +130,6 @@ export function useRenameProject() {
     },
     onSettled: () => qc.invalidateQueries({ queryKey: projectKeys.all }),
   }));
-}
-
-export function useSyncProjectTitle() {
-  const qc = useQueryClient();
-  return (projectId: string, title: string, currentTitle?: string | null) => {
-    if (!isMeaningfulSessionTitle(title)) return;
-    const cached = qc.getQueryData<Project[]>(projectKeys.list());
-    const existing = currentTitle?.trim() || cached?.find((p) => p.id === projectId)?.title?.trim();
-    if (existing) return;
-    qc.setQueryData<Project[]>(projectKeys.list(), (prev) =>
-      prev?.map((p) => (p.id === projectId ? { ...p, title } : p))
-    );
-    const reconcile = () => qc.invalidateQueries({ queryKey: projectKeys.all });
-    api.patch<Project>(`/projects/${projectId}`, { title }).then(reconcile, reconcile);
-  };
 }
 
 export function useCreateUnassignedProject() {

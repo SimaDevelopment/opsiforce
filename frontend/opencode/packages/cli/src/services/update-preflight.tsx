@@ -1,12 +1,12 @@
 /** @jsxImportSource @opentui/solid */
 // Split-footer status shown while a freshly launched CLI replaces a
 // version-mismatched background service before the TUI attaches.
-import { createCliRenderer, RGBA, TextAttributes, type CliRenderer, type ThemeMode } from "@opentui/core"
+import { createCliRenderer, RGBA, TextAttributes, type CliRenderer } from "@opentui/core"
 import { render, useTerminalDimensions } from "@opentui/solid"
 import { OPENCODE_VERSION } from "../version"
-import { registerOpencodeSpinner } from "@opencode-ai/tui/component/register-spinner"
-import { SPINNER_FRAMES } from "@opencode-ai/tui/component/spinner"
-import { go } from "@opencode-ai/tui/logo"
+import "@opencode/tui/component/spinner-renderable"
+import { SPINNER_FRAMES } from "@opencode/tui/component/spinner"
+import { go } from "@opencode/tui/logo"
 import { setTimeout } from "node:timers/promises"
 import {
   batch,
@@ -30,15 +30,9 @@ const completionHold = 650
 export type Handle = {
   readonly begin: (from?: string) => boolean
   readonly loading: () => void
-  readonly finish: () => Promise<Handoff | undefined>
+  readonly finish: () => Promise<undefined>
   readonly fail: (message: string) => Promise<void>
   readonly close: () => Promise<void>
-}
-
-export type Handoff = {
-  readonly renderer: CliRenderer
-  readonly mode: ThemeMode | null
-  readonly complete: () => void
 }
 
 export const make = (): Handle => {
@@ -72,18 +66,16 @@ export const make = (): Handle => {
 
 type Session = {
   readonly loading: () => Promise<void>
-  readonly finish: () => Promise<Handoff>
+  readonly finish: () => Promise<undefined>
   readonly fail: (message: string) => Promise<void>
   readonly close: () => Promise<void>
 }
 
 async function open(from?: string): Promise<Session> {
-  registerOpencodeSpinner()
   const [active, setActive] = createSignal(0)
   const [outcome, setOutcome] = createSignal<"running" | "success" | "failure">("running")
   const [failure, setFailure] = createSignal("")
   const [animating, setAnimating] = createSignal(true)
-  const [visible, setVisible] = createSignal(true)
   let resolveOutcome: (() => void) | undefined
   const renderer = await createCliRenderer({
     stdin: process.stdin,
@@ -101,24 +93,22 @@ async function open(from?: string): Promise<Session> {
     externalOutputMode: "capture-stdout",
     consoleMode: "disabled",
   })
-  const terminalMode = renderer.waitForThemeMode(1000).catch(() => null)
   await render(
     () => (
-      <Show when={visible()}>
-        <UpdateFooter
-          from={from}
-          active={active}
-          outcome={outcome}
-          failure={failure}
-          animating={animating}
-          renderer={renderer}
-          onOutcomeSettled={() => resolveOutcome?.()}
-        />
-      </Show>
+      <UpdateFooter
+        from={from}
+        active={active}
+        outcome={outcome}
+        failure={failure}
+        animating={animating}
+        renderer={renderer}
+        onOutcomeSettled={() => resolveOutcome?.()}
+      />
     ),
     renderer,
-  ).catch((error) => {
+  ).catch(async (error) => {
     if (!renderer.isDestroyed) renderer.destroy()
+    await renderer.closed
     throw error
   })
   let shownAt = performance.now()
@@ -148,15 +138,15 @@ async function open(from?: string): Promise<Session> {
     if (completed) await setTimeout(hold)
   }
   let closing: Promise<void> | undefined
-  let transferred = false
   const close = () =>
     (closing ??= (async () => {
-      if (transferred) return
       setAnimating(false)
-      if (renderer.isDestroyed) return
+      // closed rejects when the terminal is gone or the final flush times out; nothing is left to restore.
+      if (renderer.isDestroyed) return renderer.closed.catch(() => {})
       renderer.pause()
       await Promise.race([renderer.idle(), setTimeout(500)])
       renderer.destroy()
+      await renderer.closed.catch(() => {})
     })())
   let loading: Promise<void> | undefined
   const load = () =>
@@ -174,18 +164,8 @@ async function open(from?: string): Promise<Session> {
         await waitForStage()
         await transitionTo("success", completionHold)
       })
-      const mode = await terminalMode
-      renderer.externalOutputMode = "passthrough"
-      renderer.screenMode = "alternate-screen"
-      renderer.consoleMode = "console-overlay"
-      renderer.requestRender()
-      await Promise.race([renderer.idle(), setTimeout(500)])
-      transferred = true
-      return {
-        renderer,
-        mode,
-        complete: () => setVisible(false),
-      }
+      await close()
+      return undefined
     },
     fail: (message) =>
       settle(async () => {

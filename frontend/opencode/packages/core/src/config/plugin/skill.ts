@@ -1,9 +1,9 @@
 export * as ConfigSkillPlugin from "./skill.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import type { Entry } from "@opencode-ai/schema/config"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
+import { define } from "@opencode/plugin/effect/plugin"
+import type { Entry } from "@opencode/schema/config"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
 import path from "path"
 import { Effect, FiberMap, PubSub, Semaphore, Stream } from "effect"
 import { Config } from "../../config.js"
@@ -13,6 +13,7 @@ import { AbsolutePath } from "../../schema.js"
 import { Skill } from "../../skill.js"
 import { SkillDiscovery } from "../../skill/discovery.js"
 import { SkillFile } from "./skill-file.js"
+import { SkillScan } from "./skill-scan.js"
 
 type Source = Skill.DirectorySource | Skill.UrlSource
 
@@ -35,7 +36,9 @@ export const Plugin = define({
 
     const watch = Effect.fn("ConfigSkillPlugin.watch")(function* (directory: string, type: "file" | "directory") {
       const target = path.resolve(directory)
-      const updates = yield* watcher.subscribe({ path: target, type })
+      const updates = yield* watcher.subscribe(
+        type === "directory" ? { path: target, type, ignore: SkillScan.ignore } : { path: target, type },
+      )
       yield* FiberMap.run(
         watches,
         `${type}:${target}`,
@@ -80,13 +83,8 @@ export const Plugin = define({
         if (result.some((item) => Skill.Source.equals(item, source))) return
         result.push(source)
       }
-      const claude = loaded.entries.flatMap((entry) => (entry.type === "claude" ? [entry.path] : []))
-      const agents = loaded.entries.flatMap((entry) => (entry.type === "agents" ? [entry.path] : []))
       const directories = loaded.entries.flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
       const items = loaded.entries.flatMap((entry) => (entry.type === "document" ? (entry.info.skills ?? []) : []))
-      for (const directory of [...claude, ...agents]) {
-        add(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make(path.join(directory, "skills")) }))
-      }
       for (const directory of directories) {
         add(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make(path.join(directory, "skill")) }))
         add(Skill.DirectorySource.make({ type: "directory", path: AbsolutePath.make(path.join(directory, "skills")) }))
@@ -122,12 +120,9 @@ export const Plugin = define({
       const roots = (yield* Effect.forEach(directories, watchDirectory)).flat()
       const skills: Skill.Info[] = []
       for (const directory of directories) {
-        const files = yield* fs
-          .scan("{*.md,**/SKILL.md}", { cwd: directory, absolute: true, include: "file", symlink: true, dot: true })
-          .pipe(Effect.orElseSucceed(() => [] as string[]))
-        for (const filepath of files.toSorted()) {
+        for (const filepath of yield* SkillScan.scan(directory)) {
           const resolved = yield* fs.realPath(filepath).pipe(Effect.orElseSucceed(() => filepath))
-          if (!roots.some((root) => FSUtil.contains(root, resolved))) yield* watch(path.dirname(resolved), "directory")
+          if (!roots.some((root) => FSUtil.contains(root, resolved))) yield* watch(resolved, "file")
           const content = yield* fs.readFileStringSafe(filepath).pipe(Effect.orElseSucceed(() => undefined))
           if (!content) continue
           const parsed = SkillFile.parse(directory, filepath, content)

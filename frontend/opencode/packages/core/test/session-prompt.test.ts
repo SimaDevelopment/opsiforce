@@ -1,36 +1,37 @@
 import { describe, expect } from "bun:test"
+import type { FileSystem } from "@opencode/core/filesystem"
 import { DateTime, Effect, Fiber, Layer, LayerMap, Schema, Stream } from "effect"
 import path from "path"
 import { pathToFileURL } from "url"
 import { eq } from "drizzle-orm"
-import { Database } from "@opencode-ai/core/database/database"
-import { Agent } from "@opencode-ai/core/agent"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Location } from "@opencode-ai/schema/location"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { Model } from "@opencode-ai/core/model"
-import { Provider } from "@opencode-ai/core/provider"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionInboxTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import type { LocationServices } from "@opencode-ai/core/location-services"
-import { Image } from "@opencode-ai/core/image"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { Skill } from "@opencode-ai/core/skill"
+import { Database } from "@opencode/core/database/database"
+import { Agent } from "@opencode/core/agent"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Bus } from "@opencode/core/bus"
+import { EventTable } from "@opencode/core/event/sql"
+import { Location } from "@opencode/schema/location"
+import { SessionEvent } from "@opencode/core/session/event"
+import { Model } from "@opencode/core/model"
+import { Provider } from "@opencode/core/provider"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionInboxTable, SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import type { LocationServices } from "@opencode/core/location-services"
+import { Image } from "@opencode/core/image"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { Snapshot } from "@opencode/core/snapshot"
+import { Skill } from "@opencode/core/skill"
 import { tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -51,7 +52,7 @@ const execution = Layer.succeed(
     interrupt: (sessionID, options) =>
       Effect.sync(() => {
         interruptCalls.push(sessionID)
-        interruptContinuations.push(options?.continue)
+        interruptContinuations.push(options?.resume)
         return activeSessions.delete(sessionID)
       }),
     wake: (sessionID) =>
@@ -83,7 +84,7 @@ const locations = makeGlobalNode({
               restore: () => Effect.void,
             }),
             Layer.mock(Plugin.Service, { awaitActivation: Effect.void }),
-          ).pipe(Layer.fresh) as unknown as Layer.Layer<LocationServices>,
+          ).pipe(Layer.fresh) as unknown as Layer.Layer<LocationServices, FileSystem.DirectoryNotFoundError>,
       )
     }),
   ),
@@ -211,7 +212,7 @@ describe("Session.prompt", () => {
       interruptContinuations.length = 0
       wakeCalls.length = 0
 
-      yield* session.interrupt(sessionID, { continue: true })
+      yield* session.interrupt(sessionID, { resume: true })
 
       expect(interruptCalls).toEqual([sessionID])
       expect(interruptContinuations).toEqual([true])
@@ -501,8 +502,31 @@ describe("Session.prompt", () => {
 
       expect(error).toMatchObject({
         _tag: "Session.AttachmentError",
-        uri,
-        message: "Invalid attachment data URL",
+        uri: "image.png",
+        message: "Invalid attachment data URL: image.png",
+      })
+    }),
+  )
+
+  it.effect("rejects oversized inline attachments without echoing their bytes", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const uri = `data:application/octet-stream;base64,${Buffer.alloc(20 * 1024 * 1024 + 1).toString("base64")}`
+
+      const error = yield* session
+        .prompt({
+          sessionID,
+          text: "Inspect this",
+          files: [{ uri }],
+          resume: false,
+        })
+        .pipe(Effect.flip)
+
+      expect(error).toMatchObject({
+        _tag: "Session.AttachmentError",
+        uri: "inline attachment",
+        message: "Attachment exceeds the 20971520 byte limit: inline attachment",
       })
     }),
   )

@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect"
-import type { Content } from "@opencode-ai/schema/tool"
+import type { Content } from "@opencode/schema/tool"
 import { HttpTransport } from "../route/transport/index.js"
 import { Protocol } from "../route/protocol.js"
 import {
@@ -8,7 +8,6 @@ import {
   ProviderInternalError,
   Usage,
   type FinishReason,
-  type JsonSchema,
   type LLMRequest,
   type MediaPart,
   type ProviderMetadata,
@@ -18,11 +17,20 @@ import {
   type ToolDefinition,
   type ToolResultPart,
 } from "../schema/index.js"
-import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
+import type { Media } from "../media.js"
+import {
+  JsonObject,
+  lenient,
+  optionalArray,
+  optionalNull,
+  optionalNullish,
+  ProviderShared,
+  withUntypedFrames,
+} from "./shared.js"
 import { classifyProviderFailure } from "../provider-error.js"
+import { effortUpdate } from "../effort-updates.js"
 import { OpenResponsesOptions } from "./utils/open-responses-options.js"
 import { Lifecycle } from "./utils/lifecycle.js"
-import { ToolSchemaProjection } from "./utils/tool-schema.js"
 import { ToolStream } from "./utils/tool-stream.js"
 
 const ADAPTER = "open-responses"
@@ -66,7 +74,6 @@ type MessagePhase = Schema.Schema.Type<typeof MessagePhase>
 
 export const MessageMetadata = Schema.Struct({
   itemId: Schema.optional(Schema.String),
-  type: Schema.optional(Schema.Literal("message")),
   status: Schema.optional(Schema.String),
   phase: Schema.optional(MessagePhase),
 })
@@ -164,14 +171,31 @@ export const CompactionItem = Schema.Struct({
   encrypted_content: Schema.String,
 })
 
+// Kept out of the baseline `InputItem` union: only the OpenAI extension accepts it.
+export const ConfigurationUpdate = Schema.Struct({
+  type: Schema.Literal("configuration_update"),
+  reasoning: Schema.Struct({ effort: OpenResponsesOptions.ReasoningEffort }),
+})
+export type ConfigurationUpdate = Schema.Schema.Type<typeof ConfigurationUpdate>
+
+export const HostedToolReplay = Schema.StructWithRest(
+  Schema.Struct({
+    type: Schema.String,
+    id: Schema.String,
+  }),
+  [JsonObject],
+)
+export type HostedToolReplayItem = Schema.Schema.Type<typeof HostedToolReplay>
+
 export const InputItem = Schema.Union([
   CompactionItem,
-  Schema.Struct({ role: Schema.tag("system"), content: Schema.String }),
-  Schema.Struct({ role: Schema.tag("developer"), content: Schema.String }),
+  ConfigurationUpdate,
+  Schema.Struct({ type: Schema.tag("message"), role: Schema.tag("system"), content: Schema.String }),
+  Schema.Struct({ type: Schema.tag("message"), role: Schema.tag("developer"), content: Schema.String }),
   Schema.Struct({
+    type: Schema.tag("message"),
     role: Schema.tag("user"),
     content: Schema.Array(OpenResponsesInputContent),
-    type: Schema.optional(Schema.Literal("message")),
     id: Schema.optional(Schema.String),
     status: Schema.optional(Schema.String),
   }),
@@ -189,6 +213,7 @@ export const InputItem = Schema.Union([
     id: Schema.optionalKey(Schema.String),
     call_id: Schema.String,
     name: Schema.String,
+    namespace: Schema.optional(Schema.String),
     arguments: Schema.String,
   }),
   Schema.Struct({
@@ -197,23 +222,9 @@ export const InputItem = Schema.Union([
     output: OpenResponsesFunctionCallOutput,
   }),
   HostedToolItem,
+  HostedToolReplay,
 ])
 type OpenResponsesInputItem = Schema.Schema.Type<typeof InputItem>
-export type HostedToolReplayItem = {
-  readonly type: string
-  readonly id: string
-  readonly [key: string]: unknown
-}
-type LoweredInputItem =
-  | OpenResponsesInputItem
-  | HostedToolReplayItem
-  | {
-      readonly type: "message"
-      readonly id?: string
-      readonly role: "assistant"
-      readonly content: ReadonlyArray<{ readonly type: "output_text"; readonly text: string }>
-      readonly phase?: MessagePhase | null
-    }
 
 // Mutable counterpart of the schema reasoning item so `lowerMessages` can fold
 // multiple streamed summary parts into the same item before flushing.
@@ -230,6 +241,14 @@ export const Tool = Schema.Struct({
   parameters: JsonObject,
   strict: Schema.optional(Schema.Boolean),
 })
+
+export const HostedTool = Schema.StructWithRest(
+  Schema.Struct({
+    type: Schema.String,
+  }),
+  [JsonObject],
+)
+export type HostedTool = Schema.Schema.Type<typeof HostedTool>
 
 export const ToolChoice = Schema.Union([
   Schema.Literals(["auto", "none", "required"]),
@@ -249,7 +268,7 @@ export const coreFields = {
   model: Schema.String,
   input: Schema.Array(InputItem),
   instructions: Schema.optional(Schema.String),
-  tools: optionalArray(Tool),
+  tools: optionalArray(Schema.Union([Tool, HostedTool])),
   tool_choice: Schema.optional(ToolChoice),
   store: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -284,24 +303,32 @@ export const coreFields = {
   frequency_penalty: Schema.optional(Schema.Number),
 }
 
-const OpenResponsesBody = Schema.Struct({
+export const OpenResponsesBody = Schema.Struct({
   ...coreFields,
   stream: Schema.Literal(true),
 })
 export type OpenResponsesBody = Schema.Schema.Type<typeof OpenResponsesBody>
 
-export const OpenResponsesUsage = Schema.Struct({
-  input_tokens: Schema.optional(Schema.Number),
-  input_tokens_details: optionalNull(
-    Schema.Struct({
-      cached_tokens: Schema.optional(Schema.Number),
-      cache_write_tokens: Schema.optional(Schema.Number),
-    }),
-  ),
-  output_tokens: Schema.optional(Schema.Number),
-  output_tokens_details: optionalNull(Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Number) })),
-  total_tokens: Schema.optional(Schema.Number),
-})
+export const OpenResponsesUsage = Schema.StructWithRest(
+  Schema.Struct({
+    input_tokens: lenient(Schema.Number),
+    input_tokens_details: optionalNull(
+      Schema.StructWithRest(
+        Schema.Struct({
+          cached_tokens: lenient(Schema.Number),
+          cache_write_tokens: lenient(Schema.Number),
+        }),
+        [JsonObject],
+      ),
+    ),
+    output_tokens: lenient(Schema.Number),
+    output_tokens_details: optionalNull(
+      Schema.StructWithRest(Schema.Struct({ reasoning_tokens: lenient(Schema.Number) }), [JsonObject]),
+    ),
+    total_tokens: lenient(Schema.Number),
+  }),
+  [JsonObject],
+)
 type OpenResponsesUsage = Schema.Schema.Type<typeof OpenResponsesUsage>
 
 // The spec requires `id` on every output item, but some gateways drop it from
@@ -312,10 +339,11 @@ type OpenResponsesUsage = Schema.Schema.Type<typeof OpenResponsesUsage>
 export const StreamItem = Schema.StructWithRest(
   Schema.Struct({
     type: Schema.String,
-    id: Schema.optional(Schema.String),
-    call_id: Schema.optional(Schema.String),
-    name: Schema.optional(Schema.String),
-    arguments: Schema.optional(Schema.String),
+    id: optionalNullish(Schema.String),
+    call_id: optionalNullish(Schema.String),
+    name: optionalNullish(Schema.String),
+    namespace: optionalNullish(Schema.String),
+    arguments: optionalNullish(Schema.String),
     encrypted_content: optionalNull(Schema.String),
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
@@ -323,92 +351,61 @@ export const StreamItem = Schema.StructWithRest(
 export type StreamItem = Schema.Schema.Type<typeof StreamItem>
 export type OutputItem = StreamItem & { readonly id: string }
 
-// The Responses schema puts streaming error details at the top level and
-// response failures under `response.error`. WebSocket failures use an
-// event-level `error` envelope, so accept all three shapes here.
+// Responses-compatible providers put error details at the top level, under `error`, or under
+// `response.error`, and gateways reshape them freely: strings, numeric codes, extra fields. Those
+// fields decode as opaque values and `errorDetail` reads them defensively, so an error frame can
+// only fail on invalid JSON and otherwise always classifies with the raw body as the fallback.
 // https://www.openresponses.org/specification
-const OpenResponsesErrorPayload = Schema.Struct({
-  type: optionalNull(Schema.String),
-  code: optionalNull(Schema.String),
-  message: optionalNull(Schema.String),
-  param: optionalNull(Schema.String),
-})
-type OpenResponsesErrorPayload = Schema.Schema.Type<typeof OpenResponsesErrorPayload>
+const asText = (value: unknown) =>
+  typeof value === "string" && value.length > 0 ? value : typeof value === "number" ? String(value) : undefined
 
-const WebSocketErrorHeader = Schema.Union([Schema.String, Schema.Number, Schema.Boolean])
-export const WebSocketErrorEvent = Schema.StructWithRest(
-  Schema.Struct({
-    type: Schema.tag("error"),
-    status: Schema.optional(Schema.Number),
-    status_code: Schema.optional(Schema.Number),
-    code: optionalNull(Schema.String),
-    message: Schema.optional(Schema.String),
-    param: optionalNull(Schema.String),
-    error: optionalNull(OpenResponsesErrorPayload),
-    headers: Schema.optional(Schema.Record(Schema.String, WebSocketErrorHeader)),
-  }),
-  [Schema.Record(Schema.String, Schema.Unknown)],
-)
-const decodeWebSocketErrorEvent = Schema.decodeUnknownEffect(WebSocketErrorEvent)
-
-export const decodeKnownErrorEvent = (event: Event) =>
-  decodeWebSocketErrorEvent({
-    ...event,
-    status: typeof event.status === "number" ? event.status : undefined,
-    status_code: typeof event.status_code === "number" ? event.status_code : undefined,
-    headers: ProviderShared.isRecord(event.headers)
-      ? Object.fromEntries(
-          Object.entries(event.headers).filter(
-            (entry): entry is [string, string | number | boolean] =>
-              typeof entry[1] === "string" || typeof entry[1] === "number" || typeof entry[1] === "boolean",
-          ),
-        )
-      : undefined,
-  })
-
-export const Event = Schema.StructWithRest(
+const TypedEvent = Schema.StructWithRest(
   Schema.Struct({
     type: Schema.String,
-    delta: Schema.optional(Schema.String),
-    arguments: Schema.optional(Schema.String),
-    text: Schema.optional(Schema.String),
+    delta: optionalNullish(Schema.String),
+    arguments: optionalNullish(Schema.String),
+    text: optionalNullish(Schema.String),
+    // Kept strict: item-scoped events always carry an id, so null means a broken stream.
     item_id: Schema.optional(Schema.String),
-    output_index: Schema.optional(Schema.Number),
-    summary_index: Schema.optional(Schema.Number),
+    output_index: optionalNullish(Schema.Number),
+    summary_index: optionalNullish(Schema.Number),
     // OutputItemAdded/Done permit a null item in the Open Responses OpenAPI schema.
     item: optionalNull(StreamItem),
-    response: Schema.optional(
+    response: optionalNullish(
       Schema.StructWithRest(
         Schema.Struct({
-          id: Schema.optional(Schema.String),
+          id: optionalNullish(Schema.String),
           service_tier: optionalNull(Schema.String),
-          incomplete_details: optionalNull(Schema.Struct({ reason: Schema.optional(Schema.String) })),
-          output: Schema.optional(Schema.Array(StreamItem)),
+          incomplete_details: optionalNull(Schema.Struct({ reason: optionalNullish(Schema.String) })),
+          output: optionalNullish(Schema.Array(StreamItem)),
           usage: optionalNull(OpenResponsesUsage),
-          error: optionalNull(OpenResponsesErrorPayload),
+          error: Schema.optional(Schema.Unknown),
         }),
         [Schema.Record(Schema.String, Schema.Unknown)],
       ),
     ),
-    code: optionalNull(Schema.String),
-    message: Schema.optional(Schema.String),
-    param: optionalNull(Schema.String),
-    error: optionalNull(OpenResponsesErrorPayload),
+    code: Schema.optional(Schema.Unknown),
+    message: Schema.optional(Schema.Unknown),
+    error: Schema.optional(Schema.Unknown),
     status: Schema.optional(Schema.Unknown),
     status_code: Schema.optional(Schema.Unknown),
-    headers: Schema.optional(Schema.Unknown),
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 )
+export const Event = withUntypedFrames(TypedEvent)
 export type Event = Schema.Schema.Type<typeof Event>
 export type NormalizedEvent = Event & { readonly item?: OutputItem | null }
+
+/** Decodes one WebSocket frame. */
+export const decodeChannelEvent = Schema.decodeUnknownEffect(Protocol.jsonEvent(Event))
 
 export interface ProviderAdapter {
   readonly id: string
   readonly name: string
+  readonly nativeTool?: (native: NonNullable<ToolDefinition["native"]>) => Effect.Effect<HostedTool, AIError>
   readonly lowerMedia?: (input: {
     readonly part: MediaPart
-    readonly media: ProviderShared.NormalizedMedia
+    readonly media: Media.Inline | undefined
     readonly request: LLMRequest
   }) => MediaInput | undefined
   readonly restoreHostedToolItem?: (item: unknown) => HostedToolReplayItem | undefined
@@ -447,22 +444,25 @@ interface ReasoningStreamItem {
 // =============================================================================
 // Request Lowering
 // =============================================================================
-export const lowerTool = Effect.fn("OpenResponses.lowerTool")(function* (
-  protocolName: string,
-  tool: ToolDefinition,
-  inputSchema: JsonSchema,
-) {
+export const lowerTool = Effect.fnUntraced(function* (protocolName: string, tool: ToolDefinition) {
   if (tool.native !== undefined)
     return yield* ProviderShared.invalidRequest(`${protocolName} does not support provider-native tool ${tool.name}`)
   return {
     type: "function" as const,
     name: tool.name,
     description: tool.description,
-    parameters: inputSchema,
+    parameters: tool.inputSchema,
     // The common tool definition does not currently express Responses strict-schema policy.
     strict: false,
   }
 })
+
+export const lowerTools = (tools: ReadonlyArray<ToolDefinition>, adapter: ProviderAdapter) =>
+  Effect.forEach(
+    tools,
+    (tool): Effect.Effect<Schema.Schema.Type<typeof Tool> | HostedTool, AIError> =>
+      tool.native !== undefined && adapter.nativeTool ? adapter.nativeTool(tool.native) : lowerTool(adapter.name, tool),
+  )
 
 export const lowerToolChoice = (protocolName: string, toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
   ProviderShared.matchToolChoice(protocolName, toolChoice, {
@@ -488,7 +488,8 @@ const lowerToolCall = (part: ToolCallPart, providerMetadataKey: string): OpenRes
     ...(id === undefined ? {} : { id }),
     call_id: part.id,
     name: part.name,
-    arguments: ProviderShared.encodeJson(part.input),
+    namespace: part.namespace,
+    arguments: ProviderShared.encodeJson(part.input === undefined ? {} : part.input),
   }
 }
 
@@ -500,6 +501,7 @@ const lowerReasoning = (part: ReasoningPart, providerMetadataKey: string): OpenR
     typeof metadata.reasoningEncryptedContent === "string" || metadata.reasoningEncryptedContent === null
       ? metadata.reasoningEncryptedContent
       : undefined
+  if (part.text.length === 0 && !encryptedContent) return undefined
   return {
     type: "reasoning",
     ...(id === undefined ? {} : { id }),
@@ -508,35 +510,36 @@ const lowerReasoning = (part: ReasoningPart, providerMetadataKey: string): OpenR
   }
 }
 
-const lowerMedia = Effect.fn("OpenResponses.lowerMedia")(function* (
+const decodeImageDetail = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenResponsesInputImage.fields.detail))
+const decodeMessageMetadata = ProviderShared.validateWith(Schema.decodeUnknownEffect(MessageMetadata))
+
+const lowerMedia = Effect.fnUntraced(function* (
   part: MediaPart,
   request: LLMRequest,
   adapter: ProviderAdapter,
   target: "message" | "tool-result",
 ) {
-  const media = ProviderShared.normalizeMedia(part)
+  const media = part.media.inline()
   const providerMedia = adapter.lowerMedia?.({ part, media, request })
   if (providerMedia) return providerMedia
-  const detail = yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenResponsesInputImage.fields.detail))(
-    part.providerMetadata?.[metadataKey(request.model)]?.detail,
-  )
-  const url =
-    typeof part.data === "string" && (part.data.startsWith("https://") || part.data.startsWith("http://"))
-      ? part.data
-      : undefined
-  if (!media.mime.startsWith("image/")) {
-    if (target === "tool-result" && media.mime.startsWith("video/"))
-      return { type: "input_video" as const, video_url: url ?? media.dataUrl }
+  const rawDetail = part.providerMetadata?.[metadataKey(request.model)]?.detail
+  const detail = rawDetail === undefined ? undefined : yield* decodeImageDetail(rawDetail)
+  const mime = part.media.mediaType.toLowerCase()
+  const url = ProviderShared.mediaUrl(part.media)
+  const location = url ?? (yield* ProviderShared.requireInlineMedia(adapter.name, part.media)).dataUrl
+  if (part.media.kind !== "image") {
+    if (target === "tool-result" && part.media.kind === "video")
+      return { type: "input_video" as const, video_url: location }
     return {
       type: "input_file" as const,
-      filename: part.filename ?? (media.mime === "application/pdf" ? "document.pdf" : "file"),
+      filename: part.filename ?? (mime === "application/pdf" ? "document.pdf" : "file"),
       detail,
-      ...(url ? { file_url: url } : { file_data: media.dataUrl }),
+      ...(url ? { file_url: url } : { file_data: location }),
     }
   }
   return {
     type: "input_image" as const,
-    image_url: url ?? media.dataUrl,
+    image_url: location,
     detail,
   }
 })
@@ -566,12 +569,7 @@ const lowerToolResultContentItem = Effect.fnUntraced(function* (
   adapter: ProviderAdapter,
 ) {
   if (item.type === "text") return { type: "input_text" as const, text: item.text }
-  return yield* lowerMedia(
-    { type: "media", mediaType: item.mime, data: item.uri, filename: item.name },
-    request,
-    adapter,
-    "tool-result",
-  )
+  return yield* lowerMedia(ProviderShared.toolFileMedia(item), request, adapter, "tool-result")
 })
 
 const lowerHostedToolResultContentItem = Effect.fnUntraced(function* (
@@ -580,11 +578,7 @@ const lowerHostedToolResultContentItem = Effect.fnUntraced(function* (
   adapter: ProviderAdapter,
 ) {
   if (item.type === "text") return { type: "input_text" as const, text: item.text }
-  return yield* lowerMessageMedia(
-    { type: "media", mediaType: item.mime, data: item.uri, filename: item.name },
-    request,
-    adapter,
-  )
+  return yield* lowerMessageMedia(ProviderShared.toolFileMedia(item), request, adapter)
 })
 
 const lowerToolResultOutput = Effect.fnUntraced(function* (
@@ -600,19 +594,29 @@ const lowerToolResultOutput = Effect.fnUntraced(function* (
   return yield* Effect.forEach(content, (item) => lowerToolResultContentItem(item, request, adapter))
 })
 
-const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (
+const DEFAULT_EFFORT = "medium"
+
+const lowerMessages = Effect.fnUntraced(function* (
   request: LLMRequest,
   adapter: ProviderAdapter,
 ) {
-  const input: LoweredInputItem[] = []
+  const input: OpenResponsesInputItem[] = []
   const providerMetadataKey = metadataKey(request.model)
 
   for (const message of request.messages) {
-    const metadata = yield* ProviderShared.validateWith(
-      Schema.decodeUnknownEffect(Schema.UndefinedOr(MessageMetadata)),
-    )(message.providerMetadata?.[providerMetadataKey])
+    const rawMetadata = message.providerMetadata?.[providerMetadataKey]
+    const metadata = rawMetadata === undefined ? undefined : yield* decodeMessageMetadata(rawMetadata)
     if (message.role === "system") {
+      const update = effortUpdate(message)
+      if (update) {
+        // Consecutive updates are rejected, so a newer one replaces its predecessor.
+        const last = input.at(-1)
+        if (last !== undefined && "type" in last && last.type === "configuration_update") input.pop()
+        input.push({ type: "configuration_update", reasoning: { effort: update.effort ?? DEFAULT_EFFORT } })
+        continue
+      }
       input.push({
+        type: "message",
         role: "developer",
         content: ProviderShared.joinText(yield* ProviderShared.systemUpdateText(adapter.name, message)),
       })
@@ -622,7 +626,7 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (
     if (message.role === "user") {
       const content = yield* Effect.forEach(message.content, (part) => lowerUserContent(part, request, adapter))
       if (content.length > 0)
-        input.push({ role: "user", content, type: metadata?.type, id: metadata?.itemId, status: metadata?.status })
+        input.push({ type: "message", role: "user", content, id: metadata?.itemId, status: metadata?.status })
       continue
     }
 
@@ -649,7 +653,8 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (
             type: "message" as const,
             ...(group.id === undefined ? {} : { id: group.id }),
             role: "assistant" as const,
-            status: metadata?.status,
+            // Replayed text is a finished input item, even if generation was cut short.
+            status: "completed",
             content: group.parts.map((part) => ({ type: "output_text" as const, text: part.text })),
             ...(group.phase === undefined ? {} : { phase: group.phase }),
           })),
@@ -712,8 +717,19 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (
               ? part.result.value
               : [{ type: "text", text: ProviderShared.toolResultText(part) }]
           input.push({
+            type: "message",
             role: "user",
             content: yield* Effect.forEach(content, (item) => lowerHostedToolResultContentItem(item, request, adapter)),
+          })
+          continue
+        }
+        if (part.type === "media") {
+          flushText()
+          // Responses has no assistant-authored image item; replay generated media (e.g. from Gemini) as user input.
+          input.push({
+            type: "message",
+            role: "user",
+            content: [yield* lowerMessageMedia(part, request, adapter)],
           })
           continue
         }
@@ -722,6 +738,7 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (
           "reasoning",
           "tool-call",
           "tool-result",
+          "media",
         ])
       }
       flushText()
@@ -742,7 +759,7 @@ const lowerMessages = Effect.fn("OpenResponses.lowerMessages")(function* (
   return input
 })
 
-export const lowerConversation = Effect.fn("OpenResponses.lowerConversation")(function* (
+export const lowerConversation = Effect.fnUntraced(function* (
   request: LLMRequest,
   adapter: ProviderAdapter,
 ) {
@@ -754,8 +771,7 @@ export const lowerConversation = Effect.fn("OpenResponses.lowerConversation")(fu
   }
 })
 
-export const lowerGeneration = (request: LLMRequest) => {
-  const options = OpenResponsesOptions.resolve(request)
+export const lowerGeneration = (request: LLMRequest, options = OpenResponsesOptions.resolve(request)) => {
   const generation = request.generation
   const cacheKey = ProviderShared.promptCacheKey(request)
   const parallelToolCalls = resolveParallelToolCalls(request)
@@ -807,31 +823,18 @@ export const fromRequestWithAdapter = Effect.fn("OpenResponses.fromRequestWithAd
   request: LLMRequest,
   adapter: ProviderAdapter,
 ) {
-  const toolSchemaCompatibility = request.model.compatibility?.toolSchema
+  const projected = ProviderShared.flattenToolRequest(request)
   return {
-    ...(yield* lowerConversation(request, adapter)),
+    ...(yield* lowerConversation(projected.request, adapter)),
     ...lowerGeneration(request),
-    tools:
-      request.tools.length === 0
-        ? undefined
-        : yield* Effect.forEach(request.tools, (tool) =>
-            lowerTool(
-              adapter.name,
-              tool,
-              ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility),
-            ),
-          ),
+    tools: projected.tools.length === 0 ? undefined : yield* lowerTools(projected.tools, adapter),
     tool_choice:
       allowedToolChoice(request) ??
       (request.toolChoice ? yield* lowerToolChoice(adapter.name, request.toolChoice) : undefined),
   }
 })
 
-const decodeBody = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenResponsesBody))
-
-export const fromRequest = Effect.fn("OpenResponses.fromRequest")(function* (request: LLMRequest) {
-  return yield* decodeBody(yield* fromRequestWithAdapter(request, BASE_ADAPTER))
-})
+export const fromRequest = (request: LLMRequest) => fromRequestWithAdapter(request, BASE_ADAPTER)
 
 // =============================================================================
 // Stream Parsing
@@ -860,7 +863,7 @@ export const mapUsage = (usage: OpenResponsesUsage | null | undefined, providerM
 
 const mapFinishReason = (event: Event, hasFunctionCall: boolean): FinishReason => {
   const reason = event.response?.incomplete_details?.reason
-  if (reason === undefined || reason === null) {
+  if (reason === undefined) {
     if (hasFunctionCall) return "tool-calls"
     if (event.type === "response.incomplete") return "unknown"
     return "stop"
@@ -919,7 +922,7 @@ const joinReasoningText = (parts: ReadonlyArray<string | undefined>) => {
   return parts.filter((part) => part !== undefined).join("\n\n")
 }
 
-const outputItemID = (state: ParserState, event: Event) =>
+const outputItemID = (state: Pick<ParserState, "outputItems">, event: Event) =>
   event.output_index === undefined ? event.item_id : (state.outputItems[event.output_index] ?? event.item_id)
 
 const ITEM_ID_PREFIX: Readonly<Record<string, string>> = {
@@ -931,7 +934,11 @@ const ITEM_ID_PREFIX: Readonly<Record<string, string>> = {
 
 // An item without an id adopts the id already open in its output slot,
 // otherwise it gets a locally minted one.
-const resolveItem = (state: ParserState, item: StreamItem, index: number | undefined): OutputItem => ({
+const resolveItem = (
+  state: Pick<ParserState, "outputItems">,
+  item: StreamItem,
+  index: number | undefined,
+): OutputItem => ({
   ...item,
   id:
     item.id ??
@@ -941,7 +948,7 @@ const resolveItem = (state: ParserState, item: StreamItem, index: number | undef
 
 // Registered output slots are authoritative for `item_id` routing, and items
 // are resolved here so everything downstream can rely on `item.id`.
-export const normalize = (state: ParserState, input: Event): NormalizedEvent => ({
+export const normalize = (state: Pick<ParserState, "outputItems">, input: Event): NormalizedEvent => ({
   ...input,
   item_id: input.item_id === undefined ? undefined : outputItemID(state, input),
   item: input.item ? resolveItem(state, input.item, input.output_index) : input.item,
@@ -1094,11 +1101,20 @@ const onOutputItemAdded = (state: ParserState, event: NormalizedEvent): StepResu
       tools: ToolStream.start(state.tools, item.id, {
         id: item.call_id,
         name: item.name ?? "",
+        namespace: item.namespace,
         input: item.arguments ?? "",
         providerMetadata: metadata,
       }),
     },
-    [...events, LLMEvent.toolInputStart({ id: item.call_id, name: item.name ?? "", providerMetadata: metadata })],
+    [
+      ...events,
+      LLMEvent.toolInputStart({
+        id: item.call_id,
+        name: item.name ?? "",
+        namespace: item.namespace,
+        providerMetadata: metadata,
+      }),
+    ],
   ]
 }
 
@@ -1130,7 +1146,7 @@ const onReasoningSummaryPartDone = (state: ParserState, event: Event): StepResul
   ]
 }
 
-const onFunctionCallArgumentsDelta = Effect.fn("OpenResponses.onFunctionCallArgumentsDelta")(function* (
+const onFunctionCallArgumentsDelta = Effect.fnUntraced(function* (
   state: ParserState,
   event: Event,
 ) {
@@ -1161,7 +1177,7 @@ const onFunctionCallArgumentsDelta = Effect.fn("OpenResponses.onFunctionCallArgu
   return [{ ...state, lifecycle, tools: result.tools }, events] satisfies StepResult
 })
 
-const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
+const onOutputItemDone = Effect.fnUntraced(function* (
   state: ParserState,
   item: NormalizedEvent["item"],
 ) {
@@ -1217,7 +1233,12 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
     const registered = state.tools[item.id] !== undefined
     const tools = registered
       ? state.tools
-      : ToolStream.start(state.tools, item.id, { id: item.call_id, name: item.name, providerMetadata: metadata })
+      : ToolStream.start(state.tools, item.id, {
+          id: item.call_id,
+          name: item.name,
+          namespace: item.namespace,
+          providerMetadata: metadata,
+        })
     const result =
       item.arguments === undefined
         ? yield* ToolStream.finish(state.id, tools, item.id)
@@ -1228,7 +1249,15 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
     const resultEvents =
       registered || finished.length === 0
         ? finished
-        : [LLMEvent.toolInputStart({ id: item.call_id, name: item.name, providerMetadata: metadata }), ...finished]
+        : [
+            LLMEvent.toolInputStart({
+              id: item.call_id,
+              name: item.name,
+              namespace: item.namespace,
+              providerMetadata: metadata,
+            }),
+            ...finished,
+          ]
     const lifecycle = resultEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
     events.push(...resultEvents)
     return [
@@ -1284,7 +1313,7 @@ const onOutputItemDone = Effect.fn("OpenResponses.onOutputItemDone")(function* (
   return [state, NO_EVENTS] satisfies StepResult
 })
 
-const onResponseFinish = Effect.fn("OpenResponses.onResponseFinish")(function* (state: ParserState, event: Event) {
+const onResponseFinish = Effect.fnUntraced(function* (state: ParserState, event: Event) {
   let current = state
   const events: LLMEvent[] = []
   if (event.type === "response.completed") {
@@ -1331,22 +1360,21 @@ const onResponseFinish = Effect.fn("OpenResponses.onResponseFinish")(function* (
   return [{ ...current, lifecycle }, events] satisfies StepResult
 })
 
-// Build the prettiest summary available from whatever the provider supplied.
-// When both code and message are present, prefix the code so consumers see
-// the failure mode (e.g. `rate_limit_exceeded: Slow down`) instead of just
-// the bare message — production rate limits and context-length failures used
-// to be indistinguishable from generic stream drops. Returns undefined when
-// the payload carries no usable summary.
-const providerErrorMessage = (event: Event, nested: OpenResponsesErrorPayload | undefined): string | undefined => {
-  const message = event.message || nested?.message || undefined
-  const code = event.code || nested?.code || undefined
-  if (message && code) return `${code}: ${message}`
-  return message || code
+/** Error code and message from wherever the frame put them; top-level fields win over nested ones. */
+export const errorDetail = (event: Event) => {
+  const raw = event.error ?? event.response?.error
+  const nested = typeof raw === "string" ? { message: raw } : ProviderShared.isRecord(raw) ? raw : undefined
+  return {
+    message: asText(event.message) ?? asText(nested?.message),
+    code: asText(event.code) ?? asText(nested?.code),
+  }
 }
 
+// Prefix the code when both are present (`rate_limit_exceeded: Slow down`) so the failure mode is
+// visible; fall back to the raw frame rather than a generic message when neither decodes.
 export const providerFailure = (event: Event, fallback: string, body = ProviderShared.encodeJson(event)) => {
-  const nested = event.error ?? event.response?.error ?? undefined
-  const summary = providerErrorMessage(event, nested)
+  const detail = errorDetail(event)
+  const summary = detail.message && detail.code ? `${detail.code}: ${detail.message}` : (detail.message ?? detail.code)
   const message = summary ?? (body === "{}" ? fallback : body)
   const status =
     typeof event.status === "number"
@@ -1429,18 +1457,7 @@ export const step = (state: ParserState, event: NormalizedEvent) => {
   if (event.type === "response.output_item.done") return onOutputItemDone(state, event.item)
   if (event.type === "response.completed" || event.type === "response.incomplete") return onResponseFinish(state, event)
   if (event.type === "response.failed") return providerFailure(event, `${state.name} response failed`)
-  if (event.type === "error")
-    return decodeKnownErrorEvent(event).pipe(
-      Effect.mapError((cause) =>
-        ProviderShared.eventError(
-          state.id,
-          `${state.name} returned a malformed error event`,
-          ProviderShared.encodeJson(event),
-          cause,
-        ),
-      ),
-      Effect.flatMap(() => providerFailure(event, `${state.name} stream error`)),
-    )
+  if (event.type === "error") return providerFailure(event, `${state.name} stream error`)
   return Effect.succeed<StepResult>([state, NO_EVENTS])
 }
 

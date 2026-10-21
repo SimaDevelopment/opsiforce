@@ -27,7 +27,7 @@ terms: [Files, User uploads, Generated files]
 
 ### Freshness and access
 
-- The listing refetches when the chat embed's debounced agent-idle signal fires and when the member returns to the tab; nothing polls or watches the filesystem.
+- The listing refetches when the Active environment's Agent turns Idle ([Agent Status](../agent-system/agent-status.md)) and when the member returns to the tab; nothing polls or watches the filesystem.
 - Listing, upload, download and delete are backend filesystem work on the shared volume and work while the pod is suspended ([Persistence](../runtime/persistence.md)); upload, download and delete touch environment activity, the listing does not.
 - Visible to every project member with no permission gate, behind the same tenant guard and project-membership check download uses.
 

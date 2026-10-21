@@ -1,4 +1,4 @@
-import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
+import { OpenCode, type OpenCodeClient } from "@opencode/client/promise"
 import type { ServerConnection } from "@/runtime/server/registry"
 import { decode64 } from "@/runtime/persistence/base64"
 
@@ -8,9 +8,12 @@ export function authTokenFromCredentials(input: { password: string }) {
 
 export function authFromToken(token: string | null) {
   const decoded = decode64(token ?? undefined)
+
   if (!decoded) return
   const separator = decoded.indexOf(":")
+
   if (separator === -1) return
+
   return {
     password: decoded.slice(separator + 1),
   }

@@ -1,8 +1,8 @@
 import { For, Show } from "solid-js"
-import type { PermissionRequest } from "@opencode-ai/client/promise"
-import { Button } from "@opencode-ai/ui/button"
-import { DockPrompt } from "@opencode-ai/session-ui/dock-prompt"
-import { Icon } from "@opencode-ai/ui/icon"
+import type { PermissionRequest } from "@opencode/client/promise"
+import { Button } from "@opencode/ui/button"
+import { DockPrompt } from "@opencode/session-ui/dock-prompt"
+import { Icon } from "@opencode/ui/icon"
 import { useLanguage } from "@/runtime/i18n/language"
 
 export function SessionPermissionDock(props: {
@@ -15,7 +15,9 @@ export function SessionPermissionDock(props: {
   const toolDescription = () => {
     const key = `settings.permissions.tool.${props.request.action}.description`
     const value = language.t(key as Parameters<typeof language.t>[0])
+
     if (value === key) return ""
+
     return value
   }
 
@@ -45,7 +47,7 @@ export function SessionPermissionDock(props: {
             >
               {language.t("ui.permission.allowAlways")}
             </Button>
-            <Button variant="contrast" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
+            <Button variant="submit" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
               {language.t("ui.permission.allowOnce")}
             </Button>
           </div>

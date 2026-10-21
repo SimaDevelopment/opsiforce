@@ -8,9 +8,10 @@ import type {
   SessionMessageInfo,
   SessionMessageUser,
   SessionInboxInfo,
-} from "@opencode-ai/client/promise"
-import { Event } from "@opencode-ai/schema/event"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
+} from "@opencode/client/promise"
+import { ClientError } from "@opencode/client/promise"
+import { Event } from "@opencode/schema/event"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { blockerStatus, pickBlockerView } from "./session-data"
 import { writeSessionOutput } from "./stream"
 import { createFragmentReconciler, fragmentRef, type FragmentReconciler } from "./stream-v2.fragment"
@@ -47,6 +48,7 @@ type StreamInput = {
   location?: LocationRef
   sessionID: string
   thinking: boolean
+  tools?: boolean
   replay?: boolean
   replayLimit?: number
   footer: FooterApi
@@ -141,6 +143,8 @@ type State = {
   tools: Map<string, ToolState>
   toolSources: Map<string, SessionMessageAssistantTool>
   finishedTools: Set<string>
+  toolMessages: Set<string>
+  quietText: Map<string, Array<{ partID: string; text: string }>>
   skillMessages: Set<string>
   shellCommands: Map<string, string>
   shellStarted: Set<string>
@@ -165,9 +169,9 @@ export function formatUnknownError(error: unknown): string {
   if (typeof error === "string") return error
   if (error instanceof Error) return error.message || error.name
   if (error && typeof error === "object") {
-    const message = Reflect.get(error, "message")
+    const message = "message" in error ? error.message : undefined
     if (typeof message === "string" && message.trim()) return message
-    const tag = Reflect.get(error, "_tag")
+    const tag = "_tag" in error ? error._tag : undefined
     if (typeof tag === "string" && tag.trim()) return tag
   }
   return "unknown error"
@@ -179,11 +183,11 @@ function sessionID(event: RunV2Event) {
 }
 
 function sameLocation(left: LocationRef | undefined, right: LocationRef | undefined) {
-  return !!left && !!right && left.directory === right.directory && left.workspaceID === right.workspaceID
+  return !!left && !!right && left.directory === right.directory
 }
 
 function globalForm(form: FormInfo, location: LocationRef): MiniFormRequest {
-  return { ...form, location: { directory: location.directory, workspaceID: location.workspaceID } }
+  return { ...form, location: { directory: location.directory } }
 }
 
 function errorMessage(error: { message?: string; _tag?: string }) {
@@ -373,8 +377,13 @@ function messageIDFromEvent(id: string) {
   return SessionMessage.ID.fromEvent(Event.ID.make(id))
 }
 
+function eventIDFromMessage(id: SessionMessage.ID) {
+  return Event.ID.make(id.replace(/^msg_/, "evt_"))
+}
+
 const catalogEvents = new Set([
-  "catalog.updated",
+  "provider.updated",
+  "model.updated",
   "integration.updated",
   "credential.switched",
   "agent.updated",
@@ -458,7 +467,6 @@ async function resolveSelectedModel(
         ? {
             location: {
               directory: input.location.directory,
-              workspace: input.location.workspaceID,
             },
           }
         : undefined,
@@ -488,6 +496,8 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     tools: new Map(),
     toolSources: new Map(),
     finishedTools: new Set(),
+    toolMessages: new Set(),
+    quietText: new Map(),
     skillMessages: new Set(),
     shellCommands: new Map(),
     shellStarted: new Set(),
@@ -511,6 +521,14 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
   const abortReady = () => readyReject(new Error("Mini closed before the event stream connected"))
   controller.signal.addEventListener("abort", abortReady, { once: true })
   const offFooterClose = input.footer.onClose(() => controller.abort())
+  const waitUntilConnected = async (signal?: AbortSignal) => {
+    const abort = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
+    while (!state.connected) {
+      if (state.closed || controller.signal.aborted || input.footer.isClosed || signal?.aborted)
+        throw new Error("Event stream aborted")
+      await wait(25, abort)
+    }
+  }
   const current = (attempt: Attempt) =>
     !state.closed &&
     !controller.signal.aborted &&
@@ -592,7 +610,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     const images = freshImages(userImageCommits(messageID, files), render)
     if (!render) return
     write([
-      ...(!visible ? skillCommits(messageID, skills) : []),
+      ...(!visible && showTools() ? skillCommits(messageID, skills) : []),
       ...(!visible && text.trim()
         ? [{ kind: "user", source: "system", text, phase: "start", messageID } as const]
         : []),
@@ -662,7 +680,48 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     }
   }
 
+  const showTools = () => input.tools !== false
+
+  const rememberToolMessage = (messageID: string) => {
+    state.toolMessages.add(messageID)
+    state.quietText.delete(messageID)
+  }
+
+  const bufferQuietText = (messageID: string, partID: string, text: string, replace: boolean) => {
+    if (!text || state.toolMessages.has(messageID)) return
+    const parts = state.quietText.get(messageID) ?? []
+    const current = parts.find((part) => part.partID === partID)
+    if (current) {
+      current.text = replace ? text : current.text + text
+      return
+    }
+    parts.push({ partID, text })
+    state.quietText.set(messageID, parts)
+  }
+
+  const flushQuietText = (messageID: string) => {
+    const parts = state.quietText.get(messageID)
+    state.quietText.delete(messageID)
+    if (!parts || state.toolMessages.has(messageID)) return
+    write(
+      parts
+        .filter((part) => part.text)
+        .map((part) => ({
+          kind: "assistant" as const,
+          source: "assistant" as const,
+          text: part.text,
+          phase: "progress" as const,
+          messageID,
+          partID: part.partID,
+        })),
+    )
+  }
+
   const renderTool = (messageID: string, item: SessionMessageAssistantTool, render = true) => {
+    if (!showTools()) {
+      rememberToolMessage(messageID)
+      render = false
+    }
     const part = normalizeTool(item)
     const key = permissionSourceKey(messageID, part.id)
     if (state.finishedTools.has(key)) {
@@ -721,7 +780,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     }
     if (message.type === "skill") {
       if (state.wait?.messageID === message.id) promoteWait(state.wait, false)
-      if (!render || state.skillMessages.has(message.id)) {
+      if (!render || !showTools() || state.skillMessages.has(message.id)) {
         state.skillMessages.add(message.id)
         return
       }
@@ -784,13 +843,16 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     }
     if (message.type !== "assistant") return
     state.messageIDs.add(message.id)
+    const hasTools = message.content.some((item) => item.type === "tool")
+    if (hasTools) rememberToolMessage(message.id)
     let textOrdinal = 0
     let reasoningOrdinal = 0
     for (const item of message.content) {
       if (item.type === "text") {
         const fragment = fragmentRef(message.id, "text", textOrdinal++)
-        const update = state.fragments.project(fragment, item.text, render)
-        if (render && item.text.length > update.previous.length)
+        const visible = render && (showTools() || !hasTools)
+        const update = state.fragments.project(fragment, item.text, visible)
+        if (visible && item.text.length > update.previous.length)
           write([
             {
               kind: "assistant",
@@ -845,8 +907,26 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       )
     ).data.toReversed()
 
-  const settleSession = async (client: OpenCodeClient) => {
-    await client.session.wait({ sessionID: input.sessionID }, { signal: controller.signal })
+  const waitForSession = async (initial: OpenCodeClient) => {
+    let client = initial
+    while (true) {
+      try {
+        await client.session.wait({ sessionID: input.sessionID }, { signal: controller.signal })
+        return client
+      } catch (error) {
+        // session.wait is a long poll that only answers once the session settles, so a dropped
+        // connection or a client-side request deadline ends this waiter, not the session.
+        if (controller.signal.aborted || !(error instanceof ClientError) || error.reason !== "Transport") throw error
+        input.trace?.write("recv.wait.retry", { error: formatUnknownError(error) })
+        await wait(250, controller.signal)
+        await waitUntilConnected()
+        client = sdk
+      }
+    }
+  }
+
+  const settleSession = async (initial: OpenCodeClient) => {
+    const client = await waitForSession(initial)
     for (const message of await projectedMessages(client, controller.signal)) renderMessage(message, true)
     paintIdle(blockerStatus(state.view))
     await input.footer.idle()
@@ -873,7 +953,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     ]
     const messages = await Promise.allSettled(
       messageIDs.map((messageID) =>
-        client.session.message({ sessionID: input.sessionID, messageID }, { signal: attempt.signal }),
+        client.session.message.get({ sessionID: input.sessionID, messageID }, { signal: attempt.signal }),
       ),
     )
     if (!current(attempt)) return permissions
@@ -895,11 +975,11 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       projectedMessages(client, attempt.signal),
       client.session.inbox.list({ sessionID: input.sessionID }, options),
       client.permission.list({ sessionID: input.sessionID }, options),
-      client.form.list({ sessionID: input.sessionID }, options),
+      client.session.form.list({ sessionID: input.sessionID }, options),
       input.location
-        ? client.form.request.list(
+        ? client.form.list(
             {
-              location: { directory: input.location.directory, workspace: input.location.workspaceID },
+              location: { directory: input.location.directory },
             },
             options,
           )
@@ -938,7 +1018,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       phase: state.rootActive ? "running" : "idle",
       status: state.rootActive ? "assistant responding" : blockerStatus(state.view),
     })
-    if (!state.rootActive) await input.footer.idle()
+    if (!state.rootActive && !next.reconnect) await input.footer.idle()
     if (!current(attempt)) return
   }
 
@@ -946,12 +1026,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     if (!current(attempt)) return
     const client = attempt.client
     if (catalogEvents.has(event.type)) {
-      if (
-        input.location &&
-        event.location &&
-        (event.location.directory !== input.location.directory ||
-          event.location.workspaceID !== input.location.workspaceID)
-      )
+      if (input.location && event.location && event.location.directory !== input.location.directory)
         return
       void refreshCatalog(attempt)
       return
@@ -986,7 +1061,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       mergePending({
         id: event.data.inboxID,
         sessionID: event.data.sessionID,
-        timeCreated: event.created,
+        time: { created: event.created },
         ...event.data.item,
       })
       return
@@ -1024,7 +1099,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       if (state.wait?.messageID === messageID) promoteWait(state.wait, true)
       if (state.skillMessages.has(messageID)) return
       state.skillMessages.add(messageID)
-      write([skillCommit(messageID, event.data.name)])
+      if (showTools()) write([skillCommit(messageID, event.data.name)])
       return
     }
     if (event.type === "session.compaction.started") {
@@ -1113,6 +1188,10 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     if (event.type === "session.text.delta") {
       const fragment = fragmentRef(event.data.assistantMessageID, "text", event.data.ordinal)
       if (!state.fragments.delta(fragment, event.data.delta)) return
+      if (!showTools()) {
+        bufferQuietText(event.data.assistantMessageID, fragment.partID, event.data.delta, false)
+        return
+      }
       write([
         {
           kind: "assistant",
@@ -1130,6 +1209,10 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         fragmentRef(event.data.assistantMessageID, "text", event.data.ordinal),
         event.data.text,
       )
+      if (!showTools()) {
+        bufferQuietText(event.data.assistantMessageID, update.partID, event.data.text, true)
+        return
+      }
       if (event.data.text.length > update.previous.length)
         write([
           {
@@ -1215,7 +1298,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         id: event.data.id,
         name: current?.part.name ?? "tool",
         executed: event.data.executed,
-        providerState: event.data.state,
+        native: event.data.native,
         state: { status: "running", input: event.data.input, metadata: {} },
         time: { created: current?.part.time.created ?? event.created, ran: event.created },
       }
@@ -1232,7 +1315,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         id: event.data.id,
         name: part?.name ?? "tool",
         executed: part?.executed,
-        providerState: part?.providerState,
+        native: part?.native,
         state: {
           status: "running",
           input: part && part.state.status !== "streaming" ? part.state.input : {},
@@ -1251,8 +1334,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         id: event.data.id,
         name: part?.name ?? "tool",
         executed: event.data.executed,
-        providerState: part?.providerState,
-        providerResultState: event.data.resultState,
+        native: event.data.native ? { ...part?.native, ...event.data.native } : part?.native,
         state: failed
           ? {
               status: "error",
@@ -1303,6 +1385,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         event.data.tokens.cache.write
       const limit = state.stepModel ? input.contextLimit?.(state.stepModel) : undefined
       state.stepModel = undefined
+      if (!showTools()) flushQuietText(event.data.assistantMessageID)
       write([], {
         usage:
           total > 0 || event.data.cost
@@ -1317,6 +1400,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     }
     if (event.type === "session.step.failed") {
       state.stepModel = undefined
+      if (!showTools()) flushQuietText(event.data.assistantMessageID)
       const rendered = state.errors.has(event.data.assistantMessageID)
       state.errors.add(event.data.assistantMessageID)
       if (state.wait) state.wait.failureRendered = true
@@ -1344,6 +1428,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       event.type === "session.execution.interrupted"
     ) {
       state.executionEpoch++
+      if (!showTools()) for (const messageID of [...state.quietText.keys()]) flushQuietText(messageID)
       paintIdle("")
       const current = state.wait
       if (!current) return
@@ -1403,13 +1488,6 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     })
     return task
   }
-  const settleCatalog = async (attempt: Attempt) => {
-    while (current(attempt)) {
-      const refreshes = catalogRefreshes.get(attempt.generation)
-      if (!refreshes || refreshes.size === 0) return
-      await Promise.all(refreshes)
-    }
-  }
   const settleCatalogRefreshes = async () => {
     while (catalogRefreshes.size > 0)
       await Promise.all([...catalogRefreshes.values()].flatMap((refreshes) => [...refreshes]))
@@ -1447,18 +1525,14 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
             ),
             consume,
           ])
-          await Promise.race([refreshCatalog(attempt), consume])
           if (!current(attempt)) throw new Error("Event stream disconnected")
           state.initial = false
-          do {
-            for (const event of buffered.splice(0)) apply(attempt, event)
-            await Promise.race([subagents.ready(), consume])
-            await Promise.race([settleCatalog(attempt), consume])
-          } while (buffered.length > 0)
+          for (const event of buffered.splice(0)) apply(attempt, event)
           if (!current(attempt)) throw new Error("Event stream disconnected")
           booting = false
           state.connected = true
           readyResolve()
+          void refreshCatalog(attempt)
           await consume
         } finally {
           connection.abort()
@@ -1504,7 +1578,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
 
   const runShellTurn = async (next: SessionTurnInput) => {
     if (state.wait || state.shellWait) throw new Error("prompt already running")
-    if (!state.connected) throw new Error("Event stream is reconnecting")
+    await waitUntilConnected(next.signal)
     const client = sdk
     const abort = new AbortController()
     const onAbort = () => abort.abort()
@@ -1513,19 +1587,20 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     const output = new Promise<void>((resolve) => {
       rendered = resolve
     })
-    const eventID = Event.ID.create()
+    const messageID = SessionMessage.ID.create()
+    const eventID = eventIDFromMessage(messageID)
     const active: ShellWait = {
       eventID,
-      messageID: messageIDFromEvent(eventID),
+      messageID,
       resolve: rendered,
       abort: () => abort.abort(),
     }
     state.shellWait = active
-    input.trace?.write("send.shell", { sessionID: input.sessionID, id: eventID, command: next.prompt.text })
+    input.trace?.write("send.shell", { sessionID: input.sessionID, id: messageID, command: next.prompt.text })
     write([], { phase: "running", status: "running shell" })
     try {
       await client.session.shell(
-        { sessionID: input.sessionID, id: eventID, command: next.prompt.text },
+        { sessionID: input.sessionID, id: messageID, command: next.prompt.text },
         { signal: abort.signal },
       )
       await Promise.race([output, wait(SHELL_OUTPUT_GRACE_MS, abort.signal)])
@@ -1558,7 +1633,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     state.wait = active
     const interrupt = () => {
       active.interrupted = true
-      void sdk.session.interrupt({ sessionID: input.sessionID, continue: true }).catch(() => {})
+      void sdk.session.interrupt({ sessionID: input.sessionID, resume: true }).catch(() => {})
     }
     next.signal?.addEventListener("abort", interrupt, { once: true })
     try {
@@ -1605,6 +1680,8 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       state.tools.clear()
       state.toolSources.clear()
       state.finishedTools.clear()
+      state.toolMessages.clear()
+      state.quietText.clear()
       state.skillMessages.clear()
       state.shellCommands.clear()
       state.shellStarted.clear()
@@ -1695,7 +1772,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     return client.session.command(
       {
         sessionID: input.sessionID,
-        command: command.name,
+        name: command.name,
         text: command.arguments,
         files: attachments.files.length ? attachments.files : undefined,
         agents: agents.length ? agents : undefined,
@@ -1733,9 +1810,8 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
 
   return {
     async admitPromptTurn(next, delivery) {
-      if (next.prompt.mode === "shell" || next.prompt.command?.source === "skill")
-        throw new Error("This prompt cannot be queued")
-      if (!state.connected) throw new Error("Event stream is reconnecting")
+      if (next.prompt.mode === "shell") throw new Error("This prompt cannot be queued")
+      await waitUntilConnected(next.signal)
       const client = sdk
       if (!next.prompt.command && next.agent)
         await client.session.switchAgent({ sessionID: input.sessionID, agent: next.agent }, { signal: next.signal })
@@ -1760,29 +1836,12 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         return
       }
       if (state.wait || state.shellWait) throw new Error("prompt already running")
-      if (!state.connected) throw new Error("Event stream is reconnecting")
+      await waitUntilConnected(next.signal)
       const client = sdk
       const messageID = next.prompt.messageID
       if (!messageID) throw new Error("Prompt message ID is required")
 
       const command = next.prompt.command
-      if (command?.source === "skill") {
-        if (next.agent)
-          await client.session.switchAgent({ sessionID: input.sessionID, agent: next.agent }, { signal: next.signal })
-        input.trace?.write("send.skill", { sessionID: input.sessionID, messageID, skill: command.name })
-        await runTurnWait(
-          next,
-          messageID,
-          client,
-          () =>
-            client.session.skill(
-              { sessionID: input.sessionID, id: messageID, skill: command.name },
-              { signal: next.signal },
-            ),
-          admitted,
-        )
-        return
-      }
       if (command) {
         await admitPrompt(next, client, next.prompt.delivery ?? "steer")
         admitted?.()
@@ -1820,7 +1879,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       // A failed request paints nothing, so the two-press gesture stays available for retry,
       // and a lifecycle event racing the ack wins via the epoch guard.
       const epoch = state.executionEpoch
-      await sdk.session.interrupt({ sessionID: input.sessionID, continue: true }).then(
+      await sdk.session.interrupt({ sessionID: input.sessionID, resume: true }).then(
         () => {
           if (state.executionEpoch === epoch) paintIdle(blockerStatus(state.view))
         },

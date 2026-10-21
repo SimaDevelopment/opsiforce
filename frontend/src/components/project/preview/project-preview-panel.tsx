@@ -1,5 +1,5 @@
 import { Show, createEffect, createSignal, on, onMount, type Accessor } from 'solid-js';
-import { MarkedProvider } from '@opencode-ai/ui/context/marked';
+import { MarkedProvider } from '@opencode/ui/context/marked';
 import { ChevronLeft, PanelRightOpen } from '~/components/icons';
 import { ResizeHandle } from '~/components/ui/resize-handle';
 import { createElementWidth } from '~/lib/create-element-width';

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { JsonValue, SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { JsonValue, SessionMessageAssistantTool } from "@opencode/client/promise"
 import { currentContentDefaultOpen } from "./current-tool-state"
 
 function tool(name: string, files: JsonValue[] = []): SessionMessageAssistantTool {
@@ -43,6 +43,7 @@ describe("current content default open", () => {
       },
       time: { created: 1, completed: 2 },
     })
+
     expect(currentContentDefaultOpen(errored("shell"), true, true)).toBe(false)
     expect(currentContentDefaultOpen(errored("execute"), true, true)).toBe(false)
     expect(currentContentDefaultOpen(errored("edit"), true, true)).toBe(false)

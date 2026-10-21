@@ -1,15 +1,14 @@
 export * as PluginHost from "./host.js"
 
-import { Plugin } from "@opencode-ai/plugin/effect"
-import type { IntegrationMethodRegistration } from "@opencode-ai/plugin/effect/integration"
-import { EventManifest } from "@opencode-ai/schema/event-manifest"
-import type { Event } from "@opencode-ai/schema/event"
-import { ServerConfig } from "@opencode-ai/schema/mcp"
+import { Plugin } from "@opencode/plugin/effect"
+import type { IntegrationMethodRegistration } from "@opencode/plugin/effect/integration"
+import { EventManifest } from "@opencode/schema/event-manifest"
+import type { Event } from "@opencode/schema/event"
+import { ServerConfig } from "@opencode/schema/mcp"
 import { App } from "../app.js"
 import { Effect, Schema, Stream } from "effect"
 import { Agent } from "../agent.js"
 import { AISDK } from "../aisdk.js"
-import { Catalog } from "../catalog.js"
 import { Command } from "../command.js"
 import { Credential } from "../credential.js"
 import { Bus } from "../bus.js"
@@ -30,11 +29,13 @@ import { Tool } from "../tool.js"
 import { Workspace } from "../workspace.js"
 import { Vcs } from "../vcs.js"
 import { WebSearch } from "../websearch.js"
+import { Worktree } from "../worktree.js"
+import { WorktreeStrategies } from "../worktree/strategies.js"
 import { Generate } from "../generate.js"
 import { Permission } from "../permission.js"
 import { PluginHooks } from "./hooks.js"
 import type { Interface } from "../plugin.js"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
 type RpcEvent = Event.Payload & {
@@ -50,7 +51,8 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const app = yield* App.Metadata
   const agents = yield* Agent.Service
   const aisdk = yield* AISDK.Service
-  const catalog = yield* Catalog.Service
+  const providers = yield* Provider.Service
+  const models = yield* Model.Service
   const commands = yield* Command.Service
   const bus = yield* Bus.Service
   const integration = yield* Integration.Service
@@ -69,6 +71,9 @@ export const make = Effect.fn("PluginHost.make")(function* (
   const sessions = yield* Session.Service
   const persistentPty = yield* PersistentPty.Service
   const locations = yield* LocationServiceMap.Service
+  const worktrees = yield* Worktree.Service
+  const worktreeStrategies = yield* WorktreeStrategies.Service
+  const currentWorktreeStrategies = location.workspaceID ? undefined : worktreeStrategies
   const locationInfo = () =>
     new Location.Info({
       directory: location.directory,
@@ -87,6 +92,9 @@ export const make = Effect.fn("PluginHost.make")(function* (
     ref.directory === location.directory && ref.workspaceID === location.workspaceID
   const response = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(Effect.map((data) => ({ location: locationInfo(), data })))
+
+  const decodeWorktree = Schema.decodeUnknownEffect(Worktree.Info)
+  const decodeWorktrees = Schema.decodeUnknownEffect(Schema.Array(Worktree.ListEntry))
 
   const listAgents = Effect.fn("PluginHost.listAgents")((ref: Location.Ref) =>
     Effect.gen(function* () {
@@ -157,6 +165,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
               options: event.options,
               sdk: event.sdk,
             }
+            // oxlint-disable-next-line no-restricted-globals -- The generic hook callback remains a union after narrowing by hook name.
             return Reflect.apply(callback, undefined, [output]).pipe(
               Effect.tap(() => Effect.sync(() => (event.sdk = output.sdk))),
             )
@@ -170,60 +179,81 @@ export const make = Effect.fn("PluginHost.make")(function* (
             sdk: event.sdk,
             language: event.language,
           }
+          // oxlint-disable-next-line no-restricted-globals -- The generic hook callback remains a union after narrowing by hook name.
           return Reflect.apply(callback, undefined, [output]).pipe(
             Effect.tap(() => Effect.sync(() => (event.language = output.language))),
           )
         })
       },
     },
-    catalog: {
-      provider: {
-        list: () => response(catalog.provider.available()),
-        get: (input) =>
-          catalog.provider
-            .get(Provider.ID.make(input.providerID))
-            .pipe(
-              Effect.flatMap((provider) =>
-                provider === undefined
-                  ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
-                  : response(Effect.succeed(provider)),
-              ),
+    provider: {
+      list: () => response(providers.available()),
+      get: (input) =>
+        providers
+          .get(Provider.ID.make(input.providerID))
+          .pipe(
+            Effect.flatMap((provider) =>
+              provider === undefined
+                ? Effect.fail(new Error(`Provider not found: ${input.providerID}`))
+                : response(Effect.succeed(provider)),
             ),
-      },
-      model: {
-        list: () => response(catalog.model.available()),
-        default: () => response(catalog.model.default()),
-      },
-      reload: catalog.reload,
+          ),
+      reload: providers.reload,
       transform: (callback) =>
-        catalog.transform((editor) => {
+        providers.transform((editor) => {
           callback({
-            provider: {
-              list: () => mutable(editor.provider.list()),
-              get: (id) => mutable(editor.provider.get(Provider.ID.make(id))),
-              update: (id, update) => editor.provider.update(Provider.ID.make(id), update),
-              remove: (id) => editor.provider.remove(Provider.ID.make(id)),
-            },
-            model: {
-              get: (providerID, modelID) =>
-                mutable(editor.model.get(Provider.ID.make(providerID), Model.ID.make(modelID))),
+            list: editor.list,
+            get: (id) => editor.get(Provider.ID.make(id)),
+            add: (definition) =>
+              editor.add({
+                ...definition,
+                sourceConnection:
+                  definition.sourceConnection?.type === "credential"
+                    ? { ...definition.sourceConnection, id: Credential.ID.make(definition.sourceConnection.id) }
+                    : definition.sourceConnection,
+              }),
+            update: (id, update) => editor.update(Provider.ID.make(id), update),
+            remove: (id) => editor.remove(Provider.ID.make(id)),
+            models: {
+              set: (id, models) => editor.models.set(Provider.ID.make(id), models),
               update: (providerID, modelID, update) =>
-                editor.model.update(Provider.ID.make(providerID), Model.ID.make(modelID), update),
+                editor.models.update(Provider.ID.make(providerID), Model.ID.make(modelID), update),
               remove: (providerID, modelID) =>
-                editor.model.remove(Provider.ID.make(providerID), Model.ID.make(modelID)),
-              default: {
-                get: editor.model.default.get,
-                set: (providerID, modelID) =>
-                  editor.model.default.set(Provider.ID.make(providerID), Model.ID.make(modelID)),
-              },
+                editor.models.remove(Provider.ID.make(providerID), Model.ID.make(modelID)),
             },
           })
         }),
+    },
+    model: {
+      list: () => response(models.available()),
+      default: () => response(models.default()),
+      reload: models.reload,
+      transform: (callback) =>
+        models.transform((editor) =>
+          callback({
+            list: (providerID) => editor.list(providerID === undefined ? undefined : Provider.ID.make(providerID)),
+            get: (providerID, modelID) => editor.get(Provider.ID.make(providerID), Model.ID.make(modelID)),
+            update: (providerID, modelID, update) =>
+              editor.update(Provider.ID.make(providerID), Model.ID.make(modelID), update),
+            remove: (providerID, modelID) => editor.remove(Provider.ID.make(providerID), Model.ID.make(modelID)),
+            default: {
+              get: editor.default.get,
+              set: (providerID, modelID) => editor.default.set(Provider.ID.make(providerID), Model.ID.make(modelID)),
+            },
+            provider: {
+              list: editor.provider.list,
+              get: (id) => editor.provider.get(Provider.ID.make(id)),
+            },
+          }),
+        ),
     },
     command: {
       list: () => response(commands.list()),
       reload: commands.reload,
       transform: commands.transform,
+    },
+    credential: {
+      activate: (input) => integration.connection.activate(input.credentialID),
     },
     event: {
       subscribe: () =>
@@ -246,12 +276,23 @@ export const make = Effect.fn("PluginHost.make")(function* (
     },
     integration: {
       list: () => response(integration.list()),
-      get: (input) => response(integration.get(Integration.ID.make(input.integrationID))),
+      get: Effect.fn(function* (input) {
+        const item = yield* integration.get(Integration.ID.make(input.integrationID))
+        if (!item) return yield* Effect.fail(new Error(`Integration not found: ${input.integrationID}`))
+        return yield* response(Effect.succeed(item))
+      }),
       connect: {
         key: (input) =>
           integration.connection.key({
             integrationID: Integration.ID.make(input.integrationID),
             key: input.key,
+            answer: input.answer,
+            label: input.label,
+          }),
+        external: (input) =>
+          integration.connection.external({
+            integrationID: Integration.ID.make(input.integrationID),
+            methodID: Integration.MethodID.make(input.methodID),
             answer: input.answer,
             label: input.label,
           }),
@@ -314,6 +355,15 @@ export const make = Effect.fn("PluginHost.make")(function* (
           integration.connection.resolve(
             connection.type === "credential" ? { ...connection, id: Credential.ID.make(connection.id) } : connection,
           ),
+        status: (input) =>
+          integration.connection.status({
+            integrationID: Integration.ID.make(input.integrationID),
+            connection:
+              input.connection.type === "credential"
+                ? { ...input.connection, id: Credential.ID.make(input.connection.id) }
+                : input.connection,
+            status: input.status,
+          }),
       },
       transform: (callback) =>
         integration.transform((editor) => {
@@ -380,10 +430,20 @@ export const make = Effect.fn("PluginHost.make")(function* (
           .pipe(
             Effect.flatMap((request) =>
               request?.sessionID === input.sessionID
-                ? permission.reply({ requestID: input.requestID, reply: input.reply, message: input.message })
+                ? permission.reply({ requestID: input.requestID, reply: input.decision, message: input.message })
                 : Effect.fail(new Error(`Permission request not found: ${input.requestID}`)),
             ),
           ),
+      // Plain rejections stay defects, as for built-in tools, so they end the step.
+      assert: (input) =>
+        permission.assert(input).pipe(
+          Effect.catchTags({
+            "Permission.BlockedError": (error) => Effect.fail(new Tool.Error({ message: error.message, error })),
+            "Permission.CorrectedError": (error) => Effect.fail(new Tool.Error({ message: error.feedback, error })),
+            "Session.NotFoundError": (error) =>
+              Effect.fail(new Tool.Error({ message: `Session not found: ${error.sessionID}`, error })),
+          }),
+        ),
     },
     plugin: {
       list: () => response(plugin.list()),
@@ -422,12 +482,15 @@ export const make = Effect.fn("PluginHost.make")(function* (
     tool: {
       transform: tools.transform,
       reload: tools.reload,
+      list: tools.list,
       hook: (name, callback) => hooks.register("tool", name, callback),
     },
     vcs: {
       get: () => response(vcs.info()),
       base: () => response(vcs.base()),
-      branches: (input) => response(vcs.branches({ search: input?.search, limit: input?.limit })),
+      branch: {
+        list: (input) => response(vcs.branches({ search: input?.search, limit: input?.limit })),
+      },
       status: () => response(vcs.status()),
       diff: (input) => response(vcs.diff(input.mode, { context: input.context, base: input.base })),
       transform: vcs.transform,
@@ -462,29 +525,65 @@ export const make = Effect.fn("PluginHost.make")(function* (
           })
         }),
     },
+    worktree: {
+      list: worktrees.list,
+      create: (input) => worktrees.create(input, currentWorktreeStrategies),
+      refresh: (input) => worktrees.refresh(input, currentWorktreeStrategies).pipe(Effect.asVoid),
+      remove: (input) => worktrees.remove(input, currentWorktreeStrategies),
+      reload: worktreeStrategies.reload,
+      transform: (callback) =>
+        worktreeStrategies.transform((editor) =>
+          callback({
+            add: (definition) =>
+              editor.add({
+                id: Worktree.StrategyID.make(definition.id),
+                create: (input) => definition.create(input).pipe(Effect.flatMap(decodeWorktree)),
+                remove: (input) => definition.remove(input),
+                list: (directory) => definition.list(directory).pipe(Effect.flatMap(decodeWorktrees)),
+              }),
+          }),
+        ),
+    },
     session: {
       hook: (name, callback, options) => hooks.register("session", name, callback, options),
+      list: sessions.list,
       create: (input) =>
         sessions.create({
           id: input?.id,
           title: input?.title,
           agent: input?.agent,
           model: input?.model,
-          location:
-            input?.location ?? Location.Ref.make({ directory: location.directory, workspaceID: location.workspaceID }),
+          metadata: input?.metadata,
+          permissions: input?.permissions,
+          ...(input?.parentID === undefined
+            ? {
+                location:
+                  input?.location ??
+                  Location.Ref.make({ directory: location.directory, workspaceID: location.workspaceID }),
+              }
+            : { parentID: input.parentID }),
         }),
       get: (input) => sessions.get(input.sessionID),
+      remove: (input) => sessions.remove(input.sessionID),
       switchAgent: sessions.switchAgent,
       switchModel: sessions.switchModel,
       prompt: sessions.prompt,
       generate: (input) => sessions.generate(input).pipe(Effect.map((text) => ({ text }))),
-      command: sessions.command,
-      rename: sessions.rename,
+      command: (input) => sessions.command({ ...input, command: input.name }),
+      compact: sessions.compact,
+      update: Effect.fn(function* (input) {
+        yield* sessions.get(input.sessionID)
+        if (input.title !== undefined) yield* sessions.rename({ sessionID: input.sessionID, title: input.title })
+        if (input.metadata !== undefined)
+          yield* sessions.setMetadata({ sessionID: input.sessionID, metadata: input.metadata })
+        if (input.permissions !== undefined)
+          yield* sessions.setPermissions({ sessionID: input.sessionID, permissions: input.permissions })
+      }),
       move: sessions.move,
       synthetic: sessions.synthetic,
       interrupt: (input) =>
         sessions
-          .interrupt(input.sessionID, { continue: input.continue })
+          .interrupt(input.sessionID, { resume: input.resume })
           .pipe(Effect.map((interrupted) => ({ interrupted }))),
       wait: (input) => sessions.wait(input.sessionID),
       context: (input) => sessions.context(input.sessionID),
@@ -497,7 +596,8 @@ export const requirements = LayerNode.group([
   App.node,
   Agent.node,
   AISDK.node,
-  Catalog.node,
+  Provider.node,
+  Model.node,
   Command.node,
   Bus.node,
   Integration.node,
@@ -510,6 +610,8 @@ export const requirements = LayerNode.group([
   Tool.node,
   Vcs.node,
   WebSearch.node,
+  Worktree.node,
+  WorktreeStrategies.node,
   Generate.node,
   Permission.node,
   PluginHooks.node,
@@ -579,6 +681,12 @@ function methodImplementation(input: IntegrationMethodRegistration): Integration
     }
   }
   if (input.method.type === "command") {
+    return {
+      integrationID: Integration.ID.make(input.integrationID),
+      method: { ...input.method, id: Integration.MethodID.make(input.method.id) },
+    }
+  }
+  if (input.method.type === "external") {
     return {
       integrationID: Integration.ID.make(input.integrationID),
       method: { ...input.method, id: Integration.MethodID.make(input.method.id) },

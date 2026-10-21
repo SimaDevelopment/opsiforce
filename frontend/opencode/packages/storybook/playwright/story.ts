@@ -3,6 +3,12 @@ import type { Locator } from "@playwright/test"
 
 export { expect }
 
+/**
+ * The dev server URL of a source module, in the form Vite rewrites imports to. A different spelling, such as
+ * `/@fs//Users/...`, loads a second instance of the module, whose contexts the rest of the page never provides.
+ */
+export const sourceURL = (url: URL) => `/@fs${url.pathname}`
+
 export const story = test.extend<{
   mount: (
     id: string,
@@ -20,14 +26,14 @@ export const story = test.extend<{
             .join(";"),
         )
       }
-      if (options?.globals) {
-        query.set(
-          "globals",
-          Object.entries(options.globals)
-            .map(([key, value]) => `${key}:${value}`)
-            .join(";"),
-        )
-      }
+      // No test reads addon-a11y results, so skip its axe run after every render. Switching preview.tsx to
+      // `a11y.test: "error"` would therefore not be enforced by these tests. Caller globals still win.
+      query.set(
+        "globals",
+        Object.entries({ "a11y.manual": "!true", ...options?.globals })
+          .map(([key, value]) => `${key}:${value}`)
+          .join(";"),
+      )
       await page.goto(`/iframe.html?${query}`)
       const root = page.locator("#storybook-root")
       await expect(root).toBeVisible({ timeout: 30_000 })

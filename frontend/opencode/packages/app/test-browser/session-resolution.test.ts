@@ -17,21 +17,33 @@ function createFixture(initial: Record<string, Session> = {}) {
   const deferred = new Map<string, PromiseWithResolvers<unknown>>()
   const resolves: string[] = []
   const messages = { syncs: [] as string[], ...Promise.withResolvers<unknown>() }
+  const pending = { syncs: [] as string[] }
+
   return {
     resolves,
     messages,
+    pending,
     sessions: {
       get: (id: string) => cache()[id],
       sync: (id: string) => {
         resolves.push(id)
         const entry = deferred.get(id) ?? Promise.withResolvers<unknown>()
         deferred.set(id, entry)
+
         return entry.promise
       },
       message: {
         sync: (id: string) => {
           messages.syncs.push(id)
+
           return messages.promise
+        },
+      },
+      pending: {
+        sync: (id: string) => {
+          pending.syncs.push(id)
+
+          return Promise.resolve()
         },
       },
     },
@@ -65,6 +77,7 @@ test("refreshes the current session on reconnect while keeping cached content vi
   await createRoot(async (dispose) => {
     const fixture = createFixture({ ses_a: sessionOf("ses_a") })
     const [connection, setConnection] = createStore({ connected: false })
+
     const current = createSessionResolution(
       () => "ses_a",
       () => fixture.sessions,
@@ -86,6 +99,7 @@ test("refreshes the current session on reconnect while keeping cached content vi
     expect(fixture.resolves).toEqual(["ses_a", "ses_a"])
     expect(current()).toEqual(sessionOf("ses_a"))
     expect(fixture.messages.syncs).toEqual(["ses_a", "ses_a"])
+    expect(fixture.pending.syncs).toEqual(["ses_a", "ses_a"])
     fixture.settle("ses_a", "/worktrees/moved")
     await flush()
     expect(current()?.directory).toBe("/worktrees/moved")
@@ -123,6 +137,7 @@ test("starts metadata and messages in parallel once the route has a session ID",
 test("message failure does not fail metadata resolution", async () => {
   await createRoot(async (dispose) => {
     const fixture = createFixture()
+
     const current = createSessionResolution(
       () => "ses_a",
       () => fixture.sessions,
@@ -288,6 +303,7 @@ test("re-resolves against a replaced session store", async () => {
 test("throws not found when the settled session is deleted", async () => {
   await createRoot(async (dispose) => {
     const fixture = createFixture()
+
     const current = createSessionResolution(
       () => "ses_a",
       () => fixture.sessions,

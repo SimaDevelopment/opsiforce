@@ -53,9 +53,41 @@ describe("Model.Compatibility", () => {
       requireAssistantAfterTool: true,
     })
   })
+
+  test("keeps capability overrides that gate protocol features", () => {
+    const decode = Schema.decodeUnknownSync(Model.Compatibility)
+
+    for (const supportsEffortUpdates of [false, true]) {
+      expect(decode({ supportsEffortUpdates, supportsThinkingBlockBinding: true })).toEqual({
+        supportsEffortUpdates,
+        supportsThinkingBlockBinding: true,
+      })
+    }
+  })
+
+  test("omits undefined protocol capability overrides when encoded", () => {
+    expect(
+      Schema.encodeSync(Model.Compatibility)({
+        supportsEffortUpdates: undefined,
+        supportsThinkingBlockBinding: undefined,
+      }),
+    ).toEqual({})
+  })
 })
 
 describe("Model.Info", () => {
+  test("provider compaction policy is a typed setting", () => {
+    const model = Model.Info.default(Provider.ID.openai, Model.ID.make("gpt-5.4-mini"))
+    expect(Schema.encodeSync(Model.Info)({ ...model, settings: { compaction: undefined } }).settings).toEqual({})
+    expect(
+      Schema.decodeUnknownSync(Model.Info)({ ...model, settings: { compaction: { type: "native" } } }).settings,
+    ).toEqual({
+      compaction: { type: "native" },
+    })
+    expect(Schema.decodeUnknownSync(Provider.Compaction)({ type: "summary" })).toEqual({ type: "summary" })
+    expect(() => Schema.decodeUnknownSync(Provider.Compaction)({ type: "automatic" })).toThrow()
+  })
+
   test("uses practical token limits for unknown models", () => {
     const model = Model.Info.default(Provider.ID.make("custom"), Model.ID.make("gpt-5.6"))
 
@@ -63,12 +95,10 @@ describe("Model.Info", () => {
   })
 })
 
-describe("Model.Capabilities", () => {
-  test("decodes optional Responses WebSocket support", () => {
-    const decode = Schema.decodeUnknownSync(Model.Capabilities)
-    const base = { tools: true, input: ["text"], output: ["text"] }
-
-    expect(decode(base)).toEqual(base)
-    expect(decode({ ...base, responsesWebsockets: true })).toEqual({ ...base, responsesWebsockets: true })
+describe("Model.Settings", () => {
+  test("preserves provider-specific model options", () => {
+    expect(Schema.decodeUnknownSync(Model.Settings)({ providerOption: true })).toEqual({
+      providerOption: true,
+    })
   })
 })

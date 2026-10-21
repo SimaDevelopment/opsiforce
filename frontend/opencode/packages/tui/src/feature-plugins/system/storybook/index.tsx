@@ -1,4 +1,4 @@
-import { Plugin } from "@opencode-ai/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createSignal, For, type JSX } from "solid-js"
 import { StoryFooter } from "./footer"
@@ -6,6 +6,9 @@ import { mermanLayoutsStory } from "./merman-layouts"
 import { sessionTabsStory } from "./session-tabs"
 import { sessionLocationMissingStory } from "./session-location-missing"
 import { oneCellSpinnerStory } from "./one-cell-spinner"
+import { linkClicksStory } from "./link-clicks"
+import { highlightsStory } from "./highlights"
+import { todoStory } from "./todo"
 
 /**
  * A story is a full-screen, fixture-driven simulation of a real production component. Stories own
@@ -17,7 +20,15 @@ export type Story = {
   render: (context: Plugin.Context) => JSX.Element
 }
 
-const stories: Story[] = [mermanLayoutsStory, sessionTabsStory, sessionLocationMissingStory, oneCellSpinnerStory]
+const stories: Story[] = [
+  mermanLayoutsStory,
+  sessionTabsStory,
+  sessionLocationMissingStory,
+  oneCellSpinnerStory,
+  linkClicksStory,
+  highlightsStory,
+  todoStory,
+]
 
 function Commands(props: { context: Plugin.Context }) {
   props.context.keymap.layer(() => ({
@@ -97,15 +108,15 @@ function StorybookIndex(props: { context: Plugin.Context }) {
       width={dimensions().width}
       height={dimensions().height}
       flexDirection="column"
-      backgroundColor={theme.background.default}
+      backgroundColor={theme.background.base}
     >
       <box paddingTop={2} paddingLeft={2} flexDirection="column">
-        <text fg={theme.text.default}>storybook</text>
-        <text fg={theme.text.subdued}>fixture-driven simulations of production components</text>
+        <text fg={theme.text.base}>storybook</text>
+        <text fg={theme.text.muted}>fixture-driven simulations of production components</text>
         <box height={1} />
         <For each={stories}>
           {(story, index) => (
-            <text fg={index() === selected() ? theme.text.default : theme.text.subdued}>
+            <text fg={index() === selected() ? theme.text.base : theme.text.muted}>
               {index() === selected() ? "› " : "  "}
               {index() + 1} {story.title}
             </text>

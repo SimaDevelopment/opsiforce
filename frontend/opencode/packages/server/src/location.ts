@@ -1,19 +1,50 @@
-import { Location } from "@opencode-ai/core/location"
-import { LocationServiceMap } from "@opencode-ai/core/location-services"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { Workspace } from "@opencode-ai/core/workspace"
-import { InvalidRequestError } from "@opencode-ai/protocol/errors"
+import { FileSystem } from "@opencode/core/filesystem"
+import { Location } from "@opencode/core/location"
+import { Plugin } from "@opencode/core/plugin"
+import { LocationServiceMap } from "@opencode/core/location-services"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { LocationNotFoundError, InvalidRequestError, ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Effect, Layer, Schema } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
-import { HttpApiMiddleware } from "effect/unstable/httpapi"
+import { HttpServerRequest } from "effect/http"
+import { HttpApiMiddleware } from "effect/http-api"
 import { missingSession } from "./handlers/session-error"
 
 export type LocationServices = Layer.Success<ReturnType<(typeof LocationServiceMap.Service)["get"]>>
 
 export class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware, { provides: LocationServices }>()(
   "@opencode/HttpApiLocation",
+  { error: [LocationNotFoundError] },
 ) {}
+
+export function locationErrors<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return effect.pipe(
+    Effect.catchIf(
+      (error): error is Extract<E, FileSystem.DirectoryNotFoundError> =>
+        error instanceof FileSystem.DirectoryNotFoundError,
+      (error) =>
+        Effect.fail(
+          new LocationNotFoundError({
+            location: { directory: error.directory },
+            message: `Location not found: ${error.directory}`,
+          }),
+        ),
+    ),
+  )
+}
+
+export const awaitPlugins = Plugin.awaitActivation.pipe(
+  Effect.timeoutOrElse({
+    duration: "5 seconds",
+    orElse: () =>
+      Effect.fail(
+        new ServiceUnavailableError({
+          message: "Location plugins did not finish activating",
+          service: "plugin",
+        }),
+      ),
+  }),
+)
 
 export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
   return Effect.gen(function* () {
@@ -21,7 +52,6 @@ export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
     return {
       location: new Location.Info({
         directory: location.directory,
-        workspaceID: location.workspaceID,
         project: location.project,
       }),
       data: yield* data,
@@ -40,13 +70,11 @@ export const sessionInfo = Effect.fnUntraced(function* (sessions: Session.Interf
 
 export function requestRef(request: HttpServerRequest.HttpServerRequest): Location.Ref {
   const query = new URL(request.url, "http://localhost").searchParams
-  const workspaceID = query.get("location[workspace]") || request.headers["x-opencode-workspace"]
   const directory =
     query.get("location[directory]") ||
     (request.headers["x-opencode-directory"] ? decode(request.headers["x-opencode-directory"]) : process.cwd())
   return Location.Ref.make({
     directory: AbsolutePath.make(directory),
-    workspaceID: workspaceID ? Workspace.ID.make(workspaceID) : undefined,
   })
 }
 
@@ -65,7 +93,7 @@ export const layer = Layer.effect(
     return LocationMiddleware.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
-        return yield* effect.pipe(Effect.provide(locations.get(requestRef(request))))
+        return yield* effect.pipe(Effect.provide(locations.get(requestRef(request))), locationErrors)
       }),
     )
   }),

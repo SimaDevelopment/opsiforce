@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ConfigProviderOptionsV1 } from "@opencode-ai/core/v1/config/provider-options"
+import { ConfigProviderOptionsV1 } from "@opencode/core/v1/config/provider-options"
 
 describe("ConfigProviderOptionsV1", () => {
   test("splits provider overlays without changing package settings", () => {
@@ -21,6 +21,27 @@ describe("ConfigProviderOptionsV1", () => {
       },
       headers: { "x-test": "1" },
       body: { store: true },
+    })
+  })
+
+  test("moves openai-compatible options the package does not read into the body", () => {
+    expect(
+      ConfigProviderOptionsV1.compatibleModel({
+        reasoningEffort: "high",
+        timeout: 1000,
+        allowed_openai_params: ["reasoning_effort"],
+        chat_template_kwargs: { enable_thinking: true },
+      }),
+    ).toEqual({
+      settings: { reasoningEffort: "high", timeout: 1000 },
+      body: {
+        allowed_openai_params: ["reasoning_effort"],
+        chat_template_kwargs: { enable_thinking: true },
+      },
+    })
+    expect(ConfigProviderOptionsV1.compatibleModel({ reasoningEffort: "low" })).toEqual({
+      settings: { reasoningEffort: "low" },
+      body: undefined,
     })
   })
 

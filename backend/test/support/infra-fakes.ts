@@ -1,4 +1,5 @@
 import type { V1Pod } from '@kubernetes/client-node';
+import type { StartTimer } from '../../src/project/agent-status.service';
 import type { JsonObject } from './json';
 
 export interface RecordedCall {
@@ -205,6 +206,23 @@ export class FakeTimeoutService extends RecordingFake {
   async isFullyExpired(): Promise<boolean> {
     return false;
   }
+}
+
+export type FakeTimer = StartTimer & { elapse: () => Promise<void> };
+
+export function fakeTimer(): FakeTimer {
+  const due = new Set<() => Promise<void>>();
+  const start: StartTimer = (task) => {
+    due.add(task);
+    return () => due.delete(task);
+  };
+  return Object.assign(start, {
+    async elapse() {
+      const tasks = [...due];
+      due.clear();
+      await Promise.all(tasks.map((task) => task()));
+    },
+  });
 }
 
 export class FakeProjectAuthService extends RecordingFake {

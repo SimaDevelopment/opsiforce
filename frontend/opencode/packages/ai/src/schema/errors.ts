@@ -1,5 +1,6 @@
 import { Schema } from "effect"
-import { Tool } from "@opencode-ai/schema/tool"
+import { NonNegativeInt } from "@opencode/schema"
+import { Tool } from "@opencode/schema/tool"
 import { ModelID, ProviderID, RouteID } from "./ids.js"
 
 export const ProviderFailureClassification = Schema.Literals(["context-overflow", "payload-too-large"])
@@ -12,7 +13,7 @@ export class HttpContext extends Schema.Class<HttpContext>("AI.HttpContext")({
 }) {}
 
 export class HttpRateLimitDetails extends Schema.Class<HttpRateLimitDetails>("AI.HttpRateLimitDetails")({
-  retryAfterMs: Schema.optional(Schema.Number),
+  retryAfterMs: Schema.optional(NonNegativeInt),
   limit: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   remaining: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   reset: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -50,6 +51,19 @@ export class UnsupportedOperationError extends Schema.TaggedError<UnsupportedOpe
   route: Schema.optional(RouteID),
 }) {}
 
+/**
+ * Provider settings that are missing, conflicting, or unsupported, such as
+ * Azure without `resourceName` or `baseURL`. Thrown synchronously while a
+ * provider facade or package entrypoint configures a model, before any
+ * request exists, so it is not an `AIError` reason.
+ */
+export class ProviderConfigurationError extends Schema.TaggedError<ProviderConfigurationError>(
+  "AI.Error.ProviderConfiguration",
+)("ProviderConfiguration", {
+  provider: ProviderID,
+  message: Schema.String,
+}) {}
+
 export class NoRouteError extends Schema.TaggedError<NoRouteError>("AI.Error.NoRoute")("NoRoute", {
   ...ReasonFields,
   route: RouteID,
@@ -64,13 +78,16 @@ export class AuthenticationError extends Schema.TaggedError<AuthenticationError>
 
 export class RateLimitError extends Schema.TaggedError<RateLimitError>("AI.Error.RateLimit")("RateLimit", {
   ...ReasonFields,
-  retryAfterMs: Schema.optional(Schema.Number),
+  retryAfterMs: Schema.optional(NonNegativeInt),
   rateLimit: Schema.optional(HttpRateLimitDetails),
 }) {}
 
 export class QuotaExceededError extends Schema.TaggedError<QuotaExceededError>("AI.Error.QuotaExceeded")(
   "QuotaExceeded",
-  ReasonFields,
+  {
+    ...ReasonFields,
+    retryAfterMs: Schema.optional(NonNegativeInt),
+  },
 ) {}
 
 export class ContentPolicyError extends Schema.TaggedError<ContentPolicyError>("AI.Error.ContentPolicy")(
@@ -82,7 +99,7 @@ export class ProviderInternalError extends Schema.TaggedError<ProviderInternalEr
   "ProviderInternal",
   {
     ...ReasonFields,
-    retryAfterMs: Schema.optional(Schema.Number),
+    retryAfterMs: Schema.optional(NonNegativeInt),
   },
 ) {}
 
@@ -120,6 +137,12 @@ export class UnknownProviderError extends Schema.TaggedError<UnknownProviderErro
   ReasonFields,
 ) {}
 
+/** A caller-supplied deadline elapsed, such as `Generation.await` polling past its `Poll.timeout`. */
+export class TimeoutError extends Schema.TaggedError<TimeoutError>("AI.Error.Timeout")("Timeout", {
+  ...ReasonFields,
+  timeoutMs: Schema.optional(Schema.Number),
+}) {}
+
 export const AIErrorReason = Schema.Union([
   InvalidRequestError,
   UnsupportedOperationError,
@@ -132,6 +155,7 @@ export const AIErrorReason = Schema.Union([
   TransportError,
   InvalidProviderOutputError,
   UnknownProviderError,
+  TimeoutError,
 ]).pipe(Schema.toTaggedUnion("_tag"))
 export type AIErrorReason = Schema.Schema.Type<typeof AIErrorReason>
 

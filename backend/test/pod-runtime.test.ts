@@ -31,6 +31,20 @@ describe('generated app runtime', () => {
   });
 });
 
+describe('agent readiness', () => {
+  it('is ready once opencode answers /api/info through the agent port, with no liveness probe', () => {
+    const [agent] = buildPodSpec(options).spec?.containers ?? [];
+    expect(agent.readinessProbe).toEqual({
+      httpGet: { path: '/api/info', port: 4096 },
+      initialDelaySeconds: 5,
+      periodSeconds: 10,
+      timeoutSeconds: 10,
+      failureThreshold: 12,
+    });
+    expect(agent.livenessProbe).toBeUndefined();
+  });
+});
+
 describe('privileged Kata agents', () => {
   it('enables privileged mode for both the app and init containers', () => {
     const pod = buildPodSpec({ ...options, runtimeClassName: 'kata-clh-runtime-rs-opsiforce', privileged: true });

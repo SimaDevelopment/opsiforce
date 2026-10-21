@@ -5,7 +5,8 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { Queue } from 'bullmq';
 import { ProjectController } from './project.controller';
 import { AppAgentController } from './app.controller.agent';
-import { AgentStatusController } from './agent-status.controller';
+import { AgentObservationsController } from './agent-observations.controller';
+import { AgentObservationsService } from './agent-observations.service';
 import { AgentStatusStreamController } from './agent-status-stream.controller';
 import { PodClassController } from './pod-class.controller';
 import { ProjectService } from './project.service';
@@ -75,7 +76,7 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
   controllers: [
     ProjectController,
     AppAgentController,
-    AgentStatusController,
+    AgentObservationsController,
     AgentStatusStreamController,
     PodClassController,
     ProjectImportController,
@@ -92,6 +93,7 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     ProjectImportUploadCleanupProcessor,
     ProxyService,
     AppService,
+    AgentObservationsService,
   ],
   exports: [
     ProjectService,

@@ -2,17 +2,17 @@ import { $ } from "bun"
 import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
-import { Bus } from "@opencode-ai/core/bus"
-import { Config } from "@opencode-ai/core/config"
-import { ConfigSnapshotPlugin } from "@opencode-ai/core/config/plugin/snapshot"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Location } from "@opencode-ai/core/location"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginHost } from "@opencode-ai/core/plugin/host"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { Document, Event, Info } from "@opencode-ai/schema/config"
-import { Global } from "@opencode-ai/util/global"
+import { Bus } from "@opencode/core/bus"
+import { Config } from "@opencode/core/config"
+import { ConfigSnapshotPlugin } from "@opencode/core/config/plugin/snapshot"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Location } from "@opencode/core/location"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginHost } from "@opencode/core/plugin/host"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Snapshot } from "@opencode/core/snapshot"
+import { Document, Event, Info } from "@opencode/schema/config"
+import { Global } from "@opencode/util/global"
 import { Effect } from "effect"
 import { tmpdir } from "../fixture/tmpdir"
 import { it } from "../lib/effect"
@@ -37,6 +37,7 @@ describe("ConfigSnapshotPlugin.Plugin", () => {
             const bus = yield* Bus.Service
             const config = yield* Config.Test
             const plugins = yield* Plugin.Service
+            yield* config.setEntries([new Document({ type: "document", info: new Info({ snapshots: false }) })])
             yield* ConfigSnapshotPlugin.Plugin.effect(yield* PluginHost.make(plugins))
 
             expect(yield* snapshot.capture()).toBeUndefined()
@@ -58,9 +59,6 @@ describe("ConfigSnapshotPlugin.Plugin", () => {
           )
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.provide(PluginTestLayer),
-      Effect.provide(Config.testLayer([new Document({ type: "document", info: new Info({ snapshots: false }) })])),
-    ),
+    ).pipe(Effect.provide(PluginTestLayer)),
   )
 })

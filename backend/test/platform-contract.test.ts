@@ -152,6 +152,56 @@ describe('the inbound skills that became Service skills', () => {
   });
 });
 
+const OBSERVER_DIRECTORY = '/opt/opsiforce/opencode-plugins/observer';
+const GPT_6_MODELS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-sol-fast'];
+const CLAUDE_EFFORT_OPT_OUTS = ['claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1'];
+
+interface OpencodeProvider {
+  settings?: Record<string, unknown>;
+  models: Record<string, { settings?: Record<string, unknown>; compatibility?: Record<string, unknown> }>;
+}
+
+describe.each(['opencode.json', 'opencode.local.json'])('the opencode config %s', (file) => {
+  const config = JSON.parse(readFileSync(join(agentConfig, file), 'utf8')) as {
+    plugins?: string[];
+    providers: Record<string, OpencodeProvider>;
+  };
+  const { openai, anthropic } = config.providers;
+
+  it('sends OpenAI over HTTP, loads the observer once and switches off opencode’s own tools plugin', () => {
+    expect(openai.settings?.transport).toBe('http');
+    expect(config.plugins?.filter((entry) => entry === OBSERVER_DIRECTORY)).toHaveLength(1);
+    expect(config.plugins).toContain('-opencode.tools');
+  });
+
+  it('opts the named models out of the terse verbosity default and of in-place effort updates', () => {
+    for (const model of GPT_6_MODELS) {
+      expect(openai.models[model]?.settings?.textVerbosity, model).toBe('medium');
+      expect(openai.models[model]?.compatibility?.supportsEffortUpdates, model).toBe(false);
+    }
+    for (const model of CLAUDE_EFFORT_OPT_OUTS) {
+      expect(anthropic.models[model]?.compatibility?.supportsEffortUpdates, model).toBe(false);
+    }
+  });
+
+  it('sets no Anthropic reasoningEffort, a setting the Anthropic protocol never reads', () => {
+    expect(JSON.stringify(anthropic)).not.toContain('reasoningEffort');
+  });
+});
+
+describe('the opencode plugins', () => {
+  it('build against the plugin API of the opencode the agent image installs', () => {
+    const dockerfile = readFileSync(join(process.cwd(), '..', 'docker', 'Dockerfile.agent'), 'utf8');
+    const { devDependencies } = JSON.parse(
+      readFileSync(join(process.cwd(), '..', 'opencode-plugins', 'package.json'), 'utf8')
+    ) as { devDependencies: Record<string, string> };
+    const [, cli] = /@opencode\/cli@(\S+)/.exec(dockerfile) ?? [];
+
+    expect(cli).toBeDefined();
+    expect(devDependencies['@opencode/plugin']).toBe(cli);
+  });
+});
+
 describe('the entrypoint', () => {
   it('waits for an executable startup.sh instead of crash-looping without one', () => {
     expect(entrypoint).toContain('while [ ! -x /workspace/app/startup.sh ]');

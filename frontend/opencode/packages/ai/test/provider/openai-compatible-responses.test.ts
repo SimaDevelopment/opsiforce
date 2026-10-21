@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { LLM, LLMEvent, Message, ToolDefinition } from "../../src/index.js"
+import { LLM, LLMEvent, Message, ToolDefinition, Media } from "../../src/index.js"
 import { configure } from "../../src/providers/openai-compatible-responses.js"
 import { OpenAI } from "../../src/providers.js"
 import { OpenResponses } from "../../src/protocols/open-responses.js"
@@ -47,7 +47,7 @@ describe("Open Responses-compatible route", () => {
       })
       expect(prepared.body).toEqual({
         model: "example-model",
-        input: [{ role: "user", content: [{ type: "input_text", text: "Say hello." }] }],
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "Say hello." }] }],
         instructions: "You are concise.",
         stream: true,
         store: false,
@@ -89,9 +89,9 @@ describe("Open Responses-compatible route", () => {
 
       expect(prepared.body.instructions).toBe("Initial instructions.")
       expect(prepared.body.input).toEqual([
-        { role: "user", content: [{ type: "input_text", text: "Before." }] },
-        { role: "developer", content: "Operator update." },
-        { type: "message", role: "assistant", content: [{ type: "output_text", text: "After." }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "Before." }] },
+        { type: "message", role: "developer", content: "Operator update." },
+        { type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "After." }] },
       ])
     }),
   )
@@ -111,8 +111,8 @@ describe("Open Responses-compatible route", () => {
       )
 
       expect(prepared.body.input).toEqual([
-        { role: "user", content: [{ type: "input_text", text: "Before." }] },
-        { role: "user", content: [{ type: "input_text", text: "After." }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "Before." }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "After." }] },
       ])
     }),
   )
@@ -129,7 +129,7 @@ describe("Open Responses-compatible route", () => {
         LLM.request({
           model,
           messages: [
-            Message.user([{ type: "media", mediaType: "application/pdf", data: pdf, filename: "input.pdf" }]),
+            Message.user([{ type: "media", media: Media.fromDataUrl(pdf), filename: "input.pdf" }]),
             Message.assistant({ type: "tool-call", id: "call_1", name: "read", input: {} }),
             Message.tool({
               id: "call_1",
@@ -143,6 +143,7 @@ describe("Open Responses-compatible route", () => {
 
       expect(prepared.body.input).toEqual([
         {
+          type: "message",
           role: "user",
           content: [{ type: "input_file", filename: "input.pdf", file_data: pdf }],
         },
@@ -168,6 +169,72 @@ describe("Open Responses-compatible route", () => {
 
       expect(error.reason._tag).toBe("InvalidRequest")
       expect(error.message).toContain("Open Responses does not support provider-native tool image_generation")
+    }),
+  )
+
+  it.effect("flattens tool namespaces", () =>
+    Effect.gen(function* () {
+      const model = configure({ apiKey: "test-key", baseURL: "https://responses.example.test/v1" }).model(
+        "example-model",
+      )
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          tools: [
+            {
+              type: "namespace",
+              name: "acme",
+              tools: [
+                {
+                  type: "namespace",
+                  name: "billing",
+                  tools: [ToolDefinition.make({ name: "lookup", description: "Lookup billing", inputSchema: {} })],
+                },
+                ToolDefinition.make({ name: "users", description: "Lookup users", inputSchema: {} }),
+              ],
+            },
+          ],
+        }),
+      )
+
+      expect(prepared.body.tools).toEqual([
+        {
+          type: "function",
+          name: "acme_billing_lookup",
+          description: "Lookup billing",
+          parameters: { type: "object" },
+          strict: false,
+        },
+        {
+          type: "function",
+          name: "acme_users",
+          description: "Lookup users",
+          parameters: { type: "object" },
+          strict: false,
+        },
+      ])
+    }),
+  )
+
+  it.effect("flattens tool namespaces in history", () =>
+    Effect.gen(function* () {
+      const model = configure({ apiKey: "test-key", baseURL: "https://responses.example.test/v1" }).model(
+        "example-model",
+      )
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.assistant({ type: "tool-call", id: "call_1", name: "lookup", namespace: "crm", input: {} }),
+            Message.tool({ id: "call_1", name: "lookup", namespace: "crm", result: "done", resultType: "text" }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.input).toEqual([
+        { type: "function_call", call_id: "call_1", name: "crm_lookup", namespace: undefined, arguments: "{}" },
+        { type: "function_call_output", call_id: "call_1", output: "done" },
+      ])
     }),
   )
 
@@ -239,23 +306,27 @@ describe("Open Responses-compatible route", () => {
           type: "message",
           id: "history_1",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Kept." }],
         },
         {
           type: "message",
           id: `history_${"a".repeat(64)}`,
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Long." }],
         },
         {
           type: "message",
           id: "provider_value/with+symbols",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "Opaque." }],
         },
         {
           type: "message",
           role: "assistant",
+          status: "completed",
           content: [
             { type: "output_text", text: "No suffix." },
             { type: "output_text", text: "No prefix." },
@@ -296,9 +367,9 @@ describe("Open Responses-compatible route", () => {
 
       expect(prepared.body.input).toEqual([
         items[0],
-        { role: "user", content: [{ type: "input_text", text: JSON.stringify(items[1]) }] },
-        { role: "user", content: [{ type: "input_text", text: JSON.stringify(items[2]) }] },
-        { role: "user", content: [{ type: "input_text", text: JSON.stringify(items[3]) }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: JSON.stringify(items[1]) }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: JSON.stringify(items[2]) }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: JSON.stringify(items[3]) }] },
       ])
     }),
   )
@@ -325,6 +396,33 @@ describe("Open Responses-compatible route", () => {
       expect(response.message.content).toEqual([
         { type: "text", text: "Indexed", providerMetadata: { "openai-compatible": { itemId: "msg_1" } } },
       ])
+    }),
+  )
+
+  it.effect("ignores bare null frames between events", () =>
+    Effect.gen(function* () {
+      const model = configure({
+        apiKey: "test-key",
+        baseURL: "https://responses.example.test/v1",
+      }).model("example-model")
+      const response = yield* LLMClient.generate(LLM.request({ model, prompt: "Say hello." })).pipe(
+        Effect.provide(
+          fixedResponse(
+            sseEvents(
+              { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "msg_1" } },
+              "null",
+              { type: "response.output_text.delta", output_index: 0, item_id: "msg_1", delta: "Hello" },
+              "null",
+              { type: "response.output_item.done", output_index: 0, item: { type: "message", id: "msg_1" } },
+              { type: "response.completed", response: { id: "resp_1" } },
+              "null",
+            ),
+          ),
+        ),
+      )
+
+      expect(response.text).toBe("Hello")
+      expect(response.events.at(-1)).toMatchObject({ type: "finish" })
     }),
   )
 
@@ -546,6 +644,67 @@ describe("Open Responses-compatible route", () => {
       }),
     )
 
+    it.effect("treats null optional fields as absent", () =>
+      Effect.gen(function* () {
+        const call = { type: "function_call", id: null, call_id: "call_1", name: "lookup", namespace: null }
+        const message = { type: "message", id: "msg_1", role: "assistant" }
+        const response = yield* LLMClient.generate(request).pipe(
+          Effect.provide(
+            fixedResponse(
+              sseEvents(
+                { type: "response.created", response: null },
+                { type: "response.output_item.added", output_index: 0, item: { ...message, content: [] } },
+                { type: "response.output_text.delta", item_id: "msg_1", output_index: null, delta: "Hi" },
+                { type: "response.output_text.delta", item_id: "msg_1", output_index: 0, delta: null },
+                { type: "response.output_text.done", item_id: "msg_1", output_index: 0, text: null },
+                { type: "response.output_item.done", output_index: 0, item: message },
+                { type: "response.output_item.added", output_index: 1, item: { ...call, arguments: null } },
+                { type: "response.function_call_arguments.done", item_id: "fc", output_index: 1, arguments: null },
+                { type: "response.output_item.done", output_index: 1, item: { ...call, arguments: "{}" } },
+                {
+                  type: "response.output_item.done",
+                  output_index: 2,
+                  item: { type: "function_call", id: "fc_2", call_id: null, name: null, arguments: "{}" },
+                },
+                { type: "response.output_item.added", output_index: 3, item: { type: "reasoning", id: "rs_1" } },
+                {
+                  type: "response.reasoning_summary_part.added",
+                  item_id: "rs_1",
+                  output_index: 3,
+                  summary_index: null,
+                },
+                { type: "response.output_item.done", output_index: 3, item: { type: "reasoning", id: "rs_1" } },
+                {
+                  type: "response.completed",
+                  response: {
+                    id: null,
+                    output: null,
+                    incomplete_details: { reason: null },
+                    usage: {
+                      input_tokens: 5,
+                      input_tokens_details: { cached_tokens: null, cache_write_tokens: null },
+                      output_tokens: null,
+                      output_tokens_details: { reasoning_tokens: null },
+                      total_tokens: "7",
+                    },
+                  },
+                },
+              ),
+            ),
+          ),
+        )
+
+        expect(response.text).toBe("Hi")
+        expect(response.toolCalls).toEqual([expect.objectContaining({ id: "call_1", name: "lookup", input: {} })])
+        expect(response.toolCalls[0]?.namespace).toBeUndefined()
+        expect(response.usage).toMatchObject({
+          inputTokens: 5,
+          outputTokens: undefined,
+          cacheReadInputTokens: undefined,
+        })
+      }),
+    )
+
     it.effect("rejects missing, null, and non-string event IDs even with a registered output index", () =>
       Effect.gen(function* () {
         yield* Effect.forEach(
@@ -586,7 +745,7 @@ describe("Open Responses-compatible route", () => {
       Effect.gen(function* () {
         yield* Effect.forEach(["response.output_item.added", "response.output_item.done"], (type) =>
           Effect.forEach(fixtures, (fixture) =>
-            Effect.forEach([null, 0, false, {}, []], (id) =>
+            Effect.forEach([0, false, {}, []], (id) =>
               Effect.gen(function* () {
                 const error = yield* LLMClient.generate(request).pipe(
                   Effect.provide(
@@ -796,6 +955,7 @@ describe("Open Responses-compatible route", () => {
           type: "message",
           id: "msg_refusal",
           role: "assistant",
+          status: "completed",
           content: [{ type: "output_text", text: "I can't help with that." }],
         },
       ])

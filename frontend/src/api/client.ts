@@ -253,13 +253,6 @@ export interface WorkspacePreferences {
   updatedAt: string | null;
 }
 
-export interface OpenCodeSession {
-  id: string;
-  parentID?: string;
-  title?: string;
-  time: { created: number; updated: number };
-}
-
 export interface User {
   id: string;
   keycloakId: string;

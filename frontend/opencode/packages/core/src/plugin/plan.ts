@@ -1,10 +1,10 @@
 export * as PlanPlugin from "./plan.js"
 
-import { Message, ToolFailure } from "@opencode-ai/ai"
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import { Agent } from "@opencode-ai/schema/agent"
-import type { SessionEvent } from "@opencode-ai/schema/session-event"
-import { Global } from "@opencode-ai/util/global"
+import { Message, ToolFailure } from "@opencode/ai"
+import { define } from "@opencode/plugin/effect/plugin"
+import { Agent } from "@opencode/schema/agent"
+import type { SessionEvent } from "@opencode/schema/session-event"
+import { Global } from "@opencode/util/global"
 import { Effect, Stream } from "effect"
 import path from "path"
 import { Permission } from "../permission.js"
@@ -38,7 +38,6 @@ export const Plugin = define({
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
         item.permissions.push({ action: "edit", resource: "*", effect: "deny" })
         item.permissions.push({ action: "edit", resource: path.join(directory, "*"), effect: "allow" })
-        item.permissions.push({ action: "external_directory", resource: path.join(directory, "*"), effect: "allow" })
       })
     })
 

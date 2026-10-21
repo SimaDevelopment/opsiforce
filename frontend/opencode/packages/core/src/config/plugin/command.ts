@@ -1,21 +1,21 @@
 export * as ConfigCommandPlugin from "./command.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
-import { Info, type Entry } from "@opencode-ai/schema/config"
-import { ConfigCommand } from "@opencode-ai/schema/config/command"
-import { Model } from "@opencode-ai/schema/model"
-import { Provider } from "@opencode-ai/schema/provider"
-import { AppProcess } from "@opencode-ai/util/process"
+import { define } from "@opencode/plugin/effect/plugin"
+import { Info, type Entry } from "@opencode/schema/config"
+import { ConfigCommand } from "@opencode/schema/config/command"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { AppProcess } from "@opencode/util/process"
 import path from "path"
 import { Effect, Option, PubSub, Schema, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Location } from "../../location.js"
 import { Session } from "../../session.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { ShellSelect } from "../../shell/select.js"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { FSUtil } from "@opencode/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"
 
 const decodeCommand = Schema.decodeUnknownOption(ConfigCommand.Info)
@@ -36,7 +36,7 @@ export const Plugin = define({
     const shell = yield* ShellSelect.Service
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
-    const subagents = yield* SubagentJob.make
+    const subagents = yield* SubagentJob.Service
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
     })
@@ -206,7 +206,7 @@ function evaluateTemplate(
       if (position === last) return args.slice(argIndex).join(" ")
       return args[argIndex]
     })
-    const withArguments = expanded.replaceAll("$ARGUMENTS", input)
+    const withArguments = expanded.replaceAll("$ARGUMENTS", () => input)
     const text =
       placeholders.length === 0 && !template.includes("$ARGUMENTS") && input.trim()
         ? `${withArguments}\n\n${input}`.trim()

@@ -1,10 +1,9 @@
 import { Show } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Keybind } from "@opencode-ai/ui/keybind"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Icon } from "@opencode/ui/icon"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Keybind } from "@opencode/ui/keybind"
+import { Tooltip } from "@opencode/ui/tooltip"
 import { useCommand } from "@/shell/commands/command"
-import { reviewTooltipKeybind } from "@/shell/commands/tooltip-keybind"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useSessionLayout } from "@/session/session-layout"
 
@@ -17,10 +16,10 @@ export function SessionReviewToggle() {
     <SessionHeaderActions
       state={{
         reviewLabel: language.t("command.review.toggle"),
-        reviewKeybind: reviewTooltipKeybind(command),
+        reviewKeybind: command.keybindParts("review.toggle"),
         reviewVisible: true,
-        reviewOpened: view().reviewPanel.opened(),
-        onReviewToggle: () => view().reviewPanel.toggle(),
+        reviewOpened: view().side.opened(),
+        onReviewToggle: () => view().side.toggle(),
       }}
     />
   )
@@ -55,6 +54,11 @@ export function SessionHeaderActions(props: { state: SessionHeaderActionsState }
             variant="ghost-muted"
             size="large"
             class="shrink-0"
+            style={{
+              // This fixed control sits above moving panel contents.
+              "--v2-overlay-simple-overlay-hover": "var(--v2-background-bg-layer-01)",
+              "--v2-overlay-simple-overlay-pressed": "var(--v2-background-bg-layer-02)",
+            }}
             state={props.state.reviewOpened ? "pressed" : undefined}
             onClick={props.state.onReviewToggle}
             aria-label={props.state.reviewLabel}

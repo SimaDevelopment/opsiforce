@@ -1,27 +1,27 @@
+import type { FileSystem } from "@opencode/core/filesystem"
 import { describe, expect, test } from "bun:test"
-import { AIError, TransportError } from "@opencode-ai/ai"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { Instance } from "@opencode-ai/core/instance/service"
-import { Job } from "@opencode-ai/core/job"
-import { KV } from "@opencode-ai/core/kv"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import type { LocationServices } from "@opencode-ai/core/location-services"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionRestart } from "@opencode-ai/core/session/execution/restart"
-import { UserInterruptedError } from "@opencode-ai/core/session/error"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionRunner } from "@opencode-ai/core/session/runner/index"
-import { SessionInboxTable, SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
+import { AIError, TransportError } from "@opencode/ai"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { Instance } from "@opencode/core/instance/service"
+import { Job } from "@opencode/core/job"
+import { KV } from "@opencode/core/kv"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import type { LocationServices } from "@opencode/core/location-services"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionRestart } from "@opencode/core/session/execution/restart"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionRunner } from "@opencode/core/session/runner/index"
+import { SessionInboxTable, SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, LayerMap, Scope } from "effect"
 import { eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
@@ -50,10 +50,6 @@ describe("SessionExecution lifecycle", () => {
     const interrupted = Effect.runSyncExit(Effect.interrupt)
     expect(SessionExecution.terminal(interrupted)).toEqual({ type: "interrupted", reason: "shutdown" })
     expect(SessionExecution.terminal(interrupted, "user")).toEqual({ type: "interrupted", reason: "user" })
-    expect(SessionExecution.terminal(Exit.fail(new UserInterruptedError()))).toEqual({
-      type: "interrupted",
-      reason: "user",
-    })
   })
 
   it.effect("the sweep only lists claimed top-level Sessions", () =>
@@ -278,6 +274,7 @@ describe("SessionExecution lifecycle", () => {
           sessionID,
           text: "The server restarted while you were working. Continue from where you left off without repeating completed work.",
           description: "Continuing after restart",
+          metadata: { notice: "restart" },
         })),
       )
       // Drains completed naturally, so claims are released and counters reset.
@@ -379,7 +376,7 @@ describe("SessionExecution lifecycle", () => {
 })
 
 describe("SessionRestart background recovery", () => {
-  it.effect("wakes idle shell owners and delivers recovered notices exactly once", () =>
+  it.effect("keeps shell owners idle until a user prompt delivers recovered notices exactly once", () =>
     Effect.gen(function* () {
       const database = yield* Database.Service
       const store = yield* SessionStore.Service
@@ -416,6 +413,20 @@ describe("SessionRestart background recovery", () => {
       yield* restart.resumeSuspendedSessions
       yield* Effect.forEach([parent, child], execution.awaitIdle, { discard: true })
 
+      expect(drained).toEqual([])
+      expect(yield* SessionInbox.list(database.db, parent)).toHaveLength(1)
+      expect(yield* SessionInbox.list(database.db, child)).toHaveLength(1)
+      expect(yield* restarted.pendingBackground).toEqual([])
+      yield* restart.resumeSuspendedSessions
+      expect(drained).toEqual([])
+      expect(yield* SessionInbox.list(database.db, parent)).toHaveLength(1)
+      expect(yield* SessionInbox.list(database.db, child)).toHaveLength(1)
+
+      yield* seedInbox(database, parent, ["steer"])
+      yield* seedInbox(database, child, ["steer"])
+      yield* execution.wake(parent)
+      yield* execution.wake(child)
+      yield* Effect.forEach([parent, child], execution.awaitIdle, { discard: true })
       expect(drained.toSorted()).toEqual([parent, child].toSorted())
       expect((yield* store.context(parent)).filter((message) => message.type === "synthetic")).toMatchObject([
         {
@@ -493,7 +504,7 @@ describe("SessionRestart background recovery", () => {
         run: Deferred.await(complete),
       })
       yield* jobs.background("call-completed-shell")
-      yield* Deferred.succeed(complete, "(no output)\n\nCommand exited with code 7.")
+      yield* Deferred.succeed(complete, "Exited with code 7")
       yield* jobs.wait({ id: "call-completed-shell" })
 
       const scope = yield* Scope.make()
@@ -509,13 +520,13 @@ describe("SessionRestart background recovery", () => {
       yield* Context.get(context, SessionRestart.Service).resumeSuspendedSessions
       yield* Context.get(context, SessionExecution.Service).awaitIdle(sessionID)
 
-      expect(drained).toEqual([sessionID])
+      expect(drained).toEqual([])
       const inbox = yield* SessionInbox.list(database.db, sessionID)
       expect(inbox).toMatchObject([
         {
           type: "synthetic",
           payload: {
-            text: '<shell id="call-completed-shell" state="completed" command="exit 7">\n(no output)\n\nCommand exited with code 7.\n</shell>',
+            text: '<shell id="call-completed-shell" state="completed" command="exit 7">\nExited with code 7\n</shell>',
           },
         },
       ])
@@ -561,7 +572,8 @@ describe("SessionRestart background recovery", () => {
         expect(yield* restarted.pendingBackground).toEqual([])
         expect(yield* SessionInbox.list(database.db, sessionID)).toHaveLength(delivered ? 0 : 1)
         yield* SessionInbox.promote(database.db, bus, sessionID, "steer")
-        expect(yield* sessions.messages({ sessionID })).toMatchObject([
+        const messages = (yield* sessions.messages({ sessionID })).filter((message) => message.type !== "idle")
+        expect(messages).toMatchObject([
           {
             id: background.notificationID,
             type: "synthetic",
@@ -569,7 +581,6 @@ describe("SessionRestart background recovery", () => {
             metadata: { state: "completed" },
           },
         ])
-        expect(yield* sessions.messages({ sessionID })).toHaveLength(1)
       }),
     )
   }
@@ -1103,7 +1114,7 @@ describe("SessionExecution interrupt continuation", () => {
       yield* execution.resume(sessionID).pipe(Effect.forkScoped)
       yield* Deferred.await(draining)
 
-      yield* execution.interrupt(sessionID, { continue: true })
+      yield* execution.interrupt(sessionID, { resume: true })
       yield* execution.awaitIdle(sessionID)
 
       // The successor drain is steer-scoped: queued next-turn work stays parked.
@@ -1135,7 +1146,7 @@ describe("SessionExecution interrupt continuation", () => {
       yield* execution.resume(sessionID).pipe(Effect.forkScoped)
       yield* Deferred.await(draining)
 
-      yield* execution.interrupt(sessionID, { continue: true })
+      yield* execution.interrupt(sessionID, { resume: true })
       yield* execution.awaitIdle(sessionID)
 
       expect(drains).toEqual(["input"])
@@ -1158,7 +1169,7 @@ describe("SessionExecution interrupt continuation", () => {
       )
       const execution = Context.get(context, SessionExecution.Service)
 
-      yield* execution.interrupt(sessionID, { continue: true })
+      yield* execution.interrupt(sessionID, { resume: true })
       yield* execution.awaitIdle(sessionID)
 
       expect(drains).toEqual([{ force: false, promotable: "steer" }])
@@ -1187,7 +1198,7 @@ describe("SessionExecution interrupt continuation", () => {
       yield* execution.resume(sessionID).pipe(Effect.forkScoped)
       yield* Deferred.await(draining)
 
-      yield* execution.interrupt(sessionID, { continue: true })
+      yield* execution.interrupt(sessionID, { resume: true })
       yield* execution.awaitIdle(sessionID)
 
       // Control work is housekeeping, not next-turn input: continue runs it.
@@ -1213,7 +1224,7 @@ describe("SessionExecution interrupt continuation", () => {
       )
       const execution = Context.get(context, SessionExecution.Service)
 
-      yield* execution.interrupt(sessionID, { continue: true })
+      yield* execution.interrupt(sessionID, { resume: true })
       yield* execution.awaitIdle(sessionID)
 
       // The queued prompt is next in line; the compaction behind it waits its turn.
@@ -1361,7 +1372,7 @@ function buildExecution(
         () =>
           // The local execution test only needs the Session runner from the Location graph.
           // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-          runner as unknown as Layer.Layer<LocationServices>,
+          runner as unknown as Layer.Layer<LocationServices, FileSystem.DirectoryNotFoundError>,
       ),
     )
     return yield* Layer.buildWithScope(

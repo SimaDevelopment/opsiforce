@@ -1,8 +1,8 @@
 export * as PromiseSdk from "./promise"
 
-import { OpenCode, type OpenCodeClient } from "@opencode-ai/client"
-import type { Plugin } from "@opencode-ai/plugin"
-import { Session } from "@opencode-ai/schema/session"
+import { OpenCode, type OpenCodeClient } from "@opencode/client"
+import type { Plugin } from "@opencode/plugin"
+import { Session } from "@opencode/schema/session"
 import { Effect, Schema } from "effect"
 import { EmbeddedHost } from "./internal/host"
 
@@ -17,7 +17,8 @@ export interface InstanceOptions {
   readonly configure: (key: string) => InstanceConfiguration | Promise<InstanceConfiguration>
 }
 
-export interface CreateOptions extends Omit<EmbeddedHost.CreateOptions, "workspaceProviders" | "instances"> {
+export interface CreateOptions
+  extends Omit<EmbeddedHost.CreateOptions, "plugins" | "workspaceProviders" | "instances"> {
   readonly plugins?: ReadonlyArray<Plugin.Plugin>
   readonly instances?: InstanceOptions
 }
@@ -36,12 +37,13 @@ export async function create(options: CreateOptions = {}, embed: EmbeddedHost.Em
     EmbeddedHost.create(
       {
         ...hostOptions,
+        plugins: await adaptPlugins(plugins),
         instances: instances
           ? {
               key: (session) => instances.key(Schema.encodeSync(Session.Info)(session)),
               configure: (key) =>
                 Effect.gen(function* () {
-                  const { PluginPromise } = yield* Effect.promise(() => import("@opencode-ai/core/plugin/promise"))
+                  const { PluginPromise } = yield* Effect.promise(() => import("@opencode/core/plugin/promise"))
                   const configuration = yield* Effect.tryPromise(async () => instances.configure(key))
                   return { plugins: configuration.plugins.map(PluginPromise.fromPromise) }
                 }),
@@ -53,11 +55,9 @@ export async function create(options: CreateOptions = {}, embed: EmbeddedHost.Em
   )
   const client = OpenCode.make({ baseUrl: "http://opencode.local", fetch: host.fetch })
   const register = async (plugin: Plugin.Plugin) => {
-    const { PluginPromise } = await import("@opencode-ai/core/plugin/promise")
+    const { PluginPromise } = await import("@opencode/core/plugin/promise")
     return host.runtime.runPromise(host.plugins.register(PluginPromise.fromPromise(plugin)))
   }
-  for (const plugin of plugins ?? []) await register(plugin)
-
   return {
     ...client,
     sessions: client.session,
@@ -66,4 +66,10 @@ export async function create(options: CreateOptions = {}, embed: EmbeddedHost.Em
     close: host.close,
     [Symbol.asyncDispose]: host.close,
   }
+}
+
+async function adaptPlugins(plugins: ReadonlyArray<Plugin.Plugin> | undefined) {
+  if (!plugins?.length) return undefined
+  const { PluginPromise } = await import("@opencode/core/plugin/promise")
+  return plugins.map(PluginPromise.fromPromise)
 }

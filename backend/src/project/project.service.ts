@@ -269,6 +269,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly projectEventsService: ProjectEventsService,
     private readonly appService: AppService,
     private readonly appReadiness: AppReadinessService,
+    @Inject(forwardRef(() => AgentStatusService))
     private readonly agentStatusService: AgentStatusService,
     private readonly agentService: AgentService,
     private readonly environmentService: EnvironmentService,
@@ -1147,6 +1148,23 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.findOne(id, tenantId);
   }
 
+  async nameAfterPrimarySession(envId: string, sessionId: string, title: string): Promise<void> {
+    const [named] = await db
+      .update(projects)
+      .set({ title, updatedAt: new Date() })
+      .from(projectEnvironments)
+      .where(
+        and(
+          eq(projectEnvironments.id, envId),
+          eq(projectEnvironments.sessionId, sessionId),
+          eq(projects.id, projectEnvironments.projectId),
+          isNull(projects.title)
+        )
+      )
+      .returning({ id: projects.id });
+    if (named) await this.projectEventsService.publish(named.id);
+  }
+
   getPodClassCatalog(): PodClassCatalog {
     return buildPodClassCatalog();
   }
@@ -1713,7 +1731,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const podName = this.podService.assignedPodName(env.id);
     const pod = await this.readPodOrNull(podName);
 
-    if (!pod) {
+    if (!pod || pod.metadata?.deletionTimestamp) {
       this.spawnStartupWorker(env.id);
       return { state: 'starting', env };
     }
@@ -2269,51 +2287,49 @@ export class ProjectService implements OnApplicationBootstrap {
     const podName = this.podService.assignedPodName(envId);
     const recreateRequested = this.recreateRequests.delete(envId);
     const existingPod = await this.readPodOrNull(podName);
-    if (existingPod && !existingPod.metadata?.deletionTimestamp) {
-      if (recreateRequested) {
+    if (recreateRequested || existingPod?.metadata?.deletionTimestamp) {
+      try {
+        await this.podService.deletePodAndWait(podName);
+      } catch (err) {
+        await this.handleStartupFailure(envId, podName, err);
+        return;
+      }
+    } else if (existingPod) {
+      const existingPodIp = existingPod.status?.podIP ?? null;
+      if (this.podService.isPodReady(existingPod) && existingPodIp) {
+        await this.markEnvironmentActive(envId, existingPodIp, podName);
+        return;
+      }
+
+      const failure = this.podService.inspectFailureReason(existingPod);
+      if (failure === 'ImagePullBackOff') {
+        await this.handleStartupFailure(
+          envId,
+          podName,
+          new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
+        );
+        return;
+      }
+      if (failure === 'Unschedulable' && this.podService.podAgeMs(existingPod) > UNSCHEDULABLE_STARTUP_GRACE_MS) {
+        await this.handleStartupFailure(
+          envId,
+          podName,
+          new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
+        );
+        return;
+      }
+
+      if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
         try {
-          await this.podService.deletePod(podName);
+          const podIp = await this.podService.waitForReady(podName);
+          await this.markEnvironmentActive(envId, podIp, podName);
         } catch (err) {
           await this.handleStartupFailure(envId, podName, err);
-          return;
         }
-      } else {
-        const existingPodIp = existingPod.status?.podIP ?? null;
-        if (this.podService.isPodReady(existingPod) && existingPodIp) {
-          await this.markEnvironmentActive(envId, existingPodIp, podName);
-          return;
-        }
-
-        const failure = this.podService.inspectFailureReason(existingPod);
-        if (failure === 'ImagePullBackOff') {
-          await this.handleStartupFailure(
-            envId,
-            podName,
-            new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
-          );
-          return;
-        }
-        if (failure === 'Unschedulable' && this.podService.podAgeMs(existingPod) > UNSCHEDULABLE_STARTUP_GRACE_MS) {
-          await this.handleStartupFailure(
-            envId,
-            podName,
-            new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
-          );
-          return;
-        }
-
-        if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
-          try {
-            const podIp = await this.podService.waitForReady(podName);
-            await this.markEnvironmentActive(envId, podIp, podName);
-          } catch (err) {
-            await this.handleStartupFailure(envId, podName, err);
-          }
-          return;
-        }
-
-        await this.safeDeletePod(podName, `CrashLoopBackOff recreate for environment ${envId}`);
+        return;
       }
+
+      await this.safeDeletePod(podName, `CrashLoopBackOff recreate for environment ${envId}`);
     }
 
     if (!current.tenantId) {

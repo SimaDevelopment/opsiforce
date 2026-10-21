@@ -22,6 +22,7 @@ adrs: [0021, 0025, 0029]
 - The sidebar shows the Workspaces a member belongs to, plus their Personal Workspace and Public; permissions never widen it, and a non-member gets 404 on a direct link.
 - The one exception is the management surface at `/settings/workspaces`, where holders of `can_manage_workspaces` see every shared Workspace to rename, delete or join; Personal Workspaces are never listed there.
 - The sidebar orders Projects by the time of the last [Prompt](../../GLOSSARY.md) a user sent, not by keep-alive activity ([ADR-0021](../adr/0021-sidebar-orders-by-last-prompt.md)).
+- A pod's `prompted` observation with `root: true` (a user item entering a root opencode session's inbox) stamps that time; one from a sub-agent session doesn't ([ADR-0021](../adr/0021-sidebar-orders-by-last-prompt.md)).
 - Project rows are draggable but never sortable: a drop target is always a Workspace or Folder zone, since Project order is never persisted ([ADR-0029](../adr/0029-project-rows-are-draggables-not-sortables.md)).
 
 ### Moving Projects

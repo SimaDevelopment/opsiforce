@@ -1,4 +1,4 @@
-import type { JsonValue, SessionMessageAssistant, SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { JsonValue, SessionMessageAssistant, SessionMessageAssistantTool } from "@opencode/client/promise"
 import type { SessionDocument } from "../document"
 import { CURRENT_SESSION_ID, STORY_MODEL, STORY_TIME, thinkingDocument } from "./current-session-fixtures"
 
@@ -29,6 +29,7 @@ export function storyTool(
               ],
               metadata: options.metadata,
             }
+
   return {
     type: "tool",
     id,

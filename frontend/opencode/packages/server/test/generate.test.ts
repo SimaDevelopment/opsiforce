@@ -1,9 +1,9 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
-import { Config } from "@opencode-ai/core/config"
-import { Generate } from "@opencode-ai/core/generate"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { Config } from "@opencode/core/config"
+import { Generate } from "@opencode/core/generate"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Effect, Layer, Predicate } from "effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
@@ -53,11 +53,11 @@ it.live("uses base configuration without depending on process.cwd()", () =>
     )
 
     expect(global).not.toBe(process.cwd())
-    expect(yield* request(handler, new URL("http://opencode.local/api/generate"))).toEqual({
+    expect(yield* request(handler, new URL("http://opencode.local/api/experimental/generate"))).toEqual({
       model: { providerID: "base", model: "default" },
     })
 
-    const legacy = new URL("http://opencode.local/api/generate")
+    const legacy = new URL("http://opencode.local/api/experimental/generate")
     legacy.searchParams.set("location[directory]", project)
     expect(yield* request(handler, legacy)).toEqual({
       model: { providerID: "base", model: "default" },

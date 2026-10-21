@@ -3,16 +3,16 @@ import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useConfig } from "../../config"
 import { Slot } from "../../plugin/render"
-import { withTimestampedFallback } from "@opencode-ai/util/session-title-fallback"
+import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import { TextAttributes } from "@opentui/core"
 import "../../component/title-shimmer"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { SESSION_SIDEBAR_WIDTH } from "../../ui/layout"
 
-export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
+export function Sidebar(props: { sessionID: string }) {
   const data = useData()
-  const theme = useTheme("elevated")
+  const theme = useTheme()
   const config = useConfig().data
   const session = createMemo(() => data.session.get(props.sessionID))
   const scrollAcceleration = createMemo(() => getScrollAcceleration(config))
@@ -20,24 +20,24 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   return (
     <Show when={session()}>
       <box
-        backgroundColor={theme.background.default}
+        backgroundColor={theme.background.raised.base}
         width={SESSION_SIDEBAR_WIDTH}
         height="100%"
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
         paddingRight={2}
-        position={props.overlay ? "absolute" : "relative"}
+        position="relative"
       >
         <box flexShrink={0} paddingRight={2} paddingBottom={1}>
           <title_shimmer
-            fg={theme.text.default}
+            fg={theme.text.base}
             rename={{
               pending: data.session.title.pending(props.sessionID),
               title: withTimestampedFallback(session()),
             }}
             enabled={config.animations ?? true}
-            backdrop={theme.background.default}
+            backdrop={theme.background.raised.base}
             attributes={
               data.session.title.pending(props.sessionID) && config.animations === false
                 ? TextAttributes.DIM
@@ -46,9 +46,6 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           >
             {withTimestampedFallback(session())}
           </title_shimmer>
-          <Show when={session().location.workspaceID}>
-            <text fg={theme.text.subdued}>{session().location.workspaceID}</text>
-          </Show>
         </box>
         <scrollbox
           flexGrow={1}
@@ -64,8 +61,8 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             width: 1,
             height: "100%",
             trackOptions: {
-              backgroundColor: theme.background.default,
-              foregroundColor: theme.scrollbar.default,
+              backgroundColor: theme.background.raised.base,
+              foregroundColor: theme.scrollbar.base,
             },
           }}
         >

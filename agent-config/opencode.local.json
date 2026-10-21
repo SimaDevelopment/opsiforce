@@ -1,8 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    "-opencode.provider.opencode"
-  ],
+  "plugins": ["-opencode.tools", "/opt/opsiforce/opencode-plugins/observer"],
   "update": "disable",
   "snapshots": false,
   "websearch": {
@@ -44,29 +42,25 @@
     "anthropic": {
       "models": {
         "claude-opus-5": {
-          "settings": {
-            "reasoningEffort": "high"
+          "compatibility": {
+            "supportsEffortUpdates": false
           }
         },
-        "claude-sonnet-5": {
-          "settings": {
-            "reasoningEffort": "high"
-          }
-        },
+        "claude-sonnet-5": {},
         "claude-haiku-4-5": {},
         "claude-opus-5-5": {
-          "settings": {
-            "reasoningEffort": "high"
+          "compatibility": {
+            "supportsEffortUpdates": false
           }
         },
         "claude-sonnet-5-5": {
-          "settings": {
-            "reasoningEffort": "high"
+          "compatibility": {
+            "supportsEffortUpdates": false
           }
         },
         "claude-fable-5-1": {
-          "settings": {
-            "reasoningEffort": "high"
+          "compatibility": {
+            "supportsEffortUpdates": false
           }
         }
       },
@@ -152,7 +146,11 @@
             "output": 32000
           },
           "settings": {
-            "reasoningEffort": "high"
+            "reasoningEffort": "high",
+            "textVerbosity": "medium"
+          },
+          "compatibility": {
+            "supportsEffortUpdates": false
           },
           "variants": [
             {
@@ -187,7 +185,11 @@
             "output": 32000
           },
           "settings": {
-            "reasoningEffort": "high"
+            "reasoningEffort": "high",
+            "textVerbosity": "medium"
+          },
+          "compatibility": {
+            "supportsEffortUpdates": false
           },
           "variants": [
             {
@@ -222,7 +224,11 @@
             "output": 32000
           },
           "settings": {
-            "reasoningEffort": "high"
+            "reasoningEffort": "high",
+            "textVerbosity": "medium"
+          },
+          "compatibility": {
+            "supportsEffortUpdates": false
           },
           "variants": [
             {
@@ -253,7 +259,8 @@
         }
       },
       "settings": {
-        "baseURL": "{env:OPENAI_BASE_URL}"
+        "baseURL": "{env:OPENAI_BASE_URL}",
+        "transport": "http"
       }
     }
   },

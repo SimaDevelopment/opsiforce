@@ -1,44 +1,29 @@
 export * as SessionErrors from "./error.js"
 
 import { Schema } from "effect"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Skill } from "@opencode-ai/schema/skill"
+import { Agent } from "@opencode/schema/agent"
+import { Skill } from "@opencode/schema/skill"
 import { SessionMessage } from "./message.js"
 import { SessionSchema } from "./schema.js"
-import { SessionError } from "@opencode-ai/schema/session-error"
+import { SessionError } from "@opencode/schema/session-error"
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Session.NotFoundError", {
   sessionID: SessionSchema.ID,
 }) {}
 
+export class InvalidListCursorError extends Schema.TaggedError<InvalidListCursorError>()(
+  "Session.InvalidListCursorError",
+  {},
+) {
+  override get message() {
+    return "Invalid cursor"
+  }
+}
+
 export class MessageNotFoundError extends Schema.TaggedError<MessageNotFoundError>()("Session.MessageNotFoundError", {
   sessionID: SessionSchema.ID,
   messageID: SessionMessage.ID,
 }) {}
-
-export class MessageNotAssistantError extends Schema.TaggedError<MessageNotAssistantError>()(
-  "Session.MessageNotAssistantError",
-  {
-    sessionID: SessionSchema.ID,
-    messageID: SessionMessage.ID,
-  },
-) {}
-
-export class MessageIncompleteError extends Schema.TaggedError<MessageIncompleteError>()(
-  "Session.MessageIncompleteError",
-  {
-    sessionID: SessionSchema.ID,
-    messageID: SessionMessage.ID,
-  },
-) {}
-
-export class MessageToolIncompleteError extends Schema.TaggedError<MessageToolIncompleteError>()(
-  "Session.MessageToolIncompleteError",
-  {
-    sessionID: SessionSchema.ID,
-    messageID: SessionMessage.ID,
-  },
-) {}
 
 export class ForkEmptyError extends Schema.TaggedError<ForkEmptyError>()("Session.ForkEmptyError", {
   sessionID: SessionSchema.ID,
@@ -71,15 +56,6 @@ export class StepFailedError extends Schema.TaggedError<StepFailedError>()("Sess
 }) {
   override get message() {
     return this.error.message
-  }
-}
-
-export class UserInterruptedError extends Schema.TaggedError<UserInterruptedError>()(
-  "Session.UserInterruptedError",
-  {},
-) {
-  override get message() {
-    return "Session interrupted by user"
   }
 }
 

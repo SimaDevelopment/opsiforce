@@ -2,6 +2,7 @@ import { Button } from '~/components/ui/button';
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
+import { onEnvironmentIdle } from '~/api/agent-status';
 import { Permission } from '~/constants/permissions';
 import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
@@ -117,7 +118,6 @@ export function ProjectView(props: ProjectViewProps) {
     projectId: props.projectId,
     environmentId: activeEnvironmentId,
     status: connectionStatus,
-    currentTitle: () => statusQuery.data?.title,
     initialPrompt: () => props.initialPrompt(),
     onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
@@ -150,10 +150,10 @@ export function ProjectView(props: ProjectViewProps) {
     reloadPreview = fn;
   };
 
-  const handleAgentIdle = () => {
+  onEnvironmentIdle(activeEnvironmentId, () => {
     reloadPreview();
     setAgentIdleToken((token) => token + 1);
-  };
+  });
 
   createEffect(() => {
     const unregister = jobDock.registerProjectView(props.projectId, {
@@ -230,8 +230,6 @@ export function ProjectView(props: ProjectViewProps) {
                       environmentName={activeEnvironment()?.name ?? 'Development'}
                       showSkillsAndServices={props.showSkillsAndServices ?? true}
                       router={router()}
-                      currentTitle={statusQuery.data?.title ?? null}
-                      onAgentIdle={handleAgentIdle}
                       onPreviewFile={previewFile}
                     />
                   )}

@@ -1,19 +1,20 @@
 export * as Bus from "./bus.js"
 
 import { Cause, Clock, Context, Effect, Layer, Option, PubSub, Schema, Stream } from "effect"
-import { Event } from "@opencode-ai/schema/event"
-import type { EventLog } from "@opencode-ai/schema/event-log"
+import { Event } from "@opencode/schema/event"
+import type { EventLog } from "@opencode/schema/event-log"
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm"
 import { Database } from "./database/database.js"
 import { EventSequenceTable, EventTable } from "./event/sql.js"
-import type { Location } from "@opencode-ai/schema/location"
+import type { Location } from "@opencode/schema/location"
 import { KeyedMutex } from "./effect/keyed-mutex.js"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { isDeepStrictEqual } from "node:util"
-import { Durable } from "@opencode-ai/schema/durable-event-manifest"
-import { SessionEvent } from "@opencode-ai/schema/session-event"
-import type { SessionID } from "@opencode-ai/schema/session-id"
-import { AbsolutePath } from "@opencode-ai/schema/schema"
+import { Durable } from "@opencode/schema/durable-event-manifest"
+import { SessionEvent } from "@opencode/schema/session-event"
+import { SessionLegacy } from "@opencode/schema/session-legacy"
+import type { SessionID } from "@opencode/schema/session-id"
+import { AbsolutePath } from "@opencode/schema/schema"
 
 export type Subscriber<D extends Event.Definition = Event.Definition> = (event: Event.Payload<D>) => Effect.Effect<void>
 export type Unsubscribe = Effect.Effect<void>
@@ -70,6 +71,10 @@ const envelope = (aggregateID: string, seq: number, version: number) => ({
   version: Event.Version.make(version),
 })
 
+// Every stored event decodes through here, so payloads written in older shapes are upgraded in one place.
+const decodeStoredData = (definition: Event.DurableDefinition, data: unknown) =>
+  Schema.decodeUnknownSync(definition.data)(SessionLegacy.event(definition.type, data))
+
 const decodeSerializedEvent = (event: SerializedEvent): Event.Payload => {
   const definition = Durable.get(event.type)
   if (!definition?.durable) {
@@ -80,7 +85,7 @@ const decodeSerializedEvent = (event: SerializedEvent): Event.Payload => {
     created: event.created ?? 0,
     type: definition.type,
     durable: envelope(event.aggregateID, event.seq, definition.durable.version),
-    data: Schema.decodeUnknownSync(definition.data)(event.data),
+    data: decodeStoredData(definition, event.data),
   }
 }
 
@@ -346,7 +351,8 @@ export function configured(options?: Options) {
                             stored?.id === event.id &&
                             stored.type === versionedType(definition.type, durable.version) &&
                             stored.created === (event.created ?? 0) &&
-                            isDeepStrictEqual(stored.data, encoded)
+                            // Rows written before a payload rename compare in their upgraded shape.
+                            isDeepStrictEqual(SessionLegacy.event(definition.type, stored.data), encoded)
                           ) {
                             if (input.ownerID && row?.ownerID == null) {
                               yield* db
@@ -684,7 +690,7 @@ export function configured(options?: Options) {
                   id: event.id,
                   created: event.created ?? 0,
                   type: definition.type,
-                  data: Schema.decodeUnknownSync(definition.data)(event.data),
+                  data: decodeStoredData(definition, event.data),
                 } as Event.Payload
                 const committed = yield* commitDurableEvent(definition, payload, {
                   seq: event.seq,
