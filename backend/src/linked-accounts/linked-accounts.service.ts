@@ -67,7 +67,7 @@ const SIGN_IN_ENDED_MESSAGE = 'This Linked account needs to be signed in again';
 const NOT_REFRESHED_MESSAGE = 'The Linked account could not be refreshed';
 const PASTED_TOKEN_EXPIRED_REASON = 'The pasted access token has expired';
 const NO_USAGE_MESSAGE = 'OpenAI did not return this account’s usage; try again';
-const CHAT_KEYS_NOT_UPDATED_MESSAGE =
+const KEYS_NOT_UPDATED_MESSAGE =
   'The account is signed in, but the model gateway did not take it yet; sign in again to retry';
 
 interface PendingSignIn {
@@ -128,7 +128,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     await this.resealUnplacedSignIns();
-    void this.repointConnectedAccounts().then(() => this.keyModels.reconcileKeyModels(readModelCatalog()));
+    void this.repointConnectedAccounts().then(() => this.keyModels.applyModelCatalog(readModelCatalog()));
   }
 
   private async resealUnplacedSignIns(): Promise<void> {
@@ -291,7 +291,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
         .set({ credential: null, statusReason: null, pendingSignIn: null })
         .where(eq(linkedAccounts.modelProviderId, ownerId));
       if (row.credential) {
-        await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, bifrostProvider);
+        await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, bifrostProvider);
         this.logger.log(`The Linked account of ${bifrostProvider} is disconnected`);
       }
       return this.viewOf(vendor, disconnected, null);
@@ -448,7 +448,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       .select({ bifrostProvider: modelProviders.bifrostProvider })
       .from(modelProviders)
       .where(eq(modelProviders.id, row.modelProviderId));
-    if (owner) await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, owner.bifrostProvider);
+    if (owner) await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, owner.bifrostProvider);
     this.logger.warn(
       `The Linked account of ${owner?.bifrostProvider ?? row.modelProviderId} needs signing in again: ${reason}`
     );
@@ -546,9 +546,9 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       );
     }
     const rewritten = await retryBifrostWrite(this.logger, `Chat key rewrite (provider=${bifrostProvider})`, () =>
-      this.modelProvidersService.lockAndRewriteChatKeysOfTenantsUsing(bifrostProvider)
+      this.modelProvidersService.lockAndRewriteKeysOfTenantsUsing(bifrostProvider)
     );
-    if (!rewritten) throw new ServiceUnavailableException(CHAT_KEYS_NOT_UPDATED_MESSAGE);
+    if (!rewritten) throw new ServiceUnavailableException(KEYS_NOT_UPDATED_MESSAGE);
   }
 
   private async pollVendor(adapter: VendorAdapter, pending: PendingSignIn): Promise<SignInPoll> {
@@ -618,10 +618,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     if (existing) return existing;
     const [created] = await tx
       .insert(modelProviders)
-      .values({ tenantId: null, bifrostProvider: name, enabled: true, weight: STARTING_WEIGHT })
+      .values({ tenantId: null, bifrostProvider: name, chatEnabled: true, chatWeight: STARTING_WEIGHT })
       .returning({ id: modelProviders.id });
     if (!created) throw new Error(`The platform row of ${name} was not created`);
-    await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, name);
+    await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, name);
     return created.id;
   }
 

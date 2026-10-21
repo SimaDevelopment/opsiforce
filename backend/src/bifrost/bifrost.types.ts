@@ -11,7 +11,11 @@ export interface BifrostProviderResponse {
   name: string;
   provider_status?: string | null;
   network_config?: { base_url?: string | null } | null;
-  custom_provider_config?: { base_provider_type?: string | null; is_key_less?: boolean | null } | null;
+  custom_provider_config?: {
+    base_provider_type?: string | null;
+    is_key_less?: boolean | null;
+    allowed_requests?: { list_models?: boolean | null } | null;
+  } | null;
 }
 
 export interface BifrostProviderSummary {
@@ -20,6 +24,7 @@ export interface BifrostProviderSummary {
   baseUrl: string | null;
   status: string | null;
   keyLess: boolean;
+  listsModels: boolean;
 }
 
 export interface BifrostAllowedRequests {
@@ -70,6 +75,8 @@ export interface CreateBifrostProviderKeyRequest {
   models: string[];
   weight: number;
   enabled: boolean;
+  azure_key_config?: { endpoint: { value: string; type: 'plain_text' } };
+  aliases?: Record<string, string | { model_id: string; model_family: string }>;
 }
 
 export interface BifrostBudget {

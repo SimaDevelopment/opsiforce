@@ -42,7 +42,7 @@
 - [Document Generation](agent-system/document-generation.md) — the baked docx, pptx, xlsx and pdf stack and the Generated files convention
 
 **Gateways** (`gateways/`)
-- [LLM Gateway](gateways/llm-gateway.md) — Bifrost, per-Project virtual keys, budgets and provider routing: providers owned by the UI, fixed weights only on the `backend` key
+- [LLM Gateway](gateways/llm-gateway.md) — Bifrost, per-Project virtual keys, budgets and provider routing: providers and weights of both keys owned by the UI
 - [Linked-account Proxy](gateways/linked-account-proxy.md) — the stateless in-cluster proxy that serves signed-in ChatGPT accounts
 - [Service Gateway](gateways/service-gateway.md) — one per-environment key for External Services, the runtime proxy and platform pushes
 - [Request Logging](gateways/request-logging.md) — how much of an App's traffic the app-mode proxy records
@@ -71,9 +71,11 @@
 - [Permissions](organization/permissions.md) — how permissions flow from the identity provider and what the backend enforces
 - [Workspaces](organization/workspaces.md) — grouping Projects, membership-based visibility and moves
 - [Folder](organization/folder.md) — a single-level label for Projects inside a Workspace
-- [Model provider](organization/model-provider.md) — where an Organization's model requests go, per Base format, and how a save reaches its chat keys
+- [Model provider](organization/model-provider.md) — where an Organization's model requests go, per Base format, and how a save reaches its Projects' keys, for Agents and for Apps
 - [Custom model provider](organization/custom-model-provider.md) — adding, testing, editing, re-entering and deleting an Organization's own providers
 - [Opsiforce model provider](organization/opsiforce-model-provider.md) — the platform providers every Organization gets, global `opsiforce-*` providers and the fresh-install seed
+- [Model provider access](organization/model-provider-access.md) — which Organizations get each Built-in, and the access dialog
+- [Azure connection](organization/azure-connection.md) — connecting an Azure AI Foundry resource as a model provider
 - [Linked account](organization/linked-account.md) — signing a ChatGPT account in as a Model provider, and what ends a sign-in
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
 - [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it

@@ -575,6 +575,27 @@
       "when": 1791400000000,
       "tag": "0081_sdk-1-removed",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1791500000000,
+      "tag": "0082_model-provider-availability",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1791600000000,
+      "tag": "0083_model-provider-routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1791700000000,
+      "tag": "0084_applied-model-catalog",
+      "breakpoints": true
     }
   ]
 }

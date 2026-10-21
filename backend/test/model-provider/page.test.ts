@@ -1,6 +1,8 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { Perms } from '../../src/permission/permission.constants';
 import { seedLiveAgent } from '../support/agent-fixtures';
@@ -23,8 +25,8 @@ const WEIGHT_RULE = 'At least one enabled provider needs a weight above 0';
 interface ProviderRow {
   name: string;
   baseFormat: string | null;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
   status: string;
 }
 
@@ -104,10 +106,38 @@ describe('the Model providers page', () => {
       expect(res.json<ModelProvidersView>()).toEqual({
         bifrostReachable: true,
         baseFormats: ['openai', 'anthropic'],
+        catalogModels: {
+          openai: servedModelsOf(BASE_FORMATS.openai),
+          anthropic: servedModelsOf(BASE_FORMATS.anthropic),
+        },
         providers: [
-          { name: 'anthropic', baseFormat: 'anthropic', enabled: true, weight: 1, status: 'working' },
-          { name: 'custom-openai-1', baseFormat: 'openai', enabled: true, weight: 1, status: 'working' },
-          { name: 'openai', baseFormat: 'openai', enabled: true, weight: 0, status: 'working' },
+          {
+            name: 'anthropic',
+            baseFormat: 'anthropic',
+            chatEnabled: true,
+            chatWeight: 1,
+            backendEnabled: true,
+            backendWeight: 1,
+            status: 'working',
+          },
+          {
+            name: 'custom-openai-1',
+            baseFormat: 'openai',
+            chatEnabled: true,
+            chatWeight: 1,
+            backendEnabled: false,
+            backendWeight: 1,
+            status: 'working',
+          },
+          {
+            name: 'openai',
+            baseFormat: 'openai',
+            chatEnabled: true,
+            chatWeight: 0,
+            backendEnabled: true,
+            backendWeight: 1,
+            status: 'working',
+          },
         ],
       });
       expect(res.body).not.toContain(DOCK_BASE_URL);
@@ -119,9 +149,33 @@ describe('the Model providers page', () => {
       bifrost.setProviderStatus('anthropic', 'error');
 
       expect(await rowsOf(admin)).toEqual([
-        { name: 'anthropic', baseFormat: 'anthropic', enabled: true, weight: 1, status: 'failing' },
-        { name: 'custom-openai-1', baseFormat: null, enabled: true, weight: 1, status: 'missing' },
-        { name: 'openai', baseFormat: 'openai', enabled: true, weight: 0, status: 'working' },
+        {
+          name: 'anthropic',
+          baseFormat: 'anthropic',
+          chatEnabled: true,
+          chatWeight: 1,
+          backendEnabled: true,
+          backendWeight: 1,
+          status: 'failing',
+        },
+        {
+          name: 'custom-openai-1',
+          baseFormat: null,
+          chatEnabled: true,
+          chatWeight: 1,
+          backendEnabled: false,
+          backendWeight: 1,
+          status: 'missing',
+        },
+        {
+          name: 'openai',
+          baseFormat: 'openai',
+          chatEnabled: true,
+          chatWeight: 0,
+          backendEnabled: true,
+          backendWeight: 1,
+          status: 'working',
+        },
       ]);
     });
 
@@ -145,11 +199,10 @@ describe('the Model providers page', () => {
       const second = await projectOf(tenant);
       const neighbour = await projectOf((await seededTenant()).tenant);
       const neighbourConfigs = bifrost.chatKeyOf(neighbour).provider_configs;
-      const backendWrites = bifrost.providerConfigWritesTo(bifrost.backendKeyOf(first).id).length;
 
       const res = await saveFormat(admin, 'openai', [
-        { name: 'openai', enabled: true, weight: 3 },
-        { name: 'custom-openai-1', enabled: true, weight: 1 },
+        { name: 'openai', chatEnabled: true, chatWeight: 3 },
+        { name: 'custom-openai-1', chatEnabled: true, chatWeight: 1 },
       ]);
 
       expect(res.statusCode, res.body).toBe(200);
@@ -161,12 +214,17 @@ describe('the Model providers page', () => {
       expect(bifrost.chatKeyOf(first).provider_configs).toEqual(expected);
       expect(bifrost.chatKeyOf(second).provider_configs).toEqual(expected);
       expect(bifrost.chatKeyOf(neighbour).provider_configs).toEqual(neighbourConfigs);
-      expect(bifrost.providerConfigWritesTo(bifrost.backendKeyOf(first).id)).toHaveLength(backendWrites);
+      expect(bifrost.backendKeyOf(first).provider_configs).toEqual([
+        { provider: 'anthropic', weight: 1, ...CATALOG_WIDE },
+        { provider: 'openai', weight: 1, ...CATALOG_WIDE },
+      ]);
       expect(res.json<ModelProvidersView>().providers).toContainEqual({
         name: 'openai',
         baseFormat: 'openai',
-        enabled: true,
-        weight: 3,
+        chatEnabled: true,
+        chatWeight: 3,
+        backendEnabled: true,
+        backendWeight: 1,
         status: 'working',
       });
     });
@@ -176,8 +234,8 @@ describe('the Model providers page', () => {
       const projectId = await projectOf(tenant);
 
       const saved = await saveFormat(admin, 'openai', [
-        { name: 'openai', enabled: true, weight: 0 },
-        { name: 'custom-openai-1', enabled: true, weight: 2 },
+        { name: 'openai', chatEnabled: true, chatWeight: 0 },
+        { name: 'custom-openai-1', chatEnabled: true, chatWeight: 2 },
       ]);
       expect(saved.statusCode, saved.body).toBe(200);
       expect(bifrost.chatKeyOf(projectId).provider_configs).toEqual([
@@ -187,8 +245,8 @@ describe('the Model providers page', () => {
       ]);
 
       const switchedOff = await saveFormat(admin, 'openai', [
-        { name: 'openai', enabled: true, weight: 1 },
-        { name: 'custom-openai-1', enabled: false, weight: 2 },
+        { name: 'openai', chatEnabled: true, chatWeight: 1 },
+        { name: 'custom-openai-1', chatEnabled: false, chatWeight: 2 },
       ]);
       expect(switchedOff.statusCode, switchedOff.body).toBe(200);
       expect(bifrost.chatKeyOf(projectId).provider_configs).toEqual([
@@ -203,21 +261,21 @@ describe('the Model providers page', () => {
       const before = bifrost.chatKeyOf(projectId).provider_configs;
 
       const res = await saveFormat(admin, 'openai', [
-        { name: 'openai', enabled: true, weight: 0 },
-        { name: 'custom-openai-1', enabled: true, weight: 0 },
+        { name: 'openai', chatEnabled: true, chatWeight: 0 },
+        { name: 'custom-openai-1', chatEnabled: true, chatWeight: 0 },
       ]);
 
       expect(res.statusCode).toBe(400);
       expect(res.json<{ message: string }>().message).toBe(WEIGHT_RULE);
       expect(bifrost.chatKeyOf(projectId).provider_configs).toEqual(before);
-      expect((await rowsOf(admin)).find((row) => row.name === 'custom-openai-1')?.weight).toBe(1);
+      expect((await rowsOf(admin)).find((row) => row.name === 'custom-openai-1')?.chatWeight).toBe(1);
     });
 
     it('allows switching every row of a format off', async () => {
       const { tenant, admin } = await seededTenant();
       const projectId = await projectOf(tenant);
 
-      const res = await saveFormat(admin, 'anthropic', [{ name: 'anthropic', enabled: false, weight: 1 }]);
+      const res = await saveFormat(admin, 'anthropic', [{ name: 'anthropic', chatEnabled: false, chatWeight: 1 }]);
 
       expect(res.statusCode, res.body).toBe(200);
       expect(bifrost.chatKeyOf(projectId).provider_configs).toEqual([
@@ -229,27 +287,30 @@ describe('the Model providers page', () => {
     it('refuses a row of another format, an unknown row and a weight outside 0–100', async () => {
       const { admin } = await seededTenant();
 
-      const otherFormat = await saveFormat(admin, 'openai', [{ name: 'anthropic', enabled: true, weight: 1 }]);
-      const unknown = await saveFormat(admin, 'openai', [{ name: 'someone-else', enabled: true, weight: 1 }]);
-      const tooHeavy = await saveFormat(admin, 'openai', [{ name: 'openai', enabled: true, weight: 101 }]);
-      const fractional = await saveFormat(admin, 'openai', [{ name: 'openai', enabled: true, weight: 1.5 }]);
-      const unknownFormat = await saveFormat(admin, 'gemini', [{ name: 'openai', enabled: true, weight: 1 }]);
+      const otherFormat = await saveFormat(admin, 'openai', [{ name: 'anthropic', chatEnabled: true, chatWeight: 1 }]);
+      const unknown = await saveFormat(admin, 'openai', [{ name: 'someone-else', chatEnabled: true, chatWeight: 1 }]);
+      const tooHeavy = await saveFormat(admin, 'openai', [{ name: 'openai', chatEnabled: true, chatWeight: 101 }]);
+      const fractional = await saveFormat(admin, 'openai', [{ name: 'openai', chatEnabled: true, chatWeight: 1.5 }]);
+      const unknownFormat = await saveFormat(admin, 'gemini', [{ name: 'openai', chatEnabled: true, chatWeight: 1 }]);
 
       expect([otherFormat, unknown, tooHeavy, fractional, unknownFormat].map((res) => res.statusCode)).toEqual([
         400, 400, 400, 400, 400,
       ]);
-      expect((await rowsOf(admin)).find((row) => row.name === 'openai')).toMatchObject({ enabled: true, weight: 0 });
+      expect((await rowsOf(admin)).find((row) => row.name === 'openai')).toMatchObject({
+        chatEnabled: true,
+        chatWeight: 0,
+      });
     });
 
     it('refuses every save while Bifrost is unreachable', async () => {
       const { admin } = await seededTenant();
       bifrost.becomeUnreachable();
 
-      const res = await saveFormat(admin, 'anthropic', [{ name: 'anthropic', enabled: true, weight: 5 }]);
+      const res = await saveFormat(admin, 'anthropic', [{ name: 'anthropic', chatEnabled: true, chatWeight: 5 }]);
 
       expect(res.statusCode).toBe(503);
       bifrost.becomeReachable();
-      expect((await rowsOf(admin)).find((row) => row.name === 'anthropic')?.weight).toBe(1);
+      expect((await rowsOf(admin)).find((row) => row.name === 'anthropic')?.chatWeight).toBe(1);
     });
 
     it('fails the save and keeps the rows when a chat key refuses the new split', async () => {
@@ -257,11 +318,11 @@ describe('the Model providers page', () => {
       await projectOf(tenant);
       bifrost.refuseProviderConfigWrites();
 
-      const res = await saveFormat(admin, 'anthropic', [{ name: 'anthropic', enabled: true, weight: 5 }]);
+      const res = await saveFormat(admin, 'anthropic', [{ name: 'anthropic', chatEnabled: true, chatWeight: 5 }]);
 
       expect(res.statusCode).toBeGreaterThanOrEqual(500);
       bifrost.acceptProviderConfigWrites();
-      expect((await rowsOf(admin)).find((row) => row.name === 'anthropic')?.weight).toBe(1);
+      expect((await rowsOf(admin)).find((row) => row.name === 'anthropic')?.chatWeight).toBe(1);
     });
   });
 
@@ -271,7 +332,7 @@ describe('the Model providers page', () => {
       const member = await addMember(app, tenant, [Perms.manageTenantBudget, Perms.manageTenantDefaults]);
 
       const listed = await list(member);
-      const saved = await saveFormat(member, 'anthropic', [{ name: 'anthropic', enabled: false, weight: 1 }]);
+      const saved = await saveFormat(member, 'anthropic', [{ name: 'anthropic', chatEnabled: false, chatWeight: 1 }]);
 
       expect([listed.statusCode, saved.statusCode]).toEqual([403, 403]);
     });
@@ -288,11 +349,11 @@ describe('the Model providers page', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/anthropic',
         headers: { ...admin.headers, ...bearer },
-        payload: { providers: [{ name: 'anthropic', enabled: false, weight: 1 }] },
+        payload: { providers: [{ name: 'anthropic', chatEnabled: false, chatWeight: 1 }] },
       });
 
       expect([alone.statusCode, withHuman.statusCode]).toEqual([403, 403]);
-      expect((await rowsOf(admin)).find((row) => row.name === 'anthropic')?.enabled).toBe(true);
+      expect((await rowsOf(admin)).find((row) => row.name === 'anthropic')?.chatEnabled).toBe(true);
     });
 
     it('has no public API route', async () => {

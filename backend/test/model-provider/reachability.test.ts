@@ -82,7 +82,7 @@ describe('reachability of Base formats', () => {
   function saveFormat(
     admin: MemberFixture,
     format: string,
-    providers: { name: string; enabled: boolean; weight: number }[],
+    providers: { name: string; chatEnabled: boolean; chatWeight: number }[],
     extra: Record<string, unknown> = {}
   ) {
     return app.inject({
@@ -97,27 +97,35 @@ describe('reachability of Base formats', () => {
     const providers =
       format === 'openai'
         ? [
-            { name: 'openai', enabled: false, weight: 0 },
-            { name: 'custom-openai-1', enabled: false, weight: 1 },
+            { name: 'openai', chatEnabled: false, chatWeight: 0 },
+            { name: 'custom-openai-1', chatEnabled: false, chatWeight: 1 },
           ]
-        : [{ name: 'anthropic', enabled: false, weight: 1 }];
+        : [{ name: 'anthropic', chatEnabled: false, chatWeight: 1 }];
     const res = await saveFormat(admin, format, providers, { acknowledgeAffectedAgents: true });
     expect(res.statusCode, res.body).toBe(200);
   }
 
-  function reachableFormats(member: MemberFixture) {
-    return app.inject({ method: 'GET', url: '/api/model-providers/reachable-formats', headers: member.headers });
+  function reachableModelsRead(member: MemberFixture) {
+    return app.inject({ method: 'GET', url: '/api/model-providers/reachable-models', headers: member.headers });
   }
 
-  describe('the reachable-formats read', () => {
-    it('answers a member with no admin permission with only the reachable format ids', async () => {
+  async function reachableFormats(member: MemberFixture): Promise<{ json: () => string[] }> {
+    const res = await reachableModelsRead(member);
+    expect(res.statusCode, res.body).toBe(200);
+    const formats = [...new Set(res.json<string[]>().map((ref) => ref.slice(0, ref.indexOf('/'))))];
+    return { json: () => formats };
+  }
+
+  describe('the reachable-models read', () => {
+    it('answers a member with no admin permission with only the models of the reachable formats', async () => {
       const { admin, member } = await seededTenant();
       await switchOff(admin, 'anthropic');
 
-      const res = await reachableFormats(member);
+      const res = await reachableModelsRead(member);
 
       expect(res.statusCode, res.body).toBe(200);
-      expect(res.json()).toEqual(['openai']);
+      expect(res.json()).toContain('openai/gpt-5.6-sol');
+      expect(res.json<string[]>().every((ref) => ref.startsWith('openai/'))).toBe(true);
     });
 
     it('drops a format whose only enabled row is missing from Bifrost', async () => {
@@ -125,7 +133,7 @@ describe('reachability of Base formats', () => {
       await switchOff(admin, 'openai');
       bifrost.setProviders(['openai', 'anthropic']);
 
-      const res = await saveFormat(admin, 'openai', [{ name: 'openai', enabled: true, weight: 1 }]);
+      const res = await saveFormat(admin, 'openai', [{ name: 'openai', chatEnabled: true, chatWeight: 1 }]);
       expect(res.statusCode, res.body).toBe(200);
       expect((await reachableFormats(member)).json()).toEqual(['openai', 'anthropic']);
 
@@ -241,8 +249,8 @@ describe('reachability of Base formats', () => {
     it('is unavailable to an Organization that switched its built-in openai off, even with another OpenAI provider on', async () => {
       const { admin, member } = await seededTenant();
       const saved = await saveFormat(admin, 'openai', [
-        { name: 'openai', enabled: false, weight: 0 },
-        { name: 'custom-openai-1', enabled: true, weight: 1 },
+        { name: 'openai', chatEnabled: false, chatWeight: 0 },
+        { name: 'custom-openai-1', chatEnabled: true, chatWeight: 1 },
       ]);
       expect(saved.statusCode, saved.body).toBe(200);
 
@@ -255,8 +263,8 @@ describe('reachability of Base formats', () => {
 
   describe('the switch-off warning', () => {
     const OPENAI_OFF = [
-      { name: 'openai', enabled: false, weight: 0 },
-      { name: 'custom-openai-1', enabled: false, weight: 1 },
+      { name: 'openai', chatEnabled: false, chatWeight: 0 },
+      { name: 'custom-openai-1', chatEnabled: false, chatWeight: 1 },
     ];
 
     it('lists the Custom and Built-in Agents on the format and changes nothing without the acknowledgement', async () => {
@@ -297,8 +305,8 @@ describe('reachability of Base formats', () => {
       await agentOn(tenant, admin, 'openai/gpt-6-astra');
 
       const res = await saveFormat(admin, 'openai', [
-        { name: 'openai', enabled: false, weight: 0 },
-        { name: 'custom-openai-1', enabled: true, weight: 1 },
+        { name: 'openai', chatEnabled: false, chatWeight: 0 },
+        { name: 'custom-openai-1', chatEnabled: true, chatWeight: 1 },
       ]);
 
       expect(res.statusCode, res.body).toBe(200);

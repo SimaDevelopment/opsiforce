@@ -1,28 +1,71 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import { db } from '../../db';
-import { modelProviders } from '../../db/schema';
+import { appliedModelCatalog, modelProviders } from '../../db/schema';
 import type { ModelCatalog } from '../agent/agent-models';
 import { BifrostService } from '../bifrost/bifrost.service';
-import type { BifrostProviderKeySummary, BifrostProviderSummary } from '../bifrost/bifrost.types';
-import { BASE_FORMATS } from './base-formats';
+import type { BifrostProviderSummary } from '../bifrost/bifrost.types';
+import { BASE_FORMATS, BASE_FORMAT_IDS } from './base-formats';
 import { servedModelsOf } from './bifrost-provider-shape';
-import { baseFormatOf } from './model-provider.service';
+import { isHelmPlaceholder } from './key-model-formats';
+import { ModelProvidersService, baseFormatOf } from './model-provider.service';
 
-function sameModels(stored: string[] | undefined, served: string[]): boolean {
-  const storedSet = new Set(stored ?? []);
-  return storedSet.size === served.length && served.every((model) => storedSet.has(model));
+const EVERY_MODEL = ['*'];
+
+function coversCatalog(stored: string[] | undefined, served: string[]): boolean {
+  return served.every((model) => stored?.includes(model));
 }
 
-function isHelmPlaceholder(key: BifrostProviderKeySummary): boolean {
-  const value = key.value as { value?: unknown; ref?: unknown } | undefined;
-  return value?.value === '' && value.ref === undefined;
+function servedModelsByFormat(catalog: ModelCatalog): Record<string, string[]> {
+  return Object.fromEntries(BASE_FORMAT_IDS.map((format) => [format, servedModelsOf(BASE_FORMATS[format], catalog)]));
 }
 
 @Injectable()
 export class ModelProviderKeyModelsService {
   private readonly logger = new Logger(ModelProviderKeyModelsService.name);
 
-  constructor(private readonly bifrostService: BifrostService) {}
+  constructor(
+    private readonly bifrostService: BifrostService,
+    private readonly modelProvidersService: ModelProvidersService
+  ) {}
+
+  async applyModelCatalog(catalog: ModelCatalog): Promise<void> {
+    await this.reconcileKeyModels(catalog);
+    try {
+      await this.rewriteKeysForChangedCatalog(catalog);
+    } catch (err) {
+      this.logger.warn(
+        `The model catalog did not reach every organization's keys; retried at next boot: ${(err as Error).message}`
+      );
+    }
+  }
+
+  async rewriteKeysForChangedCatalog(catalog: ModelCatalog): Promise<void> {
+    if (!this.bifrostService.isEnabled()) return;
+    const servedModels = servedModelsByFormat(catalog);
+    const [applied] = await db.select().from(appliedModelCatalog).limit(1);
+    if (!applied) {
+      await this.recordAppliedCatalog(servedModels);
+      return;
+    }
+    if (isDeepStrictEqual(applied.servedModels, servedModels)) return;
+    const failed = await this.modelProvidersService.rewriteEveryTenantsKeys();
+    if (failed.length > 0) {
+      this.logger.warn(
+        `The model catalog reached the keys of all but ${failed.length} organizations; retried at next boot`
+      );
+      return;
+    }
+    await this.recordAppliedCatalog(servedModels);
+    this.logger.log("Every organization's keys now follow the model catalog");
+  }
+
+  private async recordAppliedCatalog(servedModels: Record<string, string[]>): Promise<void> {
+    await db
+      .insert(appliedModelCatalog)
+      .values({ id: true, servedModels })
+      .onConflictDoUpdate({ target: appliedModelCatalog.id, set: { servedModels, appliedAt: new Date() } });
+  }
 
   async reconcileKeyModels(catalog: ModelCatalog): Promise<void> {
     if (!this.bifrostService.isEnabled()) return;
@@ -62,13 +105,9 @@ export class ModelProviderKeyModelsService {
     const keys = await this.bifrostService.listProviderKeys(provider.name);
     for (const key of keys) {
       if (!key.id || key.models?.includes('*') || isHelmPlaceholder(key)) continue;
-      if (sameModels(key.models, served)) continue;
-      await this.rewriteModels(provider.name, key, served);
+      if (!coversCatalog(key.models, served)) continue;
+      await this.bifrostService.replaceProviderKey(provider.name, key.id, { ...key, models: EVERY_MODEL });
+      this.logger.log(`Key ${key.name ?? key.id} of ${provider.name} now serves every catalog model as it grows`);
     }
-  }
-
-  private async rewriteModels(providerName: string, key: BifrostProviderKeySummary, served: string[]): Promise<void> {
-    await this.bifrostService.replaceProviderKey(providerName, key.id, { ...key, models: served });
-    this.logger.log(`Key ${key.name ?? key.id} of ${providerName} now serves ${served.join(', ')}`);
   }
 }

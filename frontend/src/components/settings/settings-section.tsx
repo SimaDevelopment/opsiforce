@@ -12,7 +12,7 @@ export function SettingsSection(props: {
 }) {
   return (
     <div class="h-full overflow-y-auto bg-background">
-      <div class={cn('mx-auto w-full px-6 py-8', props.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl')}>
+      <div class={cn('mx-auto w-full px-4 py-6 sm:px-6 sm:py-8', props.width === 'wide' ? 'max-w-6xl' : 'max-w-5xl')}>
         <header class="mb-6">
           <div class="flex items-start justify-between gap-4">
             <div class="flex items-center gap-2.5">

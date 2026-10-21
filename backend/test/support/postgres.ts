@@ -59,8 +59,8 @@ async function installCutoverPlatformProviders(url: string): Promise<void> {
   try {
     for (const row of CUTOVER_PLATFORM_PROVIDER_ROWS) {
       await client`
-        INSERT INTO model_providers (tenant_id, bifrost_provider, enabled, weight)
-        VALUES (NULL, ${row.bifrostProvider}, ${row.enabled}, ${row.weight})`;
+        INSERT INTO model_providers (tenant_id, bifrost_provider, chat_enabled, chat_weight, backend_enabled, backend_weight)
+        VALUES (NULL, ${row.bifrostProvider}, ${row.chatEnabled}, ${row.chatWeight}, ${row.backendEnabled ?? false}, ${row.backendWeight ?? 1})`;
     }
   } finally {
     await client.end();

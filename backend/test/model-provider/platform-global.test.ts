@@ -16,15 +16,17 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 
 const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
-const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
+const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
 
 interface TenantRow {
   name: string;
   baseFormat: string | null;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
   status: string;
 }
 
@@ -81,11 +83,8 @@ describe('a global Built-in model provider', () => {
     await vendor.close();
   });
 
-  async function holdEveryChatKey(): Promise<void> {
-    const keys = await db
-      .select({ id: projectVirtualKeys.bifrostKeyId })
-      .from(projectVirtualKeys)
-      .where(eq(projectVirtualKeys.keyType, 'chat'));
+  async function holdEveryProjectKey(): Promise<void> {
+    const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
     bifrost.holdVirtualKeys(keys.map((key) => key.id));
   }
 
@@ -103,7 +102,7 @@ describe('a global Built-in model provider', () => {
   }
 
   async function global(name: string): Promise<string> {
-    await holdEveryChatKey();
+    await holdEveryProjectKey();
     const res = await app.inject({
       method: 'POST',
       url: '/api/platform-model-providers',
@@ -125,7 +124,7 @@ describe('a global Built-in model provider', () => {
       method: 'PUT',
       url: '/api/model-providers/formats/openai',
       headers: seeded.admin.headers,
-      payload: { providers: [{ name, enabled: true, weight }] },
+      payload: { providers: [{ name, chatEnabled: true, chatWeight: weight }] },
     });
     expect(res.statusCode, res.body).toBe(200);
   }
@@ -154,8 +153,10 @@ describe('a global Built-in model provider', () => {
       expect(await rowsOf(seeded)).toContainEqual({
         name,
         baseFormat: 'openai',
-        enabled: false,
-        weight: 1,
+        chatEnabled: false,
+        chatWeight: 1,
+        backendEnabled: false,
+        backendWeight: 1,
         status: 'working',
       });
       expect(chatProvidersOf(seeded)).not.toContain(name);
@@ -172,8 +173,16 @@ describe('a global Built-in model provider', () => {
     const later = await seededTenant();
 
     const rows = await rowsOf(later);
-    expect(rows).toContainEqual({ name, baseFormat: 'openai', enabled: false, weight: 1, status: 'working' });
-    expect(rows.filter((row) => HELM_PROVIDERS.includes(row.name)).map((row) => [row.name, row.enabled])).toEqual([
+    expect(rows).toContainEqual({
+      name,
+      baseFormat: 'openai',
+      chatEnabled: false,
+      chatWeight: 1,
+      backendEnabled: false,
+      backendWeight: 1,
+      status: 'working',
+    });
+    expect(rows.filter((row) => HELM_PROVIDERS.includes(row.name)).map((row) => [row.name, row.chatEnabled])).toEqual([
       ['anthropic', true],
       ['custom-openai-1', true],
       ['openai', true],
@@ -192,14 +201,16 @@ describe('a global Built-in model provider', () => {
     expect(bifrost.chatKeyOf(switched.projectId).provider_configs).toContainEqual({
       provider: name,
       weight: 4,
-      ...CATALOG_WIDE,
+      ...OPENAI_FAMILY,
     });
     expect(chatProvidersOf(other)).not.toContain(name);
     expect(await rowsOf(other)).toContainEqual({
       name,
       baseFormat: 'openai',
-      enabled: false,
-      weight: 1,
+      chatEnabled: false,
+      chatWeight: 1,
+      backendEnabled: false,
+      backendWeight: 1,
       status: 'working',
     });
     expect((await remove(name)).statusCode).toBe(200);

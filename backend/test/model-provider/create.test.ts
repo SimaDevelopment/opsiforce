@@ -3,7 +3,6 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { modelProviders } from '../../db/schema';
-import { catalogModelIdsOf } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { Perms } from '../../src/permission/permission.constants';
@@ -25,20 +24,21 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
+const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
 const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
-const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
 const NAME_TAKEN = 'That name is taken in this organization; choose another';
-const ANTHROPIC_CATALOG_IDS = catalogModelIdsOf('anthropic');
 
 interface ProviderRow {
   name: string;
   kind?: string | null;
   baseUrl?: string;
   baseFormat: string | null;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
   status: string;
 }
 
@@ -155,15 +155,17 @@ describe('adding, editing and deleting a Custom model provider', () => {
         name: 'own-key',
         kind: 'official-api-key',
         baseFormat: 'openai',
-        enabled: true,
-        weight: 1,
+        chatEnabled: true,
+        chatWeight: 1,
+        backendEnabled: true,
+        backendWeight: 1,
         status: 'working',
       });
       expect(bifrost.chatKeyOf(projectId).provider_configs).toEqual([
         { provider: 'anthropic', weight: 1, ...CATALOG_WIDE },
         { provider: 'custom-openai-1', weight: 1, ...CATALOG_WIDE },
         { provider: 'openai', weight: 0, ...CATALOG_WIDE },
-        { provider: bifrostName, weight: 1, ...CATALOG_WIDE },
+        { provider: bifrostName, weight: 1, ...OPENAI_FAMILY },
       ]);
       const modelListCalls = vendor.requests.filter(
         (request) => request.headers.authorization === 'Bearer sk-live-own'
@@ -257,8 +259,12 @@ describe('adding, editing and deleting a Custom model provider', () => {
         customProviderLimit: 10,
         customProviderCount: 0,
         kindsByFormat: {
-          openai: ['official-api-key', 'compatible-endpoint', 'linked-account'],
-          anthropic: ['official-api-key', 'compatible-endpoint'],
+          openai: ['official-api-key', 'compatible-endpoint', 'linked-account', 'azure-foundry'],
+          anthropic: ['official-api-key', 'compatible-endpoint', 'azure-foundry'],
+        },
+        catalogModels: {
+          openai: servedModelsOf(BASE_FORMATS.openai),
+          anthropic: servedModelsOf(BASE_FORMATS.anthropic),
         },
       });
     });
@@ -410,15 +416,41 @@ describe('adding, editing and deleting a Custom model provider', () => {
 
       expect(res.body).not.toContain('sk-live-never-shown-again');
       expect(res.json<ModelProvidersView>().providers).toEqual([
-        { name: 'anthropic', baseFormat: 'anthropic', enabled: true, weight: 1, status: 'working' },
-        { name: 'custom-openai-1', baseFormat: 'openai', enabled: true, weight: 1, status: 'working' },
-        { name: 'openai', baseFormat: 'openai', enabled: true, weight: 0, status: 'working' },
+        {
+          name: 'anthropic',
+          baseFormat: 'anthropic',
+          chatEnabled: true,
+          chatWeight: 1,
+          backendEnabled: true,
+          backendWeight: 1,
+          status: 'working',
+        },
+        {
+          name: 'custom-openai-1',
+          baseFormat: 'openai',
+          chatEnabled: true,
+          chatWeight: 1,
+          backendEnabled: false,
+          backendWeight: 1,
+          status: 'working',
+        },
+        {
+          name: 'openai',
+          baseFormat: 'openai',
+          chatEnabled: true,
+          chatWeight: 0,
+          backendEnabled: true,
+          backendWeight: 1,
+          status: 'working',
+        },
         {
           name: 'own-key',
           kind: 'official-api-key',
           baseFormat: 'openai',
-          enabled: true,
-          weight: 1,
+          chatEnabled: true,
+          chatWeight: 1,
+          backendEnabled: true,
+          backendWeight: 1,
           status: 'working',
         },
       ]);
@@ -601,7 +633,7 @@ describe('adding, editing and deleting a Custom model provider', () => {
           id: expect.any(String),
           name: `${tenant.name}-openai-own-key`,
           value: { value: 'sk-live-own', type: 'plain_text' },
-          models: OPENAI_CATALOG_IDS,
+          models: ['*'],
           weight: 1,
           enabled: true,
         },
@@ -622,7 +654,7 @@ describe('adding, editing and deleting a Custom model provider', () => {
         custom_provider_config: { base_provider_type: 'anthropic', allowed_requests: { list_models: false } },
       });
       expect(provider?.keys).toMatchObject([
-        { value: { value: 'env.ANTHROPIC_API_KEY', type: 'plain_text' }, models: ANTHROPIC_CATALOG_IDS },
+        { value: { value: 'env.ANTHROPIC_API_KEY', type: 'plain_text' }, models: ['*'] },
       ]);
       expect(vendor.requests.at(-1)?.headers).toMatchObject({
         'x-api-key': 'env.ANTHROPIC_API_KEY',
@@ -632,8 +664,10 @@ describe('adding, editing and deleting a Custom model provider', () => {
         name: 'claude-own',
         kind: 'official-api-key',
         baseFormat: 'anthropic',
-        enabled: true,
-        weight: 1,
+        chatEnabled: true,
+        chatWeight: 1,
+        backendEnabled: true,
+        backendWeight: 1,
         status: 'working',
       });
     });
@@ -685,9 +719,7 @@ describe('adding, editing and deleting a Custom model provider', () => {
           request_path_overrides: OPENAI_COMPATIBLE_PATHS,
         },
       });
-      expect(provider?.keys).toMatchObject([
-        { value: { value: 'sk-gateway', type: 'plain_text' }, models: OPENAI_CATALOG_IDS },
-      ]);
+      expect(provider?.keys).toMatchObject([{ value: { value: 'sk-gateway', type: 'plain_text' }, models: ['*'] }]);
       expect(vendor.requests.at(-1)).toMatchObject({ method: 'GET', path: '/v1/models' });
       expect(vendor.requests.at(-1)?.headers.authorization).toBe('Bearer sk-gateway');
       expect(res.json<ModelProvidersView>().providers).toContainEqual({
@@ -695,14 +727,16 @@ describe('adding, editing and deleting a Custom model provider', () => {
         kind: 'compatible-endpoint',
         baseUrl: gatewayUrl,
         baseFormat: 'openai',
-        enabled: true,
-        weight: 1,
+        chatEnabled: true,
+        chatWeight: 1,
+        backendEnabled: true,
+        backendWeight: 1,
         status: 'working',
       });
       expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
         provider: bifrostName,
         weight: 1,
-        ...CATALOG_WIDE,
+        ...OPENAI_FAMILY,
       });
     });
 
@@ -1001,17 +1035,19 @@ describe('adding, editing and deleting a Custom model provider', () => {
         baseUrl: gatewayUrl,
       });
       expect(created.statusCode, created.body).toBe(201);
-      await switchAndWeigh(admin, [{ name: 'gateway', enabled: true, weight: 7 }]);
+      await switchAndWeigh(admin, [{ name: 'gateway', chatEnabled: true, chatWeight: 7 }]);
       bifrost.loseProvider(bifrostName);
-      await switchAndWeigh(admin, [{ name: 'openai', enabled: true, weight: 2 }]);
+      await switchAndWeigh(admin, [{ name: 'openai', chatEnabled: true, chatWeight: 2 }]);
 
       expect(bifrost.chatKeyOf(projectId).provider_configs.map((config) => config.provider)).not.toContain(bifrostName);
       expect((await rowsOf(admin)).find((row) => row.name === 'gateway')).toEqual({
         name: 'gateway',
         kind: null,
         baseFormat: null,
-        enabled: true,
-        weight: 7,
+        chatEnabled: true,
+        chatWeight: 7,
+        backendEnabled: true,
+        backendWeight: 1,
         status: 'missing',
       });
 
@@ -1031,14 +1067,16 @@ describe('adding, editing and deleting a Custom model provider', () => {
         kind: 'compatible-endpoint',
         baseUrl: gatewayUrl,
         baseFormat: 'openai',
-        enabled: true,
-        weight: 7,
+        chatEnabled: true,
+        chatWeight: 7,
+        backendEnabled: true,
+        backendWeight: 1,
         status: 'working',
       });
       expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
         provider: bifrostName,
         weight: 7,
-        ...CATALOG_WIDE,
+        ...OPENAI_FAMILY,
       });
     });
 

@@ -1,5 +1,6 @@
 export const TRANSCRIPTION_PROVIDER = 'openai';
-export const TRANSCRIPTION_MODEL = `${TRANSCRIPTION_PROVIDER}/gpt-4o-mini-transcribe`;
+export const TRANSCRIPTION_MODEL_ID = 'gpt-4o-mini-transcribe';
+export const TRANSCRIPTION_MODEL = `${TRANSCRIPTION_PROVIDER}/${TRANSCRIPTION_MODEL_ID}`;
 export const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 export const MAX_REQUEST_BYTES = MAX_AUDIO_BYTES + 16 * 1024;
 export const TRANSCRIPTION_TIMEOUT_MS = 60_000;

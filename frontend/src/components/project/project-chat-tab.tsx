@@ -3,7 +3,7 @@ import { render } from 'solid-js/web';
 import type { BaseRouterProps } from '@solidjs/router';
 import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection } from '@opencode-ai/app';
 import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
-import { BASE_FORMAT_IDS, useReachableBaseFormats } from '~/api/model-providers';
+import { useReachableModels } from '~/api/model-providers';
 import { useSyncProjectTitle } from '~/api/projects';
 import { FileUpload } from '~/components/file-upload';
 import { ExternalServicesButton } from './external-services/external-services-button';
@@ -58,10 +58,10 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
   const platform = createProxyPlatform(url);
   const router = untrack(() => props.router);
   const onTitle = (title: string) => syncTitle(props.projectId, title, props.currentTitle);
-  const reachableFormats = useReachableBaseFormats();
-  const unreachableProviders = createMemo<ReadonlySet<string>>(() => {
-    const reachable = reachableFormats.data;
-    return new Set(reachable ? BASE_FORMAT_IDS.filter((format) => !reachable.includes(format)) : []);
+  const reachableModelsQuery = useReachableModels();
+  const reachableModels = createMemo<ReadonlySet<string> | undefined>(() => {
+    const reachable = reachableModelsQuery.data;
+    return reachable ? new Set(reachable) : undefined;
   });
 
   let embedHost!: HTMLDivElement;
@@ -112,7 +112,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         <PlatformProvider value={platform}>
           <AppBaseProviders>
             <AppInterface defaultServer={serverKey} servers={[server]} router={router}>
-              <OpencodeOverrides server={server} hiddenProviders={unreachableProviders} />
+              <OpencodeOverrides server={server} reachableModels={reachableModels} />
               <OpenCodeEventBridge server={server} onIdle={() => props.onAgentIdle()} onTitle={onTitle} />
             </AppInterface>
           </AppBaseProviders>

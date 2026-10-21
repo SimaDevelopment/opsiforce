@@ -32,7 +32,7 @@ import { AgentExportService } from './agent-export.service';
 import type { AgentImportResult, ImportAgentDto } from './agent-import';
 import { AgentImportService } from './agent-import.service';
 import { ModelProvidersService } from '../model-provider/model-provider.service';
-import { catalogOfFormats, modelCatalogResponse, type ModelCatalogProvider } from './agent-models';
+import { catalogOfModels, modelCatalogResponse, type ModelCatalogProvider } from './agent-models';
 import { AgentService } from './agent.service';
 import type {
   AgentCaller,
@@ -93,8 +93,8 @@ export class AgentController {
   @Get('models')
   @RelaxPermission()
   async models(@CurrentTenant() tenant: TenantContext): Promise<ModelCatalogProvider[]> {
-    const formats = await this.modelProvidersService.reachableBaseFormats(tenant.tenantId);
-    return modelCatalogResponse(catalogOfFormats(formats));
+    const models = await this.modelProvidersService.reachableModels(tenant.tenantId);
+    return modelCatalogResponse(catalogOfModels(models));
   }
 
   @Get(':id')

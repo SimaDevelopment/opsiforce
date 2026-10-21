@@ -25,7 +25,8 @@ export function DialogContent(props: DialogContentProps) {
       >
         <Kobalte.Content
           class={cn(
-            'relative z-50 w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-lg',
+            'relative z-50 w-full max-w-md overflow-y-auto rounded-lg border border-border bg-popover p-6 shadow-lg',
+            local.align === 'top' ? 'max-h-[84dvh]' : 'max-h-[calc(100dvh-2rem)]',
             'animate-in fade-in-0 zoom-in-95',
             'data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95',
             local.class

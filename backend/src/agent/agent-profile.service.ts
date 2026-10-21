@@ -115,10 +115,9 @@ export class AgentProfileService {
   }
 
   async assertModelReachable(tenantId: string, model: string): Promise<void> {
-    const format = baseFormatOfModel(model);
-    if (!format) return;
-    const reachable = await this.modelProviders.reachableBaseFormats(tenantId);
-    if (!reachable.includes(format)) throw modelUnreachable(model);
+    if (!baseFormatOfModel(model)) return;
+    const reachable = await this.modelProviders.reachableModels(tenantId);
+    if (!reachable.includes(model)) throw modelUnreachable(model);
   }
 
   async listSkills(agent: AgentRow, caller: AgentCaller): Promise<AgentProfileSkillResponse[]> {
