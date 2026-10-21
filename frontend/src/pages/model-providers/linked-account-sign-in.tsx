@@ -29,9 +29,9 @@ function accountKey(scope: ModelProviderScope, name: string): string {
 
 const DISCONNECT_DESCRIPTION: Record<ModelProviderScope, string> = {
   tenant:
-    'The sign-in is revoked at OpenAI and removed. This provider stops taking requests until someone signs in again; the format’s other providers that are on take over.',
+    'Disconnecting revokes the sign-in at OpenAI and removes it. This provider then takes no requests until someone signs in again, and the format’s other providers that are on take over.',
   platform:
-    'The sign-in is revoked at OpenAI and removed. This provider stops taking requests in every organization it serves until you sign in again. Updating every organization can take a few seconds.',
+    'Disconnecting revokes the sign-in at OpenAI and removes it. This provider then takes no requests in any organization it serves until you sign in again. Updating every organization can take a few seconds.',
 };
 
 const CONNECTED_TIP: Record<ModelProviderScope, string> = {
@@ -49,7 +49,7 @@ function Countdown(props: { until: string }) {
   onCleanup(() => clearInterval(timer));
   const secondsLeft = () => Math.max(0, Math.floor((Date.parse(props.until) - now()) / SECOND_MS));
   return (
-    <span class="tabular-nums">
+    <span class="tabular-nums" role="timer">
       {Math.floor(secondsLeft() / 60)}:{String(secondsLeft() % 60).padStart(2, '0')}
     </span>
   );
@@ -57,8 +57,12 @@ function Countdown(props: { until: string }) {
 
 function CopyButton(props: { value: string; label: string }) {
   async function copy() {
-    await navigator.clipboard.writeText(props.value);
-    toast.success(`${props.label} copied`);
+    try {
+      await navigator.clipboard.writeText(props.value);
+      toast.success(`${props.label} copied`);
+    } catch {
+      toast.error(`${props.label} could not be copied. Select it and copy it yourself.`);
+    }
   }
   return (
     <Button
@@ -253,6 +257,7 @@ export function LinkedAccountStatus(props: {
 }) {
   const actions = useLinkedAccountActions(props.scope, () => props.name);
   const offersSignIn = () => props.editable && SIGNED_OUT_STATUSES.has(props.status) && !actions.signingIn();
+  const signInLabel = () => (props.status === 'needs-sign-in' ? 'Sign in again' : 'Sign in');
   return (
     <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       <StatusBadge status={props.status} />
@@ -262,10 +267,10 @@ export function LinkedAccountStatus(props: {
           variant="link"
           class="h-5 px-0 text-xs font-medium underline decoration-muted-foreground/40 underline-offset-4 hover:decoration-foreground"
           loading={actions.busy()}
-          aria-label={`Sign in ${props.name} with ChatGPT`}
+          aria-label={`${signInLabel()}: ${props.name}`}
           onClick={() => actions.signIn()}
         >
-          {props.status === 'needs-sign-in' ? 'Sign in again' : 'Sign in'}
+          {signInLabel()}
         </Button>
       </Show>
     </div>
@@ -355,13 +360,13 @@ export function LinkedAccountSignIn(props: {
               <Show when={endedReason()}>
                 {(reason) => (
                   <p class="text-destructive" role="alert">
-                    OpenAI ended the sign-in: {reason()}
+                    OpenAI ended the sign-in: {reason()}. Sign in again to restore it.
                   </p>
                 )}
               </Show>
               <Show when={expired()}>
                 <output class="block text-muted-foreground">
-                  The last sign-in code expired before it was approved.
+                  The last sign-in code expired before it was approved. Sign in to get a new code.
                 </output>
               </Show>
               <Show when={failure()}>

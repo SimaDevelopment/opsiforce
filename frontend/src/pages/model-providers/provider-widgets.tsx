@@ -2,6 +2,7 @@ import { For, Match, Show, Switch as SolidSwitch, type JSX } from 'solid-js';
 import type { ModelProviderKind, ModelProviderStatus, TenantModelProvider } from '~/api/model-providers';
 import { Info } from '~/components/icons';
 import { Badge } from '~/components/ui/badge';
+import { Switch as KobalteSwitch } from '@kobalte/core/switch';
 import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from '~/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/cn';
@@ -106,7 +107,7 @@ function ShareLabel(props: { label: string; tip: string; muted?: boolean }) {
   return (
     <span class={cn('inline-flex items-center gap-1 text-xs', props.muted ? 'text-muted-foreground' : 'tabular-nums')}>
       {props.label}
-      <InfoTip content={props.tip} label={`About ${props.label}`} />
+      <InfoTip content={props.tip} label="What this share means" />
     </span>
   );
 }
@@ -179,15 +180,24 @@ export function LabelledSwitch(props: {
   disabled?: boolean;
 }) {
   return (
-    <div class="space-y-1">
-      <Switch checked={props.checked} onChange={props.onChange} disabled={props.disabled} class="gap-2.5">
-        <SwitchControl>
-          <SwitchThumb />
-        </SwitchControl>
-        <SwitchLabel class="mr-0 cursor-pointer text-xs font-normal">{props.label}</SwitchLabel>
-      </Switch>
-      <Show when={props.hint}>{(hint) => <p class="pl-[2.875rem] text-xs text-muted-foreground">{hint()}</p>}</Show>
-    </div>
+    <Switch
+      checked={props.checked}
+      onChange={props.onChange}
+      disabled={props.disabled}
+      class="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1"
+    >
+      <SwitchControl>
+        <SwitchThumb />
+      </SwitchControl>
+      <SwitchLabel class="mr-0 cursor-pointer text-xs font-normal">{props.label}</SwitchLabel>
+      <Show when={props.hint}>
+        {(hint) => (
+          <KobalteSwitch.Description class="col-start-2 text-xs text-muted-foreground">
+            {hint()}
+          </KobalteSwitch.Description>
+        )}
+      </Show>
+    </Switch>
   );
 }
 
@@ -207,10 +217,11 @@ export function WeightInput(props: {
       max={MAX_WEIGHT}
       step={1}
       aria-label={props.label}
+      aria-invalid={!Number.isInteger(props.value) || props.value < MIN_WEIGHT || props.value > MAX_WEIGHT}
       disabled={props.disabled}
       value={props.value}
       onInput={(event) => props.onChange(event.currentTarget.valueAsNumber)}
-      class="h-7 w-16 rounded-md border border-input bg-background px-2 py-1 text-xs tabular-nums shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      class="h-7 w-16 rounded-md border border-input bg-background aria-[invalid=true]:border-destructive px-2 py-1 text-xs tabular-nums shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
     />
   );
 }

@@ -14,6 +14,8 @@ export const TIPS = {
     'It is the only provider of this format taking requests, so every request goes here whatever its weight.',
   builtIn:
     'Provided by Opsiforce. You decide whether it is on and how many requests it gets; Opsiforce manages its connection.',
+  noAccessHere:
+    'Built-in model providers this organization has no access to. It sends them no requests, and its admins don’t see them; you see them because you manage Built-in model providers. Give access under Organization access in the ⋮ menu.',
   custom: 'Added by this organization. Only this organization can use it.',
   notMetered:
     'Not metered: the model gateway prices this provider’s requests at $0, so they count for nothing against any organization’s or project’s budget.',

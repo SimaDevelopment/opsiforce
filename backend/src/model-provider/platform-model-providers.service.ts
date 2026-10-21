@@ -197,7 +197,7 @@ export class PlatformModelProvidersService implements OnApplicationBootstrap {
       this.modelProvidersService.bifrostProvidersOrNull(),
       this.listedEntries(),
       db
-        .select({ tenantId: tenants.id, displayName: tenants.displayName })
+        .select({ tenantId: tenants.id, name: tenants.name, displayName: tenants.displayName })
         .from(tenants)
         .orderBy(asc(tenants.displayName)),
       this.modelProvidersService.availability(),

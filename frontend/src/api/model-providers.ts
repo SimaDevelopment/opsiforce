@@ -171,6 +171,7 @@ export interface ModelProviderAccessProvider {
 
 export interface TenantModelProviderAccess {
   tenantId: string;
+  name: string;
   displayName: string;
   withheld: string[];
 }

@@ -46,7 +46,7 @@ export function ModelProvidersPage() {
     <SettingsSection
       icon={Waypoints}
       title="Model providers"
-      description="Where this organization's model requests go. Each format splits its requests across the model providers that are on, by weight."
+      description="Where this organization’s model requests go. Each format splits its requests across the model providers that are on, by weight."
     >
       <Show
         when={

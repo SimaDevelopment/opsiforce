@@ -405,8 +405,16 @@ function OrganizationPicker(props: { selected: string[]; onChange: (tenantIds: s
           )}
         </For>
       </ul>
-      <p class="text-xs text-muted-foreground">
-        {props.selected.length} chosen. Organizations added later get access only when you give it to them.
+      <p class="text-xs" aria-live="polite">
+        <Show
+          when={props.selected.length > 0}
+          fallback={<span class="text-destructive">Choose at least one organization.</span>}
+        >
+          <span class="text-muted-foreground">
+            <span class="tabular-nums">{props.selected.length}</span> chosen. Organizations added later get access only
+            when you give it to them.
+          </span>
+        </Show>
       </p>
     </div>
   );

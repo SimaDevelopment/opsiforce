@@ -28,10 +28,12 @@ import { BuiltInPlatformDetails, BuiltInPlatformPills, BuiltInRowMenu } from './
 import { TIPS } from './copy';
 import { CustomProviderMenu } from './custom-provider-menu';
 import { LinkedAccountSignIn, LinkedAccountStatus } from './linked-account-sign-in';
+import { useWithoutAccessHere } from './organization-access';
 import {
   BuiltInPill,
   isCustomRow,
   LabelWithTip,
+  InfoTip,
   OnOffSwitch,
   ProviderPill,
   RetryNote,
@@ -92,6 +94,10 @@ export function FormatCard(props: FormatCardProps) {
       return Number(right.enabled) - Number(left.enabled) || right.weight - left.weight || a.name.localeCompare(b.name);
     });
 
+  const withoutAccessHere = useWithoutAccessHere(() => props.canSwitch && props.managesPlatform);
+
+  const builtInsWithoutAccess = () => builtInsWithoutRow().filter((builtIn) => withoutAccessHere(builtIn.name));
+
   const empty = () => props.rows.length === 0 && builtInsWithoutRow().length === 0;
   const columnCount = () => (props.canSwitch ? 6 : 3);
 
@@ -139,16 +145,18 @@ export function FormatCard(props: FormatCardProps) {
             <span class="font-normal text-muted-foreground"> · {AUDIENCE_LABEL[props.audience]}</span>
           </Show>
         </h2>
-        <Show when={noneInTraffic()}>
-          <span class="text-xs text-destructive">
+        <span class="text-xs text-destructive" aria-live="polite">
+          <Show when={noneInTraffic()}>
             <Show
               when={props.audience === 'apps'}
-              fallback={<>· No model provider is taking Agent requests, so Agents can’t use {label()} models</>}
+              fallback={
+                <>· No model provider is taking Agent requests. Switch one on so Agents can use {label()} models.</>
+              }
             >
-              · No model provider is taking App requests, so apps can’t use {label()} models
+              · No model provider is taking App requests. Switch one on so apps can use {label()} models.
             </Show>
-          </span>
-        </Show>
+          </Show>
+        </span>
         <AddProviderButton format={props.format} canAddCustom={props.canSwitch} canAddGlobal={props.managesPlatform} />
       </div>
       <Table>
@@ -254,35 +262,22 @@ export function FormatCard(props: FormatCardProps) {
               </TableRow>
             )}
           </For>
-          <For each={builtInsWithoutRow()}>
-            {(builtIn) => (
-              <TableRow>
-                <TableCell class="align-top">
-                  <div class="flex flex-wrap items-center gap-1.5">
-                    <span class="break-all font-mono text-xs font-medium" translate="no">
-                      {builtIn.name}
-                    </span>
-                    <BuiltInPill />
-                    <BuiltInPlatformPills row={builtIn} />
-                  </div>
-                  <BuiltInPlatformDetails row={builtIn} editable />
-                </TableCell>
-                <TableCell class="align-top">
-                  <Show when={builtIn.linkedAccountVendor} fallback={<StatusBadge status={builtIn.status} />}>
-                    <LinkedAccountStatus scope="platform" name={builtIn.name} status={builtIn.status} editable />
-                  </Show>
-                </TableCell>
-                <Show when={props.canSwitch}>
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                </Show>
-                <TableCell class="align-top">
-                  <BuiltInRowMenu row={builtIn} />
-                </TableCell>
-              </TableRow>
-            )}
+          <For each={builtInsWithoutRow().filter((builtIn) => !withoutAccessHere(builtIn.name))}>
+            {(builtIn) => <BuiltInOnlyRow builtIn={builtIn} canSwitch={props.canSwitch} />}
           </For>
+          <Show when={builtInsWithoutAccess().length > 0}>
+            <TableRow class="hover:bg-transparent">
+              <TableCell colSpan={columnCount()} class="bg-muted/40 py-1.5">
+                <span class="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  No access in this organization
+                  <InfoTip content={TIPS.noAccessHere} label="About model providers without access" />
+                </span>
+              </TableCell>
+            </TableRow>
+            <For each={builtInsWithoutAccess()}>
+              {(builtIn) => <BuiltInOnlyRow builtIn={builtIn} canSwitch={props.canSwitch} faded />}
+            </For>
+          </Show>
         </TableBody>
       </Table>
       <Show when={props.canSwitch}>
@@ -301,6 +296,36 @@ export function FormatCard(props: FormatCardProps) {
         onSaveAnyway={() => save(true)}
       />
     </div>
+  );
+}
+
+function BuiltInOnlyRow(props: { builtIn: PlatformModelProvider; canSwitch: boolean; faded?: boolean }) {
+  return (
+    <TableRow>
+      <TableCell class={cn('align-top', props.faded && 'opacity-60')}>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="break-all font-mono text-xs font-medium" translate="no">
+            {props.builtIn.name}
+          </span>
+          <BuiltInPill />
+          <BuiltInPlatformPills row={props.builtIn} />
+        </div>
+        <BuiltInPlatformDetails row={props.builtIn} editable />
+      </TableCell>
+      <TableCell class={cn('align-top', props.faded && 'opacity-60')}>
+        <Show when={props.builtIn.linkedAccountVendor} fallback={<StatusBadge status={props.builtIn.status} />}>
+          <LinkedAccountStatus scope="platform" name={props.builtIn.name} status={props.builtIn.status} editable />
+        </Show>
+      </TableCell>
+      <Show when={props.canSwitch}>
+        <TableCell />
+        <TableCell />
+        <TableCell />
+      </Show>
+      <TableCell class="align-top">
+        <BuiltInRowMenu row={props.builtIn} />
+      </TableCell>
+    </TableRow>
   );
 }
 

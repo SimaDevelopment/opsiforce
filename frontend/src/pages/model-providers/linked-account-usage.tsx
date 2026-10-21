@@ -50,7 +50,7 @@ function UsageMeter(props: { window: LinkedAccountUsageWindow; now: number }) {
         />
       </div>
       <span class="text-right tabular-nums text-foreground">{percent()}%</span>
-      <span class="whitespace-nowrap text-muted-foreground">
+      <span class="whitespace-nowrap tabular-nums text-muted-foreground">
         <Show when={props.window.resetsAt}>{(resetsAt) => resetLabel(resetsAt(), props.now)}</Show>
       </span>
     </>
@@ -68,7 +68,7 @@ export function LinkedAccountUsage(props: { scope: ModelProviderScope; name: str
       when={usage.data}
       fallback={
         <Show when={usage.isError}>
-          <p class="text-muted-foreground">The subscription’s usage could not be read from OpenAI.</p>
+          <p class="text-muted-foreground">OpenAI didn’t return this plan’s usage. Reload the page to try again.</p>
         </Show>
       }
     >

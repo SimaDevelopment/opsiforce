@@ -17,6 +17,9 @@ import { BASE_FORMAT_LABEL } from './traffic-split';
 export const INPUT_CLASS =
   'h-8 w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
+export const TEXT_BUTTON_CLASS =
+  'rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50';
+
 export type TestResult = { passed: true } | { passed: false; message: string };
 
 const NAME_SLUG = /^[a-z0-9-]+$/;
@@ -387,12 +390,12 @@ export function ModelChoiceField(props: {
         </Show>
         <div class="rounded-md border border-border">
           <div class="flex items-center gap-3 border-b border-border px-3 py-1.5 text-xs">
-            <span class="mr-auto text-muted-foreground">
+            <span class="mr-auto tabular-nums text-muted-foreground">
               {chosen().length} of {everyModel().length} chosen
             </span>
             <button
               type="button"
-              class="text-primary hover:underline disabled:opacity-50"
+              class={TEXT_BUTTON_CLASS}
               disabled={chosen().length === everyModel().length}
               onClick={() => props.onChange(everyModel(), deployments())}
             >
@@ -400,7 +403,7 @@ export function ModelChoiceField(props: {
             </button>
             <button
               type="button"
-              class="text-primary hover:underline disabled:opacity-50"
+              class={TEXT_BUTTON_CLASS}
               disabled={chosen().length === 0}
               onClick={() => props.onChange([], deployments())}
             >
@@ -436,6 +439,7 @@ export function ModelChoiceField(props: {
                             <input
                               type="text"
                               aria-label={`Deployment name of ${model}`}
+                              name={`deployment-${model}`}
                               autocomplete="off"
                               spellcheck={false}
                               class={cn(INPUT_CLASS, 'h-7 max-w-56 flex-1 font-mono')}
@@ -453,9 +457,9 @@ export function ModelChoiceField(props: {
             </For>
           </div>
         </div>
-        <Show when={chosen().length === 0}>
-          <p class="text-xs text-destructive">Choose at least one model, or choose Every model.</p>
-        </Show>
+        <p class="text-xs text-destructive" aria-live="polite">
+          {chosen().length === 0 ? 'Choose at least one model, or choose Every model.' : ''}
+        </p>
       </Show>
     </div>
   );
@@ -480,7 +484,7 @@ export function EndpointField(props: { value: string; onInput: (value: string) =
         value={props.value}
         onInput={(event) => props.onInput(event.currentTarget.value)}
       />
-      <p id={hintId} class={cn('text-xs', invalid() ? 'text-destructive' : 'text-muted-foreground')}>
+      <p id={hintId} aria-live="polite" class={cn('text-xs', invalid() ? 'text-destructive' : 'text-muted-foreground')}>
         {invalid()
           ? 'Enter the resource address only, on openai.azure.com, services.ai.azure.com or cognitiveservices.azure.com'
           : 'The resource address from the Azure AI Foundry portal, without a path.'}

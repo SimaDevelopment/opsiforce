@@ -1,5 +1,6 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { toast } from 'solid-sonner';
+import { currentTenant } from '~/api/client';
 import {
   usePlatformModelProviderAccess,
   useSetAvailabilityMode,
@@ -12,9 +13,9 @@ import { Pager, createOffsetPages } from '~/components/pager';
 import { SearchInput } from '~/components/store/store-list';
 import { Building2 } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
-import { errorMessage } from './connection-fields';
+import { cn } from '~/lib/cn';
+import { TEXT_BUTTON_CLASS, errorMessage } from './connection-fields';
 import { LabelledSwitch, OnOffSwitch } from './provider-widgets';
 
 const DIALOG_PAGE_SIZE = 8;
@@ -33,6 +34,12 @@ function organizations(count: number): string {
   return count === 1 ? '1 organization' : `${count} organizations`;
 }
 
+export function useWithoutAccessHere(enabled: () => boolean): (name: string) => boolean {
+  const access = usePlatformModelProviderAccess(enabled);
+  const here = () => access.data?.tenants.find((tenant) => tenant.name === currentTenant());
+  return (name) => here()?.withheld.includes(name) ?? false;
+}
+
 const SHOWN_LABEL: Record<Shown, string> = {
   all: 'All',
   without: 'Without access',
@@ -45,11 +52,21 @@ export function OrganizationAccessDialog(props: {
 }) {
   const access = usePlatformModelProviderAccess();
   const setAccess = useSetModelProviderAccess();
+  const setMode = useSetAvailabilityMode();
   const [query, setQuery] = createSignal('');
   const [shown, setShown] = createSignal<Shown>('all');
-  const [busy, setBusy] = createSignal(false);
-  const [confirmingRemoveAll, setConfirmingRemoveAll] = createSignal(false);
+  const [drafted, setDrafted] = createSignal<Record<string, boolean>>({});
+  const [draftedMode, setDraftedMode] = createSignal<AvailabilityMode | null>(null);
+  const [saving, setSaving] = createSignal(false);
   const tenants = () => access.data?.tenants ?? [];
+  const savedMode = () => modeOf(access.data, props.name);
+  const mode = () => draftedMode() ?? savedMode();
+  const hadAccess = (tenant: TenantModelProviderAccess) => !hasNoAccess(tenant, props.name);
+  const hasAccess = (tenant: TenantModelProviderAccess) => drafted()[tenant.tenantId] ?? hadAccess(tenant);
+  const changes = () => tenants().filter((tenant) => hasAccess(tenant) !== hadAccess(tenant));
+  const losing = () => changes().filter((tenant) => !hasAccess(tenant)).length;
+  const modeChanged = () => mode() !== savedMode();
+  const changeCount = () => changes().length + (modeChanged() ? 1 : 0);
   const filtered = createMemo(() => {
     const needle = query().trim().toLowerCase();
     return tenants().filter(
@@ -60,32 +77,57 @@ export function OrganizationAccessDialog(props: {
   const pages = createOffsetPages(filtered, DIALOG_PAGE_SIZE);
   const withoutCount = () => tenants().filter((tenant) => hasNoAccess(tenant, props.name)).length;
 
+  createEffect(() => {
+    if (props.open) {
+      setDrafted({});
+      setDraftedMode(null);
+      setQuery('');
+      setShown('all');
+    }
+  });
+
   function show(next: Shown) {
     setShown(next);
     pages.toFirst();
   }
 
-  async function apply(targets: TenantModelProviderAccess[], withheld: boolean) {
-    const changing = targets.filter((tenant) => hasNoAccess(tenant, props.name) !== withheld);
-    if (changing.length === 0) return;
-    setBusy(true);
+  function draft(targets: TenantModelProviderAccess[], on: boolean) {
+    setDrafted((current) => ({
+      ...current,
+      ...Object.fromEntries(targets.map((tenant) => [tenant.tenantId, on])),
+    }));
+  }
+
+  async function save() {
+    setSaving(true);
+    let saved = 0;
     try {
-      for (const tenant of changing) {
-        await setAccess.mutateAsync({ name: props.name, tenantId: tenant.tenantId, withheld });
+      if (modeChanged()) {
+        await setMode.mutateAsync({ name: props.name, mode: mode() });
+        setDraftedMode(null);
+        saved += 1;
       }
-      const who = changing.length === 1 ? changing[0].displayName : organizations(changing.length);
-      toast.success(
-        withheld ? `${who} no longer has access to ${props.name}` : `${who} now has access to ${props.name}`
-      );
+      for (const tenant of changes()) {
+        await setAccess.mutateAsync({ name: props.name, tenantId: tenant.tenantId, withheld: !hasAccess(tenant) });
+        setDrafted((current) => {
+          const remaining = { ...current };
+          delete remaining[tenant.tenantId];
+          return remaining;
+        });
+        saved += 1;
+      }
+      toast.success(`Access to ${props.name} saved`);
+      props.onOpenChange(false);
     } catch (err) {
-      toast.error(errorMessage(err, 'The access could not be changed'));
+      const message = errorMessage(err, 'The access could not be saved');
+      toast.error(saved > 0 ? `${message}. The changes before it were saved.` : message);
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+    <Dialog open={props.open} onOpenChange={(open) => !saving() && props.onOpenChange(open)}>
       <DialogContent class="max-w-lg" align="top">
         <DialogTitle>
           Who can use{' '}
@@ -94,11 +136,17 @@ export function OrganizationAccessDialog(props: {
           </span>
         </DialogTitle>
         <DialogDescription>
-          An organization without access doesn’t see {props.name} and sends it no requests. Giving access back restores
-          the organization’s own switch and weight.
+          An organization without access doesn’t see <span translate="no">{props.name}</span> and sends it no requests.
+          Giving access back restores the organization’s own switch and weight. Nothing changes until you save.
         </DialogDescription>
         <div class="mt-4 space-y-3">
-          <NewOrganizationsSwitch name={props.name} mode={modeOf(access.data, props.name)} />
+          <LabelledSwitch
+            checked={mode() === 'every'}
+            disabled={saving()}
+            onChange={(automatic) => setDraftedMode(automatic ? 'every' : 'chosen')}
+            label="Give organizations added later access automatically"
+            hint="Changing this doesn’t change the access of existing organizations."
+          />
           <div class="flex flex-wrap items-center gap-2">
             <div class="min-w-48 flex-1">
               <SearchInput
@@ -116,11 +164,14 @@ export function OrganizationAccessDialog(props: {
                   <button
                     type="button"
                     aria-pressed={shown() === option}
-                    class="rounded px-2 py-1 aria-pressed:bg-background aria-pressed:shadow-sm"
+                    class="rounded px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
                     onClick={() => show(option)}
                   >
                     {SHOWN_LABEL[option]}
-                    <Show when={option === 'without'}> ({withoutCount()})</Show>
+                    <Show when={option === 'without'}>
+                      {' '}
+                      <span class="tabular-nums">({withoutCount()})</span>
+                    </Show>
                   </button>
                 )}
               </For>
@@ -129,17 +180,17 @@ export function OrganizationAccessDialog(props: {
           <div class="flex gap-3 text-xs">
             <button
               type="button"
-              class="text-primary hover:underline disabled:opacity-50"
-              disabled={busy() || filtered().length === 0}
-              onClick={() => void apply(filtered(), false)}
+              class={TEXT_BUTTON_CLASS}
+              disabled={saving() || filtered().length === 0}
+              onClick={() => draft(filtered(), true)}
             >
               Give access to all shown
             </button>
             <button
               type="button"
-              class="text-primary hover:underline disabled:opacity-50"
-              disabled={busy() || filtered().length === 0}
-              onClick={() => setConfirmingRemoveAll(true)}
+              class={TEXT_BUTTON_CLASS}
+              disabled={saving() || filtered().length === 0}
+              onClick={() => draft(filtered(), false)}
             >
               Remove access from all shown
             </button>
@@ -149,75 +200,60 @@ export function OrganizationAccessDialog(props: {
               each={pages.page()}
               fallback={<li class="px-3 py-4 text-center text-xs text-muted-foreground">No organizations</li>}
             >
-              {(tenant) => (
-                <li class="flex items-center gap-2 px-3 py-2 text-sm">
-                  <Building2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span class="min-w-0 flex-1 truncate" title={tenant.displayName}>
-                    {tenant.displayName}
-                  </span>
-                  <span class="text-[11px] text-muted-foreground">
-                    {hasNoAccess(tenant, props.name) ? 'No access' : 'Has access'}
-                  </span>
-                  <OnOffSwitch
-                    checked={!hasNoAccess(tenant, props.name)}
-                    disabled={busy()}
-                    label={`${tenant.displayName} has access`}
-                    onChange={(on) => void apply([tenant], !on)}
-                  />
-                </li>
-              )}
+              {(tenant) => {
+                const changed = () => hasAccess(tenant) !== hadAccess(tenant);
+                return (
+                  <li class={cn('flex items-center gap-2 px-3 py-2 text-sm', changed() && 'bg-amber-500/5')}>
+                    <Building2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate" title={tenant.displayName}>
+                      {tenant.displayName}
+                    </span>
+                    <span
+                      class={cn(
+                        'inline-flex items-center gap-1 text-[11px]',
+                        changed() ? 'font-medium text-amber-700' : 'text-muted-foreground'
+                      )}
+                    >
+                      <Show when={changed()}>
+                        <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                      </Show>
+                      {accessLabel(hasAccess(tenant), changed())}
+                    </span>
+                    <OnOffSwitch
+                      checked={hasAccess(tenant)}
+                      disabled={saving()}
+                      label={`${tenant.displayName} has access`}
+                      onChange={(on) => draft([tenant], on)}
+                    />
+                  </li>
+                );
+              }}
             </For>
           </ul>
           <Show when={pages.needsPager()}>
             <Pager {...pages.pagerProps()} />
           </Show>
+          <Show when={losing() > 0}>
+            <p class="text-xs text-amber-700">
+              When you save, {organizations(losing())} {losing() === 1 ? 'loses' : 'lose'} access at once: their Agents
+              and Apps stop using <span translate="no">{props.name}</span>.
+            </p>
+          </Show>
         </div>
         <DialogFooter>
-          <Button size="sm" onClick={() => props.onOpenChange(false)}>
-            Done
+          <Button size="sm" variant="outline" disabled={saving()} onClick={() => props.onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button size="sm" disabled={changeCount() === 0} loading={saving()} onClick={() => void save()}>
+            {changeCount() > 1 ? `Save ${changeCount()} changes` : 'Save'}
           </Button>
         </DialogFooter>
-        <ConfirmDialog
-          open={confirmingRemoveAll()}
-          onOpenChange={setConfirmingRemoveAll}
-          title={`Remove access to ${props.name}`}
-          description={`The ${organizations(filtered().length)} shown stop using ${props.name} at once, for Agents and Apps.`}
-          confirmLabel="Remove access"
-          variant="destructive"
-          onConfirm={() => void apply(filtered(), true)}
-        />
       </DialogContent>
     </Dialog>
   );
 }
 
-function NewOrganizationsSwitch(props: { name: string; mode: AvailabilityMode }) {
-  const setMode = useSetAvailabilityMode();
-
-  function change(automatic: boolean) {
-    const mode: AvailabilityMode = automatic ? 'every' : 'chosen';
-    if (mode === props.mode) return;
-    setMode.mutate(
-      { name: props.name, mode },
-      {
-        onSuccess: () =>
-          toast.success(
-            automatic
-              ? `Organizations added later get access to ${props.name} automatically`
-              : `Organizations added later get access to ${props.name} only when you give it`
-          ),
-        onError: (err) => toast.error(errorMessage(err, 'The setting could not be saved')),
-      }
-    );
-  }
-
-  return (
-    <LabelledSwitch
-      checked={props.mode === 'every'}
-      disabled={setMode.isPending}
-      onChange={change}
-      label="Give organizations added later access automatically"
-      hint="Changing this doesn’t change the access of existing organizations."
-    />
-  );
+function accessLabel(hasAccess: boolean, changed: boolean): string {
+  if (changed) return hasAccess ? 'Gets access on save' : 'Loses access on save';
+  return hasAccess ? 'Has access' : 'No access';
 }

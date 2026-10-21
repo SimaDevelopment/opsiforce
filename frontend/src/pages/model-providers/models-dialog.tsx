@@ -11,6 +11,7 @@ import {
 } from '~/api/model-providers';
 import { Info } from '~/components/icons';
 import { Button } from '~/components/ui/button';
+import { Spinner } from '~/components/ui/spinner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
 import { FormError, ModelChoiceField, deploymentsToSend, errorMessage } from './connection-fields';
 import { BASE_FORMAT_LABEL } from './traffic-split';
@@ -135,7 +136,23 @@ export function ModelsDialog(props: {
               </span>
             </div>
           </Show>
-          <Show when={catalog()}>
+          <Show
+            when={catalog()}
+            fallback={
+              <Show
+                when={rules.isError}
+                fallback={
+                  <output class="flex justify-center py-6">
+                    <Spinner label="Loading models…" />
+                  </output>
+                }
+              >
+                <p class="text-xs text-destructive" role="alert">
+                  The models could not be loaded. Close this and try again.
+                </p>
+              </Show>
+            }
+          >
             {(models) => (
               <ModelChoiceField
                 catalog={models()}
