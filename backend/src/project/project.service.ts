@@ -63,6 +63,7 @@ import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { hasRunningPod } from '../project-environment/running-pod';
 import type {
   ExportManifestAppDetails,
   ExportManifestResources,
@@ -1853,6 +1854,8 @@ export class ProjectService implements OnApplicationBootstrap {
 
     if (!updated) {
       this.startupRetries.delete(envId);
+      const current = await this.projectEnvironmentService.findByIdOrNull(envId);
+      if (current && hasRunningPod(current)) return;
       await this.safeDeletePod(podName, `orphan after disable/delete race for environment ${envId}`);
       return;
     }
