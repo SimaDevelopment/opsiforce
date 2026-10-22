@@ -11,6 +11,8 @@ import { ProxyService } from '../proxy/proxy.service';
 import type { PodRequestInit } from '../pod/pod-fetch';
 import { SCHEDULE_QUEUE_NAME, type ScheduleJobData, type ScheduleTrigger } from './schedule.types';
 
+const APP_ANSWER_TIMEOUT_MS = 5 * 60 * 1000;
+
 @Processor(SCHEDULE_QUEUE_NAME)
 export class ScheduleWorker extends WorkerHost {
   private readonly logger = new Logger(ScheduleWorker.name);
@@ -84,6 +86,7 @@ export class ScheduleWorker extends WorkerHost {
           ...extraHeaders,
         },
         ...(hasBody ? { body: JSON.stringify(schedule.body) } : {}),
+        signal: AbortSignal.timeout(APP_ANSWER_TIMEOUT_MS),
       };
 
       const response = await this.proxyService.fetchApp(routingId, schedule.targetPath, fetchOptions);

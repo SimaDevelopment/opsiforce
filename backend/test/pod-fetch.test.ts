@@ -36,6 +36,7 @@ async function appThatRedirects(): Promise<{ url: (path: string) => URL; seen: S
       '/api/legacy': [302, '/api/job/'],
       '/api/elsewhere': [302, 'http://example.org/'],
     };
+    if (request.url === '/api/hang') return;
     const redirect = redirects[request.url ?? ''];
     if (redirect) {
       response.writeHead(redirect[0], { location: redirect[1] });
@@ -98,6 +99,14 @@ describe('calling an App on its pod', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('http://example.org/');
     expect(seen).toHaveLength(1);
+  });
+
+  it("gives up at the caller's deadline when the App never answers", async () => {
+    const { url } = await appThatRedirects();
+
+    await expect(fetchAsLocalhost(url('/api/hang'), { signal: AbortSignal.timeout(50) })).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
   });
 
   it('returns the redirect itself when asked not to follow', async () => {
