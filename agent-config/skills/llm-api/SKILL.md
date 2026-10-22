@@ -34,17 +34,17 @@ const llm = new OpenAI({
 async function ask(params: Omit<OpenAI.Responses.ResponseCreateParamsStreaming, "stream" | "store">) {
   const stream = await llm.responses.create({ ...params, store: false, stream: true })
   let text = ""
-  let output: OpenAI.Responses.ResponseOutputItem[] = []
   for await (const event of stream) {
     if (event.type === "response.output_text.delta") text += event.delta
-    else if (event.type === "response.completed") output = event.response.output
+    else if (event.type === "response.completed") return { text, output: event.response.output }
+    else if (event.type === "response.incomplete") throw new Error(`AI answer cut off: ${event.response.incomplete_details?.reason}`)
     else if (event.type === "response.failed" || event.type === "error") throw new Error(`AI call failed: ${JSON.stringify(event)}`)
   }
-  return { text, output }
+  throw new Error("AI call ended before its answer completed")
 }
 ```
 
-`ask()` reads the events itself and skips the types it doesn't use: the gateway adds events of its own, which the SDK's `llm.responses.stream()` helper rejects. `store: false` keeps nothing on the provider's side; the conversation lives in your code.
+`ask()` reads the events itself and skips the types it doesn't use: the gateway adds events of its own, which the SDK's `llm.responses.stream()` helper rejects. It returns only a completed answer and throws on anything else, so a cut-off or failed call never passes for a full one. `store: false` keeps nothing on the provider's side; the conversation lives in your code.
 
 ## Picking a Model
 
@@ -103,7 +103,7 @@ When in doubt, **start at `"medium"` and raise to `"high"`** if the output is sh
 
 ### Token limit — `max_output_tokens`
 
-Cap output with **`max_output_tokens`**. Reasoning tokens come out of this same budget, so size it generously (`8000`+ at `"high"` effort) or the visible answer gets truncated. With reasoning on, Claude needs **more than 1024**, or the call fails; `4000`–`8000` is safe.
+Cap output with **`max_output_tokens`**. Reasoning tokens come out of this same budget, so size it generously (`8000`+ at `"high"` effort): a call that runs out ends with `response.incomplete` (reason `max_output_tokens`), which `ask()` throws as a cut-off answer. With reasoning on, Claude needs **more than 1024**, or the call fails; `4000`–`8000` is safe.
 
 ## Text Generation
 

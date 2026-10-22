@@ -21,6 +21,9 @@ res.setHeader("Cache-Control", "no-cache")
 for await (const event of stream) {
   if (event.type === "response.output_text.delta") {
     res.write(`data: ${JSON.stringify({ content: event.delta })}\n\n`)
+  } else if (event.type === "response.incomplete") {
+    res.write(`data: ${JSON.stringify({ error: "The answer was cut off" })}\n\n`)
+    break
   } else if (event.type === "response.failed" || event.type === "error") {
     res.write(`data: ${JSON.stringify({ error: "The AI call failed" })}\n\n`)
     break
