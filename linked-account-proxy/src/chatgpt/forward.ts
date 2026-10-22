@@ -4,7 +4,8 @@ import type { CallerAccess } from '../credentials.ts';
 import { isRecord, sendError, sendJson } from '../http.ts';
 import type { JsonRecord } from '../http.ts';
 import { answerFailedOpening, openCodexStream } from './codex.ts';
-import { codexEventsOf } from './sse.ts';
+import { COMPLETION_EVENT_TYPES, FAILURE_EVENT_TYPES, STREAM_ENDED_EARLY, codexEventsOf, failureOf } from './sse.ts';
+import type { StreamFailure } from './sse.ts';
 
 export const SSE_HEADERS = {
   'content-type': 'text/event-stream; charset=utf-8',
@@ -19,17 +20,16 @@ function usesServerReplayState(body: JsonRecord): boolean {
   return body.input.some((item) => isRecord(item) && item.type === 'item_reference' && typeof item.id === 'string');
 }
 
-async function completedResponseOf(stream: ReadableStream<Uint8Array>): Promise<JsonRecord> {
-  let latestResponse: JsonRecord | undefined;
-  let latestError: unknown;
+type BufferedResponse = { kind: 'response'; response: JsonRecord } | ({ kind: 'failure' } & StreamFailure);
+
+async function bufferedResponseOf(stream: ReadableStream<Uint8Array>): Promise<BufferedResponse> {
   for await (const event of codexEventsOf(stream)) {
-    if (event.type === 'error') latestError = event;
-    else if (isRecord(event.response)) latestResponse = event.response;
+    if (FAILURE_EVENT_TYPES.has(event.type)) return { kind: 'failure', ...failureOf(event) };
+    if (COMPLETION_EVENT_TYPES.has(event.type) && isRecord(event.response)) {
+      return { kind: 'response', response: event.response };
+    }
   }
-  if (latestResponse) return latestResponse;
-  throw new Error(
-    `No completed response found in the Codex stream.${latestError ? ` Last error: ${JSON.stringify(latestError)}` : ''}`
-  );
+  return { kind: 'failure', ...STREAM_ENDED_EARLY };
 }
 
 export async function forwardToChatGpt(body: JsonRecord, res: ServerResponse, access: CallerAccess): Promise<void> {
@@ -47,7 +47,9 @@ export async function forwardToChatGpt(body: JsonRecord, res: ServerResponse, ac
     return;
   }
   if (body.stream !== true) {
-    sendJson(res, 200, await completedResponseOf(opening.stream));
+    const buffered = await bufferedResponseOf(opening.stream);
+    if (buffered.kind === 'failure') sendError(res, buffered.status, buffered.error);
+    else sendJson(res, 200, buffered.response);
     return;
   }
   res.writeHead(200, SSE_HEADERS);

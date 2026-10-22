@@ -11,7 +11,7 @@ import { isRecord, sendError, sendJson } from '../http.ts';
 import type { JsonRecord } from '../http.ts';
 import { answerFailedOpening, openCodexStream } from './codex.ts';
 import { SSE_HEADERS } from './forward.ts';
-import { codexEventsOf, statusOfFailure } from './sse.ts';
+import { STREAM_ENDED_EARLY, codexEventsOf, statusOfFailure } from './sse.ts';
 
 async function* chatStepsOf(
   stream: ReadableStream<Uint8Array>,
@@ -22,6 +22,7 @@ async function* chatStepsOf(
     yield step;
     if (step.kind !== 'chunks') return;
   }
+  yield { kind: 'failed', error: STREAM_ENDED_EARLY.error };
 }
 
 const chatEventOf = (payload: unknown): string => `data: ${JSON.stringify(payload)}\n\n`;

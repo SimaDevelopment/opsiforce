@@ -190,7 +190,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
   private async alignRequestTypes(vendor: string, bifrostProvider: string): Promise<void> {
     const spec = this.linkedAccountSpecOf(vendor, bifrostProvider);
     if (!(await this.connections.updateLinkedAccountRequestsIfOutdated(spec))) return;
-    await this.rewriteKeysOfTenantsUsing(bifrostProvider);
+    if (!(await this.rewriteKeysOfTenantsUsing(bifrostProvider))) {
+      await this.keyModels.rewriteEveryTenantsKeysAtNextCatalogCheck();
+      return;
+    }
     this.logger.log(`${bifrostProvider} now takes every request type a Linked account serves`);
   }
 

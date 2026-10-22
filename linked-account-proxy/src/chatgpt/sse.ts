@@ -74,6 +74,7 @@ export async function* codexEventsOf(stream: ReadableStream<Uint8Array>): AsyncG
 
 const PREAMBLE_EVENT_TYPES = new Set(['response.created', 'response.in_progress']);
 export const FAILURE_EVENT_TYPES = new Set(['error', 'response.failed']);
+export const COMPLETION_EVENT_TYPES = new Set(['response.completed', 'response.incomplete']);
 const RATE_LIMIT_SIGNALS = new Set([
   'rate_limit_exceeded',
   'rate_limit_error',
@@ -128,6 +129,15 @@ const EMPTY_COMPLETION: StreamFailure = {
   error: { message: 'ChatGPT completed the response without any output.', type: 'empty_upstream_response' },
 };
 
+export const STREAM_ENDED_EARLY: StreamFailure = {
+  status: 502,
+  error: {
+    message: 'ChatGPT ended the stream before the response completed.',
+    type: 'server_error',
+    code: 'stream_incomplete',
+  },
+};
+
 type StreamOpening = { kind: 'undecided' } | { kind: 'output' } | ({ kind: 'failure' } & StreamFailure);
 
 function openingOf(text: string): StreamOpening {
@@ -167,6 +177,8 @@ export async function holdUntilOutput(body: ReadableStream<Uint8Array>): Promise
     return { kind: 'broken' };
   }
 
+  if (opening.kind === 'undecided') opening = openingOf(`${text}\n\n`);
+  if (opening.kind === 'undecided') return { kind: 'failure', ...STREAM_ENDED_EARLY };
   if (opening.kind === 'failure') {
     await reader.cancel().catch(() => undefined);
     return opening;

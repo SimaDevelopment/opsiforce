@@ -324,6 +324,37 @@ describe('responses', () => {
     expect(await res.json()).toEqual(COMPLETED_RESPONSE);
   });
 
+  it('answers 502 to a caller that does not stream when the stream stops before the response completes', async () => {
+    proxy.upstream.respondWith(respondWithEventStream(CHATGPT_STREAM.slice(0, 2)));
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: { code: 'stream_incomplete' } });
+  });
+
+  it('answers a failure after output with an HTTP error to a caller that does not stream', async () => {
+    proxy.upstream.respondWith(
+      respondWithEventStream([
+        ...CHATGPT_STREAM.slice(0, 2),
+        { event: 'error', data: { type: 'error', error: { type: 'server_error', message: 'Stream broke.' } } },
+      ])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: { type: 'server_error', message: 'Stream broke.' } });
+  });
+
+  it('answers 502 to a stream that ends with only its preamble', async () => {
+    proxy.upstream.respondWith(respondWithEventStream(CHATGPT_STREAM.slice(0, 1)));
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(502);
+  });
+
   it('passes an upstream error through with its status, content type and body text', async () => {
     const upstreamError = '{"detail":"You have hit your usage limit."}';
     proxy.upstream.respondWith((res) => {

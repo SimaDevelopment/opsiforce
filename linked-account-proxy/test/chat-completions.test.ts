@@ -341,6 +341,30 @@ describe('buffered chat completions', () => {
   });
 });
 
+describe('a stream ChatGPT ends early', () => {
+  const CUT_AFTER_DELTA = [event(CREATED), event({ type: 'response.output_text.delta', delta: 'Hel' })];
+
+  it('ends a streaming caller with an error event and no [DONE] when the stream stops after a delta', async () => {
+    proxy.upstream.respondWith(respondWithEventStream(CUT_AFTER_DELTA));
+    const text = await (await sendChat({ model: 'gpt-6.1-sol', messages: QUESTION, stream: true })).text();
+
+    expect(text.includes('[DONE]')).toBe(false);
+    expect(chunksOf(text).at(-1)).toMatchObject({ error: { code: 'stream_incomplete' } });
+  });
+
+  it('answers 502 to a buffered caller cut off after a delta, and to any caller of an empty or preamble-only stream', async () => {
+    proxy.upstream.respondWith(respondWithEventStream(CUT_AFTER_DELTA));
+    const afterDelta = await sendChat({ model: 'gpt-6.1-sol', messages: QUESTION });
+    proxy.upstream.respondWith(respondWithEventStream([event(CREATED)]));
+    const preambleOnly = await sendChat({ model: 'gpt-6.1-sol', messages: QUESTION, stream: true });
+    proxy.upstream.respondWith(respondWithEventStream([]));
+    const empty = await sendChat({ model: 'gpt-6.1-sol', messages: QUESTION });
+
+    expect([afterDelta.status, preambleOnly.status, empty.status]).toEqual([502, 502, 502]);
+    expect(await afterDelta.json()).toMatchObject({ error: { code: 'stream_incomplete' } });
+  });
+});
+
 describe('failures before any output', () => {
   const RATE_LIMITED = [
     event(CREATED),

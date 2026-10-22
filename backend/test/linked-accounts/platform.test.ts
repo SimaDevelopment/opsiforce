@@ -2,11 +2,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
+import { appliedModelCatalog, linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
+import { readModelCatalog } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { LinkedAccountsService } from '../../src/linked-accounts/linked-accounts.service';
+import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
+import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { Perms } from '../../src/permission/permission.constants';
 import { DOCK_BASE_URL, startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { FAKE_USER_CODE, startFakeChatGptAuth, type FakeChatGptAuth } from './support/fake-chatgpt-auth';
@@ -680,6 +683,42 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       expect(updated.allowed_requests).toMatchObject({ image_generation: true, image_edit: true });
       expect(bifrost.providerNamed('custom-openai-1')?.baseUrl).toBe(PROXY_URL);
       expect(callerSecret()).toBe(secret);
+      expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
+        provider: 'custom-openai-1',
+        weight: 1,
+        ...OPENAI_FAMILY,
+      });
+    });
+
+    it('leaves a key rewrite that fails at boot to the catalog check, which then gives the keys the image models', async () => {
+      const admin = await platformAdmin();
+      const projectId = await projectOf(await createTenant(app));
+      await signIn(admin);
+      const keyModels = app.get(ModelProviderKeyModelsService);
+      await db.delete(appliedModelCatalog);
+      await keyModels.rewriteKeysForChangedCatalog(readModelCatalog());
+      const provider = bifrost.providerNamed('custom-openai-1');
+      const written = (provider?.updated ?? provider?.created)?.custom_provider_config as Record<string, unknown>;
+      written.allowed_requests = { ...(written.allowed_requests as Record<string, unknown>), image_generation: false };
+      await app.get(ModelProvidersService).lockAndRewriteKeysOfTenantsUsing('custom-openai-1');
+      const chatKeyHasImageModels = () =>
+        bifrost
+          .chatKeyOf(projectId)
+          .provider_configs.some(
+            (config) => config.provider === 'custom-openai-1' && config.allowed_models?.includes('gpt-image-2')
+          );
+      expect(chatKeyHasImageModels()).toBe(false);
+
+      bifrost.refuseProviderConfigWrites();
+      try {
+        await repointAtBoot();
+      } finally {
+        bifrost.acceptProviderConfigWrites();
+      }
+      const afterFailedBoot = chatKeyHasImageModels();
+      await keyModels.rewriteKeysForChangedCatalog(readModelCatalog());
+
+      expect(afterFailedBoot).toBe(false);
       expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
         provider: 'custom-openai-1',
         weight: 1,

@@ -4,6 +4,7 @@ import { db } from '../../db';
 import { appliedModelCatalog, modelProviders, projectVirtualKeys } from '../../db/schema';
 import { catalogModelIdsOf, readModelCatalog, type ModelCatalog } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
 import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { Perms } from '../../src/permission/permission.constants';
@@ -25,6 +26,7 @@ const NEXT_CATALOG: ModelCatalog = {
   anthropic: { models: { 'claude-opus-6': {} } },
 };
 const NEXT_OPENAI_IDS = ['gpt-7', 'gpt-7-fast', 'gpt-6-astra'];
+const OPENAI_IMAGE_MODELS = BASE_FORMATS.openai.imageModels;
 
 function staleKey(name: string, models: string[]): FakeProviderKey {
   return { id: `${name}-id`, name, value: { value: 'sk-helm', type: 'plain_text' }, models, weight: 1, enabled: true };
@@ -240,7 +242,7 @@ describe('a managed model provider serves the models the catalog lists', () => {
 
       expect(bifrost.providerConfigWritesTo(chatKeyId)).toHaveLength(before);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
-        { servedModels: { openai: OPENAI_CATALOG_IDS, anthropic: expect.any(Array) } },
+        { servedModels: { openai: [...OPENAI_CATALOG_IDS, ...OPENAI_IMAGE_MODELS], anthropic: expect.any(Array) } },
       ]);
     });
 
@@ -257,7 +259,7 @@ describe('a managed model provider serves the models the catalog lists', () => {
       expect(afterChange).toBeGreaterThan(before);
       expect(writes()).toBe(afterChange);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
-        { servedModels: { openai: NEXT_OPENAI_IDS, anthropic: ['claude-opus-6'] } },
+        { servedModels: { openai: [...NEXT_OPENAI_IDS, ...OPENAI_IMAGE_MODELS], anthropic: ['claude-opus-6'] } },
       ]);
     });
 
@@ -271,9 +273,11 @@ describe('a managed model provider serves the models the catalog lists', () => {
       const stillOld = await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog);
       await applyToKeys(NEXT_CATALOG);
 
-      expect(stillOld).toEqual([{ servedModels: { openai: OPENAI_CATALOG_IDS, anthropic: expect.any(Array) } }]);
+      expect(stillOld).toEqual([
+        { servedModels: { openai: [...OPENAI_CATALOG_IDS, ...OPENAI_IMAGE_MODELS], anthropic: expect.any(Array) } },
+      ]);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
-        { servedModels: { openai: NEXT_OPENAI_IDS, anthropic: ['claude-opus-6'] } },
+        { servedModels: { openai: [...NEXT_OPENAI_IDS, ...OPENAI_IMAGE_MODELS], anthropic: ['claude-opus-6'] } },
       ]);
     });
   });
