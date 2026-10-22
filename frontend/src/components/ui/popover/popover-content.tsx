@@ -8,7 +8,7 @@ export function PopoverContent(props: ParentProps<ComponentProps<typeof Kobalte.
     <Kobalte.Portal>
       <Kobalte.Content
         class={cn(
-          'z-50 w-72 origin-[var(--kb-popover-content-transform-origin)] rounded-lg border border-border bg-popover text-popover-foreground shadow-xl outline-none',
+          'z-50 w-72 max-w-[calc(100vw-1rem)] origin-[var(--kb-popover-content-transform-origin)] rounded-lg border border-border bg-popover text-popover-foreground shadow-xl outline-none',
           'animate-in fade-in-0 zoom-in-95 data-[closed]:animate-out data-[closed]:fade-out-0 data-[closed]:zoom-out-95',
           local.class
         )}

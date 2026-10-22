@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { IntegrationInfo } from "@opencode-ai/client"
+import type { IntegrationInfo } from "@opencode/client"
 import {
   connectionSummary,
   connectMethods,
@@ -21,8 +21,10 @@ describe("integrationOptions", () => {
         integration({ id: "openai", name: "OpenAI" }),
         integration({ id: "custom-z", name: "Zebra" }),
         integration({ id: "anthropic", name: "Anthropic" }),
+        integration({ id: "opencode", name: "OpenCode Zen" }),
+        integration({ id: "opencode-go", name: "OpenCode Go" }),
       ]).map((item) => item.id),
-    ).toEqual(["openai", "anthropic", "mistral", "custom-z"])
+    ).toEqual(["opencode-go", "opencode", "openai", "anthropic", "mistral", "custom-z"])
   })
 
   test("keeps MCP integrations above popular integrations without relying on their IDs", () => {
@@ -31,8 +33,10 @@ describe("integrationOptions", () => {
         integration({ id: "openai", name: "OpenAI" }),
         integration({ id: "linear", name: "Linear", metadata: { source: "mcp" } }),
         integration({ id: "github", name: "GitHub", metadata: { source: "mcp" } }),
+        integration({ id: "opencode", name: "OpenCode Zen" }),
+        integration({ id: "opencode-go", name: "OpenCode Go" }),
       ]).map((item) => item.id),
-    ).toEqual(["github", "linear", "openai"])
+    ).toEqual(["github", "linear", "opencode-go", "opencode", "openai"])
   })
 })
 
@@ -63,27 +67,27 @@ describe("credentialConnections", () => {
           name: "Example",
           connections: [
             { type: "env", name: "EXAMPLE_KEY" },
-            { type: "credential", id: "cred_1", label: "Work" },
+            { type: "credential", method: "key", id: "cred_1", label: "Work" },
           ],
         }),
       ),
-    ).toEqual([{ type: "credential", id: "cred_1", label: "Work" }])
+    ).toEqual([{ type: "credential", method: "key", id: "cred_1", label: "Work" }])
   })
 })
 
 describe("connectionSummary", () => {
-  test("shows credential labels and environment variables", () => {
+  test("counts several connections", () => {
     expect(
       connectionSummary(
         integration({
           id: "example",
           name: "Example",
           connections: [
-            { type: "credential", id: "cred_1", label: "Work" },
+            { type: "credential", method: "key", id: "cred_1", label: "Work" },
             { type: "env", name: "EXAMPLE_KEY" },
           ],
         }),
       ),
-    ).toBe("Work, $EXAMPLE_KEY")
+    ).toBe("2 connections")
   })
 })

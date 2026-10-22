@@ -1,52 +1,69 @@
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, rm, statfs } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { mkdir, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { HttpException, Injectable } from '@nestjs/common';
 import type yauzl from 'yauzl';
 import { ConfigService } from '@nestjs/config';
 import { hashSkillTree, SkillArchiveError, unpackSkill, type SkillTree } from '../store/gate';
 import { MAX_TREE_BYTES } from '../store/gate/skill-tree';
 import { SkillPublishService, manifestSourceRef } from '../store/skill-publish.service';
+import { ServiceSkillAvailability } from '../store/service-skill-availability';
+import {
+  isAgentServiceSettings,
+  keptServiceSettings,
+  ServiceSwitchCatalog,
+  settingsWithinGrants,
+} from '../store/service-switch-catalog';
+import { isReservedForServiceSkills } from '../store/service-skill-names';
 import { reservedSkillNames } from '../store/skill-reconciler.service';
 import { SkillRepository } from '../store/skill.repository';
+import { replacementOf, type SkillReplacement } from '../store/skills-replaced-by-services';
 import { canEditSkill, type SkillRow } from '../store/skill-visibility';
 import { scanTemplateSource } from '../agent-template/template-source';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { importsRootPath } from '../project/project-import.types';
-import { EXECUTABLE_FILE_MODE } from '../common/fs';
+import type { AgentServiceSettings } from '../../db/schema';
 import type { DbExecutor } from '../common/locks';
 import {
   collectEntries,
-  entryMode,
-  isSymlinkMode,
+  fitsOnVolume,
   openZip,
   readEntry,
   readNamedEntry,
-  writeEntryToFile,
+  writeConfinedEntry,
 } from '../common/zip-reader';
 import { assertModelSelection } from './agent-models';
 import { defaultProfileModel } from './agent-config';
 import { AgentBundleWriter } from './agent-bundle.writer';
 import type { AgentBundle, AgentBundleProfile, SkillPin } from './agent-bundle';
+import { EXPORT_MANIFEST_FILE, exportFormatUnsupported, wrongExportKind } from '../export/export-manifest';
 import {
   AGENT_EXPORT_FORMAT_VERSION,
   AGENT_EXPORT_KIND,
-  AGENT_EXPORT_MANIFEST,
   AGENT_EXPORT_SKILLS_DIR,
   AGENT_EXPORT_TEMPLATE_DIR,
   type AgentExportManifest,
   type AgentExportManifestSkill,
 } from './agent-export';
 import {
-  exportFormatUnsupported,
   importRefused,
   notAnAgentExport,
+  serviceSettingsLeftOut,
+  type AgentImportInspection,
   type AgentImportNote,
   type AgentImportProblem,
   type AgentImportResult,
 } from './agent-import';
 import { AgentService } from './agent.service';
-import type { AgentCaller } from './agent.types';
+import type { AgentCaller, AgentCopyGrants } from './agent.types';
+import {
+  DEFAULT_AGENT_PROJECT_SETTINGS,
+  settingsForCopy,
+  type AgentProjectSettings,
+  type AgentProjectSettingsChoice,
+} from './agent-copy-settings';
+import { MAX_WARM_POOL_SIZE } from './agent-pod-settings';
+import { podSettingsFromRequest } from '../pod/pod-class-request';
 
 const TEMPLATE_PREFIX = `${AGENT_EXPORT_TEMPLATE_DIR}/`;
 const SKILLS_PREFIX = `${AGENT_EXPORT_SKILLS_DIR}/`;
@@ -62,7 +79,13 @@ interface ArchiveContents {
 
 type SkillWrite = { name: string; tree: SkillTree } & ({ into: 'new' } | { into: 'existing'; skill: SkillRow });
 
+export interface AgentImportRequest {
+  displayName: string | null;
+  projectSettings: AgentProjectSettingsChoice;
+}
+
 interface ImportPlan {
+  grants: AgentCopyGrants;
   displayName: string;
   bundle: AgentBundle;
   pins: SkillPin[];
@@ -81,12 +104,19 @@ export class AgentImportService {
     private readonly writer: AgentBundleWriter,
     private readonly templates: AgentTemplateStore,
     private readonly skillRepository: SkillRepository,
-    private readonly skillPublish: SkillPublishService
+    private readonly skillPublish: SkillPublishService,
+    private readonly serviceSkillAvailability: ServiceSkillAvailability,
+    private readonly serviceSwitches: ServiceSwitchCatalog
   ) {
     this.importsRoot = importsRootPath(configService.getOrThrow<string>('storageMountPath'));
   }
 
-  async import(caller: AgentCaller, archivePath: string, displayName: string | null): Promise<AgentImportResult> {
+  async import(
+    caller: AgentCaller,
+    archivePath: string,
+    request: AgentImportRequest,
+    grants: AgentCopyGrants
+  ): Promise<AgentImportResult> {
     const manifest = await readAgentManifest(archivePath);
     const workDir = join(this.importsRoot, `.agent-import-${randomUUID()}`);
     try {
@@ -95,7 +125,7 @@ export class AgentImportService {
         join(workDir, AGENT_EXPORT_TEMPLATE_DIR),
         customSkillNames(manifest)
       );
-      const plan = await this.resolve(caller, manifest, contents, displayName);
+      const plan = await this.resolve(caller, manifest, contents, request, grants);
       if (plan.problems.length > 0) throw importRefused(plan.problems, nameFromFile(manifest));
 
       const agentId = await this.writer.write(caller, {
@@ -104,29 +134,42 @@ export class AgentImportService {
         pins: plan.pins,
         writeSkills: (tx) => this.writeSkills(caller, plan.skillWrites, tx),
       });
+      if (plan.bundle.projectSettings.warmPoolSize > 0) await this.agents.reconcilePool(agentId);
       return { agent: await this.agents.findOne(caller, agentId), notes: plan.notes };
     } finally {
       await rm(workDir, { recursive: true, force: true });
     }
   }
 
+  async inspect(archivePath: string): Promise<AgentImportInspection> {
+    const manifest = await readAgentManifest(archivePath);
+    return {
+      displayName: manifest.agent.displayName,
+      slug: manifest.agent.slug,
+      projectSettings: manifestProjectSettings(manifest),
+      maxWarmPoolSize: MAX_WARM_POOL_SIZE,
+    };
+  }
+
   private async resolve(
     caller: AgentCaller,
     manifest: AgentExportManifest,
     contents: ArchiveContents,
-    requestedName: string | null
+    request: AgentImportRequest,
+    grants: AgentCopyGrants
   ): Promise<ImportPlan> {
     const plan: ImportPlan = {
-      displayName: requestedName?.trim() || nameFromFile(manifest),
+      grants,
+      displayName: request.displayName?.trim() || nameFromFile(manifest),
       bundle: {
         identity: {
           displayName: manifest.agent.displayName,
           description: manifest.agent.description,
-          platformApi: manifest.agent.platformApi === true,
         },
         profile: manifest.profile,
         skills: [],
         template: null,
+        projectSettings: settingsForCopy(manifestProjectSettings(manifest), request.projectSettings),
       },
       pins: [],
       skillWrites: [],
@@ -136,9 +179,13 @@ export class AgentImportService {
 
     await this.resolveName(caller, plan);
     resolveModel(plan);
+    const carriedNames = new Set(manifest.skills.map((skill) => skill.name));
     for (const skill of manifest.skills) {
       if (skill.origin === 'custom' && contents.skillPacksTooLarge) continue;
-      await this.resolveSkill(caller, skill, contents.skillPacks, plan);
+      // TODO: remove in the release after External Services v2 ships: maps v1 skill pins in older exports, a no-op once every deployment has booted it
+      const replaced = skill.origin === 'built_in' ? replacementOf(skill.name) : undefined;
+      if (replaced) await this.resolveReplacedSkill(caller, replaced, carriedNames.has(replaced.replacement), plan);
+      else await this.resolveSkill(caller, skill, contents.skillPacks, plan);
     }
     if (!contents.problems.some((problem) => problem.kind === 'template')) {
       await this.resolveTemplate(manifest, contents.templateDir, plan);
@@ -162,11 +209,92 @@ export class AgentImportService {
     plan: ImportPlan
   ): Promise<void> {
     if (skill.origin === 'built_in') await this.resolveBuiltInSkill(skill, plan);
+    else if (skill.origin === 'service') await this.resolveServiceSkill(caller, skill, plan);
     else await this.resolveCustomSkill(caller, skill, packs.get(skill.name), plan);
+  }
+
+  // TODO: remove in the release after External Services v2 ships: maps v1 skill pins in older exports, a no-op once every deployment has booted it
+  private async resolveReplacedSkill(
+    caller: AgentCaller,
+    replaced: SkillReplacement,
+    replacementCarried: boolean,
+    plan: ImportPlan
+  ): Promise<void> {
+    if (replacementCarried) {
+      plan.notes.push({
+        kind: 'skill',
+        name: replaced.retired,
+        message: `Left out the retired Skill \`${replaced.retired}\`: the Agent already carries its replacement \`${replaced.replacement}\``,
+      });
+      return;
+    }
+    plan.notes.push({
+      kind: 'skill',
+      name: replaced.retired,
+      message: `The Skill \`${replaced.retired}\` is retired, so the Agent carries the Service skill \`${replaced.replacement}\` in its place`,
+    });
+    await this.resolveServiceSkill(caller, { name: replaced.replacement, origin: 'service', contentHash: '' }, plan);
+  }
+
+  private async resolveServiceSkill(
+    caller: AgentCaller,
+    skill: AgentExportManifestSkill,
+    plan: ImportPlan
+  ): Promise<void> {
+    const found = await this.skillRepository.serviceSkillNamed(caller.tenantId, skill.name);
+    const available = found
+      ? (await this.serviceSkillAvailability.availableServiceIds(caller.tenantId)).has(found.externalServiceId)
+      : false;
+    if (!found?.latestVersionId || !available) {
+      const carried = skill.serviceSettings ? ' and its service settings' : '';
+      plan.notes.push({
+        kind: 'skill',
+        name: skill.name,
+        message: `Left out the Service skill \`${skill.name}\`${carried}: its External Service isn't available here`,
+      });
+      return;
+    }
+    const serviceSettings = skill.serviceSettings
+      ? await this.serviceSettingsHere(caller, skill.name, found.externalServiceId, skill.serviceSettings, plan)
+      : null;
+    plan.pins.push({ skillId: found.id, skillVersionId: found.latestVersionId, serviceSettings });
+  }
+
+  private async serviceSettingsHere(
+    caller: AgentCaller,
+    skillName: string,
+    externalServiceId: string,
+    settings: AgentServiceSettings,
+    plan: ImportPlan
+  ): Promise<AgentServiceSettings | null> {
+    const service = await this.serviceSwitches.availableService(caller.tenantId, externalServiceId);
+    if (!service) return null;
+    const kept = keptServiceSettings(service.manifest, settings);
+    if (kept.dropped.length > 0) {
+      plan.notes.push({
+        kind: 'skill',
+        name: skillName,
+        message: `Left ${kept.dropped.map((name) => `\`${name}\``).join(', ')} out of the service settings of \`${skillName}\`: the External Service here doesn't have them`,
+      });
+    }
+    if (!kept.settings) return null;
+    const granted = settingsWithinGrants(service.manifest, kept.settings, plan.grants);
+    if (granted.dropped.length > 0) {
+      plan.notes.push(serviceSettingsLeftOut(skillName));
+    }
+    return granted.settings;
   }
 
   private async resolveBuiltInSkill(skill: AgentExportManifestSkill, plan: ImportPlan): Promise<void> {
     const [shipped] = await this.skillRepository.builtInLatestVersions([skill.name]);
+    if (!shipped && (await this.skillRepository.retiredBuiltInNames()).has(skill.name)) {
+      plan.notes.push({
+        kind: 'skill',
+        name: skill.name,
+        message: `Left out the Built-in Skill \`${skill.name}\`: it is retired here`,
+      });
+      return;
+    }
     if (!shipped) {
       plan.problems.push({
         kind: 'skill',
@@ -195,7 +323,8 @@ export class AgentImportService {
   ): Promise<void> {
     const refuse = (message: string) => plan.problems.push({ kind: 'skill', name: skill.name, message });
 
-    if (reservedSkillNames().has(skill.name)) return void refuse(`\`${skill.name}\` is a reserved Skill name here`);
+    if (reservedSkillNames().has(skill.name) || isReservedForServiceSkills(skill.name))
+      return void refuse(`\`${skill.name}\` is a reserved Skill name here`);
     if (!pack) return void refuse(`The file doesn't carry \`${skill.name}\`'s Skill pack`);
 
     let tree: SkillTree;
@@ -326,7 +455,7 @@ async function readAgentManifest(archivePath: string): Promise<AgentExportManife
   try {
     const zip = await openZip(archivePath);
     try {
-      const buffer = await readNamedEntry(zip, AGENT_EXPORT_MANIFEST);
+      const buffer = await readNamedEntry(zip, EXPORT_MANIFEST_FILE);
       if (!buffer) throw notAnAgentExport("The file isn't an export: it has no manifest.json");
       parsed = JSON.parse(buffer.toString('utf8'));
     } finally {
@@ -343,13 +472,8 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
   if (typeof parsed !== 'object' || parsed === null) throw notAnAgentExport('manifest.json is malformed');
   const manifest = parsed as Partial<AgentExportManifest> & { kind?: unknown };
 
-  if (manifest.kind !== AGENT_EXPORT_KIND) {
-    throw notAnAgentExport(
-      manifest.kind === undefined || manifest.kind === 'project'
-        ? 'This is a Project export; import it from Projects'
-        : `This is a \`${String(manifest.kind)}\` export, not an Agent export`
-    );
-  }
+  const wrongKind = wrongExportKind(manifest, AGENT_EXPORT_KIND);
+  if (wrongKind) throw notAnAgentExport(wrongKind);
 
   const version = manifest.stamp?.exportFormatVersion;
   if (typeof version !== 'number') throw notAnAgentExport('manifest.json has no exportFormatVersion');
@@ -360,7 +484,6 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
     typeof agent?.slug === 'string' &&
     isOptionalString(agent.displayName) &&
     isOptionalString(agent.description) &&
-    (agent.platformApi === undefined || typeof agent.platformApi === 'boolean') &&
     typeof profile?.promptBody === 'string' &&
     typeof profile.model === 'string' &&
     (profile.variant === null || typeof profile.variant === 'string') &&
@@ -369,23 +492,38 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
       (skill) =>
         typeof skill?.name === 'string' &&
         typeof skill.contentHash === 'string' &&
-        (skill.origin === 'built_in' || skill.origin === 'custom')
+        (skill.origin === 'built_in' || skill.origin === 'custom' || skill.origin === 'service') &&
+        (skill.serviceSettings === undefined || isAgentServiceSettings(skill.serviceSettings))
     ) &&
-    (template === null || typeof template?.hash === 'string');
+    (template === null || typeof template?.hash === 'string') &&
+    (manifest.projectSettings === undefined || isAgentProjectSettings(manifest.projectSettings));
   if (!wellFormed) throw notAnAgentExport('manifest.json is malformed');
   return manifest as AgentExportManifest;
 }
 
-function isOptionalString(value: unknown): boolean {
-  return value === undefined || value === null || typeof value === 'string';
+function isAgentProjectSettings(value: unknown): boolean {
+  const settings = value as Partial<AgentProjectSettings> | null;
+  const resources = settings?.resources;
+  return (
+    typeof settings?.warmPoolSize === 'number' &&
+    typeof resources?.podClass === 'string' &&
+    typeof resources.cpuMillicores === 'number' &&
+    typeof resources.memoryRequestMib === 'number' &&
+    typeof resources.memoryLimitMib === 'number'
+  );
 }
 
-async function fitsOnVolume(root: string, entries: yauzl.Entry[]): Promise<boolean> {
-  const declared = entries
-    .filter((entry) => entry.fileName.startsWith(TEMPLATE_PREFIX))
-    .reduce((total, entry) => total + entry.uncompressedSize, 0);
-  const volume = await statfs(root);
-  return declared <= volume.bavail * volume.bsize - FREE_SPACE_RESERVE_BYTES;
+function manifestProjectSettings(manifest: AgentExportManifest): AgentProjectSettings {
+  const carried = manifest.projectSettings;
+  if (!carried) return DEFAULT_AGENT_PROJECT_SETTINGS;
+  return {
+    resources: podSettingsFromRequest(carried.resources),
+    warmPoolSize: Math.min(Math.max(Math.trunc(carried.warmPoolSize), 0), MAX_WARM_POOL_SIZE),
+  };
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
 }
 
 function customSkillNames(manifest: AgentExportManifest): Set<string> {
@@ -409,7 +547,7 @@ async function extractArchive(
   const zip = await openZip(archivePath);
   try {
     const entries = await collectEntries(zip);
-    const templateFits = await fitsOnVolume(root, entries);
+    const templateFits = await fitsOnVolume(root, entries, TEMPLATE_PREFIX, FREE_SPACE_RESERVE_BYTES);
     if (!templateFits) {
       contents.problems.push({
         kind: 'template',
@@ -441,19 +579,13 @@ async function extractArchive(
 
       if (!templateFits || !entry.fileName.startsWith(TEMPLATE_PREFIX)) continue;
       const relative = entry.fileName.slice(TEMPLATE_PREFIX.length);
-      const target = resolve(root, relative);
-      const mode = entryMode(entry);
-      if (!target.startsWith(root + sep) || isSymlinkMode(mode)) {
+      if (!(await writeConfinedEntry(zip, entry, root, relative))) {
         contents.problems.push({
           kind: 'template',
           path: relative,
           message: `template/${relative}: only regular files inside template/ can be imported`,
         });
-        continue;
       }
-      await mkdir(dirname(target), { recursive: true });
-      await writeEntryToFile(zip, entry, target);
-      if (mode & 0o111) await chmod(target, EXECUTABLE_FILE_MODE);
     }
   } catch (error) {
     if (error instanceof HttpException) throw error;

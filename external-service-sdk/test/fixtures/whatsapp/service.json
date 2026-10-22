@@ -1,0 +1,99 @@
+{
+  "sdk": 2,
+  "displayName": "WhatsApp",
+  "description": "Receive WhatsApp messages on the numbers your Organization connects.",
+  "inbound": true,
+  "serviceForm": [
+    {
+      "key": "apiUrl",
+      "type": "text",
+      "label": "Whapi API URL",
+      "default": "https://gate.whapi.cloud",
+      "validate": {
+        "format": "url"
+      }
+    },
+    {
+      "key": "channels",
+      "type": "list",
+      "label": "Numbers",
+      "item": [
+        {
+          "key": "channelId",
+          "type": "text",
+          "label": "Channel id",
+          "required": true
+        },
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "required": true
+        },
+        {
+          "key": "apiToken",
+          "type": "secret",
+          "label": "API token",
+          "required": true
+        },
+        {
+          "key": "webhookSecret",
+          "type": "secret",
+          "label": "Webhook secret",
+          "generate": {
+            "bytes": 32
+          }
+        },
+        {
+          "key": "webhookStatus",
+          "type": "info",
+          "label": "Webhook",
+          "call": "webhookStatus"
+        },
+        {
+          "key": "qr",
+          "type": "button",
+          "label": "Show QR code",
+          "call": "showQr"
+        }
+      ]
+    }
+  ],
+  "projectForm": [
+    {
+      "key": "channels",
+      "type": "list",
+      "label": "Numbers",
+      "item": [
+        {
+          "key": "channel",
+          "type": "select",
+          "label": "Number",
+          "required": true,
+          "options": {
+            "serviceConfiguration": "channels",
+            "labelKey": "label"
+          }
+        },
+        {
+          "key": "chats",
+          "type": "multiselect",
+          "label": "Chats",
+          "options": {
+            "call": "listChats",
+            "dependsOn": [
+              "channel"
+            ],
+            "searchable": true
+          }
+        }
+      ]
+    }
+  ],
+  "events": {
+    "message.received": {
+      "title": "Message received",
+      "description": "A WhatsApp message arrived in an allowed chat."
+    }
+  }
+}

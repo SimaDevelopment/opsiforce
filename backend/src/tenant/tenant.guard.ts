@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { TenantService } from './tenant.service';
 import { TenantAccessDeniedException } from './tenant-access-denied.exception';
-import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
+import { podCredentialOf } from '../public-api/auth/gateway-bearer';
 import {
   IS_PLATFORM_SCOPE_KEY,
   IS_PUBLIC_KEY,
@@ -33,7 +33,7 @@ export class TenantGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (resolvesOwnTenant && gatewayBearerOf(request.headers)) return true;
+    if (resolvesOwnTenant && podCredentialOf(request.headers)) return true;
 
     const isPlatformScope = this.reflector.getAllAndOverride<boolean>(IS_PLATFORM_SCOPE_KEY, [
       context.getHandler(),

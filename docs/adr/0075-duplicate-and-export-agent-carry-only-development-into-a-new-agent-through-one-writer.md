@@ -9,13 +9,14 @@ An Organization copies an Agent to re-brand it or build on it, and moves a Custo
 | Part | In the new Agent |
 |---|---|
 | Display name | the name typed by whoever copies it; the slug is derived from it again |
-| Description, `platform_api` | copied |
+| Description | copied |
 | Development Profile: prompt body, model, variant | copied |
 | Skill pins (Skill and Version) | copied, resolved in the target, `platform` like any other; `platform` is added at its current Version only when the source pins none |
 | Development Template | written again under `agent-templates/<newId>/`, with the same content hash |
 | Builder chat, Test Project | never; the first open claims a fresh chat, and the first test creates the Test Project |
 | Default environment (Agent) | Production, with no Production Profile |
-| Visibility, Disable state, `pool_size`, `created_by`, other Environments | private, enabled, 0, the person copying, none |
+| Resources and Ready Projects for new Projects | the source's unless the person copying chooses others ([ADR-0093](0093-an-agent-sets-the-resources-and-ready-projects-of-the-projects-created-from-it.md)) |
+| Visibility, Disable state, `created_by`, other Environments | private, enabled, the person copying, none |
 
 - The new Agent is the same as one made with New agent. It reaches the Agent picker after its first Publish (Agent), and nothing here publishes.
 - Its first Builder chat opens with the Template already in `template/` ([ADR-0073](0073-a-custom-agents-template-is-a-folder-per-environment-copied-into-every-new-project.md)).
@@ -54,7 +55,7 @@ Duplicate accepts App Builder and Makara App Builder. The copy is a Custom Agent
 ```
 manifest.json      { kind: "agent",
                      stamp{exportFormatVersion: 1, platformVersion, agentImageVersion, arch},
-                     agent{displayName, slug, description, platformApi},
+                     agent{displayName, slug, description},
                      profile{promptBody, model, variant},
                      skills[{name, origin: built_in|custom, contentHash, file?: "skills/<name>.zip"}],
                      template{hash} | null }

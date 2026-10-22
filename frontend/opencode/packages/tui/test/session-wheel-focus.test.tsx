@@ -2,13 +2,16 @@ import { expect, test } from "bun:test"
 import { BoxRenderable, EmbeddedTerminalRenderable, type Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 
-test.each([80, 120, 180])("session wheel scrolling preserves pane focus at width %s", async (width) => {
+test
+  .skipIf(process.platform === "win32")
+  .each([80, 120, 180])("session wheel scrolling preserves pane focus at width %s", async (width) => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width, height: 36, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width, height: 36, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   const session = {
     id: "ses_wheel",
@@ -76,7 +79,7 @@ test.each([80, 120, 180])("session wheel scrolling preserves pane focus at width
       app: { name: "test", version: "test", channel: "test" },
       server: { endpoint: { url: server.url.toString() } },
       config: {
-        get: async () => ({ animations: false, session: { terminal: true }, tabs: { enabled: false } }),
+        get: async () => ({ animations: false, tabs: { mode: "off" } }),
         update: async () => ({}),
       },
       packages: { prepare: async () => ({ directory: "" }) },

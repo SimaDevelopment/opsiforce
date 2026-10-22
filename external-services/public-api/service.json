@@ -1,0 +1,58 @@
+{
+  "sdk": 2,
+  "displayName": "Opsiforce Public API",
+  "description": "Manage this Organization's Agents, Skills and Projects as the human who created the calling Project.",
+  "projectForm": [
+    {
+      "key": "reads",
+      "type": "info",
+      "label": "Always allowed",
+      "text": "Reading the Agents and Skills this Project's creator can see, and the Projects this Project created."
+    },
+    {
+      "key": "authorSkillsAndAgents",
+      "type": "toggle",
+      "label": "Edit Agents and Skills",
+      "help": "Create and update Skills, and change an Agent's instructions, model, starting files and Skills. Only the Agents and Skills this Project created, or the one its Builder chat is building.",
+      "default": false
+    },
+    {
+      "key": "createAgents",
+      "type": "toggle",
+      "label": "Create Agents",
+      "help": "New Agents are private to this Project's creator.",
+      "default": false
+    },
+    {
+      "key": "createProjects",
+      "type": "toggle",
+      "label": "Create Projects",
+      "default": false
+    },
+    {
+      "key": "maxCreatedProjects",
+      "type": "number",
+      "label": "Created Projects limit",
+      "help": "Counts every Project this Project created that still exists, disabled and test Projects included. Deleting one frees a slot.",
+      "default": 5,
+      "min": 0,
+      "max": 100,
+      "integer": true,
+      "visibleWhen": { "field": "createProjects", "truthy": true }
+    },
+    {
+      "key": "driveCreatedProjects",
+      "type": "toggle",
+      "label": "Manage created Projects",
+      "help": "Open, restart, update and reset the Projects this Project created.",
+      "default": false
+    },
+    {
+      "key": "deleteCreatedProjects",
+      "type": "toggle",
+      "label": "Delete created Projects",
+      "help": "Only the Projects this Project created.",
+      "default": false
+    }
+  ]
+}

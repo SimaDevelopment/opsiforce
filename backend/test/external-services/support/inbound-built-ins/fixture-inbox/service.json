@@ -1,0 +1,14 @@
+{
+  "sdk": 2,
+  "displayName": "Fixture Inbox",
+  "description": "A pretend message provider whose webhooks the backend tests send.",
+  "inbound": true,
+  "serviceForm": [{ "key": "signingKey", "type": "secret", "label": "Signing key", "required": true }],
+  "projectForm": [{ "key": "address", "type": "text", "label": "Address" }],
+  "events": {
+    "message.received": {
+      "title": "Message received",
+      "description": "A message arrived at the Project's address."
+    }
+  }
+}

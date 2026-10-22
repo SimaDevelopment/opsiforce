@@ -1,24 +1,30 @@
 import { EventStreamCodec } from "@smithy/eventstream-codec"
 import { fromUtf8, toUtf8 } from "@smithy/util-utf8"
 import { describe, expect } from "bun:test"
-import { Effect, Encoding, Ref, Stream } from "effect"
+import { Effect, Ref, Schema, Stream } from "effect"
+import { Base64 } from "effect/encoding"
+import { HttpClientRequest } from "effect/http"
 import {
+  Media,
   CacheHint,
   GenerationOptions,
+  type LanguageModel,
   LLM,
   LLMEvent,
   LLMRequest,
   Message,
+  Tool,
   ToolCallPart,
   ToolChoice,
   ToolDefinition,
+  ToolRuntime,
 } from "../../src/index.js"
 import { LLMClient } from "../../src/route.js"
 import { compileRequest } from "../../src/route/client.js"
 import { AmazonBedrock } from "../../src/providers.js"
-import * as BedrockConverse from "../../src/protocols/bedrock-converse.js"
 import { it } from "../lib/effect.js"
-import { fixedResponse } from "../lib/http.js"
+import { withProcessEnv } from "../lib/env.js"
+import { dynamicResponse, fixedResponse } from "../lib/http.js"
 import {
   eventSummary,
   expectWeatherToolLoop,
@@ -95,10 +101,45 @@ const fixedByteChunks = (...chunks: ReadonlyArray<Uint8Array>) =>
     { headers: { "content-type": "application/vnd.amazon.eventstream" } },
   )
 
+// Clears every input the AWS default chain reads so tests do not pick up the
+// developer's profiles, SSO cache, or instance metadata.
+const noAmbientAWS = {
+  AWS_ACCESS_KEY_ID: undefined,
+  AWS_SECRET_ACCESS_KEY: undefined,
+  AWS_SESSION_TOKEN: undefined,
+  AWS_BEARER_TOKEN_BEDROCK: undefined,
+  AWS_PROFILE: undefined,
+  AWS_REGION: undefined,
+  AWS_DEFAULT_REGION: undefined,
+  AWS_WEB_IDENTITY_TOKEN_FILE: undefined,
+  AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: undefined,
+  AWS_CONTAINER_CREDENTIALS_FULL_URI: undefined,
+  AWS_EC2_METADATA_DISABLED: "true",
+}
+
+const captureHeaders = (target: LanguageModel) =>
+  Effect.gen(function* () {
+    const seen: Array<Headers> = []
+    yield* LLMClient.generate(LLMRequest.update(baseRequest, { model: target })).pipe(
+      Effect.provide(
+        dynamicResponse((input) =>
+          Effect.gen(function* () {
+            const request = yield* HttpClientRequest.toWeb(input.request)
+            seen.push(request.headers)
+            return input.respond(eventStreamBody(["messageStop", { stopReason: "end_turn" }]), {
+              headers: { "content-type": "application/vnd.amazon.eventstream" },
+            })
+          }),
+        ),
+      ),
+    )
+    return seen[0]!
+  })
+
 const model = AmazonBedrock.configure({
   baseURL: "https://bedrock-runtime.test",
   apiKey: "test-bearer",
-}).model("anthropic.claude-3-5-sonnet-20240620-v1:0")
+}).model("anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 const baseRequest = LLM.request({
   id: "req_1",
@@ -117,7 +158,7 @@ describe("Bedrock Converse route", () => {
       const prepared = yield* compileRequest(baseRequest)
 
       expect(prepared.body).toEqual({
-        modelId: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
         system: [{ text: "You are concise." }],
         messages: [{ role: "user", content: [{ text: "Say hello." }] }],
         inferenceConfig: { maxTokens: 64, temperature: 0 },
@@ -184,6 +225,48 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
+  it.effect("omits maxTokens only for Nova 2 at high reasoning effort", () =>
+    Effect.gen(function* () {
+      const inferenceConfig = (modelID: string, maxReasoningEffort: string) =>
+        compileRequest(
+          LLMRequest.update(baseRequest, {
+            model: AmazonBedrock.model(modelID, {
+              baseURL: "https://bedrock-runtime.test",
+              apiKey: "test-bearer",
+              body: { additionalModelRequestFields: { reasoningConfig: { type: "enabled", maxReasoningEffort } } },
+            }),
+          }),
+        ).pipe(Effect.map((prepared) => prepared.body.inferenceConfig))
+
+      expect(yield* inferenceConfig("us.amazon.nova-2-lite-v1:0", "high")).toEqual({ temperature: 0 })
+      expect(yield* inferenceConfig("us.amazon.nova-2-lite-v1:0", "low")).toEqual({ maxTokens: 64, temperature: 0 })
+      expect(yield* inferenceConfig("us.xai.grok-4.6", "high")).toEqual({ maxTokens: 64, temperature: 0 })
+    }),
+  )
+
+  it.effect("fits a Claude thinking budget below maxTokens", () =>
+    Effect.gen(function* () {
+      const fields = (maxTokens: number, budgetTokens: number, topK?: number) =>
+        compileRequest(
+          LLMRequest.update(baseRequest, {
+            model: AmazonBedrock.model("us.anthropic.claude-haiku-4-5-20251001-v1:0", {
+              baseURL: "https://bedrock-runtime.test",
+              apiKey: "test-bearer",
+              thinking: { type: "enabled", budgetTokens },
+            }),
+            generation: GenerationOptions.make({ maxTokens, topK }),
+          }),
+        ).pipe(Effect.map((prepared) => prepared.body.additionalModelRequestFields))
+
+      expect(yield* fields(64_000, 31_999)).toEqual({ thinking: { type: "enabled", budget_tokens: 31_999 } })
+      expect(yield* fields(20_000, 31_999, 40)).toEqual({
+        top_k: 40,
+        thinking: { type: "enabled", budget_tokens: 10_000 },
+      })
+      expect(yield* fields(1_500, 31_999)).toEqual({ thinking: { type: "enabled", budget_tokens: 1_024 } })
+    }),
+  )
+
   it.effect("omits additionalModelRequestFields when topK is unset", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(baseRequest)
@@ -239,6 +322,52 @@ describe("Bedrock Converse route", () => {
           toolChoice: { any: {} },
         },
       })
+    }),
+  )
+  ;["", " \t\r\n"].forEach((description) => {
+    it.effect(`omits blank tool description ${JSON.stringify(description)}`, () =>
+      Effect.gen(function* () {
+        const prepared = yield* compileRequest(
+          LLMRequest.update(baseRequest, {
+            tools: [
+              ToolDefinition.make({
+                name: "lookup",
+                description,
+                inputSchema: { type: "object", properties: { query: { type: "string" } } },
+              }),
+            ],
+          }),
+        )
+
+        expect(prepared.body.toolConfig.tools).toEqual([
+          {
+            toolSpec: {
+              name: "lookup",
+              inputSchema: { json: { type: "object", properties: { query: { type: "string" } } } },
+            },
+          },
+        ])
+        expect(prepared.body.toolConfig.tools[0].toolSpec).not.toHaveProperty("description")
+      }),
+    )
+  })
+
+  it.effect("preserves meaningful tool descriptions including surrounding whitespace", () =>
+    Effect.gen(function* () {
+      const description = " \tLookup data.\n"
+      const prepared = yield* compileRequest(
+        LLMRequest.update(baseRequest, {
+          tools: [
+            ToolDefinition.make({
+              name: "lookup",
+              description,
+              inputSchema: { type: "object" },
+            }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.toolConfig.tools[0].toolSpec.description).toBe(description)
     }),
   )
 
@@ -310,6 +439,45 @@ describe("Bedrock Converse route", () => {
       })
     }),
   )
+  ;[
+    { name: "browser.tabs.open", expected: "browser_tabs_open" },
+    { name: "$lookup", expected: "_lookup" },
+    { name: "", expected: "_" },
+    { name: "   ", expected: "___" },
+    { name: "a".repeat(65), expected: "a".repeat(64) },
+    { name: "lookup_123-ABC", expected: "lookup_123-ABC" },
+    { name: "a".repeat(64), expected: "a".repeat(64) },
+  ].forEach((item) => {
+    it.effect(`replays historical tool name ${JSON.stringify(item.name)} within Bedrock constraints`, () =>
+      Effect.gen(function* () {
+        const call = ToolCallPart.make({ id: "call_unknown", name: item.name, input: { query: "weather" } })
+        const error = `No tool named "${item.name}" is currently available. Please use a tool from the available tool list.`
+        const request = LLM.request({
+          model,
+          cache: "none",
+          tools: [ToolDefinition.make({ name: "execute", description: "Run code", inputSchema: { type: "object" } })],
+          messages: [
+            Message.user("Check the weather"),
+            Message.assistant([call]),
+            Message.tool({ id: call.id, name: call.name, result: error, resultType: "error" }),
+            Message.user("Say OK"),
+          ],
+        })
+        const prepared = yield* compileRequest(request)
+
+        expect(prepared.body.messages[1].content).toEqual([
+          { toolUse: { toolUseId: call.id, name: item.expected, input: call.input } },
+        ])
+        expect(prepared.body.messages[2].content).toEqual([
+          { toolResult: { toolUseId: call.id, content: [{ text: error }], status: "error" } },
+          { text: "Say OK" },
+        ])
+        expect(prepared.body.toolConfig.tools.map((tool) => tool.toolSpec.name)).toEqual(["execute"])
+        expect(request.messages[1].content[0]).toEqual(call)
+        expect(call.name).toBe(item.name)
+      }),
+    )
+  })
 
   it.effect("removes empty keys recursively from outbound tool inputs without mutating history", () =>
     Effect.gen(function* () {
@@ -333,25 +501,23 @@ describe("Bedrock Converse route", () => {
         LLM.request({ model, messages: [Message.assistant([call])], cache: "none" }),
       )
 
-      expect(prepared.body.messages).toEqual([
-        {
-          role: "assistant",
-          content: [
-            {
-              toolUse: {
-                toolUseId: "tool_1",
-                name: "edit",
-                input: {
-                  path: "file.ts",
-                  edits: [{ oldText: "a", newText: "b" }, null, true, 7, "text", ["kept", { nested: { value: "ok" } }]],
-                  nested: { empty: {}, onlyEmpty: {} },
-                  " ": "preserve whitespace key",
-                },
+      expect(prepared.body.messages[0]).toEqual({
+        role: "assistant",
+        content: [
+          {
+            toolUse: {
+              toolUseId: "tool_1",
+              name: "edit",
+              input: {
+                path: "file.ts",
+                edits: [{ oldText: "a", newText: "b" }, null, true, 7, "text", ["kept", { nested: { value: "ok" } }]],
+                nested: { empty: {}, onlyEmpty: {} },
+                " ": "preserve whitespace key",
               },
             },
-          ],
-        },
-      ])
+          },
+        ],
+      })
       expect(input).toEqual(original)
       expect(call.input).toBe(input)
     }),
@@ -372,15 +538,13 @@ describe("Bedrock Converse route", () => {
         }),
       )
 
-      expect(prepared.body.messages).toEqual([
-        {
-          role: "assistant",
-          content: [
-            { toolUse: { toolUseId: "tool_empty_key", name: "first", input: {} } },
-            { toolUse: { toolUseId: "tool_empty_object", name: "second", input: {} } },
-          ],
-        },
-      ])
+      expect(prepared.body.messages[0]).toEqual({
+        role: "assistant",
+        content: [
+          { toolUse: { toolUseId: "tool_empty_key", name: "first", input: {} } },
+          { toolUse: { toolUseId: "tool_empty_object", name: "second", input: {} } },
+        ],
+      })
     }),
   )
 
@@ -484,6 +648,177 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
+  it.effect("hoists tool-result images beside the result for Bedrock GPT models", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model: AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", apiKey: "test-bearer" }).model(
+            "global.openai.gpt-6-sol",
+          ),
+          messages: [
+            Message.user("What is in this image?"),
+            Message.assistant([ToolCallPart.make({ id: "tool_1", name: "read", input: {} })]),
+            Message.tool({
+              id: "tool_1",
+              name: "read",
+              result: {
+                type: "content",
+                value: [
+                  { type: "text", text: "Image loaded." },
+                  { type: "file", uri: "data:image/png;base64,AAAA", mime: "image/png" },
+                  { type: "file", uri: "data:application/pdf;base64,QkI=", mime: "application/pdf", name: "note.pdf" },
+                ],
+              },
+            }),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages[2]).toEqual({
+        role: "user",
+        content: [
+          {
+            toolResult: {
+              toolUseId: "tool_1",
+              content: [
+                { text: "Image loaded." },
+                { text: 'Attached file "note.pdf" has document label "note".' },
+                { document: { format: "pdf", name: "note", source: { bytes: "QkI=" } } },
+              ],
+              status: "success",
+            },
+          },
+          { image: { format: "png", source: { bytes: "AAAA" } } },
+        ],
+      })
+    }),
+  )
+
+  it.effect("hoists tool-result images for other Bedrock model families", () =>
+    Effect.gen(function* () {
+      for (const id of [
+        "qwen.qwen3-vl-235b-a22b",
+        "global.xai.grok-4.7",
+        "global.moonshotai.kimi-k3",
+        "us.meta.llama4-scout-17b-instruct-v1:0",
+      ]) {
+        const prepared = yield* compileRequest(
+          LLM.request({
+            model: AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", apiKey: "test-bearer" }).model(
+              id,
+            ),
+            messages: [
+              Message.assistant([ToolCallPart.make({ id: "tool_1", name: "read", input: {} })]),
+              Message.tool({
+                id: "tool_1",
+                name: "read",
+                result: {
+                  type: "content",
+                  value: [{ type: "file", uri: "data:image/png;base64,AAAA", mime: "image/png" }],
+                },
+              }),
+            ],
+            cache: "none",
+          }),
+        )
+        expect(prepared.body.messages[1]).toEqual({
+          role: "user",
+          content: [
+            { toolResult: { toolUseId: "tool_1", content: [{ text: "See attached image." }], status: "success" } },
+            { image: { format: "png", source: { bytes: "AAAA" } } },
+          ],
+        })
+      }
+    }),
+  )
+  ;["global.anthropic.claude-sonnet-4-5-20250929-v1:0", "us.amazon.nova-pro-v1:0"].forEach((id) => {
+    it.effect(`keeps ${id} tool images inside the result`, () =>
+      Effect.gen(function* () {
+        const prepared = yield* compileRequest(
+          LLM.request({
+            model: AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", apiKey: "test-bearer" }).model(
+              id,
+            ),
+            messages: [
+              Message.assistant([ToolCallPart.make({ id: "tool_1", name: "read", input: {} })]),
+              Message.tool({
+                id: "tool_1",
+                name: "read",
+                result: {
+                  type: "content",
+                  value: [{ type: "file", uri: "data:image/png;base64,AAAA", mime: "image/png" }],
+                },
+              }),
+            ],
+            cache: "none",
+          }),
+        )
+
+        expect(prepared.body.messages[1]).toEqual({
+          role: "user",
+          content: [
+            {
+              toolResult: {
+                toolUseId: "tool_1",
+                content: [{ image: { format: "png", source: { bytes: "AAAA" } } }],
+                status: "success",
+              },
+            },
+          ],
+        })
+      }),
+    )
+  })
+
+  it.effect("keeps parallel tool results before hoisted images and gives image-only results text", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model: AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", apiKey: "test-bearer" }).model(
+            "global.openai.gpt-6-sol",
+          ),
+          messages: [
+            Message.assistant([
+              ToolCallPart.make({ id: "tool_1", name: "first", input: {} }),
+              ToolCallPart.make({ id: "tool_2", name: "second", input: {} }),
+            ]),
+            Message.tool({
+              id: "tool_1",
+              name: "first",
+              result: {
+                type: "content",
+                value: [{ type: "file", uri: "data:image/png;base64,AAAA", mime: "image/png" }],
+              },
+            }),
+            Message.tool({
+              id: "tool_2",
+              name: "second",
+              result: {
+                type: "content",
+                value: [
+                  { type: "text", text: "Second image." },
+                  { type: "file", uri: "data:image/jpeg;base64,BBBB", mime: "image/jpeg" },
+                ],
+              },
+            }),
+          ],
+          cache: "none",
+        }),
+      )
+
+      expect(prepared.body.messages[1]).toEqual({
+        role: "user",
+        content: [
+          { toolResult: { toolUseId: "tool_1", content: [{ text: "See attached image." }], status: "success" } },
+          { toolResult: { toolUseId: "tool_2", content: [{ text: "Second image." }], status: "success" } },
+          { image: { format: "png", source: { bytes: "AAAA" } } },
+          { image: { format: "jpeg", source: { bytes: "BBBB" } } },
+        ],
+      })
+    }),
+  )
+
   it.effect("decodes text-delta + messageStop + metadata usage from binary event stream", () =>
     Effect.gen(function* () {
       const body = eventStreamBody(
@@ -531,7 +866,7 @@ describe("Bedrock Converse route", () => {
           reason: { _tag: "InvalidProviderOutput", classification: "incomplete-stream" },
           message: `Incomplete Bedrock Converse event-stream frame: ${partial.length} buffered bytes remain at end of stream`,
         })
-        expect(error.reason.body).toBe(Encoding.encodeBase64(partial))
+        expect(error.reason.body).toBe(Base64.encode(partial))
       }
     }),
   )
@@ -713,9 +1048,61 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
-  it.effect("ignores late tool deltas after contentBlockStop", () =>
+  it.effect("rejects a provider-emitted dotted name before normalizing its replay", () =>
+    Effect.gen(function* () {
+      const response = yield* LLMClient.generate(baseRequest).pipe(
+        Effect.provide(
+          fixedBytes(
+            eventStreamBody(
+              [
+                "contentBlockStart",
+                { contentBlockIndex: 0, start: { toolUse: { toolUseId: "call_unknown", name: "browser.tabs.open" } } },
+              ],
+              ["contentBlockDelta", { contentBlockIndex: 0, delta: { toolUse: { input: "{}" } } }],
+              ["contentBlockStop", { contentBlockIndex: 0 }],
+              ["messageStop", { stopReason: "tool_use" }],
+            ),
+          ),
+        ),
+      )
+      const call = response.toolCalls[0]
+      if (!call) throw new Error("Expected a tool call")
+      expect(call.name).toBe("browser.tabs.open")
+      const dispatched = yield* ToolRuntime.dispatch(
+        {
+          browser_tabs_open: Tool.make({
+            description: "Open a tab",
+            parameters: Schema.Struct({}),
+            success: Schema.String,
+            execute: () => Effect.die("A normalized replay name must not select an executor"),
+          }),
+        },
+        call,
+      )
+      expect(dispatched.result).toEqual({
+        type: "error",
+        value:
+          'No tool named "browser.tabs.open" is currently available. Please use a tool from the available tool list.',
+      })
+
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          cache: "none",
+          messages: [response.message, Message.tool({ id: call.id, name: call.name, result: dispatched.result })],
+        }),
+      )
+      expect(prepared.body.messages[0].content).toEqual([
+        { toolUse: { toolUseId: call.id, name: "browser_tabs_open", input: {} } },
+      ])
+      expect(response.toolCalls[0]?.name).toBe("browser.tabs.open")
+    }),
+  )
+
+  it.effect("ignores tool deltas without an open tool block", () =>
     Effect.gen(function* () {
       const body = eventStreamBody(
+        ["contentBlockDelta", { contentBlockIndex: 5, delta: { toolUse: { input: "{}" } } }],
         [
           "contentBlockStart",
           {
@@ -745,28 +1132,7 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
-  it.effect("rejects tool deltas without contentBlockStart", () =>
-    Effect.gen(function* () {
-      const error = yield* LLMClient.generate(baseRequest).pipe(
-        Effect.provide(
-          fixedBytes(
-            eventStreamBody(
-              ["contentBlockDelta", { contentBlockIndex: 0, delta: { toolUse: { input: "{}" } } }],
-              ["messageStop", { stopReason: "tool_use" }],
-            ),
-          ),
-        ),
-        Effect.flip,
-      )
-
-      expect(error).toMatchObject({
-        reason: { _tag: "InvalidProviderOutput" },
-        message: "Bedrock Converse tool delta is missing its tool call",
-      })
-    }),
-  )
-
-  it.effect("recovers incomplete tool input at finalization", () =>
+  it.effect("rejects incomplete tool input at finalization", () =>
     Effect.gen(function* () {
       const body = eventStreamBody(
         ["messageStart", { role: "assistant" }],
@@ -783,10 +1149,11 @@ describe("Bedrock Converse route", () => {
       )
       const response = yield* LLMClient.generate(baseRequest).pipe(Effect.provide(fixedBytes(body)))
 
-      expect(response.events.find((event) => event.type === "tool-call")).toMatchObject({
+      expect(response.toolCalls).toEqual([])
+      expect(response.events.find((event) => event.type === "tool-input-error")).toMatchObject({
         id: "tool_1",
         name: "lookup",
-        input: { query: "partial" },
+        raw: '{"query":"partial',
       })
       expect(response.finishReason).toEqual({ normalized: "tool-calls", raw: "end_turn" })
     }),
@@ -898,6 +1265,12 @@ describe("Bedrock Converse route", () => {
             { reasoningContent: { redactedContent: "cmVkYWN0ZWQ=" } },
             { text: "Checking" },
             { toolUse: { toolUseId: "call_1", name: "lookup", input: {} } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            { toolResult: { toolUseId: "call_1", content: [{ text: "Tool result missing" }], status: "error" } },
           ],
         },
       ])
@@ -1102,11 +1475,11 @@ describe("Bedrock Converse route", () => {
           ),
         ),
       )
-      expect(response.events.filter((event) => event.type === "reasoning-delta" && event.text === "").at(-1)).toEqual({
-        type: "reasoning-delta",
+      expect(response.events.filter((event) => event.type === "reasoning-delta")).toEqual([])
+      expect(response.events.find((event) => event.type === "reasoning-start")).toEqual({
+        type: "reasoning-start",
         id: "reasoning-0",
-        text: "",
-        providerMetadata: { bedrock: { redactedData } },
+        providerMetadata: undefined,
       })
       expect(response.events.find((event) => event.type === "reasoning-end")).toEqual({
         type: "reasoning-end",
@@ -1184,6 +1557,13 @@ describe("Bedrock Converse route", () => {
         ),
       )
 
+      expect(response.events.filter((event) => event.type === "reasoning-delta")).toEqual([])
+      expect(response.events.find((event) => event.type === "reasoning-end")).toEqual({
+        type: "reasoning-end",
+        id: "reasoning-0",
+        providerMetadata: { bedrock: { redactedData: "AQID" } },
+        text: undefined,
+      })
       expect(response.message.content).toEqual([
         { type: "reasoning", text: "", providerMetadata: { bedrock: { redactedData: "AQID" } } },
       ])
@@ -1331,35 +1711,143 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
-  it.effect("rejects requests with no auth path", () =>
+  it.effect("fails with an authentication error when the default chain cannot resolve credentials", () =>
     Effect.gen(function* () {
       const unsignedModel = AmazonBedrock.configure({
         baseURL: "https://bedrock-runtime.test",
+        profile: "opencode-test-missing-profile",
       }).model("anthropic.claude-3-5-sonnet-20240620-v1:0")
       const error = yield* LLMClient.generate(LLMRequest.update(baseRequest, { model: unsignedModel })).pipe(
         Effect.provide(fixedBytes(eventStreamBody(["messageStop", { stopReason: "end_turn" }]))),
         Effect.flip,
       )
 
-      expect(error.message).toContain("Bedrock Converse requires either route bearer auth or AWS credentials")
-    }),
+      expect(error.reason._tag).toBe("Authentication")
+      expect(error.message).toContain("AWS default credential chain failed")
+    }).pipe(withProcessEnv(noAmbientAWS)),
   )
 
-  it.effect("signs requests with SigV4 when AWS credentials are provided (deterministic plumbing check)", () =>
+  it.effect("signs with static credentials using the configured region for the SigV4 scope", () =>
     Effect.gen(function* () {
       const signed = AmazonBedrock.configure({
         baseURL: "https://bedrock-runtime.test",
+        region: "eu-west-1",
         credentials: {
           region: "us-east-1",
           accessKeyId: "AKIAIOSFODNN7EXAMPLE",
           secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
         },
       }).model("anthropic.claude-3-5-sonnet-20240620-v1:0")
-      const prepared = yield* compileRequest(LLMRequest.update(baseRequest, { model: signed }))
+      const headers = yield* captureHeaders(signed)
 
-      expect(prepared.route).toBe("bedrock-converse")
-      expect(prepared.model).toBe(signed)
-    }),
+      expect(headers.get("authorization")).toContain("Credential=AKIAIOSFODNN7EXAMPLE/")
+      expect(headers.get("authorization")).toContain("/eu-west-1/bedrock/aws4_request")
+      expect(headers.get("x-amz-security-token")).toBeNull()
+    }).pipe(withProcessEnv(noAmbientAWS)),
+  )
+
+  it.effect("resolves SigV4 credentials through the AWS default chain on every request", () =>
+    Effect.gen(function* () {
+      const chained = AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", region: "us-west-2" }).model(
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+      )
+      const headers = yield* captureHeaders(chained)
+
+      expect(headers.get("authorization")).toContain("Credential=AKIACHAINEXAMPLE/")
+      expect(headers.get("authorization")).toContain("/us-west-2/bedrock/aws4_request")
+      expect(headers.get("x-amz-security-token")).toBe("chain-session-token")
+    }).pipe(
+      withProcessEnv({
+        ...noAmbientAWS,
+        AWS_ACCESS_KEY_ID: "AKIACHAINEXAMPLE",
+        AWS_SECRET_ACCESS_KEY: "chain-secret",
+        AWS_SESSION_TOKEN: "chain-session-token",
+      }),
+    ),
+  )
+
+  it.effect("re-resolves rotated chain credentials on the next request without rebuilding the model", () =>
+    Effect.gen(function* () {
+      const chained = AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test", region: "us-west-2" }).model(
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+      )
+      const first = yield* captureHeaders(chained)
+      const second = yield* captureHeaders(chained).pipe(
+        withProcessEnv({ AWS_ACCESS_KEY_ID: "AKIAROTATEDEXAMPLE", AWS_SECRET_ACCESS_KEY: "rotated-secret" }),
+      )
+
+      expect(first.get("authorization")).toContain("Credential=AKIACHAINEXAMPLE/")
+      expect(second.get("authorization")).toContain("Credential=AKIAROTATEDEXAMPLE/")
+    }).pipe(
+      withProcessEnv({
+        ...noAmbientAWS,
+        AWS_ACCESS_KEY_ID: "AKIACHAINEXAMPLE",
+        AWS_SECRET_ACCESS_KEY: "chain-secret",
+      }),
+    ),
+  )
+
+  it.effect("prefers AWS_BEARER_TOKEN_BEDROCK over the credential chain", () =>
+    Effect.gen(function* () {
+      const bearer = AmazonBedrock.configure({ baseURL: "https://bedrock-runtime.test" }).model(
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+      )
+      const headers = yield* captureHeaders(bearer)
+
+      expect(headers.get("authorization")).toBe("Bearer env-bearer-token")
+    }).pipe(
+      withProcessEnv({
+        ...noAmbientAWS,
+        AWS_BEARER_TOKEN_BEDROCK: "env-bearer-token",
+        AWS_ACCESS_KEY_ID: "AKIACHAINEXAMPLE",
+        AWS_SECRET_ACCESS_KEY: "chain-secret",
+      }),
+    ),
+  )
+
+  it.effect("auth: sigv4 ignores an ambient bearer token from configure and settings", () =>
+    Effect.gen(function* () {
+      const configured = AmazonBedrock.configure({ auth: "sigv4", baseURL: "https://bedrock-runtime.test" }).model(
+        "anthropic.claude-3-5-sonnet-20240620-v1:0",
+      )
+      const fromSettings = AmazonBedrock.model("anthropic.claude-3-5-sonnet-20240620-v1:0", {
+        auth: "sigv4",
+        baseURL: "https://bedrock-runtime.test",
+      })
+
+      for (const target of [configured, fromSettings]) {
+        const headers = yield* captureHeaders(target)
+        expect(headers.get("authorization")).toContain("Credential=AKIACHAINEXAMPLE/")
+        expect(headers.get("authorization")).toContain("/ap-southeast-2/bedrock/aws4_request")
+      }
+      expect(() => AmazonBedrock.configure({ auth: "sigv4", apiKey: "k" })).toThrow(
+        expect.objectContaining({
+          _tag: "ProviderConfiguration",
+          provider: "amazon-bedrock",
+          message: "Amazon Bedrock SigV4 auth does not accept apiKey",
+        }),
+      )
+    }).pipe(
+      withProcessEnv({
+        ...noAmbientAWS,
+        AWS_BEARER_TOKEN_BEDROCK: "env-bearer-token",
+        AWS_REGION: "ap-southeast-2",
+        AWS_ACCESS_KEY_ID: "AKIACHAINEXAMPLE",
+        AWS_SECRET_ACCESS_KEY: "chain-secret",
+      }),
+    ),
+  )
+
+  it.effect("derives the endpoint region from AWS_REGION then AWS_DEFAULT_REGION", () =>
+    Effect.gen(function* () {
+      const fromRegion = AmazonBedrock.configure({ apiKey: "k" }).model("anthropic.claude-3-5-sonnet-20240620-v1:0")
+      expect(fromRegion.route.endpoint.baseURL).toBe("https://bedrock-runtime.eu-central-1.amazonaws.com")
+
+      const fromDefault = yield* Effect.sync(() =>
+        AmazonBedrock.configure({ apiKey: "k" }).model("anthropic.claude-3-5-sonnet-20240620-v1:0"),
+      ).pipe(withProcessEnv({ AWS_REGION: undefined }))
+      expect(fromDefault.route.endpoint.baseURL).toBe("https://bedrock-runtime.us-gov-west-1.amazonaws.com")
+    }).pipe(withProcessEnv({ ...noAmbientAWS, AWS_REGION: "eu-central-1", AWS_DEFAULT_REGION: "us-gov-west-1" })),
   )
 
   it.effect("emits cachePoint markers after system, user-text, and assistant-text with cache hints", () =>
@@ -1414,10 +1902,10 @@ describe("Bedrock Converse route", () => {
           messages: [
             Message.user([
               { type: "text", text: "What is in this image?" },
-              { type: "media", mediaType: "image/png", data: "AAAA" },
-              { type: "media", mediaType: "image/jpeg", data: "BBBB" },
-              { type: "media", mediaType: "image/jpg", data: "CCCC" },
-              { type: "media", mediaType: "image/webp", data: "DDDD" },
+              { type: "media", media: Media.base64("AAAA", "image/png") },
+              { type: "media", media: Media.base64("BBBB", "image/jpeg") },
+              { type: "media", media: Media.base64("CCCC", "image/jpg") },
+              { type: "media", media: Media.base64("DDDD", "image/webp") },
             ]),
           ],
           cache: "none",
@@ -1448,7 +1936,9 @@ describe("Bedrock Converse route", () => {
         LLM.request({
           id: "req_image_bytes",
           model,
-          messages: [Message.user([{ type: "media", mediaType: "image/png", data: new Uint8Array([1, 2, 3, 4, 5]) }])],
+          messages: [
+            Message.user([{ type: "media", media: Media.bytes(new Uint8Array([1, 2, 3, 4, 5]), "image/png") }]),
+          ],
         }),
       )
 
@@ -1469,12 +1959,31 @@ describe("Bedrock Converse route", () => {
       const error = yield* compileRequest(
         LLM.request({
           model,
-          messages: [Message.user({ type: "media", mediaType: "image/png", data: "https://example.test/image.png" })],
+          messages: [Message.user({ type: "media", media: Media.base64("not base64!", "image/png") })],
         }),
       ).pipe(Effect.flip)
 
       expect(error).toMatchObject({ reason: { _tag: "InvalidRequest" } })
       expect(error.message).toContain("Bedrock Converse media data must be valid base64")
+    }),
+  )
+
+  it.effect("rejects remote image URLs that were not materialized", () =>
+    Effect.gen(function* () {
+      const error = yield* compileRequest(
+        LLM.request({
+          model,
+          messages: [
+            Message.user({
+              type: "media",
+              media: Media.url("https://example.test/image.png", { mediaType: "image/png" }),
+            }),
+          ],
+        }),
+      ).pipe(Effect.flip)
+
+      expect(error).toMatchObject({ reason: { _tag: "InvalidRequest" } })
+      expect(error.message).toContain("requires inline media")
     }),
   )
 
@@ -1488,8 +1997,8 @@ describe("Bedrock Converse route", () => {
           messages: [
             Message.user([
               { type: "text", text: "Summarize these documents." },
-              { type: "media", mediaType: "application/pdf", data: "UERGREFUQQ==", filename: "report.pdf" },
-              { type: "media", mediaType: "text/csv", data: "Q1NWREFUQQ==", filename: "data.csv" },
+              { type: "media", media: Media.base64("UERGREFUQQ==", "application/pdf"), filename: "report.pdf" },
+              { type: "media", media: Media.base64("Q1NWREFUQQ==", "text/csv"), filename: "data.csv" },
             ]),
           ],
         }),
@@ -1501,29 +2010,140 @@ describe("Bedrock Converse route", () => {
             role: "user",
             content: [
               { text: "Summarize these documents." },
-              { document: { format: "pdf", name: "report.pdf", source: { bytes: "UERGREFUQQ==" } } },
-              { document: { format: "csv", name: "data.csv", source: { bytes: "Q1NWREFUQQ==" } } },
+              { text: 'Attached file "report.pdf" has document label "report".' },
+              { document: { format: "pdf", name: "report", source: { bytes: "UERGREFUQQ==" } } },
+              { text: 'Attached file "data.csv" has document label "data".' },
+              { document: { format: "csv", name: "data", source: { bytes: "Q1NWREFUQQ==" } } },
             ],
           },
         ],
       })
     }),
   )
+  ;[
+    {
+      label: "filename punctuation",
+      filename: "report_v1.2?.pdf",
+      expected: "report v1 2",
+      duplicate: "report v1 2 2",
+    },
+    {
+      label: "repeated whitespace",
+      filename: "  Quarterly\t \n report.txt",
+      expected: "Quarterly report",
+      duplicate: "Quarterly report 2",
+    },
+    {
+      label: "allowed characters",
+      filename: "Report - Final (v2) [2026]",
+      expected: "Report - Final (v2) [2026]",
+      duplicate: "Report - Final (v2) [2026] 2",
+    },
+    { label: "accented filename", filename: "résumé.pdf", expected: "r sum", duplicate: "r sum 2" },
+    { label: "non-Latin filename", filename: "報告書.pdf", expected: "document", duplicate: "document 2" },
+    { label: "missing filename", filename: undefined, expected: "document", duplicate: "document 2" },
+    { label: "empty filename", filename: "", expected: "document", duplicate: "document 2" },
+    { label: "blank filename", filename: " \t\n", expected: "document", duplicate: "document 2" },
+    { label: "extension-only filename", filename: ".pdf", expected: "document", duplicate: "document 2" },
+    { label: "symbols-only filename", filename: "@@@.pdf", expected: "document", duplicate: "document 2" },
+    {
+      label: "overlong filename",
+      filename: `${"a".repeat(201)}.txt`,
+      expected: "a".repeat(200),
+      duplicate: `${"a".repeat(198)} 2`,
+    },
+    {
+      label: "maximum-length label",
+      filename: "a".repeat(200),
+      expected: "a".repeat(200),
+      duplicate: `${"a".repeat(198)} 2`,
+    },
+    {
+      label: "whitespace at truncation",
+      filename: `${"a".repeat(199)} b.txt`,
+      expected: "a".repeat(199),
+      duplicate: `${"a".repeat(198)} 2`,
+    },
+  ].forEach((item) => {
+    it.effect(`normalizes ${item.label} in user and tool-result documents`, () =>
+      Effect.gen(function* () {
+        const request = LLM.request({
+          model,
+          cache: "none",
+          messages: [
+            Message.user([
+              { type: "text", text: "Read this document" },
+              { type: "media", media: Media.base64("UERGREFUQQ==", "application/pdf"), filename: item.filename },
+            ]),
+            Message.assistant([ToolCallPart.make({ id: "call_read", name: "read", input: {} })]),
+            Message.tool({
+              id: "call_read",
+              name: "read",
+              result: {
+                type: "content",
+                value: [
+                  { type: "text", text: "Read successfully" },
+                  {
+                    type: "file",
+                    uri: "data:application/pdf;base64,UERGREFUQQ==",
+                    mime: "application/pdf",
+                    name: item.filename,
+                  },
+                ],
+              },
+            }),
+          ],
+        })
+        const original = JSON.stringify(request.messages)
+        const first = yield* compileRequest(request)
+        const second = yield* compileRequest(request)
+        const expected = { format: "pdf", name: item.expected, source: { bytes: "UERGREFUQQ==" } }
 
-  it.effect("requires names for document media", () =>
+        expect(first.body.messages[0].content.find((part) => "document" in part)?.document).toEqual(expected)
+        expect(
+          first.body.messages[2].content[0].toolResult.content.find((part) => "document" in part)?.document,
+        ).toEqual({
+          ...expected,
+          name: item.duplicate,
+        })
+        expect(second.body).toEqual(first.body)
+        expect(JSON.stringify(request.messages)).toBe(original)
+      }),
+    )
+  })
+
+  it.effect("keeps colliding document labels distinct within a request", () =>
     Effect.gen(function* () {
-      const error = yield* compileRequest(
+      const prepared = yield* compileRequest(
         LLM.request({
           model,
-          messages: [Message.user({ type: "media", mediaType: "application/pdf", data: "UERGREFUQQ==" })],
+          cache: "none",
+          messages: [
+            Message.user([
+              { type: "text", text: "Read these documents" },
+              ...["report_v1.txt", "report#v1.txt", "report v1 2.txt", "report v1.txt"].map((filename) => ({
+                type: "media" as const,
+                media: Media.base64("SGVsbG8=", "text/plain"),
+                filename,
+              })),
+            ]),
+          ],
         }),
-      ).pipe(Effect.flip)
-
-      expect(error.message).toContain("document media requires a filename")
+      )
+      expect(prepared.body.messages[0].content.slice(1)).toEqual([
+        { text: 'Attached file "report_v1.txt" has document label "report v1".' },
+        { document: { format: "txt", name: "report v1", source: { bytes: "SGVsbG8=" } } },
+        { text: 'Attached file "report#v1.txt" has document label "report v1 2".' },
+        { document: { format: "txt", name: "report v1 2", source: { bytes: "SGVsbG8=" } } },
+        { text: 'Attached file "report v1 2.txt" has document label "report v1 2 2".' },
+        { document: { format: "txt", name: "report v1 2 2", source: { bytes: "SGVsbG8=" } } },
+        { text: 'Attached file "report v1.txt" has document label "report v1 3".' },
+        { document: { format: "txt", name: "report v1 3", source: { bytes: "SGVsbG8=" } } },
+      ])
     }),
   )
 
-  it.effect("passes named document-only messages through for provider validation", () =>
+  it.effect("annotates renamed document-only messages with their original filename", () =>
     Effect.gen(function* () {
       const prepared = yield* compileRequest(
         LLM.request({
@@ -1532,8 +2152,7 @@ describe("Bedrock Converse route", () => {
           messages: [
             Message.user({
               type: "media",
-              mediaType: "application/pdf",
-              data: "UERGREFUQQ==",
+              media: Media.base64("UERGREFUQQ==", "application/pdf"),
               filename: "report.pdf",
             }),
           ],
@@ -1543,8 +2162,39 @@ describe("Bedrock Converse route", () => {
       expect(prepared.body.messages).toEqual([
         {
           role: "user",
-          content: [{ document: { format: "pdf", name: "report.pdf", source: { bytes: "UERGREFUQQ==" } } }],
+          content: [
+            { text: 'Attached file "report.pdf" has document label "report".' },
+            { document: { format: "pdf", name: "report", source: { bytes: "UERGREFUQQ==" } } },
+          ],
         },
+      ])
+    }),
+  )
+
+  it.effect("quotes original filenames in annotations and omits redundant mappings", () =>
+    Effect.gen(function* () {
+      const prepared = yield* compileRequest(
+        LLM.request({
+          model,
+          cache: "none",
+          messages: [
+            Message.user([
+              { type: "text", text: "Read these documents" },
+              ...["report", undefined, 'report "final"\n.pdf'].map((filename) => ({
+                type: "media" as const,
+                media: Media.base64("SGVsbG8=", "text/plain"),
+                filename,
+              })),
+            ]),
+          ],
+        }),
+      )
+      expect(prepared.body.messages[0].content).toEqual([
+        { text: "Read these documents" },
+        { document: { format: "txt", name: "report", source: { bytes: "SGVsbG8=" } } },
+        { document: { format: "txt", name: "document", source: { bytes: "SGVsbG8=" } } },
+        { text: 'Attached file "report \\"final\\"\\n.pdf" has document label "report final".' },
+        { document: { format: "txt", name: "report final", source: { bytes: "SGVsbG8=" } } },
       ])
     }),
   )
@@ -1568,7 +2218,7 @@ describe("Bedrock Converse route", () => {
                     type: "file",
                     uri: "data:application/pdf;base64,UERGREFUQQ==",
                     mime: "application/pdf",
-                    name: "report",
+                    name: "report.pdf",
                   },
                 ],
               },
@@ -1591,6 +2241,7 @@ describe("Bedrock Converse route", () => {
                 status: "success",
                 content: [
                   { text: "Read successfully" },
+                  { text: 'Attached file "report.pdf" has document label "report".' },
                   { document: { format: "pdf", name: "report", source: { bytes: "UERGREFUQQ==" } } },
                 ],
               },
@@ -1628,7 +2279,7 @@ describe("Bedrock Converse route", () => {
       ).pipe(Effect.flip)
 
       expect(error).toMatchObject({ reason: { _tag: "InvalidRequest" } })
-      expect(error.message).toContain("Bedrock Converse media data must be valid base64")
+      expect(error.message).toContain("requires inline media")
     }),
   )
 
@@ -1638,7 +2289,7 @@ describe("Bedrock Converse route", () => {
         LLM.request({
           id: "req_bad_image",
           model,
-          messages: [Message.user([{ type: "media", mediaType: "image/svg+xml", data: "x" }])],
+          messages: [Message.user([{ type: "media", media: Media.base64("x", "image/svg+xml") }])],
         }),
       ).pipe(Effect.flip)
 
@@ -1652,7 +2303,9 @@ describe("Bedrock Converse route", () => {
         LLM.request({
           id: "req_bad_doc",
           model,
-          messages: [Message.user([{ type: "media", mediaType: "application/x-tar", data: "x", filename: "a.tar" }])],
+          messages: [
+            Message.user([{ type: "media", media: Media.base64("x", "application/x-tar"), filename: "a.tar" }]),
+          ],
         }),
       ).pipe(Effect.flip)
 

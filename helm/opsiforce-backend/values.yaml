@@ -30,27 +30,34 @@ config:
   storageMountPath: "/workspace-data"
   storageClaimSize: "300Gi"
   proxyControlToken: ""
+  appAuthForwardingSigningKey: ""
+  linkedAccountProxyServiceToken: ""
   agentWorkspaceUpdateOnStartup: "true"
   agentUpdateJobTimeoutMs: "1800000"
   agentNodeSelector: {}
   agentTolerations: []
   openaiApiKey: ""
+  anthropicApiKey: ""
   gotenbergUrl: ""
   bifrostProxyUrl: ""
   bifrostPodProxyUrl: ""
   bifrostAdminUsername: ""
   bifrostAdminPassword: ""
   gatewayUrl: ""
-  platformApiUrl: ""
   runtimeProxyUrl: ""
-  externalServicesUrl: ""
+  externalServicesHost: ""
+  externalServiceProxyControl: ""
+  podCaBundleConfigMap: ""
+  # Days a Call log row is kept; empty = the backend default (30). Usage counters are kept forever.
+  externalServiceCallLogRetentionDays: ""
+  # TODO: remove in the release after External Services v2 ships: every mailgun* key and whapiApiUrl (dead /api/gateway email provider + one-time v1 importers)
   mailgunApiKey: ""
   mailgunDomain: ""
   mailgunReceiveDomain: ""
   mailgunWebhookSigningKey: ""
   mailgunSender: ""
   whapiApiUrl: ""
-  externalServicesWebhookBaseUrl: ""
+  opsiforcePublicUrl: ""
   externalServicesEncryptionKey: ""
   appsHostname: ""
   webappServiceName: ""
@@ -62,6 +69,10 @@ config:
   managedTenantRolePrefix: ""
   ssoGroupMap: ""
   defaultTenantName: ""
+  # Empty uses the cluster default runtime (Azure and local development).
+  # The regular deployment workflow explicitly selects the Kata RuntimeClass.
+  agentRuntimeClassName: ""
+  agentPrivileged: false
   agentAffinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

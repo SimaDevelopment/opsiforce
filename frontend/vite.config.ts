@@ -4,10 +4,19 @@ import solidPlugin from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
-import { OC_PACKAGES_ROOT, opencodeMessageStamp, opencodeResolver } from "./vite-plugins/index.ts";
+import {
+  deploymentBranding,
+  dropUnloadedOfficeFiles,
+  OC_PACKAGES_ROOT,
+  opencodeMessageStamp,
+  opencodeResolver,
+} from "./vite-plugins/index.ts";
+
+const OFFICE_DEPS = ["@betteroffice/docx", "@betteroffice/fonts", "@betteroffice/pptx", "@betteroffice/xlsx"];
 
 export default defineConfig(({ mode }) => ({
   plugins: [
+    deploymentBranding(),
     opencodeResolver(),
     opencodeMessageStamp(),
     tanstackRouter({
@@ -16,6 +25,7 @@ export default defineConfig(({ mode }) => ({
     }),
     solidPlugin(),
     tailwindcss(),
+    dropUnloadedOfficeFiles(),
   ],
   resolve: {
     // Array form so CSS entry points can be matched by pattern. Tailwind resolves
@@ -25,38 +35,45 @@ export default defineConfig(({ mode }) => ({
       { find: "@/", replacement: path.join(OC_PACKAGES_ROOT, "app/src") + "/" },
       { find: "~/", replacement: path.resolve(import.meta.dirname, "src") + "/" },
       {
-        find: /^@opencode-ai\/session-ui\/v2\/(.*\.css)$/,
+        find: "@betteroffice/fonts-cjk",
+        replacement: path.join(OC_PACKAGES_ROOT, "gui-extensions/src/microsoft-office/fonts-cjk.ts"),
+      },
+      {
+        find: /^@opencode\/session-ui\/v2\/(.*\.css)$/,
         replacement: path.join(OC_PACKAGES_ROOT, "session-ui/src/v2/components/$1"),
       },
       {
-        find: "@opencode-ai/ui/button.css",
+        find: "@opencode/ui/button.css",
         replacement: path.join(OC_PACKAGES_ROOT, "ui/src/actions/button/button.css"),
       },
       {
-        find: "@opencode-ai/ui/file-tree.css",
+        find: "@opencode/ui/file-tree.css",
         replacement: path.join(OC_PACKAGES_ROOT, "ui/src/styles/file-tree.css"),
       },
       {
-        find: "@opencode-ai/ui/text-input.css",
+        find: "@opencode/ui/text-input.css",
         replacement: path.join(OC_PACKAGES_ROOT, "ui/src/forms/text-input/text-input.css"),
       },
       {
-        find: "@opencode-ai/ui/styles/tokens",
+        find: "@opencode/ui/styles/tokens",
         replacement: path.join(OC_PACKAGES_ROOT, "ui/src/styles/tokens/index.css"),
       },
       {
-        find: "@opencode-ai/ui/styles/tailwind",
+        find: "@opencode/ui/styles/tailwind",
         replacement: path.join(OC_PACKAGES_ROOT, "ui/src/styles/tailwind/index.css"),
       },
       {
-        find: "@opencode-ai/ui/styles",
+        find: "@opencode/ui/styles",
         replacement: path.join(OC_PACKAGES_ROOT, "ui/src/styles/index.css"),
       },
       {
-        find: "@opencode-ai/session-ui/styles",
+        find: "@opencode/session-ui/styles",
         replacement: path.join(OC_PACKAGES_ROOT, "session-ui/src/styles/index.css"),
       },
     ],
+  },
+  optimizeDeps: {
+    exclude: OFFICE_DEPS,
   },
   server: {
     port: 8084,
@@ -82,7 +99,7 @@ export default defineConfig(({ mode }) => ({
     format: "es",
     // Workers bundle in a separate environment that does not inherit the top-level
     // plugins, so the resolver is registered again here — session-ui's markdown and
-    // pierre workers import @opencode-ai/* directly.
+    // pierre workers import @opencode/* directly.
     plugins: () => [opencodeResolver()],
   },
   build: {

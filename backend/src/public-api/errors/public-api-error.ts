@@ -83,6 +83,7 @@ export const Errors = {
       detail: 'This Builder chat already has its one Test Project; Update or Reset it instead of creating another',
       testProjectId,
     }),
+  outsideCallingProject: (detail: string) => new PublicApiError('permission-denied', { detail }),
   notTestProjectOwner: () =>
     new PublicApiError('permission-denied', {
       detail: 'Only the Builder chat that created this Test Project may refresh it',
@@ -90,6 +91,14 @@ export const Errors = {
   limitReached: (key: LimitKey, limit: number) =>
     new PublicApiError('limit-reached', {
       detail: `This tenant has reached its limit of ${limit} ${LIMITS[key].noun}.`,
+    }),
+  chainTooDeep: (maxDepth: number) =>
+    new PublicApiError('chain-too-deep', {
+      detail: `This Project was made by a chain of ${maxDepth} Projects already, so it cannot create another.`,
+    }),
+  maxCreatedProjects: (max: number, setting: string) =>
+    new PublicApiError('max-created-projects', {
+      detail: `This Project may create at most ${max} Projects (${setting}). Delete one you created, or ask someone who can configure this Project's External Services to raise it.`,
     }),
   unexpected: () => new PublicApiError('unexpected'),
   fromForeignStatus: (status: number, detail: string) =>

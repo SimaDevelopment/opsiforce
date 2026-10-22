@@ -14,6 +14,6 @@ We chose this to mirror ADR-0001's split: owner-set *policy* (budget, timeouts, 
 
 - A published **Production** pod runs at the **same class as Development**; sizing prod above dev is impossible until per-env overrides ship.
 - Re-tuning a preset (what "medium" means) is a code change **plus** an explicit backfill (`UPDATE … WHERE pod_class = 'medium'`); it never reaches existing projects automatically.
-- The pending pool stays homogeneous (always `small`): a new or pool-claimed project's **first** pod is `small`, and a chosen class materializes only on the next pod rebuild — resources are immutable on a running pod, so applying a class is always a pod recreate, never an in-place resize.
+- A new or pool-claimed project's **first** pod runs at its Agent's Resources, copied into the row at create ([ADR-0093](0093-an-agent-sets-the-resources-and-ready-projects-of-the-projects-created-from-it.md)); a class chosen later materializes only on the next pod rebuild — resources are immutable on a running pod, so applying a class is always a pod recreate, never an in-place resize.
 - Changing class is non-destructive (it writes the row) and applies on next idle-resume or via an explicit "Restart to apply" on the current env; publishing brings a prod pod up at the project's current class by construction.
-- There is no Helm `agentResources` value. Every pod reads its Project's row; pool slots are pending Projects whose row is `small` ([ADR-0041](0041-new-projects-are-claimed-from-a-pool-of-pending-projects.md)).
+- There is no Helm `agentResources` value. Every pod reads its Project's row; pool slots are pending Projects whose row is their Agent's Resources ([ADR-0041](0041-new-projects-are-claimed-from-a-pool-of-pending-projects.md)).

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://opsiforce.dev/schemas/service.schema.json",
+  "sdk": 2,
+  "displayName": "Trello",
+  "description": "Read and update cards on your Trello boards.",
+  "icon": "icon.svg",
+  "inbound": true,
+  "serviceForm": [
+    {
+      "key": "workspaces",
+      "label": "Workspaces",
+      "type": "list",
+      "item": [
+        {
+          "key": "label",
+          "label": "Name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "apiKey",
+          "label": "API key",
+          "type": "secret"
+        },
+        {
+          "key": "apiSecret",
+          "label": "API secret",
+          "type": "secret"
+        },
+        {
+          "key": "token",
+          "label": "Token",
+          "type": "secret"
+        },
+        {
+          "key": "test",
+          "type": "button",
+          "label": "Test connection",
+          "call": "ping"
+        }
+      ]
+    },
+    {
+      "key": "callback",
+      "type": "info",
+      "template": "{{webhookUrl}}"
+    }
+  ],
+  "projectForm": [
+    {
+      "key": "workspace",
+      "label": "Workspace",
+      "type": "select",
+      "required": true,
+      "options": {
+        "serviceConfiguration": "workspaces",
+        "labelKey": "label"
+      }
+    },
+    {
+      "key": "boardsMode",
+      "label": "Boards",
+      "type": "radio",
+      "default": "selected",
+      "options": [
+        {
+          "value": "selected",
+          "label": "Selected boards"
+        },
+        {
+          "value": "all",
+          "label": "All boards"
+        }
+      ]
+    },
+    {
+      "key": "boardIds",
+      "label": "Selected boards",
+      "was": "boards",
+      "type": "multiselect",
+      "visibleWhen": {
+        "field": "boardsMode",
+        "equals": "selected"
+      },
+      "options": {
+        "call": "listBoards",
+        "dependsOn": [
+          "workspace"
+        ],
+        "searchable": true
+      }
+    }
+  ],
+  "events": {
+    "card.moved": {
+      "title": "Card moved",
+      "description": "A card moved to another list."
+    }
+  }
+}

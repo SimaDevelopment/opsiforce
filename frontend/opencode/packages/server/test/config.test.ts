@@ -1,12 +1,12 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
-import { Config } from "@opencode-ai/schema/config"
+import { Config } from "@opencode/schema/config"
 import { Effect, Schema } from "effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { startServer } from "./fixture/server"
-import { AbsolutePath } from "@opencode-ai/schema/schema"
+import { AbsolutePath } from "@opencode/schema/schema"
 
 it.live("returns ordered config entries for the requested directory", () =>
   Effect.gen(function* () {
@@ -56,6 +56,46 @@ it.live("returns ordered config entries for the requested directory", () =>
       throw new Error("Expected an MCP server config")
     expect(mcp["servers"]["docs"]).not.toHaveProperty("headers")
     expect(mcp["servers"]["docs"]).not.toHaveProperty("oauth")
+  }),
+)
+
+it.live("updates the global shell without replacing unrelated JSONC", () =>
+  Effect.gen(function* () {
+    const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-config-shells-")))
+    const global = path.join(tmp.path, "global")
+    const config = path.join(global, "opencode.jsonc")
+    yield* Effect.promise(() => fs.mkdir(global, { recursive: true }))
+    yield* Effect.promise(() =>
+      fs.writeFile(
+        config,
+        `{
+  // keep this comment
+  "model": "provider/model",
+  "shell": "bash"
+}
+`,
+      ),
+    )
+    const server = yield* startServer(global)
+    const response = yield* Effect.promise(() =>
+      fetch(new URL("/api/experimental/config", server.base), {
+        method: "PATCH",
+        headers: { ...server.headers, "content-type": "application/json" },
+        body: JSON.stringify({ shell: "/bin/zsh" }),
+      }),
+    )
+
+    expect(response.status).toBe(204)
+    const text = yield* Effect.promise(() => fs.readFile(config, "utf8"))
+    expect(text).toContain("// keep this comment")
+    expect(text).toContain('"model": "provider/model"')
+    expect(text).toContain('"shell": "/bin/zsh"')
+
+    const shells = yield* Effect.promise(() =>
+      fetch(new URL("/api/config/shell", server.base), { headers: server.headers }),
+    )
+    expect(shells.status).toBe(200)
+    expect(Array.isArray(yield* Effect.promise(() => shells.json()))).toBe(true)
   }),
 )
 

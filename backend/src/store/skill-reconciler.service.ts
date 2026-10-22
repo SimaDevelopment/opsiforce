@@ -1,9 +1,10 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { db } from '../../db';
 import { skills, skillVersionFiles, skillVersions } from '../../db/schema';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
 import { isTextFile } from './gate/skill-tree';
+import { renameSkillsReservedForServices } from './service-skill-names';
 import { agentConfigRoot, readComposedSkills, skillSourceDirectories, type ComposedSkill } from './skill-tree';
 import { readdirSync } from 'node:fs';
 
@@ -21,8 +22,16 @@ export class SkillReconcilerService implements OnModuleInit {
   }
 
   ready(): Promise<void> {
-    this.reconciled ??= this.agentReconciler.ready().then(() => this.reconcile(readComposedSkills()));
+    this.reconciled ??= this.agentReconciler
+      .ready()
+      .then(() => this.reconcileImage(readComposedSkills()))
+      .then(() => renameSkillsReservedForServices());
     return this.reconciled;
+  }
+
+  private async reconcileImage(composed: ComposedSkill[]): Promise<void> {
+    await this.reconcile(composed);
+    await this.retireAbsent(composed.map((skill) => skill.name));
   }
 
   async reconcile(composed: ComposedSkill[]): Promise<void> {
@@ -30,8 +39,38 @@ export class SkillReconcilerService implements OnModuleInit {
       const skillId = await this.upsertSkill(skill);
       await this.ensureVersion(skillId, skill);
       await this.pointAtNewestVersion(skillId, skill.description);
+      await this.unretire(skillId, skill.name);
     }
     this.logger.log(`Reconciled ${composed.length} built-in skill(s) from the image`);
+  }
+
+  async retireAbsent(shipped: string[]): Promise<string[]> {
+    if (shipped.length === 0) return [];
+    const retired = await db
+      .update(skills)
+      .set({ retiredAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          isNull(skills.tenantId),
+          eq(skills.origin, 'built_in'),
+          isNull(skills.externalServiceId),
+          isNull(skills.retiredAt),
+          notInArray(skills.name, shipped)
+        )
+      )
+      .returning({ name: skills.name });
+    const names = retired.map((row) => row.name).toSorted();
+    if (names.length > 0) this.logger.log(`Retired built-in skill(s) the image no longer ships: ${names.join(', ')}`);
+    return names;
+  }
+
+  private async unretire(skillId: string, name: string): Promise<void> {
+    const [unretired] = await db
+      .update(skills)
+      .set({ retiredAt: null, updatedAt: new Date() })
+      .where(and(eq(skills.id, skillId), isNotNull(skills.retiredAt)))
+      .returning({ id: skills.id });
+    if (unretired) this.logger.log(`The image ships ${name} again; it is no longer retired`);
   }
 
   private async upsertSkill(skill: ComposedSkill): Promise<string> {

@@ -1,10 +1,10 @@
 import { describe, expect } from "bun:test"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Config } from "@opencode-ai/core/config"
-import { Document, Info } from "@opencode-ai/schema/config"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Config } from "@opencode/core/config"
+import { Document, Info } from "@opencode/schema/config"
 import { Effect, Layer, Stream } from "effect"
-import { SkillPlugin } from "@opencode-ai/core/plugin/skill"
-import { Skill } from "@opencode-ai/core/skill"
+import { SkillPlugin } from "@opencode/core/plugin/skill"
+import { Skill } from "@opencode/core/skill"
 import { testEffect } from "../lib/effect"
 import { host } from "./host"
 
@@ -49,7 +49,6 @@ describe("SkillPlugin.Plugin", () => {
           description: expect.stringContaining("opencode issue"),
         }),
       )
-      expect(report?.slash).toBe(true)
       expect(report?.content).toContain("- opencode version: 1.2.3")
       expect(report?.content).toContain("- install/channel: beta")
     }),

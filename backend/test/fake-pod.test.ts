@@ -62,13 +62,15 @@ describe('the fake pod session routes', () => {
     });
 
     const inbox = await fetch(`${pod.url}/api/session/${session.id}/inbox`);
-    expect(await inbox.json()).toMatchObject({ data: [{ payload: { text: 'hello' } }] });
+    expect(await inbox.json()).toMatchObject({
+      data: [{ payload: { text: 'hello' }, time: { created: expect.any(Number) } }],
+    });
 
     pod.setMessages(session.id, { data: [{ id: 'msg_1', role: 'user' }], cursor: { previous: null, next: 'next-1' } });
     const listedMessages = await fetch(`${pod.url}/api/session/${session.id}/message?limit=1`);
     expect(await listedMessages.json()).toMatchObject({ cursor: { next: 'next-1' } });
 
-    const waited = await fetch(`${pod.url}/api/session/${session.id}/wait`, { method: 'POST' });
+    const waited = await fetch(`${pod.url}/api/experimental/session/${session.id}/wait`, { method: 'POST' });
     expect(waited.status).toBe(204);
 
     pod.setActive([session.id]);
@@ -108,6 +110,28 @@ describe('the fake pod session routes', () => {
     const missingRoute = await fetch(`${pod.url}/api/session/ses_missing/compact`, { method: 'POST' });
     expect(missingRoute.status).toBe(404);
     expect(pod.requests.at(-1)?.route).toBe('unknown');
+  });
+});
+
+describe('the fake pod runtime info', () => {
+  it('answers /api/info as a ready runtime by default', async () => {
+    const res = await fetch(`${pod.url}/api/info`);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } });
+    expect(pod.requests.map((entry) => entry.route)).toEqual(['info']);
+  });
+
+  it('answers a starting and a failed runtime with their statuses', async () => {
+    pod.setInfo({ status: 503, body: { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } } });
+    expect((await fetch(`${pod.url}/api/info`)).status).toBe(503);
+
+    pod.setInfo({ status: 500, body: { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } } });
+    expect((await fetch(`${pod.url}/api/info`)).status).toBe(500);
+  });
+
+  it('no longer serves the beta health route', async () => {
+    expect((await fetch(`${pod.url}/api/health`)).status).toBe(404);
   });
 });
 

@@ -1,6 +1,6 @@
 ---
 name: platform
-description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
+description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, reaching External Services on their Service hosts and relaying their refusals, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
 ---
 
 # The Opsiforce platform
@@ -52,7 +52,7 @@ Gone with the container, every time:
 - **State lives under `/workspace/app/data/`.** Anything a process writes and must keep — a database, uploads, caches worth keeping — goes there, so it survives a restart. `data/` is ignored by git, so none of it is published.
 - **A first-time setup is finished or redone, never half-trusted.** Initialise into a temporary directory beside the target and rename it into place once setup succeeds, so a container killed mid-setup leaves nothing that looks initialised.
 - **A service that refuses to run as root** runs as an unprivileged user that owns its directory under `data/`. A user created in the container is gone after a restart, so `startup.sh` creates it idempotently.
-- **Every long-running process runs under `guard`, in the foreground.** `guard <name> <command> &` supervises it: the platform restarts it whenever it exits, crashed or not, and its output and lifecycle land in the observability database under `<name>`. A command that daemonises itself and returns escapes supervision, stays invisible to the logs, and collides with itself when `startup.sh` runs again — run the process's foreground mode instead. The server on `$APP_PORT` is one of these processes, not a special case. A server that must be compiled builds inside its guarded command — `guard <server> sh -c '<build> && exec <binary>'` — so every restart runs current source; in development it runs under a watcher that rebuilds on save, since nothing restarts it by hand.
+- **Every long-running process runs under `guard`, in the foreground.** `guard <name> <command> &` supervises it: the platform restarts it whenever it exits, crashed or not, and its output and lifecycle land in `/workspace/data/logs/<name>.log`, read with `process-logs <name>`. A command that daemonises itself and returns escapes supervision, stays invisible to the logs, and collides with itself when `startup.sh` runs again — run the process's foreground mode instead. The server on `$APP_PORT` is one of these processes, not a special case. A server that must be compiled builds inside its guarded command — `guard <server> sh -c '<build> && exec <binary>'` — so every restart runs current source; in development it runs under a watcher that rebuilds on save, since nothing restarts it by hand.
 - **Expect leftovers from a dead container.** The previous container was killed, not shut down, so a process that keeps a lock or pid file under `data/` finds it still there. Make its start tolerate that. Decide whether a service is already running by asking the service itself — its own ready check or client — never by a process number read from a file: numbers are reused in a new container, so a stale one can point at an unrelated process.
 - **Survive a dependency restarting.** A service the server uses can restart underneath it, and `guard` brings it back in seconds. The server reconnects on its next request instead of holding on to a connection that died with the old process.
 - **Order is the dependency order.** Start what the server needs before the server, and end with `wait -n` so the script exits — and is run again — when a supervised process gives up.
@@ -112,8 +112,8 @@ The platform's own values below are real environment variables: read those from 
 | `APP_LLM_BASE_URL` | OpenAI-compatible base URL for the LLM gateway |
 | `APP_LLM_API_KEY` | Key for that gateway |
 | `SERVICE_GATEWAY_URL` | Base URL of the platform's service gateway |
-| `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway |
-| `EXTERNAL_SERVICES_URL` | Base URL for the external-services endpoints |
+| `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway and for External Services |
+| `EXTERNAL_SERVICES_HOST` | The domain every External Service's host sits under: `<slug>.$EXTERNAL_SERVICES_HOST` (§External Services) |
 
 ## AI runs on the gateway — never locally
 
@@ -137,17 +137,30 @@ Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call. `OPENAI_API_K
 > ❌ User names a real entity → you seed the DB with invented names, prices, or stats that look plausible
 > ✅ User names a real entity → you search first, then seed with real, verifiable facts
 
-## The platform observability database — `/workspace/data/database.db`
+## Platform observability — process logs and the request log
 
-A **read-only** SQLite file, one per project, where the platform records everything it sees. Never create tables or write to it; always open it with `-readonly`. Use it to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits.
+The platform records what every process prints and every request the App serves. Use both to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits. Both are the platform's and read-only to you, and both keep only the last few days.
 
-| Table | What it captures | Key columns |
-|---|---|---|
-| `app_requests` | Every HTTP request to the App | `method`, `url`, `status`, `duration_ms`, `request_body`, `response_body`, `request_headers`, `response_headers`, `size`, `domain`, `created_at` |
-| `process_logs` | stdout/stderr from every process | `process_name`, `line`, `created_at` |
-| `process_events` | Lifecycle events | `process_name`, `event` (started/crashed/stopped/signal/gave_up), `exit_code`, `uptime_seconds`, `restart_count`, `created_at` |
+### Process logs — `process-logs`, files under `/workspace/data/logs/`
 
-Process names come from whatever `startup.sh` supervises, plus the platform's own. Run `SELECT DISTINCT process_name FROM process_logs` when unsure; `webapp` is the supervisor's own meta-lines, `opencode` is you, `vscode` is the editor.
+Every supervised process writes its stdout/stderr and its lifecycle events (`started`, `crashed`, `stopped`, `signal`, `gave_up`, with `exit_code`, `uptime_seconds` and `restart_count`) to `/workspace/data/logs/<process>.log`, rotated as it grows. Read them with `process-logs`, which merges the rotated files and every process by time:
+
+```bash
+process-logs --list                # every process, its last write and size
+process-logs -n 100 <process>      # the last 100 lines of one process
+process-logs --follow <process>    # stream while you reproduce something
+```
+
+`--since`, `--events` and `--grep` narrow any of these; `process-logs --help` has the rest. Process names come from whatever `startup.sh` supervises, plus the platform's own: `webapp` is the supervisor's own meta-lines, `opencode` is you, `vscode` is the editor, `dbviewer` the database viewer.
+
+### The request log — `/workspace/data/database.db`
+
+A SQLite file holding one table, `app_requests`: every HTTP request to the App. Always open it with `-readonly`.
+
+| Column | |
+|---|---|
+| `method`, `url`, `status`, `duration_ms`, `size`, `domain`, `created_at` | what was asked and how it went |
+| `request_body`, `response_body`, `request_headers`, `response_headers` | the payloads, when the Project's Request Logging level records them |
 
 ### Verify the App booted — run after every round of edits
 
@@ -155,23 +168,17 @@ Both of these should come back empty (or show only healthy `started` events) bef
 
 ```bash
 # 1. Crashes in the last 2 minutes
-sqlite3 -readonly -header -column /workspace/data/database.db \
-  "SELECT created_at, process_name, event, exit_code, uptime_seconds, restart_count
-   FROM process_events WHERE created_at > datetime('now','-2 minutes') ORDER BY id DESC"
+process-logs --events --since 2m
 
-# 2. Error lines from the App in the last 2 minutes
-sqlite3 -readonly -header -column /workspace/data/database.db \
-  "SELECT created_at, process_name, line FROM process_logs
-   WHERE created_at > datetime('now','-2 minutes')
-     AND (line LIKE '%error%' OR line LIKE '%Error%' OR line LIKE '%FAIL%' OR line LIKE '%Cannot find%' OR line LIKE '%Unexpected%')
-   ORDER BY id DESC LIMIT 50"
+# 2. Error lines in the last 2 minutes
+process-logs --since 2m --grep 'error|fail|cannot find|unexpected'
 ```
 
-A recent `event='crashed'` with a climbing `restart_count` and small `uptime_seconds` is a crash loop — a hard error, fix it before continuing. `event='started'` with nothing else recent is healthy.
+A recent `crashed` event with a climbing `restart_count` and small `uptime_seconds` is a crash loop — a hard error, fix it before continuing. `started` with nothing else recent is healthy.
 
 ### Then walk it, and keep what you saw
 
-Fix what those queries show before opening a browser: a blank page is almost always a crashed server, which the logs catch and guessing at the UI does not. When you carry `agent-browser`, walk the flow you changed in it before saying it is done — open the page, run the flow, check the result — and use it to see what the user sees when they report something broken. Save every screenshot to `/workspace/.cache/checks/`, which survives a restart and is never published.
+Fix what those commands show before opening a browser: a blank page is almost always a crashed server, which the logs catch and guessing at the UI does not. When you carry `agent-browser`, walk the flow you changed in it before saying it is done — open the page, run the flow, check the result — and use it to see what the user sees when they report something broken. Save every screenshot to `/workspace/.cache/checks/`, which survives a restart and is never published.
 
 ### Investigate failed requests and crashes
 
@@ -189,24 +196,99 @@ sqlite3 -readonly -header -column /workspace/data/database.db \
 sqlite3 -readonly -header -column /workspace/data/database.db \
   "SELECT method, url, status, duration_ms, created_at FROM app_requests ORDER BY duration_ms DESC LIMIT 20"
 
-# Output from one process
-sqlite3 -readonly -header -column /workspace/data/database.db \
-  "SELECT created_at, line FROM process_logs WHERE process_name='<name>' ORDER BY id DESC LIMIT 50"
+# What one process printed around a failure
+process-logs --since 15m <name>
 ```
 
-Date filters like `datetime('now','-N hours')` work, or compare `created_at` to an ISO string. Drop `-header -column` when piping.
+`created_at` is UTC, as are the log timestamps, so a failed request and the process lines around it line up. Date filters like `datetime('now','-N hours')` work, or compare `created_at` to an ISO string. Drop `-header -column` when piping.
 
-## Inbound messages — `/workspace/data/external-services.db`
+## External Services — `https://<slug>.$EXTERNAL_SERVICES_HOST`
 
-A second read-only SQLite file holding messages that arrived from outside — inbound email, WhatsApp. The platform backend is the only writer; never create tables, write, or run migrations against it. Its two tables (`messages`, `attachments`) are created lazily when the first message arrives, so `no such table: messages` means "nothing has arrived yet", not a broken setup. Every service shares the tables, so always filter by `service`.
+An External Service connects the project to an outside system: incoming email, WhatsApp, or a system the Organization added itself. Each one this project has arrives as its own `service-<slug>` skill: what the service is for, which outside API it passes through and where that API's docs are, how calling it here differs, how to set up your tools for it, and the `data` of each Event it delivers. This section is what every service shares. Services this Organization offers but this project has not connected are listed under External services in the chat bar; when a task needs one, tell the person to connect it there.
+
+### The Service host and your key
+
+Every service answers on its own host, `https://<slug>.$EXTERNAL_SERVICES_HOST`, and speaks its outside system's own API there. Point that system's own client — its CLI, its SDK, git, curl — at the Service host in place of the system's address, and use the system's own paths and docs. The service adds the outside system's credentials itself.
+
+Your credential is `$SERVICE_GATEWAY_API_KEY`, sent in a header and never in a URL:
+
+```bash
+curl -s "https://<slug>.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce" \
+  -H "Authorization: Bearer $SERVICE_GATEWAY_API_KEY"
+```
+
+Any header carries it, Basic auth included (the key as username or password), so a tool that only offers its own auth header works too. The Service skill says how to set up each of its tools to send the key on the first request without stopping at a password prompt. A URL lands in shell history, git remotes and logs, so give a tool the key through its header setting even where it would accept `https://user:key@…`.
+
+App code calls the same host with the same key, read from `process.env` on the App's server and kept out of the browser, so what you try from the shell behaves the same at runtime.
+
+The host holds a request for up to a minute while a sleeping service wakes, so a slow first answer is normal.
+
+### Read `/.well-known/opsiforce` before you plan
+
+`GET https://<slug>.$EXTERNAL_SERVICES_HOST/.well-known/opsiforce` is the service's live answer for this ProjectEnvironment. Read it before you plan work with a service, and again after the user changes a setting:
+
+- `upstreams` — each outside API the service passes through: `api` (name and version), its real `url`, and the `mount`, the path prefix on the Service host that stands for that `url`.
+- `routes` — what the service serves, in order, first match wins: the pattern, `action` (`proxy` passes the request to an upstream, `handle` is answered by the service itself as its skill describes, `refuse` is blocked), a `summary`, and `allowedBy`, the settings that govern it. A request no route matches is refused.
+- `configuration` — this Project's settings by field, with labels and secrets masked, and `settingsLink`, the page where they change.
+
+A summary says when a route filters an answer or changes a request: read it as a difference from the outside system's docs. The settings and `allowedBy` tell you which requests a task takes; whether one is allowed is the service's to decide, from the request itself, so the answer holds no verdicts.
+
+`/.well-known/opsiforce` answers for the environment you run in. In a Development chat that is Development's own configuration, which Publish carries to the published environment: Development changes go live on Publish, so never tell the user what Production can do from what you see here.
+
+### Make the request; the service decides
+
+Only the service decides what this Project may do. When the user asks for something, make the request it takes and relay the answer, also when the settings suggest a refusal: the service's refusal carries the reason, the setting and its link, and its Call log shows the people who configure it what was asked for.
+
+To act on something the user names without an id, find it through the service the way its outside system's API finds things (a search, a list) and use what comes back. An empty or filtered answer is the service's answer: tell the user the service returned nothing by that name for this Project and give the `settingsLink`, leaving the reason to the service. An id or a link the user gives you goes into the request as it is.
+
+Tell the user something is refused, unavailable or not found only from a service answer to a request you made for it.
+
+### Relay a refusal
+
+The service refuses in your client's own format, so your tool prints it: a CLI's error, git's `remote:` lines, a JSON body. The message says what was refused and why, names the setting and links to it. Every answer the service makes itself carries an `Opsiforce-Outcome` header, plus `Opsiforce-Setting: <field>` when a setting governs it:
+
+- `not allowed` — the service's policy forbids the request: this Project's settings when `Opsiforce-Setting` names one, otherwise something only the person the message names can change, such as an Organization admin on the service's page. Stop and relay it. A *not allowed* is final: never retry it, and never reach the same result another way.
+- `not connected` — this Project has no connection to the service. Relay it: the user connects the service under External services in the chat bar.
+- `incomplete` — a required setting is empty. Relay it, naming the setting.
+- `not supported` — the service does not serve this request. Look for a route that does in `/.well-known/opsiforce`, or tell the user this service cannot do it.
+- `failed` — the service or the outside system failed. Retry once when the request is safe to repeat, then report it.
+
+To relay, tell the user in one or two plain sentences what you tried, why it was refused and which setting decides it, give the link from the message, and add whom to ask: the person the message names, or, when they can't change it there, someone who can configure this Project's External Services. Leave the status, headers and JSON out.
+
+The host answers some requests before any service sees them: `401` when no valid key was in a header or this Project is disabled; `404` when this Organization has no such service, or "<service> is turned off in this Organization", so say it is not available here instead of building around it; `502` or `504` when the service failed to start or did not start in time, so retry once a little later, then report it.
+
+In App code a refusal reaches the App's end users, who cannot open the settings link: the App shows its own "not available" message and logs the refusal's message for whoever maintains it. That includes the host's `404`, which has no `Opsiforce-Outcome`: trying again will not help, so only a `failed`, `502` or `504` invites the user to retry.
+
+## Inbound Events — `/workspace/data/external-services.db`
+
+A second read-only SQLite file holding Events that External Services delivered to this environment, as each service's own settings for this Project choose (an email, a WhatsApp message, a card moved in another tool). The platform backend is the only writer; never create tables, write, or run migrations against it. Its tables are created when the first Event arrives, so `no such table: events` means "nothing has arrived yet", not a broken setup. Every service shares the tables, so always filter by `service` (and `type`).
+
+- `events`: `id`, `service`, `type`, `key` (unique per service and type: a resent Event is not stored twice), `occurred_at`, `received_at`, `data` (JSON, read with `json_extract`; its shape is in the service's `service-<slug>` skill), `app_delivered_at`.
+- `event_files`: `event_id`, `name`, `mime_type`, `size_bytes`, `path` — the bytes are a file at `path`, read it with `fs`.
+
+The platform rings the App for every stored batch: `POST /api/external-services/<slug>` with `{ "service": "<slug>", "eventIds": [12, 13] }` and no auth header, waking the App first. The template's catch-all stub answers 501; add a concrete route for the service above it (`DoorbellNotification` is in `doorbell-notification.ts`):
+
+```typescript
+@Post("my-service")
+async myService(@Body() notification: DoorbellNotification): Promise<{ received: true }> {
+  await this.myServiceEvents.process(notification.eventIds)
+  return { received: true }
+}
+```
+
+- The body carries ids only; read the rows from SQLite, so the live path and the catch-up path run the same code.
+- A 2xx stamps `app_delivered_at`. A 5xx or a timeout (10 s) is retried after 30 s, 2 min, 10 min, 1 h and 6 h. A 404 or 501 means "not wired": the platform stops ringing for that service until the App starts again. Reloading the server under its watcher does not count, so when you wire a service that already has Events waiting, tell the user they arrive at the App's next start, or at once if they restart this environment.
+- Answer quickly and process idempotently: key the App's own records on the Event `id` (a `UNIQUE` column in `app.db`), because an id can arrive twice.
+- Catch up on boot and from a schedule: `SELECT id FROM events WHERE service = ? AND app_delivered_at IS NULL ORDER BY id`.
+
+An App built before Events existed reads the older `messages` / `attachments` tables (attachment bytes inline as `BLOB`) and gets `rowIds` next to `eventIds`; the platform keeps writing both for that environment. Leave such an App on `messages` unless the user asks for a change; new code reads `events`.
 
 ## What else the platform can do
 
 These capabilities exist and are delivered as skills that can be added to an agent. If one is not in your skill list, the capability is still real — say so, and the user can have it added.
 
 - **AI gateway recipes** — worked examples for chat, structured output, streaming, vision, image generation, transcription and text-to-speech against `APP_LLM_BASE_URL`.
-- **Inbound email** — an App can be given its own address; mail with attachments lands in the external-services database and rings the App. **Sending** email is not supported by the platform; offer an in-app alternative instead of installing a mail library.
-- **WhatsApp intake** — inbound messages, photos, documents and voice notes from allowlisted chats and groups. Inbound only.
+- **External Services** — the outside systems this platform and this Organization connect: what may arrive into the App and what an agent or App may call. An Agent knows a service through its `service-<slug>` skill: one the Agent carries, or one this project gets once the service is configured here. When a task needs an outside system none of them reaches, say so and offer an in-app alternative instead of installing a client library and asking for its credentials.
 - **Schedules** — recurring background work, run on a cron schedule by the platform.
 - **Browser testing** — a headless browser in the pod for walking the real user flow and seeing what the user sees.
 - **Document generation** — Word, PowerPoint, Excel and PDF deliverables, with the libraries already installed in the container.

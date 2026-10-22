@@ -20,10 +20,11 @@ import type {
   PermissionRequest,
   ReferenceListOutput,
   SessionMessageAssistantTool,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import type { Config } from "../config"
+import type { Todo } from "../util/todo"
 import type { CliRenderer } from "@opentui/core"
-import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
+import type { SessionInbox } from "@opencode/schema/session-inbox"
 
 export type RunFilePart = {
   type: "file"
@@ -85,7 +86,6 @@ export type RunPrompt = {
   command?: {
     name: string
     arguments: string
-    // Catalog source of the matched slash entry ("skill" routes to session.skill).
     source?: string
   }
 }
@@ -223,6 +223,11 @@ type ToolTaskSnapshot = {
   tail: string
 }
 
+type ToolTodoSnapshot = {
+  kind: "todo"
+  items: Todo[]
+}
+
 type ToolQuestionSnapshot = {
   kind: "question"
   items: Array<{
@@ -232,7 +237,12 @@ type ToolQuestionSnapshot = {
   tail: string
 }
 
-export type ToolSnapshot = ToolCodeSnapshot | ToolDiffSnapshot | ToolTaskSnapshot | ToolQuestionSnapshot
+export type ToolSnapshot =
+  | ToolCodeSnapshot
+  | ToolDiffSnapshot
+  | ToolTaskSnapshot
+  | ToolTodoSnapshot
+  | ToolQuestionSnapshot
 
 type MiniToolState =
   | {
@@ -295,7 +305,6 @@ export type FooterPromptRoute =
   | { type: "subagent-menu" }
   | { type: "subagent"; sessionID: string }
   | { type: "command" }
-  | { type: "skill" }
   | { type: "agent" }
   | { type: "model" }
   | { type: "variant" }
@@ -402,6 +411,7 @@ export type RunTuiConfig = Pick<
 
 export type MiniSettings = {
   thinking: "show" | "hide"
+  tools: "show" | "hide"
   shell_output: "show" | "hide"
   turn_summary: "show" | "hide"
   footer: "show" | "hide"
@@ -410,9 +420,13 @@ export type MiniSettings = {
   mono: boolean
 }
 
-export type MiniSettingChange = {
-  [Key in keyof MiniSettings]: { key: Key; value: MiniSettings[Key] }
-}[keyof MiniSettings]
+export type MiniVerbosity = "quiet" | "default" | "everything"
+
+export type MiniSettingChange =
+  | {
+      [Key in keyof MiniSettings]: { key: Key; value: MiniSettings[Key] }
+    }[keyof MiniSettings]
+  | { key: "verbosity"; value: MiniVerbosity }
 
 // Lifecycle phase of a scrollback entry. "start" opens the entry, "progress"
 // appends content (coalesced in the footer queue), "final" closes it.

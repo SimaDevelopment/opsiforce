@@ -6,6 +6,10 @@ import { projects, skills, tenantSettings, users, workspaces } from '../../db/sc
 import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
 import { ensureBuiltInAgent } from './agent-fixtures';
 import { EnvironmentService } from '../../src/environment/environment.service';
+import { mintCallerIdentity } from '@opsiforce/external-service-sdk/server';
+import { builtInCallerKey } from '../../src/external-services/built-ins/built-in-caller-key';
+import { PUBLIC_API_SERVICE } from '../../src/external-services/built-ins/public-api-service';
+import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectService } from '../../src/project/project.service';
@@ -184,19 +188,15 @@ export async function createProject(
   return project.id;
 }
 
-export function platformApiKeyFor(
-  app: INestApplication,
-  tenant: TenantFixture,
-  projectId: string
-): Promise<string> {
-  return app.get(GatewayKeyService).createKey(projectId, projectId, tenant.tenantId, 'platform-api');
+/** The `X-Opsiforce-Caller` public-api's Service host hands `/api/v1` for a call from this Project's Development. */
+export function callerIdentityFor(app: INestApplication, tenant: TenantFixture, projectId: string): string {
+  return mintCallerIdentity(
+    { kind: 'call', tenantId: tenant.tenantId, projectId, projectEnvironmentId: projectId, environment: 'development' },
+    builtInCallerKey(app.get(SecretSealer), PUBLIC_API_SERVICE)
+  );
 }
 
-export function serviceKeyFor(
-  app: INestApplication,
-  tenant: TenantFixture,
-  projectId: string
-): Promise<string> {
+export function serviceKeyFor(app: INestApplication, tenant: TenantFixture, projectId: string): Promise<string> {
   return app.get(GatewayKeyService).createKey(projectId, projectId, tenant.tenantId);
 }
 
@@ -240,9 +240,7 @@ export async function addNamedEnvironment(
   projectId: string,
   name: string
 ): Promise<string> {
-  const environment = await app
-    .get(EnvironmentService)
-    .create(tenant.tenantId, { name, slug: name.toLowerCase() });
+  const environment = await app.get(EnvironmentService).create(tenant.tenantId, { name, slug: name.toLowerCase() });
   const projectEnvironmentId = randomUUID();
   await app.get(ProjectEnvironmentService).create({
     id: projectEnvironmentId,

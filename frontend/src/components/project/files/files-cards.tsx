@@ -28,7 +28,7 @@ export function FilesCards(props: FilesCardsProps) {
             <div class="p-3 flex flex-col gap-2.5 pointer-events-none">
               <div class="flex items-start justify-between gap-2">
                 <FileTypeBadge name={entry.name} type={entry.type} class="w-9 h-9 text-[10px]" />
-                <div class="relative flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-events-auto">
+                <div class="relative flex items-center gap-0.5 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 focus-within:opacity-100 pointer-events-auto">
                   <Show when={entry.type === 'file'}>
                     <ToolbarButton tooltip="Download" onClick={() => props.onDownload(entry)}>
                       <Download class="w-3.5 h-3.5" />

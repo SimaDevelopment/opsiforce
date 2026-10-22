@@ -123,7 +123,7 @@ export function PaneStrip(props: PaneStripProps) {
         onScroll={syncScroll}
         class={cn(
           'flex h-full w-full min-h-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain snap-x',
-          hoverCapable() ? 'snap-proximity' : 'snap-mandatory'
+          hoverCapable() ? 'snap-proximity [scrollbar-width:none]' : 'snap-mandatory'
         )}
       >
         <div

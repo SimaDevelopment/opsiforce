@@ -1,27 +1,32 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { Link } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
-import {
-  useRemoveAgentSkill,
-  useSetAgentSkill,
-  type AgentDetail,
-  type AgentProfileSkill,
-} from '~/api/agents';
+import { useRemoveAgentSkill, useSetAgentSkill, type AgentDetail, type AgentProfileSkill } from '~/api/agents';
 import { ApiError } from '~/api/client';
 import { useSkills, type Skill } from '~/api/skills';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
 import {
   DisabledBadge,
   FOCUS_RING,
   OriginBadge,
+  RetiredBadge,
   RowList,
   SearchInput,
+  ServiceMark,
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ArrowUp, Check, Files, Lock, Plus } from '~/components/icons';
 import { cn } from '~/lib/cn';
+import { ServiceSettingsDialog, serviceSettingsSummary } from './agent-service-settings-dialog';
 import { DEFAULT_SKILL_FILE } from './skill-page';
 
 function refusalMessage(error: unknown): string {
@@ -44,6 +49,9 @@ export function AgentSkillList(props: {
 }) {
   const setSkill = useSetAgentSkill(() => props.agent.id);
   const removeSkill = useRemoveAgentSkill(() => props.agent.id);
+  const [settingsOf, setSettingsOf] = createSignal<AgentProfileSkill | null>(null);
+  const carriesServiceSettings = (skill: AgentProfileSkill) =>
+    props.agent.origin === 'custom' && skill.externalServiceId !== null;
 
   const upgrade = async (row: AgentProfileSkill) => {
     const skill = { name: row.name, skillId: row.skillId, latestVersion: row.latestVersion };
@@ -106,23 +114,41 @@ export function AgentSkillList(props: {
                 class="flex min-w-0 flex-1 items-center gap-2 after:absolute after:inset-0 focus-visible:outline-none"
               >
                 <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <Show
-                  when={skill.displayName}
-                  fallback={<span class="truncate font-mono text-sm text-foreground">{skill.name}</span>}
-                >
-                  {(displayName) => (
-                    <>
-                      <span class="truncate text-sm text-foreground">{displayName()}</span>
-                      <span class="shrink-0 font-mono text-[11px] text-muted-foreground">{skill.name}</span>
-                    </>
-                  )}
-                </Show>
-                <span class="shrink-0 text-xs tabular-nums text-muted-foreground">v{skill.pinnedVersion}</span>
-                <Show when={skill.visibility === 'private'}>
-                  <Lock class="h-3 w-3 shrink-0 text-amber-600" role="img" aria-label="Private" />
-                </Show>
+                <span class="min-w-0 flex-1 space-y-0.5">
+                  <span class="flex min-w-0 items-center gap-2">
+                    <Show
+                      when={skill.displayName}
+                      fallback={<span class="truncate font-mono text-sm text-foreground">{skill.name}</span>}
+                    >
+                      {(displayName) => (
+                        <>
+                          <span class="truncate text-sm text-foreground">{displayName()}</span>
+                          <span class="shrink-0 font-mono text-[11px] text-muted-foreground">{skill.name}</span>
+                        </>
+                      )}
+                    </Show>
+                    <span class="shrink-0 text-xs tabular-nums text-muted-foreground">v{skill.pinnedVersion}</span>
+                    <ServiceMark externalServiceId={skill.externalServiceId} available />
+                    <Show when={skill.retired}>
+                      <RetiredBadge />
+                    </Show>
+                    <Show when={skill.visibility === 'private'}>
+                      <Lock class="h-3 w-3 shrink-0 text-amber-600" role="img" aria-label="Private" />
+                    </Show>
+                  </span>
+                  <Show when={carriesServiceSettings(skill)}>
+                    <span class="block truncate text-xs text-muted-foreground">
+                      {serviceSettingsSummary(skill.serviceSettings)}
+                    </span>
+                  </Show>
+                </span>
               </Link>
               <div class="relative flex shrink-0 items-center gap-2">
+                <Show when={carriesServiceSettings(skill) && props.editable}>
+                  <Button size="sm" variant="outline" class="h-7" onClick={() => setSettingsOf(skill)}>
+                    Service settings
+                  </Button>
+                </Show>
                 <Show when={skill.updateAvailable ? skill.latestVersion : null}>
                   {(latest) => (
                     <>
@@ -150,6 +176,11 @@ export function AgentSkillList(props: {
           )}
         </For>
       </RowList>
+      <ServiceSettingsDialog
+        agentId={props.agent.id}
+        skillId={settingsOf()?.skillId ?? null}
+        onClose={() => setSettingsOf(null)}
+      />
     </Show>
   );
 }
@@ -157,12 +188,16 @@ export function AgentSkillList(props: {
 interface Verdict {
   ok: boolean;
   reason?: string;
+  onAgent?: boolean;
 }
 
 export function skillAddable(agent: AgentDetail, carried: AgentProfileSkill[], skill: Skill): Verdict {
+  if (agent.shippedSkills.some((shipped) => shipped.name === skill.name))
+    return { ok: false, reason: 'Ships with this agent', onAgent: true };
   if (skill.disabled) return { ok: false, reason: 'Disabled' };
   if (!skill.latestVersion) return { ok: false, reason: 'No published version' };
-  if (carried.some((pinned) => pinned.skillId === skill.id)) return { ok: false, reason: 'Already on this agent' };
+  if (carried.some((pinned) => pinned.skillId === skill.id))
+    return { ok: false, reason: 'Already on this agent', onAgent: true };
   if (carried.some((pinned) => pinned.name === skill.name))
     return { ok: false, reason: 'Another skill with this name is already on this agent' };
   if (skill.visibility === 'private' && agent.origin === 'built_in')
@@ -191,10 +226,11 @@ export function AddSkillsDialog(props: {
     const needle = query().trim().toLowerCase();
     return (skills.data ?? []).filter(
       (skill) =>
-        !needle ||
-        skill.name.toLowerCase().includes(needle) ||
-        (skill.displayName ?? '').toLowerCase().includes(needle) ||
-        (skill.description ?? '').toLowerCase().includes(needle)
+        !(skill.externalServiceId && !skill.available) &&
+        (!needle ||
+          skill.name.toLowerCase().includes(needle) ||
+          (skill.displayName ?? '').toLowerCase().includes(needle) ||
+          (skill.description ?? '').toLowerCase().includes(needle))
     );
   });
 
@@ -246,11 +282,12 @@ export function AddSkillsDialog(props: {
                 {(skill) => {
                   const verdict = () => skillAddable(props.agent, props.carried, skill);
                   const on = () => picked().includes(skill.id);
+                  const checked = () => on() || verdict().onAgent === true;
                   return (
                     <button
                       type="button"
                       role="checkbox"
-                      aria-checked={on()}
+                      aria-checked={checked()}
                       disabled={!verdict().ok}
                       onClick={() => toggle(skill.id)}
                       class={cn(
@@ -263,11 +300,11 @@ export function AddSkillsDialog(props: {
                       <span
                         class={cn(
                           'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                          on() ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'
+                          checked() ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background'
                         )}
                         aria-hidden="true"
                       >
-                        <Show when={on()}>
+                        <Show when={checked()}>
                           <Check class="h-3 w-3" />
                         </Show>
                       </span>
@@ -287,6 +324,7 @@ export function AddSkillsDialog(props: {
                             )}
                           </Show>
                           <OriginBadge origin={skill.origin} />
+                          <ServiceMark externalServiceId={skill.externalServiceId} available={skill.available} />
                           <Show when={skill.visibility === 'private'}>
                             <VisibilityBadge visibility="private" />
                           </Show>

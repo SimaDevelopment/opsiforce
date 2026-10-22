@@ -8,10 +8,10 @@ import {
   isContextOverflowFailure,
   type ProviderErrorEvent,
   type ToolCall,
-} from "@opencode-ai/ai"
-import type { Agent } from "@opencode-ai/schema/agent"
-import { Cause, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
-import { SessionError } from "@opencode-ai/schema/session-error"
+} from "@opencode/ai"
+import type { Agent } from "@opencode/schema/agent"
+import { Cause, Clock, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
+import { SessionError } from "@opencode/schema/session-error"
 import { Bus } from "../../bus.js"
 import { Permission } from "../../permission.js"
 import { Snapshot } from "../../snapshot.js"
@@ -38,15 +38,17 @@ export type Outcome = Data.TaggedEnum<{
   }
   RecoverFull: {}
   Compacted: {}
+  OutputLimit: { readonly needsContinuation: boolean }
 }>
 export const Outcome = Data.taggedEnum<Outcome>()
 
 interface Input {
+  readonly isLocationClosed: () => boolean
   readonly sessionID: SessionSchema.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly agent: Agent.ID
   readonly model: SessionRunnerModel.Resolved
-  readonly prepared: SessionModelRequest.Prepared
+  readonly prepared: Omit<SessionModelRequest.Prepared, "event">
   readonly retry: (
     cause: AIError,
     error: SessionError.Error,
@@ -69,14 +71,17 @@ export const make = Effect.gen(function* () {
   const toolOutput = yield* ToolOutput.Service
 
   const attempt = Effect.fn("SessionStep.attempt")(function* (input: Input) {
-    const startSnapshot = yield* snapshots.capture()
+    // The start snapshot only has to exist before local tools run, which cannot happen before Step.Started,
+    // so it is captured while the provider request is in flight instead of delaying it.
+    const pendingStartSnapshot = yield* snapshots.capture().pipe(Effect.forkScoped)
     const publisher = createLLMEventPublisher(bus, {
       sessionID: input.sessionID,
       assistantMessageID: input.assistantMessageID,
       agent: input.agent,
       model: input.model.ref,
       providerMetadataKey: input.model.model.route.providerMetadataKey ?? input.model.model.provider,
-      snapshot: startSnapshot,
+      pendingSnapshot: Fiber.join(pendingStartSnapshot),
+      started: yield* Clock.currentTimeMillis,
     })
     const toolRuns: Array<{
       readonly call: ToolCall
@@ -103,6 +108,8 @@ export const make = Effect.gen(function* () {
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           if (overflowFailure || publisher.hasProviderError()) return
+          // Wait here, where cancellation still works, rather than inside the uninterruptible publish.
+          if (!publisher.hasStarted()) yield* Fiber.join(pendingStartSnapshot)
           if (
             LLMEvent.is.providerError(event) &&
             isContextOverflowFailure(event) &&
@@ -136,18 +143,28 @@ export const make = Effect.gen(function* () {
         const stream = yield* restore(providerStream).pipe(Effect.exit)
         const streamFailure = Option.getOrUndefined(Exit.findErrorOption(stream))
         const streamInterrupted = Exit.hasInterrupts(stream)
+        // Cancelled before the start snapshot existed: record nothing, as when the capture preceded the request.
+        if (streamInterrupted && !publisher.hasStarted() && !pendingStartSnapshot.pollUnsafe())
+          return yield* Effect.failCause(stream.cause)
         if (!overflowFailure && publisher.hasStarted()) yield* publisher.streamed()
         if (streamInterrupted) yield* interruptTools
         const joined = yield* restore(Fiber.awaitAll(toolRuns.map((run) => run.fiber))).pipe(Effect.exit)
         if (Exit.isFailure(joined)) yield* interruptTools
         const tools = classifyToolExits(joined, toolRuns)
 
+        const overflow = overflowFailure ?? streamFailure
         if (
           !publisher.record().outputStarted &&
-          isContextOverflowFailure(overflowFailure ?? streamFailure) &&
+          isContextOverflowFailure(overflow) &&
           (yield* restore(input.recoverOverflow))
-        )
+        ) {
+          yield* Effect.logWarning("provider rejected the request as too long; compacting", {
+            sessionID: input.sessionID,
+            model: input.model.ref,
+            message: overflow?.message,
+          })
           return Outcome.Compacted()
+        }
 
         if (overflowFailure) yield* publisher.publish(overflowFailure)
         const recorded = publisher.record()
@@ -190,8 +207,9 @@ export const make = Effect.gen(function* () {
         for (const decline of tools.declines)
           yield* publisher.failTool(decline.call.id, {
             type: "aborted",
-            message:
-              decline.reason._tag === "QuestionTool.CancelledError"
+            message: input.isLocationClosed()
+              ? "Interaction cancelled because the location shut down"
+              : decline.reason._tag === "QuestionTool.CancelledError"
                 ? decline.reason.message
                 : "The user declined this tool call",
           })
@@ -206,14 +224,16 @@ export const make = Effect.gen(function* () {
         if (toolFailure) yield* publisher.failUnsettledTools(toolFailure)
         if (interrupted) yield* publisher.failAssistant(STEP_INTERRUPTED)
 
-        // All local fibers have joined; only provider-hosted results can still be missing.
+        // Parsers may leave unfinished calls without an execution event.
         if (llmError || (Exit.isSuccess(stream) && !recorded.providerFailed)) {
           const missing = yield* publisher.failUnsettledTools(RESULT_MISSING, "hosted")
           if (missing && !llmError && !recorded.finish) yield* publisher.failAssistant(RESULT_MISSING)
+          yield* publisher.failIncompleteTools()
         }
 
         const record = publisher.record()
         if (record.finish || record.failure) {
+          const startSnapshot = yield* Fiber.join(pendingStartSnapshot)
           const snapshot = yield* snapshots.capture()
           const files =
             startSnapshot && snapshot
@@ -233,7 +253,7 @@ export const make = Effect.gen(function* () {
               assistantMessageID: yield* publisher.startAssistant(),
               finish: record.finish.finish,
               rawFinish: record.finish.rawFinish,
-              providerState: record.finish.providerState,
+              native: record.finish.native,
               ...usage,
               snapshot,
               files,
@@ -251,13 +271,16 @@ export const make = Effect.gen(function* () {
           return Outcome.Continue({ error: llmError, decision: retry })
 
         if (Exit.isFailure(stream)) return yield* Effect.failCause(stream.cause)
-        if (tools.declines.length > 0) return yield* Effect.interrupt
+        if (tools.declines.length > 0) {
+          if (input.isLocationClosed()) return Outcome.Completed({ needsContinuation: true })
+          return yield* Effect.interrupt
+        }
         if (tools.interrupted && tools.failure) return yield* Effect.failCause(tools.failure)
         if (tools.interrupted && Exit.isFailure(joined)) return yield* Effect.failCause(joined.cause)
         if (record.failure) return yield* new StepFailedError({ error: record.failure })
-        return Outcome.Completed({
-          needsContinuation: input.prepared.request.toolChoice?.type !== "none" && record.needsContinuation,
-        })
+        const needsContinuation = input.prepared.request.toolChoice?.type !== "none" && record.needsContinuation
+        if (record.finish?.finish === "length") return Outcome.OutputLimit({ needsContinuation })
+        return Outcome.Completed({ needsContinuation })
       }),
     )
   }, Effect.scoped)

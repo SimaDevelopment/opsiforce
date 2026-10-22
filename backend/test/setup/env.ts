@@ -17,6 +17,8 @@ process.env.DATABASE_URL = workerDatabaseUrl(inject('databaseUrl'), poolId);
 process.env.NODE_ENV ??= 'test';
 process.env.K8S_NAMESPACE ??= 'opsiforce-test';
 process.env.STORAGE_TYPE ??= 'hostPath';
+process.env.EXTERNAL_SERVICES_ENCRYPTION_KEY ??= 'e'.repeat(64);
+process.env.OPSIFORCE_PUBLIC_URL ??= 'https://opsiforce.test';
 const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? path.join(tmpdir(), `opsiforce-test-storage-${poolId}`);
 mkdirSync(path.join(storageMountPath, 'projects'), { recursive: true });
 process.env.STORAGE_MOUNT_PATH = storageMountPath;

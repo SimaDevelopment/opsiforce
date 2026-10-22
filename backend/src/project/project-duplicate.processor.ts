@@ -85,6 +85,7 @@ export class ProjectDuplicateProcessor extends WorkerHost {
       await rm(targetPath, { recursive: true, force: true });
       await rename(tempPath, targetPath);
       await this.delivery.copyLedger(sourceProjectId, targetProjectId);
+      await this.projectService.configureCopiedProject(targetProjectId);
       await this.markStarting(duplicateJobId, targetProjectId);
       await this.projectService.requestStartupForId(targetProjectId);
       this.logger.log(`Duplicated project ${sourceProjectId} to ${targetProjectId} in ${Date.now() - started}ms`);

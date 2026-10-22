@@ -8,12 +8,22 @@ import {
 } from '@nestjs/common';
 import { AgentService } from '../agent/agent.service';
 import { canEditAgent, findVisibleAgent } from '../agent/agent-visibility';
+import { PUBLIC_API_SERVICE } from '../external-services/built-ins/public-api-service';
+import { builderChatPublicApiSettings } from '../external-services/configuration/public-api-settings';
+import { ProjectConfigurationStore } from '../external-services/configuration/project-configuration.store';
+import { ServiceRegistry } from '../external-services/registry/service-registry';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
 import { Perms } from '../permission/permission.constants';
 import { ProjectService } from '../project/project.service';
-import { ProjectStatus, type ChatKind } from '../project/project.types';
+import { EXTERNAL_SERVICE_CHAT_KIND, ProjectStatus, type ChatKind } from '../project/project.types';
 import { canEditSkill, findVisibleSkill } from '../store/skill-visibility';
-import { BuilderChatRepository, type ChatRow, type SubjectRow, type TestProjectRow } from './builder-chat.repository';
+import {
+  BuilderChatRepository,
+  type ChatRow,
+  type ClaimableSubjectRow,
+  type SubjectRow,
+  type TestProjectRow,
+} from './builder-chat.repository';
 import type {
   BuilderChatCaller,
   BuilderChatSummary,
@@ -25,6 +35,13 @@ import type {
 const CHAT_KIND_OF: Record<BuilderSubjectType, ChatKind> = {
   agent: 'agent_builder_chat',
   skill: 'skill_builder_chat',
+  external_service: EXTERNAL_SERVICE_CHAT_KIND,
+};
+
+const SUBJECT_NOUN: Record<BuilderSubjectType, string> = {
+  agent: 'Agent',
+  skill: 'Skill',
+  external_service: 'External Service',
 };
 
 interface ResolvedSubject extends BuilderSubject {
@@ -54,10 +71,25 @@ function subjectFields(type: BuilderSubjectType, row: SubjectColumns): Omit<Reso
 function subjectRowOf(ref: BuilderSubjectRef | undefined): SubjectRow {
   if (ref && 'agentId' in ref && typeof ref.agentId === 'string') return { type: 'agent', id: ref.agentId };
   if (ref && 'skillId' in ref && typeof ref.skillId === 'string') return { type: 'skill', id: ref.skillId };
+  if (ref && 'externalServiceId' in ref && typeof ref.externalServiceId === 'string') {
+    return { type: 'external_service', id: ref.externalServiceId };
+  }
   throw new BadRequestException({
     code: 'validation_failed',
-    message: 'A Builder chat is opened for either an agentId or a skillId',
+    message: 'A Builder chat is opened for an agentId, a skillId or an externalServiceId',
   });
+}
+
+function isClaimable(target: SubjectRow): target is ClaimableSubjectRow {
+  return target.type !== 'external_service';
+}
+
+function requirePermissionFor(caller: BuilderChatCaller, type: BuilderSubjectType): void {
+  if (type === 'agent' && !caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
+  if (type === 'skill' && !caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
+  if (type === 'external_service' && !caller.canManageTenantExternalServices) {
+    throw new MissingPermissionException(Perms.manageTenantExternalServices);
+  }
 }
 
 @Injectable()
@@ -65,7 +97,9 @@ export class BuilderChatService {
   constructor(
     private readonly repository: BuilderChatRepository,
     private readonly projects: ProjectService,
-    private readonly agents: AgentService
+    private readonly agents: AgentService,
+    private readonly registry: ServiceRegistry,
+    private readonly projectConfigurationStore: ProjectConfigurationStore
   ) {}
 
   async openFor(caller: BuilderChatCaller, ref: BuilderSubjectRef): Promise<BuilderChatSummary> {
@@ -73,6 +107,7 @@ export class BuilderChatService {
     const subject = await this.requireEditableSubject(caller, target);
     const existing = await this.existingChat(caller.tenantId, subject);
     if (existing) return this.summarize(await this.enableWithSubject(caller.tenantId, existing, subject), subject);
+    if (!isClaimable(target)) throw new NotFoundException(`External Service ${target.id} has no builder chat`);
 
     if (subject.disabled) {
       throw new BadRequestException({
@@ -93,6 +128,7 @@ export class BuilderChatService {
         createdBy: caller.userId,
         kind: CHAT_KIND_OF[subject.type],
         builderSubjectAgentId: subject.type === 'agent' ? subject.id : null,
+        configureBeforeDelivery: (chatId) => this.startWithPublicApi(chatId),
       }
     );
     if (await this.repository.claim(target, project.id)) {
@@ -103,6 +139,18 @@ export class BuilderChatService {
     const winner = await this.existingChat(caller.tenantId, await this.requireEditableSubject(caller, target));
     if (!winner) throw new ConflictException('The Builder chat could not be opened; try again');
     return this.summarize(winner, subject);
+  }
+
+  private async startWithPublicApi(chatId: string): Promise<void> {
+    const service = this.registry.bySlug(PUBLIC_API_SERVICE);
+    if (!service) {
+      throw new ServiceUnavailableException(
+        `The ${PUBLIC_API_SERVICE} External Service is not registered, so a Builder chat could not reach the platform`
+      );
+    }
+    await this.projectConfigurationStore.startWith(service, chatId, {
+      values: builderChatPublicApiSettings(service.manifest),
+    });
   }
 
   /** The chat's one Test Project; null when `chatId` is not a Builder chat or has none yet. */
@@ -146,12 +194,10 @@ export class BuilderChatService {
   }
 
   private async requireEditableSubject(caller: BuilderChatCaller, target: SubjectRow): Promise<ResolvedSubject> {
-    const permission = target.type === 'agent' ? Perms.manageAgents : Perms.manageSkills;
-    const permitted = target.type === 'agent' ? caller.canManageAgents : caller.canManageSkills;
-    if (!permitted) throw new MissingPermissionException(permission);
+    requirePermissionFor(caller, target.type);
 
     const subject = await this.readSubject(caller.tenantId, caller.userId, target);
-    if (!subject) throw new NotFoundException(`${target.type === 'agent' ? 'Agent' : 'Skill'} ${target.id} not found`);
+    if (!subject) throw new NotFoundException(`${SUBJECT_NOUN[target.type]} ${target.id} not found`);
     if (!subject.editable) {
       throw new ForbiddenException({ code: 'not_editable', message: `\`${subject.name}\` cannot be edited` });
     }
@@ -162,6 +208,14 @@ export class BuilderChatService {
     if (target.type === 'agent') {
       const agent = await findVisibleAgent(tenantId, userId, target.id);
       return agent ? { ...subjectFields('agent', agent), editable: canEditAgent(agent, userId) } : null;
+    }
+    if (target.type === 'external_service') {
+      const service = await this.repository.findExternalService(tenantId, target.id);
+      if (!service) return null;
+      return {
+        ...subjectFields('external_service', { ...service, name: service.slug, displayName: service.title }),
+        editable: true,
+      };
     }
     const skill = await findVisibleSkill(tenantId, userId, target.id);
     return skill ? { ...subjectFields('skill', skill), editable: canEditSkill(skill, userId) } : null;

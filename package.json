@@ -1,12 +1,15 @@
 {
   "name": "@opsiforce/root",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "packageManager": "yarn@4.17.0",
   "workspaces": [
     "backend",
     "frontend",
-    "codex-proxy"
+    "external-service-sdk",
+    "external-services",
+    "opencode-plugins",
+    "linked-account-proxy"
   ],
   "scripts": {
     "dev": "sh scripts/spin-up.sh"

@@ -7,7 +7,6 @@ import { FinishReason } from "./llm.js"
 import { Content } from "./tool.js"
 import { Model } from "./model.js"
 import { NonNegativeInt, PositiveInt, RelativePath } from "./schema.js"
-import { FileAttachment } from "./prompt.js"
 import { SessionID } from "./session-id.js"
 import { SessionMetadata } from "./session-metadata.js"
 import { Location } from "./location.js"
@@ -25,8 +24,7 @@ import { TokenUsage } from "./token-usage.js"
 import { SessionInbox } from "./session-inbox.js"
 import { Project } from "./project.js"
 import { SessionFork } from "./session-fork.js"
-
-export { FileAttachment }
+import { Permission } from "./permission.js"
 
 export const Source = Schema.Struct({
   start: NonNegativeInt,
@@ -62,6 +60,7 @@ export const Created = Event.durable({
     model: Model.Ref.pipe(optional),
     /** Host-supplied annotations resolved at creation, including any inherited from a parent. */
     metadata: SessionMetadata.pipe(optional),
+    permissions: Permission.Ruleset.pipe(optional),
     version: Schema.String,
   },
 })
@@ -109,6 +108,26 @@ export const Renamed = Event.durable({
 })
 export type Renamed = typeof Renamed.Type
 
+export const MetadataUpdated = Event.durable({
+  type: "session.metadata.updated",
+  ...options,
+  schema: {
+    ...Base,
+    metadata: SessionMetadata,
+  },
+})
+export type MetadataUpdated = typeof MetadataUpdated.Type
+
+export const Permissions = Event.durable({
+  type: "session.permissions",
+  ...options,
+  schema: {
+    ...Base,
+    permissions: Permission.Ruleset,
+  },
+})
+export type Permissions = typeof Permissions.Type
+
 export const Viewed = Event.durable({
   type: "session.viewed",
   ...options,
@@ -120,6 +139,21 @@ export const Viewed = Event.durable({
 })
 export type Viewed = typeof Viewed.Type
 
+export const Archived = Event.durable({
+  type: "session.archived",
+  ...options,
+  schema: Base,
+})
+export type Archived = typeof Archived.Type
+
+export const Unarchived = Event.durable({
+  type: "session.unarchived",
+  ...options,
+  schema: Base,
+})
+export type Unarchived = typeof Unarchived.Type
+
+// Replay-only: older releases allowed replacing completed assistant content.
 export const MessageContentUpdated = Event.durable({
   type: "session.message.content.updated",
   ...options,
@@ -233,7 +267,7 @@ export namespace Execution {
   export const Interrupted = Event.durable({
     type: "session.execution.interrupted",
     ...options,
-    schema: { ...Base, reason: Schema.Literals(["user", "shutdown", "superseded"]) },
+    schema: { ...Base, reason: Schema.Literals(["user", "shutdown", "superseded", "inactivity"]) },
   })
   export type Interrupted = typeof Interrupted.Type
 }
@@ -315,6 +349,8 @@ export namespace Step {
       agent: Agent.ID,
       model: Model.Ref,
       snapshot: Snapshot.ID.pipe(optional),
+      /** Request dispatch time, before waiting for provider output. */
+      started: NonNegativeInt,
     },
   })
   export type Started = typeof Started.Type
@@ -338,7 +374,7 @@ export namespace Step {
       assistantMessageID: SessionMessage.ID,
       finish: FinishReason,
       rawFinish: Schema.String.pipe(optional),
-      providerState: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
       cost: Money.USD,
       tokens: TokenUsage.Info,
       snapshot: Snapshot.ID.pipe(optional),
@@ -356,7 +392,7 @@ export namespace Step {
       error: SessionError.Error,
       finish: Schema.Literals(["content-filter"]).pipe(optional),
       rawFinish: Schema.String.pipe(optional),
-      providerState: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
       cost: Money.USD.pipe(optional),
       tokens: TokenUsage.Info.pipe(optional),
       snapshot: Snapshot.ID.pipe(optional),
@@ -398,7 +434,7 @@ export namespace Text {
       assistantMessageID: SessionMessage.ID,
       ordinal: NonNegativeInt,
       text: Schema.String,
-      state: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
     },
   })
   export type Ended = typeof Ended.Type
@@ -412,7 +448,7 @@ export namespace Reasoning {
       ...Base,
       assistantMessageID: SessionMessage.ID,
       ordinal: NonNegativeInt,
-      state: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
     },
   })
   export type Started = typeof Started.Type
@@ -437,7 +473,7 @@ export namespace Reasoning {
       assistantMessageID: SessionMessage.ID,
       ordinal: NonNegativeInt,
       text: Schema.String,
-      state: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
     },
   })
   export type Ended = typeof Ended.Type
@@ -489,7 +525,7 @@ export namespace Tool {
       ...ToolBase,
       input: Schema.Record(Schema.String, Schema.Unknown),
       executed: Schema.Boolean,
-      state: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
     },
   })
   export type Called = typeof Called.Type
@@ -516,7 +552,7 @@ export namespace Tool {
       content: Schema.NonEmptyArray(Content),
       metadata: Schema.Record(Schema.String, Schema.Json).pipe(optional),
       executed: Schema.Boolean,
-      resultState: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
     },
   })
   export type Success = typeof Success.Type
@@ -538,7 +574,7 @@ export namespace Tool {
       content: Schema.NonEmptyArray(Content).pipe(optional),
       metadata: Schema.Record(Schema.String, Schema.Json).pipe(optional),
       executed: Schema.Boolean,
-      resultState: SessionMessage.ProviderState.pipe(optional),
+      native: SessionMessage.Native.pipe(optional),
     },
   })
   export type Failed = typeof Failed.Type
@@ -564,7 +600,6 @@ export namespace Compaction {
     schema: {
       ...Base,
       reason: Schema.Literals(["auto", "manual"]),
-      recent: Schema.String,
       inputID: SessionMessage.ID.pipe(optional),
     },
   })
@@ -586,9 +621,12 @@ export namespace Compaction {
       ...Base,
       reason: Started.data.fields.reason,
       model: SessionMessage.CompactionCompleted.fields.model,
-      providerState: SessionMessage.CompactionCompleted.fields.providerState,
+      native: SessionMessage.CompactionCompleted.fields.native,
       text: Schema.String,
-      recent: Schema.String,
+      // Repeats the internal `session.usage.recorded` figures: that event never reaches clients, and it
+      // stays the accounting source for session totals and stats.
+      cost: SessionMessage.CompactionCompleted.fields.cost,
+      tokens: SessionMessage.CompactionCompleted.fields.tokens,
     },
   })
   export type Ended = typeof Ended.Type
@@ -601,6 +639,8 @@ export namespace Compaction {
       reason: Started.data.fields.reason,
       error: SessionError.Error,
       inputID: SessionMessage.ID.pipe(optional),
+      cost: SessionMessage.CompactionFailed.fields.cost,
+      tokens: SessionMessage.CompactionFailed.fields.tokens,
     },
   })
   export type Failed = typeof Failed.Type
@@ -626,7 +666,11 @@ export const Definitions = Event.inventory(
   ModelSelected,
   Moved,
   Renamed,
+  MetadataUpdated,
+  Permissions,
   Viewed,
+  Archived,
+  Unarchived,
   UsageUpdated,
   Deleted,
   Forked,
@@ -668,13 +712,13 @@ export const Definitions = Event.inventory(
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
-  MessageContentUpdated,
 )
 
-// UsageRecorded is durable but internal: excluded from Definitions so it never reaches the public manifest.
+// Internal and replay-only events are excluded from the public manifest.
 export const DurableDefinitions = Event.inventory(
   ...Definitions.filter((definition) => definition.durability === "durable"),
   UsageRecorded,
+  MessageContentUpdated,
 )
 export const EphemeralDefinitions = Event.inventory(
   ...Definitions.filter((definition) => definition.durability === "ephemeral"),

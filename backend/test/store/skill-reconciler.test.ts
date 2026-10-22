@@ -10,6 +10,7 @@ import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service
 import { hashSkillTree, validateSkillTree } from '../../src/store/gate';
 import { reservedSkillNames, SkillReconcilerService } from '../../src/store/skill-reconciler.service';
 import { readComposedSkills, skillSourceDirectories } from '../../src/store/skill-tree';
+import { ensureBuiltInServiceSkill } from '../support/agent-fixtures';
 
 const agentReconciler = { ready: () => Promise.resolve() } as AgentReconcilerService;
 
@@ -45,6 +46,10 @@ async function versionsOf(name: string) {
     .innerJoin(skills, eq(skills.id, skillVersions.skillId))
     .where(and(eq(skills.name, name), isNull(skills.tenantId)))
     .orderBy(asc(skillVersions.version));
+}
+
+function shippedByTheImage(): string[] {
+  return readComposedSkills().map((skill) => skill.name);
 }
 
 async function skillRow(name: string) {
@@ -129,16 +134,47 @@ describe('the built-in skill reconciler', () => {
     expect(row.description).toBe('Second.');
   });
 
-  it('leaves a name that left the image in place', async () => {
+  it('retires a name that left the image, keeping its rows and Versions', async () => {
     const retired = `skill-${randomUUID()}`;
     writeSkill(join(root, 'skills'), retired, manifest(retired, 'Retired.'));
     await newReconciler().reconcile(readComposedSkills(root));
 
-    const empty = mkdtempSync(join(tmpdir(), 'agent-config-'));
-    await newReconciler().reconcile(readComposedSkills(empty));
+    const names = await newReconciler().retireAbsent(shippedByTheImage());
 
-    expect(await skillRow(retired)).toBeDefined();
+    expect(names).toContain(retired);
+    expect((await skillRow(retired)).retiredAt).not.toBeNull();
     expect(await versionsOf(retired)).toHaveLength(1);
+    expect((await skillRow('platform')).retiredAt).toBeNull();
+  });
+
+  it('un-retires a name the image ships again, without minting a Version for unchanged files', async () => {
+    const returning = `skill-${randomUUID()}`;
+    writeSkill(join(root, 'skills'), returning, manifest(returning, 'Back again.'));
+    await newReconciler().reconcile(readComposedSkills(root));
+    await newReconciler().retireAbsent(shippedByTheImage());
+
+    await newReconciler().reconcile(readComposedSkills(root));
+
+    expect((await skillRow(returning)).retiredAt).toBeNull();
+    expect(await versionsOf(returning)).toHaveLength(1);
+  });
+
+  it('retires nothing when it reads no skill at all, so a missing tree never empties the Store', async () => {
+    const kept = `skill-${randomUUID()}`;
+    writeSkill(join(root, 'skills'), kept, manifest(kept, 'Kept.'));
+    await newReconciler().reconcile(readComposedSkills(root));
+
+    expect(await newReconciler().retireAbsent([])).toEqual([]);
+    expect((await skillRow(kept)).retiredAt).toBeNull();
+  });
+
+  it('never retires a Service skill, which its External Service ships rather than the image', async () => {
+    const service = await ensureBuiltInServiceSkill(`svc-${randomUUID().slice(0, 8)}`);
+
+    await newReconciler().retireAbsent(shippedByTheImage());
+
+    const [row] = await db.select({ retiredAt: skills.retiredAt }).from(skills).where(eq(skills.id, service.skillId));
+    expect(row.retiredAt).toBeNull();
   });
 
   it('converges on one row and one version when two replicas boot at once', async () => {

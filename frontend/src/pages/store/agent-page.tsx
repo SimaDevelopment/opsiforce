@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
 import { Link, useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import {
@@ -34,9 +34,7 @@ import {
 import { DropdownMenuSeparator } from '~/components/ui/dropdown-menu';
 import { ActionsMenu, ActionsMenuItem } from '~/components/actions-menu';
 import { Spinner } from '~/components/ui/spinner';
-import { EnvironmentBadge } from '~/components/environment-badge';
 import {
-  DefaultEnvironmentMark,
   DisabledBadge,
   EmptyState,
   ErrorState,
@@ -48,14 +46,20 @@ import {
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ENTRY_SLUG_MAX_LENGTH, EntryNameField, isNameUnavailable } from '~/components/store/entry-name-field';
+import { EnvironmentList, EnvironmentSplit, type EnvironmentRowStatus } from '~/components/store/environment-list';
 import { InlineEdit } from '~/components/store/inline-edit';
+import { AgentSettingsDialog } from './agent-settings-dialog';
+import {
+  ProjectSettingsChoiceField,
+  createProjectSettingsChoice,
+} from '~/components/resources/project-settings-choice';
+import { AgentProjectDefaults } from '~/components/store/agent-project-defaults';
 import { OpenBuilderButton } from '~/components/store/open-builder-button';
 import {
   AlertTriangle,
   Ban,
   Bot,
   ChevronLeft,
-  ChevronRight,
   CirclePlay,
   Copy,
   Download,
@@ -63,11 +67,13 @@ import {
   Globe,
   Plus,
   Rocket,
+  Settings,
   Trash2,
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
 import { slugify } from '~/lib/app-url';
 import { cn } from '~/lib/cn';
+import { createDocumentTitle } from '~/lib/create-document-title';
 import { driftText, isPublished } from './agent-drift';
 import { DevelopmentPanel, ReadOnlyPanel } from './agent-profile-panel';
 import { PublishAgentDialog } from './agent-publish-dialog';
@@ -86,6 +92,7 @@ function refusal(error: unknown, fallback: string): string {
 
 export function AgentPage(props: AgentPageProps) {
   const agent = useAgent(() => props.agentId);
+  createDocumentTitle(() => agent.data && (agent.data.displayName ?? agent.data.name));
   const environments = useEnvironments();
   const { hasPermission } = usePermissions();
   const canManage = () => hasPermission(Permission.manageAgents);
@@ -181,7 +188,17 @@ function AgentBody(props: {
       </Show>
 
       <Show when={!isBuiltIn()}>
-        <div class="grid grid-cols-[minmax(0,1fr)_16rem] gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
+        <EnvironmentSplit
+          list={
+            <EnvironmentList
+              environments={props.environments}
+              selectedId={props.selectedId}
+              defaultEnvironmentId={props.agent.settings.defaultEnvironmentId}
+              statusOf={(environment) => agentEnvironmentStatus(environment, developmentProfile(), profileFor)}
+              onEnv={props.onEnv}
+            />
+          }
+        >
           <EnvironmentPanel
             agent={props.agent}
             environments={props.environments}
@@ -190,18 +207,7 @@ function AgentBody(props: {
             canManage={props.canManage}
             onAdd={() => setAdding(true)}
           />
-          <aside class="sticky top-4 self-start">
-            <SectionTitle>Environments</SectionTitle>
-            <EnvironmentList
-              agent={props.agent}
-              environments={props.environments}
-              development={developmentProfile()}
-              selectedId={props.selectedId}
-              profileFor={profileFor}
-              onEnv={props.onEnv}
-            />
-          </aside>
-        </div>
+        </EnvironmentSplit>
       </Show>
 
       <Show when={publishing()}>
@@ -242,6 +248,7 @@ function AgentHeader(props: {
     null;
   const editable = () => props.canManage && props.agent.origin === 'custom';
   const name = () => props.agent.displayName ?? props.agent.name;
+  const [editingSettings, setEditingSettings] = createSignal(false);
 
   const save = async (patch: { displayName?: string; description?: string | null }) => {
     try {
@@ -302,6 +309,12 @@ function AgentHeader(props: {
             </span>
             <Show when={creator()}>{(creatorName) => <span> · created by {creatorName()}</span>}</Show>
           </div>
+          <AgentProjectDefaults
+            podSettings={props.agent.podSettings}
+            readyProjects={props.agent.settings.warmPoolSize}
+            imageOwned={props.agent.origin === 'built_in'}
+            onEdit={editable() ? () => setEditingSettings(true) : undefined}
+          />
         </div>
         <Show when={props.canManage}>
           <div class="flex shrink-0 flex-wrap items-center gap-2">
@@ -316,16 +329,25 @@ function AgentHeader(props: {
                 Publish
               </Button>
             </Show>
-            <AgentActionsMenu agent={props.agent} publishedBeyondDevelopment={props.publishedBeyondDevelopment} />
+            <AgentActionsMenu
+              agent={props.agent}
+              publishedBeyondDevelopment={props.publishedBeyondDevelopment}
+              onEditSettings={() => setEditingSettings(true)}
+            />
           </div>
         </Show>
       </div>
       <div class="mt-4 h-px bg-border" />
+      <AgentSettingsDialog agent={props.agent} open={editingSettings()} onOpenChange={setEditingSettings} />
     </header>
   );
 }
 
-function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopment: boolean }) {
+function AgentActionsMenu(props: {
+  agent: AgentDetail;
+  publishedBeyondDevelopment: boolean;
+  onEditSettings: () => void;
+}) {
   const [duplicating, setDuplicating] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
   const [widening, setWidening] = createSignal(false);
@@ -364,6 +386,11 @@ function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopmen
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
+        <Show when={props.agent.origin === 'custom'}>
+          <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
+            Settings
+          </ActionsMenuItem>
+        </Show>
         <Show when={props.agent.duplicable}>
           <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate
@@ -507,6 +534,20 @@ function DeleteAgentDialog(props: {
 function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const duplicate = useDuplicateAgent(() => props.agent.id);
+  const projectSettings = createProjectSettingsChoice();
+  createEffect(
+    on(
+      () => props.open,
+      (open) => {
+        if (!open) return;
+        const agent = untrack(() => props.agent);
+        projectSettings.reset(
+          { resources: agent.podSettings, warmPoolSize: agent.settings.warmPoolSize },
+          agent.settings.maxWarmPoolSize
+        );
+      }
+    )
+  );
   const sourceName = () => props.agent.displayName ?? props.agent.name;
   const [displayName, setDisplayName] = createSignal(`${sourceName()} copy`);
   const [error, setError] = createSignal<string | null>(null);
@@ -514,16 +555,21 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
 
   const slug = () => slugify(displayName().trim(), ENTRY_SLUG_MAX_LENGTH.agent);
   const unavailable = () => unavailableSlug() === slug();
-  const canSubmit = () => slug().length > 0 && !unavailable() && !duplicate.isPending;
+  const canSubmit = () => slug().length > 0 && !unavailable() && !duplicate.isPending && !projectSettings.invalid();
 
   const save = async (event: SubmitEvent) => {
     event.preventDefault();
     if (!canSubmit()) return;
     setError(null);
     try {
-      const copy = await duplicate.mutateAsync(displayName().trim());
+      const { agent: copy, notes } = await duplicate.mutateAsync({
+        displayName: displayName().trim(),
+        ...projectSettings.toChoice(),
+      });
       props.onOpenChange(false);
-      toast.success(`Created ${copy.displayName ?? copy.name}`);
+      toast.success(`Created ${copy.displayName ?? copy.name}`, {
+        description: notes.map((note) => note.message).join('\n') || undefined,
+      });
       void navigate({ to: '/store/agents/$id', params: { id: copy.id } });
     } catch (caught) {
       if (isNameUnavailable(caught)) {
@@ -536,7 +582,7 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent>
+      <DialogContent class="max-h-[85vh] max-w-xl overflow-y-auto" align="top">
         <form onSubmit={(event) => void save(event)}>
           <DialogHeader>
             <DialogTitle>Duplicate {sourceName()}</DialogTitle>
@@ -557,6 +603,13 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
                 setError(null);
               }}
             />
+            <div class="mt-4">
+              <ProjectSettingsChoiceField
+                choice={projectSettings}
+                sourceLabel="This agent"
+                disabled={duplicate.isPending}
+              />
+            </div>
             <Show when={error()}>
               <p class="mt-2 text-xs text-destructive" role="alert">
                 {error()}
@@ -804,61 +857,14 @@ function OmittedSkills(props: { omitted: AgentDeliverySummary['omitted'] }) {
   );
 }
 
-function EnvironmentList(props: {
-  agent: AgentDetail;
-  environments: Environment[];
-  development: AgentProfile | undefined;
-  selectedId: string;
-  profileFor: (environmentId: string) => AgentProfile | undefined;
-  onEnv: (environmentId: string) => void;
-}) {
-  return (
-    <RowList>
-      <For each={props.environments}>
-        {(environment) => {
-          const selected = () => environment.id === props.selectedId;
-          const status = () =>
-            environment.isDefault ? 'Where you edit' : driftText(props.development, props.profileFor(environment.id));
-          const stale = () =>
-            !environment.isDefault &&
-            isPublished(props.profileFor(environment.id)) &&
-            status() !== 'Same as Development';
-          return (
-            <button
-              type="button"
-              aria-pressed={selected()}
-              onClick={() => props.onEnv(environment.id)}
-              class={cn(
-                'group flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/60',
-                FOCUS_RING,
-                selected() && 'bg-accent'
-              )}
-            >
-              <span class="min-w-0 flex-1 space-y-0.5">
-                <span class="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                  <EnvironmentBadge environment={environment} />
-                  <span class="truncate">{environment.name}</span>
-                  <Show when={props.agent.settings.defaultEnvironmentId === environment.id}>
-                    <DefaultEnvironmentMark environmentName={environment.name} plain />
-                  </Show>
-                </span>
-                <span class={cn('block truncate text-xs', stale() ? 'text-amber-700' : 'text-muted-foreground')}>
-                  {status()}
-                </span>
-              </span>
-              <ChevronRight
-                class={cn(
-                  'h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5',
-                  selected() ? 'text-foreground' : 'text-muted-foreground'
-                )}
-                aria-hidden="true"
-              />
-            </button>
-          );
-        }}
-      </For>
-    </RowList>
-  );
+function agentEnvironmentStatus(
+  environment: Environment,
+  development: AgentProfile | undefined,
+  profileFor: (environmentId: string) => AgentProfile | undefined
+): EnvironmentRowStatus {
+  if (environment.isDefault) return { text: 'Where you edit', stale: false };
+  const text = driftText(development, profileFor(environment.id));
+  return { text, stale: isPublished(profileFor(environment.id)) && text !== 'Same as Development' };
 }
 
 function EnvironmentPanel(props: {

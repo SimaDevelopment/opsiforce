@@ -1,4 +1,4 @@
-import { and, eq, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gt, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
@@ -18,7 +18,7 @@ export function cursorValue(column: PgColumn) {
   return sql<string>`to_char(${column}, ${CURSOR_TIMESTAMP_FORMAT})`.as('cursor_at');
 }
 
-function encodeCursor({ cursorAt, id }: PageCursor): string {
+export function encodeCursor({ cursorAt, id }: PageCursor): string {
   return Buffer.from(`${cursorAt}${CURSOR_SEPARATOR}${id}`).toString('base64url');
 }
 
@@ -29,7 +29,7 @@ function isMintedCursorTimestamp(value: string): boolean {
   return parsed.toISOString().slice(0, 19) === `${value.slice(0, 10)}T${value.slice(11, 19)}`;
 }
 
-function decodeCursor(value: string): PageCursor | null {
+export function decodeCursor(value: string): PageCursor | null {
   const decoded = Buffer.from(value, 'base64url').toString('utf8');
   const separator = decoded.indexOf(CURSOR_SEPARATOR);
   if (separator <= 0 || separator === decoded.length - 1) return null;
@@ -81,6 +81,11 @@ export function beforeCursor(column: PgColumn, idColumn: PgColumn, cursor: PageC
   if (!cursor) return undefined;
   const at = sql`to_timestamp(${cursor.cursorAt}, ${CURSOR_TIMESTAMP_FORMAT})::timestamp`;
   return or(lt(column, at), and(eq(column, at), lt(idColumn, cursor.id)));
+}
+
+export function afterCursor(column: PgColumn, idColumn: PgColumn, cursor: PageCursor): SQL | undefined {
+  const at = sql`to_timestamp(${cursor.cursorAt}, ${CURSOR_TIMESTAMP_FORMAT})::timestamp`;
+  return or(gt(column, at), and(eq(column, at), gt(idColumn, cursor.id)));
 }
 
 export interface TakenPage<TRow> {

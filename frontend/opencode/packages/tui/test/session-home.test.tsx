@@ -2,9 +2,10 @@ import { expect, test } from "bun:test"
 import { type Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
+import { waitForHighlightedFrame } from "./fixture/frame"
 
 test.each([
   "bottom",
@@ -26,7 +27,8 @@ test.each([
   "prepend-failure",
 ])("Home loads a stable, bounded beginning (%s)", async (mode) => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 100, height: 30, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   const session = {
     id: "ses_test",
@@ -93,7 +95,7 @@ test.each([
       config: {
         get: async () => ({
           animations: false,
-          tabs: { enabled: false },
+          tabs: { mode: "off" },
           keybinds: {
             "session.line.up": "f6",
             "session.page.down": "f7",
@@ -110,7 +112,7 @@ test.each([
     }).pipe(Effect.provide(Global.layerWith({ state: state.path })), Effect.provide(FileSystem.layerNoop({}))),
   )
   try {
-    await setup.waitForFrame((frame) => frame.includes("History message 0399"))
+    await waitForHighlightedFrame(setup, (frame) => frame.includes("History message 0399"))
     const findScrollBox = (root: Renderable): ScrollBoxRenderable | undefined =>
       root instanceof ScrollBoxRenderable && root.getRenderable("message-399")
         ? root
@@ -223,7 +225,7 @@ test.each([
       )
       await setup.waitForVisualIdle()
       expect(frames).toEqual([before, visible()])
-      expect(setup.captureCharFrame()).toContain("History message 0001")
+      await waitForHighlightedFrame(setup, (frame) => frame.includes("History message 0001"))
       expect(mounted().map((child) => child.id)).toEqual(messages.slice(0, 40).map((message) => message.id))
       expect(scroll.scrollTop).toBe(0)
       expect(Math.max(...mountCounts)).toBeLessThanOrEqual(60)

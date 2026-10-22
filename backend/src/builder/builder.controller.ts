@@ -10,7 +10,7 @@ import { BuilderChatService } from './builder-chat.service';
 import type { BuilderChatCaller, BuilderChatSummary, BuilderSubjectRef } from './builder.types';
 
 @Controller('builder')
-@RequireAnyPermission([Perms.manageSkills, Perms.manageAgents])
+@RequireAnyPermission([Perms.manageSkills, Perms.manageAgents, Perms.manageTenantExternalServices])
 export class BuilderController {
   constructor(
     private readonly chats: BuilderChatService,
@@ -35,6 +35,7 @@ export class BuilderController {
       userId: await this.userService.resolveUserId(user, tenant.tenantId),
       canManageSkills: hasPermission(groups, Perms.manageSkills),
       canManageAgents: hasPermission(groups, Perms.manageAgents),
+      canManageTenantExternalServices: hasPermission(groups, Perms.manageTenantExternalServices),
     };
   }
 }

@@ -1,17 +1,11 @@
 import { Component } from "solid-js"
-import { Select } from "@opencode-ai/ui/select"
-import { Switch } from "@opencode-ai/ui/switch"
 import { useLanguage } from "@/runtime/i18n/language"
-import { SettingsList } from "@/settings/list"
-import { useSettings } from "@/settings/model"
-import { SettingsRow } from "@/settings/row"
 import "@/settings/settings.css"
 
-const tabLayoutOptions: ("horizontal" | "vertical")[] = ["horizontal", "vertical"]
+export const experimentalSettingsAvailable = false
 
 export const SettingsExperimental: Component = () => {
   const language = useLanguage()
-  const settings = useSettings()
 
   return (
     <>
@@ -23,45 +17,6 @@ export const SettingsExperimental: Component = () => {
               {language.t("settings.experimental.description")}
             </span>
           </div>
-        </div>
-      </div>
-
-      <div class="settings-tab-body">
-        <div class="settings-section">
-          <SettingsList>
-            <SettingsRow
-              title={language.t("settings.appearance.row.tabs.title")}
-              description={language.t("settings.appearance.row.tabs.description")}
-            >
-              <Select
-                data-action="settings-tab-layout"
-                options={tabLayoutOptions}
-                current={tabLayoutOptions.find((option) => option === settings.appearance.tabLayout())}
-                placement="bottom-end"
-                gutter={6}
-                label={(option) =>
-                  option === "horizontal"
-                    ? language.t("settings.appearance.row.tabs.horizontal")
-                    : language.t("settings.appearance.row.tabs.vertical")
-                }
-                onSelect={(option) => option && settings.appearance.setTabLayout(option)}
-              />
-            </SettingsRow>
-            <SettingsRow
-              title={language.t("settings.appearance.row.projectName.title")}
-              description={language.t("settings.appearance.row.projectName.description")}
-            >
-              <div data-action="settings-show-project-name">
-                <Switch
-                  checked={settings.appearance.showProjectName()}
-                  onChange={settings.appearance.setShowProjectName}
-                  hideLabel
-                >
-                  {language.t("settings.appearance.row.projectName.title")}
-                </Switch>
-              </div>
-            </SettingsRow>
-          </SettingsList>
         </div>
       </div>
     </>

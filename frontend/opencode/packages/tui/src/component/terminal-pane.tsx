@@ -1,5 +1,5 @@
-import { CliRenderEvents, EmbeddedTerminalRenderable, type RGBA } from "@opentui/core"
-import type { ResolvedThemeTokens } from "@opencode-ai/theme/tui"
+import { EmbeddedTerminalRenderable, type RGBA } from "@opentui/core"
+import { rgbToOklch, type ResolvedThemeTokens } from "@opencode/theme/tui"
 import { extend, useRenderer } from "@opentui/solid"
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useClient } from "../context/client"
@@ -28,12 +28,11 @@ export function TerminalPane(props: {
   onAutoFocus?: () => void
   onFocusRequest?: (focus: (() => void) | undefined) => void
   onDisconnect?: () => void
-  onFocusChange?: (focused: boolean) => void
 }) {
   const client = useClient()
   const keymap = Keymap.use()
   const leader = Keymap.useLeaderActive()
-  const theme = useTheme("elevated")
+  const theme = useTheme()
   const themes = useThemes()
   const renderer = useRenderer()
   const [failure, setFailure] = createSignal<string>()
@@ -47,6 +46,7 @@ export function TerminalPane(props: {
   let restored = false
   let wantsControl = false
   let disposed = false
+  let exited = false
   let size: TerminalSize | undefined
   let canonicalSize: TerminalSize | undefined
   let terminalSize: TerminalSize | undefined
@@ -65,7 +65,7 @@ export function TerminalPane(props: {
     if (terminalTheme) terminal?.write(terminalTheme)
   }
 
-  const send = (data: Uint8Array) => {
+  const send = (data: Uint8Array<ArrayBuffer>) => {
     if (attached && socket?.readyState === WebSocket.OPEN) socket.send(data)
   }
 
@@ -148,9 +148,6 @@ export function TerminalPane(props: {
     },
     { priority: 100 },
   )
-  // Blur emits this event before updating the terminal's own focused flag.
-  const onFocused = () => props.onFocusChange?.(renderer.currentFocusedRenderable === terminal)
-  renderer.on(CliRenderEvents.FOCUSED_RENDERABLE, onFocused)
   createEffect(() => {
     if (!props.autoFocus || !terminal) return
     terminal.focus()
@@ -158,8 +155,8 @@ export function TerminalPane(props: {
   })
 
   createEffect(() => {
-    const tokens = themes.currentTokens().contextual.elevated
-    terminalTheme = terminalPalette(tokens, themes.mode(), tokens.background.default)
+    const tokens = themes.currentTokens()
+    terminalTheme = terminalPalette(tokens, themes.mode(), tokens.background.raised.base)
     applyTerminalTheme()
   })
 
@@ -172,8 +169,6 @@ export function TerminalPane(props: {
     waitingSize?.resolve()
     socket?.close()
     offKeys()
-    renderer.off(CliRenderEvents.FOCUSED_RENDERABLE, onFocused)
-    props.onFocusChange?.(false)
     props.onFocusRequest?.(undefined)
   })
 
@@ -209,6 +204,10 @@ export function TerminalPane(props: {
       if (typeof event.data !== "string") return
       const message: unknown = JSON.parse(event.data)
       if (!message || typeof message !== "object" || !("type" in message)) return
+      if (message.type === "exited") {
+        exited = true
+        return
+      }
       if (
         message.type === "resized" &&
         "cols" in message &&
@@ -272,7 +271,8 @@ export function TerminalPane(props: {
       if (disposed) return
       const focused = terminal?.focused
       terminal = undefined
-      setFailure("Terminal disconnected")
+      // The removal event arrives separately; keep the terminal visible until then.
+      if (!exited) setFailure("Terminal disconnected")
       if (focused) props.onDisconnect?.()
     })
     socket = next
@@ -284,7 +284,7 @@ export function TerminalPane(props: {
       minWidth={0}
       minHeight={0}
       overflow="hidden"
-      backgroundColor={themes.currentTokens().contextual.elevated.background.default}
+      backgroundColor={themes.currentTokens().background.raised.base}
       onSizeChange={function () {
         size = { cols: Math.max(1, this.width - 2), rows: this.height }
         if (controller && restored) interact()
@@ -292,9 +292,10 @@ export function TerminalPane(props: {
       // TODO: Revisit when embedded terminal mouse handlers can compose without replacing its internal focus handler.
       onMouseDown={() => interact()}
     >
-      <Show when={!failure()} fallback={<text fg={theme.text.feedback.error.default}>{failure()}</text>}>
+      <Show when={!failure()} fallback={<text fg={theme.text.feedback.error.base}>{failure()}</text>}>
         <>
           <embeddedTerminal
+            transparentBackground={themes.currentTokens().background.raised.base.a === 0}
             ref={(value) => {
               terminal = value
               props.onFocusRequest?.(() => {
@@ -335,33 +336,53 @@ function sameSize(first: TerminalSize | undefined, second: TerminalSize | undefi
   return !!first && !!second && first.cols === second.cols && first.rows === second.rows
 }
 
-function terminalPalette(theme: ResolvedThemeTokens, mode: "dark" | "light", background: RGBA) {
-  const base = mode === "dark" ? 200 : 800
-  const bright = mode === "dark" ? 100 : 900
+export function terminalPalette(theme: ResolvedThemeTokens, mode: "light" | "dark", background: RGBA) {
+  const black = theme.hue.neutral[mode === "dark" ? 800 : 200]
+  const white = theme.hue.neutral[mode === "dark" ? 200 : 800]
+  const brightWhite = theme.hue.neutral[mode === "dark" ? 100 : 900]
+  const blue = terminalHue(theme, rgbToOklch(0, 0, 1).h)
+  const magenta = terminalHue(theme, rgbToOklch(1, 0, 1).h)
+  const normal = [
+    theme.text.feedback.error.base,
+    theme.text.feedback.success.base,
+    theme.text.feedback.warning.base,
+    blue,
+    magenta,
+    theme.text.feedback.info.base,
+    white,
+  ]
   const colors = [
-    background,
-    theme.text.feedback.error.default,
-    theme.text.feedback.success.default,
-    theme.text.feedback.warning.default,
-    theme.hue.blue[base],
-    theme.hue.purple[base],
-    theme.text.feedback.info.default,
-    theme.text.default,
-    theme.text.subdued,
-    theme.text.feedback.error.subdued,
-    theme.text.feedback.success.subdued,
-    theme.text.feedback.warning.subdued,
-    theme.hue.blue[bright],
-    theme.hue.purple[bright],
-    theme.hue.cyan[bright],
-    theme.hue.neutral[mode === "dark" ? 100 : 900],
+    black,
+    ...normal,
+    theme.text.muted,
+    ...normal.slice(0, -1).map((color) => theme.decrease(color)),
+    brightWhite,
   ]
   return Buffer.from(
     colors
       .map((color, index) => `\x1b]4;${index};${hex(color)}\x1b\\`)
-      .concat(`\x1b]10;${hex(theme.text.default)}\x1b\\`, `\x1b]11;${hex(background)}\x1b\\`)
+      .concat(`\x1b]10;${hex(theme.text.base)}\x1b\\`, `\x1b]11;${hex(background)}\x1b\\`)
       .join(""),
   )
+}
+
+function terminalHue(theme: ResolvedThemeTokens, target: number) {
+  const nearest = Object.values(theme.hue)
+    .map((scale) => {
+      const color = scale[200]
+      const [red, green, blue, alpha] = color.toInts()
+      const converted = rgbToOklch(red / 255, green / 255, blue / 255)
+      return { color, alpha, chroma: converted.c, distance: hueDistance(converted.h, target) }
+    })
+    .filter((item) => item.alpha > 0 && item.chroma >= 0.03)
+    .sort((first, second) => first.distance - second.distance)[0]
+  if (!nearest || nearest.distance > 30) return theme.hue.accent[200]
+  return nearest.color
+}
+
+function hueDistance(first: number, second: number) {
+  const difference = Math.abs(first - second)
+  return Math.min(difference, 360 - difference)
 }
 
 function hex(color: RGBA) {

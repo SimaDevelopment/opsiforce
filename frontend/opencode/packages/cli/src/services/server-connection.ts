@@ -1,5 +1,5 @@
-import { Service, type Endpoint, type EnsureOptions } from "@opencode-ai/client/effect/service"
-import { ClientError, isUnauthorizedError, OpenCode } from "@opencode-ai/client/promise"
+import { Service, type Endpoint, type EnsureOptions } from "@opencode/client/effect/service"
+import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client/promise"
 import { OPENCODE_VERSION } from "../version"
 import { Effect, Redacted } from "effect"
 import { Env } from "../env"
@@ -18,7 +18,7 @@ export type Resolved = {
   readonly service?: ReturnType<typeof managedService>
 }
 
-export const resolve = Effect.fn("cli.server-connection.resolve")(function* (args: Args) {
+export const resolve = Effect.fn("cli.server-connection.resolve")(function* (args: Args = {}) {
   if (args.server !== undefined && args.standalone)
     return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
   if (args.server !== undefined) {
@@ -29,7 +29,7 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
     } satisfies Endpoint
     const client = OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) })
     const health = yield* Effect.tryPromise({
-      try: () => client.health.get({ signal: AbortSignal.timeout(5_000) }),
+      try: () => client.server.info({ signal: AbortSignal.timeout(5_000) }),
       catch: (cause) => connectError(endpoint, cause),
     })
     if (health.version !== OPENCODE_VERSION)
@@ -38,7 +38,7 @@ export const resolve = Effect.fn("cli.server-connection.resolve")(function* (arg
       )
     return { endpoint } satisfies Resolved
   }
-  if (args.standalone) {
+  if (args.standalone || (yield* ServiceConfig.read()).disabled === true) {
     return { endpoint: yield* Standalone.start() } satisfies Resolved
   }
 

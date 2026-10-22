@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { BASE_FORMATS, BASE_FORMAT_IDS, type BaseFormatId } from '../model-provider/base-formats';
 import { modelUnknown } from './agent-errors';
 
 interface ReasoningOption {
@@ -10,6 +11,7 @@ interface ReasoningOption {
 interface CatalogModel {
   name?: string;
   reasoning_options?: ReasoningOption[];
+  experimental?: { modes?: Record<string, unknown> };
 }
 
 interface CatalogProvider {
@@ -80,6 +82,14 @@ export function assertModelSelection(model: string, variant: string | null, cata
   if (variant !== null && !effortValues(entry).includes(variant)) throw modelUnknown('variant', variant);
 }
 
+export function catalogModelIdsOf(providerId: string, catalog = readModelCatalog()): string[] {
+  const ids: string[] = [];
+  for (const [modelId, model] of Object.entries(catalog[providerId]?.models ?? {})) {
+    ids.push(modelId, ...Object.keys(model.experimental?.modes ?? {}).map((mode) => `${modelId}-${mode}`));
+  }
+  return ids;
+}
+
 export interface ModelCatalogModel {
   id: string;
   name: string;
@@ -107,4 +117,21 @@ export function modelCatalogResponse(catalog = readModelCatalog()): ModelCatalog
     }))
     .filter((provider) => provider.models.length > 0)
     .toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+export function catalogOfModels(modelRefs: string[], catalog = readModelCatalog()): ModelCatalog {
+  const wanted = new Set(modelRefs);
+  return Object.fromEntries(
+    Object.entries(catalog).flatMap(([providerId, provider]) => {
+      const models = Object.entries(provider.models ?? {}).filter(([modelId]) =>
+        wanted.has(`${providerId}/${modelId}`)
+      );
+      return models.length > 0 ? [[providerId, { ...provider, models: Object.fromEntries(models) }]] : [];
+    })
+  );
+}
+
+export function baseFormatOfModel(model: string): BaseFormatId | null {
+  const catalogKey = model.slice(0, Math.max(model.indexOf('/'), 0));
+  return BASE_FORMAT_IDS.find((format) => BASE_FORMATS[format].modelCatalogKey === catalogKey) ?? null;
 }

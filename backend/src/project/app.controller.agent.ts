@@ -1,4 +1,5 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Doorbell } from '../external-services/doorbell/doorbell';
 import { Public } from '../tenant/tenant.decorator';
 import { GatewayAuthGuard } from '../gateway/gateway-auth.guard';
 import type { GatewayRequest } from '../gateway/gateway-key.service';
@@ -20,7 +21,8 @@ export class AppAgentController {
   constructor(
     private readonly appService: AppService,
     private readonly appReadiness: AppReadinessService,
-    private readonly projectEventsService: ProjectEventsService
+    private readonly projectEventsService: ProjectEventsService,
+    private readonly doorbell: Doorbell
   ) {}
 
   @Post('state')
@@ -43,6 +45,7 @@ export class AppAgentController {
     } else {
       this.appReadiness.markDown(key);
     }
+    if (serving || live) await this.doorbell.appStarted(key);
 
     return { ok: true };
   }

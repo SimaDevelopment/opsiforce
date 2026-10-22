@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import 'reflect-metadata';
 import { and, eq } from 'drizzle-orm';
@@ -10,12 +12,15 @@ import {
   agentProfiles,
   agentSettings,
   environments,
+  projectEnvironments,
   projectSkillDeliveries,
   projects,
   skills,
 } from '../../db/schema';
 import { DEFAULT_AGENT_NAME, type AgentCaller } from '../../src/agent/agent.types';
-import { TEST_PROJECT_KIND } from '../../src/project/project.types';
+import { ProjectStatus, TEST_PROJECT_KIND } from '../../src/project/project.types';
+import { SkillReconcilerService } from '../../src/store/skill-reconciler.service';
+import { readComposedSkills } from '../../src/store/skill-tree';
 import type { SkillCaller } from '../../src/store/skill.service';
 import {
   defaultEnvironmentId,
@@ -264,5 +269,63 @@ describe('a new Custom Agent with no Production Profile', () => {
 
   it('refuses an ordinary Project until its first Publish', async () => {
     await expect(createProject(agentId)).rejects.toThrow(/not found/);
+  });
+});
+
+describe('a Built-in Skill a Custom Agent pins, once the image stops shipping it', () => {
+  let agent: SeededAgent;
+  let skillName: string;
+  let earlierProjectId: string;
+
+  beforeAll(async () => {
+    agent = await seedLiveAgent(tenantId, userId);
+    skillName = `retiring-${randomUUID().slice(0, 8)}`;
+    const root = mkdtempSync(path.join(tmpdir(), 'agent-config-'));
+    mkdirSync(path.join(root, 'skills', skillName), { recursive: true });
+    writeFileSync(
+      path.join(root, 'skills', skillName, 'SKILL.md'),
+      manifest(`name: ${skillName}\ndescription: ${validDescription}`, '# Retiring\n')
+    );
+    const reconciler = harness.moduleRef.get(SkillReconcilerService);
+    await reconciler.reconcile(readComposedSkills(root));
+    const [row] = await db
+      .select({ skillId: skills.id, versionId: skills.latestVersionId })
+      .from(skills)
+      .where(eq(skills.name, skillName));
+    if (!row.versionId) throw new Error(`${skillName} was reconciled without a version`);
+    await pin(agent.id, await defaultEnvironmentId(tenantId), { skillId: row.skillId, versionId: row.versionId });
+    earlierProjectId = await createProject(agent.id);
+
+    await reconciler.retireAbsent(readComposedSkills().map((skill) => skill.name));
+  });
+
+  function installed(projectId: string): boolean {
+    return existsSync(path.join(storageMountPath, 'projects', projectId, '.opencode/skills', skillName));
+  }
+
+  it('was delivered to the Project created while the image shipped it', async () => {
+    expect(await deliveredSkillNames(earlierProjectId)).toContain(skillName);
+    expect(installed(earlierProjectId)).toBe(true);
+  });
+
+  it('reaches no Project created after it retired', async () => {
+    const laterProjectId = await createProject(agent.id);
+
+    expect(await deliveredSkillNames(laterProjectId)).not.toContain(skillName);
+    expect(installed(laterProjectId)).toBe(false);
+  });
+
+  it('is swept out of every workspace that still holds it', async () => {
+    expect(await harness.skillDeliveries.enqueueEnvironmentsHoldingRetiredSkills()).toContain(earlierProjectId);
+    await db
+      .update(projectEnvironments)
+      .set({ status: ProjectStatus.Active })
+      .where(eq(projectEnvironments.id, earlierProjectId));
+
+    await harness.skillDeliveries.deliver({ projectEnvironmentId: earlierProjectId, attempt: 0 });
+
+    expect(await deliveredSkillNames(earlierProjectId)).not.toContain(skillName);
+    expect(installed(earlierProjectId)).toBe(false);
+    expect(await harness.skillDeliveries.enqueueEnvironmentsHoldingRetiredSkills()).not.toContain(earlierProjectId);
   });
 });

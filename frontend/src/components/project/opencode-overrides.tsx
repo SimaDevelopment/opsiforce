@@ -1,9 +1,10 @@
 import { createEffect, onMount, untrack } from 'solid-js';
-import { useTheme } from '@opencode-ai/ui/theme/context';
-import { useSettings } from '@opencode-ai/app/settings/model';
-import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
-import type { ServerConnection } from '@opencode-ai/app';
-import { timelinePresets, type TimelineDetail } from '@opencode-ai/session-ui/timeline/detail';
+import { useTheme } from '@opencode/ui/theme/context';
+import { useSettings } from '@opencode/app/settings/model';
+import { useGlobal } from '@opencode/app/runtime/server/runtime';
+import type { ServerConnection } from '@opencode/app';
+import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
+import { BASE_FORMAT_IDS } from '~/api/model-providers';
 
 const detailedPreset = timelinePresets.find((preset) => preset.id === 'detailed');
 if (!detailedPreset) throw new Error('opencode timeline presets no longer include "detailed"');
@@ -17,21 +18,23 @@ const activityTimeline: TimelineDetail = {
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
 
+type ReachableModels = ReadonlySet<string> | undefined;
+
+const ROUTED_PROVIDERS: ReadonlySet<string> = new Set(BASE_FORMAT_IDS);
+
 const visibilityKey = (model: ModelKey) => `${model.providerID}:${model.modelID}`;
 
-// Models still served by pods running an agent image whose models.json predates their removal.
-// Dropping them from the catalog only reaches a pod on its next recreate, so hide them here until
-// the next agent image bump has rolled out, then delete the entry.
-const HIDDEN_UNTIL_NEXT_AGENT_IMAGE: ReadonlySet<string> = new Set([
-  visibilityKey({ providerID: 'openai', modelID: 'gpt-6-astra-fast' }),
-]);
+const desiredVisibility = (model: ModelKey, reachable: ReachableModels): Visibility =>
+  reachable && ROUTED_PROVIDERS.has(model.providerID) && !reachable.has(`${model.providerID}/${model.modelID}`)
+    ? 'hide'
+    : 'show';
 
-const desiredVisibility = (model: ModelKey): Visibility =>
-  HIDDEN_UNTIL_NEXT_AGENT_IMAGE.has(visibilityKey(model)) ? 'hide' : 'show';
+const pinnedEntry = (model: ModelKey, reachable: ReachableModels) => ({
+  ...model,
+  visibility: desiredVisibility(model, reachable),
+});
 
-const pinnedEntry = (model: ModelKey) => ({ ...model, visibility: desiredVisibility(model) });
-
-function pinModelVisibilityToCatalog(server: ServerConnection.Any) {
+function pinModelVisibilityToCatalog(server: ServerConnection.Any, reachableModels: () => ReachableModels) {
   const global = useGlobal();
   const ctx = global.ensureServerCtx(server);
 
@@ -39,10 +42,11 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any) {
     const location = ctx.data.location.default();
     const served = location ? ctx.data.location.model.list(location) : undefined;
     if (!served) return;
+    const reachable = reachableModels();
     const current = new Map(global.models.store.user.map((entry) => [visibilityKey(entry), entry.visibility]));
     const changes = served
       .filter((model) => model.status !== 'deprecated')
-      .map((model) => pinnedEntry({ providerID: model.providerID, modelID: model.id }))
+      .map((model) => pinnedEntry({ providerID: model.providerID, modelID: model.id }, reachable))
       .filter((model) => current.get(visibilityKey(model)) !== model.visibility);
     if (changes.length === 0) return;
     const changed = new Set(changes.map(visibilityKey));
@@ -50,7 +54,7 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any) {
   });
 }
 
-export function OpencodeOverrides(props: { server: ServerConnection.Any }) {
+export function OpencodeOverrides(props: { server: ServerConnection.Any; reachableModels: () => ReachableModels }) {
   const theme = useTheme();
   const settings = useSettings();
 
@@ -60,10 +64,12 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any }) {
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
     settings.general.setTimelineDetail(activityTimeline);
-    settings.general.setReleaseNotes(false);
   });
 
-  pinModelVisibilityToCatalog(untrack(() => props.server));
+  pinModelVisibilityToCatalog(
+    untrack(() => props.server),
+    () => props.reachableModels()
+  );
 
   return null;
 }

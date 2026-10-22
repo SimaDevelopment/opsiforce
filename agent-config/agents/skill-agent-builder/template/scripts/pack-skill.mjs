@@ -141,7 +141,7 @@ function main(argv) {
 
   const tree = readSkillDirectory(directory)
   if (mode === "json") {
-    // `name` is required by POST /skills and refused by POST /skills/{id}/versions, so it is opt-in.
+    // `name` is required by POST /skills and refused by POST /skills/<id>/versions, so it is opt-in.
     console.log(
       JSON.stringify({
         ...(name ? { name } : {}),

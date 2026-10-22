@@ -131,7 +131,7 @@ The pod can be suspended when idle and recreated later against the same workspac
 Start with these docs when working on the system:
 
 - [Documentation index](docs/README.md) for what Opsiforce is and the complete doc tree.
-- [Domain vocabulary](CONTEXT.md) for canonical product language.
+- [Domain vocabulary](GLOSSARY.md) for canonical product language.
 - [Environments](docs/projects/environments.md) and [Publish](docs/projects/publish.md) for the Project/Environment model, App Auth, publishing and Environment Variables.
 - [Persistence](docs/runtime/persistence.md) for workspace durability and pod replacement.
 - [Request Flows](docs/runtime/request-flows.md) for how browser traffic reaches each pod surface.
@@ -189,7 +189,7 @@ sudo apt-get update && sudo apt-get install -y mkcert libnss3-tools
 
 On Linux the cluster uses the Docker driver and `minikube tunnel` binds `127.0.0.1:80` and `:443` for ingress, so the Quickstart asks for `sudo` once to bind those privileged ports.
 
-For the LLM, the default local proxy lets you drive a **ChatGPT/Codex subscription** you already pay for (a one-time browser sign-in, no API credits) or **your own OpenAI API key**. You are not limited to those: the LLM gateway is Bifrost and the agent runtime is OpenCode, so you can use any provider they support (Anthropic, Google, Azure OpenAI, AWS Bedrock, OpenRouter, local or self-hosted models, and more) by configuring it in Bifrost and selecting the model in OpenCode. For the full walkthrough (every numbered step, the LLM choices, the pinned-versions manifest, and day-two re-runs), see the **[Quickstart guide](docs/operations/quickstart.md)**.
+For the LLM, you drive a **ChatGPT/Codex subscription** you already pay for (a one-time sign-in on Settings → Model providers, no API credits) or **your own OpenAI API key**. You are not limited to those: the LLM gateway is Bifrost, and more providers (Anthropic, Azure OpenAI, OpenRouter, any OpenAI-compatible endpoint) are added on Settings → Model providers. For the full walkthrough (every numbered step, the LLM choices, the pinned-versions manifest, and day-two re-runs), see the **[Quickstart guide](docs/operations/quickstart.md)**.
 
 ## Local URLs
 
@@ -221,6 +221,6 @@ The Quickstart targets local development. A production deployment uses the same 
 - Kubernetes control plane: a managed or self-managed cluster (not minikube), sized for the control plane plus the per-project agent pods.
 - Traefik ingress controller: the app, runtime-proxy, and per-project routes expect Traefik; install it in-cluster and point DNS at its load balancer.
 - RWX persistent storage: project workspaces need ReadWriteMany volumes that survive pod replacement; back them with a shared-storage system such as Ceph (for example Rook-Ceph or CephFS) or another RWX-capable provisioner.
-- Container registry: build and host the Opsiforce images (agent, backend, runtime-proxy, frontend) in your own registry instead of building into minikube.
-- Helm values, adjusted for your environment: image references and tags, ingress hosts and TLS, storage classes, replica counts, resource requests and limits, PostgreSQL/Redis, and Bifrost provider secrets.
+- Container registry: build and host the Opsiforce images (agent, backend, runtime-proxy, linked-account-proxy, frontend) in your own registry instead of building into minikube.
+- Helm values, adjusted for your environment: image references and tags, ingress hosts and TLS, storage classes, replica counts, resource requests and limits, PostgreSQL/Redis, and the Bifrost admin, encryption and provider-key secrets. The Bifrost values declare the built-in `openai` and `anthropic`; every other Model provider is added on Settings → Model providers.
 

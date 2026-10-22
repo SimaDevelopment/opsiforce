@@ -2,6 +2,7 @@ import { createSignal, onMount, Show } from 'solid-js';
 import { createFileRoute } from '@tanstack/solid-router';
 import { Lock, LogOut } from '~/components/icons';
 import { Button } from '~/components/ui/button';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const Route = createFileRoute('/permission-denied')({
   component: PermissionDeniedPage,
@@ -12,6 +13,7 @@ function handleLogout() {
 }
 
 function PermissionDeniedPage() {
+  createDocumentTitle(() => 'No permission');
   const [username, setUsername] = createSignal<string>();
 
   onMount(async () => {

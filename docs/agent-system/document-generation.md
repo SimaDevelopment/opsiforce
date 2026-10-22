@@ -21,7 +21,7 @@ kind: explanation
 
 - One shared skill, `document-generation`, covers all four formats; it opens with the inventory of what is preinstalled and an instruction never to install any of it, then carries the recipes and a few taste defaults (Liberation body font, one-inch margins, a title slide first).
 - Each Agent's `agent.md` carries two lines in its file-handling section: save deliverables under `/workspace/generated_files/`, and load `document-generation` for any docx, pptx, xlsx or pdf deliverable.
-- Deliverables go into `/workspace/generated_files/`, created on first write, which [Files](../projects/files.md) surfaces as [Generated files](../../CONTEXT.md) and chat renders as file cards; the save-and-link convention is the only signal ([File Downloads](../projects/file-downloads.md)).
+- Deliverables go into `/workspace/generated_files/`, created on first write, which [Files](../projects/files.md) surfaces as [Generated files](../../GLOSSARY.md) and chat renders as file cards; the save-and-link convention is the only signal ([File Downloads](../projects/file-downloads.md)).
 - Revisions default to versioned filenames (`report.docx`, then `report_v2.docx`), so a link already in the transcript keeps pointing at the document it announced; the Agent overwrites only when asked to fix that file.
 - The libraries live in the image, so the capability reached existing workspaces through an empty `requiresPodRecreate` migration alongside the image-version bump, while the skill and prompt travelled as agent-owned files ([Agent Updates](agent-updates.md)).
 

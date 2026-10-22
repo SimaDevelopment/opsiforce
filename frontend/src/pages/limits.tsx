@@ -1,4 +1,5 @@
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createSignal, type Component } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { toast } from 'solid-sonner';
 import {
   useFollowPlatformLimit,
@@ -10,7 +11,17 @@ import {
   type TenantLimit,
   type TenantLimits,
 } from '~/api/limits';
-import { AlertTriangle, Building2, Gauge, Globe, Pencil, RefreshCw } from '~/components/icons';
+import {
+  AlertTriangle,
+  Building2,
+  FolderKanban,
+  Gauge,
+  Globe,
+  Info,
+  Layers,
+  Pencil,
+  RefreshCw,
+} from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import {
@@ -24,10 +35,47 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~
 import { Skeleton } from '~/components/ui/skeleton';
 import { SettingsSection } from '~/components/settings/settings-section';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
+import { cn } from '~/lib/cn';
 
-const LIMIT_LABELS: Record<LimitKey, string> = {
-  projects: 'Projects',
+const LIMITS: Record<LimitKey, { label: string; icon: Component<{ class?: string }>; description: string }> = {
+  projects: {
+    label: 'Projects',
+    icon: FolderKanban,
+    description:
+      "Enabled Projects an organization can have. Disabled Projects, Builder chats and Test Projects don't count.",
+  },
+  warm_pool: {
+    label: 'Ready Projects',
+    icon: Layers,
+    description: 'Projects kept running ahead of time so new ones open instantly, added up across the Custom Agents.',
+  },
 };
+
+function LimitName(props: { limitKey: LimitKey; class?: string }) {
+  const meta = () => LIMITS[props.limitKey];
+  return (
+    <span class={cn('inline-flex items-center gap-1.5', props.class)}>
+      <Dynamic component={meta().icon} class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      {meta().label}
+    </span>
+  );
+}
+
+function LimitHelp(props: { limitKey: LimitKey }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        as="span"
+        class="inline-flex text-muted-foreground/70 hover:text-foreground"
+        aria-label={`About ${LIMITS[props.limitKey].label}`}
+      >
+        <Info class="h-3.5 w-3.5" />
+      </TooltipTrigger>
+      <TooltipContent class="max-w-64">{LIMITS[props.limitKey].description}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 type Mode = 'platform' | 'none' | 'custom';
 
@@ -132,7 +180,10 @@ function PlatformCard(props: { view: PlatformLimitsView }) {
       <For each={props.view.platform}>
         {(limit) => (
           <div class="rounded-lg border border-border p-3 flex items-center justify-between gap-4">
-            <span class="text-xs font-medium text-foreground">{LIMIT_LABELS[limit.key]}</span>
+            <div class="min-w-0 space-y-0.5">
+              <LimitName limitKey={limit.key} class="text-xs font-medium text-foreground" />
+              <p class="text-xs text-muted-foreground/80">{LIMITS[limit.key].description}</p>
+            </div>
             <LimitInput
               value={drafts()[limit.key]}
               placeholder="No limit"
@@ -157,12 +208,19 @@ function TenantsTable(props: { view: PlatformLimitsView }) {
   return (
     <>
       <div class="rounded-lg border border-border overflow-hidden bg-card">
-        <Table>
+        <Table layout="responsive" layoutPreferenceKey="opsiforce:settings:limits-layout">
           <TableHeader>
             <TableRow>
               <TableHead class="min-w-56">Organization</TableHead>
               <For each={props.view.platform}>
-                {(limit) => <TableHead class="w-40">{LIMIT_LABELS[limit.key]}</TableHead>}
+                {(limit) => (
+                  <TableHead class="w-48">
+                    <span class="inline-flex items-center gap-1.5">
+                      {LIMITS[limit.key].label}
+                      <LimitHelp limitKey={limit.key} />
+                    </span>
+                  </TableHead>
+                )}
               </For>
               <TableHead class="w-12" />
             </TableRow>
@@ -177,7 +235,9 @@ function TenantsTable(props: { view: PlatformLimitsView }) {
                       <span class="text-sm font-medium truncate">{tenant.displayName}</span>
                     </div>
                   </TableCell>
-                  <For each={tenant.limits}>{(limit) => <UsageCell limit={limit} />}</For>
+                  <For each={tenant.limits}>
+                    {(limit) => <UsageCell limit={limit} platformValue={platformValue(limit.key)} />}
+                  </For>
                   <TableCell class="text-right">
                     <Button
                       size="icon"
@@ -205,14 +265,44 @@ function TenantsTable(props: { view: PlatformLimitsView }) {
   );
 }
 
-function UsageCell(props: { limit: TenantLimit }) {
+function UsageCell(props: { limit: TenantLimit; platformValue: number | null }) {
   const reached = () => props.limit.limit !== null && props.limit.used >= props.limit.limit;
+  const share = () =>
+    props.limit.limit === null || props.limit.limit === 0
+      ? 0
+      : Math.min(100, Math.round((props.limit.used / props.limit.limit) * 100));
+  const sourceHint = () =>
+    props.limit.overridden
+      ? `This organization's own value. ${props.platformValue === null ? 'The platform sets no limit.' : `The platform value is ${props.platformValue}.`}`
+      : 'Follows the platform value.';
 
   return (
-    <TableCell>
-      <span class="text-sm tabular-nums" classList={{ 'text-amber-600 dark:text-amber-500': reached() }}>
-        {props.limit.used} / {formatLimit(props.limit.limit)}
-      </span>
+    <TableCell label={LIMITS[props.limit.key].label}>
+      <Tooltip>
+        <TooltipTrigger as="div" class="w-24 space-y-1">
+          <span class="block text-sm tabular-nums" classList={{ 'text-amber-600 dark:text-amber-500': reached() }}>
+            {props.limit.used}
+            <span
+              class={cn(
+                'text-muted-foreground',
+                props.limit.overridden && 'underline decoration-dotted underline-offset-4'
+              )}
+            >
+              {' '}
+              / {formatLimit(props.limit.limit)}
+            </span>
+          </span>
+          <Show when={props.limit.limit !== null}>
+            <div class="h-1 overflow-hidden rounded-full bg-muted">
+              <div
+                class={cn('h-full rounded-full', reached() ? 'bg-amber-500' : 'bg-primary/60')}
+                style={{ width: `${share()}%` }}
+              />
+            </div>
+          </Show>
+        </TooltipTrigger>
+        <TooltipContent class="max-w-64">{sourceHint()}</TooltipContent>
+      </Tooltip>
     </TableCell>
   );
 }
@@ -283,9 +373,10 @@ function TenantLimitsDialog(props: {
             {(limit) => (
               <div class="rounded-lg border border-border p-3 space-y-2.5">
                 <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-xs font-medium text-foreground">{LIMIT_LABELS[limit.key]}</span>
+                  <LimitName limitKey={limit.key} class="text-xs font-medium text-foreground" />
                   <span class="text-xs text-muted-foreground tabular-nums">{limit.used} in use</span>
                 </div>
+                <p class="text-xs text-muted-foreground/80">{LIMITS[limit.key].description}</p>
                 <div class="flex items-center gap-2">
                   <div class="w-44">
                     <Select
@@ -316,7 +407,9 @@ function TenantLimitsDialog(props: {
                     />
                   </Show>
                   <Show when={drafts()[limit.key].mode === 'platform'}>
-                    <span class="text-xs text-muted-foreground">({formatLimit(props.platformValue(limit.key))})</span>
+                    <span class="text-xs text-muted-foreground">
+                      Currently {formatLimit(props.platformValue(limit.key)).toLowerCase()}
+                    </span>
                   </Show>
                 </div>
               </div>

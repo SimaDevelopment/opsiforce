@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode-ai/client/promise"
-import { sessionPermissionRequest, sessionQuestionForm } from "@/session/requests/session-request-tree"
+import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode/client/promise"
+import { sessionPermissionRequest, sessionFormRequest, sessionTreeIDs } from "@/session/requests/session-request-tree"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -23,94 +23,89 @@ const question = (id: string, sessionID: string) =>
     fields: [{ key: "q0", type: "string" }],
   }) as FormInfo
 
-describe("sessionPermissionRequest", () => {
-  test("prefers the current session permission", () => {
-    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
-    const permissions = {
-      root: [permission("perm-root", "root")],
-      child: [permission("perm-child", "child")],
-    }
-
-    expect(sessionPermissionRequest(sessions, permissions, "root")?.id).toBe("perm-root")
-  })
-
-  test("returns a nested child permission", () => {
+describe("sessionTreeIDs", () => {
+  test("returns only the current session and its descendants", () => {
     const sessions = [
       session({ id: "root" }),
       session({ id: "child", parentID: "root" }),
       session({ id: "grand", parentID: "child" }),
+      session({ id: "sibling", parentID: "root" }),
       session({ id: "other" }),
     ]
-    const permissions = {
-      grand: [permission("perm-grand", "grand")],
-      other: [permission("perm-other", "other")],
-    }
 
-    expect(sessionPermissionRequest(sessions, permissions, "root")?.id).toBe("perm-grand")
-  })
-
-  test("returns undefined without a matching tree permission", () => {
-    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
-    const permissions = {
-      other: [permission("perm-other", "other")],
-    }
-
-    expect(sessionPermissionRequest(sessions, permissions, "root")).toBeUndefined()
-  })
-
-  test("skips filtered permissions in the current tree", () => {
-    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
-    const permissions = {
-      root: [permission("perm-root", "root")],
-      child: [permission("perm-child", "child")],
-    }
-
-    expect(sessionPermissionRequest(sessions, permissions, "root", (item) => item.id !== "perm-root"))?.toMatchObject({
-      id: "perm-child",
-    })
-  })
-
-  test("returns undefined when all tree permissions are filtered out", () => {
-    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
-    const permissions = {
-      root: [permission("perm-root", "root")],
-      child: [permission("perm-child", "child")],
-    }
-
-    expect(sessionPermissionRequest(sessions, permissions, "root", () => false)).toBeUndefined()
+    expect(sessionTreeIDs(sessions, "child")).toEqual(["child", "grand"])
+    expect(sessionTreeIDs(sessions, "root")).toEqual(["root", "child", "sibling", "grand"])
+    expect(sessionTreeIDs(sessions)).toEqual([])
   })
 })
 
-describe("sessionQuestionForm", () => {
-  test("prefers the current session question", () => {
-    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
-    const questions = {
-      root: [question("q-root", "root")],
-      child: [question("q-child", "child")],
-    }
+const tree = [
+  session({ id: "root" }),
+  session({ id: "child", parentID: "root" }),
+  session({ id: "grand", parentID: "child" }),
+  session({ id: "other" }),
+]
 
-    expect(sessionQuestionForm(sessions, questions, "root")?.id).toBe("q-root")
+const search = (id: string, sessionID: string) => ({
+  ...question(id, sessionID),
+  metadata: { kind: "websearch.provider" },
+})
+
+describe("sessionPermissionRequest", () => {
+  const both = { root: [permission("perm-root", "root")], child: [permission("perm-child", "child")] }
+
+  test.each([
+    ["prefers the current session permission", both, undefined, "perm-root"],
+    [
+      "returns a nested child permission",
+      { grand: [permission("perm-grand", "grand")], other: [permission("perm-other", "other")] },
+      undefined,
+      "perm-grand",
+    ],
+    [
+      "returns undefined without a matching tree permission",
+      { other: [permission("perm-other", "other")] },
+      undefined,
+      undefined,
+    ],
+    [
+      "skips filtered permissions in the current tree",
+      both,
+      (item: PermissionRequest) => item.id !== "perm-root",
+      "perm-child",
+    ],
+    ["returns undefined when all tree permissions are filtered out", both, () => false, undefined],
+  ])("%s", (_name, permissions, include, id) => {
+    expect(sessionPermissionRequest(tree, permissions, "root", include)?.id).toBe(id)
   })
+})
 
-  test("returns a nested child question", () => {
-    const sessions = [
-      session({ id: "root" }),
-      session({ id: "child", parentID: "root" }),
-      session({ id: "grand", parentID: "child" }),
-    ]
-    const questions = {
-      grand: [question("q-grand", "grand")],
-    }
-
-    expect(sessionQuestionForm(sessions, questions, "root")?.id).toBe("q-grand")
-  })
-
-  test("skips forms that are not questions", () => {
-    const sessions = [session({ id: "root" })]
-    const forms = {
-      root: [{ ...question("form", "root"), metadata: { kind: "integration" } }],
-    }
-
-    expect(sessionQuestionForm(sessions, forms, "root")).toBeUndefined()
+describe("sessionFormRequest", () => {
+  test.each([
+    [
+      "prefers the current session question",
+      { root: [question("q-root", "root")], child: [question("q-child", "child")] },
+      "q-root",
+    ],
+    ["returns a nested child question", { grand: [question("q-grand", "grand")] }, "q-grand"],
+    [
+      "skips unsupported forms",
+      { root: [{ ...question("form", "root"), metadata: { kind: "integration" } }] },
+      undefined,
+    ],
+    ["finds web search consent in a nested child session", { child: [search("search", "child")] }, "search"],
+    [
+      "keeps web search ahead of a later question",
+      { root: [search("search", "root"), question("q", "root")] },
+      "search",
+    ],
+    ["keeps a question ahead of a later web search", { root: [question("q", "root"), search("search", "root")] }, "q"],
+    [
+      "keeps the current session ahead of a child question",
+      { root: [search("search", "root")], child: [question("q", "child")] },
+      "search",
+    ],
+  ])("%s", (_name, forms, id) => {
+    expect(sessionFormRequest(tree, forms, "root")?.id).toBe(id)
   })
 })

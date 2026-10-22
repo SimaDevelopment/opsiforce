@@ -10,7 +10,7 @@ export interface AgentRegistryEntry {
   model?: string;
   variant?: string;
   poolSize?: number;
-  platformApi?: boolean;
+  podClass?: string;
 }
 
 export interface AgentRegistry {
@@ -28,7 +28,6 @@ export interface AgentRuntimeConfig {
   poolSizes: Map<string, number>;
   versions: Map<string, string>;
   modelSelections: Map<string, AgentModelSelection>;
-  platformApi: Map<string, boolean>;
 }
 
 function readPublicRegistry(): AgentRegistry {
@@ -74,10 +73,6 @@ export function defaultProfileModel(): { model: string; variant: string | null }
   return { model: fallback.model, variant: fallback.variant ?? null };
 }
 
-export function agentDeclaresPlatformApi(slug: string): boolean {
-  return readMergedAgentRegistry().agents[slug]?.platformApi === true;
-}
-
 export function agentAppPort(slug: string): number {
   const entry = readMergedAgentRegistry().agents[slug];
   return portOf(entry);
@@ -101,11 +96,9 @@ export function readAgentConfig(): AgentRuntimeConfig {
   const poolSizes = new Map<string, number>();
   const versions = new Map<string, string>();
   const modelSelections = new Map<string, AgentModelSelection>();
-  const platformApi = new Map<string, boolean>();
   for (const [slug, conf] of Object.entries(readMergedAgentRegistry().agents)) {
     const poolSize = typeof conf.poolSize === 'number' && conf.poolSize > 0 ? conf.poolSize : 0;
     poolSizes.set(slug, poolSize);
-    platformApi.set(slug, conf.platformApi === true);
     if (typeof conf.version === 'string' && conf.version.length > 0) {
       versions.set(slug, conf.version);
     }
@@ -116,5 +109,5 @@ export function readAgentConfig(): AgentRuntimeConfig {
       });
     }
   }
-  return { poolSizes, versions, modelSelections, platformApi };
+  return { poolSizes, versions, modelSelections };
 }

@@ -3,15 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect, FileSystem, Schema, SchemaAST, SchemaGetter } from "effect"
-import {
-  HttpApi,
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpApiMiddleware,
-  HttpApiSchema,
-  OpenApi,
-} from "effect/unstable/httpapi"
+import { type Brand, Effect, FileSystem, Schema, SchemaAST, SchemaGetter, Stream } from "effect"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/http-api"
 import { format } from "prettier"
 import {
   compile as compileContract,
@@ -143,6 +136,107 @@ describe("HttpApiCodegen.generate", () => {
     expect(source).not.toContain("@example/api")
   })
 
+  test("preserves named Effect references across optional schema occurrences", () => {
+    const State = Schema.Record(Schema.String, Schema.Unknown).annotate({ identifier: "Message.State" })
+    const output = emitEffectShape(
+      compileContract(
+        api(
+          HttpApiEndpoint.get("get", "/session", {
+            success: Schema.Struct({
+              encoded: Schema.toEncoded(Schema.Struct({ state: Schema.optionalKey(State) })),
+              optional: Schema.optional(State),
+            }),
+          }),
+        ),
+      ),
+      {
+        typeReferences: [
+          { schema: State, name: "Message.State", import: 'import type { Message } from "@example/schema/message"' },
+        ],
+      },
+    )
+    const source = output.files[0]?.content
+    expect(source).toContain('readonly "state"?: Message.State')
+    expect(source).toContain('readonly "optional"?: Message.State | undefined')
+  })
+
+  test("does not reuse named Effect references for different suffixed shapes", () => {
+    const State = Schema.Record(Schema.String, Schema.Unknown).annotate({ identifier: "Message.State" })
+    const Different = Schema.Record(Schema.String, Schema.Number).annotate({ identifier: "Message.State" })
+    const output = emitEffectShape(
+      compileContract(
+        api(
+          HttpApiEndpoint.get("get", "/session", {
+            success: Schema.Struct({ original: State, different: Different }),
+          }),
+        ),
+      ),
+      {
+        typeReferences: [
+          { schema: State, name: "Message.State", import: 'import type { Message } from "@example/schema/message"' },
+        ],
+      },
+    )
+    const source = output.files[0]?.content
+    expect(source).toContain('readonly "original": Message.State')
+    expect(source).toContain('readonly "different": ({ readonly [x: string]: number })')
+  })
+
+  test("preserves referenced branded Effect types across optional, record, and re-annotated shapes", () => {
+    const SessionID = Schema.String.check(Schema.isStartingWith("ses_")).pipe(
+      Schema.brand("Session.ID"),
+      Schema.annotate({ identifier: "Session.ID" }),
+    )
+    const AgentID = Schema.String.pipe(Schema.brand("Agent.ID"), Schema.annotate({ identifier: "Agent.ID" }))
+    const Cursor = Schema.String.pipe(
+      Schema.brand("SessionsCursor"),
+      Schema.annotate({ identifier: "SessionsCursor" }),
+    ).annotate({ description: "Cursor" })
+    const Cost = Schema.Finite.pipe(Schema.brand("Money.USD"), Schema.annotate({ identifier: "Money.USD" }))
+    const output = emitEffectShape(
+      compileContract(
+        api(
+          HttpApiEndpoint.get("list", "/session/:sessionID", {
+            params: { sessionID: SessionID },
+            query: Schema.Struct({
+              agent: AgentID.pipe(Schema.optional),
+              cursor: Cursor.pipe(Schema.optional),
+            }),
+            success: Schema.Struct({
+              data: Schema.Struct({
+                active: Schema.Record(SessionID, Schema.Struct({ cost: Cost })),
+                agents: Schema.Array(AgentID),
+              }),
+            }),
+          }),
+        ),
+      ),
+      {
+        typeReferences: [
+          { schema: SessionID, name: "Session.ID", import: 'import type { Session } from "@example/schema/session"' },
+          { schema: AgentID, name: "Agent.ID", import: 'import type { Agent } from "@example/schema/agent"' },
+          {
+            schema: Cursor,
+            name: "SessionsCursor",
+            import: 'import type { SessionsCursor } from "@example/protocol/session"',
+          },
+          { schema: Cost, name: "Money.USD", import: 'import type { Money } from "@example/schema/money"' },
+        ],
+      },
+    )
+    const source = output.files[0]?.content
+
+    expect(source).toContain('import type { Session } from "@example/schema/session"')
+    expect(source).toContain('import type { Agent } from "@example/schema/agent"')
+    expect(source).toContain('import type { SessionsCursor } from "@example/protocol/session"')
+    expect(source).toContain('import type { Money } from "@example/schema/money"')
+    expect(source).toContain('readonly "sessionID": Session.ID')
+    expect(source).toContain('readonly "agent"?: Agent.ID | undefined')
+    expect(source).toContain('readonly "cursor"?: SessionsCursor | undefined')
+    expect(source).toContain('readonly [x: Session.ID]: { readonly "cost": Money.USD }')
+    expect(source).toContain('readonly "agents": ReadonlyArray<Agent.ID>')
+  })
+
   test("allows composed Effect outputs to use an authoritative named type", () => {
     const output = emitEffectShape(
       compileContract(api(HttpApiEndpoint.get("events", "/event", { success: Schema.Unknown }))),
@@ -207,7 +301,7 @@ describe("HttpApiCodegen.generate", () => {
     ).toThrow("Generated Effect adapter collides with imported endpoint: EndpointSessionGet")
   })
 
-  test("exposes an imported Effect client through its generated shape", () => {
+  test("exposes an imported Effect client through its generated shape and rejects widened outputs", () => {
     const output = emitEffectImported(
       compileContract(api(HttpApiEndpoint.get("get", "/session", { success: Schema.String }))),
       { module: "@example/api", api: "Api", shapeModule: "../api" },
@@ -216,6 +310,37 @@ describe("HttpApiCodegen.generate", () => {
 
     expect(source).toContain('import type { SessionGetOutput } from "../api"')
     expect(source).toContain("preserveEffect<SessionGetOutput>()")
+    expect(source).toContain("__generatedOutputWiderThanContract")
+
+    type BrandedID = string & Brand.Brand<"Session.ID">
+    const preserveEffect =
+      <A>() =>
+      <Actual extends A, E, R>(
+        effect: Effect.Effect<Actual, E, R> &
+          ([A] extends [Actual]
+            ? unknown
+            : { readonly __generatedOutputWiderThanContract: [expected: Actual, generated: A] }),
+      ): Effect.Effect<A, E, R> =>
+        effect
+    const preserveStream =
+      <A>() =>
+      <Actual extends A, E, R>(
+        stream: Stream.Stream<Actual, E, R> &
+          ([A] extends [Actual]
+            ? unknown
+            : { readonly __generatedOutputWiderThanContract: [expected: Actual, generated: A] }),
+      ): Stream.Stream<A, E, R> =>
+        stream
+
+    const brandedEffect = Effect.succeed("ses_1" as BrandedID)
+    const brandedStream = Stream.make("ses_1" as BrandedID)
+
+    preserveEffect<BrandedID>()(brandedEffect)
+    preserveStream<BrandedID>()(brandedStream)
+    // @ts-expect-error Generated output cannot widen a branded contract output to plain string.
+    preserveEffect<string>()(brandedEffect)
+    // @ts-expect-error Generated stream output cannot widen a branded contract output to plain string.
+    preserveStream<string>()(brandedStream)
   })
 
   test("projects imported endpoint constants into a generated API", () => {
@@ -839,7 +964,7 @@ describe("HttpApiCodegen.generate", () => {
     await using emitted = await emittedModule(output)
     let request: Request | undefined
     const client = emitted.module.OpenCode.make({
-      baseUrl: "https://example.com",
+      baseUrl: "https://example.com/base?tenant=one#fragment",
       fetch: async (input: RequestInfo | URL) => {
         request = input instanceof Request ? input : new Request(input)
         return Response.json({ data: "hello" })
@@ -848,7 +973,7 @@ describe("HttpApiCodegen.generate", () => {
 
     expect(await client.session.get({ sessionID: "a/b" })).toBe("hello")
     expect(request?.method).toBe("GET")
-    expect(request?.url).toBe("https://example.com/session/a%2Fb")
+    expect(request?.url).toBe("https://example.com/base/session/a%2Fb")
   })
 
   test("maps an emitted no-content response to undefined", async () => {
@@ -1005,7 +1130,8 @@ describe("HttpApiCodegen.generate", () => {
     })
 
     const error = await client.session.get({ sessionID: "missing" }).catch((cause: unknown) => cause)
-    expect(error).toEqual({ _tag: "Missing", message: "gone" })
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toMatchObject({ name: "Missing", message: "gone", _tag: "Missing" })
     expect(emitted.module.isMissing(error)).toBeTrue()
   })
 
@@ -1426,6 +1552,17 @@ describe("HttpApiCodegen.generate", () => {
     )
   })
 
+  test("emits schema classes with native arbitrary constraints structurally", () => {
+    class Attempt extends Schema.Class<Attempt>("Attempt")({
+      count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    }) {}
+    const output = emitPromise(compileContract(api(HttpApiEndpoint.get("get", "/session", { success: Attempt }))))
+    const types = output.files.find((file) => file.path === "types.ts")?.content
+
+    expect(types).toContain('export type Attempt = { readonly "count": number }')
+    expect(types).toContain("export type SessionGetOutput = Attempt")
+  })
+
   test("rejects spoofed and aborted validation checks", () => {
     const Spoofed = Schema.Number.check(
       Schema.makeFilter(() => "always fails", { meta: { _tag: "isFinite" }, arbitrary: {} }),
@@ -1445,6 +1582,7 @@ describe("HttpApiCodegen.generate", () => {
     const link = JsonNumber.ast.encoding?.[0]
     if (link === undefined) throw new Error("Expected JSON number encoding")
     // This helper is present at runtime but omitted from the public declaration surface.
+    // oxlint-disable-next-line no-restricted-globals -- The test verifies an Effect runtime helper without a public type.
     const replaceEncoding: unknown = Reflect.get(SchemaAST, "replaceEncoding")
     if (typeof replaceEncoding !== "function") throw new Error("Expected SchemaAST.replaceEncoding")
     const ast: unknown = replaceEncoding(JsonNumber.ast, [

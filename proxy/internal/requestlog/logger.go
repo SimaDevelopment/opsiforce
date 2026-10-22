@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -44,6 +45,8 @@ type task struct {
 
 type cachedDB struct {
 	db       *sql.DB
+	path     string
+	file     os.FileInfo
 	lastUsed time.Time
 }
 
@@ -98,6 +101,7 @@ func (l *Logger) run() {
 	defer ticker.Stop()
 
 	cache := make(map[string]*cachedDB)
+	lastFailure := make(map[string]string)
 
 	for {
 		select {
@@ -107,37 +111,71 @@ func (l *Logger) run() {
 				return
 			}
 
-			if err := handleTask(l.rootPath, cache, task); err != nil {
-				continue
-			}
+			reportFailure(lastFailure, task.directory, l.handleTask(cache, task))
 		case <-ticker.C:
 			closeIdle(cache)
 		}
 	}
 }
 
-func handleTask(rootPath string, cache map[string]*cachedDB, task task) error {
-	cached, err := getOrOpen(rootPath, cache, task.directory)
+func reportFailure(lastFailure map[string]string, directory string, err error) {
+	if err == nil {
+		delete(lastFailure, directory)
+		return
+	}
+	if lastFailure[directory] == err.Error() {
+		return
+	}
+	lastFailure[directory] = err.Error()
+	slog.Warn("request log write failed", "directory", directory, "error", err.Error())
+}
+
+func (l *Logger) handleTask(cache map[string]*cachedDB, task task) error {
+	if existing, ok := cache[task.directory]; ok && !existing.stillAtPath() {
+		closeCached(cache, task.directory)
+	}
+
+	cached, err := getOrOpen(l.rootPath, cache, task.directory)
 	if err != nil {
 		return err
 	}
 
 	cached.lastUsed = time.Now()
 
-	_, err = cached.db.Exec(
+	if err := insert(cached.db, task.entry); err != nil {
+		closeCached(cache, task.directory)
+		return err
+	}
+	return nil
+}
+
+func (c *cachedDB) stillAtPath() bool {
+	current, err := os.Stat(c.path)
+	return err == nil && os.SameFile(c.file, current)
+}
+
+func closeCached(cache map[string]*cachedDB, directory string) {
+	if cached, ok := cache[directory]; ok {
+		_ = cached.db.Close()
+		delete(cache, directory)
+	}
+}
+
+func insert(db *sql.DB, entry Entry) error {
+	_, err := db.Exec(
 		`INSERT INTO app_requests (method, url, domain, source_ip, status, size, duration_ms, request_headers, response_headers, request_body, response_body)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		task.entry.Method,
-		task.entry.URL,
-		nullIfEmpty(task.entry.Domain),
-		nullIfEmpty(task.entry.SourceIP),
-		task.entry.Status,
-		task.entry.Size,
-		task.entry.DurationMillis,
-		nullIfEmpty(task.entry.RequestHeaders),
-		nullIfEmpty(task.entry.ResponseHeaders),
-		nullIfEmpty(task.entry.RequestBody),
-		nullIfEmpty(task.entry.ResponseBody),
+		entry.Method,
+		entry.URL,
+		nullIfEmpty(entry.Domain),
+		nullIfEmpty(entry.SourceIP),
+		entry.Status,
+		entry.Size,
+		entry.DurationMillis,
+		nullIfEmpty(entry.RequestHeaders),
+		nullIfEmpty(entry.ResponseHeaders),
+		nullIfEmpty(entry.RequestBody),
+		nullIfEmpty(entry.ResponseBody),
 	)
 	return err
 }
@@ -203,8 +241,16 @@ func getOrOpen(rootPath string, cache map[string]*cachedDB, directory string) (*
 		}
 	}
 
+	file, err := os.Stat(dbPath)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	cached := &cachedDB{
 		db:       db,
+		path:     dbPath,
+		file:     file,
 		lastUsed: time.Now(),
 	}
 	cache[directory] = cached

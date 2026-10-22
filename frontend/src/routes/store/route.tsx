@@ -1,18 +1,20 @@
 import { Show, createEffect } from 'solid-js';
 import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/solid-router';
-import { StoreNav } from '~/components/store/store-nav';
+import { StoreNav, storeSectionForPath } from '~/components/store/store-nav';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const Route = createFileRoute('/store')({
   component: StoreLayout,
 });
 
-const BUILDER_PATH = /^\/store\/(agents|skills)\/[^/]+\/builder\/?$/;
+const BUILDER_PATH = /^\/store\/(agents|skills|external-services)\/[^/]+\/builder\/?$/;
 
 function StoreLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const isIndex = () => location().pathname === '/store' || location().pathname === '/store/';
   const inBuilder = () => BUILDER_PATH.test(location().pathname);
+  createDocumentTitle(() => storeSectionForPath(location().pathname)?.label ?? 'Store');
 
   createEffect(() => {
     if (isIndex()) navigate({ to: '/store/agents', replace: true });

@@ -1,9 +1,22 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import { Perms } from '../permission/permission.constants';
 import type { AgentDetail } from './agent.types';
+import type { AgentProjectSettings, AgentProjectSettingsChoice } from './agent-copy-settings';
 
-export interface ImportAgentDto {
+export interface ImportAgentDto extends AgentProjectSettingsChoice {
   uploadId?: string;
   displayName?: string | null;
+}
+
+export interface InspectAgentImportDto {
+  uploadId?: string;
+}
+
+export interface AgentImportInspection {
+  displayName: string | null;
+  slug: string;
+  projectSettings: AgentProjectSettings;
+  maxWarmPoolSize: number;
 }
 
 export type AgentImportNoteKind = 'model' | 'skill' | 'template';
@@ -29,16 +42,24 @@ export interface AgentImportResult {
   notes: AgentImportNote[];
 }
 
-export function notAnAgentExport(message: string): BadRequestException {
-  return new BadRequestException({ code: 'not_an_agent_export', message });
+export function serviceSettingsLeftOut(skillName: string): AgentImportNote {
+  return {
+    kind: 'skill',
+    name: skillName,
+    message: `Left out the service settings of \`${skillName}\`: setting them needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+  };
 }
 
-export function exportFormatUnsupported(version: number, supported: number): BadRequestException {
-  return new BadRequestException({
-    code: 'export_format_unsupported',
-    message: `The file uses export format ${version}, but this deployment reads up to ${supported}; import it into a newer deployment`,
-    exportFormatVersion: version,
-  });
+export function serviceSettingsOfUnavailableService(skillName: string): AgentImportNote {
+  return {
+    kind: 'skill',
+    name: skillName,
+    message: `Left out the service settings of \`${skillName}\`: its External Service isn't available here`,
+  };
+}
+
+export function notAnAgentExport(message: string): BadRequestException {
+  return new BadRequestException({ code: 'not_an_agent_export', message });
 }
 
 /** A name problem answers 409 `name_unavailable` so the dialog can resubmit a new name on the same upload. */

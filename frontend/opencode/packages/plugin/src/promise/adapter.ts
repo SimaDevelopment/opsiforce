@@ -1,10 +1,12 @@
-import { Tool } from "@opencode-ai/schema/tool"
-import type { Rpc } from "@opencode-ai/schema/rpc"
-import type { RpcCallOptions, RpcEventPayload } from "@opencode-ai/client/promise/api"
+import { Tool } from "@opencode/schema/tool"
+import type { Rpc } from "@opencode/schema/rpc"
+import type { RpcCallOptions, RpcEventPayload } from "@opencode/client/promise/api"
 import { Effect, Schema, SchemaAST, Stream } from "effect"
 import type { Scope } from "effect"
-import { HttpApiEndpoint, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiSchema } from "effect/http-api"
 import { define } from "../effect/plugin.js"
+import type { ToolFailures, ToolHooks } from "../effect/tool.js"
+import { AssertInput } from "../permission.js"
 import type { Plugin } from "./plugin.js"
 import type { Info } from "./tool.js"
 import type { RpcDomain, RpcHandlers } from "./rpc.js"
@@ -26,6 +28,7 @@ interface CompiledEndpoint {
 }
 
 const compiledEndpoints = new WeakMap<object, CompiledEndpoint>()
+const JsonInput = Schema.fromJsonString(Schema.Unknown)
 
 interface HostRpcCallContext {
   readonly error: (type: string, message: string, data?: unknown) => unknown
@@ -129,6 +132,7 @@ const rpcFromEffect = Effect.fn("Plugin.Rpc.fromEffect")(function* (host: HostRp
                 try: (signal) => {
                   // SAFETY: Promise RPC handlers return Promise values before this adapter erases their concrete types.
                   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
+                  // oxlint-disable-next-line no-restricted-globals -- The portable RPC registry intentionally erases each handler's concrete signature.
                   return Reflect.apply(handler, undefined, [
                     input,
                     {
@@ -217,10 +221,11 @@ export function fromPromise(plugin: Plugin) {
     effect: (host) =>
       Effect.gen(function* () {
         const [{ ClientApi }, { OpenCodeEvent }] = yield* Effect.promise(() =>
-          Promise.all([import("@opencode-ai/protocol/client"), import("@opencode-ai/protocol/groups/event")]),
+          Promise.all([import("@opencode/protocol/client"), import("@opencode/protocol/groups/event")]),
         )
         const AgentEndpoints = ClientApi.groups["server.agent"].endpoints
         const CommandEndpoints = ClientApi.groups["server.command"].endpoints
+        const CredentialEndpoints = ClientApi.groups["server.credential"].endpoints
         const ExperimentalEndpoints = ClientApi.groups["server.experimental"].endpoints
         const GenerateEndpoints = ClientApi.groups["server.generate"].endpoints
         const IntegrationEndpoints = ClientApi.groups["server.integration"].endpoints
@@ -234,25 +239,27 @@ export function fromPromise(plugin: Plugin) {
         const SkillEndpoints = ClientApi.groups["server.skill"].endpoints
         const VcsEndpoints = ClientApi.groups["server.vcs"].endpoints
         const WebSearchEndpoints = ClientApi.groups["server.websearch"].endpoints
-        const context = yield* Effect.context<Scope.Scope>()
+        const WorktreeEndpoints = ClientApi.groups["server.worktree"].endpoints
+        const runtime = yield* Effect.context<Scope.Scope>()
         const streams = yield* makeStreams()
 
         // Run a hook registration on the plugin scope and resolve once it is registered.
         const register = (effect: Effect.Effect<HostRegistration, never, Scope.Scope>): Promise<Registration> =>
-          Effect.runPromiseWith(context)(effect).then((registration) => ({
-            dispose: () => Effect.runPromiseWith(context)(registration.dispose),
+          Effect.runPromiseWith(runtime)(effect).then((registration) => ({
+            dispose: () => Effect.runPromiseWith(runtime)(registration.dispose),
           }))
 
-        const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromiseWith(context)(effect)
+        const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromiseWith(runtime)(effect)
 
         const promiseExecutor =
           (execute: Tool.Info["execute"]): Info["execute"] =>
           (input, context) =>
-            run(
+            Effect.runPromiseWith(runtime)(
               execute(input, {
                 ...context,
                 progress: (update) => Effect.promise(() => context.progress(update)),
               }),
+              { signal: context.signal },
             )
 
         const adaptApiMethod = <PromiseMethod>(
@@ -262,11 +269,15 @@ export function fromPromise(plugin: Plugin) {
           const compiled = compileEndpoint(endpoint)
           return ((input?: unknown) =>
             Effect.gen(function* () {
-              const decoded = yield* Effect.forEach(compiled.decode, (decode) => decode(input ?? {}))
+              // Match the generated Promise client, whose request body crosses JSON before endpoint decoding.
+              const normalized = yield* Schema.encodeUnknownEffect(JsonInput)(input ?? {}).pipe(
+                Effect.flatMap(Schema.decodeUnknownEffect(JsonInput)),
+              )
+              const decoded = yield* Effect.forEach(compiled.decode, (decode) => decode(normalized))
               const result = yield* method(Object.assign({}, ...decoded) as never)
               if (compiled.noContent) return undefined
               return yield* compiled.encode(result)
-            }).pipe(Effect.runPromiseWith(context))) as PromiseMethod
+            }).pipe(Effect.runPromiseWith(runtime))) as PromiseMethod
         }
 
         const transform =
@@ -296,18 +307,6 @@ export function fromPromise(plugin: Plugin) {
                 host.aisdk.hook(name, (event) => Effect.promise(() => Promise.resolve(callback(event))), options),
               ),
           },
-          catalog: {
-            provider: {
-              list: adaptApiMethod(ProviderEndpoints["provider.list"], host.catalog.provider.list),
-              get: adaptApiMethod(ProviderEndpoints["provider.get"], host.catalog.provider.get),
-            },
-            model: {
-              list: adaptApiMethod(ModelEndpoints["model.list"], host.catalog.model.list),
-              default: adaptApiMethod(ModelEndpoints["model.default"], host.catalog.model.default),
-            },
-            transform: transform(host.catalog),
-            reload: () => run(host.catalog.reload()),
-          },
           command: {
             list: adaptApiMethod(CommandEndpoints["command.list"], host.command.list),
             transform: (callback) =>
@@ -324,6 +323,9 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             reload: () => run(host.command.reload()),
+          },
+          credential: {
+            activate: adaptApiMethod(CredentialEndpoints["credential.activate"], host.credential.activate),
           },
           event: {
             subscribe: (options) =>
@@ -343,11 +345,27 @@ export function fromPromise(plugin: Plugin) {
           generate: {
             text: adaptApiMethod(GenerateEndpoints["generate.text"], host.generate.text),
           },
+          model: {
+            list: adaptApiMethod(ModelEndpoints["model.list"], host.model.list),
+            default: adaptApiMethod(ModelEndpoints["model.default"], host.model.default),
+            transform: transform(host.model),
+            reload: () => run(host.model.reload()),
+          },
+          provider: {
+            list: adaptApiMethod(ProviderEndpoints["provider.list"], host.provider.list),
+            get: adaptApiMethod(ProviderEndpoints["provider.get"], host.provider.get),
+            transform: transform(host.provider),
+            reload: () => run(host.provider.reload()),
+          },
           integration: {
             list: adaptApiMethod(IntegrationEndpoints["integration.list"], host.integration.list),
             get: adaptApiMethod(IntegrationEndpoints["integration.get"], host.integration.get),
             connect: {
               key: adaptApiMethod(IntegrationEndpoints["integration.connect.key"], host.integration.connect.key),
+              external: adaptApiMethod(
+                IntegrationEndpoints["integration.connect.external"],
+                host.integration.connect.external,
+              ),
             },
             oauth: {
               connect: adaptApiMethod(
@@ -417,8 +435,9 @@ export function fromPromise(plugin: Plugin) {
               ),
             reload: () => run(host.integration.reload()),
             connection: {
-              active: (id) => Effect.runPromiseWith(context)(host.integration.connection.active(id)),
-              resolve: (connection) => Effect.runPromiseWith(context)(host.integration.connection.resolve(connection)),
+              active: (id) => Effect.runPromiseWith(runtime)(host.integration.connection.active(id)),
+              resolve: (connection) => Effect.runPromiseWith(runtime)(host.integration.connection.resolve(connection)),
+              status: (input) => run(host.integration.connection.status(input)),
             },
           },
           mcp: {
@@ -432,6 +451,8 @@ export function fromPromise(plugin: Plugin) {
             list: adaptApiMethod(PermissionEndpoints["session.permission.list"], host.permission.list),
             get: adaptApiMethod(PermissionEndpoints["session.permission.get"], host.permission.get),
             reply: adaptApiMethod(PermissionEndpoints["session.permission.reply"], host.permission.reply),
+            assert: (input) =>
+              run(Schema.decodeUnknownEffect(AssertInput)(input).pipe(Effect.flatMap(host.permission.assert))),
           },
           plugin: {
             list: adaptApiMethod(PluginEndpoints["plugin.list"], host.plugin.list),
@@ -455,6 +476,10 @@ export function fromPromise(plugin: Plugin) {
           },
           tool: {
             reload: () => run(host.tool.reload()),
+            list: () =>
+              run(host.tool.list()).then((tools) =>
+                tools.map((tool) => ({ ...tool, execute: promiseExecutor(tool.execute) })),
+              ),
             transform: (callback) =>
               register(
                 host.tool.transform((editor) =>
@@ -489,12 +514,14 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             hook: (name, callback) =>
-              register(host.tool.hook(name, (event) => Effect.promise(() => Promise.resolve(callback(event))))),
+              register(host.tool.hook(name, (event) => toolHook[name](() => Promise.resolve(callback(event))))),
           },
           vcs: {
             get: adaptApiMethod(VcsEndpoints["vcs.get"], host.vcs.get),
             base: adaptApiMethod(VcsEndpoints["vcs.base"], host.vcs.base),
-            branches: adaptApiMethod(VcsEndpoints["vcs.branches"], host.vcs.branches),
+            branch: {
+              list: adaptApiMethod(VcsEndpoints["vcs.branch.list"], host.vcs.branch.list),
+            },
             status: adaptApiMethod(VcsEndpoints["vcs.status"], host.vcs.status),
             diff: adaptApiMethod(VcsEndpoints["vcs.diff"], host.vcs.diff),
             reload: () => run(host.vcs.reload()),
@@ -503,10 +530,12 @@ export function fromPromise(plugin: Plugin) {
                 host.vcs.transform((editor) => {
                   callback({
                     add: (definition) => {
+                      const init = definition.init?.bind(definition)
                       const base = definition.base?.bind(definition)
                       editor.add({
                         id: definition.id,
                         name: definition.name,
+                        init: init ? (input) => attempt((signal) => init(input, { signal })) : undefined,
                         info: (input) => attempt((signal) => definition.info(input, { signal })),
                         base: base ? (input) => attempt((signal) => base(input, { signal })) : undefined,
                         branches: (input) => attempt((signal) => definition.branches(input, { signal })),
@@ -538,21 +567,45 @@ export function fromPromise(plugin: Plugin) {
                 }),
               ),
           },
+          worktree: {
+            list: adaptApiMethod(WorktreeEndpoints["worktree.list"], host.worktree.list),
+            create: adaptApiMethod(WorktreeEndpoints["worktree.create"], host.worktree.create),
+            remove: adaptApiMethod(WorktreeEndpoints["worktree.remove"], host.worktree.remove),
+            refresh: adaptApiMethod(WorktreeEndpoints["worktree.refresh"], host.worktree.refresh),
+            reload: () => run(host.worktree.reload()),
+            transform: (callback) =>
+              register(
+                host.worktree.transform((editor) =>
+                  callback({
+                    add: (definition) =>
+                      editor.add({
+                        id: definition.id,
+                        create: (input) => attempt((signal) => definition.create(input, { signal })),
+                        remove: (input) => attempt((signal) => definition.remove(input, { signal })),
+                        list: (directory) => attempt((signal) => definition.list(directory, { signal })),
+                      }),
+                  }),
+                ),
+              ),
+          },
           session: {
             hook: (name, callback, options) =>
               register(
                 host.session.hook(name, (event) => Effect.promise(() => Promise.resolve(callback(event))), options),
               ),
+            list: adaptApiMethod(SessionEndpoints["session.list"], host.session.list),
             create: adaptApiMethod(SessionEndpoints["session.create"], host.session.create),
             get: adaptApiMethod(SessionEndpoints["session.get"], host.session.get),
+            remove: adaptApiMethod(SessionEndpoints["session.remove"], host.session.remove),
             switchAgent: adaptApiMethod(SessionEndpoints["session.switchAgent"], host.session.switchAgent),
             switchModel: adaptApiMethod(SessionEndpoints["session.switchModel"], host.session.switchModel),
             prompt: adaptApiMethod(SessionEndpoints["session.prompt"], host.session.prompt),
             generate: adaptApiMethod(SessionEndpoints["session.generate"], host.session.generate),
             command: adaptApiMethod(SessionEndpoints["session.command"], host.session.command),
+            compact: adaptApiMethod(SessionEndpoints["session.compact"], host.session.compact),
             synthetic: adaptApiMethod(SessionEndpoints["session.synthetic"], host.session.synthetic),
             interrupt: adaptApiMethod(SessionEndpoints["session.interrupt"], host.session.interrupt),
-            rename: adaptApiMethod(SessionEndpoints["session.rename"], host.session.rename),
+            update: adaptApiMethod(SessionEndpoints["session.update"], host.session.update),
             move: adaptApiMethod(SessionEndpoints["session.move"], host.session.move),
             wait: adaptApiMethod(SessionEndpoints["session.wait"], host.session.wait),
             context: adaptApiMethod(SessionEndpoints["session.context"], host.session.context),
@@ -577,10 +630,26 @@ function attempt<A>(evaluate: (signal: AbortSignal) => PromiseLike<A>) {
 
 type RuntimeSchema = Schema.Codec<unknown, unknown>
 
+const toolError = (error: unknown) =>
+  error instanceof Tool.Error
+    ? error
+    : new Tool.Error({ message: error instanceof Error ? error.message : String(error), error })
+
+// Only execute.before may reject a call; a rejection fails that call alone, like an Effect hook.
+const toolHook: {
+  readonly [Name in keyof ToolHooks]: (run: () => Promise<void>) => Effect.Effect<void, ToolFailures[Name]>
+} = {
+  "execute.before": (run) => Effect.tryPromise({ try: run, catch: toolError }),
+  "execute.after": (run) => Effect.promise(run),
+}
+
 const executePromiseTool = (tool: Info, input: any, context: Tool.Context) =>
-  Effect.promise(() =>
-    tool.execute(input, {
-      ...context,
-      progress: (update) => Effect.runPromise(context.progress(update)),
-    }),
-  )
+  Effect.tryPromise({
+    try: (signal) =>
+      tool.execute(input, {
+        ...context,
+        signal,
+        progress: (update) => Effect.runPromise(context.progress(update), { signal }),
+      }),
+    catch: toolError,
+  })

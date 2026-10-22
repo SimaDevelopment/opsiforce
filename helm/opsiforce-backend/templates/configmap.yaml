@@ -22,6 +22,8 @@ data:
   STORAGE_TYPE: {{ .Values.config.storageType | quote }}
   STORAGE_MOUNT_PATH: {{ .Values.config.storageMountPath | default "/workspace-data" | quote }}
   STORAGE_CLAIM_SIZE: {{ .Values.config.storageClaimSize | default "" | quote }}
+  AGENT_PRIVILEGED: {{ .Values.config.agentPrivileged | default false | quote }}
+  AGENT_RUNTIME_CLASS_NAME: {{ .Values.config.agentRuntimeClassName | default "" | quote }}
   AGENT_WORKSPACE_UPDATE_ON_STARTUP: {{ .Values.config.agentWorkspaceUpdateOnStartup | default "true" | quote }}
   AGENT_UPDATE_JOB_TIMEOUT_MS: {{ .Values.config.agentUpdateJobTimeoutMs | default "1800000" | quote }}
   {{- if .Values.config.agentNodeSelector }}
@@ -48,15 +50,22 @@ data:
   {{- if .Values.config.gatewayUrl }}
   SERVICE_GATEWAY_URL: {{ .Values.config.gatewayUrl | quote }}
   {{- end }}
-  {{- if .Values.config.platformApiUrl }}
-  OPSIFORCE_API_URL: {{ .Values.config.platformApiUrl | quote }}
-  {{- end }}
   {{- if .Values.config.runtimeProxyUrl }}
   OPSIFORCE_RUNTIME_PROXY_URL: {{ .Values.config.runtimeProxyUrl | quote }}
   {{- end }}
-  {{- if .Values.config.externalServicesUrl }}
-  EXTERNAL_SERVICES_URL: {{ .Values.config.externalServicesUrl | quote }}
+  {{- if .Values.config.externalServicesHost }}
+  EXTERNAL_SERVICES_HOST: {{ .Values.config.externalServicesHost | quote }}
   {{- end }}
+  {{- if .Values.config.externalServiceProxyControl }}
+  EXTERNAL_SERVICE_PROXY_CONTROL: {{ .Values.config.externalServiceProxyControl | quote }}
+  {{- end }}
+  {{- if .Values.config.podCaBundleConfigMap }}
+  POD_CA_BUNDLE_CONFIGMAP: {{ .Values.config.podCaBundleConfigMap | quote }}
+  {{- end }}
+  {{- if ne (toString .Values.config.externalServiceCallLogRetentionDays) "" }}
+  EXTERNAL_SERVICE_CALL_LOG_RETENTION_DAYS: {{ .Values.config.externalServiceCallLogRetentionDays | quote }}
+  {{- end }}
+  {{- /* TODO: remove in the release after External Services v2 ships: MAILGUN_* and WHAPI_API_URL below (dead /api/gateway email provider + one-time v1 importers) */}}
   {{- if .Values.config.mailgunDomain }}
   MAILGUN_DOMAIN: {{ .Values.config.mailgunDomain | quote }}
   {{- end }}
@@ -72,9 +81,7 @@ data:
   {{- if .Values.config.whapiApiUrl }}
   WHAPI_API_URL: {{ .Values.config.whapiApiUrl | quote }}
   {{- end }}
-  {{- if .Values.config.externalServicesWebhookBaseUrl }}
-  EXTERNAL_SERVICES_WEBHOOK_BASE_URL: {{ .Values.config.externalServicesWebhookBaseUrl | quote }}
-  {{- end }}
+  OPSIFORCE_PUBLIC_URL: {{ required "config.opsiforcePublicUrl is required: the deployment's public origin, such as https://opsiforce.example.com" .Values.config.opsiforcePublicUrl | quote }}
   {{- if .Values.config.appsHostname }}
   APPS_HOSTNAME: {{ .Values.config.appsHostname | quote }}
   {{- end }}

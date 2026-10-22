@@ -7,10 +7,10 @@ import { Route, type RouteDefaultsInput } from "../route/client.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Protocol } from "../route/protocol.js"
 import { ProviderID, type ModelID, type LLMRequest } from "../schema/index.js"
-import { profiles } from "./openai-compatible-profile.js"
 import type { OpenAIProviderOptionsInput } from "./openai-options.js"
 
 export const id = ProviderID.make("groq")
+const baseURL = "https://api.groq.com/openai/v1"
 
 export type ProviderOptions = Pick<OpenAIProviderOptionsInput, "reasoningEffort"> & {
   /** Controls visible reasoning on GPT-OSS; other models always use parsed reasoning. */
@@ -26,11 +26,11 @@ export type LanguageModelOptions = Omit<RouteDefaultsInput, "providerOptions"> &
     readonly providerOptions?: ProviderOptions
   }
 
-export interface Settings extends ProviderPackage.Settings {
-  readonly apiKey?: string
-  readonly baseURL?: string
-  readonly providerOptions?: ProviderOptions
-}
+export type Settings = ProviderPackage.Settings &
+  ProviderOptions & {
+    readonly apiKey?: string
+    readonly baseURL?: string
+  }
 
 const Options = Schema.Struct({
   includeReasoning: Schema.optional(Schema.Boolean),
@@ -71,17 +71,17 @@ export const protocol = Protocol.make({
 export const route = Route.make({
   id: "groq-chat",
   provider: id,
-  providerMetadataKey: "openai",
+  providerMetadataKey: "groq",
   protocol,
-  endpoint: Endpoint.path("/chat/completions", { baseURL: profiles.groq.baseURL }),
+  endpoint: Endpoint.path("/chat/completions", { baseURL }),
   framing: OpenAIChat.framing,
 })
 
 export const configure = (input: LanguageModelOptions = {}) => {
-  const { apiKey: _apiKey, auth: _auth, baseURL, ...defaults } = input
+  const { apiKey: _apiKey, auth: _auth, baseURL: endpoint, ...defaults } = input
   const configured = route.with({
     ...defaults,
-    endpoint: { baseURL: baseURL ?? profiles.groq.baseURL },
+    endpoint: { baseURL: endpoint ?? baseURL },
     auth: AuthOptions.bearer(input, "GROQ_API_KEY"),
   })
   return {
@@ -93,7 +93,6 @@ export const configure = (input: LanguageModelOptions = {}) => {
           maxTokensField: "max_completion_tokens",
           reasoningField: "reasoning",
           requireReasoning: false,
-          supportsStore: false,
           supportsStrictMode: false,
         },
       }),
@@ -103,13 +102,16 @@ export const configure = (input: LanguageModelOptions = {}) => {
 
 export const provider = configure()
 
-export const model: ProviderPackage.Definition<Settings, ProviderOptions>["model"] = (modelID, settings) =>
+export const model: ProviderPackage.Definition<Settings, ProviderOptions>["model"] = (
+  modelID,
+  { apiKey, baseURL, body, headers, ...providerOptions },
+) =>
   configure({
-    apiKey: settings.apiKey,
-    baseURL: settings.baseURL,
-    headers: settings.headers === undefined ? undefined : { ...settings.headers },
-    http: settings.body === undefined ? undefined : { body: { ...settings.body } },
-    providerOptions: settings.providerOptions,
+    apiKey,
+    baseURL,
+    headers,
+    http: body === undefined ? undefined : { body },
+    providerOptions,
   }).model(modelID)
 
 export * as Groq from "./groq.js"

@@ -8,6 +8,7 @@ import {
   useDeleteProjectEnvironment,
   useProjectEnvironments,
   useRestartProjectEnvironment,
+  useRotateGatewayKey,
   type ProjectEnvironment,
 } from '~/api/environments';
 import { usePublishTargets, type PublishTarget } from '~/api/publish';
@@ -22,7 +23,6 @@ import { EnvTargetRow } from './env-target-row';
 import { EnvStatusDot } from './env-status-dot';
 import { PublishDialog } from './publish-dialog';
 import { EnvironmentVariablesDialog } from './environment-variables-dialog';
-import { ExternalServicesDialog } from '~/components/external-services/external-services-dialog';
 
 export interface EnvironmentsPopoverProps {
   projectId: string;
@@ -40,7 +40,6 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const canPublish = () => hasPermission(Permission.publishProject);
   const canManageVariables = () => hasPermission(Permission.manageEnvironmentVariables);
   const canSchedules = () => hasPermission(Permission.manageSchedules);
-  const canManageExternalServices = () => hasPermission(Permission.manageExternalServices);
 
   const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);
@@ -66,14 +65,15 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
 
   const restart = useRestartProjectEnvironment();
   const remove = useDeleteProjectEnvironment();
+  const rotateGatewayKey = useRotateGatewayKey();
 
   const [authEnv, setAuthEnv] = createSignal<ProjectEnvironment | null>(null);
   const [variablesEnv, setVariablesEnv] = createSignal<ProjectEnvironment | null>(null);
-  const [externalServicesEnv, setExternalServicesEnv] = createSignal<ProjectEnvironment | null>(null);
   const [publishTarget, setPublishTarget] = createSignal<PublishTarget | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<ProjectEnvironment | null>(null);
   const [pendingRestart, setPendingRestart] = createSignal<ProjectEnvironment | null>(null);
   const [restartingId, setRestartingId] = createSignal<string | null>(null);
+  const [pendingRotate, setPendingRotate] = createSignal<ProjectEnvironment | null>(null);
 
   const developmentRow = createMemo(() => environments.data?.find((e) => e.isDefault) ?? null);
 
@@ -119,6 +119,18 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     );
   };
 
+  const confirmRotate = () => {
+    const env = pendingRotate();
+    if (!env) return;
+    rotateGatewayKey.mutate(
+      { projectId: props.projectId, environmentId: env.id },
+      {
+        onSuccess: () => toast.success(`Rotated the Gateway Key of ${env.name}`),
+        onError: () => toast.error(`Failed to rotate the Gateway Key of ${env.name}`),
+      }
+    );
+  };
+
   const confirmDelete = () => {
     const env = pendingDelete();
     if (!env) return;
@@ -148,14 +160,13 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     canPublish: canPublish() && target !== null,
     canManageVariables: canManageVariables(),
     canSchedules: canSchedules(),
-    canManageExternalServices: canManageExternalServices(),
     restarting: restartingId() === env.id,
     onAuth: () => setAuthEnv(env),
     onVariables: () => setVariablesEnv(env),
     onPublish: () => setPublishTarget(target),
     onSchedules: () => openSchedules(env),
-    onExternalServices: () => setExternalServicesEnv(env),
     onRestart: () => setPendingRestart(env),
+    onRotateGatewayKey: () => setPendingRotate(env),
     onDelete: () => setPendingDelete(env),
   });
 
@@ -163,7 +174,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     <>
       <Popover open={open()} onOpenChange={setOpen} placement="bottom-start">
         <PopoverTrigger
-          class="flex h-8 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs transition-colors hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
+          class="flex h-8 min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs transition-colors hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
           aria-label="Environments"
         >
           <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}>
@@ -251,13 +262,6 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         }}
       />
 
-      <ExternalServicesDialog
-        environment={externalServicesEnv()}
-        onOpenChange={(value) => {
-          if (!value) setExternalServicesEnv(null);
-        }}
-      />
-
       <Show when={canPublish()}>
         <PublishDialog
           projectId={props.projectId}
@@ -279,6 +283,18 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         confirmLabel="Restart"
         variant="destructive"
         onConfirm={confirmRestart}
+      />
+
+      <ConfirmDialog
+        open={pendingRotate() !== null}
+        onOpenChange={(value) => {
+          if (!value) setPendingRotate(null);
+        }}
+        title="Rotate Gateway Key"
+        description={`The ${pendingRotate()?.name ?? ''} environment gets a new Gateway Key and the old one stops working at once. Its pod restarts with the new key, so the running app and agent briefly go offline.`}
+        confirmLabel="Rotate"
+        variant="destructive"
+        onConfirm={confirmRotate}
       />
 
       <ConfirmDialog

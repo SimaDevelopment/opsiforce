@@ -106,9 +106,9 @@ Two fixing rounds in a row that turn no failing line into a pass is the point to
 ## `scripts/tp.sh`
 
 Every step below is one `sh scripts/tp.sh <command>`, and its state in `scratch/test-project.json`
-carries over to a new shell or a resumed chat. For a call it lacks: `scripts/api.sh call` (the
-platform) and `runtime <baseUrl>` (the Test Project, through the runtime proxy); outside this chat's
-Projects, 404.
+carries over to a new shell or a resumed chat. For a call it lacks: `scripts/api.sh <METHOD> <path>`
+(an Opsiforce Public API v1 path) and `runtime <baseUrl>` (the Test Project, through the runtime proxy);
+outside this chat's Projects, 404.
 
 ## 1. Save first
 
@@ -214,9 +214,10 @@ sh scripts/tp.sh sh 'git -C /workspace log --oneline | tail -3'           # "Ini
 sh scripts/tp.sh sh 'find /workspace -maxdepth 3 -type d -not -path "*/node_modules*" -not -path "*/.*"'   # the Template's directories, still there
 ```
 
-The `platform` skill's boot and crash queries are the child's to run. Run them through `tp.sh sh` only
-when its record has none since the last change. A recent `crashed` with a climbing `restart_count` is
-a crash loop, and it outranks anything the child said about itself.
+The `platform` skill's boot and crash checks are the child's to run. Run them yourself —
+`sh scripts/tp.sh sh 'process-logs --events --since 10m'` — only when its record has none since the
+last change. A recent `crashed` with a climbing `restart_count` is a crash loop, and it outranks
+anything the child said about itself.
 
 Everything through `tp.sh sh` is a **read** (§Who checks what).
 

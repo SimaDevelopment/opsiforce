@@ -127,14 +127,16 @@ export interface PodClassCatalog {
   customBounds: { min: PodResources; max: PodResources };
 }
 
-export interface UpdateProjectPodClassDto {
+export type PodSettings = PodResources & { podClass: PodClass };
+
+export interface UpdatePodClassDto {
   podClass: PodClass;
   cpuMillicores?: number;
   memoryRequestMib?: number;
   memoryLimitMib?: number;
 }
 
-export type ProjectKind = 'skill_builder_chat' | 'agent_builder_chat' | 'test';
+export type ProjectKind = 'skill_builder_chat' | 'agent_builder_chat' | 'external_service_builder_chat' | 'test';
 
 export interface Project {
   id: string;
@@ -171,8 +173,7 @@ export interface Project {
 
 export const podClassApi = {
   catalog: () => api.get<PodClassCatalog>('/pod-classes'),
-  update: (projectId: string, dto: UpdateProjectPodClassDto) =>
-    api.put<Project>(`/projects/${projectId}/pod-class`, dto),
+  update: (projectId: string, dto: UpdatePodClassDto) => api.put<Project>(`/projects/${projectId}/pod-class`, dto),
 };
 
 export interface ProjectState {
@@ -192,6 +193,7 @@ export interface ProjectAppMeta {
 export type ProjectAuthMode = 'public' | 'manual' | 'managed';
 
 export interface ProjectAuthOidcConfig {
+  forwardAccessToken?: boolean;
   clientId?: string;
   clientSecret?: string;
   discoveryUrl?: string;
@@ -249,13 +251,6 @@ export interface Agent {
 export interface WorkspacePreferences {
   workspaceOrder: string[];
   updatedAt: string | null;
-}
-
-export interface OpenCodeSession {
-  id: string;
-  parentID?: string;
-  title?: string;
-  time: { created: number; updated: number };
 }
 
 export interface User {

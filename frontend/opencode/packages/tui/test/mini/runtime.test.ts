@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { OpenCode } from "@opencode-ai/client/promise"
+import { OpenCode } from "@opencode/client/promise"
 import { runInteractiveDeferredMode } from "../../src/mini/runtime"
 import type { LifecycleInput } from "../../src/mini/runtime.lifecycle"
 import type { FooterEvent, MiniHost } from "../../src/mini/types"
@@ -146,7 +146,7 @@ describe("run interactive runtime", () => {
     await refreshCatalog?.()
     expect(defaultModel).toHaveBeenCalledTimes(1)
     selected.resolve({
-      location: { directory: "/tmp", project: { id: "pro-1", directory: "/tmp", canonical: "/tmp" } },
+      location: { directory: "/tmp" },
       data: model,
     })
     await defaultModelReloaded.promise
@@ -173,7 +173,7 @@ describe("run interactive runtime", () => {
     let lifecycle!: LifecycleInput
     const settled: Array<{ sessionID: string; formID: string }> = []
     stubCatalogLists(sdk)
-    const reply = spyOn(sdk.form, "reply").mockImplementation(() => ok(undefined))
+    const reply = spyOn(sdk.session.form, "reply").mockImplementation(() => ok(undefined))
 
     const task = runInteractiveDeferredMode(
       {
@@ -192,7 +192,6 @@ describe("run interactive runtime", () => {
         model: { providerID: "test", modelID: "model" },
         variant: undefined,
         files: [],
-        thinking: false,
       },
       {
         createRuntimeLifecycle: async (input) => {
@@ -230,19 +229,18 @@ describe("run interactive runtime", () => {
       sessionID: "global",
       formID: "frm_global",
       answer: { value: "yes" },
-      location: { directory: "/remote work", workspaceID: "wrk_1" },
+      location: { directory: "/remote work" },
     })
     expect(reply).toHaveBeenCalledWith(
       {
         sessionID: "global",
         formID: "frm_global",
         answer: { value: "yes" },
-        location: { directory: "/remote work", workspaceID: "wrk_1" },
+        location: { directory: "/remote work" },
       },
       {
         headers: {
           "x-opencode-directory": "%2Fremote%20work",
-          "x-opencode-workspace": "wrk_1",
         },
       },
     )
@@ -289,7 +287,6 @@ describe("run interactive runtime", () => {
         model: { providerID: "openai", modelID: "gpt-5" },
         variant: undefined,
         files: [],
-        thinking: false,
       },
       {
         createRuntimeLifecycle: async () => {
@@ -376,7 +373,6 @@ describe("run interactive runtime", () => {
         model: undefined,
         variant: undefined,
         files: [],
-        thinking: false,
       },
       {
         createRuntimeLifecycle: async () => {
@@ -459,7 +455,6 @@ describe("run interactive runtime", () => {
         model: undefined,
         variant: undefined,
         files: [],
-        thinking: false,
       },
       {
         createRuntimeLifecycle: async () => ({
@@ -581,7 +576,7 @@ describe("run interactive runtime", () => {
     painted.resolve()
     await task
 
-    const query = { location: { directory: "/session", workspace: "work-1" } }
+    const query = { location: { directory: "/session" } }
     expect(getDirectory?.()).toBe("/session")
     if (!runtimeConfig) throw new Error("runtime lifecycle did not receive TUI config")
     expect(await runtimeConfig).toBe(tuiConfig)
@@ -591,7 +586,6 @@ describe("run interactive runtime", () => {
     expect(catalogs.agent).toHaveBeenCalledWith(query, { signal: expect.any(AbortSignal) })
     expect(catalogs.reference).toHaveBeenCalledWith(query, { signal: expect.any(AbortSignal) })
     expect(catalogs.command).toHaveBeenCalledWith(query, { signal: expect.any(AbortSignal) })
-    expect(catalogs.skill).toHaveBeenCalledWith(query, { signal: expect.any(AbortSignal) })
     expect(fileFind).toHaveBeenCalledWith({ query: "index", type: "file", ...query })
   })
 })

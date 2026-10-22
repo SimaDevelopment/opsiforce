@@ -23,8 +23,8 @@ export function SectionRail(props: { tabs: RailTab[]; groupOrder: readonly strin
     <>
       <nav
         class={cn(
-          'hidden shrink-0 flex-col gap-1 overflow-y-auto border-r border-sidebar-border bg-sidebar md:flex',
-          collapsed() ? 'p-2 md:w-14' : 'p-3 md:w-56 lg:w-60'
+          'hidden shrink-0 flex-col gap-1 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:flex',
+          collapsed() ? 'p-2 lg:w-14' : 'p-3 lg:w-60'
         )}
       >
         <button
@@ -77,7 +77,7 @@ export function SectionRail(props: { tabs: RailTab[]; groupOrder: readonly strin
         </For>
       </nav>
 
-      <nav class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 md:hidden">
+      <nav class="flex shrink-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] border-b border-sidebar-border bg-sidebar p-2 lg:hidden">
         <For each={props.tabs}>
           {(tab) => (
             <button

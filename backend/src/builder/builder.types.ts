@@ -5,11 +5,12 @@ export interface BuilderChatCaller {
   userId: string;
   canManageSkills: boolean;
   canManageAgents: boolean;
+  canManageTenantExternalServices: boolean;
 }
 
-export type BuilderSubjectRef = { skillId: string } | { agentId: string };
+export type BuilderSubjectRef = { skillId: string } | { agentId: string } | { externalServiceId: string };
 
-export type BuilderSubjectType = 'skill' | 'agent';
+export type BuilderSubjectType = 'skill' | 'agent' | 'external_service';
 
 export interface BuilderSubject {
   type: BuilderSubjectType;

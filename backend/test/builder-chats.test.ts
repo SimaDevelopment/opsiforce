@@ -33,13 +33,10 @@ import type { UserService } from '../src/user/user.service';
 import { ensureBuiltInAgent, seedLiveAgent } from './support/agent-fixtures';
 import { createDomainTestingModule, type DomainTestHarness } from './support/domain';
 import { DomainTestModule } from './support/domain-module';
+import { EveryServiceAvailableModule } from './support/every-service-available';
+import { PublicApiConfigurationDoubleModule } from './support/public-api-configuration-double';
 import { createUserRow } from './support/org-fixtures';
-import {
-  addMember,
-  createTenant,
-  type MemberFixture,
-  type TenantFixture,
-} from './support/project-fixtures';
+import { addMember, createTenant, type MemberFixture, type TenantFixture } from './support/project-fixtures';
 
 @Module({
   controllers: [BuilderController],
@@ -57,7 +54,7 @@ let colleague: BuilderChatCaller;
 let builderAgentId: string;
 
 function callerFor(userId: string): BuilderChatCaller {
-  return { tenantId, userId, canManageSkills: true, canManageAgents: true };
+  return { tenantId, userId, canManageSkills: true, canManageAgents: true, canManageTenantExternalServices: false };
 }
 
 beforeAll(async () => {
@@ -381,6 +378,8 @@ describe('the Builder routes over HTTP', () => {
       imports: [
         ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
         DomainTestModule,
+        EveryServiceAvailableModule,
+        PublicApiConfigurationDoubleModule,
         BuilderApiTestModule,
       ],
     }).compile();
@@ -419,7 +418,7 @@ describe('the Builder routes over HTTP', () => {
     const refused = await request('POST', '/api/builder/chats', plainMember, { skillId });
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({
-      message: `Missing permission: ${Perms.manageSkills} or ${Perms.manageAgents}`,
+      message: `Missing permission: ${Perms.manageSkills} or ${Perms.manageAgents} or ${Perms.manageTenantExternalServices}`,
     });
   });
 });

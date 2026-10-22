@@ -1,0 +1,554 @@
+# Opsiforce
+
+AI coding-assistant platform: users converse with an agent inside a Kubernetes pod to build apps, and can promote those apps from a working environment to production-like environments.
+
+## Language
+
+### Organization
+
+**Organization**:
+The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the code and the public API contract — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
+_Avoid_: Tenant (internal name only — never user-facing); Account (collides with the user's login); Workspace (a grouping *within* an Organization, not the Organization itself)
+
+**Workspace**:
+A grouping of Projects within an Organization that decides who sees them: a shared Workspace is visible to its explicit members only, and every Project sits in exactly one Workspace or in Public. Folders group Projects inside a Workspace.
+_Avoid_: Team, Group, Space (non-canonical); Organization (the account that owns Workspaces); Files (the project tab, a different thing)
+
+**Personal Workspace**:
+The one private Workspace a member gets in an Organization, created on first sign-in, visible to and manageable by nobody else. Organizations can switch Personal Workspaces off, in which case existing ones are hidden rather than deleted.
+_Avoid_: Private workspace (the internal type name, not user-facing copy); My workspace, Home
+
+**Public Workspace**:
+The Organization-wide surface for Projects that belong to no Workspace, visible to every member of the Organization. Placing a Project there widens its audience to the whole Organization.
+_Avoid_: Unassigned (retired label); Default workspace, Shared (a shared Workspace is member-scoped, Public is not)
+
+**Folder**:
+A named, single-level grouping of Projects within a Workspace — an organizational label, not ownership: deleting a Folder releases its Projects to the Workspace; an empty Folder is fine. A Project sits either directly in its Workspace or in exactly one of its Folders, and a Folder's name is unique within its Workspace. Folders exist in shared Workspaces and the private Personal Workspace, never in Public. Moving a Folder to another Workspace carries its Projects and follows the same rules as moving the Projects themselves.
+_Avoid_: Group (vague — collides with UI grouping); Directory (filesystem connotation); Subfolder, nested folders (out of scope — one level only)
+
+**Limit**:
+The most of one kind of thing an Organization may hold at once. An Organization follows the platform's value for a Limit unless it has its own, either may be none, and only the platform sets them.
+_Avoid_: Quota, Cap, Plan limit (non-canonical); Default (a Limit is enforced on every create, not copied into new entities)
+
+**Model provider**:
+One upstream an Organization's Agents and Apps may send model traffic to, switched on or off and weighted within its Base format, separately for Agents and for Apps. Its key, URL and Base format live only in the LLM gateway; the platform keeps the ones new Organizations start with.
+_Avoid_: Provider slot, Organization provider setting
+
+**Opsiforce model provider**:
+A Model provider the platform gives every Organization rather than one the Organization added. The Organization switches and weights it but never sees how it connects. The UI labels it Built-in.
+_Avoid_: Platform provider (the platform's own row that new Organizations start from), Shared provider
+
+**Azure connection**:
+A Model provider that reaches one Azure AI Foundry resource, serving only the catalog models chosen for it, from either Base format, with its own switches and weights for each format it serves. The platform's are Opsiforce model providers and an Organization's own are Custom model providers; both are added from Settings.
+_Avoid_: Deployment-managed model provider, Azure provider (the gateway has one, which every Azure connection shares), Azure deployment (one model on the resource)
+
+**Withheld**:
+An Opsiforce model provider an Organization doesn't have, because a platform admin removed its access there, or because it is offered only to chosen Organizations and that one isn't among them: it carries none of that Organization's traffic and its admin doesn't see it. An Organization added later gets a provider offered to every Organization and is withheld from one offered to chosen ones.
+_Avoid_: Disabled, Hidden, Blocked (an Organization's own switch only turns a provider off)
+
+**Custom model provider**:
+A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint, a Linked account or an Azure connection, serves every model of its Base format or only the ones chosen for it, and its name and Base format are fixed once it exists, except an Azure connection's formats, which follow its models.
+_Avoid_: Own provider, BYOK provider
+
+**Official API key**:
+A Custom model provider that reaches the vendor's own API with a key the Organization holds.
+_Avoid_: Direct key, Vendor key
+
+**Compatible endpoint**:
+A Custom model provider that reaches a gateway, proxy or Azure deployment speaking its Base format, at a public `https://` base URL, with a key the Organization holds.
+_Avoid_: Custom URL, Self-hosted provider, OpenAI-compatible provider
+
+**Linked account**:
+A Model provider whose credential is an account signed in at a Vendor rather than a key, served through the Linked-account Proxy. It takes traffic only while it is connected. The platform's `custom-openai-1` is one, shared by every Organization.
+_Avoid_: ChatGPT account, Subscription provider, Codex login
+
+**Vendor**:
+The company whose account a Linked account signs in to, which decides how it signs in, refreshes and forwards requests. ChatGPT is the only one.
+_Avoid_: Provider (a Vendor is not a Model provider)
+
+**Codex OAuth Dock**:
+The hosted service that serves the platform's `custom-openai-1` until a platform admin signs it in. Nothing in an environment calls it after that sign-in.
+_Avoid_: Dock
+
+**Base format**:
+The request format a Model provider speaks, which decides which catalog models it can serve: OpenAI or Anthropic. Weights split traffic only among the Model providers of one Base format.
+
+### Projects & Environments
+
+**Project**:
+The durable shell a user owns — identity, ownership, and cross-environment policy. It holds no running state of its own; it groups one or more ProjectEnvironments, each running its own App.
+_Avoid_: App (a Project is not the thing that gets built — it groups several; see App)
+
+**Environment**:
+A tenant-scoped, named target a Project can run in and a Custom Agent can publish to (name + description). Every tenant has two protected Environments — **Development** and **Production** — created with the tenant; admins add others (e.g. Staging). A protected Environment cannot be renamed or deleted, and neither can one holding a Custom Agent's Agent Profile or named as its Default environment (Agent). The set of Environments is the list of publish targets offered to every Project and every Custom Agent in the tenant.
+_Avoid_: Tier, Target, Deployment target
+
+**Environment Slug**:
+The short, immutable, URL-safe identifier an Environment carries alongside its name, shown as the environment suffix in an App's public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
+_Avoid_: Suffix (its position in the URL, not the concept); Code
+
+**Environment Color**:
+The color an Organization gives an Environment as its visual identity — the one hue that stands for that Environment wherever environments are shown at a glance (today, the environment markers beside a Project in the sidebar). Every Environment has one: the protected Development and Production Environments are seeded with defaults, and any Environment's color — protected ones included — can be changed by an admin from the Environment registry in Settings. It answers *which* Environment this is, and is deliberately a different axis from the status colors that signal *how* a running environment is doing (active, starting, suspended, failed) — a suspended Production is still "Production" and keeps its color.
+_Avoid_: Status color (the orthogonal running-state axis, not identity); Label color; Theme; Tag
+
+**Badge Label**:
+The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased.
+_Avoid_: Short name (the stored identifier, not user-facing copy); Abbreviation; Tag
+
+**ProjectEnvironment**:
+A per-Project instance of an Environment — the thing that actually runs. It owns the runtime state (its files, pod, URLs, and service-gateway key); it shares the Project's LLM virtual keys rather than owning its own. Every Project has one bound to Development; publishing creates additional ones bound to other Environments.
+_Avoid_: Instance, Deployment, Env
+
+**Development**:
+The default protected Environment present in every tenant. Every Project's working ProjectEnvironment is bound to it. It is never the destination of a publish and cannot be renamed or deleted.
+_Avoid_: Dev env, working copy
+
+**Production**:
+The second protected Environment present in every tenant — the conventional target for publishing the App's live version. Beyond being guaranteed to exist and protected from rename/delete, it behaves like any other publish target.
+_Avoid_: Prod (non-canonical in user-facing copy); Live
+
+**App**:
+The application the agent builds inside a ProjectEnvironment, served at that environment's public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).
+_Avoid_: Project (when you mean the built application); "one App per Project" (retired — each ProjectEnvironment is its own App)
+
+**App Details**:
+An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at publish and evolve independently afterwards.
+_Avoid_: App metadata (vague); Project title (the Project shell's label — a different thing); project-level identity (retired — App Details belong to each App/environment, not the Project)
+
+**Go-live**:
+The moment an App first exists and is running in a ProjectEnvironment — for Development, when the agent finishes the first feature, it builds and boots, and the agent publishes App Details; for a published environment, when its freshly-deployed pod first serves. Go-live is decoupled from "done": it happens before the agent's feature testing, which follows with the App already live. Each environment goes live independently. Before its App goes live an environment has a pod but no App; that environment's app pane appears only once it happens.
+_Avoid_: Detection (the platform's inward-facing name for noticing the same moment); App ready, Launch; Deploy/Publish (which moves an already-live App between Environments)
+
+**Publish**:
+The act of materializing or updating a non-Development ProjectEnvironment from the Development one's files, so the App runs in a chosen Environment. Publishing over an already-running environment is a **Publish update**.
+_Avoid_: Deploy, Release, Promote, Redeploy; conflating with Publish (Skill) or Publish (Agent), disambiguated by object: Apps and Agent Profiles publish to Environments, Skills publish to the Store
+
+**Duplicate**:
+Creating a new Project in the same tenant and workspace from an existing one, preserving its working state in full — App source and history, the agent conversation, the App's databases, Environment Variables, settings, Resources, and App Details. The duplicate is independent: it gets its own keys, and its Schedules arrive **paused** so no automation fires twice. Only the Development ProjectEnvironment is duplicated — published environments are re-created by publishing from the duplicate.
+_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source only, never working state); Duplicate (Agent) (the Agent sense)
+
+**Export**:
+Producing a Project export from a Project's Development working state, to carry it to a *different* Opsiforce deployment. The cross-deployment sibling of Duplicate — same bundle and carry-rules — but the destination is another instance reached through a file rather than a local copy. Only the Development ProjectEnvironment is exported.
+_Avoid_: Share; Download (the chat file-download is a different feature); conflating with Publish (which moves App source between Environments within one deployment) or Duplicate (same-deployment copy); Export (Agent) (the Agent sense)
+
+**Import**:
+Creating a new, independent Project on this deployment from a Project export — the consume side of Export. The result behaves like a freshly duplicated Project: its own keys, Schedules paused.
+_Avoid_: Restore (implies returning to the deployment it left); Upload (the transport, not the act); Import (Agent) (the Agent sense)
+
+**Project export**:
+The opaque, versioned file an Export produces and an Import consumes — a sealed copy of a Project's Development working state, meaningful only when imported back into an Opsiforce deployment, never read or edited on its own.
+_Avoid_: Workflow (colloquial — maps to no entity; the exported unit is a Project); Workspace export (Workspace is the Org-level project grouping, a different thing); Blueprint, Package (non-canonical); Template (the files a new Project starts from, a different thing)
+
+**Active environment**:
+The one ProjectEnvironment the project workspace is currently showing — chat, code, DB, and the app pane all follow it. Chosen by clicking an environment in the Environments panel, or via **View environment** after a Publish completes; defaults to Development. Viewing changes nothing about the environment itself — it only re-points the workspace.
+_Avoid_: Current env, Selected env (spell out "environment"); conflating with Development (the default, not a synonym)
+
+**Environment Variables**:
+The per-ProjectEnvironment configuration values (string keys and values) the App reads when it starts — API keys, base URLs, flags. Each ProjectEnvironment carries its own set; values are set at publish or edited directly per environment, and changes take effect only when the App restarts.
+_Avoid_: Secrets (they may hold secrets but are not only secrets); the pod's process env (platform plumbing, a different thing)
+
+**Restart (environment)**:
+Recreating a ProjectEnvironment's pod from scratch — the row-level Restart action. Distinct from the lighter **App restart** that applying Environment Variables performs, which restarts only the App's processes inside the running pod.
+_Avoid_: Reboot; conflating with App restart
+
+**Disable (Project)**:
+Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a Test Project, whose pods stop, a Custom External Service, whose pods stop and which leaves its Organization's Project forms, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
+_Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
+
+**App Auth**:
+Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **managed** (a shared identity provider configured by the platform operator, scoped to the tenant). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
+_Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)
+
+**Auth mode**:
+The chosen App Auth setting for one ProjectEnvironment — `public`, `manual`, or `managed` (the stored identifier is `auth_mode`).
+_Avoid_: Auth type, Auth provider
+
+**Token forwarding**:
+An opt-in App Auth setting, available only in manual mode, that passes the signed-in visitor's access token from the owner's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
+_Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
+
+**Resources**:
+The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources — from the agent image for a Built-in Agent (Small unless it declares otherwise), set per Custom Agent — copied once and the Project's own from then on.
+_Avoid_: Pod class (the internal identifier — never user-facing); Environment size (collides with Environment); Tier, Machine size, Compute (non-canonical — say Resources)
+
+### Agents
+
+**Agent**:
+The AI coding assistant a user converses with inside a ProjectEnvironment's pod. The platform ships one — **app-builder** — as the default. An Agent is a profile: identity, instructions, skills, and the Model it runs on.
+_Avoid_: Bot, Assistant (non-canonical)
+
+**Agent Model**:
+The LLM an Agent runs on, named directly as a provider/model pair together with a variant. For Built-in Agents it comes from agent-config and changing it is a platform rollout; a Custom Agent names its own in each Agent Profile, validated against the platform's model catalog — a model or variant the running distribution does not carry cannot be saved.
+_Avoid_: Model Preset (retired 2026-09-17 — Agents name the model directly); Default model (it is **not** a configurable default — Defaults covers timeouts and budgets only)
+
+**Custom Agent**:
+An Agent authored in the platform rather than shipped in the image, owned by one Organization and carrying a Visibility. It consists of what its author writes — identity, plus per Environment one Agent Profile (instructions, the Agent Model and its Skills) and at most one Template — and nothing else: it has no workspace migrations. A new Project is laid from the Template of the Agent's Default environment (Agent), or opens on an empty workspace when there is none. It becomes pickable for new Projects only once it has an Agent Profile in its Default environment (Agent).
+_Avoid_: Dynamic agent, User agent, Tenant agent (non-canonical); Global agent (retired — Custom Agents never span Organizations); Base Agent, chassis (retired 2026-09-17 — a Custom Agent rides the platform's shared runtime, not a chosen Built-in Agent)
+
+**Built-in Agent**:
+An Agent shipped in the platform's agent image and registered in agent-config — identity, instructions, skills, Template, workspace migrations and Agent Model all come from code, and changing any of them is a platform rollout that reaches existing Projects through Agent Updates. The registry is the source of which Built-in Agents exist and which are current. The sibling of Custom Agent, the only kind with workspace migrations, and the only kind whose Skills reach Projects that already exist.
+_Avoid_: Baked Agent (retired term, renamed 2026-08-28); System agent, Platform agent (non-canonical)
+
+**Template**:
+The files copied into the root of a new Project's workspace before its Agent first runs: an app starter, reference documents, or anything else the Agent's Projects start from. A Built-in Agent's Template ships in the agent image. A Custom Agent has at most one per Environment: the Skill & Agent Builder writes it in Development, and Publish (Agent) carries it to another Environment beside the Agent Profile. An Agent may have none. A Project keeps the files it was created with, so a later change reaches only new Projects.
+_Avoid_: Starter (App Builder's Template is one app starter, not the concept); Scaffold, Scaffold Skill (retired — a Template is the files themselves, not a Skill describing them); Seed, Boilerplate (non-canonical)
+
+**Agent Profile**:
+An Agent's definition in one scope. A Custom Agent has exactly one Profile per Environment — its instructions, its Agent Model, and its Skills — where the Development one is what its author edits and every other one is a copy placed there by a Publish (Agent). A Built-in Agent has exactly one Profile per Organization, holding only its Skills, since its instructions and Agent Model come from the image; it starts from what the image declares, is parked at the Development Environment, and applies on every Environment. Profiles carry no versions and no history — editing overwrites the Development Profile, and publishing overwrites the target's. A Custom Agent's Template belongs to the same Environment as its Profile and moves with it: it is edited in Development, and Publish (Agent) carries both.
+_Avoid_: Version, Release, Publication, Snapshot (retired — a Profile is an Environment's current state, not a point in a history); Draft (the Development Profile *is* the draft)
+
+**Publish (Agent)**:
+Copying a Custom Agent's Development Profile onto another Environment's Profile, overwriting whatever was there, so that Projects created from that Environment afterwards get the new definition. Existing Projects are untouched, and the overwritten content is not kept. Shares the verb with the App and Skill senses deliberately — the object disambiguates.
+_Avoid_: Deploy, Release, Promote (reserved against the environment vocabulary); conflating with Publish, which moves an App's source between Environments
+
+**Default environment (Agent)**:
+The Environment a Custom Agent's new Projects are created from — their Agent Profile and Template both — one per Agent, set by a holder of `can_manage_agents`. It is never Development: a new Custom Agent defaults to Production, so it reaches the picker only after its first Publish (Agent). Until the Agent has an Agent Profile there, the Agent is not offered in the picker at all.
+_Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
+
+**Ready Projects**:
+The Projects an Agent keeps already running, so creating one hands back a live environment instead of starting a pod; the UI sets their number as "Keep N ready". A Custom Agent keeps 0 to 3, set beside its Resources and kept only while the Agent can start Projects; a Built-in Agent's number comes from the agent image and is shared by every Organization. Each Ready Project holds a pod at the Agent's Resources and belongs to no Organization until claimed, and an Organization's Custom Agents together stay within its Ready Projects Limit. A copy of the Agent keeps the number unless the person copying changes it. Its technical name is **warm pool** — the `warm_pool` Limit key, the `warm_pool_size` column, the code and the API — which must never surface in user-facing copy.
+_Avoid_: Warm pool, warm pods (internal names only — never user-facing); Pool size; Pre-warmed Projects, Standby Projects
+
+**Disable (Agent)**:
+An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Agent enabled that new Projects can start on — a Built-in Agent, or a public Custom Agent published to its Default environment — and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
+_Avoid_: Delete (the permanent sibling); Archive, Deactivate (non-canonical)
+
+**Duplicate (Agent)**:
+Creating a new private Custom Agent from any Agent a member can see — a public Custom Agent, their own private one, or a Built-in Agent other than the Skill & Agent Builder — carrying its Development definition: description, instructions, Agent Model, Skills and Template. From a Built-in Agent these come from the image. The copy is named before it is created, its Default environment (Agent) is Production, so it reaches the picker after its first Publish (Agent). Neither the Builder chat nor the Test Project travels: the copy starts with a fresh chat, and nothing records what it was copied from. The way to base a new Agent on one that already works, and the only way back from a Visibility already made public.
+_Avoid_: Duplicate (Custom Agent) (renamed 2026-09-25 — the source may be a Built-in Agent); Copy, Clone, Fork (non-canonical); Agent bundle (a code name, not user-facing copy); Base Agent (retired); Lineage (nothing records what a Duplicate was copied from)
+
+**Export (Agent)**:
+Producing an Agent export from a Custom Agent's Development definition — description, instructions, Agent Model, Skills and Template — to carry it to another Organization or another Opsiforce deployment. The cross-boundary sibling of Duplicate (Agent), carrying the same parts: neither the Builder chat nor the Test Project travels. A Built-in Agent is never exported, since every deployment already has it; duplicate it first and export the copy.
+_Avoid_: Share, Download (the transport, not the act); Publish (Agent) (moves a Profile between Environments of one Agent); conflating with Export (the Project sense)
+
+**Import (Agent)**:
+Creating a new private Custom Agent from an Agent export, named before it is created. It is always a new Agent: a name already taken is refused, and nothing records where the Agent came from. Skills are matched by name — a Built-in Skill to this deployment's Version with the same content, or its current one; a Custom Skill to a Version with the same content, a new Version of one the importer can edit, or a new Skill of theirs. Its Default environment (Agent) is Production, so it reaches the picker after its first Publish (Agent), and its first Builder chat opens on its Template.
+_Avoid_: Update, Sync (an import never changes an existing Agent); Restore; Upload (the transport)
+
+**Agent export**:
+The file an Export (Agent) produces and an Import (Agent) consumes — a sealed copy of one Custom Agent's Development definition, meaningful only when imported into an Opsiforce deployment. The sibling of Project export; one is never imported as the other.
+_Avoid_: Agent bundle (a code name); Agent package (collides with a Built-in Agent's package in the image); Template (the files a new Project starts from, which an Agent export carries)
+
+**Platform Skill**:
+The built-in skill named `platform`, shipped in the agent image and laid into every workspace, carrying the facts every Agent needs about running here — the App contract, that the pod is disposable and the workspace durable, where uploads and generated files live, the gateway and its environment variables, the two read-only databases and how to query them, what must never be installed — so an Agent's own prompt never restates them. Agent Updates refresh it in every existing Project of a Built-in Agent; a Custom Agent's Projects keep the Version pinned in its Agent Profile, written once at create. Its name is reserved, and it cannot be removed from an Agent's Skills.
+_Avoid_: Harness (not a term — the thing is a skill); Base prompt, System preamble (nothing is prepended to an Agent's prompt; the prompt is the author's body alone)
+
+**App contract**:
+The three things the platform needs from an App to run it in any stack: an executable `/workspace/app/startup.sh` the pod runs, restarts and re-runs in a published Environment; a server answering on `$APP_PORT`; and `app/app.meta.json` naming the App. Any HTTP answer on the port is serving, and serving plus the file present is live. App Builder's Template satisfies it out of the box; any other App satisfies it through its own Agent's Template or by writing the files.
+_Avoid_: Start command (startup.sh already is one); Health check route (no route is required); Manifest (the meta file holds a name and description only)
+
+**Agent Status**:
+Whether an Agent is **Working** — processing a run it was prompted to do, including the runs of sub-agents it started, even after its own run has ended, and any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. A Working Agent counts as Keep-alive's *Agent activity*, so it keeps its pod up; Agent activity is wider than Working (it also covers the user's own traffic).
+_Avoid_: Agent activity (the Keep-alive kind that Working feeds, not a synonym for it); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
+
+**Prompt**:
+The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project. A Prompt sent while the Agent is already working is either _steered_ (folded into the running turn) or _queued_ (starts the next turn once the Agent is idle); a queued Prompt waits until a new turn begins.
+_Avoid_: Message (ambiguous — also covers the Agent's reply); Query, Command
+
+**Dictation**:
+Speaking into the chat instead of typing — a recording made from the prompt's mic button is transcribed to text and inserted into the prompt draft for review; nothing is sent until the user sends. The audio is transient input, never a stored artifact. The spoken language is auto-detected by default, with an explicit per-browser language override.
+_Avoid_: Voice message (implies the audio itself is attached or kept); Voice chat, Speech-to-text (the mechanism, not the feature); Transcription (the backend step, not the user-facing act)
+
+**Session**:
+The primary OpenCode conversation a ProjectEnvironment carries — the durable thread of Prompts and Agent replies every surface shares. "Prompting a Project" means prompting that environment's primary Session; the UI, a program connecting through the public API, and any channel wired to the Project all read and write the same thread. The platform resolves and remembers the binding during a Connection; a caller never has to pick it. Other native Sessions may exist in the environment — opencode allows them and a native client can create them — and they are not the platform's concern: they never become the primary one.
+_Avoid_: Chat, Conversation, Thread (non-canonical); Run (Trello shorthand for a Project)
+
+**Connection**:
+The act of making a ProjectEnvironment's OpenCode runtime usable, and the descriptor that answers it. One operation behind both the app and the public API: it authorizes the Project, wakes the environment inside a single budget, resolves and persists the primary Session, and reports where the runtime is (`baseUrl`, `openapiUrl`), which Session to open, and which build answered. A successful Connection describes a runtime that is usable now — not a promise it will not restart.
+_Avoid_: Handshake, Session open (a Connection binds a Session, it does not create the conversation); Attach
+
+### Files
+
+**Files**:
+The project workspace tab where a user sees and manages the Active environment's workspace files — User uploads, Generated files, and any stray files the Agent left at the workspace root — with folder drill-down and breadcrumbs. Visible to every project member; the App's source, platform data, and dotfiles never appear in it.
+_Avoid_: File browser, File manager (dev-tool connotation — it is a curated view, not the filesystem); Workspace (the Org-level Project grouping — a different thing)
+
+**User uploads**:
+Files a user added to a ProjectEnvironment — attached in chat or uploaded from the Files tab — kept durably in the environment's upload area with their original folder layout preserved.
+_Avoid_: Attachments (implies message-scoped; uploads are durable workspace files, not parts of a Prompt)
+
+**Generated files**:
+The Agent's finished deliverables — documents, reports, exports — saved by convention into the environment's designated output folder, which the Files tab surfaces as its own section. The folder comes into existence on first write; deliverables the Agent drops elsewhere still surface in the tab as other files.
+_Avoid_: Artifacts (claude.ai's concept — different mechanics); Outputs (vague); Generated app (the App source — a different thing entirely)
+
+**File preview**:
+Reading a finished workspace file in the project's right side panel instead of downloading it — opened by clicking a file link the Agent posted in chat, or a file in the Files tab. It shares the panel with the App preview through an App | File switcher, shows one file at a time, and never opens or switches modes on its own. Formats outside the supported set are not an error state: they offer a download instead.
+_Avoid_: Artifact preview (implies claude.ai's streaming artifacts; this is finished files only); Viewer, File viewer (suggests a separate surface — it is the same panel the App preview uses); App preview (the running App in that panel — the other mode, not this one)
+
+**Document conversion**:
+Turning a Word or PowerPoint deliverable into a PDF so File preview can render it, on a shared in-cluster converter the Agent cannot reach. It runs as a job — the panel is told a conversion is pending, then shown the PDF — and the result is transient, so reopening the same file converts it again. An unconvertible document offers a download instead of failing.
+_Avoid_: Export (the Project Export & Import feature — a different thing); Rendering (the browser-side half of File preview); Caching, Cached PDF (there is no conversion cache — results are job plumbing)
+
+### Skills & the Skill Store
+
+**Skill**:
+A named instruction package — a directory with a `SKILL.md` and optional supporting files — that an Agent loads on demand when a task matches its description. Every Skill is either Built-in or Custom; a Custom Skill belongs to exactly one Organization while a Built-in one is the platform's and is offered to all. A Skill becomes active for an Agent only by being added to that Agent's Skills; a Service skill also reaches one ProjectEnvironment through its Project configuration.
+_Avoid_: Plugin, Extension, Command (non-canonical); Tool (a different Agent capability concept); Global skill (retired — authored Skills never span Organizations)
+
+**Built-in Skill**:
+A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image is retired — hidden from the Store, closed to new use and delivered to no workspace any more, even where an Agent still pins it — while its stored content survives, and it comes back if the image ships it again.
+_Avoid_: Platform skill, System skill (non-canonical); Deprecated (retired term — leaving the image is the whole mechanism)
+
+**Custom Skill**:
+A Skill authored in the platform rather than shipped in the image — through the Skill & Agent Builder or the Store's form — owned by one Organization and carrying a Visibility. The sibling of Built-in Skill.
+_Avoid_: Dynamic skill, User skill, Tenant skill (non-canonical)
+
+**Visibility**:
+Whether an authored Skill or Custom Agent is **private** — listed, pickable and editable only for the member who created it — or **public**, meaning every member of the Organization can see and use it and every permission holder can edit, disable or delete it. Making something public is irreversible and hands it to the Organization; the way back is to Duplicate. Private means unlisted, never secret: what an Agent carries is written into its Project's workspace, so anyone who can see the Project can read it.
+_Avoid_: Shared (a shared Workspace is member-scoped — Visibility is Organization-wide); Published (reserved for the Skill and App senses); Scope (retired — there is no scope above the Organization)
+
+**Skill Version**:
+The immutable snapshot of a Skill's content created each time it is published, and the only form in which a Skill's content exists — there is no unpublished content. A Skill named in the Store before its Builder chat has written it holds no Version yet, and nothing can pin it until one exists. An Agent's Skills each pin one Version, and a Version, once published, never changes.
+_Avoid_: Revision, Draft Revision (retired — the Builder chat holds the work in progress, and nothing unfinished is stored); Release
+
+**Publish (Skill)**:
+Validating a Skill's content and freezing it as the Skill's next Version, which makes it available to add to the Organization's Agents. This is the only way a Skill's content is written: there is no separate save, so every Version marks an author saying the content is ready. Failing validation refuses the write and returns the errors to whoever submitted it. Shares the verb with the environment sense deliberately — the object disambiguates: Apps publish to Environments, Skills publish to the Store.
+_Avoid_: Release, Promote (reserved against the environment vocabulary); Deploy; Save (there is no save short of publishing)
+
+**Agent Skills**:
+The Skills an Agent carries, each pinned to one Skill Version (a Service skill always to its newest) — added and removed while editing the Agent, and never two with the same name. One mechanism for both Agent kinds: the set hangs off an Agent Profile either way, and only the moment it is read differs. A Built-in Agent's Skills are read at delivery time, so a change reaches the Organization's existing Projects; a Custom Agent's reach only Projects created afterwards. Removing a Skill is the only way it stops applying to the Agent as a whole — retiring it in the Store never silently changes an Agent; one Project's environment may still Switch it off.
+_Avoid_: Attachment, Attach, Detach (retired 2026-09-17 — the relationship needs no noun of its own); Install (implies a copy); Assignment, Enable
+
+**Update available**:
+The state of a Skill on an Agent whose pinned Skill Version is behind that Skill's newest one. Purely a prompt to a human — nothing upgrades on its own, and upgrading is a deliberate act on one Agent's one Skill.
+_Avoid_: Outdated, Stale (judgemental — a pin behind the newest Version is a valid state); Auto-update (retired — nothing updates itself)
+
+**Switch off (Skill)**:
+Making one Skill unavailable to the agent in one Project's environment, while the Agent keeps carrying it everywhere else. It narrows what the agent knows there and grants or removes no access. Any Skill the environment has can be switched off — a Skill the Agent carries, one its kind ships, a Service skill — except the Platform Skill. Everything starts switched on, a Skill newly added to the Agent arrives switched on, and Publish carries Development's choices to the published environment. Switching back on brings the Version the Agent carries now; a Skill the Agent no longer carries cannot come back once switched off. Takes effect from the agent's next look at its Skills; instructions it already read stay in that conversation.
+_Avoid_: Disable (the Organization-wide Store act, which leaves Agents unchanged); Mute, Hide, Toggle (non-canonical); Remove (taking a Skill off the Agent itself)
+
+**Skill Store**:
+The catalog where members browse their Organization's Skills — Built-in and public Custom ones, plus their own private ones — inspect their contents, and add them to Agents. It is the Skills tab of Store, not a destination of its own.
+_Avoid_: Marketplace (implies cross-Organization publishing or commerce — out of scope); Library, Hub (non-canonical); Store (the containing section, which also holds Agents)
+
+**Disable (Skill)**:
+An Organization taking a Skill out of use for itself — one of its own or a Built-in Skill: hidden from the Store and closed to new use, while every Agent that already carries it keeps working unchanged. Reversible by Enable. Another Organization is unaffected, and the Platform Skill is never disabled.
+_Avoid_: Delete (the separate, permanent act); Archive (retired); Unpublish, Revoke, Deprecate (retired — nothing withdraws a Skill from Agents that already carry it)
+
+**Delete (Skill)**:
+Permanently removing a Skill and its Versions. Available for a disabled Skill once no Agent carries it — the attempt is refused while any does, naming them. The one act with no undo.
+_Avoid_: Remove (the act of taking a Skill off one Agent); Disable (the reversible sibling)
+
+**Duplicate (Skill)**:
+Forking any Skill a member can see — a public one, a Built-in one, or their own private one — into a new private Skill they own, whose first Version copies the original's content. What it was copied from is not recorded. The way to vary content someone else published, and the only way back from a Visibility that has already been made public.
+_Avoid_: Copy, Clone, Fork (non-canonical — Duplicate is the house verb, as for Projects); Import (the `.skill` route, which crosses Organizations)
+
+**Dynamic Delivery**:
+How what an Agent carries reaches a Project's workspace. A Project's files are laid when the Project is created and are never re-laid by a restart. For a Built-in Agent, a change to its Skills reaches every existing Project of the Organization silently — no pod restart, no interruption, running conversations unaffected; the Agent simply has the new state from its next message — and a change to its image content arrives the same way through Agent Updates. A Custom Agent's content is written once, when the Project is created, and never re-derived, except that a Skill switched back on arrives at the Version the Agent carries now. Propagation is prompt but not instantaneous, and a Project that has not yet received a change is shown as such, never silently behind.
+_Avoid_: Sync, Push, Install (mechanism words); Update (collides with Agent Updates, the image-version pipeline)
+
+**Skill & Agent Builder**:
+The Built-in Agent that authors Skills and Custom Agents through conversation. Reached from a Skill's or a Custom Agent's page in the Store rather than the project workspace, and shipped in every distribution. It interviews, drafts in conversation, publishes on its author's word, and tests a Custom Agent it wrote by conversing with it in a Test Project rather than trusting its own transcript; everything it writes is judged as the permissions of the user who opened the Builder chat, and its pod may create, edit, duplicate a Skill and change a display name or description, but never delete, disable or make anything public.
+_Avoid_: Builder alone in user-facing copy (ambiguous beside app-builder); Studio, Workshop, Creator, Copilot (non-canonical); conflating with app-builder (the Agent that builds Apps)
+
+**Builder chat**:
+The one authoring conversation that belongs to a Skill or a Custom Agent — its **subject** — with the Skill & Agent Builder. A subject has at most one: New skill and New agent name the entry and open its chat, and the entry's page opens the same chat again later. Whoever may see the subject, with the permission matching it, may open and prompt its chat, so it widens when the subject is made public. It is where unfinished work lives: nothing half-written is stored anywhere else. From the chat the Builder publishes the Skill's Versions, or writes the Agent's Development Agent Profile, its Skills, its display name and description, saves its Development Template, and runs a Test Project; Publish (Agent) to another Environment, making anything public, Disable and Delete stay on the subject's page. The pod reads its subject from the platform API. Carried by a kind-stamped Project — plumbing that never appears in workspaces or the project list. It is never deleted on its own: it lives exactly as long as its subject, since its workspace holds the draft of the Agent's Template. A new chat starts with its subject's saved Template as that draft.
+_Avoid_: Builder Project (retired — a Builder chat is not a workspace artifact); Builder session (collides with the runtime's session); chat visibility (retired — who opens a chat follows its subject); chat list (there is none — a chat is reached from its subject)
+
+**chat kind**:
+The facet a Builder chat is stamped with when it is made — Skill or Agent, following its subject — choosing which authoring skill opens the conversation. The same column marks a Test Project, and its absence is what makes a Project an ordinary one that lists show.
+_Avoid_: Project type, Project kind unqualified (the column is internal — users see Skill chat / Agent chat); Mode
+
+**Test Project**:
+A Project a Builder chat creates to try what the chat is building in a context that did not write it. The Skill & Agent Builder creates it on the Custom Agent its chat is about, from that Agent's Development Agent Profile and Template, to converse with the child, judge the record of the checks it ran and check the rest itself. The External Service Builder creates it on a consumer Agent, whose calls to the service reach the service's Development rather than its Default environment, to see whether an agent that only has the service's delivered docs can use it, and whether the service refuses what it must. One per Builder chat, created once and then refreshed in place by an Update or a Reset (Test Project). Hidden from every project list and reachable from the chat that made it, where whoever may open the chat opens it beside the chat as an ordinary Project; it goes when the chat's subject goes.
+_Avoid_: test project in lowercase, Builder's Test Project (the qualifier is redundant: every Test Project belongs to a Builder chat); Sandbox, Eval, Preview project (non-canonical); Draft project (there is no draft — the Development Profile is what runs)
+
+**Update (Test Project)**:
+Overlaying a Test Project's workspace with its Agent's newly saved Development Template, committed as one change, so the child keeps its conversation and sees the fix. Deletes nothing. For an External Service Builder's Test Project, delivering its Service skill again from the service's Development instead.
+_Avoid_: Update available (the Skill-pin sense); Agent Updates (the platform rollout)
+
+**Reset (Test Project)**:
+Wiping a Test Project's workspace and laying it again as at create, with a new session and a fresh budget, for a run that starts from nothing. For an External Service Builder's Test Project it also forgets the Events it received and the state the service's Development kept.
+_Avoid_: Recreate, Restart (a pod restart keeps the workspace)
+
+### External Services
+
+**External Service**:
+The one program that speaks to one outside system (WhatsApp, an inbox, a code host, the public API) on the platform's behalf, written once against the platform's SDK: it alone uses that system's credentials, which the platform keeps for it; it owns its API — what callers may send and what they get back — and its Service policy; its Service manifest declares what may be configured and what may arrive, and every call reaches it through the Gate. One shape whoever wrote it.
+_Avoid_: Integration, Connector, Gatekeeper, Plugin; Channel (WhatsApp's word for a number)
+
+**Built-in External Service**:
+An External Service shipped in git and run inside the platform, offered to every Organization and configured once for the whole platform. A Custom External Service becomes one by committing its folder.
+_Avoid_: Platform service, Core service
+
+**Custom External Service**:
+An External Service one Organization authored, run as its own App and live only once published, offered only within that Organization and configured once for that Organization.
+_Avoid_: Tenant service, User service, Private service; Draft (there is no draft state — Development is where the builder works, and a service no Publish has reached is simply not published yet, as for a Custom Agent)
+
+**Service manifest**:
+The one file (`service.json`) that declares what the platform needs about an External Service without running it: its Service form, its Project form and the Event types it may receive. What the service serves is its Service routes, not part of the manifest.
+_Avoid_: Manifest unqualified (an App's `app.meta.json` is not one); Definition, Descriptor, Spec
+
+**Service routes**:
+The ordered list, in an External Service's own code, of the requests it serves: each passed to the outside system as it is, refused, or answered by the service itself when there is nothing to pass through, and each with the part of the service's Service policy that decides who may. A request no route matches is refused as not supported. Callers read the list from the service itself; the platform only shows it.
+_Avoid_: Operations, Endpoints, API spec, Route table in user-facing copy
+
+**Form**:
+The fields an External Service declares in its Service manifest for one level of configuration — a Service form and a Project form — which the platform renders and the right person fills in.
+_Avoid_: Schema, Fields, Settings; Configurator
+
+**Service configuration**:
+The values filled into an External Service's Service form, one per service and owner: for a Built-in External Service one for the whole platform, set by the platform operator; for a Custom External Service one for its Organization, set by that Organization's admin, plus a second one for its Development that only test calls read, so trying a new version never touches what callers use. WhatsApp's numbers and their tokens are items in it.
+_Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
+
+**Project configuration**:
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, and Publish carries Development's forward.
+_Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
+
+**Disconnect (External Service)**:
+Removing one ProjectEnvironment's Project configuration for an External Service, so the service refuses that environment from its next call while every other Project keeps using it. The brake for one Project whose calls get through when they should not. Connecting again means filling the Project form again.
+_Avoid_: Revoke, Block, Suspend, Disable (the whole service, or a Project)
+
+**Event**:
+One thing that arrived from an outside system through an External Service — a WhatsApp message, an email, an issue opened, a card moved — of a type declared in its Service manifest. The service decides which ProjectEnvironments receive it, reading their Project configurations (a repository they cover, a "Notify on" choice its author offered), and hands it over; the platform only checks that each receiver is connected to the service, keeps the Event for that environment's App and tells the App it arrived.
+_Avoid_: Message (one kind only), Webhook (how it travels), Notification, Hook
+
+**Service skill**:
+The skill an External Service carries to teach Agents what it is for and how to reach it: a Skill in the Store marked by its service, written with the service and changed only with it. An Agent carries it like any Skill, always at its newest version; a ProjectEnvironment also receives it once it has a Project configuration for the service, whatever its Agent carries. Either way only while the service is Available, and one Project's environment may Switch it off.
+_Avoid_: Integration skill, Connector skill
+
+**Service settings (Agent)**:
+The values of one External Service's Project form, other than its targets, that a Custom Agent writes into every Project created from it, held beside the Service skill it carries and set by whoever manages the Agent and may configure Projects' External Services. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it; its targets are still picked in the Project, and a later change to the settings reaches no existing Project.
+_Avoid_: Agent defaults, Default configuration, Service profile
+
+**Service host**:
+The hostname an External Service is reached at by any client calling for a ProjectEnvironment — the service's slug under the platform's External Services domain, the same name in every Organization: which Organization's service it means is settled by who is calling, never by the name. It does not change once the service is published, so callers may write it into their own tools and code, and code that uses it keeps working when copied to another Organization that has a service of that slug.
+_Avoid_: Service URL, Endpoint, Subdomain, Gateway URL
+
+**Gate**:
+The one place in the platform every call from a ProjectEnvironment's pod — its Agent or its App — to an External Service passes through: it identifies the calling ProjectEnvironment from its credential, finds the service the call is addressed to and forwards the call untouched except that the caller's credential is replaced by its Caller identity. It refuses only a caller it cannot identify (a disabled Project's key identifies no one) or a service that is not there (a disabled one is not); it never reads, changes or judges what was asked or what comes back — the service's Service policy does. It keeps no record of the calls it forwards.
+_Avoid_: Gateway (collides with Gateway Key and the LLM gateway), Proxy (the Go runtime proxy), Front door, Gatekeeper (cloudflare-os's word for the service itself)
+
+**Webhook address**:
+The public address, on the platform's own host, that an outside system sends an External Service's webhooks to — a Custom service's named by the service itself rather than its slug, because a sender has no caller to say which Organization it means; a Built-in's by its slug, which means one service in the whole deployment. Anything may reach it; the service decides what is genuine, and nothing it answers there can act as the signed-in user. It never changes, so registrations made upstream outlive a switch of the Default environment.
+_Avoid_: Webhook URL, Inbound endpoint, Callback URL
+
+**Caller identity**:
+The platform's short-lived, signed statement of whom a request to an External Service is for, valid only at the copy of the service it was made for: a ProjectEnvironment calling it, the platform acting for one ProjectEnvironment or for the service as a whole, or an inbound delivery with no caller. It is the only thing a service trusts about who is asking; nothing the request says about itself counts, and an App's signed-in end user is never part of it.
+_Avoid_: Caller context, Via, Gate key, Caller token
+
+**Service policy**:
+The code in an External Service that decides, for each request, whether and how the calling ProjectEnvironment may proceed, reading its Project configuration — refusing a repository the Project was not given, or a ticket queue it may only read. It answers a refusal the way the caller's client expects, saying what to fix or whom to ask. The platform never sees it.
+_Avoid_: Permission (the platform's `can_*` word), Bounds, Rule, Admission, Access control
+
+**Call log**:
+An External Service's own record of every request it receives — from a calling ProjectEnvironment or from the platform — saying who asked, what was asked for, what the service did with it and why, never what was sent or returned. The service writes it and keeps it for a limited time; the platform writes none of it and only shows it to the Organization's service managers and to each Project's people for their own calls.
+_Avoid_: Audit log, Request log (an App's own traffic, see Request Logging), Activity (collides with Keep-alive activity), Gate log
+
+**Usage (External Service)**:
+The monthly counts an External Service keeps about itself, per Project and environment: the requests it received, refused and failed, and the counters its author defined (pull requests opened, cards created). For display only — a limit the service enforces is its own state, not Usage. The service writes them and keeps them for as long as it exists; the platform only shows them on the service's page.
+_Avoid_: Metering, Billing (nothing is charged), Quota (a limit is the service's state)
+
+**External Service Builder**:
+The Built-in Agent an Organization admin chats with to author a Custom External Service. It passes the outside system's own API through, inventing an endpoint only where there is nothing to pass through, where a client needs one, or where the person insists. Before writing code it agrees with the person on the settings, what each one lets through, the upstream credential's permissions, and the outside system's own protections that hold even if the service's code is wrong. It never Publishes the service itself: a human does, reading the note it leaves on what each version lets through.
+_Avoid_: Builder alone in user-facing copy (ambiguous beside app-builder and the Skill & Agent Builder); Service builder, Integration builder, Connector builder
+
+**Available**:
+An External Service whose Service configuration has every required field of its Service form filled (for a Custom one, the configuration callers use, against its Default environment's form). Only an Available service is offered for Projects to connect; it decides nothing about calls, which the service answers itself. There is no separate switch.
+_Avoid_: Enabled, Active, Configured, Installed
+
+**Default environment (External Service)**:
+The Environment whose running copy of a Custom External Service every caller reaches — Agents, Apps, form callbacks and incoming webhooks — one per service, set by its first Publish and changed only by a holder of `can_manage_tenant_external_services`. It is never Development: the draft is reached only by tests. The service's stored state and webhook address follow it, so switching it moves the service, not just its code.
+_Avoid_: Default Environment unqualified (the tenant registry's default row is Development); Live environment, Active environment (the workspace's current view)
+
+**Duplicate (External Service)**:
+Creating a new, unpublished Custom External Service in the same Organization from another one, named and slugged before it is created, carrying only the files its External Service Builder last committed in Development's `app/` folder. It gets its own builder chat; no Service configuration, Project configuration, state, Calls, chat history or Test Project travels. Built-in External Services are never duplicated.
+_Avoid_: Copy, Clone, Fork (non-canonical); Duplicate unqualified (the Project sense)
+
+**Export (External Service)**:
+Producing a Service export from a Custom External Service's last committed `app/` folder in Development, to carry it to another Organization or another Opsiforce deployment. The cross-boundary sibling of Duplicate (External Service), carrying the same files and nothing configured.
+_Avoid_: Download service.json (the manifest alone); Share; conflating with Export (the Project sense) or Export (Agent)
+
+**Import (External Service)**:
+Creating a new, unpublished Custom External Service with its own builder chat from a Service export, named and slugged before it is created, by default as the file names it. It is always a new service: a slug already taken is refused, and an SDK major this deployment does not serve arrives with a warning, to be upgraded by the builder before its first Publish.
+_Avoid_: Update, Sync (an import never changes an existing service); Restore; Upload (the transport)
+
+**Service export**:
+The file an Export (External Service) produces and an Import (External Service) consumes — one Custom External Service's committed `app/` folder with a stamp naming the platform and SDK versions. The sibling of Project export and Agent export; none is imported as another.
+_Avoid_: Service bundle, Service package; service.json (the Service manifest alone)
+
+### Schedules
+
+**Schedule**:
+A recurring cron job an agent registers against an endpoint in the App, owned by **one ProjectEnvironment** — it fires only against that environment's running App. Publishing copies Development's chosen schedules into the target environment, so a same-named schedule can exist and fire **independently** in several environments (the copies are intentional, not duplicates).
+_Avoid_: Cron job (the mechanism, not the domain concept); Job (collides with BullMQ jobs and publish jobs)
+
+### Public API
+
+**API Token**:
+The credential a program — the CLI, an integration, another Agent — presents to call the public API on a user's behalf. Today it is the bearer token the deployment's identity provider issues when that user signs in, so it carries exactly the Organization memberships and permissions they hold in the UI; a token issued by Opsiforce itself is a possible later form of the same concept. The public API selects the Organization it acts in with the same organization header the UI already sends (implicit when the caller belongs to exactly one), and its documentation speaks of Organizations, never of the internal tenant vocabulary.
+_Avoid_: Client key; API key (non-canonical); Personal access token (canonical only in other products); Tenant header (internal name — never user-facing)
+
+**Gateway Key**:
+The per-ProjectEnvironment `gw-` token a pod holds: the one key every pod has for Schedules, External Services, the runtime proxy and platform pushes. It never opens the public API itself: a pod reaches that only through the Public API External Service. Never a user credential — the platform resolves it to the human who created the Project. It works only while its Project is enabled. Rotating it replaces it at once, which is how a leaked key is stopped without deleting anything.
+_Avoid_: API key (collides with API Token); Pod token; Platform-api key (retired: a pod has one key)
+
+**Agent Caller**:
+A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only at the Public API External Service's Service host: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the kinds of work its Project configuration turns on. It reads the Skills and Custom Agents that person can see but only the Projects its own Project created, and changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it; it keeps no more Projects than its Project configuration allows, and a chain of Projects creating Projects stops at depth two.
+_Avoid_: Bot (a service account is an ordinary user); Machine user; Pod identity (the identity is the human's)
+
+**Error**:
+The public API's single error shape: every failed call, whatever its cause, answers with an Error that names the kind of failure (a stable, deployment-independent identifier a program can branch on), a fixed title for that kind, a per-occurrence explanation written for the caller, and the request id so support can find the call. It is the shape of `/api/v1` only — a failure on the runtime path is OpenCode's own error, or the edge's.
+_Avoid_: Problem, Problem Details (the RFC's own words for the format — the media type stays `application/problem+json`, but the concept is called an Error here); Exception (internal, never crosses the API boundary)
+
+### Request Logging
+
+**Request Logging**:
+Per-Project control over how much of its App's live traffic the app-mode proxy records to the Project's request log. Owner-set policy, alongside Resources, budgets, and timeouts.
+_Avoid_: Access logging, tracing, audit log
+
+**Logging level**:
+The chosen verbosity — Off (record nothing), Metadata (method, path, status, latency, size, redacted headers; no bodies), or Full (metadata plus a bounded prefix of each body). An ordered scale from least to most recorded.
+_Avoid_: Mode (the stored identifier `request_log_mode`); log level (in the DEBUG/INFO sense)
+
+**Body limit**:
+The byte cap on how much of each request/response body the Full level captures before truncating. The log holds a prefix, never the whole body.
+_Avoid_: Buffer size, max body size (collides with upload limits)
+
+### Runtime
+
+**Process Log**:
+What one supervised process in a pod printed, with its lifecycle events (started, crashed, stopped, signal, gave up), kept as timestamped text files in the workspace for three days. Read by the Agent to tell whether the App booted or why it crashed.
+_Avoid_: Observability database (process output is in no database); container logs (what Kubernetes keeps, gone with the pod)
+
+**Keep-alive activity**:
+The traffic that keeps a ProjectEnvironment's pod running, of two kinds: **Agent activity** — the user working through the Agent (chat, the code editor, the database viewer, file uploads), and the Agent itself while its Agent Status is Working — and **App activity** — the running App's own traffic (its public and preview URLs, and scheduled runs). Each kind has its own idle timeout, and an Agent's idle timeout counts from when it goes Idle; the pod is suspended only once both kinds have been idle past their timeouts. "Why a pod is still alive" is always one of these two, never a finer reason.
+_Avoid_: Chat (one input to Agent activity, not a category of its own); Heartbeat, Ping (non-canonical)
+
+### Administration
+
+**Settings**:
+The permission-gated surface where a member **configures** the Organization currently chosen in the selector — its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. One destination with one section per area; each section is independently gated, so a member sees only the areas they may manage. It changes stored configuration; the running-state counterpart is Admin.
+_Avoid_: Tenant Settings (retired user-facing label — the old modal that held only Integrations + Environments); Config (non-canonical); Admin (the operational sibling — a separate destination, not a synonym for Settings); conflating with Defaults (one section within Settings, not the whole)
+
+**Admin**:
+The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown, built on the same left-rail layout (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
+_Avoid_: Settings (the configuration sibling — a different destination); Admin panel, Console, Operations, Monitoring (non-canonical — say Admin); conflating with Pods (the first page within Admin, not the whole)
+
+**Store**:
+The third sibling beside Settings and Admin, reached from the avatar dropdown at `/store`, where a member browses the Organization's catalog of Agents and Skills and, with `can_manage_skills` or `can_manage_agents`, authors them — each through its own Builder chat. Its two sections, Agents and Skills, sit in a tab bar and are open to every member because consuming the catalog is free. It contains the Skill Store, which is its Skills section rather than a separate destination. The test for where a view belongs: if it browses or authors the catalog, it is Store; if it shows what is running now, it is Admin; if it changes stored configuration, it is Settings.
+_Avoid_: Marketplace, Catalog, Library (non-canonical — say Store); Skill Store (one tab within Store, not the whole); Settings, Admin (the sibling destinations)
+
+**Platform-scope permission**:
+A permission whose view spans **all Organizations** rather than the one chosen in the selector — the `platform_` segment in its name marks the scope (e.g. `can_view_platform_storage`). Granting one is granting cross-Organization visibility, so its Keycloak group is never part of the default admin bundle. There is no "super admin": cross-Organization capability is a property of individual permissions, not of a role.
+_Avoid_: Super admin, Global admin (role concepts — the system has only flat permissions); Cross-tenant permission (say Platform-scope)
+
+**Storage**:
+The Admin view of disk usage on the shared volume — one measured number per ProjectEnvironment directory, rolled up Environment → Project → Organization, plus Unattributed storage, reconciled against the volume's actual usage. Gated by a Platform-scope permission, so it shows all Organizations and ignores the selector. Read-only, current-state snapshot; sizes may lag recent writes.
+_Avoid_: Disk usage, Quota (no quotas exist — the view only observes); Usage (an External Service's own counts — a different thing); Storage view per Organization (Platform-scope by definition)
+
+**Pending deletion**:
+Disk usage from an Organization's deleted Projects and ProjectEnvironments whose directories are retained until cleanup retention expires. Attributed to the Organization — it answers "why is this Organization's total bigger than the sum of its projects" — as one aggregate per Organization, never itemized (the project record is gone; a bare directory identifier tells an operator nothing).
+_Avoid_: Tombstoned (reserve for directories attributable to no Organization); Deleted storage (non-canonical)
+
+**Unattributed storage**:
+Disk usage on the shared volume that belongs to no Organization: the **pool** (live unclaimed pool projects), **tombstoned** (retained deleted directories whose record names no Organization), **orphaned** (directories matching no record at all), **exports** and **imports** (transient archives), and **unaccounted** (the computed residual between everything measured and the volume's actual usage). An Organization's own retained deleted directories are NOT unattributed — they are its Pending deletion.
+_Avoid_: Platform storage (reads as "all storage on the platform", which this is not); System storage (non-canonical); Orphaned (one bucket within, not the whole)
+
+**Pods**:
+The view of an Organization's running environment pods — one row per running ProjectEnvironment, grouped by Project — showing each pod's status, age, Resources, configured timeouts, and live Keep-alive activity (when it was last kept alive and by which kind) — and, separately, the Ready Projects its Custom Agents keep. Read-only; the first page within Admin.
+_Avoid_: Pod class (the Resources identifier — a different thing); Resources (the size policy, not the running instances); Instances (non-canonical)
+
+**Deployment branding**:
+The product name, icon and theme color an Opsiforce deployment shows in place of the Opsiforce defaults, fixed when its frontend is built. It belongs to the deployment, not to an Organization, so every Organization on that deployment sees the same brand.
+_Avoid_: White-label, Theme; Organization branding (there is no per-Organization branding)

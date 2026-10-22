@@ -1,19 +1,19 @@
+import type { AgentServiceSettings } from '../../db/schema';
 import type { TemplatePathNote } from '../agent-template/agent-template.types';
 import type { ExportManifestStamp } from '../export/project-export.types';
+import type { AgentProjectSettings } from './agent-copy-settings';
 
 export const AGENT_EXPORT_KIND = 'agent';
 export const AGENT_EXPORT_FORMAT_VERSION = 1;
-export const AGENT_EXPORT_MANIFEST = 'manifest.json';
 export const AGENT_EXPORT_TEMPLATE_DIR = 'template';
 export const AGENT_EXPORT_SKILLS_DIR = 'skills';
 
-export type AgentExportSkillOrigin = 'built_in' | 'custom';
+export type AgentExportSkillOrigin = 'built_in' | 'custom' | 'service';
 
 export interface AgentExportManifestAgent {
   displayName: string | null;
   slug: string;
   description: string | null;
-  platformApi: boolean;
 }
 
 export interface AgentExportManifestProfile {
@@ -27,6 +27,7 @@ export interface AgentExportManifestSkill {
   origin: AgentExportSkillOrigin;
   contentHash: string;
   file?: string;
+  serviceSettings?: AgentServiceSettings;
 }
 
 export interface AgentExportManifest {
@@ -36,6 +37,7 @@ export interface AgentExportManifest {
   profile: AgentExportManifestProfile;
   skills: AgentExportManifestSkill[];
   template: { hash: string } | null;
+  projectSettings?: AgentProjectSettings;
 }
 
 export interface AgentExportFile {

@@ -11,6 +11,7 @@ import type { MiniSettingChange, MiniSettings, RunAgent, RunTuiConfig, StreamCom
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 import { tmpdir } from "../fixture/fixture"
 import { createFooterApiFixture } from "./fixture/footer-api"
+import { getOpenCodeTheme } from "../../src/theme"
 
 function progress(input: Partial<StreamCommit> = {}): StreamCommit {
   return {
@@ -34,6 +35,52 @@ test("coalesces progress only within the same message and tool state", () => {
   )
 })
 
+test.each(["show", "hide"] as const)("tools setting %s controls tool and skill transcript", async (tools) => {
+  const app = await setup({ tools })
+  try {
+    app.footer.append({ kind: "user", text: "do the thing", phase: "start", source: "system" })
+    app.footer.append({
+      kind: "tool",
+      text: "running read",
+      phase: "start",
+      source: "tool",
+      tool: "read",
+      messageID: "msg_1",
+      partID: "prt_1",
+    })
+    app.footer.append({
+      kind: "system",
+      text: `→ Skill "demo"`,
+      phase: "start",
+      source: "system",
+      messageID: "msg_skill",
+      partID: "skill:demo",
+    })
+    app.footer.append({
+      kind: "assistant",
+      text: "all done",
+      phase: "progress",
+      source: "assistant",
+      messageID: "msg_2",
+      partID: "prt_text",
+    })
+    await app.footer.idle()
+    const text = app.externalOutput.takeText()
+    expect(text).toContain("do the thing")
+    expect(text).toContain("all done")
+    if (tools === "hide") {
+      expect(text).not.toContain("Read")
+      expect(text).not.toContain("Skill")
+      return
+    }
+    expect(text).toContain("-> Read")
+    expect(text).toContain("Skill")
+  } finally {
+    app.footer.destroy()
+    app.renderer.destroy()
+  }
+})
+
 test("falls back only when no agent is selected", () => {
   const agents: RunAgent[] = [
     { id: "task", name: "Task", mode: "subagent", hidden: false },
@@ -50,6 +97,7 @@ test("falls back only when no agent is selected", () => {
 async function setup(
   input: {
     mono?: boolean
+    tools?: MiniSettings["tools"]
     theme?: RunTuiConfig["theme"]
     startup?: { version: string; detail: string }
     cursorRow?: number
@@ -61,6 +109,7 @@ async function setup(
   const app = await createTestRenderer({
     width: 112,
     height: 24,
+    exitOnCtrlC: false,
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
@@ -93,7 +142,7 @@ async function setup(
     theme: mono ? RUN_THEME_MONO : RUN_THEME_FALLBACK,
     tuiConfig: createTuiResolvedConfig({ theme: input.theme }),
     miniSettings: {
-      current: { ...resolveMiniSettings(), mono },
+      current: { ...resolveMiniSettings(), mono, ...(input.tools ? { tools: input.tools } : {}) },
       update: input.update,
     },
     onPermissionReply: () => {},
@@ -211,7 +260,7 @@ test.each([false, true])("command menu uses its full height on first open (mono=
     expect(frame).toContain("Show status")
     expect(frame).toContain("Compact session")
     expect(frame).toContain("New session")
-    expect(frame).toContain("Skills")
+    expect(frame).toContain("Variant cycle")
   } finally {
     app.footer.destroy()
     app.renderer.destroy()
@@ -274,7 +323,7 @@ test.each([false, true])("monochrome toggles live without replacing the footer (
     ])
     expect(output.filter((text) => text.includes("new output"))).toHaveLength(2)
     app.mockInput.pressKey("c", { ctrl: true })
-    await app.renderOnce()
+    await app.flush()
     expect(app.renderer.currentFocusedEditor?.plainText).toBe("draft")
     expect(app.captureCharFrame()).toContain(mono ? "| draft" : "\u2503 draft")
   } finally {
@@ -323,7 +372,10 @@ test("explicit theme refresh reloads custom colors without a palette event", asy
     for (const color of ["#123456", "#abcdef"]) {
       await Bun.write(
         path.join(tmp.path, "themes", "mini-refresh.json"),
-        JSON.stringify({ version: 2, dark: { text: { default: color } } }),
+        JSON.stringify({
+          base: { ...getOpenCodeTheme().base, text: { ...getOpenCodeTheme().base.text, base: color } },
+          dark: { hue: getOpenCodeTheme().dark.hue },
+        }),
       )
       await app.footer.refreshTheme()
       await app.renderOnce()

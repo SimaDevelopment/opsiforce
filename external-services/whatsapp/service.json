@@ -1,0 +1,87 @@
+{
+  "sdk": 2,
+  "displayName": "WhatsApp",
+  "description": "Receive WhatsApp messages, media included, from chosen chats of the numbers this deployment connects.",
+  "icon": "icon.svg",
+  "inbound": true,
+  "serviceForm": [
+    {
+      "key": "apiUrl",
+      "type": "text",
+      "label": "Whapi API URL",
+      "help": "The Whapi gateway every number talks to; empty means the default.",
+      "default": "https://gate.whapi.cloud",
+      "validate": { "format": "url" }
+    },
+    {
+      "key": "channels",
+      "type": "list",
+      "label": "Numbers",
+      "help": "One item per Whapi channel. Every Organization can pick any number for its Projects.",
+      "item": [
+        {
+          "key": "channelId",
+          "type": "text",
+          "label": "Channel ID",
+          "help": "The channel's ID on the Whapi dashboard.",
+          "required": true,
+          "validate": { "maxLength": 120 }
+        },
+        {
+          "key": "label",
+          "type": "text",
+          "label": "Label",
+          "help": "The name Projects pick the number by.",
+          "required": true,
+          "validate": { "maxLength": 120 }
+        },
+        {
+          "key": "apiToken",
+          "type": "secret",
+          "label": "API token",
+          "help": "The channel's API token from the Whapi dashboard.",
+          "required": true
+        },
+        {
+          "key": "webhookSecret",
+          "type": "secret",
+          "label": "Webhook secret",
+          "help": "Generated. Saving registers it with Whapi as the `X-Opsiforce-Webhook-Secret` header of this deployment's webhook; Rotate registers a new one.",
+          "generate": { "bytes": 32 }
+        },
+        { "key": "webhookStatus", "type": "info", "label": "Webhook", "call": "webhookStatus" },
+        { "key": "qr", "type": "button", "label": "Show QR code", "call": "showQr" }
+      ]
+    }
+  ],
+  "projectForm": [
+    {
+      "key": "channels",
+      "type": "list",
+      "label": "Numbers",
+      "help": "The numbers this environment receives from, each with the chats it listens to.",
+      "item": [
+        {
+          "key": "channel",
+          "type": "select",
+          "label": "Number",
+          "required": true,
+          "options": { "serviceConfiguration": "channels", "labelKey": "label" }
+        },
+        {
+          "key": "chats",
+          "type": "multiselect",
+          "label": "Chats",
+          "help": "Individual chats and groups whose messages this environment receives.",
+          "options": { "call": "listChats", "dependsOn": ["channel"], "searchable": true }
+        }
+      ]
+    }
+  ],
+  "events": {
+    "message.received": {
+      "title": "Message received",
+      "description": "A WhatsApp message arrived in one of the chats this environment listens to, media as the Event's file; its data is described in the Service skill."
+    }
+  }
+}

@@ -6,22 +6,23 @@ adrs: [0021, 0025, 0029]
 
 # Workspaces
 
-> How are [Projects](../../CONTEXT.md) grouped and made visible inside an [Organization](../../CONTEXT.md), and who may move them where?
+> How are [Projects](../../GLOSSARY.md) grouped and made visible inside an [Organization](../../GLOSSARY.md), and who may move them where?
 
 ## How it works
 
 ### Three groupings
 
-- A shared [Workspace](../../CONTEXT.md) is created by holders of `can_manage_workspaces`, who are added as members; it has an explicit member list and only members see it.
-- A [Personal Workspace](../../CONTEXT.md) is created for each member on first authentication, one per user and Organization while the per-tenant toggle is on; it is owned by the user, invisible to everyone else, and cannot be renamed, deleted or given members.
-- The [Public Workspace](../../CONTEXT.md) holds Projects with no Workspace and is visible to every member of the Organization.
+- A shared [Workspace](../../GLOSSARY.md) is created by holders of `can_manage_workspaces`, who are added as members; it has an explicit member list and only members see it.
+- A [Personal Workspace](../../GLOSSARY.md) is created for each member on first authentication, one per user and Organization while the per-tenant toggle is on; it is owned by the user, invisible to everyone else, and cannot be renamed, deleted or given members.
+- The [Public Workspace](../../GLOSSARY.md) holds Projects with no Workspace and is visible to every member of the Organization.
 - A [Folder](folder.md) groups Projects inside a shared or Personal Workspace, never in Public.
 
 ### Visibility is membership
 
 - The sidebar shows the Workspaces a member belongs to, plus their Personal Workspace and Public; permissions never widen it, and a non-member gets 404 on a direct link.
 - The one exception is the management surface at `/settings/workspaces`, where holders of `can_manage_workspaces` see every shared Workspace to rename, delete or join; Personal Workspaces are never listed there.
-- The sidebar orders Projects by the time of the last [Prompt](../../CONTEXT.md) a user sent, not by keep-alive activity ([ADR-0021](../adr/0021-sidebar-orders-by-last-prompt.md)).
+- The sidebar orders Projects by the time of the last [Prompt](../../GLOSSARY.md) a user sent, not by keep-alive activity ([ADR-0021](../adr/0021-sidebar-orders-by-last-prompt.md)).
+- A pod's `prompted` observation with `root: true` (a user item entering a root opencode session's inbox) stamps that time; one from a sub-agent session doesn't ([ADR-0021](../adr/0021-sidebar-orders-by-last-prompt.md)).
 - Project rows are draggable but never sortable: a drop target is always a Workspace or Folder zone, since Project order is never persisted ([ADR-0029](../adr/0029-project-rows-are-draggables-not-sortables.md)).
 
 ### Moving Projects

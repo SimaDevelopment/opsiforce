@@ -12,9 +12,9 @@ export function SettingsSection(props: {
 }) {
   return (
     <div class="h-full overflow-y-auto bg-background">
-      <div class={cn('mx-auto w-full px-6 py-8', props.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl')}>
+      <div class={cn('mx-auto w-full px-4 py-6 sm:px-6 sm:py-8', props.width === 'wide' ? 'max-w-6xl' : 'max-w-5xl')}>
         <header class="mb-6">
-          <div class="flex items-start justify-between gap-4">
+          <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
             <div class="flex items-center gap-2.5">
               <Dynamic component={props.icon} class="h-5 w-5 shrink-0 text-muted-foreground" />
               <h1 class="text-xl font-semibold tracking-tight text-foreground">{props.title}</h1>

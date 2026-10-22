@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { DateTime, Schema } from "effect"
 import { Agent } from "../src/agent.js"
 import { ConfigAgent } from "../src/config/agent.js"
+import { ConfigProvider } from "../src/config/provider.js"
 import { FileSystem } from "../src/filesystem.js"
 import { Form } from "../src/form.js"
 import { Mcp } from "../src/mcp.js"
@@ -98,7 +100,7 @@ describe("contract hygiene", () => {
           admittedSeq: 3,
           id: "msg_pending",
           sessionID: "ses_pending",
-          timeCreated: 1,
+          time: { created: 1 },
           type: "user",
           payload: { text: "hello" },
           delivery: "steer",
@@ -107,7 +109,7 @@ describe("contract hygiene", () => {
     ).toEqual({
       id: "msg_pending",
       sessionID: "ses_pending",
-      timeCreated: 1,
+      time: { created: 1 },
       type: "user",
       payload: { text: "hello" },
       delivery: "steer",
@@ -168,6 +170,8 @@ describe("contract hygiene", () => {
   test("reusable public identifiers are stable and unique", () => {
     const identifiers = [
       Agent.Color,
+      ConfigProvider.ModelSettings,
+      ConfigProvider.Settings,
       FileSystem.Submatch,
       Form.Field,
       Form.Fields,
@@ -181,10 +185,10 @@ describe("contract hygiene", () => {
       Model.Ref,
       Model.Capabilities,
       Model.Cost,
+      Model.Settings,
       Model.Variant,
       Project.Current,
       Worktree.Directory,
-      Worktree.ListInput,
       Worktree.List,
       Project.Icon,
       Project.Commands,
@@ -192,6 +196,8 @@ describe("contract hygiene", () => {
       Project.Info,
       Pty.Info,
       Session.ListAnchor,
+      Session.ListCursor,
+      Session.ListFilter,
       Session.Revert,
       SessionInbox.Delivery,
       SessionInbox.UserPayload,
@@ -214,7 +220,7 @@ describe("contract hygiene", () => {
 
   test("all session inbox item types accept both delivery modes", () => {
     const decode = Schema.decodeUnknownSync(SessionInbox.Info)
-    const base = { id: "msg_inbox", sessionID: "ses_inbox", timeCreated: 1 }
+    const base = { id: "msg_inbox", sessionID: "ses_inbox", time: { created: 1 } }
     const move = {
       location: { directory: "/project" },
       projectID: "global",
@@ -227,8 +233,8 @@ describe("contract hygiene", () => {
     }
   })
 
-  test("current source limits Any to provider options and avoids mutable contract wrappers", async () => {
-    const files = [...new Bun.Glob("*.ts").scanSync(new URL("../src", import.meta.url).pathname)].filter(
+  test("current source limits Any to reviewed boundaries and avoids mutable contract wrappers", async () => {
+    const files = [...new Bun.Glob("*.ts").scanSync(path.join(import.meta.dir, "../src"))].filter(
       (file) => !file.endsWith("-v1.ts"),
     )
     const sources = await Promise.all(
@@ -238,11 +244,13 @@ describe("contract hygiene", () => {
 
     expect(
       sources
-        .filter((item) => item.file !== "provider.ts")
+        .filter((item) => item.file !== "provider.ts" && item.file !== "model.ts" && item.file !== "integration.ts")
         .map((item) => item.source)
         .join("\n"),
     ).not.toContain("Schema.Any")
-    expect(sources.find((item) => item.file === "provider.ts")?.source.match(/Schema\.Any/g)).toHaveLength(4)
+    expect(sources.find((item) => item.file === "provider.ts")?.source.match(/Schema\.Any/g)).toHaveLength(3)
+    expect(sources.find((item) => item.file === "model.ts")?.source.match(/Schema\.Any/g)).toHaveLength(2)
+    expect(sources.find((item) => item.file === "integration.ts")?.source.match(/Schema\.Any/g)).toHaveLength(2)
     expect(source).not.toContain("Schema.mutable")
   })
 
@@ -252,15 +260,15 @@ describe("contract hygiene", () => {
       text: "hello",
     })
     expect(
-      SessionMessage.AssistantReasoning.make({ type: "reasoning", text: "thinking", state: { id: "opaque" } }),
-    ).toEqual({ type: "reasoning", text: "thinking", state: { id: "opaque" } })
+      SessionMessage.AssistantReasoning.make({ type: "reasoning", text: "thinking", native: { id: "opaque" } }),
+    ).toEqual({ type: "reasoning", text: "thinking", native: { id: "opaque" } })
     expect(
       SessionMessage.AssistantTool.make({
         type: "tool",
         id: "call_1",
         name: "search",
         executed: true,
-        providerState: { itemId: "item_1" },
+        native: { itemId: "item_1" },
         state: { status: "streaming", input: "" },
         time: { created: DateTime.makeUnsafe(0) },
       }),

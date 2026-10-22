@@ -6,14 +6,14 @@ import * as AmazonBedrock from "../src/providers/amazon-bedrock.js"
 import * as Anthropic from "../src/providers/anthropic.js"
 import * as AnthropicCompatible from "../src/providers/anthropic-compatible.js"
 import * as Azure from "../src/providers/azure.js"
-import * as Cloudflare from "../src/providers/cloudflare.js"
+import { CloudflareWorkersAI } from "../src/providers/cloudflare-workers-ai.js"
+import { DeepSeek } from "../src/providers/deepseek.js"
 import * as Google from "../src/providers/google.js"
 import * as GoogleVertex from "../src/providers/google-vertex.js"
 import * as GoogleVertexChat from "../src/providers/google-vertex-chat.js"
 import * as GoogleVertexMessages from "../src/providers/google-vertex-messages.js"
 import * as GoogleVertexResponses from "../src/providers/google-vertex-responses.js"
 import * as OpenAI from "../src/providers/openai.js"
-import * as OpenAICompatible from "../src/providers/openai-compatible.js"
 import * as OpenRouter from "../src/providers/openrouter.js"
 import * as XAI from "../src/providers/xai.js"
 
@@ -29,7 +29,7 @@ type LanguageModel = {
 declare const auth: Auth.Definition
 declare const optionalAuthModel: LanguageModelFactory<BaseOptions, "optional", LanguageModel>
 declare const requiredAuthModel: LanguageModelFactory<BaseOptions, "required", LanguageModel>
-const configApiKey = Config.redacted("OPENAI_API_KEY")
+const configApiKey = Config.Redacted("OPENAI_API_KEY")
 
 OpenAIChat.route.model({ id: "gpt-4.1-mini" })
 
@@ -263,10 +263,10 @@ XAI.configure({ apiKey: "xai-key" }).responses("grok-4", {})
 // @ts-expect-error xAI Chat selectors only accept model ids.
 XAI.configure({ apiKey: "xai-key" }).chat("grok-4", {})
 
-OpenAICompatible.deepseek.configure({ apiKey: "deepseek-key" }).model("deepseek-chat")
+DeepSeek.configure({ apiKey: "deepseek-key" }).model("deepseek-chat")
 // @ts-expect-error OpenAI-compatible family selectors only accept model ids.
-OpenAICompatible.deepseek.configure({ apiKey: "deepseek-key" }).model("deepseek-chat", {})
+DeepSeek.configure({ apiKey: "deepseek-key" }).model("deepseek-chat", {})
 
-Cloudflare.CloudflareWorkersAI.configure({ accountId: "account", apiKey: "cf-key" }).model("@cf/meta/llama")
+CloudflareWorkersAI.configure({ accountId: "account", apiKey: "cf-key" }).model("@cf/meta/llama")
 // @ts-expect-error Cloudflare Workers AI model selectors only accept model ids.
-Cloudflare.CloudflareWorkersAI.configure({ accountId: "account", apiKey: "cf-key" }).model("@cf/meta/llama", {})
+CloudflareWorkersAI.configure({ accountId: "account", apiKey: "cf-key" }).model("@cf/meta/llama", {})

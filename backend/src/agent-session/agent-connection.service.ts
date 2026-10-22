@@ -188,8 +188,8 @@ export class AgentConnectionService {
   private async readBuild(upstream: string, deadline: Deadline): Promise<string | null> {
     deadline.assertUnspent(connectionBudgetExhausted);
     try {
-      const health = await this.pod.health(upstream, { signal: deadline.signal() });
-      return health.version ?? null;
+      const info = await this.pod.info(upstream, { signal: deadline.signal() });
+      return info.version ?? null;
     } catch (error) {
       if (error instanceof PodResponded && error.status === 503) throw new EnvironmentNotRunning('starting');
       throw error;

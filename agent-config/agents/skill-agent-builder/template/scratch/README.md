@@ -13,10 +13,4 @@ send it through the API.
   `scripts/evidence.sh`.
 - `scratch/test-project.json` — the chat's Test Project and its Connection, kept by `scripts/tp.sh`.
 
-The loop:
-
-```sh
-node scripts/validate-skill.mjs "scratch/$NAME" --name "$NAME"   # ERRORS and LINTS, offline
-node scripts/pack-skill.mjs --json "scratch/$NAME" > scratch/body.json
-sh   scripts/api.sh call POST "/skills/$ID/versions" @scratch/body.json      # publish a Version
-```
+The draft-to-Version loop is `skill-authoring`'s *The authoring loop*.

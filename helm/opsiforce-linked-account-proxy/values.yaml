@@ -1,0 +1,48 @@
+replicaCount: 1
+
+fullnameOverride: opsiforce-linked-account-proxy
+
+image:
+  repository: opsiforce-linked-account-proxy
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8455
+
+config:
+  backendUrl: "http://opsiforce-backend:3001"
+
+# The token the backend's /internal/linked-accounts/credential route checks. Set it here or
+# point existingSecret at a Secret holding LINKED_ACCOUNT_PROXY_SERVICE_TOKEN; the backend's
+# config.linkedAccountProxyServiceToken must carry the same value.
+serviceToken: ""
+existingSecret: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+terminationGracePeriodSeconds: 600
+
+imagePullSecrets: []
+nameOverride: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

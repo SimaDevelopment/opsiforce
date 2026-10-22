@@ -1,6 +1,6 @@
 import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
-import { Command } from "effect/unstable/cli"
+import { Command } from "effect/cli"
 import { Commands } from "../../src/commands/commands"
 import upgrade from "../../src/commands/handlers/upgrade"
 import { Updater } from "../../src/services/updater"
@@ -12,16 +12,18 @@ await Effect.runPromise(
     process.argv.slice(2),
   ).pipe(
     Effect.provideService(Updater.Service, {
-      monitor: () => Effect.die("Manual upgrades must not monitor automatic updates"),
+      run: () => Effect.die("Manual upgrades must not check for automatic updates"),
+      check: () => Effect.die("Manual upgrades must not check for TUI updates"),
       apply: () => Effect.die("Manual upgrades must not apply TUI updates"),
+      removal: () => undefined,
       method: () =>
         Effect.sync(() => {
           record("method")
           return Updater.methods.find((method) => method === (process.env.UPGRADE_TEST_METHOD ?? "npm"))
         }),
-      latest: () =>
+      latest: (method) =>
         Effect.suspend(() => {
-          record("latest")
+          record({ latest: method })
           return process.env.UPGRADE_TEST_LATEST_ERROR
             ? Effect.fail(new Error("Update check failed"))
             : Effect.succeed("0.0.0-beta-new")

@@ -11,6 +11,7 @@ import { agentConfigRoot, packageSkillNames } from '../store/skill-tree';
 import { SkillRepository } from '../store/skill.repository';
 import { defaultProfileModel, readMergedAgentRegistry } from './agent-config';
 import { AgentRepository } from './agent.repository';
+import { readAgentProjectSettings } from './agent-pod-settings';
 import type { AgentRow } from './agent.types';
 import type { AgentBundle, AgentBundleProfile, AgentBundleSkillReference, AgentBundleTemplate } from './agent-bundle';
 
@@ -36,7 +37,6 @@ export class AgentBundleReader {
       identity: {
         displayName: agent.displayName,
         description: agent.description,
-        platformApi: (await this.repository.settings(agent.id)).platformApi,
       },
       profile: {
         promptBody: profile.promptBody ?? '',
@@ -45,6 +45,7 @@ export class AgentBundleReader {
       },
       skills: await pinnedSkills(profile.id),
       template: template ? { hash: template.hash, sourceDir: template.directory } : null,
+      projectSettings: await readAgentProjectSettings(agent.id),
     };
   }
 
@@ -52,17 +53,16 @@ export class AgentBundleReader {
     const parked = await builtInProfileFor(agent.id, tenantId);
     const shipped = await this.skills.builtInLatestVersions([...packageSkillNames(agent.name)]);
     const byName = new Map([...shipped, ...(await pinnedSkills(parked.id))].map((skill) => [skill.name, skill]));
-    const entry = readMergedAgentRegistry().agents[agent.name];
 
     return {
       identity: {
         displayName: agent.displayName,
         description: agent.description,
-        platformApi: entry?.platformApi === true,
       },
       profile: { promptBody: readPromptBody(agent.name), ...registryModel(agent.name) },
       skills: [...byName.values()].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: await this.packageTemplate(agent.name),
+      projectSettings: await readAgentProjectSettings(agent.id),
     };
   }
 
@@ -103,6 +103,8 @@ async function pinnedSkills(profileId: string): Promise<AgentBundleSkillReferenc
       name: skills.name,
       skillId: agentProfileSkills.skillId,
       skillVersionId: agentProfileSkills.skillVersionId,
+      externalServiceId: skills.externalServiceId,
+      serviceSettings: agentProfileSkills.serviceSettings,
     })
     .from(agentProfileSkills)
     .innerJoin(skills, eq(skills.id, agentProfileSkills.skillId))

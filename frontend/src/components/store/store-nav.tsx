@@ -1,23 +1,33 @@
 import { For } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Link, useLocation } from '@tanstack/solid-router';
-import { Bot, Files } from '~/components/icons';
+import { usePermissions } from '~/api/permissions';
+import { Bot, Cable, Files } from '~/components/icons';
 import { cn } from '~/lib/cn';
+import { canSeeExternalServices } from '~/components/external-service/service-access';
 
 const SECTIONS = [
   { to: '/store/agents', label: 'Agents', icon: Bot },
   { to: '/store/skills', label: 'Skills', icon: Files },
+  { to: '/store/external-services', label: 'External Services', icon: Cable },
 ] as const;
+
+export function storeSectionForPath(pathname: string) {
+  return SECTIONS.find((section) => pathname === section.to || pathname.startsWith(`${section.to}/`));
+}
 
 export function StoreNav() {
   const location = useLocation();
-  const isActive = (to: string) => location().pathname === to || location().pathname.startsWith(`${to}/`);
+  const { hasPermission } = usePermissions();
+  const sections = () =>
+    SECTIONS.filter((section) => section.to !== '/store/external-services' || canSeeExternalServices(hasPermission));
+  const isActive = (to: string) => storeSectionForPath(location().pathname)?.to === to;
 
   return (
     <nav aria-label="Store" class="shrink-0 border-b border-border bg-background">
       <div class="mx-auto flex w-full max-w-5xl items-center px-4 py-2 sm:px-6">
         <div class="inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground">
-          <For each={SECTIONS}>
+          <For each={sections()}>
             {(section) => (
               <Link
                 to={section.to}

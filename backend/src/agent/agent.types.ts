@@ -1,5 +1,10 @@
 import type { EnvironmentTemplate, TemplateComparison } from '../agent-template/agent-template.types';
+import type { AgentServiceSettings } from '../../db/schema';
 import type { SkillFlags } from '../store/gate';
+import type { SwitchableService } from '../store/service-switch-catalog';
+import type { AgentImportNote } from './agent-import';
+import type { PodClassSelection, PodSettings } from '../pod/pod-classes';
+import type { AgentProjectSettingsChoice } from './agent-copy-settings';
 export type { AgentRow } from './agent-visibility';
 
 export interface AgentResponse {
@@ -21,6 +26,7 @@ export interface AgentCaller {
   tenantId: string;
   userId: string;
   canManageAgents: boolean;
+  callingProjectId?: string;
 }
 
 export interface AgentProfileSkillResponse {
@@ -32,8 +38,11 @@ export interface AgentProfileSkillResponse {
   pinnedVersion: number;
   latestVersion: number | null;
   updateAvailable: boolean;
+  retired: boolean;
   visibility: string;
   flags: SkillFlags;
+  externalServiceId: string | null;
+  serviceSettings: AgentServiceSettings | null;
 }
 
 export interface AgentProfileResponse {
@@ -48,7 +57,8 @@ export interface AgentProfileResponse {
 
 export interface AgentSettingsResponse {
   defaultEnvironmentId: string | null;
-  platformApi: boolean;
+  warmPoolSize: number;
+  maxWarmPoolSize: number;
 }
 
 export interface AgentSummary extends AgentResponse {
@@ -76,9 +86,15 @@ export interface ShippedSkillResponse {
 
 export interface AgentDetail extends AgentSummary {
   settings: AgentSettingsResponse;
+  podSettings: PodSettings;
   profiles: AgentProfileResponse[];
   shippedSkills: ShippedSkillResponse[];
   projectCount: number;
+}
+
+export interface AgentDuplicateResult {
+  agent: AgentDetail;
+  notes: AgentImportNote[];
 }
 
 export interface CreateAgentDto {
@@ -103,21 +119,36 @@ export interface SetAgentSkillDto {
   versionId?: string;
 }
 
+export interface SetServiceSettingsDto {
+  values?: unknown;
+}
+
+export interface AgentServiceSettingsView {
+  service: SwitchableService;
+  settings: AgentServiceSettings | null;
+}
+
 export interface PublishAgentDto {
   environmentId: string;
 }
 
 export interface UpdateAgentSettingsDto {
   defaultEnvironmentId?: string | null;
-  platformApi?: boolean;
+  warmPoolSize?: number;
 }
+
+export type UpdateAgentPodClassDto = PodClassSelection;
 
 export interface SetAgentVisibilityDto {
   visibility: string;
 }
 
-export interface DuplicateAgentDto {
+export interface DuplicateAgentDto extends AgentProjectSettingsChoice {
   displayName: string;
+}
+
+export interface AgentCopyGrants {
+  canConfigureProjects: boolean;
 }
 
 export interface PublishAgentResponse {
@@ -125,6 +156,7 @@ export interface PublishAgentResponse {
     prompt: 'changed' | 'same';
     model: { from: string | null; to: string | null } | null;
     skills: { added: string[]; removed: string[]; repinned: string[] };
+    serviceSettings: string[];
     template: TemplateComparison;
   };
 }

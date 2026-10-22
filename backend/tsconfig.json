@@ -18,6 +18,7 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "moduleResolution": "nodenext",
-    "resolvePackageJsonExports": true
+    "resolvePackageJsonExports": true,
+    "rewriteRelativeImportExtensions": true
   }
 }

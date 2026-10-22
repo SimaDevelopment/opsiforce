@@ -2,7 +2,7 @@ import { Body, Get, HttpException, HttpStatus, Module, NotFoundException, Post, 
 import { z } from 'zod';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../../../src/public-api/public-api.decorator';
 import { Errors } from '../../../src/public-api/errors/public-api-error';
-import { AllowsGatewayCaller } from '../../../src/public-api/auth/allows-gateway-caller.decorator';
+import { ServiceRoute } from '../../../src/public-api/auth/service-route.decorator';
 import { PublicApiAuthModule } from '../../../src/public-api/auth/public-api-auth.module';
 
 export const PROBE_PATH = 'probe';
@@ -19,7 +19,7 @@ type ProbeReply = z.infer<typeof ProbeReplySchema>;
 @PublicApiController(PROBE_PATH)
 export class ProbeController {
   @Post('echo')
-  @AllowsGatewayCaller()
+  @ServiceRoute({ summary: 'Echo a name', allowedBy: [] })
   @PublicResponse(200, ProbeReplySchema)
   @PublicApiErrors('validation-error')
   echo(@Body({ schema: ProbeBodySchema }) body: ProbeBody): ProbeReply {
@@ -27,7 +27,7 @@ export class ProbeController {
   }
 
   @Get('paged')
-  @AllowsGatewayCaller()
+  @ServiceRoute({ summary: 'Page a name', allowedBy: [] })
   @PublicResponse(200, ProbeReplySchema)
   @PublicApiErrors('validation-error')
   paged(@Query({ schema: ProbeQuerySchema }) query: ProbeQuery): ProbeReply {

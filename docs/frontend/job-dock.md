@@ -14,10 +14,11 @@ kind: explanation
 - The dock is mounted once at the root layout, so a job started anywhere surfaces in the same place and survives navigation; a small context exposes `trackPublish`, `trackDuplicate`, `trackExport` and `startImportUpload`.
 - A card shows title, current step and a progress bar; the dialog shows the full step list; closing the dialog drops back to a card while the job keeps running.
 - A finished card carries a kind-specific action: Download for export, Open project for import and duplicate, Open app and View environment for publish; a failed card shows the error and a dismiss button.
+- The publish dialog lists the job's report under its steps: one line per External Service whose Project configuration was carried, with the Event types whose Receive was turned off in Development, or why it was not carried.
 - Everything kind-specific lives in a per-kind adapter (phase and step reading, the SSE endpoint, titles, byte progress, terminal actions, queries to invalidate); the host, card and dialog are generic, and a fifth kind is one adapter.
-- Jobs are keyed `kind:id`, publish by environment and the rest by [Project](../../CONTEXT.md), so a publish and an export for one Project sit side by side.
+- Jobs are keyed `kind:id`, publish by environment and the rest by [Project](../../GLOSSARY.md), so a publish and an export for one Project sit side by side.
 - The dock's state is in-memory; a reload clears the cards while the jobs run to completion on the backend.
-- The project page registers two publish callbacks with the dock while mounted, reloading the preview and switching the [Active environment](../../CONTEXT.md) in place, and the adapter falls back to navigation when they are absent.
+- The project page registers two publish callbacks with the dock while mounted, reloading the preview and switching the [Active environment](../../GLOSSARY.md) in place, and the adapter falls back to navigation when they are absent.
 
 ### Import owns its upload
 

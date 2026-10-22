@@ -114,7 +114,7 @@ export function SidebarFolderGroup(props: {
         <span class="flex-1 min-w-0 text-sm truncate text-foreground">{props.folder.name}</span>
         <DropdownMenu>
           <DropdownMenuTrigger
-            class="opacity-0 group-hover/folderrow:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"
+            class="opacity-0 group-hover/folderrow:opacity-100 pointer-coarse:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"
             onClick={(e: MouseEvent) => e.stopPropagation()}
             aria-label="Folder actions"
           >

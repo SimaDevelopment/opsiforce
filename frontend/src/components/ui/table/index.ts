@@ -1,4 +1,4 @@
-export { Table } from './table';
+export { Table, type TableLayout, type TableProps } from './table';
 export { TableHeader } from './table-header';
 export { TableBody } from './table-body';
 export { TableFooter } from './table-footer';

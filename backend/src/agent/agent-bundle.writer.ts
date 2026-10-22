@@ -9,7 +9,9 @@ import { nameUnavailable } from '../store/store-errors';
 import { SkillRepository } from '../store/skill.repository';
 import { readMergedAgentRegistry } from './agent-config';
 import { AgentRepository } from './agent.repository';
+import { writeAgentPodSettings, writeWarmPoolSize } from './agent-pod-settings';
 import { PLATFORM_SKILL_NAME, type AgentCaller } from './agent.types';
+import { isPostgresError, PG_UNIQUE_VIOLATION } from '../common/postgres-errors';
 import type { AgentBundle, SkillPin } from './agent-bundle';
 
 const SLUG_MAX_LENGTH = 60;
@@ -79,11 +81,11 @@ export class AgentBundleWriter {
           origin: 'custom',
           visibility: 'private',
           createdBy: caller.userId,
-          poolSize: 0,
+          createdByProjectId: caller.callingProjectId ?? null,
         });
-        await tx
-          .insert(agentSettings)
-          .values({ agentId, defaultEnvironmentId: productionId, platformApi: identity.platformApi });
+        await tx.insert(agentSettings).values({ agentId, defaultEnvironmentId: productionId });
+        await writeAgentPodSettings(tx, agentId, draft.bundle.projectSettings.resources);
+        await writeWarmPoolSize(tx, caller.tenantId, agentId, draft.bundle.projectSettings.warmPoolSize);
 
         const profileId = crypto.randomUUID();
         await tx.insert(agentProfiles).values({
@@ -94,13 +96,20 @@ export class AgentBundleWriter {
           model: profile.model,
           variant: profile.variant,
         });
-        const carried = [...draft.pins, ...mintedPins];
+        const carried: SkillPin[] = [...draft.pins, ...mintedPins];
         const carriesPlatform = platform !== null && carried.some((pin) => pin.skillId === platform.skillId);
-        const pins = platform && !carriesPlatform ? [platform, ...carried] : carried;
+        const pins: SkillPin[] = platform && !carriesPlatform ? [platform, ...carried] : carried;
         if (pins.length > 0) {
           await tx
             .insert(agentProfileSkills)
-            .values(pins.map((pin) => ({ profileId, skillId: pin.skillId, skillVersionId: pin.skillVersionId })))
+            .values(
+              pins.map((pin) => ({
+                profileId,
+                skillId: pin.skillId,
+                skillVersionId: pin.skillVersionId,
+                serviceSettings: pin.serviceSettings ?? null,
+              }))
+            )
             .onConflictDoNothing({ target: [agentProfileSkills.profileId, agentProfileSkills.skillId] });
         }
       });
@@ -113,13 +122,6 @@ export class AgentBundleWriter {
   }
 }
 
-interface PostgresErrorFields {
-  code?: string;
-  constraint_name?: string;
-}
-
 function isAgentNameTaken(error: unknown): boolean {
-  const direct = error as PostgresErrorFields & { cause?: unknown };
-  const pg = direct?.code ? direct : ((direct?.cause as PostgresErrorFields | undefined) ?? {});
-  return pg.code === '23505' && pg.constraint_name === AGENT_NAME_UNIQUE;
+  return isPostgresError(error, PG_UNIQUE_VIOLATION, AGENT_NAME_UNIQUE);
 }

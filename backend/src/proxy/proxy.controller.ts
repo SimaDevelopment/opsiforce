@@ -13,6 +13,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { FastifyRequest } from 'fastify';
 import { appCanonicalHost } from '../common/app-host';
+import { WHO_CHANGES_PUBLIC_API_SETTINGS } from '../external-services/built-ins/public-api-service';
+import { PublicApiSettings } from '../external-services/configuration/public-api-settings';
+import { servesAnExternalService } from '../external-services/gate/service-projects';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../identity/forwarded-identity.service';
 import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
@@ -62,7 +65,8 @@ export class ProxyController {
     private readonly agentSessionGateway: AgentSessionGateway,
     private readonly identities: ForwardedIdentityService,
     private readonly gatewayKeys: GatewayKeyService,
-    private readonly provenance: ProjectProvenanceRepository
+    private readonly provenance: ProjectProvenanceRepository,
+    private readonly publicApiSettings: PublicApiSettings
   ) {
     this.proxyControlToken = this.configService.getOrThrow<string>('proxyControlToken');
     this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
@@ -81,6 +85,10 @@ export class ProxyController {
 
     const env = await this.projectEnvironmentService.findByIdOrNull(environmentId);
     if (!env) throw new NotFoundException(`Project environment ${environmentId} not found`);
+
+    if (surface === 'app' && (await servesAnExternalService(env.projectId))) {
+      throw new NotFoundException(`Project environment ${environmentId} not found`);
+    }
 
     if (surface === 'agent') {
       if (!env.tenantId) throw new BadRequestException(`Project environment ${environmentId} not yet claimed`);
@@ -115,15 +123,6 @@ export class ProxyController {
     const surface = requireSurface(body);
 
     await this.projectService.touchEnvironmentActivity(environmentId, activityForSurface(surface));
-  }
-
-  @Post('projects/:environmentId/prompt')
-  async stampLastPrompt(
-    @Param('environmentId') environmentId: string,
-    @Headers('x-proxy-control-token') token: string | undefined
-  ): Promise<void> {
-    this.assertToken(token);
-    await this.projectService.stampLastPromptByEnvId(environmentId);
   }
 
   private toEnsureResponse(
@@ -184,11 +183,16 @@ export class ProxyController {
   }
 
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {
-    const key = await this.gatewayKeys.validateToken(token, 'platform-api');
-    if (!key) throw new UnauthorizedException('Unknown gateway key');
-    if (key.tenantId !== tenantId) throw new NotFoundException('Project not found');
+    const caller = await this.gatewayKeys.validateToken(token);
+    if (!caller?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
+    if (caller.tenantId !== tenantId) throw new NotFoundException('Project not found');
+    if ((await this.publicApiSettings.of(caller.projectEnvironmentId))?.driveCreatedProjects !== true) {
+      throw new ForbiddenException(
+        `"${this.publicApiSettings.labelOf('driveCreatedProjects')}" is off in the calling Project's configuration. ${WHO_CHANGES_PUBLIC_API_SETTINGS}`
+      );
+    }
 
-    const creatorId = await this.provenance.findCreatorId(key.projectId);
+    const creatorId = await this.provenance.findCreatorId(caller.projectId);
     if (!creatorId) throw new UnauthorizedException('The calling Project has no creator');
 
     const creator = await this.identities.resolveByPlatformId(creatorId);
@@ -201,7 +205,7 @@ export class ProxyController {
       throw new NotFoundException('Project not found');
     }
 
-    if (!(await this.provenance.isCreatedByProject(projectId, key.projectId))) {
+    if (!(await this.provenance.isCreatedByProject(projectId, caller.projectId))) {
       throw new ForbiddenException('The calling Project did not create this Project');
     }
   }

@@ -34,9 +34,13 @@ auth:
       - can_view_pods
       - can_manage_platform_defaults
       - can_manage_tenant_defaults
+      - can_manage_tenant_model_providers
+      - can_manage_platform_model_providers
       - can_manage_external_integration
-      - can_manage_external_services
-      - can_view_external_services_usage
+      - can_manage_platform_external_services
+      - can_manage_tenant_external_services
+      - can_configure_project_external_services
+      - can_manage_project_skills
       - can_view_platform_storage
       - can_manage_platform_storage
       - can_manage_platform_limits
@@ -64,10 +68,11 @@ oauth2Proxy:
   provider: keycloak-oidc
   emailClaim: preferred_username
   clientId:
+  clientSecret: ""
   cookieSecret:
+  cookieSecure: false
   cookieDomain:
   cookieName:
-  clientSecret:
   issuerUrl:
   logoutUrl:
   redirectUrl:
@@ -119,6 +124,12 @@ vscodeProxy:
 dbProxy:
   backendService: ""
   appsHostname: ""
+
+externalServiceProxy:
+  backendService: ""
+  backendPort: "3006"
+  webhookPort: "3008"
+  hostname: ""
 
 bifrostDashboard:
   enabled: true

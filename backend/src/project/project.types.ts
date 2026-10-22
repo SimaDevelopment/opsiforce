@@ -1,5 +1,6 @@
 import type { ProjectKindValue } from '../../db/schema';
 import type { PodClass } from '../pod/pod-classes';
+import type { CreatedProjectsCap } from './project-limit';
 
 export const ProjectStatus = {
   Starting: 'starting',
@@ -39,6 +40,8 @@ export interface ProjectCreationContext {
   createdByProjectId?: string | null;
   kind?: ProjectKind | null;
   builderSubjectAgentId?: string | null;
+  configureBeforeDelivery?: ((projectEnvironmentId: string) => Promise<void>) | null;
+  createdProjectsCap?: CreatedProjectsCap | null;
 }
 
 export interface CreateProjectDto {
@@ -82,10 +85,17 @@ export type ProjectKind = ProjectKindValue;
 export const PROJECT_KINDS = [
   'skill_builder_chat',
   'agent_builder_chat',
+  'external_service_builder_chat',
   'test',
 ] as const satisfies readonly ProjectKind[];
 
-export const CHAT_KINDS = ['skill_builder_chat', 'agent_builder_chat'] as const satisfies readonly ProjectKind[];
+export const EXTERNAL_SERVICE_CHAT_KIND = 'external_service_builder_chat' satisfies ProjectKind;
+
+export const CHAT_KINDS = [
+  'skill_builder_chat',
+  'agent_builder_chat',
+  EXTERNAL_SERVICE_CHAT_KIND,
+] as const satisfies readonly ProjectKind[];
 
 export type ChatKind = (typeof CHAT_KINDS)[number];
 
@@ -163,6 +173,7 @@ export interface ProjectAppMeta {
 }
 
 export interface ProjectAuthOidcConfig {
+  forwardAccessToken?: boolean;
   clientId?: string;
   clientSecret?: string;
   discoveryUrl?: string;

@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, not, sql } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { db } from '../../db';
 import { projectEnvironments, projects } from '../../db/schema';
@@ -9,6 +9,7 @@ import { PodService } from '../pod/pod.service';
 import { ProjectEventsService } from '../project/project-events.service';
 import { AppReadinessService } from '../project/app-readiness.service';
 import { AgentStatusService } from '../project/agent-status.service';
+import { servesAsServiceDefault } from '../external-services/publishing/service-default-environments';
 
 @Injectable()
 export class TimeoutListener implements OnModuleInit, OnModuleDestroy {
@@ -72,7 +73,8 @@ export class TimeoutListener implements OnModuleInit, OnModuleDestroy {
         and(
           eq(projectEnvironments.id, envId),
           eq(projectEnvironments.status, ProjectStatus.Active),
-          sql`exists (select 1 from ${projects} where ${projects.id} = ${projectEnvironments.projectId} and ${projects.disabled} = false)`
+          sql`exists (select 1 from ${projects} where ${projects.id} = ${projectEnvironments.projectId} and ${projects.disabled} = false)`,
+          not(servesAsServiceDefault())
         )
       )
       .returning({ projectId: projectEnvironments.projectId });

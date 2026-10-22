@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import { Context, Effect, Exit, Layer, Scope, Stream } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { tmpdirScoped } from "../../core/test/fixture/tmpdir"
 import { testEffect } from "../../core/test/lib/effect"
 import { AbsolutePath, Location, OpenCode, Session } from "../src/effect"
@@ -35,7 +35,7 @@ for (const entrypoint of ["create", "layer"] as const) {
       ).pipe(Effect.provideService(FetchHttpClient.Fetch, ambient))
 
       yield* Effect.gen(function* () {
-        expect(yield* client.health.get()).toMatchObject({ healthy: true, version: "transport-test" })
+        expect(yield* client.server.info()).toMatchObject({ version: "transport-test" })
         const session = yield* client.sessions.create({
           location: Location.Ref.make({ directory: AbsolutePath.make(directory.path) }),
         })
@@ -45,8 +45,13 @@ for (const entrypoint of ["create", "layer"] as const) {
         expect(yield* client.events.subscribe().pipe(Stream.take(1), Stream.runCollect)).toMatchObject([
           { type: "server.connected" },
         ])
-        expect(yield* client.sessions.get({ sessionID: Session.ID.create() }).pipe(Effect.flip)).toMatchObject({
+        const missing = Session.ID.create()
+        // Error responses must decode over the SDK transport too; sessions.get is served by core without HTTP.
+        expect(yield* client.sessions.export({ sessionID: missing }).pipe(Effect.flip)).toMatchObject({
           _tag: "SessionNotFoundError",
+        })
+        expect(yield* client.sessions.get({ sessionID: missing }).pipe(Effect.flip)).toMatchObject({
+          _tag: "Session.NotFoundError",
         })
         // Binding the SDK's transport must not change the caller's surrounding context.
         expect(yield* FetchHttpClient.Fetch).toBe(ambient)
@@ -56,7 +61,7 @@ for (const entrypoint of ["create", "layer"] as const) {
       yield* Scope.close(scope, Exit.void)
       expect(
         Exit.isFailure(
-          yield* client.health.get().pipe(Effect.provideService(FetchHttpClient.Fetch, ambient), Effect.exit),
+          yield* client.server.info().pipe(Effect.provideService(FetchHttpClient.Fetch, ambient), Effect.exit),
         ),
       ).toBe(true)
       expect(calls).toEqual([])

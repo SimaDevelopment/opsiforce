@@ -8,6 +8,7 @@ import {
   Inject,
   forwardRef,
   OnApplicationBootstrap,
+  Optional,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
@@ -34,13 +35,20 @@ import {
   projectDuplicateJobs,
   projectTransferJobs,
 } from '../../db/schema';
-import { accessibleProjectsFilter, isHiddenProjectReachable, visibleProjectsFilter } from './project-visibility';
+import {
+  accessibleProjectsFilter,
+  hiddenProjectReachOf,
+  isHiddenProjectReachable,
+  visibleProjectsFilter,
+} from './project-visibility';
 import { PodService, PodStartupFailedError } from '../pod/pod.service';
 import { PodCacheService } from '../pod/pod.cache.service';
 import { ProxyService } from '../proxy/proxy.service';
+import { podWebhookUrl } from '../external-services/configuration/webhook-url';
 import { ProjectPoolService } from '../pool/project-pool.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { BifrostService } from '../bifrost/bifrost.service';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
 import { assertIdleTimeoutMs } from '../common/validation';
 import { restoreEnvJsonBackup } from '../common/env-file';
 import { writeJsonAtomic } from '../common/fs';
@@ -51,7 +59,7 @@ import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ScheduleService } from '../schedule/schedule.service';
 import { AgentService } from '../agent/agent.service';
 import { EnvironmentService } from '../environment/environment.service';
-import { ExternalServiceProvisioningService } from '../external-services';
+import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
@@ -84,18 +92,21 @@ import {
   isChatKind,
   availableAuthModes,
 } from './project.types';
-import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
 import {
   buildPodClassCatalog,
   clampCustom,
   isPreset,
   resolvePreset,
+  resolveStoredPodResources,
   toK8sResources,
   type K8sResourceRequirements,
   type PodClass,
   type PodClassCatalog,
   type PodResources,
 } from '../pod/pod-classes';
+import { readAgentPodSettings } from '../agent/agent-pod-settings';
+import { podSettingsFromRequest } from '../pod/pod-class-request';
+import { podSettingsColumns } from '../pod/pod-settings-columns';
 
 const APP_NAME_MIN_LENGTH = 1;
 const APP_NAME_MAX_LENGTH = 80;
@@ -163,7 +174,7 @@ import { ProjectEventsService } from './project-events.service';
 import { AppService } from './app.service';
 import { AppReadinessService } from './app-readiness.service';
 import { AgentStatusService } from './agent-status.service';
-import { assertRoomForProject } from './project-limit';
+import { assertRoomForCreatedProject, assertRoomForProject, CreatedProjectsCapReached } from './project-limit';
 import { LimitReachedException } from '../limit/limit-reached.exception';
 import {
   ACTIVE_DUPLICATE_STATUSES,
@@ -218,10 +229,7 @@ const projectSelectFields = {
   timezone: projectSettings.timezone,
   requestLogMode: projectSettings.requestLogMode,
   requestLogBodyLimit: projectSettings.requestLogBodyLimit,
-  podClass: projectPodSettings.podClass,
-  cpuMillicores: projectPodSettings.cpuMillicores,
-  memoryRequestMib: projectPodSettings.memoryRequestMib,
-  memoryLimitMib: projectPodSettings.memoryLimitMib,
+  ...podSettingsColumns(projectPodSettings),
   hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`.as('has_app'),
   appName: projectApps.name,
   appDescription: projectApps.description,
@@ -252,6 +260,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => BifrostService))
     private readonly bifrostService: BifrostService,
+    private readonly modelProviders: ModelProvidersService,
     private readonly defaultsService: DefaultsService,
     private readonly gatewayKeyService: GatewayKeyService,
     @Inject(forwardRef(() => ScheduleService))
@@ -260,16 +269,17 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly projectEventsService: ProjectEventsService,
     private readonly appService: AppService,
     private readonly appReadiness: AppReadinessService,
+    @Inject(forwardRef(() => AgentStatusService))
     private readonly agentStatusService: AgentStatusService,
     private readonly agentService: AgentService,
     private readonly environmentService: EnvironmentService,
     private readonly gitService: GitService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
-    private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly proxyService: ProxyService,
     private readonly deliveryService: DeliveryService,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
-    private readonly duplicateQueue: Queue<ProjectDuplicateJobData>
+    private readonly duplicateQueue: Queue<ProjectDuplicateJobData>,
+    @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
   ) {}
 
   async onApplicationBootstrap() {
@@ -457,6 +467,8 @@ export class ProjectService implements OnApplicationBootstrap {
       createdByProjectId = null,
       kind = null,
       builderSubjectAgentId = null,
+      configureBeforeDelivery = null,
+      createdProjectsCap = null,
     } = context;
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
@@ -472,12 +484,14 @@ export class ProjectService implements OnApplicationBootstrap {
         createdBy,
         createdByProjectId,
         kind,
+        configureBeforeDelivery,
+        createdProjectsCap,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
-        if (err instanceof LimitReachedException) throw err;
+        if (err instanceof LimitReachedException || err instanceof CreatedProjectsCapReached) throw err;
         this.logger.warn(`Pool claim failed; falling back to slow path: ${(err as Error).message}`);
         return null;
       });
@@ -495,6 +509,8 @@ export class ProjectService implements OnApplicationBootstrap {
       createdByProjectId,
       kind,
       builderSubjectAgentId,
+      configureBeforeDelivery,
+      createdProjectsCap,
     });
   }
 
@@ -511,14 +527,25 @@ export class ProjectService implements OnApplicationBootstrap {
     timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
     context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
-    const { workspaceId, folderId, createdBy, createdByProjectId, kind, builderSubjectAgentId } = context;
+    const {
+      workspaceId,
+      folderId,
+      createdBy,
+      createdByProjectId,
+      kind,
+      builderSubjectAgentId,
+      configureBeforeDelivery,
+      createdProjectsCap,
+    } = context;
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
+    const podSettings = await readAgentPodSettings(agentId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, kind);
+      await assertRoomForCreatedProject(tx, createdProjectsCap);
       await tx.insert(projects).values({
         id,
         tenantId,
@@ -539,11 +566,7 @@ export class ProjectService implements OnApplicationBootstrap {
         timezone: dto?.timezone || 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({
-        projectId: id,
-        podClass: 'small',
-        ...resolvePreset('small'),
-      });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...podSettings });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -557,9 +580,10 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     await this.discardOnFailure(id, async () => {
-      await this.externalServiceProvisioning.provisionEnvironment(id);
+      await this.lifecycle?.created(id);
+      await configureBeforeDelivery?.(id);
       await this.createBifrostResources(id, tenantId);
-      await this.createGatewayKeys(id, id, tenantId, agentId, createdByProjectId);
+      await this.createGatewayKey(id, id, tenantId);
     });
     try {
       await this.deliveryService.deliverAtCreate(id, { builderSubjectAgentId });
@@ -567,6 +591,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.discardHalfCreatedProject(id);
       throw new InternalServerErrorException(`Could not deliver the agent's files: ${(err as Error).message}`);
     }
+    await this.lifecycle?.delivered(id);
     this.spawnStartupWorker(id);
 
     return this.findOne(id, tenantId);
@@ -698,9 +723,8 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     await this.discardOnFailure(id, async () => {
-      await this.externalServiceProvisioning.provisionEnvironment(id);
       await this.createBifrostResources(id, tenantId);
-      await this.createGatewayKeys(id, id, tenantId, source.agentId, parentProjectId);
+      await this.createGatewayKey(id, id, tenantId);
       await this.enqueueDuplicateJob({
         duplicateJobId,
         sourceProjectId: source.id,
@@ -748,7 +772,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
-    const podResources = this.resolveImportedResources(resources);
+    const podResources = await this.resolveImportedResources(resources, agentId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId);
@@ -821,18 +845,17 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     await this.discardOnFailure(id, async () => {
-      await this.externalServiceProvisioning.provisionEnvironment(id);
       await this.createBifrostResources(id, tenantId);
-      await this.createGatewayKeys(id, id, tenantId, agentId, null);
+      await this.createGatewayKey(id, id, tenantId);
     });
 
     return this.findOne(id, tenantId);
   }
 
-  private resolveImportedResources(resources: ExportManifestResources | null): {
-    podClass: PodClass;
-    resources: PodResources;
-  } {
+  private async resolveImportedResources(
+    resources: ExportManifestResources | null,
+    agentId: string
+  ): Promise<{ podClass: PodClass; resources: PodResources }> {
     if (resources?.podClass === 'custom') {
       return {
         podClass: 'custom',
@@ -846,7 +869,8 @@ export class ProjectService implements OnApplicationBootstrap {
     if (resources && isPreset(resources.podClass)) {
       return { podClass: resources.podClass, resources: resolvePreset(resources.podClass) };
     }
-    return { podClass: 'small', resources: resolvePreset('small') };
+    const { podClass, ...agentResources } = await readAgentPodSettings(agentId);
+    return { podClass, resources: agentResources };
   }
 
   async getSchedulesForExport(projectEnvironmentId: string): Promise<ExportManifestSchedule[]> {
@@ -908,7 +932,7 @@ export class ProjectService implements OnApplicationBootstrap {
   /** Every Project this user may watch: the ordinary visible set plus the hidden ones they created. */
   async findVisibleProjectIds(params: { tenantId: string; userId: string }): Promise<string[]> {
     const { tenantId, userId } = params;
-    const accessible = accessibleProjectsFilter(tenantId, userId);
+    const accessible = accessibleProjectsFilter(tenantId, userId, await hiddenProjectReachOf(userId));
 
     const rows = await db
       .select({ id: projects.id })
@@ -1124,55 +1148,43 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.findOne(id, tenantId);
   }
 
+  async nameAfterPrimarySession(envId: string, sessionId: string, title: string): Promise<void> {
+    const [named] = await db
+      .update(projects)
+      .set({ title, updatedAt: new Date() })
+      .from(projectEnvironments)
+      .where(
+        and(
+          eq(projectEnvironments.id, envId),
+          eq(projectEnvironments.sessionId, sessionId),
+          eq(projects.id, projectEnvironments.projectId),
+          isNull(projects.title)
+        )
+      )
+      .returning({ id: projects.id });
+    if (named) await this.projectEventsService.publish(named.id);
+  }
+
   getPodClassCatalog(): PodClassCatalog {
     return buildPodClassCatalog();
   }
 
   async updatePodClass(id: string, dto: UpdateProjectPodClassDto, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
-    const resources = this.resolvePodClassResources(dto);
-
     await db
       .update(projectPodSettings)
-      .set({ podClass: dto.podClass, ...resources })
+      .set(podSettingsFromRequest(dto))
       .where(eq(projectPodSettings.projectId, project.id));
 
     return this.findOne(id, tenantId);
   }
 
-  private resolvePodClassResources(dto: UpdateProjectPodClassDto): PodResources {
-    if (dto.podClass === 'custom') {
-      if (
-        typeof dto.cpuMillicores !== 'number' ||
-        typeof dto.memoryRequestMib !== 'number' ||
-        typeof dto.memoryLimitMib !== 'number'
-      ) {
-        throw new BadRequestException(
-          'Custom pod class requires numeric cpuMillicores, memoryRequestMib, and memoryLimitMib'
-        );
-      }
-      return clampCustom({
-        cpuMillicores: dto.cpuMillicores,
-        memoryRequestMib: dto.memoryRequestMib,
-        memoryLimitMib: dto.memoryLimitMib,
-      });
-    }
-    if (!isPreset(dto.podClass)) {
-      throw new BadRequestException(`Unknown pod class: ${String(dto.podClass)}`);
-    }
-    return resolvePreset(dto.podClass);
-  }
-
   private async podResourcesForProject(projectId: string): Promise<K8sResourceRequirements> {
     const [row] = await db
-      .select({
-        cpuMillicores: projectPodSettings.cpuMillicores,
-        memoryRequestMib: projectPodSettings.memoryRequestMib,
-        memoryLimitMib: projectPodSettings.memoryLimitMib,
-      })
+      .select(podSettingsColumns(projectPodSettings))
       .from(projectPodSettings)
       .where(eq(projectPodSettings.projectId, projectId));
-    return toK8sResources(row ?? resolvePreset('small'));
+    return toK8sResources(resolveStoredPodResources(row));
   }
 
   async getLogging(id: string, tenantId: string): Promise<ProjectLoggingResponse> {
@@ -1264,6 +1276,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.remove(child.id, tenantId);
     }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
+    for (const env of envs) await this.lifecycle?.environmentRemoving(env.id);
 
     await db
       .update(projectEnvironments)
@@ -1295,7 +1308,10 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.projectEnvironmentService.delete(env);
     }
 
-    await db.delete(projects).where(eq(projects.id, id));
+    await db.transaction(async (tx) => {
+      await this.lifecycle?.removing(tx, id);
+      await tx.delete(projects).where(eq(projects.id, id));
+    });
   }
 
   private testProjectsCreatedBy(projectId: string, tenantId: string): Promise<{ id: string; title: string | null }[]> {
@@ -1338,6 +1354,7 @@ export class ProjectService implements OnApplicationBootstrap {
       this.agentStatusService.clear(id, env.id);
     });
 
+    await this.lifecycle?.disabled(id);
     await this.projectEventsService.publish(id);
 
     return this.findOne(id, tenantId);
@@ -1360,6 +1377,7 @@ export class ProjectService implements OnApplicationBootstrap {
     );
 
     envs.forEach((env) => this.spawnStartupWorker(env.id));
+    await this.lifecycle?.enabled(id);
     await this.projectEventsService.publish(id);
     return this.findOne(id, tenantId);
   }
@@ -1379,10 +1397,25 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.findOne(id, tenantId);
   }
 
+  async rotateGatewayKey(id: string, tenantId: string, environmentId: string): Promise<void> {
+    const project = await this.findOne(id, tenantId);
+    const env = await this.projectEnvironmentService.findById(environmentId);
+    if (env.projectId !== id) {
+      throw new NotFoundException(`Environment ${environmentId} not found`);
+    }
+
+    const { revoked } = await this.gatewayKeyService.rotate(id, env.id, tenantId);
+    await this.lifecycle?.gatewayKeysRevoked(id, revoked);
+    if (!project.disabled && env.status !== ProjectStatus.Suspended) {
+      await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
+    }
+  }
+
   /** Update (Test Project): overlay Development's Template and commit it, leaving the pod and the chat running. */
   async updateTestProject(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
     const written = await this.deliveryService.overlayTemplate(env.id);
+    await this.lifecycle?.updated(env.id);
     const workspace = this.workspacePath(env.directory);
     if (written.length === 0 || !(await isGitWorkspace(workspace))) return;
     await db.transaction(async (tx) => {
@@ -1394,6 +1427,7 @@ export class ProjectService implements OnApplicationBootstrap {
   /** Reset (Test Project): the same Project laid again from scratch, with a new session and a fresh budget. */
   async resetTestProject(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
+    await this.lifecycle?.resetting(env.id);
     this.agentStatusService.clear(env.projectId, env.id);
     this.appReadiness.markDown(env.id);
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
@@ -1424,6 +1458,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (env.isDefault) {
       throw new BadRequestException('The Development environment cannot be deleted');
     }
+    await this.lifecycle?.environmentRemoving(env.id);
 
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
 
@@ -1522,6 +1557,10 @@ export class ProjectService implements OnApplicationBootstrap {
   async reassignPodById(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
+  }
+
+  async configureCopiedProject(id: string): Promise<void> {
+    await this.lifecycle?.copied(id);
   }
 
   async requestStartupForId(id: string): Promise<void> {
@@ -1677,6 +1716,7 @@ export class ProjectService implements OnApplicationBootstrap {
     );
 
     if (updated) {
+      this.appReadiness.markDown(env.id);
       await this.projectEventsService.publish(env.projectId);
     }
 
@@ -1691,7 +1731,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const podName = this.podService.assignedPodName(env.id);
     const pod = await this.readPodOrNull(podName);
 
-    if (!pod) {
+    if (!pod || pod.metadata?.deletionTimestamp) {
       this.spawnStartupWorker(env.id);
       return { state: 'starting', env };
     }
@@ -1779,7 +1819,11 @@ export class ProjectService implements OnApplicationBootstrap {
   private async markEnvironmentActive(envId: string, podIp: string, podName: string): Promise<void> {
     const recovery = this.recoveryStartups.delete(envId);
 
-    if (recovery && (await this.timeoutService.isFullyExpired(envId).catch(() => false))) {
+    if (
+      recovery &&
+      (await this.timeoutService.isFullyExpired(envId).catch(() => false)) &&
+      !(await this.lifecycle?.neverSleeps(envId))
+    ) {
       const suspended = await this.projectEnvironmentService.patch(
         envId,
         { status: ProjectStatus.Suspended, podIp: null },
@@ -1840,43 +1884,19 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.bifrostService.createProjectResources({ projectId, tenantId });
     } catch (err) {
       this.logger.warn(`Failed to create Bifrost resources for project ${projectId}: ${(err as Error).message}`);
+      return;
+    }
+    if (!(await this.modelProviders.writeProjectKeys(tenantId, projectId))) {
+      throw new InternalServerErrorException("Could not give the Project's keys the Organization's model providers");
     }
   }
 
-  private async createGatewayKeys(
-    projectId: string,
-    environmentId: string,
-    tenantId: string,
-    agentId: string,
-    createdByProjectId: string | null
-  ): Promise<void> {
+  private async createGatewayKey(projectId: string, environmentId: string, tenantId: string): Promise<void> {
     try {
       await this.gatewayKeyService.createKey(projectId, environmentId, tenantId);
-      if (await this.mintsPlatformApiKey(agentId, createdByProjectId)) {
-        await this.gatewayKeyService.createKey(projectId, environmentId, tenantId, 'platform-api');
-      }
     } catch (err) {
-      this.logger.warn(`Failed to create gateway keys for environment ${environmentId}: ${(err as Error).message}`);
+      this.logger.warn(`Failed to create the gateway key for environment ${environmentId}: ${(err as Error).message}`);
     }
-  }
-
-  private async mintsPlatformApiKey(agentId: string, createdByProjectId: string | null): Promise<boolean> {
-    if (!(await this.agentService.callsPlatformApi(agentId))) return false;
-    return (await this.childChainDepth(createdByProjectId)) < MAX_PROJECT_CHAIN_DEPTH;
-  }
-
-  private async childChainDepth(createdByProjectId: string | null): Promise<number> {
-    let parentId = createdByProjectId;
-    let depth = 0;
-    while (parentId !== null && depth < MAX_PROJECT_CHAIN_DEPTH) {
-      depth += 1;
-      const [row] = await db
-        .select({ parentId: projects.createdByProjectId })
-        .from(projects)
-        .where(eq(projects.id, parentId));
-      parentId = row?.parentId ?? null;
-    }
-    return depth;
   }
 
   private async enqueueDuplicateJob(data: ProjectDuplicateJobData): Promise<void> {
@@ -2213,6 +2233,7 @@ export class ProjectService implements OnApplicationBootstrap {
       return current;
     }
 
+    this.appReadiness.markDown(env.id);
     if (options.deleteExistingPod) {
       const podName = this.podService.assignedPodName(env.id);
       this.recreateRequests.add(env.id);
@@ -2266,51 +2287,49 @@ export class ProjectService implements OnApplicationBootstrap {
     const podName = this.podService.assignedPodName(envId);
     const recreateRequested = this.recreateRequests.delete(envId);
     const existingPod = await this.readPodOrNull(podName);
-    if (existingPod && !existingPod.metadata?.deletionTimestamp) {
-      if (recreateRequested) {
+    if (recreateRequested || existingPod?.metadata?.deletionTimestamp) {
+      try {
+        await this.podService.deletePodAndWait(podName);
+      } catch (err) {
+        await this.handleStartupFailure(envId, podName, err);
+        return;
+      }
+    } else if (existingPod) {
+      const existingPodIp = existingPod.status?.podIP ?? null;
+      if (this.podService.isPodReady(existingPod) && existingPodIp) {
+        await this.markEnvironmentActive(envId, existingPodIp, podName);
+        return;
+      }
+
+      const failure = this.podService.inspectFailureReason(existingPod);
+      if (failure === 'ImagePullBackOff') {
+        await this.handleStartupFailure(
+          envId,
+          podName,
+          new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
+        );
+        return;
+      }
+      if (failure === 'Unschedulable' && this.podService.podAgeMs(existingPod) > UNSCHEDULABLE_STARTUP_GRACE_MS) {
+        await this.handleStartupFailure(
+          envId,
+          podName,
+          new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
+        );
+        return;
+      }
+
+      if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
         try {
-          await this.podService.deletePod(podName);
+          const podIp = await this.podService.waitForReady(podName);
+          await this.markEnvironmentActive(envId, podIp, podName);
         } catch (err) {
           await this.handleStartupFailure(envId, podName, err);
-          return;
         }
-      } else {
-        const existingPodIp = existingPod.status?.podIP ?? null;
-        if (this.podService.isPodReady(existingPod) && existingPodIp) {
-          await this.markEnvironmentActive(envId, existingPodIp, podName);
-          return;
-        }
-
-        const failure = this.podService.inspectFailureReason(existingPod);
-        if (failure === 'ImagePullBackOff') {
-          await this.handleStartupFailure(
-            envId,
-            podName,
-            new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
-          );
-          return;
-        }
-        if (failure === 'Unschedulable' && this.podService.podAgeMs(existingPod) > UNSCHEDULABLE_STARTUP_GRACE_MS) {
-          await this.handleStartupFailure(
-            envId,
-            podName,
-            new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
-          );
-          return;
-        }
-
-        if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
-          try {
-            const podIp = await this.podService.waitForReady(podName);
-            await this.markEnvironmentActive(envId, podIp, podName);
-          } catch (err) {
-            await this.handleStartupFailure(envId, podName, err);
-          }
-          return;
-        }
-
-        await this.safeDeletePod(podName, `CrashLoopBackOff recreate for environment ${envId}`);
+        return;
       }
+
+      await this.safeDeletePod(podName, `CrashLoopBackOff recreate for environment ${envId}`);
     }
 
     if (!current.tenantId) {
@@ -2332,12 +2351,12 @@ export class ProjectService implements OnApplicationBootstrap {
       throw new Error(`Cannot start pool environment ${env.id} without a tenant`);
     }
 
-    const [bifrostOptions, gatewayApiKey, platformApiKey, agentName, podResources] = await Promise.all([
+    const [bifrostOptions, gatewayApiKey, agentName, podResources, serviceWebhookUrl] = await Promise.all([
       this.bifrostService.getEnvironmentPodOptions(env.id),
       this.gatewayKeyService.getEnvironmentToken(env.id),
-      this.gatewayKeyService.getEnvironmentToken(env.id, 'platform-api'),
       this.agentService.resolvePackageName(env.agentId),
       this.podResourcesForProject(env.projectId),
+      podWebhookUrl(this.configService, env),
     ]);
 
     if (this.bifrostService.isEnabled() && !bifrostOptions) {
@@ -2346,25 +2365,13 @@ export class ProjectService implements OnApplicationBootstrap {
       );
     }
 
-    const platformApiUrl = this.configService.get<string>('platformApiUrl', '');
-    const runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
-
-    if (platformApiKey && !(platformApiUrl && runtimeProxyUrl)) {
-      throw new Error(
-        `Environment ${env.id} holds a platform-api key but OPSIFORCE_API_URL or OPSIFORCE_RUNTIME_PROXY_URL is unset; ` +
-          'refusing to start a pod that cannot reach the platform API'
-      );
-    }
-
     const tenantOptions = {
       ...bifrostOptions,
       agentName,
       gatewayApiKey: gatewayApiKey ?? undefined,
       gatewayUrl: this.configService.get<string>('gatewayUrl', ''),
-      platformApiKey: platformApiKey ?? undefined,
-      platformApiUrl,
-      runtimeProxyUrl,
-      externalServicesUrl: this.configService.get<string>('externalServicesUrl', ''),
+      serviceWebhookUrl,
+      runtimeProxyUrl: this.configService.get<string>('runtimeProxyUrl', ''),
       opsiforceEnv: env.isDefault ? undefined : 'production',
       environmentSlug: env.environmentSlug,
       resources: podResources,

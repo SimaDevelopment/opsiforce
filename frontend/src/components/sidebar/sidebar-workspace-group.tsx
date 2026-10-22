@@ -135,7 +135,7 @@ export function SidebarWorkspaceGroup(props: {
         <span class="flex-1 min-w-0 text-sm font-medium truncate text-foreground">{props.workspace.name}</span>
         <Show when={props.onOpenSettings}>
           <button
-            class="opacity-0 group-hover/wsrow:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"
+            class="opacity-0 group-hover/wsrow:opacity-100 pointer-coarse:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"
             onClick={(e) => {
               e.stopPropagation();
               props.onOpenSettings?.();

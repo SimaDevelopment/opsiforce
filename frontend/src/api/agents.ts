@@ -1,8 +1,12 @@
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
-import { api, currentTenant, type Agent } from './client';
+import { api, currentTenant, type Agent, type PodSettings, type UpdatePodClassDto } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
+import { limitUsageKey } from './limits';
 import { skillKeys, type SkillFlags } from './skills';
 import type { StoreFilter } from './store';
+import type { ServiceManifest } from '@opsiforce/external-service-sdk/forms';
+
+const MODEL_CATALOG_STALE_MS = 30_000;
 
 export const agentKeys = {
   all: ['agents'] as const,
@@ -12,6 +16,7 @@ export const agentKeys = {
   delivery: (id: string) => [...agentKeys.all, 'delivery', id] as const,
   exportPreview: (id: string) => [...agentKeys.all, 'export-preview', id] as const,
   models: () => [...agentKeys.all, 'models'] as const,
+  serviceSettings: (id: string, skillId: string) => [...agentKeys.all, 'service-settings', id, skillId] as const,
 };
 
 export interface StoreAgent extends Agent {
@@ -39,8 +44,27 @@ export interface AgentProfileSkill {
   pinnedVersion: number;
   latestVersion: number | null;
   updateAvailable: boolean;
+  retired: boolean;
   visibility: string;
   flags: SkillFlags;
+  externalServiceId: string | null;
+  serviceSettings: AgentServiceSettings | null;
+}
+
+export type AgentServiceSettings = Record<string, unknown>;
+
+export interface AgentServiceSettingsView {
+  service: {
+    id: string;
+    slug: string;
+    displayName: string;
+    manifest: Pick<ServiceManifest, 'projectForm'>;
+  };
+  settings: AgentServiceSettings | null;
+}
+
+export interface AgentServiceSettingsInput {
+  values: AgentServiceSettings;
 }
 
 export interface AgentProfileTemplate {
@@ -65,8 +89,20 @@ export interface ShippedSkill {
   version: number | null;
 }
 
+export interface AgentSettings {
+  defaultEnvironmentId: string | null;
+  warmPoolSize: number;
+  maxWarmPoolSize: number;
+}
+
+export interface UpdateAgentSettingsDto {
+  defaultEnvironmentId?: string;
+  warmPoolSize?: number;
+}
+
 export interface AgentDetail extends StoreAgent {
-  settings: { defaultEnvironmentId: string | null; platformApi: boolean };
+  settings: AgentSettings;
+  podSettings: PodSettings;
   profiles: AgentProfile[];
   shippedSkills: ShippedSkill[];
   projectCount: number;
@@ -109,6 +145,7 @@ export interface PublishApplied {
   prompt: 'changed' | 'same';
   model: { from: string | null; to: string | null } | null;
   skills: { added: string[]; removed: string[]; repinned: string[] };
+  serviceSettings: string[];
   template: TemplateComparison;
 }
 
@@ -193,6 +230,15 @@ export interface AgentExportPreview {
   skills: { name: string; hits: KeyLikeHit[] }[];
 }
 
+export function useAgentServiceSettings(id: () => string, skillId: () => string) {
+  return createAppQuery(() => ({
+    queryKey: agentKeys.serviceSettings(id(), skillId()),
+    queryFn: () => api.get<AgentServiceSettingsView>(`/agents/${id()}/skills/${skillId()}/service-settings`),
+    staleTime: 0,
+    reconcile: false as const,
+  }));
+}
+
 export function useAgentExportPreview(id: () => string, enabled: () => boolean) {
   return createAppQuery(() => ({
     queryKey: agentKeys.exportPreview(id()),
@@ -219,7 +265,7 @@ export function useAgentModels() {
   return createAppQuery(() => ({
     queryKey: agentKeys.models(),
     queryFn: () => api.get<CatalogProvider[]>('/agents/models'),
-    staleTime: Infinity,
+    staleTime: MODEL_CATALOG_STALE_MS,
   }));
 }
 
@@ -231,7 +277,11 @@ function useAgentMutation<TVariables, TResult>(
   const qc = useQueryClient();
   return createMutation(() => ({
     mutationFn: (input: TVariables) => run(id(), input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: agentKeys.all }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: agentKeys.all }),
+        qc.invalidateQueries({ queryKey: limitUsageKey }),
+      ]),
   }));
 }
 
@@ -253,6 +303,12 @@ export function useSetAgentSkill(id: () => string) {
   );
 }
 
+export function useSetAgentServiceSettings(id: () => string) {
+  return useAgentMutation(id, (agentId, input: { skillId: string; settings: AgentServiceSettingsInput }) =>
+    api.put<AgentProfileSkill[]>(`/agents/${agentId}/skills/${input.skillId}/service-settings`, input.settings)
+  );
+}
+
 export function useRemoveAgentSkill(id: () => string) {
   return useAgentMutation(id, (agentId, skillId: string) =>
     api.delete<AgentProfileSkill[]>(`/agents/${agentId}/skills/${skillId}`)
@@ -266,8 +322,14 @@ export function usePublishAgent(id: () => string) {
 }
 
 export function useUpdateAgentSettings(id: () => string) {
-  return useAgentMutation(id, (agentId, defaultEnvironmentId: string) =>
-    api.put<AgentDetail>(`/agents/${agentId}/settings`, { defaultEnvironmentId })
+  return useAgentMutation(id, (agentId, dto: UpdateAgentSettingsDto) =>
+    api.put<AgentDetail>(`/agents/${agentId}/settings`, dto)
+  );
+}
+
+export function useUpdateAgentPodClass(id: () => string) {
+  return useAgentMutation(id, (agentId, dto: UpdatePodClassDto) =>
+    api.put<AgentDetail>(`/agents/${agentId}/pod-class`, dto)
   );
 }
 
@@ -283,10 +345,36 @@ export function useSetAgentDisabled(id: () => string) {
   );
 }
 
+export interface AgentDuplicateResult {
+  agent: AgentDetail;
+  notes: AgentImportNote[];
+}
+
+export interface AgentProjectSettings {
+  resources: PodSettings;
+  warmPoolSize: number;
+}
+
+export interface AgentProjectSettingsChoice {
+  resources?: UpdatePodClassDto;
+  warmPoolSize?: number;
+}
+
 export function useDuplicateAgent(id: () => string) {
-  return useAgentMutation(id, (agentId, displayName: string) =>
-    api.post<AgentDetail>(`/agents/${agentId}/duplicate`, { displayName })
+  return useAgentMutation(id, (agentId, input: { displayName: string } & AgentProjectSettingsChoice) =>
+    api.post<AgentDuplicateResult>(`/agents/${agentId}/duplicate`, input)
   );
+}
+
+export interface AgentImportInspection {
+  displayName: string | null;
+  slug: string;
+  projectSettings: AgentProjectSettings;
+  maxWarmPoolSize: number;
+}
+
+export function inspectAgentImport(uploadId: string): Promise<AgentImportInspection> {
+  return api.post<AgentImportInspection>('/agents/import/inspect', { uploadId });
 }
 
 export interface AgentImportNote {
@@ -311,12 +399,13 @@ export interface AgentImportResult {
 export function useImportAgent() {
   const qc = useQueryClient();
   return createMutation(() => ({
-    mutationFn: (input: { uploadId: string; displayName: string | null }) =>
+    mutationFn: (input: { uploadId: string; displayName: string | null } & AgentProjectSettingsChoice) =>
       api.post<AgentImportResult>('/agents/import', input),
     onSuccess: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: agentKeys.all }),
         qc.invalidateQueries({ queryKey: skillKeys.all }),
+        qc.invalidateQueries({ queryKey: limitUsageKey }),
       ]);
     },
   }));

@@ -2,35 +2,36 @@ import path from "path"
 import fs from "fs/promises"
 import { writeFileSync } from "node:fs"
 import { describe, expect } from "bun:test"
-import { Document, Event, Info } from "@opencode-ai/schema/config"
-import { Agent } from "@opencode-ai/core/agent"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { Command } from "@opencode-ai/core/command"
-import { Config } from "@opencode-ai/core/config"
-import { ConfigAgentPlugin } from "@opencode-ai/core/config/plugin/agent"
-import { ConfigCommandPlugin } from "@opencode-ai/core/config/plugin/command"
-import { ConfigProviderPlugin } from "@opencode-ai/core/config/plugin/provider"
-import { ConfigReferencePlugin } from "@opencode-ai/core/config/plugin/reference"
-import { ConfigSkillPlugin } from "@opencode-ai/core/config/plugin/skill"
-import { Bus } from "@opencode-ai/core/bus"
-import { Integration } from "@opencode-ai/core/integration"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginHost } from "@opencode-ai/core/plugin/host"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Provider } from "@opencode-ai/core/provider"
-import { Reference } from "@opencode-ai/core/reference"
-import { Skill } from "@opencode-ai/core/skill"
-import { ShellSelect } from "@opencode-ai/core/shell/select"
-import { Job } from "@opencode-ai/core/job"
-import { Global } from "@opencode-ai/util/global"
-import { Location } from "@opencode-ai/core/location"
-import { Credential } from "@opencode-ai/core/credential"
-import { WellKnown } from "@opencode-ai/core/wellknown"
-import { Watcher } from "@opencode-ai/core/filesystem/watcher"
-import { AppProcess } from "@opencode-ai/util/process"
+import { Document, Event, Info } from "@opencode/schema/config"
+import { Agent } from "@opencode/core/agent"
+import { Command } from "@opencode/core/command"
+import { Config } from "@opencode/core/config"
+import { ConfigAgentPlugin } from "@opencode/core/config/plugin/agent"
+import { ConfigCommandPlugin } from "@opencode/core/config/plugin/command"
+import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
+import { ConfigReferencePlugin } from "@opencode/core/config/plugin/reference"
+import { ConfigCompatibilityPlugin } from "@opencode/core/config/plugin/compatibility"
+import { ConfigSkillPlugin } from "@opencode/core/config/plugin/skill"
+import { Bus } from "@opencode/core/bus"
+import { Integration } from "@opencode/core/integration"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginHost } from "@opencode/core/plugin/host"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Provider } from "@opencode/core/provider"
+import { Reference } from "@opencode/core/reference"
+import { Skill } from "@opencode/core/skill"
+import { ShellSelect } from "@opencode/core/shell/select"
+import { Job } from "@opencode/core/job"
+import { SubagentJob } from "@opencode/core/session/subagent-job"
+import { Global } from "@opencode/util/global"
+import { Location } from "@opencode/core/location"
+import { Credential } from "@opencode/core/credential"
+import { WellKnown } from "@opencode/core/wellknown"
+import { Watcher } from "@opencode/core/filesystem/watcher"
+import { AppProcess } from "@opencode/util/process"
 import { Deferred, Effect, Layer, Schema } from "effect"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { AbsolutePath } from "@opencode-ai/core/schema"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { AbsolutePath } from "@opencode/core/schema"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "../plugin/fixture"
 import { emptyCredentialNode, emptyWellknownNode } from "../fixture/config-nodes"
@@ -38,7 +39,10 @@ import { location } from "../fixture/location"
 import { tmpdir } from "../fixture/tmpdir"
 
 const it = testEffect(
-  Layer.merge(PluginTestLayer, AppNodeBuilder.build(LayerNode.group([AppProcess.node, ShellSelect.node, Job.node]))),
+  Layer.merge(
+    PluginTestLayer,
+    AppNodeBuilder.build(LayerNode.group([AppProcess.node, ShellSelect.node, Job.node, SubagentJob.node])),
+  ),
 )
 const decode = Schema.decodeUnknownSync(Info)
 const document = path.join(import.meta.dir, "opencode.json")
@@ -67,7 +71,7 @@ describe("config plugin reloads", () => {
               const plugins = yield* Plugin.Service
               const skills = yield* Skill.Service
               const host = yield* PluginHost.make(plugins)
-              yield* ConfigSkillPlugin.Plugin.effect(host)
+              yield* ConfigCompatibilityPlugin.Plugin.effect(host)
               expect(yield* skills.list()).toEqual([])
 
               // Finish startup by observing an ordinary config reload before creating the root.
@@ -80,7 +84,7 @@ describe("config plugin reloads", () => {
                 Bun.write(skill, "---\nname: probe\ndescription: Hot reload\n---\nTest skill"),
               )
               yield* waitUntil(skills.list().pipe(Effect.map((items) => items.some((item) => item.id === "probe"))))
-              expect((yield* skills.list())[0]?.location).toBe(AbsolutePath.make(skill))
+              expect((yield* skills.list())[0]?.path).toBe(AbsolutePath.make(skill))
               yield* Effect.promise(() => fs.rm(root, { recursive: true }))
               yield* waitUntil(skills.list().pipe(Effect.map((items) => items.length === 0)))
               yield* Effect.promise(() => Bun.write(skill, "---\nname: probe\ndescription: Recreated\n---\nTest skill"))
@@ -268,7 +272,7 @@ describe("config plugin reloads", () => {
   it.live("reloads config-backed domains without reloading external plugins", () =>
     Effect.gen(function* () {
       const agents = yield* Agent.Service
-      const catalog = yield* Catalog.Service
+      const providers = yield* Provider.Service
       const commands = yield* Command.Service
       const integrations = yield* Integration.Service
       const bus = yield* Bus.Service
@@ -289,7 +293,7 @@ describe("config plugin reloads", () => {
       expect(yield* integrations.get(Integration.ID.make("first"))).toBeDefined()
       expect((yield* skills.list()).some((skill) => skill.id === "first")).toBe(true)
       expect((yield* references.list()).map((reference) => reference.name)).toEqual(["first"])
-      expect(yield* catalog.provider.get(Provider.ID.make("first"))).toBeDefined()
+      expect(yield* providers.get(Provider.ID.make("first"))).toBeDefined()
 
       yield* test.setEntries([config("second")])
       yield* Effect.yieldNow
@@ -304,8 +308,10 @@ describe("config plugin reloads", () => {
             (yield* integrations.get(Integration.ID.make("first"))) === undefined &&
             (yield* integrations.get(Integration.ID.make("second"))) !== undefined &&
             (yield* references.list()).some((reference) => reference.name === "second") &&
-            (yield* catalog.provider.get(Provider.ID.make("first"))) === undefined &&
-            (yield* catalog.provider.get(Provider.ID.make("second"))) !== undefined
+            (yield* providers.get(Provider.ID.make("first"))) === undefined &&
+            (yield* providers.get(Provider.ID.make("second"))) !== undefined &&
+            (yield* skills.list()).every((skill) => skill.id !== "first") &&
+            (yield* skills.list()).some((skill) => skill.id === "second")
           )
         }),
       )

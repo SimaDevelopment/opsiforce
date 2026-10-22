@@ -10,9 +10,13 @@ COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn/releases .yarn/releases
 
 COPY ${PKG_PREFIX}backend/package.json ./${PKG_PREFIX}backend/package.json
-RUN yarn workspaces focus @opsiforce/backend
+COPY ${PKG_PREFIX}external-service-sdk/package.json ./${PKG_PREFIX}external-service-sdk/package.json
+COPY ${PKG_PREFIX}external-services/package.json ./${PKG_PREFIX}external-services/package.json
+RUN yarn workspaces focus @opsiforce/backend @opsiforce/external-services
 
 COPY ${PKG_PREFIX}backend/ ./${PKG_PREFIX}backend/
+COPY ${PKG_PREFIX}external-service-sdk/ ./${PKG_PREFIX}external-service-sdk/
+COPY ${PKG_PREFIX}external-services/ ./${PKG_PREFIX}external-services/
 COPY ${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json ./${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json
 COPY ${PKG_PREFIX}agent-config/ ./${PKG_PREFIX}agent-config/
 

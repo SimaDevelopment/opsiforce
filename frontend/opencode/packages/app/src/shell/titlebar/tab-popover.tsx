@@ -1,18 +1,22 @@
 import { HoverCard } from "@kobalte/core/hover-card"
-import { createSignal, Show, type JSXElement } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show, type JSXElement } from "solid-js"
 import { useLanguage } from "@/runtime/i18n/language"
 import { createMediaQuery } from "@solid-primitives/media"
 import "./tab-popover.css"
 
 // Initial hover delay before the preview appears, per design.
 const OPEN_DELAY = 750
-// Mouse-out delay: begin closing immediately (a brief exit animation plays).
+
 const CLOSE_DELAY = 0
+
 // After a preview closes, hovering a neighbouring tab within this window skips
 // the open delay — mirrors the tooltip's skipDelayDuration so moving across
 // tabs doesn't re-wait the full delay each time.
 const SKIP_WINDOW = 500
+
 let lastClosedAt = 0
+
+let activePreview: (() => void) | undefined
 
 export interface TabPreviewData {
   projectName?: string
@@ -36,32 +40,51 @@ export function TabPreviewPopover(props: {
   // "cold" preview animates. Mirrors how browsers reuse one tab tooltip.
   const [instant, setInstant] = createSignal(false)
 
-  const warm = () => Date.now() - lastClosedAt < SKIP_WINDOW
+  const warm = () => !!activePreview || Date.now() - lastClosedAt < SKIP_WINDOW
+  const open = () => props.open && !mobile()
+  const close = () => props.onOpenChange(false)
+
+  // Observe accepted, controlled state, including drag/menu suppression in TabNav.
+  createEffect(() => {
+    if (open()) {
+      if (activePreview !== close) activePreview?.()
+      activePreview = close
+
+      return
+    }
+
+    if (activePreview !== close) return
+    activePreview = undefined
+    lastClosedAt = Date.now()
+  })
+  onCleanup(() => {
+    if (activePreview !== close) return
+    activePreview = undefined
+    lastClosedAt = Date.now()
+  })
   // Kobalte reads openDelay lazily when the pointer enters the trigger, so this
   // resolves the skip window per-hover.
   const resolveOpenDelay = () => (warm() ? 0 : OPEN_DELAY)
+
   const handleOpenChange = (open: boolean) => {
     if (open) setInstant(warm())
-    else lastClosedAt = Date.now()
     props.onOpenChange(open)
   }
 
+  // Kept out of JSX: an inline nested ternary compiles to a memo created on every read, and Kobalte reads
+  // placement from a ResizeObserver callback, where that memo has no owner and is never disposed.
+  const placement = () =>
+    props.orientation === "vertical" ? (language.direction() === "rtl" ? "left-start" : "right-start") : "bottom-start"
+
   return (
     <HoverCard
-      open={props.open && !mobile()}
+      open={open()}
       onOpenChange={handleOpenChange}
       openDelay={resolveOpenDelay()}
       closeDelay={CLOSE_DELAY}
-      // The preview is non-interactive (pointer-events: none), so there is no
-      // safe area to traverse — leaving the tab hides it immediately.
+      // Informational previews belong to their tab, not to a hoverable safe area.
       ignoreSafeArea
-      placement={
-        props.orientation === "vertical"
-          ? language.direction() === "rtl"
-            ? "left-start"
-            : "right-start"
-          : "bottom-start"
-      }
+      placement={placement()}
       gutter={6}
     >
       <HoverCard.Trigger ref={triggerEl} as="div" data-component="session-tab-popover-trigger" tabIndex={-1}>
@@ -73,6 +96,7 @@ export function TabPreviewPopover(props: {
             // Portalled content lives outside the themed subtree, so mirror the
             // active theme like the v2 tooltip does.
             const theme = triggerEl?.closest("[data-theme]")?.getAttribute("data-theme")
+
             if (theme) el.setAttribute("data-theme", theme)
           }}
           data-component="session-tab-popover"

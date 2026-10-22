@@ -1,10 +1,9 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
-import type { OpenCodeEvent } from "@opencode-ai/client"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Bus } from "@opencode-ai/core/bus"
-import { Event } from "@opencode-ai/schema/event"
+import type { OpenCodeEvent } from "@opencode/client"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Event } from "@opencode/schema/event"
 import { Expected } from "../../../../core/test/lib/session-message"
 import { createEffect, onMount, type ParentProps } from "solid-js"
 import { ConfigProvider } from "../../../src/config"
@@ -13,13 +12,17 @@ import { DataProvider as DataProviderBase, useData } from "../../../src/context/
 import { Keymap } from "../../../src/context/keymap"
 import { LocationProvider, useLocation } from "../../../src/context/location"
 import { RouteProvider } from "../../../src/context/route"
+import { TuiAppProvider } from "../../../src/context/runtime"
+import { StorageProvider } from "../../../src/context/storage"
 import { ThemeProvider } from "../../../src/context/theme"
 import { Composer } from "../../../src/routes/session/composer"
 import { DialogProvider } from "../../../src/ui/dialog"
 import { ToastProvider } from "../../../src/ui/toast"
 import { createSessionRows, type SessionRow } from "../../../src/routes/session/rows"
+import { groupRefs } from "../../../src/routes/session/grouping/session"
+import { unwrap } from "solid-js/store"
 import { createApi, createEventStream, createFetch, directory, json, worktree } from "../../fixture/tui-client"
-import { emptyThemeSource } from "../../fixture/fixture"
+import { emptyThemeSource, tmpdir } from "../../fixture/fixture"
 import { TestTuiContexts } from "../../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 
@@ -43,7 +46,7 @@ function emitEvent(events: ReturnType<typeof createEventStream>, event: OpenCode
   events.emit({ ...event, location: { directory } })
 }
 
-const config = createTuiResolvedConfig({ session: { terminal: false } })
+const config = createTuiResolvedConfig()
 
 function DataProvider(props: ParentProps) {
   return (
@@ -153,7 +156,7 @@ test("syncs VCS info and applies branch updates", async () => {
   }
 })
 
-test("proactively syncs project metadata newest first", async () => {
+test("proactively syncs project metadata most recently active first", async () => {
   const events = createEventStream()
   const calls = createFetch((url) => {
     if (url.pathname !== "/api/project") return
@@ -162,14 +165,14 @@ test("proactively syncs project metadata newest first", async () => {
         id: "proj_old",
         canonical: "/old/project",
         name: "Old project",
-        time: { created: 1, updated: 1 },
+        time: { created: 1, updated: 1, active: 3 },
         sandboxes: [],
       },
       {
         id: "proj_test",
         canonical: worktree,
         name: "OpenCode",
-        time: { created: 1, updated: 2 },
+        time: { created: 1, updated: 2, active: 2 },
         sandboxes: [],
       },
     ])
@@ -197,17 +200,17 @@ test("proactively syncs project metadata newest first", async () => {
     await wait(() => data.project.get("proj_test") !== undefined)
     expect(data.project.list()).toEqual([
       {
-        id: "proj_test",
-        canonical: worktree,
-        name: "OpenCode",
-        time: { created: 1, updated: 2 },
-        sandboxes: [],
-      },
-      {
         id: "proj_old",
         canonical: "/old/project",
         name: "Old project",
-        time: { created: 1, updated: 1 },
+        time: { created: 1, updated: 1, active: 3 },
+        sandboxes: [],
+      },
+      {
+        id: "proj_test",
+        canonical: worktree,
+        name: "OpenCode",
+        time: { created: 1, updated: 2, active: 2 },
         sandboxes: [],
       },
     ])
@@ -510,6 +513,7 @@ test("truncates committed revert messages without changing lifetime usage", asyn
       type: "session.step.started",
       durable: durable(sessionID, 1),
       data: {
+        started: 1,
         sessionID,
         assistantMessageID: "msg_revert_boundary",
         agent: "build",
@@ -545,6 +549,7 @@ test("truncates committed revert messages without changing lifetime usage", asyn
       type: "session.step.started",
       durable: durable(sessionID, 3),
       data: {
+        started: 3,
         sessionID,
         assistantMessageID: "msg_revert_later",
         agent: "build",
@@ -687,7 +692,6 @@ test("restores running manual compaction before applying live deltas", async () 
             status: "running",
             reason: "manual",
             summary: "Existing ",
-            recent: "",
             time: { created: 1 },
           },
         ],
@@ -847,7 +851,7 @@ test("reconnects the event stream and resyncs active data", async () => {
   }
 })
 
-test("completes exploration when a queued prompt is promoted", async () => {
+test("completes exploration and keeps live rows when a queued prompt is promoted", async () => {
   const events = createEventStream()
   const sessionID = "session-promotion"
   const calls = createFetch((url) => {
@@ -855,10 +859,16 @@ test("completes exploration when a queued prompt is promoted", async () => {
   }, events)
   let rows!: ReturnType<typeof createSessionRows>
   let client!: ReturnType<typeof useClient>
+  let data!: ReturnType<typeof useData>
+  let synced = false
 
   function Probe() {
     client = useClient()
-    rows = createSessionRows(() => sessionID)
+    data = useData()
+    rows = createSessionRows(
+      () => sessionID,
+      () => (synced = true),
+    )
     return <box />
   }
 
@@ -876,23 +886,41 @@ test("completes exploration when a queued prompt is promoted", async () => {
 
   try {
     await wait(() => client.connection.status() === "connected")
+    // Rebuilds from the history sync and the new assistant message must land before the parts stream in,
+    // as they do live; otherwise those rebuilds, not the live append, create the part rows.
+    await wait(() => synced)
     emitEvent(events, {
       id: "evt_step_started",
       created: 1,
       type: "session.step.started",
       durable: durable(sessionID),
       data: {
+        started: 1,
         sessionID,
         assistantMessageID: "message-assistant",
         agent: "build",
         model: { id: "model", providerID: "provider" },
       },
     })
+    await wait(() => data.session.message.get(sessionID, "message-assistant") !== undefined)
+    emitEvent(events, {
+      id: "evt_text_started",
+      created: 1,
+      type: "session.text.started",
+      durable: durable(sessionID, 1),
+      data: { sessionID, assistantMessageID: "message-assistant", ordinal: 0 },
+    })
+    emitEvent(events, {
+      id: "evt_text_delta",
+      created: 1,
+      type: "session.text.delta",
+      data: { sessionID, assistantMessageID: "message-assistant", ordinal: 0, delta: "Looking" },
+    })
     emitEvent(events, {
       id: "evt_tool_started",
       created: 2,
       type: "session.tool.input.started",
-      durable: durable(sessionID, 1),
+      durable: durable(sessionID, 2),
       data: {
         sessionID,
         assistantMessageID: "message-assistant",
@@ -901,12 +929,13 @@ test("completes exploration when a queued prompt is promoted", async () => {
       },
     })
     await wait(() => rows.some((row) => row.type === "group" && !row.completed))
+    const text = rows.find((row) => row.type === "part")
 
     emitEvent(events, {
       id: "evt_prompt_admitted",
       created: 3,
       type: "session.inbox.enqueued",
-      durable: durable(sessionID, 2),
+      durable: durable(sessionID, 3),
       data: {
         sessionID,
         inboxID: "message-user",
@@ -920,14 +949,17 @@ test("completes exploration when a queued prompt is promoted", async () => {
       id: "evt_prompt_promoted",
       created: 4,
       type: "session.inbox.delivered",
-      durable: durable(sessionID, 3),
+      durable: durable(sessionID, 4),
       data: {
         sessionID,
         inboxID: "message-user",
       },
     })
     await wait(() => rows.find((row) => row.type === "group")?.completed === true)
-    expect(rows.at(-1)).toEqual({ type: "message", messageID: "message-user" })
+    expect(rows.at(-1)).toMatchObject({ type: "message", messageID: "message-user" })
+    // Promotion rebuilds every row; the live text must keep its store object or it remounts.
+    expect(text).toMatchObject({ type: "part", ref: { messageID: "message-assistant", partID: "text:0" } })
+    expect(rows.find((row) => row.type === "part")).toBe(text)
   } finally {
     app.renderer.destroy()
   }
@@ -976,7 +1008,7 @@ test("updates and removes queued inputs from durable lifecycle events", async ()
       },
     })
     await wait(() => data.session.pending.list(sessionID).length === 1)
-    expect(rows).not.toContainEqual({ type: "message", messageID: "message-queued" })
+    expect(rows).not.toContainEqual(expect.objectContaining({ type: "message", messageID: "message-queued" }))
 
     emitEvent(events, {
       id: "evt_queue_steered",
@@ -990,7 +1022,7 @@ test("updates and removes queued inputs from durable lifecycle events", async ()
         .list(sessionID)
         .some((item) => item.id === "message-queued" && item.type !== "compaction" && item.delivery === "steer"),
     )
-    expect(rows).toContainEqual({ type: "message", messageID: "message-queued" })
+    expect(rows).toContainEqual(expect.objectContaining({ type: "message", messageID: "message-queued" }))
 
     emitEvent(events, {
       id: "evt_queue_restored",
@@ -1004,7 +1036,7 @@ test("updates and removes queued inputs from durable lifecycle events", async ()
         .list(sessionID)
         .some((item) => item.id === "message-queued" && item.type !== "compaction" && item.delivery === "queue"),
     )
-    expect(rows).not.toContainEqual({ type: "message", messageID: "message-queued" })
+    expect(rows).not.toContainEqual(expect.objectContaining({ type: "message", messageID: "message-queued" }))
 
     emitEvent(events, {
       id: "evt_cancel_admitted",
@@ -1076,7 +1108,100 @@ test("classifies live tool rows independently of their call ID", async () => {
     })
 
     await wait(() => rows.length > 0)
-    expect(rows).toEqual([{ type: "part", ref: { messageID: "message-assistant", partID: "reasoning:0" } }])
+    expect(unwrap(rows)).toMatchObject([
+      { type: "part", ref: { messageID: "message-assistant", partID: "reasoning:0" } },
+    ])
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("loads older pages until the oldest exploration group is complete before reporting sync and keeps existing rows", async () => {
+  const events = createEventStream()
+  const sessionID = "session-boundary"
+  const model = { id: "model", providerID: "provider" }
+  // One prompt, 50 single-read steps, then an answer: the 20-message first page cuts the group.
+  const history = [
+    { type: "user", id: "msg_000", text: "Explore", time: { created: 0 } },
+    ...Array.from({ length: 50 }, (_, index) => ({
+      type: "assistant",
+      id: `msg_${String(index + 1).padStart(3, "0")}`,
+      agent: "build",
+      model,
+      time: { created: index + 1, completed: index + 1 },
+      finish: "tool-calls",
+      content: [
+        {
+          type: "tool",
+          id: `read-${index}`,
+          name: "read",
+          time: { created: index + 1, completed: index + 1 },
+          state: { status: "completed", input: { path: `${index}.ts` }, content: [], metadata: {} },
+        },
+      ],
+    })),
+    {
+      type: "assistant",
+      id: "msg_051",
+      agent: "build",
+      model,
+      time: { created: 51, completed: 51 },
+      finish: "stop",
+      content: [{ type: "text", text: "Done" }],
+    },
+  ]
+  const pages: string[] = []
+  const older = Promise.withResolvers<void>()
+  const calls = createFetch(async (url) => {
+    if (url.pathname !== `/api/session/${sessionID}/message`) return
+    const cursor = url.searchParams.get("cursor")
+    if (cursor) await older.promise
+    const end = Number(cursor ?? history.length)
+    const start = Math.max(0, end - Number(url.searchParams.get("limit") ?? 20))
+    pages.push(`${start}-${end}`)
+    return json({ data: history.slice(start, end).toReversed(), cursor: start > 0 ? { next: String(start) } : {} })
+  }, events)
+  let rows!: ReturnType<typeof createSessionRows>
+  let client!: ReturnType<typeof useClient>
+  const synced: SessionRow[] = []
+
+  function Probe() {
+    client = useClient()
+    rows = createSessionRows(
+      () => sessionID,
+      () => synced.push(structuredClone(unwrap(rows[0]))),
+    )
+    return <box />
+  }
+
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <ClientProvider api={createApi(calls.fetch)}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </ClientProvider>
+    </TestTuiContexts>
+  ))
+
+  try {
+    await wait(() => client.connection.status() === "connected")
+    const answer = () => rows.find((row) => row.type === "part" && row.ref.messageID === "msg_051")
+    await wait(() => answer() !== undefined)
+    const mounted = answer()
+    older.resolve()
+    await wait(() => synced.length > 0, 4000)
+    expect(pages).toEqual(["32-52", "12-32", "0-12"])
+    // Sync is reported only once the group's true first read is loaded.
+    expect(synced[0]).toMatchObject({ type: "message", messageID: "msg_000" })
+    const group = rows[1]
+    if (group?.type !== "group") throw new Error("Expected exploration group")
+    expect(group.size).toBe(50)
+    expect(groupRefs(group)[0]).toEqual({ messageID: "msg_001", partID: "read-0" })
+    // The transcript keys rows by store object, so a new object would remount the answer.
+    expect(answer()).toBe(mounted)
   } finally {
     app.renderer.destroy()
   }
@@ -1275,6 +1400,7 @@ test("tracks session status from active sessions and execution events", async ()
       type: "session.step.started",
       durable: durable("session-live"),
       data: {
+        started: 0,
         sessionID: "session-live",
         assistantMessageID: "message-live",
         agent: "build",
@@ -1340,6 +1466,7 @@ test("tracks session status from active sessions and execution events", async ()
       type: "session.step.started",
       durable: durable("session-failed"),
       data: {
+        started: 0,
         sessionID: "session-failed",
         assistantMessageID: "message-failed",
         agent: "build",
@@ -1411,6 +1538,7 @@ test("tracks session status from active sessions and execution events", async ()
       type: "session.step.started",
       durable: durable("session-retry", 1),
       data: {
+        started: 0,
         sessionID: "session-retry",
         assistantMessageID: "message-retry",
         agent: "build",
@@ -1441,6 +1569,7 @@ test("tracks session status from active sessions and execution events", async ()
       type: "session.step.started",
       durable: durable("session-retry", 1),
       data: {
+        started: 2_000,
         sessionID: "session-retry",
         assistantMessageID: "message-retry",
         agent: "build",
@@ -1497,7 +1626,7 @@ test("tracks session status from active sessions and execution events", async ()
       created: 1,
       type: "session.compaction.started",
       durable: durable("session-manual", 2),
-      data: { sessionID: "session-manual", reason: "manual", recent: "", inputID: "message-compaction" },
+      data: { sessionID: "session-manual", reason: "manual", inputID: "message-compaction" },
     })
     emitEvent(events, {
       id: "evt_manual_compaction_delta",
@@ -1516,13 +1645,13 @@ test("tracks session status from active sessions and execution events", async ()
       created: 3,
       type: "session.compaction.ended",
       durable: durable("session-manual", 4),
-      data: { sessionID: "session-manual", reason: "manual", text: "Streamed summary", recent: "recent" },
+      data: { sessionID: "session-manual", reason: "manual", text: "Streamed summary" },
     })
     await wait(() => {
       const message = data.session.message.get("session-manual", "message-compaction")
       return message?.type === "compaction" && message.status === "completed"
     })
-    expect(manualRows.filter((row) => row.type === "message")).toEqual([
+    expect(manualRows.filter((row) => row.type === "message")).toMatchObject([
       { type: "message", messageID: "message-compaction" },
     ])
     expect(manualRows.find((row) => row.type === "message" && row.messageID === "message-compaction")).toBe(
@@ -1534,7 +1663,7 @@ test("tracks session status from active sessions and execution events", async ()
       created: 0,
       type: "session.compaction.started",
       durable: durable("session-live", 2),
-      data: { sessionID: "session-live", reason: "auto", recent: "" },
+      data: { sessionID: "session-live", reason: "auto" },
     })
     emitEvent(events, {
       id: "evt_compaction_delta_1",
@@ -1559,7 +1688,7 @@ test("tracks session status from active sessions and execution events", async ()
       created: 0,
       type: "session.compaction.ended",
       durable: durable("session-live", 5),
-      data: { sessionID: "session-live", reason: "auto", text: "Live summary", recent: "recent" },
+      data: { sessionID: "session-live", reason: "auto", text: "Live summary" },
     })
     await wait(() => {
       const message = data.session.message.get("session-live", "msg_compaction_started")
@@ -1579,6 +1708,89 @@ test("tracks session status from active sessions and execution events", async ()
   }
 })
 
+test.each(["before", "between", "after"])("shows compaction admitted %s steers in execution order", async (order) => {
+  const events = createEventStream()
+  const sessionID = "session-compaction-priority"
+  const calls = createFetch((url) => {
+    if (url.pathname === `/api/session/${sessionID}/message`) return json({ data: [], cursor: {} })
+    return undefined
+  }, events)
+  let rows: SessionRow[] = []
+  let client: ReturnType<typeof useClient> | undefined
+  function Probe() {
+    client = useClient()
+    rows = createSessionRows(() => sessionID)
+    return <box />
+  }
+  const app = await testRender(() => (
+    <TestTuiContexts>
+      <ClientProvider api={createApi(calls.fetch)}>
+        <ProjectProvider>
+          <DataProvider>
+            <Probe />
+          </DataProvider>
+        </ProjectProvider>
+      </ClientProvider>
+    </TestTuiContexts>
+  ))
+  const admissions =
+    order === "before" ? ["compact", "a", "b"] : order === "between" ? ["a", "compact", "b"] : ["a", "b", "compact"]
+  try {
+    await wait(() => client?.connection.status() === "connected")
+    admissions.forEach((id, index) =>
+      emitEvent(events, {
+        id: `evt_admit_${id}`,
+        created: index + 1,
+        type: "session.inbox.enqueued",
+        durable: durable(sessionID, index + 1),
+        data: {
+          sessionID,
+          inboxID: id,
+          item:
+            id === "compact"
+              ? { type: "compaction", payload: {}, delivery: "steer" }
+              : { type: "user", payload: { text: `STEER_${id.toUpperCase()}` }, delivery: "steer" },
+        },
+      }),
+    )
+    await wait(() => rows.length === 3)
+    expect(unwrap(rows)).toMatchObject([
+      { type: "compaction-queued", inboxID: "compact" },
+      { type: "message", messageID: "a" },
+      { type: "message", messageID: "b" },
+    ])
+    emitEvent(events, {
+      id: "evt_compaction_started",
+      created: 4,
+      type: "session.compaction.started",
+      durable: durable(sessionID, 4),
+      data: { sessionID, reason: "manual", inputID: "compact" },
+    })
+    await wait(() => rows[0]?.type === "message")
+    expect(unwrap(rows)).toMatchObject(["compact", "a", "b"].map((messageID) => ({ type: "message", messageID })))
+    emitEvent(events, {
+      id: "evt_compaction_ended",
+      created: 5,
+      type: "session.compaction.ended",
+      durable: durable(sessionID, 5),
+      data: { sessionID, reason: "manual", text: "## Objective\n- Checkpoint" },
+    })
+    for (const [index, id] of ["a", "b"].entries()) {
+      emitEvent(events, {
+        id: `evt_deliver_${id}`,
+        created: index + 6,
+        type: "session.inbox.delivered",
+        durable: durable(sessionID, index + 6),
+        data: { sessionID, inboxID: id },
+      })
+    }
+    await app.renderOnce()
+    expect(unwrap(rows)).toMatchObject(["compact", "a", "b"].map((messageID) => ({ type: "message", messageID })))
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("restores queued compaction from durable pending input", async () => {
   const events = createEventStream()
   const sessionID = "session-compaction-queued"
@@ -1586,7 +1798,7 @@ test("restores queued compaction from durable pending input", async () => {
     {
       id: "message-compaction-queued",
       sessionID,
-      timeCreated: 1,
+      time: { created: 1 },
       type: "compaction" as const,
       payload: {},
       delivery: "queue" as const,
@@ -1594,7 +1806,7 @@ test("restores queued compaction from durable pending input", async () => {
     {
       id: "message-compaction-later",
       sessionID,
-      timeCreated: 2,
+      time: { created: 2 },
       type: "compaction" as const,
       payload: {},
       delivery: "queue" as const,
@@ -1635,7 +1847,7 @@ test("restores queued compaction from durable pending input", async () => {
       "message-compaction-later",
     ])
     await wait(() => rows.filter((row) => row.type === "compaction-queued").length === 2)
-    expect(rows.filter((row) => row.type === "compaction-queued")).toEqual([
+    expect(rows.filter((row) => row.type === "compaction-queued")).toMatchObject([
       { type: "compaction-queued", inboxID: "message-compaction-queued" },
       { type: "compaction-queued", inboxID: "message-compaction-later" },
     ])
@@ -1646,6 +1858,7 @@ test("restores queued compaction from durable pending input", async () => {
       type: "session.step.started",
       durable: durable(sessionID, 3),
       data: {
+        started: 2,
         sessionID,
         assistantMessageID: "message-assistant",
         agent: "build",
@@ -1686,7 +1899,6 @@ test("restores queued compaction from durable pending input", async () => {
       data: {
         sessionID,
         reason: "manual",
-        recent: "",
         inputID: "message-compaction-queued",
       },
     })
@@ -1698,7 +1910,7 @@ test("restores queued compaction from durable pending input", async () => {
       created: 3,
       type: "session.compaction.ended",
       durable: durable(sessionID, 7),
-      data: { sessionID, reason: "manual", text: "Summary", recent: "" },
+      data: { sessionID, reason: "manual", text: "Summary" },
     })
     expect(data.session.pending.list(sessionID).map((item) => item.id)).toEqual(["message-compaction-later"])
 
@@ -1735,7 +1947,7 @@ test("refreshes integrations after integration updates", async () => {
                 id: "openai",
                 name: "OpenAI",
                 methods: [{ type: "key" }],
-                connections: [{ type: "credential", id: "cred_openai", label: "OpenAI" }],
+                connections: [{ type: "credential", method: "key", id: "cred_openai", label: "OpenAI" }],
               },
             ],
     })
@@ -1853,7 +2065,7 @@ test("refreshes MCP resources after catalog updates", async () => {
   }
 })
 
-test("refreshes effective catalog data after catalog updates", async () => {
+test("refreshes provider and model data independently after domain updates", async () => {
   const events = createEventStream()
   const requests = { model: 0, provider: 0 }
   const calls = createFetch((url) => {
@@ -1882,8 +2094,13 @@ test("refreshes effective catalog data after catalog updates", async () => {
   try {
     await wait(() => requests.model > 0 && requests.provider > 0)
     const before = { ...requests }
-    emitEvent(events, { id: "evt_catalog", created: 0, type: "catalog.updated", data: {} })
-    await wait(() => requests.model > before.model && requests.provider > before.provider)
+    emitEvent(events, { id: "evt_provider", created: 0, type: "provider.updated", data: {} })
+    await wait(() => requests.provider > before.provider)
+    expect(requests).toEqual({ model: before.model, provider: before.provider + 1 })
+
+    emitEvent(events, { id: "evt_model", created: 0, type: "model.updated", data: {} })
+    await wait(() => requests.model > before.model)
+    expect(requests).toEqual({ model: before.model + 1, provider: before.provider + 1 })
   } finally {
     app.renderer.destroy()
   }
@@ -1985,7 +2202,6 @@ test("refreshes references after updates", async () => {
 test("keeps shell state scoped to location", async () => {
   const events = createEventStream()
   const other = "/tmp/opencode/other"
-  const workspace = "ws_other"
   let removed: URL | undefined
   const calls = createFetch((url, request) => {
     if (url.pathname === "/api/shell/sh_other" && request.method === "DELETE") {
@@ -1997,7 +2213,6 @@ test("keeps shell state scoped to location", async () => {
     return json({
       location: {
         directory: requestDirectory ?? directory,
-        workspaceID: url.searchParams.get("location[workspace]") ?? undefined,
         project: { id: "proj_test", directory: requestDirectory ?? directory },
       },
       data: [
@@ -2015,6 +2230,7 @@ test("keeps shell state scoped to location", async () => {
     })
   }, events)
   let data!: ReturnType<typeof useData>
+  await using state = await tmpdir()
 
   function Probe() {
     data = useData()
@@ -2034,24 +2250,28 @@ test("keeps shell state scoped to location", async () => {
   }
 
   const app = await testRender(() => (
-    <TestTuiContexts>
-      <ClientProvider api={createApi(calls.fetch)}>
-        <ProjectProvider>
-          <DataProvider>
-            <Probe />
-          </DataProvider>
-        </ProjectProvider>
-      </ClientProvider>
+    <TestTuiContexts paths={{ state: state.path }}>
+      <TuiAppProvider value={{ name: "test", version: "test", channel: "test" }}>
+        <StorageProvider>
+          <ClientProvider api={createApi(calls.fetch)}>
+            <ProjectProvider>
+              <DataProvider>
+                <Probe />
+              </DataProvider>
+            </ProjectProvider>
+          </ClientProvider>
+        </StorageProvider>
+      </TuiAppProvider>
     </TestTuiContexts>
   ))
   app.renderer.start()
 
   try {
     await wait(() => data.shell.list().some((shell) => shell.id === "sh_default"))
-    await data.shell.sync({ directory: other, workspaceID: workspace })
+    await data.shell.sync({ directory: other })
 
     expect(data.shell.list().map((shell) => shell.id)).toEqual(["sh_default"])
-    expect(data.shell.list({ directory: other, workspaceID: workspace }).map((shell) => shell.id)).toEqual(["sh_other"])
+    expect(data.shell.list({ directory: other }).map((shell) => shell.id)).toEqual(["sh_other"])
     expect(data.shell.listBySession("ses_shared").map((shell) => [shell.id, shell.location.directory])).toEqual([
       ["sh_default", directory],
       ["sh_other", other],
@@ -2062,13 +2282,13 @@ test("keeps shell state scoped to location", async () => {
     app.mockInput.pressKey("d", { ctrl: true })
     await wait(() => removed !== undefined)
     expect(removed?.searchParams.get("location[directory]")).toBe(other)
-    expect(removed?.searchParams.get("location[workspace]")).toBe(workspace)
+    expect(removed?.searchParams.has("location[workspace]")).toBe(false)
 
     events.emit({
       id: "evt_shell_created",
       created: 0,
       type: "shell.created",
-      location: { directory: other, workspaceID: workspace },
+      location: { directory: other },
       data: {
         info: {
           id: "sh_live_other",
@@ -2082,9 +2302,7 @@ test("keeps shell state scoped to location", async () => {
         },
       },
     })
-    await wait(() =>
-      data.shell.list({ directory: other, workspaceID: workspace }).some((shell) => shell.id === "sh_live_other"),
-    )
+    await wait(() => data.shell.list({ directory: other }).some((shell) => shell.id === "sh_live_other"))
     expect(data.shell.list().map((shell) => shell.id)).toEqual(["sh_default"])
     expect(
       data.shell.listBySession("ses_shared").find((shell) => shell.id === "sh_live_other")?.location.directory,
@@ -2261,7 +2479,7 @@ test("dismisses a permission that expired before its reply", async () => {
     await data.session.permission.reply({
       sessionID: request.sessionID,
       requestID: request.id,
-      reply: "once",
+      decision: "once",
     })
 
     expect(replies).toBe(1)
@@ -2348,7 +2566,7 @@ test("adds, dismisses, and refreshes form requests", async () => {
 test("tracks global forms by location", async () => {
   const events = createEventStream()
   const calls = createFetch(undefined, events)
-  const other = { directory: "/tmp/opencode-other", workspaceID: "wrk_other" }
+  const other = { directory: "/tmp/opencode-other" }
   let data!: ReturnType<typeof useData>
   let client!: ReturnType<typeof useClient>
 
@@ -2413,16 +2631,14 @@ test("tracks global forms by location", async () => {
 test("syncs global forms once for each requested location", async () => {
   const events = createEventStream()
   const requests: URL[] = []
-  const other = { directory: "/tmp/opencode-other", workspaceID: "wrk_other" }
+  const other = { directory: "/tmp/opencode-other" }
   const calls = createFetch((url) => {
-    if (url.pathname !== "/api/form/request") return
+    if (url.pathname !== "/api/form") return
     requests.push(url)
     const requestedDirectory = url.searchParams.get("location[directory]") ?? directory
-    const requestedWorkspace = url.searchParams.get("location[workspace]") ?? undefined
     return json({
       location: {
         directory: requestedDirectory,
-        workspaceID: requestedWorkspace,
         project: { id: "proj_test", directory: requestedDirectory },
       },
       data: [
@@ -2465,7 +2681,7 @@ test("syncs global forms once for each requested location", async () => {
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.searchParams.get("location[directory]")).toBe(other.directory)
-    expect(requests[0]?.searchParams.get("location[workspace]")).toBe(other.workspaceID)
+    expect(requests[0]?.searchParams.has("location[workspace]")).toBe(false)
     expect(data.session.form.list("global", other)?.map((form) => form.id)).toEqual(["frm_other"])
     expect(data.session.form.list("global", { directory })?.map((form) => form.id)).toEqual(["frm_default"])
 
@@ -2482,7 +2698,7 @@ test("resyncs global forms only for the active location after reconnect", async 
   const requests: URL[] = []
   const counts = new Map<string, number>()
   const home = { directory: process.cwd() }
-  const other = { directory: "/tmp/opencode-other", workspaceID: "wrk_other" }
+  const other = { directory: "/tmp/opencode-other" }
   const calls = createFetch((url) => {
     if (url.pathname === "/api/location")
       return json({ ...home, project: { id: "proj_test", directory: home.directory } })
@@ -2495,16 +2711,14 @@ test("resyncs global forms only for the active location after reconnect", async 
         ],
         cursor: {},
       })
-    if (url.pathname !== "/api/form/request") return
+    if (url.pathname !== "/api/form") return
     requests.push(url)
     const requestedDirectory = url.searchParams.get("location[directory]") ?? home.directory
-    const requestedWorkspace = url.searchParams.get("location[workspace]") ?? undefined
     const count = (counts.get(requestedDirectory) ?? 0) + 1
     counts.set(requestedDirectory, count)
     return json({
       location: {
         directory: requestedDirectory,
-        workspaceID: requestedWorkspace,
         project: { id: "proj_test", directory: requestedDirectory },
       },
       data: [
@@ -2548,12 +2762,7 @@ test("resyncs global forms only for the active location after reconnect", async 
     await wait(() => data.session.form.list("global", home)?.[0]?.id === "frm_default_2", 4000)
     expect(data.session.form.list("global", other)?.[0]?.id).toBe("frm_other_1")
     expect(requests).toHaveLength(1)
-    expect(
-      requests.map((url) => [
-        url.searchParams.get("location[directory]") ?? directory,
-        url.searchParams.get("location[workspace]") ?? undefined,
-      ]),
-    ).toEqual([[home.directory, undefined]])
+    expect(requests.map((url) => url.searchParams.get("location[directory]") ?? directory)).toEqual([home.directory])
   } finally {
     app.renderer.destroy()
   }
@@ -2675,6 +2884,7 @@ test("settles pending tools when a live failure arrives", async () => {
       type: "session.step.started",
       durable: durable("session-1", 2),
       data: {
+        started: 0,
         sessionID: "session-1",
         assistantMessageID: "msg_explicit_assistant_9",
         agent: "build",
@@ -2704,7 +2914,7 @@ test("settles pending tools when a live failure arrives", async () => {
         id: "call-1",
         input: {},
         executed: false,
-        state: { call: true },
+        native: { call: true },
       },
     })
     emitEvent(events, {
@@ -2740,7 +2950,7 @@ test("settles pending tools when a live failure arrives", async () => {
         id: "call-1",
         error: { type: "unknown", message: "aborted" },
         executed: false,
-        resultState: { result: true },
+        native: { result: true },
       },
     })
 
@@ -2767,8 +2977,7 @@ test("settles pending tools when a live failure arrives", async () => {
     expect(tool.state.metadata).toBeUndefined()
     expect(tool.state.content).toBeUndefined()
     expect(tool.executed).toBe(false)
-    expect(tool.providerState).toEqual({ call: true })
-    expect(tool.providerResultState).toEqual({ result: true })
+    expect(tool.native).toEqual({ call: true, result: true })
     expect(sync.session.message.list("session-1").map((message) => message.type)).toEqual([
       "agent-switched",
       "model-switched",
@@ -2842,7 +3051,7 @@ test("renders admitted prompts immediately and tracks them until promoted", asyn
       {
         id: messageID,
         sessionID,
-        timeCreated: 0,
+        time: { created: 0 },
         type: "user",
         payload: { text: "hello" },
         delivery: "steer",
@@ -3196,7 +3405,7 @@ test("admits prompts optimistically and reconciles with the durable echo", async
       {
         id: messageID,
         sessionID,
-        timeCreated: 5,
+        time: { created: 5 },
         type: "user",
         payload: { text: "hello", files: [echoFile] },
         delivery: "steer",
@@ -3224,7 +3433,7 @@ test("hydrates durable pending prompts into the visible transcript", async () =>
   const item = {
     id: "msg_pending_1",
     sessionID,
-    timeCreated: 5,
+    time: { created: 5 },
     type: "user" as const,
     payload: { text: "waiting" },
     delivery: "steer" as const,
@@ -3278,7 +3487,7 @@ test("keeps the row when the response lands before the echo", async () => {
   const admission = {
     id: messageID,
     sessionID,
-    timeCreated: 1,
+    time: { created: 1 },
     type: "user",
     payload: { text: "hello" },
     delivery: "steer",
@@ -3385,7 +3594,7 @@ test("a retry under the same client-minted ID cannot duplicate rows", async () =
   const admission = {
     id: messageID,
     sessionID,
-    timeCreated: 1,
+    time: { created: 1 },
     type: "user",
     payload: { text: "hello" },
     delivery: "steer",

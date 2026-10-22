@@ -9,6 +9,7 @@ import {
   firstPermittedSettingsTab,
   settingsTabForPath,
 } from '~/constants/settings-tabs';
+import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const Route = createFileRoute('/settings')({
   component: SettingsLayout,
@@ -25,6 +26,7 @@ function SettingsLayout() {
     const tab = settingsTabForPath(location().pathname);
     return !tab || tab.isPermitted(hasPermission);
   };
+  createDocumentTitle(() => settingsTabForPath(location().pathname)?.label ?? 'Settings');
 
   createEffect(() => {
     if (permissions.isPending) return;
@@ -39,7 +41,7 @@ function SettingsLayout() {
   });
 
   return (
-    <div class="flex h-full w-full flex-col overflow-hidden md:flex-row">
+    <div class="flex h-full w-full flex-col overflow-hidden lg:flex-row">
       <Show when={!permissions.isPending && permittedTabs().length > 0}>
         <SectionRail tabs={permittedTabs()} groupOrder={SETTINGS_GROUP_ORDER} />
       </Show>

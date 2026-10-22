@@ -1,11 +1,11 @@
-import { Agent } from "@opencode-ai/core/agent"
-import { CodeModeCatalog } from "@opencode-ai/core/codemode/catalog"
-import type { Permission } from "@opencode-ai/core/permission"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { toSessionError } from "@opencode-ai/core/session/to-session-error"
-import type { SessionError } from "@opencode-ai/schema/session-error"
-import { Tool } from "@opencode-ai/core/tool"
-import type { Context } from "@opencode-ai/plugin/effect/plugin"
+import { Agent } from "@opencode/core/agent"
+import { CodeModeCatalog } from "@opencode/core/codemode/catalog"
+import type { Permission } from "@opencode/core/permission"
+import { SessionMessage } from "@opencode/core/session/message"
+import { toSessionError } from "@opencode/core/session/to-session-error"
+import type { SessionError } from "@opencode/schema/session-error"
+import { Tool } from "@opencode/core/tool"
+import type { Context } from "@opencode/plugin/effect/plugin"
 import { Effect, type Scope } from "effect"
 import { host } from "../plugin/host"
 
@@ -60,18 +60,21 @@ export const registerToolPlugin = <R>(
     readonly effect: (context: Context) => Effect.Effect<void, never, R>
   },
   overrides: Parameters<typeof host>[0] = {},
+  hook?: Context["tool"]["hook"],
 ): Effect.Effect<void, never, R | Tool.Service | Scope.Scope> =>
   Effect.gen(function* () {
     const tools = yield* Tool.Service
     const context = host({
       ...overrides,
       session: {
-        hook: () => Effect.succeed({ dispose: Effect.void }),
+        ...overrides.session,
+        hook: overrides.session?.hook ?? (() => Effect.succeed({ dispose: Effect.void })),
       },
       tool: {
         transform: tools.transform,
         reload: tools.reload,
-        hook: () => Effect.die("registerToolPlugin does not support tool hooks"),
+        list: tools.list,
+        hook: hook ?? (() => Effect.die("registerToolPlugin does not support tool hooks")),
       },
     })
     yield* plugin.effect(context)

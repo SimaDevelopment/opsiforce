@@ -8,7 +8,7 @@ What the platform adds to make that a supported surface rather than a leak:
 
 - **A connection operation.** `POST /api/v1/projects/{id}/environments/{environmentId}/connect`, and the internal route the app calls, run one implementation. It authorizes Project visibility and environment ownership, wakes the environment within one 30-second budget, resolves and persists the primary Session, reads the build the ready runtime reports, and answers 200 only when all of that holds. A caller never re-implements "list roots, pick the oldest, else create".
 - **Origin-relative discovery.** Every environment in the Project DTO carries `opencode: { baseUrl, openapiUrl, sessionId }`. A consumer resolves those against the origin it already called the platform on, so there is no public-origin setting and no trust placed in a caller-supplied `Host`. `sessionId` is the remembered binding — discovery information, not a readiness guarantee.
-- **Authorization parity on the runtime path.** The proxy's ensure call forwards the edge's trusted identity headers, or a pod's `gw-` bearer ([ADR-0062](0062-a-pod-calls-the-platform-api-as-the-human-who-created-its-project-bounded-to-what-it-created.md)), and the backend gates the agent surface by Organization membership *and* the same per-user Project visibility predicate the Project list uses. The Go ready-cache is keyed by that identity, not by groups alone.
+- **Authorization parity on the runtime path.** The proxy's ensure call forwards the edge's trusted identity headers, or a pod's `gw-` `service` key ([ADR-0062](0062-a-pod-calls-the-platform-api-as-the-human-who-created-its-project-bounded-to-what-it-created.md), admitted only while its `connect_project` switch is on, so the proxy never caches a pod's answer, [ADR-0087](0087-the-public-api-is-a-built-in-external-service-that-api-v1-itself-serves-and-pods-reach-it-only-through-its-service-host.md)), and the backend gates the agent surface by Organization membership *and* the same per-user Project visibility predicate the Project list uses. The Go ready-cache is keyed by that identity, not by groups alone.
 
 ## Considered options
 
@@ -35,7 +35,7 @@ Session ids are descending-encoded, so a newer Session sorts lower as a string. 
 ## Consequences — accepted costs
 
 - **No platform-owned chat schema stability.** The conversation is the protocol of the deployed build. A bump can change bodies, kinds and defaults, and the platform will not absorb that for consumers.
-- **No per-prompt outcome.** Native `wait` means the Session went idle, not that a particular prompt succeeded. Consumers read the outcome from messages or events.
+- **No platform-owned per-prompt outcome.** The platform adds no outcome call; a consumer reads the outcome from opencode's events, and native `wait` is experimental and means only that the Session went idle.
 - **The delivery default is native `steer`.** A program that wants its second prompt to wait for the next turn sends `queue` itself.
 - **Interrupt is native.** It stops the turn; parked inbox items are the caller's business.
 - **Events are opencode's stream as it is**, unfiltered and not re-framed.
@@ -45,5 +45,5 @@ Session ids are descending-encoded, so a newer Session sorts lower as a string. 
 
 ## Consequences — what improves
 
-- The verified opencode client works against a Project, with a documented fetch adapter for the upstream root-relative URL bug (anomalyco/opencode#46498).
+- The verified opencode client works against a Project as it is.
 - One connection operation serves both the app and programs, so the browser and a program bind the same Session by construction.

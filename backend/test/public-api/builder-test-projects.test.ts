@@ -5,6 +5,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { agentSettings, agents, environments, projectEnvironments, projects, skills } from '../../db/schema';
@@ -20,21 +21,23 @@ import {
   addMember,
   createTenant,
   createProject,
-  platformApiKeyFor,
+  callerIdentityFor,
   stampProjectKind,
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
 
-function bearer(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}` };
+function asCaller(callerIdentity: string): Record<string, string> {
+  return { [callerIdentityHeader]: callerIdentity };
 }
 
 const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? '';
 const IMAGE_MIGRATE_SCRIPT = resolve('../agent-config/scripts/agent-workspace-migrate.mjs');
 
 async function imageWithPlatformIgnores(gitignore: string): Promise<string> {
-  const { withPlatformIgnores } = (await import(IMAGE_MIGRATE_SCRIPT)) as { withPlatformIgnores(text: string): string };
+  const { withPlatformIgnores } = (await import(IMAGE_MIGRATE_SCRIPT)) as {
+    withPlatformIgnores: (text: string) => string;
+  };
   return withPlatformIgnores(gitignore);
 }
 
@@ -99,14 +102,14 @@ describe('a Builder chat pod creating a test Project', () => {
       createdBy: creator.userId,
       builderChatId: skillChatId,
     });
-    return platformApiKeyFor(app, tenant, skillChatId);
+    return callerIdentityFor(app, tenant, skillChatId);
   }
 
   async function createTestProject(title: string) {
     return app.inject({
       method: 'POST',
       url: '/api/v1/projects',
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { title, agentId: childAgentId, kind: 'test' },
     });
   }
@@ -125,7 +128,6 @@ describe('a Builder chat pod creating a test Project', () => {
     colleague = await addMember(app, tenant, [Perms.usePublicApi]);
 
     const chatAgent = await seedLiveAgent(tenant.tenantId, creator.userId);
-    await db.update(agentSettings).set({ platformApi: true }).where(eq(agentSettings.agentId, chatAgent.id));
     childAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId, { visibility: 'private' })).id;
     otherAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
     chatAgentId = chatAgent.id;
@@ -134,7 +136,7 @@ describe('a Builder chat pod creating a test Project', () => {
     await stampProjectKind(chatId, 'agent_builder_chat');
     await db.update(agents).set({ builderChatId: chatId }).where(eq(agents.id, childAgentId));
     await defaultToProduction(childAgentId);
-    chatKey = await platformApiKeyFor(app, tenant, chatId);
+    chatKey = callerIdentityFor(app, tenant, chatId);
   });
 
   afterEach(async () => {
@@ -164,14 +166,14 @@ describe('a Builder chat pod creating a test Project', () => {
 
   it('names the chat’s Test Project on GET /me, and nothing for anyone else', async () => {
     const me = (headers: Record<string, string>) => app.inject({ method: 'GET', url: '/api/v1/me', headers });
-    expect((await me(bearer(chatKey))).json()).toMatchObject({ builderTestProject: null });
+    expect((await me(asCaller(chatKey))).json()).toMatchObject({ builderTestProject: null });
 
     const id = (await createTestProject('Found again')).json<{ id: string }>().id;
 
-    expect((await me(bearer(chatKey))).json()).toMatchObject({ builderTestProject: { id } });
+    expect((await me(asCaller(chatKey))).json()).toMatchObject({ builderTestProject: { id } });
     expect((await me(creator.headers)).json()).toMatchObject({ builderTestProject: null });
-    const testKey = await platformApiKeyFor(app, tenant, id);
-    expect((await me(bearer(testKey))).json()).toMatchObject({ builderTestProject: null });
+    const testKey = callerIdentityFor(app, tenant, id);
+    expect((await me(asCaller(testKey))).json()).toMatchObject({ builderTestProject: null });
   });
 
   it('hands the test Project to its creator and to the pod, and hides it from a colleague', async () => {
@@ -179,7 +181,7 @@ describe('a Builder chat pod creating a test Project', () => {
     const id = created.json<{ id: string }>().id;
 
     expect(
-      (await app.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers: bearer(chatKey) })).statusCode
+      (await app.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers: asCaller(chatKey) })).statusCode
     ).toBe(200);
     expect(
       (await app.inject({ method: 'GET', url: `/api/v1/projects/${id}`, headers: creator.headers })).statusCode
@@ -215,7 +217,7 @@ describe('a Builder chat pod creating a test Project', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/projects',
-      headers: bearer(chatKey),
+      headers: asCaller(chatKey),
       payload: { title: 'Wrong Agent', agentId: otherAgentId, kind: 'test' },
     });
 
@@ -232,7 +234,7 @@ describe('a Builder chat pod creating a test Project', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/projects',
-      headers: bearer(key),
+      headers: asCaller(key),
       payload: { title: 'Skill on another Agent', agentId: otherAgentId, kind: 'test' },
     });
 
@@ -254,12 +256,12 @@ describe('a Builder chat pod creating a test Project', () => {
 
   it('refuses kind from a pod whose own Project is not a Builder chat', async () => {
     const ordinaryId = await createProject(app, tenant, { createdBy: creator.userId });
-    const ordinaryKey = await platformApiKeyFor(app, tenant, ordinaryId);
+    const ordinaryKey = callerIdentityFor(app, tenant, ordinaryId);
 
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/projects',
-      headers: bearer(ordinaryKey),
+      headers: asCaller(ordinaryKey),
       payload: { title: 'Not a test', agentId: childAgentId, kind: 'test' },
     });
 
@@ -289,12 +291,12 @@ describe('a Builder chat pod creating a test Project', () => {
       const saved = await app.inject({
         method: 'PUT',
         url: `/api/v1/agents/${childAgentId}/template`,
-        headers: bearer(chatKey),
+        headers: asCaller(chatKey),
       });
       expect(saved.statusCode).toBe(200);
     }
 
-    function refresh(action: 'update' | 'reset', headers: Record<string, string> = bearer(chatKey), id = testId) {
+    function refresh(action: 'update' | 'reset', headers: Record<string, string> = asCaller(chatKey), id = testId) {
       return app.inject({ method: 'POST', url: `/api/v1/projects/${id}/test/${action}`, headers });
     }
 
@@ -388,17 +390,17 @@ describe('a Builder chat pod creating a test Project', () => {
         args: { podName: pods().assignedPodName(testId) },
       });
       expect(await testProjectIdsOfChat()).toEqual([testId]);
-      const same = await app.inject({ method: 'GET', url: `/api/v1/projects/${testId}`, headers: bearer(chatKey) });
+      const same = await app.inject({ method: 'GET', url: `/api/v1/projects/${testId}`, headers: asCaller(chatKey) });
       expect(same.json()).toMatchObject({ id: testId, kind: 'test' });
     });
 
     it('refuses both refreshes to everyone but the chat that created the Test Project', async () => {
-      const testKey = await platformApiKeyFor(app, tenant, testId);
+      const testKey = callerIdentityFor(app, tenant, testId);
       const otherChatKey = await skillChatKey();
       const ordinary = await app.inject({
         method: 'POST',
         url: '/api/v1/projects',
-        headers: bearer(chatKey),
+        headers: asCaller(chatKey),
         payload: { title: 'Not a test', agentId: otherAgentId },
       });
       expect(ordinary.statusCode).toBe(201);
@@ -410,9 +412,9 @@ describe('a Builder chat pod creating a test Project', () => {
           type: 'urn:opsiforce:error:permission-denied',
         });
         expect((await refresh(action, colleague.headers)).statusCode).toBe(404);
-        expect((await refresh(action, bearer(testKey))).statusCode).toBe(404);
-        expect((await refresh(action, bearer(otherChatKey))).statusCode).toBe(404);
-        expect((await refresh(action, bearer(chatKey), ordinaryId)).statusCode).toBe(403);
+        expect((await refresh(action, asCaller(testKey))).statusCode).toBe(404);
+        expect((await refresh(action, asCaller(otherChatKey))).statusCode).toBe(404);
+        expect((await refresh(action, asCaller(chatKey), ordinaryId)).statusCode).toBe(403);
       }
       expect(await readFile(join(workspaceOf(testId), 'app/dropped.md'), 'utf8')).toBe('dropped\n');
       expect(

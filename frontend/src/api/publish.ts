@@ -44,6 +44,11 @@ export interface PublishDto {
   scheduleIds: string[];
 }
 
+export type PublishReportLine =
+  | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'carried' }
+  | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'failed'; code: string }
+  | { kind: 'skills-off'; switchedOff: string[]; switchedOn: string[] };
+
 export interface PublishJob {
   id: string;
   projectEnvironmentId: string;
@@ -51,6 +56,7 @@ export interface PublishJob {
   status: PublishJobStatus;
   commitSha: string | null;
   error: string | null;
+  report: PublishReportLine[];
   createdAt: string;
   updatedAt: string;
 }

@@ -9,6 +9,7 @@ import {
   agentSettings,
   agents,
   environments,
+  externalServices,
   projectEnvironments,
   projects,
   skillVersions,
@@ -62,11 +63,10 @@ export async function seedLiveAgent(
     origin: 'custom',
     visibility,
     createdBy: userId,
-    poolSize: 0,
     ...(createdAt ? { createdAt } : {}),
   });
   if (disabled) await db.insert(tenantDisabledAgents).values({ tenantId, agentId: id });
-  await db.insert(agentSettings).values({ agentId: id, defaultEnvironmentId: environmentId, platformApi: false });
+  await db.insert(agentSettings).values({ agentId: id, defaultEnvironmentId: environmentId });
   if (withProfile) {
     await db
       .insert(agentProfiles)
@@ -94,6 +94,7 @@ export async function ensureBuiltInSkill(name: string): Promise<{ skillId: strin
     .from(skills)
     .where(and(eq(skills.name, name), isNull(skills.tenantId)))
     .limit(1);
+  if (existing) await db.update(skills).set({ retiredAt: null }).where(eq(skills.id, existing.id));
   if (existing?.latestVersionId) return { skillId: existing.id, versionId: existing.latestVersionId };
 
   const skillId = existing?.id ?? randomUUID();
@@ -104,6 +105,37 @@ export async function ensureBuiltInSkill(name: string): Promise<{ skillId: strin
   await db
     .insert(skillVersions)
     .values({ id: versionId, skillId, version: 1, contentHash: `hash-${versionId}`, createdVia: 'reconciler' });
+  await db.update(skills).set({ latestVersionId: versionId }).where(eq(skills.id, skillId));
+  return { skillId, versionId };
+}
+
+export async function ensureBuiltInServiceSkill(slug: string): Promise<{ skillId: string; versionId: string }> {
+  const [service] = await db
+    .select({ id: externalServices.id })
+    .from(externalServices)
+    .where(and(eq(externalServices.slug, slug), isNull(externalServices.tenantId)))
+    .limit(1);
+  const serviceId = service?.id ?? randomUUID();
+  if (!service) await db.insert(externalServices).values({ id: serviceId, origin: 'built_in', slug });
+
+  const name = `service-${slug}`;
+  const [existing] = await db
+    .select({ id: skills.id, latestVersionId: skills.latestVersionId })
+    .from(skills)
+    .where(and(eq(skills.name, name), isNull(skills.tenantId)))
+    .limit(1);
+  if (existing?.latestVersionId) return { skillId: existing.id, versionId: existing.latestVersionId };
+
+  const skillId = existing?.id ?? randomUUID();
+  if (!existing) {
+    await db
+      .insert(skills)
+      .values({ id: skillId, name, origin: 'built_in', visibility: 'public', externalServiceId: serviceId });
+  }
+  const versionId = randomUUID();
+  await db
+    .insert(skillVersions)
+    .values({ id: versionId, skillId, version: 1, contentHash: `hash-${versionId}`, createdVia: 'service' });
   await db.update(skills).set({ latestVersionId: versionId }).where(eq(skills.id, skillId));
   return { skillId, versionId };
 }

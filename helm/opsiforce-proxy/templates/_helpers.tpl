@@ -64,3 +64,8 @@ proxy_set_header X-Forwarded-Preferred-Username "{{ .Values.auth.static.preferre
 proxy_set_header X-Forwarded-Email "{{ .Values.auth.static.email }}";
 proxy_set_header X-Forwarded-Groups "{{ include "opsiforce-proxy.staticGroups" . }}";
 {{- end }}
+
+{{- define "opsiforce-proxy.dropOpsiforceHeaders" -}}
+proxy_set_header X-Opsiforce-Caller "";
+proxy_set_header X-Opsiforce-Expected-Manifest "";
+{{- end }}

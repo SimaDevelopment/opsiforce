@@ -96,12 +96,14 @@ spec:
                 - --email-domain=*
                 - --oidc-email-claim={{ .Values.oauth2Proxy.emailClaim | default "preferred_username" }}
                 - --pass-access-token=true
+                {{- if .Values.oauth2Proxy.clientSecret }}
                 - --client-secret={{ .Values.oauth2Proxy.clientSecret }}
+                {{- end }}
                 - --oidc-issuer-url={{ .Values.oauth2Proxy.issuerUrl }}
                 {{- if .Values.oauth2Proxy.logoutUrl }}
                 - --backend-logout-url={{ .Values.oauth2Proxy.logoutUrl }}
                 {{- end }}
-                - --cookie-secure=false
+                - --cookie-secure={{ .Values.oauth2Proxy.cookieSecure | default false }}
                 - --skip-jwt-bearer-tokens=true
                 - --cookie-csrf-per-request=true
                 - --redirect-url={{ .Values.oauth2Proxy.redirectUrl }}
@@ -115,8 +117,8 @@ spec:
                 - --skip-auth-route=GET=^/api/v1/runtime/openapi.json$
                 - --skip-auth-route=GET=^/api/v1/docs(/.*)?$
                 - --api-route=^/api/(v1|proxy)/
-                - --skip-auth-route=POST=^/api/external-services/webhooks/.*$
                 - --cookie-refresh=4m
+                - --upstream-timeout=2m
                 {{- range .Values.oauth2Proxy.extraArgs }}
                 - {{ . | quote }}
                 {{- end }}

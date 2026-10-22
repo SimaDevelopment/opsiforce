@@ -23,7 +23,7 @@ import { TenantService } from '../tenant/tenant.service';
 import { ProjectService } from './project.service';
 import { ProjectEventsService } from './project-events.service';
 import { PROJECT_EXPORT_KIND, type ExportManifest } from '../export/project-export.types';
-import { AGENT_EXPORT_KIND } from '../agent/agent-export';
+import { wrongExportKind } from '../export/export-manifest';
 import {
   importsRootPath,
   PROJECT_IMPORT_QUEUE,
@@ -324,12 +324,8 @@ export class ProjectImportService {
 }
 
 export function assertProjectExportKind(manifest: { kind?: unknown }): void {
-  if (manifest.kind === undefined || manifest.kind === PROJECT_EXPORT_KIND) return;
-  throw new BadRequestException(
-    manifest.kind === AGENT_EXPORT_KIND
-      ? "This is an Agent export; import it from the Store's Agents tab."
-      : `This is a \`${String(manifest.kind)}\` export, not a project export.`
-  );
+  const wrongKind = wrongExportKind(manifest, PROJECT_EXPORT_KIND);
+  if (wrongKind) throw new BadRequestException(wrongKind);
 }
 
 function toResponse(row: typeof projectTransferJobs.$inferSelect): ProjectImportJobResponse {

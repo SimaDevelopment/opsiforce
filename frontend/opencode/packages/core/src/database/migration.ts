@@ -6,7 +6,7 @@ import { supportsForeignKeyToggle } from "#sqlite"
 import type { EffectDrizzleSqlite } from "./drizzle.js"
 import { migrations } from "./migration.gen.js"
 import schema from "./schema.gen.js"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 
 type Database = EffectDrizzleSqlite.EffectSQLiteDatabase
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0]
@@ -125,7 +125,9 @@ export function applyOnly(db: Database, input: Migration[]) {
               const relaxForeignKeys = supportsForeignKeyToggle
                 ? db.run(sql`PRAGMA foreign_keys = OFF`)
                 : db.run(sql`PRAGMA defer_foreign_keys = ON`)
-              const restoreForeignKeys = supportsForeignKeyToggle ? db.run(sql`PRAGMA foreign_keys = ON`) : Effect.void
+              const restoreForeignKeys = supportsForeignKeyToggle
+                ? Effect.asVoid(db.run(sql`PRAGMA foreign_keys = ON`))
+                : Effect.void
               yield* relaxForeignKeys
               yield* apply.pipe(Effect.ensuring(restoreForeignKeys.pipe(Effect.orDie)))
             })

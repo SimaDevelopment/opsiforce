@@ -1,9 +1,9 @@
 import { Component, createMemo, Show } from "solid-js"
 import { useData } from "@/runtime/server/current"
 import { useWorkspaceLocation } from "@/workspaces/location"
-import { Dialog, DialogBody, DialogHeader, DialogTitleGroup } from "@opencode-ai/ui/dialog"
-import { List } from "@opencode-ai/ui/list"
-import { Switch } from "@opencode-ai/ui/switch"
+import { Dialog, DialogBody, DialogHeader, DialogTitleGroup } from "@opencode/ui/dialog"
+import { List } from "@opencode/ui/list"
+import { Switch } from "@opencode/ui/switch"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useMcpToggle } from "@/providers/connect/mcp"
 
@@ -56,17 +56,25 @@ export const DialogSelectMcp: Component = () => {
             const mcpStatus = () =>
               data.location.mcp.server.list({ directory: sdk().directory })?.find((server) => server.name === i.name)
                 ?.status
+
             const status = () => mcpStatus()?.status
+
             const statusLabel = () => {
               const key = status() ? statusLabels[status() as keyof typeof statusLabels] : undefined
+
               if (!key) return
+
               return language.t(key)
             }
+
             const error = () => {
               const s = mcpStatus()
+
               if (s?.status === "failed") return s.error
             }
+
             const enabled = () => status() === "connected"
+
             return (
               <div class="w-full flex items-center justify-between gap-x-3">
                 <div class="flex flex-col gap-0.5 min-w-0">

@@ -12,14 +12,14 @@ adrs: [0019]
 
 ### Kubernetes is authoritative
 
-- The running unit is the [ProjectEnvironment](../../CONTEXT.md); each owns a status, a cached pod IP and a workspace directory ([Environments](../projects/environments.md)).
+- The running unit is the [ProjectEnvironment](../../GLOSSARY.md); each owns a status, a cached pod IP and a workspace directory ([Environments](../projects/environments.md)).
 - Pod existence is looked up by the deterministic name `opsiforce-agent-{environmentId[:8]}`, which is never persisted; readiness, IP and failure reason are read from the pod's status, and the last attempt time from its creation timestamp.
 - The cached pod IP is a routing fast path only; any divergence (proxy 5xx, missing pod, IP mismatch) triggers a re-read against Kubernetes and repairs the cache.
 - Two writers converge without locks: pod creation treats a 409 AlreadyExists as success, and every status transition is a conditional `UPDATE … WHERE status = '<expected>'` whose loser updates zero rows and stops.
 
 ### Startup
 
-- A new [Project](../../CONTEXT.md) claims a running environment from the [pending project pool](pending-project-pools.md); every other path is the ensure dispatcher the runtime proxies call before forwarding ([Request Flows](request-flows.md)).
+- A new [Project](../../GLOSSARY.md) claims a running environment from the [pending project pool](pending-project-pools.md); every other path is the ensure dispatcher the runtime proxies call before forwarding ([Request Flows](request-flows.md)).
 - The dispatcher wakes a `suspended` environment, checks Kubernetes for a `starting` one, and serves an `active` one from the cached IP; a startup worker creates or adopts the pod, waits on informer events for Ready plus IP, and flips the row to `active`.
 
 ```
@@ -58,7 +58,8 @@ adrs: [0019]
 
 ### Suspension
 
-- Each environment has two Redis TTL keys, one per kind of [Keep-alive activity](../../CONTEXT.md): agent activity and app activity. Each kind has its own idle timeout and the pod is suspended only once both have expired.
+- Each environment has two Redis TTL keys, one per kind of [Keep-alive activity](../../GLOSSARY.md): agent activity and app activity. Each kind has its own idle timeout and the pod is suspended only once both have expired. The ProjectEnvironment serving a [Custom External Service](../../GLOSSARY.md) at its Default environment is never suspended for idleness ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
+- A Working Agent keeps the agent key alive: the backend touches it when a run starts, on each 60-second re-read while the environment is Working, and when it turns Idle, so the agent idle timeout counts from when the Agent goes Idle and a run driven from the Public API or a closed tab is never suspended mid-turn ([Agent Status](../agent-system/agent-status.md)). There is no cap on Working, ours or opencode's; a stuck level is cleared by the re-read, and a run waiting on a question or permission nobody answers holds the pod until someone answers or interrupts it.
 - Expiry is delivered by Redis keyspace notifications (`notify-keyspace-events Ex`, set in the Redis deployment); the listener suspends with the conditional update, deletes the pod, and is backstopped by a startup sweep for expiries missed while the backend was down.
 
 ## States

@@ -5,7 +5,8 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { Queue } from 'bullmq';
 import { ProjectController } from './project.controller';
 import { AppAgentController } from './app.controller.agent';
-import { AgentStatusController } from './agent-status.controller';
+import { AgentObservationsController } from './agent-observations.controller';
+import { AgentObservationsService } from './agent-observations.service';
 import { AgentStatusStreamController } from './agent-status-stream.controller';
 import { PodClassController } from './pod-class.controller';
 import { ProjectService } from './project.service';
@@ -38,6 +39,7 @@ import { EnvironmentModule } from '../environment/environment.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
+import { ModelProvidersModule } from '../model-provider/model-provider.module';
 
 @Module({
   imports: [
@@ -67,13 +69,14 @@ import { ExternalServicesModule } from '../external-services';
     ProjectEnvironmentModule,
     forwardRef(() => AgentSessionModule),
     ExternalServicesModule,
+    forwardRef(() => ModelProvidersModule),
     GitModule,
     AppReadinessModule,
   ],
   controllers: [
     ProjectController,
     AppAgentController,
-    AgentStatusController,
+    AgentObservationsController,
     AgentStatusStreamController,
     PodClassController,
     ProjectImportController,
@@ -90,6 +93,7 @@ import { ExternalServicesModule } from '../external-services';
     ProjectImportUploadCleanupProcessor,
     ProxyService,
     AppService,
+    AgentObservationsService,
   ],
   exports: [
     ProjectService,
@@ -97,6 +101,7 @@ import { ExternalServicesModule } from '../external-services';
     ProjectFilesService,
     ProjectImportService,
     ProjectImportUploadService,
+    ProxyService,
     AppReadinessModule,
   ],
 })

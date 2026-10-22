@@ -307,7 +307,7 @@ function collectFrontmatterErrors(
   entries                    ,
   byKey                               ,
   options                          ,
-  errors               
+  errors
 )       {
   const allowed = new Set        (ALLOWED_FRONTMATTER_KEYS);
   const seenKeys = new Set        ();
@@ -408,7 +408,7 @@ function collectLints(
   text        ,
   bodyStartLine        ,
   byKey                               ,
-  lints               
+  lints
 )       {
   const lines = splitLines(text);
   const bodyLines = Math.max(0, lines.length - (bodyStartLine - 1));

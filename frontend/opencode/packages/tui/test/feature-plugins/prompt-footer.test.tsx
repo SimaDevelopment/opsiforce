@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { RGBA, TextRenderable } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import type { Context } from "@opencode-ai/plugin/tui/context"
+import type { Context } from "@opencode/plugin/tui/context"
 import { createSignal } from "solid-js"
 import { PromptFooter } from "../../src/feature-plugins/prompt/footer"
 
@@ -14,8 +14,8 @@ test("prompt footer separates simultaneous subagent, shell, and usage status", a
     location: { directory: "/workspace" },
     theme: {
       text: {
-        default: color,
-        subdued,
+        base: color,
+        muted: subdued,
       },
     },
     keymap: {
@@ -70,8 +70,8 @@ test("prompt footer can hide details", async () => {
     location: { directory: "/workspace" },
     theme: {
       text: {
-        default: color,
-        subdued: color,
+        base: color,
+        muted: color,
       },
     },
     keymap: {

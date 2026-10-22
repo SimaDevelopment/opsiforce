@@ -1,3 +1,4 @@
+import { defaultProfileModel } from '../../src/agent/agent-config';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,17 +8,20 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, assert, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import {
+  agentPodSettings,
+  tenantLimits,
   agentProfileSkills,
   agentProfiles,
   agentSettings,
   agents,
   environments,
+  projectPodSettings,
   projects,
   skillVersions,
   skills,
 } from '../../db/schema';
 import { AgentController } from '../../src/agent/agent.controller';
-import { BUILDER_AGENT_SLUG, liveBuiltInSlugs } from '../../src/agent/agent-visibility';
+import { BUILDER_AGENT_SLUG, liveBuiltInSlugs, warmPooledCustomAgentsWhere } from '../../src/agent/agent-visibility';
 import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
 import { Perms } from '../../src/permission/permission.constants';
 import { RELAXED_PERMISSION_KEY } from '../../src/permission/permission.guard';
@@ -128,10 +132,10 @@ describe('creating a custom agent', () => {
       createdBy: author.userId,
       projectCount: 0,
     });
-    expect(created.settings).toEqual({ defaultEnvironmentId: productionId, platformApi: false });
+    expect(created.settings).toMatchObject({ defaultEnvironmentId: productionId });
 
     const development = created.profiles.find((profile) => profile.environmentId === developmentId);
-    expect(development).toMatchObject({ promptBody: '', model: 'openai/gpt-5.6-sol', variant: 'high' });
+    expect(development).toMatchObject({ promptBody: '', ...defaultProfileModel() });
     expect(development?.skills?.map((skill) => skill.name)).toEqual(['platform']);
 
     const production = created.profiles.find((profile) => profile.environmentId === productionId);
@@ -254,6 +258,18 @@ describe('agent skills', () => {
 
     const platform = (await service.listSkills(author, agent.id)).find((row) => row.name === 'platform');
     expect(await code(service.removeSkill(author, agent.id, platform?.skillId ?? ''))).toBe('not_editable');
+  });
+
+  it("refuses a skill a built-in agent's image already ships, and takes it where the package leaves it out", async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const { skillId } = await ensureBuiltInSkill('dates');
+
+    expect(await code(service.setSkill(author, appBuilder, skillId, {}))).toBe('duplicate_skill_name');
+
+    await service.setSkill(author, makara, skillId, {});
+    expect((await service.listSkills(author, makara)).map((row) => row.name)).toContain('dates');
+    await service.removeSkill(author, makara, skillId);
   });
 
   it('parks one profile per organization on a built-in agent and refuses publishing it', async () => {
@@ -396,6 +412,7 @@ describe('publishing an agent to another environment', () => {
       prompt: 'same',
       model: null,
       skills: { added: [], removed: [], repinned: [] },
+      serviceSettings: [],
       template: 'none',
     });
 
@@ -526,7 +543,12 @@ describe('agent lifecycle', () => {
       variant: 'low',
     });
 
-    const copy = await service.duplicate(author, source.id, { displayName: agentName() });
+    const { agent: copy } = await service.duplicate(
+      author,
+      source.id,
+      { displayName: agentName() },
+      { canConfigureProjects: true }
+    );
 
     const development = copy.profiles.find((profile) => profile.environmentId === developmentId);
     expect(copy).toMatchObject({ visibility: 'private', origin: 'custom' });
@@ -574,12 +596,9 @@ describe('agent lifecycle', () => {
   it('points new projects at another environment through settings', async () => {
     const agent = await service.create(author, { displayName: agentName() });
 
-    const updated = await service.updateSettings(author, agent.id, {
-      defaultEnvironmentId: productionId,
-      platformApi: true,
-    });
+    const updated = await service.updateSettings(author, agent.id, { defaultEnvironmentId: productionId });
 
-    expect(updated.settings).toEqual({ defaultEnvironmentId: productionId, platformApi: true });
+    expect(updated.settings).toMatchObject({ defaultEnvironmentId: productionId });
     const foreign = await defaultEnvironmentId(otherTenantId);
     expect(await code(service.updateSettings(author, agent.id, { defaultEnvironmentId: foreign }))).toContain(
       'NotFoundException'
@@ -602,9 +621,176 @@ describe('agent lifecycle', () => {
   it('leaves an existing agent on a Development default as it is', async () => {
     const agent = await seedLiveAgent(tenantId, author.userId);
 
-    const kept = await service.updateSettings(author, agent.id, { platformApi: true });
+    const kept = await service.updateSettings(author, agent.id, {});
 
-    expect(kept).toMatchObject({ live: true, settings: { defaultEnvironmentId: developmentId, platformApi: true } });
+    expect(kept).toMatchObject({ live: true, settings: { defaultEnvironmentId: developmentId } });
+  });
+});
+
+describe('what new projects of an agent start with', () => {
+  const copyGrants = { canConfigureProjects: true };
+
+  beforeAll(async () => {
+    await db.insert(tenantLimits).values({ tenantId, limitKey: 'warm_pool', value: null }).onConflictDoNothing();
+  });
+
+  async function freshCaller(): Promise<AgentCaller> {
+    const id = await createTenantRow();
+    await harness.environments.ensureDefaultForTenant(id);
+    return { tenantId: id, userId: await createUserRow(), canManageAgents: true };
+  }
+
+  async function sizedAgent(caller: AgentCaller = author) {
+    const agent = await service.create(caller, { displayName: agentName() });
+    await service.updatePodClass(caller, agent.id, { podClass: 'medium' });
+    return service.updateSettings(caller, agent.id, { warmPoolSize: 2 });
+  }
+
+  it('keeps the source’s pod settings and Ready Projects on a Duplicate unless another choice is sent', async () => {
+    const source = await sizedAgent();
+
+    const kept = await service.duplicate(author, source.id, { displayName: agentName() }, copyGrants);
+    const changed = await service.duplicate(
+      author,
+      source.id,
+      { displayName: agentName(), resources: { podClass: 'small' }, warmPoolSize: 0 },
+      copyGrants
+    );
+
+    expect(kept.agent).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+    expect(changed.agent).toMatchObject({ podSettings: { podClass: 'small' }, settings: { warmPoolSize: 0 } });
+    expect(await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, changed.agent.id))).toHaveLength(
+      0
+    );
+  });
+
+  it('holds an Organization’s Ready Projects to its Ready Projects limit across agents', async () => {
+    const caller = await freshCaller();
+    await db.insert(tenantLimits).values({ tenantId: caller.tenantId, limitKey: 'warm_pool', value: 3 });
+    const first = await sizedAgent(caller);
+    const second = await service.create(caller, { displayName: agentName() });
+
+    expect(await code(service.updateSettings(caller, second.id, { warmPoolSize: 2 }))).toBe('limit_reached');
+    await service.updateSettings(caller, second.id, { warmPoolSize: 1 });
+    expect(await code(service.duplicate(caller, first.id, { displayName: agentName() }, copyGrants))).toBe(
+      'limit_reached'
+    );
+    await service.updateSettings(caller, first.id, { warmPoolSize: 1 });
+    await service.updateSettings(caller, first.id, { warmPoolSize: 2 });
+    expect((await service.findOne(caller, first.id)).settings.warmPoolSize).toBe(2);
+  });
+
+  it('starts every agent at Small with no Ready Projects', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    expect(agent.podSettings).toEqual({
+      podClass: 'small',
+      cpuMillicores: 100,
+      memoryRequestMib: 2048,
+      memoryLimitMib: 4096,
+    });
+    expect(agent.settings).toMatchObject({ warmPoolSize: 0, maxWarmPoolSize: 3 });
+    expect(await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, agent.id))).toHaveLength(0);
+  });
+
+  it('stores the pod class in agent_pod_settings and the Ready Projects count in agent_settings, reconciling the pool', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    await service.updatePodClass(author, agent.id, { podClass: 'medium' });
+    const updated = await service.updateSettings(author, agent.id, { warmPoolSize: 2 });
+
+    expect(updated.podSettings).toEqual({
+      podClass: 'medium',
+      cpuMillicores: 1000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 8192,
+    });
+    expect(updated.settings.warmPoolSize).toBe(2);
+    const [settingsRow] = await db.select().from(agentSettings).where(eq(agentSettings.agentId, agent.id));
+    expect(settingsRow?.warmPoolSize).toBe(2);
+    expect(harness.fakes.pool.callsTo('reconcileAgent').filter((call) => call.args.agentId === agent.id)).toHaveLength(
+      2
+    );
+  });
+
+  it('clamps a Custom pod class to the platform bounds', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    const custom = await service.updatePodClass(author, agent.id, {
+      podClass: 'custom',
+      cpuMillicores: 99_000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 1024,
+    });
+
+    expect(custom.podSettings).toEqual({
+      podClass: 'custom',
+      cpuMillicores: 4000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 4096,
+    });
+  });
+
+  it('refuses a Ready Projects count outside 0–3 and a missing pod class', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+
+    for (const warmPoolSize of [4, -1, 1.5]) {
+      expect(await code(service.updateSettings(author, agent.id, { warmPoolSize }))).toBe('bad_request');
+    }
+    expect(await code(service.updatePodClass(author, agent.id, null as never))).toBe('bad_request');
+    expect(await service.findOne(author, agent.id)).toMatchObject({
+      podSettings: { podClass: 'small' },
+      settings: { warmPoolSize: 0 },
+    });
+  });
+
+  it('copies the pod settings into a project created from the agent, which keeps them after the agent changes', async () => {
+    const agent = await seedLiveAgent(tenantId, author.userId);
+    await service.updatePodClass(author, agent.id, { podClass: 'large' });
+
+    const project = await harness.projects.create({ title: 'inherits', agentId: agent.id }, tenantId, {
+      createdBy: author.userId,
+    });
+    await service.updatePodClass(author, agent.id, { podClass: 'small' });
+
+    const [row] = await db.select().from(projectPodSettings).where(eq(projectPodSettings.projectId, project.id));
+    expect(row).toMatchObject({
+      podClass: 'large',
+      cpuMillicores: 2000,
+      memoryRequestMib: 8192,
+      memoryLimitMib: 16384,
+    });
+  });
+
+  it('keeps warm slots only for an enabled agent with a Default environment profile', async () => {
+    const pooled = await seedLiveAgent(tenantId, author.userId);
+    const disabled = await seedLiveAgent(tenantId, author.userId, { disabled: true });
+    const unpublished = await seedLiveAgent(tenantId, author.userId, { withProfile: false });
+    const unpooled = await seedLiveAgent(tenantId, author.userId);
+    const seeded = [pooled.id, disabled.id, unpublished.id, unpooled.id];
+    await db
+      .update(agentSettings)
+      .set({ warmPoolSize: 2 })
+      .where(inArray(agentSettings.agentId, [pooled.id, disabled.id, unpublished.id]));
+
+    const rows = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(inArray(agents.id, seeded), warmPooledCustomAgentsWhere()));
+
+    expect(rows.map((row) => row.id)).toEqual([pooled.id]);
+  });
+
+  it('releases the warm slots before deleting the agent', async () => {
+    const agent = await service.create(author, { displayName: agentName() });
+    await service.updateSettings(author, agent.id, { warmPoolSize: 3 });
+
+    await service.remove(author, agent.id, noTestProjects);
+
+    expect(harness.fakes.pool.callsTo('releaseAgentSlots')).toContainEqual({
+      method: 'releaseAgentSlots',
+      args: { agentId: agent.id },
+    });
   });
 });
 
@@ -730,7 +916,7 @@ async function seedProject(agentId: string, kind: 'test' | null): Promise<string
   return id;
 }
 
-describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
+describe('disabling an agent for one Organization (ADR-0070)', () => {
   async function freshTenant(): Promise<AgentCaller> {
     const id = await createTenantRow();
     await harness.environments.ensureDefaultForTenant(id);
@@ -763,7 +949,7 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
     expect(await service.findIdByName('makara-app-builder', otherTenantId)).toBe(makara);
   });
 
-  it('refuses to disable the last built-in agent an Organization can start a project on, the Builder aside', async () => {
+  it('refuses to disable the last agent an Organization can start a project on, the Builder aside', async () => {
     await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
     const appBuilder = await ensureBuiltInAgent('app-builder');
     const makara = await ensureBuiltInAgent('makara-app-builder');
@@ -771,10 +957,89 @@ describe('disabling a built-in agent for one Organization (ADR-0072)', () => {
 
     await service.setDisabled(caller, makara, true);
 
-    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_built_in_agent');
+    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_agent');
 
     await service.setDisabled(caller, makara, false);
     await expect(service.setDisabled(caller, appBuilder, true)).resolves.toMatchObject({ disabled: true });
+  });
+
+  it('lets an Organization disable every built-in agent while a custom agent stays enabled', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+
+    await service.setDisabled(caller, makara, true);
+    await expect(service.setDisabled(caller, appBuilder, true)).resolves.toMatchObject({ disabled: true });
+
+    expect(await code(service.setDisabled(caller, custom.id, true))).toBe('last_agent');
+  });
+
+  it('counts only public custom agents published to their default environment, and says so', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    await seedLiveAgent(caller.tenantId, caller.userId, { visibility: 'private' });
+    await seedLiveAgent(caller.tenantId, caller.userId, { withProfile: false });
+    await seedLiveAgent(caller.tenantId, caller.userId, { disabled: true });
+
+    await service.setDisabled(caller, makara, true);
+
+    expect(await code(service.setDisabled(caller, appBuilder, true))).toBe('last_agent');
+    await expect(service.setDisabled(caller, appBuilder, true)).rejects.toThrow(
+      "A private agent, or one with nothing published to its default environment, doesn't count."
+    );
+  });
+
+  it('refuses to point the last custom agent at an environment it has nothing published to', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+    const staging = await harness.environments.create(caller.tenantId, { name: `Staging ${randomUUID().slice(0, 6)}` });
+    await service.setDisabled(caller, makara, true);
+    await service.setDisabled(caller, appBuilder, true);
+
+    expect(await code(service.updateSettings(caller, custom.id, { defaultEnvironmentId: staging.id }))).toBe(
+      'last_agent'
+    );
+    await expect(service.updateSettings(caller, custom.id, { defaultEnvironmentId: staging.id })).rejects.toThrow(
+      "A private agent, or one with nothing published to its default environment, doesn't count."
+    );
+    expect((await service.findOne(caller, custom.id)).settings.defaultEnvironmentId).toBe(
+      await defaultEnvironmentId(caller.tenantId)
+    );
+    await expect(service.updateSettings(caller, custom.id, {})).resolves.toMatchObject({
+      settings: { defaultEnvironmentId: await defaultEnvironmentId(caller.tenantId) },
+    });
+  });
+
+  it('lets only one of two concurrent disables of a built-in and the last custom agent through', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+    await service.setDisabled(caller, makara, true);
+
+    const outcomes = await Promise.allSettled([
+      service.setDisabled(caller, appBuilder, true),
+      service.setDisabled(caller, custom.id, true),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+  });
+
+  it('starts a project that names no agent on a custom agent once every built-in agent is disabled', async () => {
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const makara = await ensureBuiltInAgent('makara-app-builder');
+    const caller = await freshTenant();
+    await seedLiveAgent(caller.tenantId, caller.userId, { visibility: 'private' });
+    const custom = await seedLiveAgent(caller.tenantId, caller.userId);
+
+    await service.setDisabled(caller, makara, true);
+    await service.setDisabled(caller, appBuilder, true);
+
+    expect(await service.getDefaultAgentId(caller.tenantId)).toBe(custom.id);
   });
 
   it('lets only one of two concurrent disables of the last two built-in agents through', async () => {

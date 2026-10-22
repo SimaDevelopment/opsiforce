@@ -39,6 +39,8 @@ export interface SkillAgentUsage {
   id: string;
   name: string;
   displayName: string | null;
+  /** The agent's image package ships it, at the latest Version, with no pin. */
+  shipped: boolean;
   /** Every version this agent pins, one per Environment it carries the skill in. */
   pinnedVersions: number[];
   outdated: boolean;
@@ -55,14 +57,20 @@ export interface Skill {
   disabled: boolean;
   disableable: boolean;
   available: boolean;
+  retired: boolean;
   createdBy: string | null;
   createdByName: string | null;
   builderChatId: string | null;
+  externalServiceId: string | null;
   usedByAgentCount: number;
   outdatedAgentCount: number;
   latestVersion: SkillVersionSummary | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export function isAuthoredSkill(skill: Pick<Skill, 'origin' | 'externalServiceId'>): boolean {
+  return skill.origin === 'custom' && !skill.externalServiceId;
 }
 
 export const skillKeys = {

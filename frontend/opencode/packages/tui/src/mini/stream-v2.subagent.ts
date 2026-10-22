@@ -22,7 +22,7 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageInfo,
   SessionMessageUser,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import { Locale } from "../util/locale"
 import { createFragmentReconciler, fragmentRef, type FragmentReconciler } from "./stream-v2.fragment"
 import { toolImageCommits, userImageCommits } from "./stream-v2.image"
@@ -469,7 +469,7 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     for (let offset = 0; offset < messageIDs.length; offset += FAMILY_DISCOVERY_CONCURRENCY) {
       const batch = messageIDs.slice(offset, offset + FAMILY_DISCOVERY_CONCURRENCY)
       const messages = await Promise.allSettled(
-        batch.map((messageID) => sdk.session.message({ sessionID: child.sessionID, messageID }, { signal })),
+        batch.map((messageID) => sdk.session.message.get({ sessionID: child.sessionID, messageID }, { signal })),
       )
       if (!blockerCurrent(child, epoch, signal)) return permissions
       if (
@@ -541,7 +541,7 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
         replayBlockerEvents(child, "permission")
         input.emit()
       }),
-      sdk.form.list({ sessionID: child.sessionID }, { signal }).then((forms) => {
+      sdk.session.form.list({ sessionID: child.sessionID }, { signal }).then((forms) => {
         if (!blockerCurrent(child, epoch, signal)) return
         child.forms = forms
         replayBlockerEvents(child, "form")
@@ -800,7 +800,7 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
           id: event.data.id,
           name: current?.part.name ?? "tool",
           executed: event.data.executed,
-          providerState: event.data.state,
+          native: event.data.native,
           state: { status: "running", input: event.data.input, metadata: {} },
           time: { created: current?.part.time.created ?? event.created, ran: event.created },
         },
@@ -822,7 +822,7 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
           id: event.data.id,
           name: part?.name ?? "tool",
           executed: part?.executed,
-          providerState: part?.providerState,
+          native: part?.native,
           state: {
             status: "running",
             input: part && part.state.status !== "streaming" ? part.state.input : {},
@@ -852,8 +852,7 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
           id: event.data.id,
           name: part?.name ?? "tool",
           executed: event.data.executed,
-          providerState: part?.providerState,
-          providerResultState: event.data.resultState,
+          native: event.data.native ? { ...part?.native, ...event.data.native } : part?.native,
           state: failed
             ? {
                 status: "error",

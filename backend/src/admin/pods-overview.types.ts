@@ -83,6 +83,28 @@ export interface PodProjectGroupView {
   ghostCount: number;
 }
 
+export type WarmPoolPause = 'disabled' | 'not_published';
+
+export interface WarmPoolSlotView {
+  projectId: string;
+  podName: string;
+  status: PodStatusView | null;
+  ageMs: number | null;
+  claiming: boolean;
+}
+
+export interface WarmPoolAgentView {
+  agentId: string;
+  agentName: string;
+  displayName: string | null;
+  warmPoolSize: number;
+  effectiveSize: number;
+  paused: WarmPoolPause | null;
+  resources: PodResourcesView;
+  slots: WarmPoolSlotView[];
+}
+
 export interface PodsView {
   projects: PodProjectGroupView[];
+  warmPool: WarmPoolAgentView[];
 }

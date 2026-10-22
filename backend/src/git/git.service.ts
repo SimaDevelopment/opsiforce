@@ -1,18 +1,37 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
 const BASE_CONFIG = ['-c', 'safe.directory=*', '-c', 'core.hooksPath=/dev/null'];
 const COMMITTER = ['-c', 'user.email=publish@opsiforce.local', '-c', 'user.name=OpsiForce Publish'];
+const EXECUTABLE_BLOB_MODE = '100755';
+const COMMITTED_FILE_MODES = new Set(['100644', EXECUTABLE_BLOB_MODE]);
+const MAX_BLOB_BYTES = 256 * 1024 * 1024;
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+export interface CommittedFile {
+  path: string;
+  content: Buffer;
+  executable: boolean;
+}
+
+function splitOnce(text: string, separator: string): [string, string] {
+  const index = text.indexOf(separator);
+  return index < 0 ? [text, ''] : [text.slice(0, index), text.slice(index + separator.length)];
+}
 
 @Injectable()
 export class GitService {
   private readonly logger = new Logger(GitService.name);
 
-  private async git(cwd: string, args: string[]): Promise<string> {
-    const { stdout } = await run('git', [...BASE_CONFIG, ...args], { cwd, maxBuffer: 32 * 1024 * 1024 });
+  private async git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
+    const { stdout } = await run('git', [...BASE_CONFIG, ...args], { cwd, env, maxBuffer: 32 * 1024 * 1024 });
     return stdout.trim();
   }
 
@@ -97,6 +116,87 @@ export class GitService {
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
       .map((line) => (line.endsWith('/') ? line.slice(0, -1) : line));
+  }
+
+  async changedSince(dir: string, commit: string): Promise<string[]> {
+    const quoted = ['-c', 'core.quotePath=false'];
+    const changed = await this.git(dir, [...quoted, 'diff', '--name-only', commit, '--']);
+    const untracked = await this.git(dir, [...quoted, 'ls-files', '--others', '--exclude-standard']);
+    return [...new Set([...changed.split('\n'), ...untracked.split('\n')])]
+      .filter((line) => line.length > 0)
+      .toSorted();
+  }
+
+  async hasCommit(dir: string, sha: string): Promise<boolean> {
+    try {
+      await this.git(dir, ['cat-file', '-e', `${sha}^{commit}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async workingTreeDiffs(dir: string, base: string | null, folder: string, pathspecs: string[]): Promise<string[]> {
+    const env = { ...process.env, GIT_INDEX_FILE: join(tmpdir(), `opsiforce-diff-${randomUUID()}`) };
+    try {
+      if (await this.hasCommits(dir)) await this.git(dir, ['read-tree', 'HEAD'], env);
+      await this.git(dir, ['add', '-A', '--', folder], env);
+      return await Promise.all(
+        pathspecs.map((pathspec) =>
+          this.git(
+            dir,
+            [
+              '-c',
+              'core.quotePath=false',
+              'diff',
+              '--cached',
+              '--no-color',
+              '--no-ext-diff',
+              base ?? EMPTY_TREE,
+              '--',
+              pathspec,
+            ],
+            env
+          )
+        )
+      );
+    } finally {
+      await rm(env.GIT_INDEX_FILE, { force: true });
+    }
+  }
+
+  async committedFiles(dir: string, folder: string): Promise<CommittedFile[]> {
+    if (!(await this.hasCommits(dir))) return [];
+    const listing = await this.git(dir, ['-c', 'core.quotePath=false', 'ls-tree', '-r', '-z', 'HEAD', '--', folder]);
+    const prefix = `${folder}/`;
+    const files: CommittedFile[] = [];
+    for (const line of listing.split('\0').filter((entry) => entry.length > 0)) {
+      const [meta, path] = splitOnce(line, '\t');
+      const [mode, type, object] = meta.split(' ');
+      if (type !== 'blob' || !COMMITTED_FILE_MODES.has(mode) || !path.startsWith(prefix)) continue;
+      const { stdout } = await run('git', [...BASE_CONFIG, 'cat-file', 'blob', object], {
+        cwd: dir,
+        encoding: 'buffer',
+        maxBuffer: MAX_BLOB_BYTES,
+      });
+      files.push({ path: path.slice(prefix.length), content: stdout, executable: mode === EXECUTABLE_BLOB_MODE });
+    }
+    return files;
+  }
+
+  async trackedFiles(dir: string, folder: string): Promise<string[]> {
+    const listing = await this.git(dir, ['-c', 'core.quotePath=false', 'ls-files', '-z', '--', folder]);
+    return listing.split('\0').filter((entry) => entry.length > 0);
+  }
+
+  private async hasCommits(dir: string): Promise<boolean> {
+    try {
+      await this.git(dir, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+      return true;
+    } catch (err) {
+      this.logger.debug(`No commits at ${dir}: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   async isRepo(dir: string): Promise<boolean> {

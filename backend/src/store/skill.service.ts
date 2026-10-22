@@ -4,11 +4,34 @@ import { Perms } from '../permission/permission.constants';
 import { CATALOG_LIST_FILTERS } from './catalog-filters';
 import { packSkill, SkillArchiveError, unpackSkill, type SkillTree } from './gate';
 import { isTextFile } from './gate/skill-tree';
-import { imageSkillNames } from './skill-reconciler.service';
+import { readMergedAgentRegistry } from '../agent/agent-config';
+import { ServiceSkillAvailability } from './service-skill-availability';
+import { packageSkillNames } from './skill-tree';
 import { manifestName, manifestSourceRef, SkillPublishService } from './skill-publish.service';
-import { SkillRepository, type SkillListRow, type SkillVersionRow } from './skill.repository';
-import { assertSkillVisibleToUser, canDisableSkill, canEditSkill, type SkillRow } from './skill-visibility';
-import { nameUnavailable, notDisableable, skillInUse, validationFailed, visibilityIncoherent } from './store-errors';
+import {
+  SkillRepository,
+  type BuiltInAgentIdentity,
+  type SkillListRow,
+  type SkillVersionRow,
+} from './skill.repository';
+import {
+  assertSkillVisibleToUser,
+  canDisableSkill,
+  canEditSkill,
+  isRetiredSkill,
+  isServiceSkill,
+  type SkillRow,
+} from './skill-visibility';
+import { isWithinCallingProject } from './calling-project';
+import {
+  nameUnavailable,
+  notDisableable,
+  outsideCallingProject,
+  serviceSkillReadOnly,
+  skillInUse,
+  validationFailed,
+  visibilityIncoherent,
+} from './store-errors';
 import type {
   CreateSkillDto,
   CreateSkillVersionDto,
@@ -26,17 +49,27 @@ import type {
   ValidateSkillDto,
 } from './skill.types';
 
+interface SkillShipper extends BuiltInAgentIdentity {
+  ships: Set<string>;
+}
+
 export interface SkillCaller {
   tenantId: string;
   userId: string;
   canManageSkills: boolean;
+  callingProjectId?: string;
+}
+
+interface Availability {
+  services: ReadonlySet<string>;
 }
 
 @Injectable()
 export class SkillService {
   constructor(
     private readonly repository: SkillRepository,
-    private readonly publishService: SkillPublishService
+    private readonly publishService: SkillPublishService,
+    private readonly serviceSkillAvailability: ServiceSkillAvailability
   ) {}
 
   async list(caller: SkillCaller, rawFilter: string | undefined, query: string | undefined): Promise<SkillSummary[]> {
@@ -44,35 +77,51 @@ export class SkillService {
     if (filter === 'disabled' && !caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
 
     const rows = await this.repository.list(caller.tenantId, caller.userId, filter, query);
-    const fromImage = imageSkillNames();
-    return rows.map((row) => toSummary(row, fromImage, caller.userId));
+    const availability = await this.availability(caller.tenantId);
+    const shippers = await this.shippers();
+    return rows.map((row) => toSummary(row, availability, shippers, caller.userId));
   }
 
   async findOne(caller: SkillCaller, skillId: string): Promise<SkillSummary> {
     await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
     const row = await this.repository.findOne(caller.tenantId, caller.userId, skillId);
     if (!row) throw new NotFoundException(`Skill ${skillId} not found`);
-    return toSummary(row, imageSkillNames(), caller.userId);
+    return toSummary(row, await this.availability(caller.tenantId), await this.shippers(), caller.userId);
   }
 
   async listAgents(caller: SkillCaller, skillId: string): Promise<SkillAgentUsage[]> {
     const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
     const pins = await this.repository.agentPins(skillId, caller.tenantId, caller.userId);
     const omissions = await this.repository.omissionCountsByAgent(skill.name, caller.tenantId);
+    const shipping = skill.origin === 'built_in' ? shippersOf(await this.shippers(), skill.name) : [];
+    const shippingIds = new Set(shipping.map((agent) => agent.id));
     const byAgent = new Map<string, SkillAgentUsage>();
+
+    for (const agent of shipping) {
+      byAgent.set(agent.id, {
+        id: agent.id,
+        name: agent.name,
+        displayName: agent.displayName,
+        shipped: true,
+        pinnedVersions: [],
+        outdated: false,
+        omittedIn: omissions.get(agent.id) ?? 0,
+      });
+    }
 
     for (const pin of pins) {
       const behind = pin.versionId !== skill.latestVersionId;
       const existing = byAgent.get(pin.id);
       if (existing) {
         existing.pinnedVersions.push(pin.version);
-        existing.outdated ||= behind;
+        existing.outdated ||= behind && !shippingIds.has(pin.id);
         continue;
       }
       byAgent.set(pin.id, {
         id: pin.id,
         name: pin.name,
         displayName: pin.displayName,
+        shipped: false,
         pinnedVersions: [pin.version],
         outdated: behind,
         omittedIn: omissions.get(pin.id) ?? 0,
@@ -80,6 +129,12 @@ export class SkillService {
     }
 
     return [...byAgent.values()].toSorted((left, right) => agentLabel(left).localeCompare(agentLabel(right)));
+  }
+
+  /** Which skills each Built-in Agent's image package ships: they reach its Projects without any pin (ADR-0060). */
+  private async shippers(): Promise<SkillShipper[]> {
+    const registered = await this.repository.builtInAgentsNamed(Object.keys(readMergedAgentRegistry().agents));
+    return registered.map((agent) => Object.assign(agent, { ships: packageSkillNames(agent.name) }));
   }
 
   async listVersions(caller: SkillCaller, skillId: string): Promise<SkillVersionResponse[]> {
@@ -125,6 +180,7 @@ export class SkillService {
         userId: caller.userId,
         name,
         displayName: dto.displayName?.trim() || null,
+        createdByProjectId: caller.callingProjectId ?? null,
       });
       return this.findOne(caller, skillId);
     }
@@ -134,6 +190,7 @@ export class SkillService {
       userId: caller.userId,
       name,
       displayName: dto.displayName ?? null,
+      createdByProjectId: caller.callingProjectId ?? null,
       tree: readTree(dto.files),
       createdVia: 'form',
     });
@@ -181,6 +238,7 @@ export class SkillService {
       return this.findOne(caller, skillId);
     }
 
+    if (isServiceSkill(existing)) throw serviceSkillReadOnly(existing.name);
     if (!canEditSkill(existing, caller.userId)) throw nameUnavailable(name);
     if (existing.disabled) throw disabledSkill(existing);
 
@@ -207,6 +265,7 @@ export class SkillService {
       userId: caller.userId,
       name,
       displayName: dto.displayName ?? null,
+      createdByProjectId: caller.callingProjectId ?? null,
       tree,
       createdVia: 'duplicate',
     });
@@ -233,7 +292,8 @@ export class SkillService {
 
   async setDisabled(caller: SkillCaller, skillId: string, disabled: boolean): Promise<SkillSummary> {
     const skill = await this.assertDisableable(caller, skillId);
-    if (disabled !== skill.disabled) await this.repository.setDisabledIn(caller.tenantId, skill.id, disabled, caller.userId);
+    if (disabled !== skill.disabled)
+      await this.repository.setDisabledIn(caller.tenantId, skill.id, disabled, caller.userId);
     return this.findOne(caller, skillId);
   }
 
@@ -258,8 +318,13 @@ export class SkillService {
     await this.repository.deleteSkill(skillId);
   }
 
+  private async availability(tenantId: string): Promise<Availability> {
+    return { services: await this.serviceSkillAvailability.availableServiceIds(tenantId) };
+  }
+
   private async assertDisableable(caller: SkillCaller, skillId: string): Promise<SkillRow> {
     const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
+    if (isServiceSkill(skill)) throw serviceSkillReadOnly(skill.name);
     if (skill.origin === 'custom') return this.assertEditable(caller, skillId);
     if (!canDisableSkill(skill, caller.userId)) {
       throw notDisableable('The `platform` skill stays enabled: every agent carries it to know how the platform works');
@@ -270,8 +335,12 @@ export class SkillService {
 
   private async assertEditable(caller: SkillCaller, skillId: string): Promise<SkillRow> {
     const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
+    if (isServiceSkill(skill)) throw serviceSkillReadOnly(skill.name);
     if (!canEditSkill(skill, caller.userId)) {
       throw new ForbiddenException({ code: 'not_editable', message: `Skill \`${skill.name}\` cannot be edited` });
+    }
+    if (!isWithinCallingProject(skill, caller.callingProjectId)) {
+      throw outsideCallingProject(`Skill \`${skill.name}\``);
     }
     return skill;
   }
@@ -326,8 +395,23 @@ function renameManifest(tree: SkillTree, name: string): SkillTree {
   });
 }
 
-function toSummary(row: SkillListRow, fromImage: Set<string>, userId: string): SkillSummary {
+function shippersOf(shippers: SkillShipper[], skillName: string): SkillShipper[] {
+  return shippers.filter((agent) => agent.ships.has(skillName));
+}
+
+function availableAt(skill: SkillRow, availability: Availability): boolean {
+  if (isServiceSkill(skill)) return availability.services.has(skill.externalServiceId);
+  return !isRetiredSkill(skill);
+}
+
+function toSummary(
+  row: SkillListRow,
+  availability: Availability,
+  shippers: SkillShipper[],
+  userId: string
+): SkillSummary {
   const { skill, latestVersion } = row;
+  const shipping = skill.origin === 'built_in' ? shippersOf(shippers, skill.name).map((agent) => agent.id) : [];
   return {
     id: skill.id,
     name: skill.name,
@@ -337,12 +421,14 @@ function toSummary(row: SkillListRow, fromImage: Set<string>, userId: string): S
     visibility: skill.visibility,
     disabled: skill.disabled,
     disableable: canDisableSkill(skill, userId),
-    available: skill.origin !== 'built_in' || fromImage.has(skill.name),
+    available: availableAt(skill, availability),
+    retired: isRetiredSkill(skill),
     createdBy: skill.createdBy,
     createdByName: row.createdByName,
     builderChatId: skill.builderChatId,
-    usedByAgentCount: row.usedByAgentCount,
-    outdatedAgentCount: row.outdatedAgentCount,
+    externalServiceId: skill.externalServiceId,
+    usedByAgentCount: new Set([...row.pinnedAgentIds, ...shipping]).size,
+    outdatedAgentCount: row.outdatedAgentIds.filter((agentId) => !shipping.includes(agentId)).length,
     latestVersion: latestVersion
       ? { version: latestVersion.version, description: latestVersion.description, flags: latestVersion.flags }
       : null,

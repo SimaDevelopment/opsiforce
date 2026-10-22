@@ -1,12 +1,12 @@
-import { getDirectory, getFilename } from "@opencode-ai/util/path"
+import { getDirectory, getFilename } from "@opencode/util/path"
 import type { SelectedLineRange } from "@pierre/diffs"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { DiffChanges } from "@opencode/ui/diff-changes"
+import { FileIcon } from "@opencode/ui/file-icon"
+import { useFileComponent } from "@opencode/ui/context/file"
+import { useI18n } from "@opencode/ui/context/i18n"
 import { mediaKindFromPath } from "../../pierre/media"
 import { cloneSelectedLineRange, previewSelectedLines } from "../../pierre/selection-bridge"
-import type { FileDiffInfo } from "@opencode-ai/client/promise"
+import type { FileDiffInfo } from "@opencode/client/promise"
 import type { PresentationFileContent, PresentationFileDiff } from "../../file-presentation"
 import { createEffect, createMemo, onCleanup, Show, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -24,8 +24,8 @@ import type {
 import type { SessionReviewExpandMode } from "./session-review-v2"
 import { createLineCommentControllerV2 } from "./line-comment-annotations-v2"
 import { shouldVirtualizeReviewDiff } from "./session-review-file-preview-v2-virtualize"
-import { LineCommentOverflowIcon } from "@opencode-ai/ui/line-comment"
-import { Menu } from "@opencode-ai/ui/menu"
+import { LineCommentOverflowIcon } from "@opencode/ui/line-comment"
+import { Menu } from "@opencode/ui/menu"
 import "./session-review-v2.css"
 
 type ReviewDiff = (PresentationFileDiff & { file: string }) | FileDiffInfo
@@ -47,13 +47,17 @@ export type SessionReviewFilePreviewV2Props = {
 
 function statusLabel(status: ViewDiff["status"]) {
   if (status === "added") return "A"
+
   if (status === "deleted") return "D"
+
   return "M"
 }
 
 function statusType(status: ViewDiff["status"]) {
   if (status === "added") return "added"
+
   if (status === "deleted") return "deleted"
+
   return "modified"
 }
 
@@ -64,7 +68,9 @@ function selectionSide(range: SelectedLineRange) {
 function selectionPreview(diff: ViewDiff, range: SelectedLineRange) {
   const side = selectionSide(range)
   const contents = text(diff, side)
+
   if (contents.length === 0) return undefined
+
   return previewSelectedLines(contents, range)
 }
 
@@ -111,6 +117,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
     ...normalize(props.diff),
     preloaded: "preloaded" in props.diff ? props.diff.preloaded : undefined,
   }))
+
   const diffCanRender = createMemo(() => view().additions !== 0 || view().deletions !== 0)
   const mediaKind = createMemo(() => mediaKindFromPath(props.file))
   const comments = createMemo(() => (props.comments ?? []).filter((comment) => comment.file === props.file))
@@ -167,7 +174,9 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
 
   createEffect(() => {
     const focus = props.focusedComment
+
     if (!focus) return
+
     if (focus.file !== props.file) {
       // The focused file has no mounted preview (e.g. not in the current diff
       // set); clear the focus anyway so it cannot hijack a later diff refresh.
@@ -179,6 +188,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
           props.onFocusedCommentChange?.(null)
         })
       })
+
       return
     }
 
@@ -186,6 +196,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
       setStore("opened", focus.id)
 
       const comment = (props.comments ?? []).find((item) => item.file === focus.file && item.id === focus.id)
+
       if (comment) setStore("selection", cloneSelectedLineRange(comment.selection))
 
       // The diff renders asynchronously, so poll for the comment anchor before
@@ -193,16 +204,21 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
       // re-open a stale comment.
       focusToken++
       const token = focusToken
+
       const scrollTo = (attempt: number) => {
         if (token !== focusToken) return
         const anchor = scrollRef?.querySelector(`[data-comment-id="${focus.id}"]`)
+
         if (anchor instanceof HTMLElement) {
           anchor.scrollIntoView({ block: "center" })
+
           return
         }
+
         if (attempt >= 120) return
         requestAnimationFrame(() => scrollTo(attempt + 1))
       }
+
       requestAnimationFrame(() => scrollTo(0))
       requestAnimationFrame(() => {
         if (token !== focusToken) return

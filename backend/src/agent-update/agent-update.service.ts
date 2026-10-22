@@ -19,10 +19,10 @@ import { agentUpdateStaleAfterMs, reapStaleRunningAgentUpdates } from './agent-u
 import {
   AGENT_WORKSPACE_UPDATE_QUEUE,
   AgentUpdateStatus,
-  type AgentEnvironmentJobData,
   type AgentReloadJobData,
   type AgentSweepJobData,
   type AgentUpdateJobData,
+  type RecordedEnvironmentJobData,
 } from './agent-update.types';
 
 const RELOAD_RETRY_DELAYS_MS = [5, 15, 30, 60].map((m) => m * 60 * 1000);
@@ -129,24 +129,17 @@ export class AgentUpdateService implements OnApplicationBootstrap {
     });
   }
 
-  async enqueueEnvironmentUpdates(jobs: AgentEnvironmentJobData[]): Promise<void> {
+  async enqueueEnvironmentUpdates(jobs: RecordedEnvironmentJobData[]): Promise<void> {
     if (jobs.length === 0) return;
     await this.queue.addBulk(jobs.map((job) => this.buildEnvironmentJob(job)));
   }
 
-  private buildEnvironmentJob(data: AgentEnvironmentJobData) {
+  private buildEnvironmentJob({ updateId, ...data }: RecordedEnvironmentJobData) {
     return {
       name: 'environment',
       data,
       opts: {
-        jobId: this.queueJobId(
-          'environment',
-          data.packageName,
-          data.targetVersion,
-          data.mode,
-          data.projectEnvironmentId,
-          'stable'
-        ),
+        jobId: this.queueJobId('environment', updateId),
         attempts: 3,
         backoff: { type: 'exponential' as const, delay: 5000 },
         removeOnComplete: 100,

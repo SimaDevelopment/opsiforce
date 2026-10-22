@@ -46,6 +46,7 @@ export const Definitions = {
   leader: keybind(LeaderDefault, "Leader key for keybind combinations"),
 
   "app.exit": keybind("ctrl+c,ctrl+d,<leader>q", "Exit the application"),
+  "app.clear": keybind("ctrl+l", "Clear the screen in mini"),
   "app.debug": keybind("none", "Toggle debug panel"),
   "app.console": keybind("none", "Toggle console"),
   "app.scrap": keybind("none", "Open scrap screen"),
@@ -59,7 +60,7 @@ export const Definitions = {
   "opencode.settings": keybind("none", "Open settings"),
   "server.pair": keybind("none", "Pair device"),
   "service.restart": keybind("none", "Restart service"),
-  "permission.mode": keybind("none", "Toggle auto-approve permissions"),
+  "location.reload": keybind("none", "Reload configuration"),
   "diff.open": keybind("none", "Open diff viewer"),
   "diff.close": keybind("escape,q", "Close diff viewer"),
   "diff.down": keybind("j,down", "Move diff viewer down"),
@@ -84,6 +85,7 @@ export const Definitions = {
   "diff.single_patch": keybind("s", "Toggle single patch view"),
   "diff.switch_source": keybind("d", "Switch diff viewer source"),
   "diff.toggle_view": keybind("v", "Toggle diff viewer split or unified view"),
+  "diff.toggle_fullscreen": keybind("f", "Toggle diff viewer full screen"),
   "diff.mark_reviewed": keybind("m", "Toggle selected diff file reviewed"),
   "diff.help": keybind("?,shift+?,shift+/", "Show more diff viewer shortcuts"),
 
@@ -93,7 +95,7 @@ export const Definitions = {
   "theme.mode.lock": keybind("none", "Lock or unlock theme mode"),
   "session.sidebar.toggle": keybind("<leader>b", "Toggle sidebar"),
   "pane.focus.left": keybind("<leader>left", "Focus session pane"),
-  "pane.focus.right": keybind("<leader>right", "Focus terminal pane"),
+  "pane.focus.right": keybind("<leader>right", "Focus right pane"),
   "terminal.select": keybind("<leader>down", "Select terminal"),
   "terminal.toggle": keybind("<leader>t", "Toggle terminal pane"),
   "terminal.close": keybind("<leader>up", "Close terminal pane"),
@@ -104,7 +106,7 @@ export const Definitions = {
   "session.export": keybind("<leader>x", "Export session to editor"),
   "session.copy": keybind("none", "Copy session transcript"),
   "session.copy.id": keybind("none", "Copy session ID"),
-  "session.move": keybind("none", "Move session"),
+  "session.move": keybind("none", "Manage workspaces"),
   "session.new": keybind("<leader>n", "Create a new session"),
   "session.list": keybind("<leader>l", "List all sessions"),
   "open.menu": keybind("ctrl+o", "Open recent sessions and projects"),
@@ -120,15 +122,19 @@ export const Definitions = {
   "session.fork": keybind("none", "Fork session from message"),
   "session.rename": keybind("ctrl+r", "Rename session"),
   "session.delete": keybind("ctrl+d", "Delete session"),
-  "session.share": keybind("none", "Share current session"),
-  "session.unshare": keybind("none", "Unshare current session"),
+  // Retain shipped configuration names; session sharing was removed.
+  "session.share": keybind("none", "Deprecated: session sharing was removed"),
+  "session.unshare": keybind("none", "Deprecated: session sharing was removed"),
   "session.interrupt": keybind("escape", "Interrupt current session"),
   "session.background": keybind("ctrl+b", "Background blocking session tools"),
   "session.compact": keybind("<leader>c", "Compact the session"),
+  "session.aside": keybind("none", "Ask a side question"),
   "session.cd": keybind("none", "Change working directory"),
   "session.queued_prompts": keybind("<leader>q", "Manage queued prompts"),
+  "queued_prompt.undo": keybind("ctrl+u", "Undo queued prompt"),
   "queued_prompt.delete": keybind("ctrl+d", "Delete queued prompt"),
   "session.toggle.exploration_grouping": keybind("none", "Toggle related tool call grouping"),
+  "session.verbosity.cycle": keybind("none", "Cycle transcript verbosity"),
   "session.child.first": keybind("down", "Toggle subagent picker"),
   "session.child.next": keybind("right", "Go to next child session"),
   "session.child.previous": keybind("left", "Go to previous child session"),
@@ -261,7 +267,8 @@ export const Definitions = {
   "dialog.integration.rename": keybind("ctrl+r", "Rename integration account"),
   "dialog.integration.delete": keybind("ctrl+d", "Delete integration account"),
   "dialog.worktree.generate": keybind("tab", "Generate worktree name"),
-  "dialog.move_session.new": keybind("ctrl+m", "New worktree"),
+  "dialog.move_session.new": keybind("ctrl+a", "New worktree"),
+  "dialog.move_session.move": keybind("ctrl+m", "Move session to worktree"),
   "dialog.move_session.delete": keybind("ctrl+d", "Delete worktree"),
   "dialog.move_session.refresh": keybind("ctrl+r", "Refresh worktrees"),
   "prompt.autocomplete.prev": keybind("up,ctrl+p", "Move to previous autocomplete item"),
@@ -272,14 +279,13 @@ export const Definitions = {
   "permission.prompt.fullscreen": keybind("ctrl+f", "Toggle permission prompt fullscreen"),
   "plugins.toggle": keybind("return", "Toggle plugin"),
   "dialog.mcp.toggle": keybind("space", "Toggle MCP server"),
-  "dialog.plugins.install": keybind("shift+i", "Install plugin from plugin dialog"),
+  "dialog.plugins.error": keybind("space", "View plugin error"),
   "dialog.plugins.update": keybind("ctrl+u", "Update plugin from plugin dialog"),
   "dialog.plugins.check": keybind("ctrl+r", "Check for plugin updates from plugin dialog"),
 
   "terminal.suspend": keybind("ctrl+z", "Suspend terminal"),
   "terminal.title.toggle": keybind("none", "Toggle terminal title"),
   "plugins.list": keybind("none", "Open plugin manager dialog"),
-  "plugins.install": keybind("none", "Install plugin"),
 
   "which-key.toggle": keybind("ctrl+alt+k", "Toggle which-key panel"),
   "which-key.layout.toggle": keybind("ctrl+alt+shift+k", "Switch which-key layout"),
@@ -340,8 +346,6 @@ export function parse(keybinds: KeybindOverrides): Keybinds {
     ]),
   ) as Keybinds
 }
-
-export const Keybinds = { parse }
 
 export function unknownKeys(input: object) {
   return Object.keys(input).filter((key) => !KeybindNames.has(key))

@@ -2,7 +2,7 @@ import { availableParallelism } from 'node:os';
 import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
-const maxWorkers = Math.max(2, Math.min(8, availableParallelism() - 2));
+const maxWorkers = Math.max(2, Math.min(4, availableParallelism() - 2));
 
 export default defineConfig({
   cacheDir: '.vite-cache',

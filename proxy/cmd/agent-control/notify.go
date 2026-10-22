@@ -88,7 +88,7 @@ func markerName() (string, error) {
 	if _, err := rand.Read(suffix); err != nil {
 		return "", err
 	}
-	return ".notify-" + hex.EncodeToString(suffix), nil
+	return "notify-" + hex.EncodeToString(suffix), nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

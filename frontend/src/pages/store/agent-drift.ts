@@ -12,6 +12,7 @@ export interface ProfileDiff {
   added: AgentProfileSkill[];
   removed: AgentProfileSkill[];
   repinned: RepinnedSkill[];
+  serviceSettingsChanged: AgentProfileSkill[];
   skillsChanged: boolean;
   template: TemplateComparison;
   templateChanged: boolean;
@@ -37,10 +38,16 @@ export function profileDiff(development: AgentProfile, target: AgentProfile | un
         : null;
     })
     .filter((entry): entry is RepinnedSkill => entry !== null);
+  const serviceSettingsChanged = [...to.values()].filter((skill) => {
+    const before = from.get(skill.skillId);
+    if (!before) return !!skill.serviceSettings;
+    return JSON.stringify(before.serviceSettings) !== JSON.stringify(skill.serviceSettings);
+  });
 
   const promptChanged = (development.promptBody ?? '') !== (target?.promptBody ?? '');
-  const modelChanged = development.model !== (target?.model ?? null) || development.variant !== (target?.variant ?? null);
-  const skillsChanged = added.length + removed.length + repinned.length > 0;
+  const modelChanged =
+    development.model !== (target?.model ?? null) || development.variant !== (target?.variant ?? null);
+  const skillsChanged = added.length + removed.length + repinned.length + serviceSettingsChanged.length > 0;
   const template = compareTemplates(development.template?.hash ?? null, target?.template?.hash ?? null);
   const templateChanged = template !== 'same' && template !== 'none';
 
@@ -50,6 +57,7 @@ export function profileDiff(development: AgentProfile, target: AgentProfile | un
     added,
     removed,
     repinned,
+    serviceSettingsChanged,
     skillsChanged,
     template,
     templateChanged,

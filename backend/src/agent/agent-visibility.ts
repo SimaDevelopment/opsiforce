@@ -2,10 +2,27 @@ import { NotFoundException } from '@nestjs/common';
 import { and, eq, getTableColumns, inArray, isNull, not, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentProfiles, agentSettings, agents, environments, tenantDisabledAgents } from '../../db/schema';
-import { TEST_PROJECT_KIND, type ProjectKind } from '../project/project.types';
+import {
+  EXTERNAL_SERVICE_CHAT_KIND,
+  TEST_PROJECT_KIND,
+  type ChatKind,
+  type ProjectKind,
+} from '../project/project.types';
 import { readMergedAgentRegistry } from './agent-config';
 
 export const BUILDER_AGENT_SLUG = 'skill-agent-builder';
+
+export const EXTERNAL_SERVICE_BUILDER_AGENT_SLUG = 'external-service-builder';
+
+const BUILDER_AGENT_SLUGS: ReadonlySet<string> = new Set([BUILDER_AGENT_SLUG, EXTERNAL_SERVICE_BUILDER_AGENT_SLUG]);
+
+export function builderAgentSlugOf(kind: ChatKind): string {
+  return kind === EXTERNAL_SERVICE_CHAT_KIND ? EXTERNAL_SERVICE_BUILDER_AGENT_SLUG : BUILDER_AGENT_SLUG;
+}
+
+function isBuilderAgentName(name: string): boolean {
+  return BUILDER_AGENT_SLUGS.has(name);
+}
 
 export type AgentRow = typeof agents.$inferSelect & { disabled: boolean };
 
@@ -56,25 +73,46 @@ export function canEditAgent(agent: AgentRow, userId: string): boolean {
 }
 
 export function liveBuiltInSlugs(): string[] {
-  return Object.keys(readMergedAgentRegistry().agents).filter((slug) => slug !== BUILDER_AGENT_SLUG);
+  return Object.keys(readMergedAgentRegistry().agents).filter((slug) => !isBuilderAgentName(slug));
 }
 
-export function startableBuiltInAgentsWhere(tenantId: string): SQL | undefined {
+function liveBuiltInAgentsWhere(): SQL | undefined {
   const slugs = liveBuiltInSlugs();
+  return and(eq(agents.origin, 'built_in'), slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`);
+}
+
+export function tenantStartableAgentsWhere(tenantId: string): SQL | undefined {
+  const builtIn = and(liveBuiltInAgentsWhere(), isNull(agents.tenantId));
+  const custom = and(
+    eq(agents.origin, 'custom'),
+    eq(agents.tenantId, tenantId),
+    eq(agents.visibility, 'public'),
+    customAgentHasDefaultProfile()
+  );
+  return and(or(builtIn, custom), not(agentDisabledIn(tenantId)));
+}
+
+export function warmPooledCustomAgentsWhere(): SQL | undefined {
   return and(
-    eq(agents.origin, 'built_in'),
-    isNull(agents.tenantId),
-    slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`,
-    not(agentDisabledIn(tenantId))
+    eq(agents.origin, 'custom'),
+    sql`exists (
+      select 1 from ${agentSettings}
+      where ${agentSettings.agentId} = ${agents.id} and ${agentSettings.warmPoolSize} > 0
+    )`,
+    customAgentHasDefaultProfile(),
+    sql`not exists (
+      select 1 from ${tenantDisabledAgents}
+      where ${tenantDisabledAgents.agentId} = ${agents.id} and ${tenantDisabledAgents.tenantId} = ${agents.tenantId}
+    )`
   );
 }
 
 export function canDuplicateAgent(agent: AgentRow): boolean {
-  return agent.origin === 'custom' || agent.name !== BUILDER_AGENT_SLUG;
+  return agent.origin === 'custom' || !isBuilderAgentName(agent.name);
 }
 
 export function canDisableAgent(agent: AgentRow, userId: string): boolean {
-  return agent.origin === 'custom' ? canEditAgent(agent, userId) : agent.name !== BUILDER_AGENT_SLUG;
+  return agent.origin === 'custom' ? canEditAgent(agent, userId) : !isBuilderAgentName(agent.name);
 }
 
 export function liveAgentsWhere(tenantId: string, userId: string | null): SQL | undefined {
@@ -95,13 +133,11 @@ export function projectCreatableAgentsWhere(
 }
 
 function startableAgentsWhere(tenantId: string, userId: string | null, customProfile: SQL): SQL | undefined {
-  const slugs = liveBuiltInSlugs();
-  const builtIn = and(eq(agents.origin, 'built_in'), slugs.length > 0 ? inArray(agents.name, slugs) : sql`false`);
   const custom = and(eq(agents.origin, 'custom'), customProfile);
-  return and(visibleAgentsWhere(tenantId, userId ?? ''), or(builtIn, custom));
+  return and(visibleAgentsWhere(tenantId, userId ?? ''), or(liveBuiltInAgentsWhere(), custom));
 }
 
-function customAgentHasDefaultProfile(): SQL {
+export function customAgentHasDefaultProfile(): SQL {
   return sql`exists (
     select 1
     from ${agentSettings}

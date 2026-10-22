@@ -1,0 +1,6 @@
+replicaCount: 1
+
+config:
+  backendUrl: "http://opsiforce-backend-opsiforce-backend-standalone:3001"
+
+existingSecret: opsiforce-linked-account-proxy-service-token

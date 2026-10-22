@@ -1,3 +1,4 @@
+// TODO: remove in the release after External Services v2 ships: the dead POST /api/gateway dispatcher's provider contract
 export interface ServiceProviderContext {
   projectId: string;
   tenantId: string;

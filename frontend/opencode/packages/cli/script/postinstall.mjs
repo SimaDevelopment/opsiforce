@@ -12,10 +12,18 @@ const require = createRequire(import.meta.url)
 const packageJson = JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf8"))
 const command = Object.keys(packageJson.bin ?? {})[0]
 if (!command) throw new Error("OpenCode package does not declare a binary")
+const sourceCommand = packageJson.opencodeSourceBinary ?? command
 
 const platform = { darwin: "darwin", linux: "linux", win32: "windows" }[os.platform()] ?? os.platform()
-const arch = { x64: "x64", arm64: "arm64", arm: "arm" }[os.arch()] ?? os.arch()
-const sourceBinary = platform === "windows" ? `${command}.exe` : command
+const nodeArch = { x64: "x64", arm64: "arm64", arm: "arm" }[os.arch()] ?? os.arch()
+// x64 Node runs emulated on Windows ARM64, but PROCESSOR_IDENTIFIER still names the host CPU.
+const arch =
+  platform === "windows" && nodeArch === "x64" && process.env.PROCESSOR_IDENTIFIER?.startsWith("ARM")
+    ? "arm64"
+    : nodeArch
+// Windows cannot spawn npm's .cmd shim directly, so reuse the npm CLI that runs this script.
+const npm = process.env.npm_execpath?.endsWith("npm-cli.js") ? [process.execPath, process.env.npm_execpath] : ["npm"]
+const sourceBinary = platform === "windows" ? `${sourceCommand}.exe` : sourceCommand
 const targetBinary = path.resolve(directory, packageJson.bin[command])
 const dependencies = packageJson.optionalDependencies ?? {}
 const base = Object.keys(dependencies).find((name) => name.endsWith(`-${platform}-${arch}`))
@@ -94,13 +102,20 @@ function packageNames() {
           ? [`${base}-baseline`, base]
           : [base, `${base}-baseline`]
         : [base]
-  return names.filter((name) => dependencies[name])
+  // Windows 11 on ARM64 can still run the x64 binary under emulation when the native one fails.
+  const x64 = base.replace(/-arm64$/, "-x64")
+  const emulated = platform === "windows" && arch === "arm64" ? [`${x64}-baseline`, x64] : []
+  return [...names, ...emulated].filter((name) => dependencies[name])
 }
 
 function copyBinary(source) {
   if (!fs.existsSync(source)) throw new Error(`Binary not found at ${source}`)
   fs.mkdirSync(path.dirname(targetBinary), { recursive: true })
-  if (fs.existsSync(targetBinary)) fs.unlinkSync(targetBinary)
+  if (fs.existsSync(targetBinary)) {
+    try {
+      fs.unlinkSync(targetBinary)
+    } catch {}
+  }
   try {
     fs.linkSync(source, targetBinary)
   } catch {
@@ -111,6 +126,10 @@ function copyBinary(source) {
 
 function resolveBinary(name) {
   const packagePath = require.resolve(`${name}/package.json`)
+  // Package managers keep an older platform package when the matching version is not yet on the registry,
+  // which would silently install the previous release under the new launcher.
+  const version = JSON.parse(fs.readFileSync(packagePath, "utf8")).version
+  if (version !== dependencies[name]) throw new Error(`${name} is ${version}, expected ${dependencies[name]}`)
   return path.join(path.dirname(packagePath), "bin", sourceBinary)
 }
 
@@ -118,12 +137,15 @@ function installPackage(name) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-install-"))
   try {
     const result = childProcess.spawnSync(
-      "npm",
+      npm[0],
       [
+        ...npm.slice(1),
         "install",
         "--ignore-scripts",
         "--no-save",
         "--loglevel=error",
+        // npm rejects a package built for another CPU, such as arm64 under emulated x64 Node, unless forced.
+        ...(name.includes(`-${platform}-${nodeArch}`) ? [] : ["--force"]),
         "--prefix",
         temp,
         `${name}@${dependencies[name]}`,

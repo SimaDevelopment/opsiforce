@@ -110,7 +110,6 @@ describe('exporting a Custom Agent', () => {
       model: 'openai/gpt-5.6-sol',
       variant: 'low',
     });
-    await harness.agents.updateSettings(author, agent.id, { platformApi: true });
     const hash = await saveTemplate(agent.id, { 'README.md': '# Notes\n', 'scripts/check.sh': '#!/bin/sh\n' });
 
     const { fileName, tree, manifest: written } = await readExport(agent.id);
@@ -142,7 +141,6 @@ describe('exporting a Custom Agent', () => {
         displayName: agent.displayName,
         slug: agent.name,
         description: 'Writes release notes.',
-        platformApi: true,
       },
       profile: { promptBody: 'Write the notes.', model: 'openai/gpt-5.6-sol', variant: 'low' },
       skills: [
@@ -155,6 +153,10 @@ describe('exporting a Custom Agent', () => {
         },
       ].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: { hash },
+      projectSettings: {
+        resources: { podClass: 'small', cpuMillicores: 100, memoryRequestMib: 2048, memoryLimitMib: 4096 },
+        warmPoolSize: 0,
+      },
     });
 
     const template = entries(tree, 'template/');

@@ -1,36 +1,32 @@
 import { describe, expect } from "bun:test"
 import { DateTime, Effect, Fiber, Option, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { asc, eq, sql } from "drizzle-orm"
-import { Database } from "@opencode-ai/core/database/database"
-import { Agent } from "@opencode-ai/core/agent"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Bus } from "@opencode-ai/core/bus"
-import { Event } from "@opencode-ai/schema/event"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Model } from "@opencode-ai/core/model"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath, RelativePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { Money } from "@opencode-ai/schema/money"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { fromRow } from "@opencode-ai/core/session/info"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Shell } from "@opencode-ai/schema/shell"
-import {
-  InstructionStateTable,
-  SessionInboxTable,
-  SessionMessageTable,
-  SessionTable,
-} from "@opencode-ai/core/session/sql"
+import { Database } from "@opencode/core/database/database"
+import { Agent } from "@opencode/core/agent"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Bus } from "@opencode/core/bus"
+import { Event } from "@opencode/schema/event"
+import { EventTable } from "@opencode/core/event/sql"
+import { Model } from "@opencode/core/model"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath, RelativePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionMessage } from "@opencode/core/session/message"
+import { Money } from "@opencode/schema/money"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { fromRow } from "@opencode/core/session/info"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionStore } from "@opencode/core/session/store"
+import { Shell } from "@opencode/schema/shell"
+import { InstructionStateTable, SessionInboxTable, SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { testEffect } from "./lib/effect"
-import { Snapshot } from "@opencode-ai/core/snapshot"
+import { Snapshot } from "@opencode/core/snapshot"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -201,8 +197,8 @@ describe("SessionProjector", () => {
         tokens_cache_read: 3,
         tokens_cache_write: 1,
       })
-      // A committed revert resets the fold cache so the next boundary establishes a new epoch.
-      expect(yield* db.select().from(InstructionStateTable).get().pipe(Effect.orDie)).toBeUndefined()
+      // No instruction update followed the boundary, so the fold survives.
+      expect(yield* db.select().from(InstructionStateTable).get().pipe(Effect.orDie)).toMatchObject({ through_seq: 0 })
     }),
   )
 
@@ -390,7 +386,6 @@ describe("SessionProjector", () => {
       yield* bus.publish(SessionEvent.Compaction.Started, {
         sessionID,
         reason: "manual",
-        recent: "recent context",
       })
       yield* bus.publish(SessionEvent.Compaction.Delta, {
         sessionID,
@@ -411,12 +406,11 @@ describe("SessionProjector", () => {
           .where(eq(SessionMessageTable.type, "compaction"))
           .all()
           .pipe(Effect.orDie),
-      ).toEqual([{ data: expect.objectContaining({ status: "running", summary: "", recent: "recent context" }) }])
+      ).toEqual([{ data: expect.objectContaining({ status: "running", summary: "" }) }])
       yield* bus.publish(SessionEvent.Compaction.Ended, {
         sessionID,
         reason: "manual",
         text: "summary",
-        recent: "recent context",
       })
 
       const rows = yield* db
@@ -454,10 +448,8 @@ describe("SessionProjector", () => {
         output: { output: "/project", truncated: false },
         time: { completed: DateTime.makeUnsafe(0) },
       })
-      expect(messages.find((message) => message.type === "compaction")).toMatchObject({
-        summary: "summary",
-        recent: "recent context",
-      })
+      expect(messages.find((message) => message.type === "compaction")).toMatchObject({ summary: "summary" })
+      expect(rows.find((row) => row.type === "compaction")?.data).not.toHaveProperty("recent")
       expect(
         yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie),
       ).toMatchObject({
@@ -485,6 +477,7 @@ describe("SessionProjector", () => {
           assistantMessageID: id,
           agent: build,
           model,
+          started: 0,
         })
         .pipe(Effect.exit)
 
@@ -501,7 +494,13 @@ describe("SessionProjector", () => {
       const bus = yield* Bus.Service
       const first = SessionMessage.ID.make("msg_retry_first")
       const second = SessionMessage.ID.make("msg_retry_second")
-      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: first, agent: build, model })
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: first,
+        agent: build,
+        model,
+        started: 0,
+      })
       yield* bus.publish(SessionEvent.RetryScheduled, {
         sessionID,
         assistantMessageID: first,
@@ -523,7 +522,13 @@ describe("SessionProjector", () => {
         retry: { attempt: 2, at: DateTime.makeUnsafe(2_000), error: { type: "provider.transport" } },
       })
 
-      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: second, agent: build, model })
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: second,
+        agent: build,
+        model,
+        started: 0,
+      })
       yield* bus.publish(SessionEvent.RetryScheduled, {
         sessionID,
         assistantMessageID: second,
@@ -625,6 +630,200 @@ describe("SessionProjector", () => {
     }),
   )
 
+  it.effect("reads and replays native data stored under its pre-v2.1 names", () =>
+    Effect.gen(function* () {
+      const db = yield* seedSession()
+      const store = yield* SessionStore.Service
+      const bus = yield* Bus.Service
+      const assistantID = SessionMessage.ID.make("msg_legacy_assistant")
+      const {
+        id: _,
+        type: __,
+        ...assistant
+      } = encodeMessage(
+        SessionMessage.Assistant.make({
+          id: assistantID,
+          type: "assistant",
+          agent: build,
+          model,
+          content: [],
+          time: { created },
+        }),
+      )
+      const legacyAssistant = {
+        ...assistant,
+        providerState: { step: "kept" },
+        content: [
+          { type: "text", text: "hi", state: { signature: "text" } },
+          { type: "reasoning", text: "thinking", state: { signature: "reasoning" } },
+          {
+            type: "tool",
+            id: "call",
+            name: "search",
+            executed: true,
+            providerState: { call: "kept" },
+            providerResultState: { result: "kept" },
+            state: { status: "completed", input: {}, content: [{ type: "text", text: "done" }] },
+            time: { created: 0, ran: 0, completed: 0 },
+          },
+        ],
+      }
+      const legacyCompaction = {
+        status: "completed",
+        reason: "manual",
+        summary: "summary",
+        providerState: { compaction: "kept" },
+        time: { created: 0 },
+      }
+      yield* db.run(sql`
+        INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES
+          (${assistantID}, ${sessionID}, 'assistant', 0, 0, 0, ${JSON.stringify(legacyAssistant)}),
+          ('msg_legacy_compaction', ${sessionID}, 'compaction', 1, 0, 0, ${JSON.stringify(legacyCompaction)})
+      `)
+      const stored = [
+        {
+          id: Event.ID.make("evt_legacy_0"),
+          type: "session.tool.called.1",
+          data: { id: "call", input: {}, executed: true, state: { call: "kept" } },
+        },
+        {
+          id: Event.ID.make("evt_legacy_1"),
+          type: "session.tool.success.2",
+          data: {
+            id: "call",
+            content: [{ type: "text", text: "done" }],
+            executed: true,
+            resultState: { result: "kept" },
+          },
+        },
+      ].map((event, seq) => ({
+        ...event,
+        seq,
+        created: 0,
+        aggregateID: sessionID,
+        data: { sessionID, assistantMessageID: assistantID, ...event.data },
+      }))
+      yield* db.run(sql`INSERT OR IGNORE INTO event_sequence (aggregate_id, seq) VALUES (${sessionID}, 1)`)
+      for (const event of stored)
+        yield* db.run(
+          sql`INSERT INTO event (id, aggregate_id, seq, created, type, data) VALUES (${event.id}, ${sessionID}, ${event.seq}, 0, ${event.type}, ${JSON.stringify(event.data)})`,
+        )
+
+      const [readAssistant, readCompaction] = yield* store.messages({ sessionID, order: "asc" })
+      expect(readAssistant).toMatchObject({
+        native: { step: "kept" },
+        content: [
+          { type: "text", native: { signature: "text" } },
+          { type: "reasoning", native: { signature: "reasoning" } },
+          { type: "tool", native: { call: "kept", result: "kept" } },
+        ],
+      })
+      expect(readCompaction).toMatchObject({ native: { compaction: "kept" } })
+
+      expect(
+        (yield* Stream.runCollect(bus.log({ aggregateID: sessionID }))).filter((item) => !Bus.isSynced(item)),
+      ).toMatchObject([
+        { type: "session.tool.called", data: { native: { call: "kept" } } },
+        { type: "session.tool.success", data: { native: { result: "kept" } } },
+      ])
+
+      // Re-delivering an event that is already stored in its legacy shape stays idempotent.
+      yield* Effect.forEach(stored, (event) => bus.replay(event), { discard: true })
+
+      // A legacy-shaped event replayed from elsewhere is projected and stored in the current shape.
+      yield* bus.replay({
+        id: Event.ID.make("evt_legacy_2"),
+        type: "session.step.ended.1",
+        seq: 2,
+        created: 0,
+        aggregateID: sessionID,
+        data: {
+          sessionID,
+          assistantMessageID: assistantID,
+          finish: "stop",
+          providerState: { step: "replayed" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      })
+      const replayed = yield* db.get<{ data: string }>(sql`SELECT data FROM event WHERE id = 'evt_legacy_2'`)
+      expect(JSON.parse(replayed?.data ?? "{}")).toMatchObject({ native: { step: "replayed" } })
+      expect(JSON.parse(replayed?.data ?? "{}")).not.toHaveProperty("providerState")
+
+      // Projecting onto the legacy row wrote it back in the current shape.
+      const rewritten = JSON.parse(
+        (yield* db.get<{ data: string }>(sql`SELECT data FROM session_message WHERE id = ${assistantID}`))?.data ??
+          "{}",
+      )
+      expect(rewritten).not.toHaveProperty("providerState")
+      expect(rewritten).toMatchObject({
+        native: { step: "replayed" },
+        content: [
+          { type: "text", native: { signature: "text" } },
+          { type: "reasoning", native: { signature: "reasoning" } },
+          { type: "tool", native: { call: "kept", result: "kept" } },
+        ],
+      })
+      expect(rewritten.content.map((part: Record<string, unknown>) => Object.keys(part).toSorted())).toEqual([
+        ["native", "text", "type"],
+        ["native", "text", "type"],
+        ["executed", "id", "name", "native", "state", "time", "type"],
+      ])
+    }),
+  )
+
+  it.effect("merges tool result native data into the call's native data", () =>
+    Effect.gen(function* () {
+      const db = yield* seedSession()
+      const assistantMessageID = SessionMessage.ID.make("msg_tools")
+      yield* db.insert(SessionMessageTable).values(assistantRow(assistantMessageID, 0)).run().pipe(Effect.orDie)
+
+      const service = yield* Bus.Service
+      const call = (id: string) =>
+        Effect.gen(function* () {
+          yield* service.publish(SessionEvent.Tool.Input.Started, { sessionID, assistantMessageID, id, name: id })
+          yield* service.publish(SessionEvent.Tool.Called, {
+            sessionID,
+            assistantMessageID,
+            id,
+            input: {},
+            executed: true,
+            native: { call: id },
+          })
+        })
+      yield* call("succeeded")
+      yield* service.publish(SessionEvent.Tool.Success, {
+        sessionID,
+        assistantMessageID,
+        id: "succeeded",
+        content: [{ type: "text", text: "done" }],
+        executed: true,
+        native: { result: "succeeded" },
+      })
+      yield* call("failed")
+      yield* service.publish(SessionEvent.Tool.Failed, {
+        sessionID,
+        assistantMessageID,
+        id: "failed",
+        error: { type: "tool.execution", message: "failed" },
+        executed: true,
+      })
+
+      const row = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.id, assistantMessageID))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row?.data).toMatchObject({
+        content: [
+          { id: "succeeded", native: { call: "succeeded", result: "succeeded" }, state: { status: "completed" } },
+          { id: "failed", native: { call: "failed" }, state: { status: "error" } },
+        ],
+      })
+    }),
+  )
+
   it.effect("projects ended and failed step terminal state", () =>
     Effect.gen(function* () {
       const db = yield* seedSession()
@@ -646,7 +845,7 @@ describe("SessionProjector", () => {
         assistantMessageID: endedID,
         finish: "stop",
         rawFinish: "stop_sequence",
-        providerState: { response: "ended" },
+        native: { response: "ended" },
         cost: Money.USD.make(1),
         tokens: { input: 2, output: 3, reasoning: 4, cache: { read: 5, write: 6 } },
         snapshot: Snapshot.ID.make("snap_ended"),
@@ -657,7 +856,7 @@ describe("SessionProjector", () => {
         assistantMessageID: failedID,
         finish: "content-filter",
         rawFinish: "blocked",
-        providerState: { response: "failed" },
+        native: { response: "failed" },
         error: { type: "provider.invalid-request", message: "Failed" },
         snapshot: Snapshot.ID.make("snap_failed"),
         files: [RelativePath.make("src/failed.ts")],
@@ -677,7 +876,7 @@ describe("SessionProjector", () => {
         type: "assistant",
         finish: "stop",
         rawFinish: "stop_sequence",
-        providerState: { response: "ended" },
+        native: { response: "ended" },
         cost: Money.USD.make(1),
         tokens: { input: 2, output: 3, reasoning: 4, cache: { read: 5, write: 6 } },
         snapshot: { end: "snap_ended", files: ["src/ended.ts"] },
@@ -687,7 +886,7 @@ describe("SessionProjector", () => {
         type: "assistant",
         finish: "content-filter",
         rawFinish: "blocked",
-        providerState: { response: "failed" },
+        native: { response: "failed" },
         error: { type: "provider.invalid-request", message: "Failed" },
         snapshot: { end: "snap_failed", files: ["src/failed.ts"] },
         time: { completed: created },
@@ -745,6 +944,53 @@ describe("SessionProjector", () => {
           time: { created },
         }),
       ])
+    }),
+  )
+
+  it.effect("bumps session time_updated on step lifecycle events", () =>
+    Effect.gen(function* () {
+      const db = yield* seedSession({ time_created: 0, time_updated: 0 })
+      const bus = yield* Bus.Service
+      const updated = () =>
+        db.select({ time_updated: SessionTable.time_updated }).from(SessionTable).get().pipe(Effect.orDie)
+      const first = SessionMessage.ID.make("msg_touch_first")
+      const second = SessionMessage.ID.make("msg_touch_second")
+
+      yield* TestClock.setTime(5)
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: first,
+        agent: build,
+        model,
+        started: 5,
+      })
+      expect(yield* updated()).toEqual({ time_updated: 5 })
+
+      yield* TestClock.setTime(9)
+      yield* bus.publish(SessionEvent.Step.Ended, {
+        sessionID,
+        assistantMessageID: first,
+        finish: "stop",
+        cost: Money.USD.make(0),
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+      expect(yield* updated()).toEqual({ time_updated: 9 })
+
+      yield* TestClock.setTime(12)
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID,
+        assistantMessageID: second,
+        agent: build,
+        model,
+        started: 12,
+      })
+      yield* TestClock.setTime(15)
+      yield* bus.publish(SessionEvent.Step.Failed, {
+        sessionID,
+        assistantMessageID: second,
+        error: { type: "provider.invalid-request", message: "Failed" },
+      })
+      expect(yield* updated()).toEqual({ time_updated: 15 })
     }),
   )
 })

@@ -1,0 +1,27 @@
+{
+  "name": "opsiforce-external-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.17.0",
+  "scripts": {
+    "check": "external-service-cli check",
+    "types": "external-service-cli types",
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "dev": "external-service-cli dev",
+    "serve": "external-service-cli serve"
+  },
+  "dependencies": {
+    "@opsiforce/external-service-sdk": "file:./vendor/external-service-sdk-2.0.1.tgz"
+  },
+  "dependenciesMeta": {
+    "@opsiforce/external-service-sdk": {
+      "unplugged": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "typescript": "^6.0.0"
+  }
+}

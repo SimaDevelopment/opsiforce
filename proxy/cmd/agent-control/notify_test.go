@@ -89,13 +89,13 @@ func TestNotifyConfigChangeRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
-func TestMarkerNameIsHiddenAndNotMarkdown(t *testing.T) {
+func TestMarkerNameIsVisibleAndNotMarkdown(t *testing.T) {
 	name, err := markerName()
 	if err != nil {
 		t.Fatalf("markerName: %v", err)
 	}
-	if name[0] != '.' {
-		t.Fatalf("marker %s is not hidden", name)
+	if name[0] == '.' {
+		t.Fatalf("marker %s is a dot-file, which opencode's skill watcher ignores", name)
 	}
 	if filepath.Ext(name) == ".md" {
 		t.Fatalf("marker %s would be scanned as markdown", name)

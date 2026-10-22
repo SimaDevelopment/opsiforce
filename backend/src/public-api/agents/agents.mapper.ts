@@ -36,7 +36,6 @@ export const AgentMapper = {
     updatedAt: agent.updatedAt.toISOString(),
     settings: {
       defaultEnvironmentId: agent.settings.defaultEnvironmentId,
-      platformApi: agent.settings.platformApi,
     },
     profiles: agent.profiles.map((profile) => ({
       environmentId: profile.environmentId,

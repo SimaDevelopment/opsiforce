@@ -44,7 +44,7 @@ kind: operations
    | PostgreSQL · Redis · Keycloak | `localhost:5435` · `6382` · `8086` |
    | Drizzle Studio · Mailgun mock | `localhost:4983` · `8089` |
 
-5. Local environment notes: `backend/local-envs.sh` and `frontend/local-envs.sh` hold local bootstrap variables; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are optional locally, and without them the Bifrost provider secrets are created empty; local dev builds the agent image into minikube with `AGENT_CONTAINER_IMAGE_PULL_POLICY=Never` while production uses `Always`.
+5. Local environment notes: `backend/local-envs.sh` and `frontend/local-envs.sh` hold local bootstrap variables; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` in the package's `.env` are optional, and Tilt hands them to the backend, which, on a fresh database's first boot, creates a built-in `openai` or `anthropic` from them only when Bifrost lacks it (the Helm values declare both, so it usually adopts them); local dev builds the agent image into minikube with `AGENT_CONTAINER_IMAGE_PULL_POLICY=Never` while production uses `Always`.
 
 ## Verify
 

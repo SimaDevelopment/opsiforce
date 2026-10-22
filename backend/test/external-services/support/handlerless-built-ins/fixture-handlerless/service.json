@@ -1,0 +1,5 @@
+{
+  "sdk": 2,
+  "displayName": "Fixture handlerless",
+  "description": "A built-in whose folder has no service.ts."
+}

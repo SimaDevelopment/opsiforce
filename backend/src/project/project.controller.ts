@@ -6,9 +6,11 @@ import {
   Put,
   Delete,
   Body,
+  HttpCode,
   Param,
   Req,
   Res,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -23,6 +25,7 @@ import {
   UpdateProjectLoggingDto,
   UpdateAppDto,
   UpdateProjectPodClassDto,
+  EXTERNAL_SERVICE_CHAT_KIND,
 } from './project.types';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { TenantService } from '../tenant/tenant.service';
@@ -38,6 +41,12 @@ import type { AgentConnection } from '../agent-session/agent-session.types';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../project-environment/environment-variables.service';
 import type { UpdateEnvironmentVariablesDto } from '../project-environment/environment-variables.types';
+
+const DELETE_SERVICE_FROM_ITS_PAGE =
+  'Delete an External Service from its page in Store → External Services, where you confirm its slug and see who uses it';
+
+const SERVICE_KEEPS_ITS_ENVIRONMENTS =
+  'An External Service keeps its environments for as long as it exists; delete the whole service from its page in Store → External Services to remove them';
 
 @Controller('projects')
 export class ProjectController {
@@ -216,7 +225,7 @@ export class ProjectController {
   @Delete(':id')
   @RequirePermission(Perms.deleteProject)
   async remove(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
-    await this.gate(id, tenant, user);
+    await this.gateUnlessServiceBuilder(id, tenant, user, DELETE_SERVICE_FROM_ITS_PAGE);
     return this.projectService.remove(id, tenant.tenantId);
   }
 
@@ -324,6 +333,18 @@ export class ProjectController {
     return this.projectService.restart(id, tenant.tenantId, environmentId);
   }
 
+  @Post(':id/environments/:environmentId/gateway-key/rotate')
+  @HttpCode(204)
+  async rotateGatewayKey(
+    @Param('id') id: string,
+    @Param('environmentId') environmentId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<void> {
+    await this.gate(id, tenant, user);
+    await this.projectService.rotateGatewayKey(id, tenant.tenantId, environmentId);
+  }
+
   @Get(':id/environments/:environmentId/variables')
   @RequirePermission(Perms.manageEnvironmentVariables)
   async getEnvironmentVariables(
@@ -379,7 +400,7 @@ export class ProjectController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ) {
-    await this.gate(id, tenant, user);
+    await this.gateUnlessServiceBuilder(id, tenant, user, SERVICE_KEEPS_ITS_ENVIRONMENTS);
     await this.projectService.removeEnvironment(id, environmentId, tenant.tenantId);
     return { ok: true };
   }
@@ -397,12 +418,24 @@ export class ProjectController {
   }
 
   private async gate(projectId: string, tenant: TenantContext, user: UserContext): Promise<string> {
-    const dbUserId = await this.userService.resolveUserId(user, tenant.tenantId);
-    await this.projectService.findOneForUser({
-      projectId,
-      tenantId: tenant.tenantId,
-      userId: dbUserId,
-    });
-    return dbUserId;
+    return (await this.gatedProject(projectId, tenant, user)).userId;
+  }
+
+  private async gateUnlessServiceBuilder(
+    projectId: string,
+    tenant: TenantContext,
+    user: UserContext,
+    refusal: string
+  ): Promise<void> {
+    const { project } = await this.gatedProject(projectId, tenant, user);
+    if (project.kind === EXTERNAL_SERVICE_CHAT_KIND) {
+      throw new ConflictException({ code: 'manage-from-service-page', message: refusal });
+    }
+  }
+
+  private async gatedProject(projectId: string, tenant: TenantContext, user: UserContext) {
+    const userId = await this.userService.resolveUserId(user, tenant.tenantId);
+    const project = await this.projectService.findOneForUser({ projectId, tenantId: tenant.tenantId, userId });
+    return { userId, project };
   }
 }

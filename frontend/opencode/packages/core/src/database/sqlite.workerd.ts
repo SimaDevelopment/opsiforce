@@ -1,14 +1,14 @@
 import { Context, Effect, Exit, Fiber, Layer, Scope, Semaphore } from "effect"
-import { Reactivity } from "effect/unstable/reactivity"
-import { SqlClient, Statement } from "effect/unstable/sql"
-import type { Connection } from "effect/unstable/sql/SqlConnection"
-import { classifySqliteError, SqlError, UnknownError } from "effect/unstable/sql/SqlError"
+import { Reactivity } from "effect/reactivity"
+import { SqlClient, Statement } from "effect/sql"
+import type { Connection } from "effect/sql/SqlConnection"
+import { classifySqliteError, SqlError, UnknownError } from "effect/sql/SqlError"
 import type { NativeTransactionSqlClient } from "./drizzle/effect-sqlite/session.js"
 import { Sqlite } from "./sqlite.js"
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name"
 
-const TypeId = "~@opencode-ai/core/database/SqliteWorkerd" as const
+const TypeId = "~@opencode/core/database/SqliteWorkerd" as const
 type TypeId = typeof TypeId
 
 // Durable Object SQLite only allowlists introspection pragmas; journal_mode,
@@ -60,7 +60,7 @@ interface Config {
 // DurableObjectStorage.transaction-backed implementation; this service only
 // tracks the active transaction connection for statements and nesting checks.
 const WorkerdTransaction = Context.Service<SqlClient.TransactionConnection, SqlClient.TransactionConnection.Service>(
-  "@opencode-ai/core/database/SqliteWorkerdTransaction",
+  "@opencode/core/database/SqliteWorkerdTransaction",
 )
 
 const transactionError = (message: string) =>

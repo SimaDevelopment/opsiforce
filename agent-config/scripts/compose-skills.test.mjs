@@ -26,6 +26,11 @@ describe("sharedSkillsForPackage", () => {
     assert.deepEqual(sharedSkillsForPackage("skill-agent-builder", shared), ["agent-browser", "platform", "web-app"])
   })
 
+  it("gives the External Service Builder only platform and sqlite from the shared pool", async () => {
+    const pool = await readdir(new URL("../skills", import.meta.url))
+    assert.deepEqual(sharedSkillsForPackage("external-service-builder", pool).toSorted(), ["platform", "sqlite"])
+  })
+
   it("gives the custom package the platform skill and nothing else", () => {
     assert.deepEqual(sharedSkillsForPackage("custom", shared), ["platform"])
   })

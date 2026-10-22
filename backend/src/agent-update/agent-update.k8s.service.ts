@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as k8s from '@kubernetes/client-node';
+import { agentSecurityContext } from '../pod/agent-security-context';
 import { loadKubeConfig } from '../common/k8s-client';
 import { resolvePreset, toK8sResources } from '../pod/pod-classes';
 import type { AgentUpdateMode } from './agent-update.types';
 import { AGENT_UPDATE_JOB_COMPLETION_GRACE_MS } from './agent-update.reaper';
-
 
 const UPDATE_ID_LABEL = 'opsiforce.io/agent-update-id';
 
@@ -17,6 +17,7 @@ export interface AgentUpdateJobOptions {
   packageName: string;
   targetVersion: string;
   mode: AgentUpdateMode;
+  switchedOffSkills: string[];
 }
 
 export interface AgentUpdateRunResult {
@@ -57,6 +58,11 @@ export class AgentUpdateK8sService {
   }
 
   private buildJob(jobName: string, options: AgentUpdateJobOptions): k8s.V1Job {
+    const runtimeClassName = this.configService.get<string>('agentRuntimeClassName');
+    const securityContext = agentSecurityContext(
+      runtimeClassName,
+      this.configService.get<boolean>('agentPrivileged', false)
+    );
     return {
       apiVersion: 'batch/v1',
       kind: 'Job',
@@ -83,6 +89,7 @@ export class AgentUpdateK8sService {
           },
           spec: {
             restartPolicy: 'Never',
+            ...(runtimeClassName ? { runtimeClassName } : {}),
             ...(this.imagePullSecrets().length > 0 ? { imagePullSecrets: this.imagePullSecrets() } : {}),
             ...(Object.keys(this.nodeSelector()).length > 0 ? { nodeSelector: this.nodeSelector() } : {}),
             ...(this.tolerations().length > 0 ? { tolerations: this.tolerations() } : {}),
@@ -90,6 +97,7 @@ export class AgentUpdateK8sService {
             containers: [
               {
                 name: 'migrate',
+                ...(securityContext ? { securityContext } : {}),
                 image: this.configService.getOrThrow<string>('agentContainerImage'),
                 imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
                 command: ['agent-workspace-migrate', ...migrateArgs(options.mode)],
@@ -97,6 +105,7 @@ export class AgentUpdateK8sService {
                   { name: 'AGENT_NAME', value: options.packageName },
                   { name: 'TARGET_VERSION', value: options.targetVersion },
                   { name: 'WORKSPACE', value: '/workspace' },
+                  { name: 'SWITCHED_OFF_SKILLS', value: options.switchedOffSkills.join(',') },
                 ],
                 volumeMounts: [
                   {

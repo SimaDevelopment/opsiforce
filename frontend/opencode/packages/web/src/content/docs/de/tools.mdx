@@ -21,7 +21,7 @@ Pro Tool kannst du erlauben, verbieten oder eine Rueckfrage verlangen.
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "edit": "deny",
-    "bash": "ask",
+    "shell": "ask",
     "webfetch": "allow"
   }
 }
@@ -49,7 +49,7 @@ Hier sind alle in OpenCode verfuegbaren eingebauten Tools.
 
 ---
 
-### bash
+### shell
 
 Fuehrt Shell-Befehle in deiner Projektumgebung aus.
 
@@ -57,7 +57,7 @@ Fuehrt Shell-Befehle in deiner Projektumgebung aus.
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "bash": "allow"
+    "shell": "allow"
   }
 }
 ```

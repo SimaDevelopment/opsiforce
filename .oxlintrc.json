@@ -24,6 +24,21 @@
     {
       "files": ["**/agent-config/**"],
       "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": ["**/opencode-plugins/*/index.ts"],
+      "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": [
+        "**/external-service-sdk/test/fixtures/*/handlers.ts",
+        "**/external-service-sdk/test/fixtures/*/service.ts",
+        "**/external-services/*/handlers.ts",
+        "**/external-services/*/service.ts",
+        "**/test/external-services/support/built-ins/*/service.ts",
+        "**/test/external-services/support/*-built-ins/*/service.ts"
+      ],
+      "rules": { "import/no-default-export": "off" }
     }
   ],
   "ignorePatterns": ["**/dist/**", "**/build/**", "**/coverage/**", "**/*.d.ts"]

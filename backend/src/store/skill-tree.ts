@@ -57,6 +57,21 @@ export function packageSkillNames(packageName: string, root: string = agentConfi
   return new Set([...sharedShipped, ...own.flatMap((directory) => subdirectories(directory))]);
 }
 
+export function readPackageSkill(
+  packageName: string,
+  name: string,
+  root: string = agentConfigRoot()
+): ComposedSkill | null {
+  if (!packageSkillNames(packageName, root).has(name)) return null;
+  const candidates = [
+    join(root, 'agents', packageName, 'skills', name),
+    join(root, 'private', 'agents', packageName, 'skills', name),
+    join(root, 'skills', name),
+  ];
+  const directory = candidates.find((candidate) => subdirectories(join(candidate, '..')).includes(name));
+  return directory ? readSkill(name, directory) : null;
+}
+
 export function assertBuiltInSkillsShipped(root: string = agentConfigRoot()): void {
   const names = new Set(skillSourceDirectories(root).flatMap((directory) => subdirectories(directory)));
   if (!names.has(PLATFORM_SKILL_NAME)) {

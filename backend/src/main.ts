@@ -3,13 +3,10 @@ import { NestFactory } from '@nestjs/core';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { assertModelCatalogShipped } from './agent/agent-models';
 import { AppModule } from './app.module';
-import { webhookBodyLimitHook } from './external-services/http/webhook-body-limit.hook';
+import { registerBuiltInsAdapterRoutes } from './external-services/built-ins/built-ins-routes';
 import { requirePermissionHook } from './permission/permission.hook';
 import { configurePublicApi, createHttpAdapter } from './public-api/public-api.bootstrap';
 import { assertBuiltInSkillsShipped } from './store/skill-tree';
-
-const WEBHOOK_ROUTE_PREFIX = '/api/external-services/webhooks/';
-const WEBHOOK_JSON_BODY_LIMIT = 5 * 1024 * 1024;
 
 async function bootstrap() {
   assertModelCatalogShipped();
@@ -37,9 +34,9 @@ async function bootstrap() {
   });
 
   await configurePublicApi(app);
+  await registerBuiltInsAdapterRoutes(app);
 
   fastify.addHook('onRequest', requirePermissionHook('/api/admin/queues', 'can_view_queue_dashboard'));
-  fastify.addHook('preParsing', webhookBodyLimitHook(WEBHOOK_ROUTE_PREFIX, WEBHOOK_JSON_BODY_LIMIT));
 
   app.enableCors({
     origin: true,

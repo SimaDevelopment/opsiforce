@@ -49,9 +49,7 @@ export function ReadOnlyPanel(props: {
           class="min-h-28 resize-y bg-muted/30 p-3 font-mono text-xs leading-relaxed text-muted-foreground"
         />
         <Show when={props.profile.updatedAt}>
-          {(updatedAt) => (
-            <p class="mt-1.5 text-xs text-muted-foreground">Published {formatDate(updatedAt())}</p>
-          )}
+          {(updatedAt) => <p class="mt-1.5 text-xs text-muted-foreground">Published {formatDate(updatedAt())}</p>}
         </Show>
       </div>
       <div>
@@ -94,6 +92,7 @@ export function DevelopmentPanel(props: {
   const models = createMemo(() => catalog.data ?? []);
   const flatModels = createMemo(() => models().flatMap((provider) => provider.models));
   const chosenModel = createMemo(() => flatModels().find((entry) => entry.id === model()) ?? null);
+  const unavailableModel = () => !!catalog.data && !!model() && chosenModel() === null;
   const efforts = () => chosenModel()?.efforts ?? [];
 
   const dirty = () =>
@@ -122,7 +121,7 @@ export function DevelopmentPanel(props: {
       await save.mutateAsync({ promptBody: promptDraft(), model: chosen, variant: variant() });
       toast.success('Development saved');
     } catch (caught) {
-      if (caught instanceof ApiError && caught.code === 'model_unknown') {
+      if (caught instanceof ApiError && (caught.code === 'model_unknown' || caught.code === 'model_unreachable')) {
         setModelError({ part: String(caught.details.part ?? 'model'), message: caught.message });
         return;
       }
@@ -155,17 +154,22 @@ export function DevelopmentPanel(props: {
                   </span>
                 </SelectItem>
               )}
-              sectionComponent={(sectionProps) => (
-                <SelectSection>{sectionProps.section.rawValue.name}</SelectSection>
-              )}
+              sectionComponent={(sectionProps) => <SelectSection>{sectionProps.section.rawValue.name}</SelectSection>}
             >
               <SelectTrigger id="agent-model" aria-label="Model" class="h-9">
                 <SelectValue<CatalogModel>>
-                  {(state) => <span class="truncate">{state.selectedOption()?.name ?? model() ?? 'Choose a model'}</span>}
+                  {(state) => (
+                    <span class="truncate">{state.selectedOption()?.name ?? model() ?? 'Choose a model'}</span>
+                  )}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent />
             </Select>
+            <Show when={unavailableModel() && !modelError()}>
+              <p class="mt-1 text-xs text-amber-700">
+                <span class="font-mono">{model()}</span> is unavailable in your organization
+              </p>
+            </Show>
             <Show when={modelError()?.part === 'provider' || modelError()?.part === 'model'}>
               <p class="mt-1 text-xs text-destructive" role="alert">
                 {modelError()?.message}
@@ -226,7 +230,10 @@ export function DevelopmentPanel(props: {
         />
         <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p class="text-xs text-muted-foreground">
-            <Show when={dirty()} fallback={props.profile.updatedAt ? `Saved ${formatDate(props.profile.updatedAt)}` : ''}>
+            <Show
+              when={dirty()}
+              fallback={props.profile.updatedAt ? `Saved ${formatDate(props.profile.updatedAt)}` : ''}
+            >
               Unsaved changes
             </Show>
           </p>

@@ -59,6 +59,12 @@ export function JobDialog(props: JobDialogProps) {
           )}
         </Show>
 
+        <Show when={(display().report ?? []).length > 0}>
+          <ul class="mt-3 space-y-1 text-xs text-muted-foreground">
+            <For each={display().report}>{(line) => <li>{line}</li>}</For>
+          </ul>
+        </Show>
+
         <Show when={isFailed() && display().error}>
           <div class="mt-2 text-xs text-destructive">{display().error}</div>
         </Show>

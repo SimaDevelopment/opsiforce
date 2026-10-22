@@ -7,6 +7,9 @@ type SessionStore<T> = {
   message: {
     sync: (id: string) => Promise<unknown>
   }
+  pending: {
+    sync: (id: string) => Promise<unknown>
+  }
 }
 
 type Resolution<T> = { id: string; store: SessionStore<T> } & (
@@ -38,9 +41,12 @@ export function createSessionResolution<T>(
 ) {
   const cached = createMemo(() => {
     const id = sessionID()
+
     if (!id) return
+
     return sessions().get(id)
   })
+
   const [status, setStatus] = createSignal<Resolution<T>>()
 
   // Start independent reads before constructing the selected view, including
@@ -52,12 +58,18 @@ export function createSessionResolution<T>(
       onCleanup(() => {
         stale = true
       })
-      // The timeline owns message errors; metadata resolution stays independent.
+      // The timeline owns message errors; metadata resolution stays independent. Queued inputs
+      // ride along so a reconnect refreshes them with the transcript instead of leaving the
+      // pre-disconnect queue on screen.
       void store.message.sync(id).catch(() => undefined)
+      void store.pending.sync(id).catch(() => undefined)
+
       if (cached() && !options?.children && !options?.connected) {
         setStatus({ id, store, state: "settled" })
+
         return
       }
+
       setStatus({ id, store, state: "pending" })
       store
         .sync(id, options)
@@ -72,16 +84,22 @@ export function createSessionResolution<T>(
 
   return createMemo(() => {
     const id = sessionID()
+
     if (!id) return
     const value = cached()
+
     if (value) return value
     const state = status()
+
     if (!state || state.id !== id || state.store !== sessions()) return undefined
+
     if (state.state === "failed") throw state.failure
+
     // A session missing after settlement was deleted, possibly by another client.
     // Match the resolve error so the boundary shows the
     // session not found fallback.
     if (state.state === "settled") throw sessionNotFoundError(id)
+
     return undefined
   })
 }

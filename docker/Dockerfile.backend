@@ -10,6 +10,8 @@ COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn/releases .yarn/releases
 
 COPY ${PKG_PREFIX}backend/ ./packages/opsiforce/backend/
+COPY ${PKG_PREFIX}external-service-sdk/ ./packages/opsiforce/external-service-sdk/
+COPY ${PKG_PREFIX}external-services/ ./packages/opsiforce/external-services/
 
 WORKDIR packages/opsiforce/backend
 RUN yarn install
@@ -29,6 +31,10 @@ COPY package.json yarn.lock .yarnrc.yml ./
 COPY --from=builder /app/packages/opsiforce/backend/dist ./packages/opsiforce/backend/dist
 COPY --from=builder /app/packages/opsiforce/backend/db ./packages/opsiforce/backend/db
 COPY --from=builder /app/packages/opsiforce/backend/package.json ./packages/opsiforce/backend/package.json
+COPY ${PKG_PREFIX}external-service-sdk/package.json ./packages/opsiforce/external-service-sdk/package.json
+COPY ${PKG_PREFIX}external-service-sdk/service.schema.json ./packages/opsiforce/external-service-sdk/service.schema.json
+COPY ${PKG_PREFIX}external-service-sdk/src ./packages/opsiforce/external-service-sdk/src
+COPY ${PKG_PREFIX}external-services/ ./packages/opsiforce/external-services/
 COPY ${PKG_PREFIX}backend/platform-version.json ./packages/opsiforce/backend/platform-version.json
 COPY ${PKG_PREFIX}frontend/opencode/packages/protocol/openapi.json ./packages/opsiforce/frontend/opencode/packages/protocol/openapi.json
 COPY ${PKG_PREFIX}agent-config/ ./packages/opsiforce/agent-config/

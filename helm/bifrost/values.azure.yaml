@@ -1,0 +1,141 @@
+service:
+  type: ClusterIP
+
+fullnameOverride: opsiforce-bifrost
+
+image:
+  tag: "v2.3.2"
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 4Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+storage:
+  mode: postgres
+  # Separate runtime pools: at most 20 connections per pod in total.
+  configStore:
+    enabled: true
+    maxOpenConns: 10
+    maxIdleConns: 2
+  logsStore:
+    enabled: true
+    maxOpenConns: 10
+    maxIdleConns: 2
+
+vectorStore:
+  enabled: false
+  type: none
+
+postgresql:
+  enabled: false
+  external:
+    enabled: true
+    # Follow the CNPG primary directly; avoid stale PgBouncer plans after migrations.
+    host: postgres-cluster-rw.postgres.svc.cluster.local
+    port: 5432
+    user: postgres
+    database: bifrost
+    sslMode: disable
+    existingSecret: opsiforce-bifrost-postgres
+    passwordKey: password
+
+bifrost:
+  sourceOfTruth: "split"
+  encryptionKeySecret:
+    name: opsiforce-bifrost-encryption
+    key: key
+  authConfig:
+    isEnabled: true
+    existingSecret: opsiforce-bifrost-admin-auth
+    usernameKey: username
+    passwordKey: password
+  client:
+    dropExcessRequests: true
+    enableLogging: true
+    disableContentLogging: true
+    logRetentionDays: 7
+    allowDirectKeys: false
+    enforceAuthOnInference: true
+    compat:
+      forceReasoningOnlyModelsToResponses: false
+  providers:
+    custom-openai-1:
+      keys:
+        - name: placeholder
+          value: ""
+          weight: 1
+          models:
+            - gpt-6-astra
+            - gpt-6-sol
+            - gpt-6-luna
+            - gpt-reserve
+            - gpt-5.6-sol
+            - gpt-5.6-terra
+            - gpt-5.6-luna
+            - gpt-5.5
+            - codex-auto-review
+      network_config:
+        base_url: ""
+        default_request_timeout_in_seconds: 1200
+        max_retries: 2
+        retry_backoff_initial_ms: 500
+        retry_backoff_max_ms: 5000
+        stream_idle_timeout_in_seconds: 3600
+      custom_provider_config:
+        is_key_less: true
+        base_provider_type: openai
+        allowed_requests:
+          list_models: true
+          text_completion: true
+          text_completion_stream: true
+          chat_completion: true
+          chat_completion_stream: true
+          responses: false
+          responses_stream: true
+          embedding: false
+          speech: false
+          speech_stream: false
+          transcription: false
+          transcription_stream: false
+          image_generation: false
+          image_generation_stream: false
+          image_edit: false
+          image_edit_stream: false
+          image_variation: false
+          count_tokens: true
+    azure:
+      keys:
+        - name: azure-foundry
+          value: env.AZURE_FOUNDRY_API_KEY
+          weight: 1
+          models:
+            - gpt-5.6-sol
+          azure_key_config:
+            endpoint: env.AZURE_FOUNDRY_ENDPOINT
+  providerSecrets:
+    azure-api-key:
+      existingSecret: opsiforce-bifrost-provider-keys
+      key: azure-api-key
+      envVar: AZURE_FOUNDRY_API_KEY
+    azure-endpoint:
+      existingSecret: opsiforce-bifrost-provider-keys
+      key: azure-endpoint
+      envVar: AZURE_FOUNDRY_ENDPOINT
+  plugins:
+    governance:
+      enabled: true
+    logging:
+      enabled: true

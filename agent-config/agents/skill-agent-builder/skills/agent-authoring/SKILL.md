@@ -18,7 +18,7 @@ chat's, and a new Agent cannot be picked for a Project until someone has publish
 
 **1. Never restate anything the `platform` skill covers.** Every agent, including every Custom Agent,
 carries `platform` — the App contract (`startup.sh`, `$APP_PORT`, `app.meta.json`), the pod restart,
-files, configuration, the LLM gateway, the observability database. Read it once so you know what it
+files, configuration, the LLM gateway, the process logs and request log. Read it once so you know what it
 covers. A copy in a body goes stale the next time the platform changes. Write none of it.
 
 **2. When the child builds, serves or delivers anything, tell it to load the skill and to check its
@@ -104,8 +104,8 @@ all.
 
 A Custom Agent starts with `platform` and nothing else; **every other capability is an explicit add**,
 and Built-in Skills are Store rows like any other, so adding `sqlite` is the same act as adding an
-authored Skill. Read the catalogue first (`GET /skills?filter=built_in`, and `GET /skills/{id}` for a
-Skill's files). A stack skill goes only on an Agent with that stack.
+authored Skill. Read the catalogue first (`GET /skills?filter=built_in`, and `GET /skills/<id>` plus
+`GET /skills/<id>/versions/<version>/files` for a Skill's files). A stack skill goes only on an Agent with that stack.
 
 On a starter snapshot, pin `web-app` and **every** Skill in its *Skills for this stack* table, minus
 any whose layer the Template replaced, plus the Skill for what replaced it — the set App
@@ -114,10 +114,10 @@ load each, so the body does not repeat that. Before pinning two Skills, check th
 agree; an Agent carrying two answers to one question has no answer.
 
 Anything outside that table is added only when the brief implies it, and the body says when to reach
-for it: `schedules` for recurring work, `incoming-email` or `whatsapp` for inbound messages, an
-authored Skill for the job's own specifics — and, for an Agent with no starter, `llm-api` when the job
+for it: `schedules` for recurring work, an authored Skill for the job's own specifics — and, for an Agent with no starter, `llm-api` when the job
 needs a model call and `document-generation` when it delivers office documents. In the report, name
-what each one buys, not the skill.
+what each one buys, not the skill. Inbound messages (email, WhatsApp) are External Services: add a
+service's `service-<slug>` Skill like any other when every Project needs it; it always follows the service.
 
 The `skill-authoring` skill has the reuse / extend / fresh decision for a capability nothing covers.
 `references/agent-api.md` has every call: describe, write the profile, add and pin Skills.

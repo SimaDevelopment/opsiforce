@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import 'reflect-metadata';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
@@ -26,7 +26,7 @@ import type { SkillCaller, SkillService } from '../../src/store/skill.service';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import { manifest, validDescription } from './support/skill-fixtures';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
-import { ensureBuiltInSkill } from '../support/agent-fixtures';
+import { ensureBuiltInAgent, ensureBuiltInSkill } from '../support/agent-fixtures';
 
 let harness: DomainTestHarness;
 let service: SkillService;
@@ -326,7 +326,13 @@ describe('delete', () => {
     const removed: string[][] = [];
     await db
       .insert(projects)
-      .values({ id: chatId, tenantId, agentId: await anyAgentId(), kind: 'skill_builder_chat', createdBy: author.userId });
+      .values({
+        id: chatId,
+        tenantId,
+        agentId: await anyAgentId(),
+        kind: 'skill_builder_chat',
+        createdBy: author.userId,
+      });
     await db.update(skills).set({ builderChatId: chatId }).where(eq(skills.id, created.id));
 
     await service.remove(author, created.id, async (ids) => {
@@ -430,6 +436,7 @@ describe('the agents carrying a skill', () => {
         id: carrier.agentId,
         name: expect.stringContaining('agent-'),
         displayName: carrier.displayName,
+        shipped: false,
         pinnedVersions: [1],
         outdated: false,
         omittedIn: 0,
@@ -491,6 +498,37 @@ describe('the agents carrying a skill', () => {
     await omittingEnvironment(otherTenantId, carrier.agentId, [name]);
 
     expect((await service.listAgents(author, created.id))[0]).toMatchObject({ omittedIn: 0 });
+  });
+
+  it('names the Built-in Agents whose image ships it, with no pin, and counts them on the list', async () => {
+    const { skillId } = await ensureBuiltInSkill('platform');
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    const unregistered = await pinToAgent(tenantId, skillId);
+
+    const rows = await service.listAgents(author, skillId);
+
+    expect(rows.find((row) => row.id === appBuilder)).toMatchObject({
+      shipped: true,
+      pinnedVersions: [],
+      outdated: false,
+    });
+    expect(rows.find((row) => row.id === unregistered.agentId)).toMatchObject({ shipped: false, pinnedVersions: [1] });
+    expect((await service.findOne(author, skillId)).usedByAgentCount).toBe(rows.length);
+  });
+
+  it('shows a Built-in Agent that both ships and pins a skill once, and never counts that pin as behind', async () => {
+    const { skillId } = await ensureBuiltInSkill('dates');
+    const appBuilder = await ensureBuiltInAgent('app-builder');
+    await pinToAgent(tenantId, skillId, { agentId: appBuilder, versionId: await nonLatestVersionOf(skillId) });
+
+    const rows = await service.listAgents(author, skillId);
+    const summary = await service.findOne(author, skillId);
+
+    expect(rows.filter((row) => row.id === appBuilder)).toEqual([
+      expect.objectContaining({ shipped: true, pinnedVersions: [expect.any(Number)], outdated: false }),
+    ]);
+    expect(summary.usedByAgentCount).toBe(rows.length);
+    expect(summary.outdatedAgentCount).toBe(rows.filter((row) => row.outdated).length);
   });
 
   it('is empty while no agent carries it and refuses a skill the caller cannot see', async () => {
@@ -605,6 +643,22 @@ async function pinToAgent(
   return { agentId, displayName };
 }
 
+async function nonLatestVersionOf(skillId: string): Promise<string> {
+  const [{ highest }] = await db
+    .select({ highest: sql<number>`max(${skillVersions.version})` })
+    .from(skillVersions)
+    .where(eq(skillVersions.skillId, skillId));
+  const id = randomUUID();
+  await db.insert(skillVersions).values({
+    id,
+    skillId,
+    version: Number(highest) + 1,
+    contentHash: `hash-${id}`,
+    createdVia: 'reconciler',
+  });
+  return id;
+}
+
 async function versionIdFor(skillId: string, version: number): Promise<string> {
   const [row] = await db
     .select({ id: skillVersions.id })
@@ -650,5 +704,40 @@ describe('disabling a built-in skill for one Organization (ADR-0072)', () => {
     await expect(service.setDisabled({ ...author, canManageSkills: false }, skillId, true)).rejects.toThrow(
       Perms.manageSkills
     );
+  });
+});
+
+async function retiredSkill(): Promise<string> {
+  const { skillId } = await ensureBuiltInSkill(`retired-${randomUUID().slice(0, 8)}`);
+  await db.update(skills).set({ retiredAt: new Date() }).where(eq(skills.id, skillId));
+  return skillId;
+}
+
+describe('a retired built-in skill', () => {
+  it('leaves the Store list, which the Add skills picker reads too, under every filter', async () => {
+    const skillId = await retiredSkill();
+
+    for (const filter of ['all', 'built_in', 'disabled']) {
+      expect((await service.list(author, filter, undefined)).map((row) => row.id)).not.toContain(skillId);
+    }
+  });
+
+  it('still opens, marked retired, unavailable and not disableable', async () => {
+    const skillId = await retiredSkill();
+
+    expect(await service.findOne(author, skillId)).toMatchObject({
+      retired: true,
+      available: false,
+      disableable: false,
+    });
+  });
+
+  it('cannot be added to an agent', async () => {
+    const skillId = await retiredSkill();
+    await harness.environments.ensureDefaultForTenant(tenantId);
+    const agentCaller = { tenantId, userId: author.userId, canManageAgents: true };
+    const agent = await harness.agents.create(agentCaller, { displayName: `Agent ${randomUUID().slice(0, 8)}` });
+
+    expect(await code(harness.agents.setSkill(agentCaller, agent.id, skillId, {}))).toBe('skill_retired');
   });
 });

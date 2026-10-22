@@ -12,6 +12,27 @@ ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/log-writer ./cmd/agent-log-writer
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/agent-control ./cmd/agent-control
 
+FROM node:24.18.0-slim AS external-service-sdk
+
+WORKDIR /sdk
+COPY external-service-sdk/package.json ./
+RUN npm install --no-audit --no-fund --no-package-lock --no-save \
+    typescript@6.0.3 @types/node@22.19.15 zod@4.5.4 ajv@8.20.0
+COPY external-service-sdk/ ./
+RUN node scripts/pack-sdk.ts /out
+
+FROM node:24.18.0-slim AS opencode-plugins
+
+WORKDIR /plugins
+COPY opencode-plugins/package.json ./
+RUN npm install --no-audit --no-fund --no-package-lock --no-save bun@1.4.2
+COPY opencode-plugins/ ./
+RUN npx tsc --noEmit -p tsconfig.json \
+    && for entry in */index.ts; do \
+         npx bun build "$entry" --target bun --external effect --external @opencode/plugin \
+           --outfile "/out/$(dirname "$entry")/index.js" || exit 1; \
+       done
+
 FROM node:24.18.0-slim
 
 ARG OPENCODE_CONFIG=agent-config/opencode.json
@@ -36,7 +57,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     requests Pillow datasette==1.0a28 datasette-write-ui==0.0.1a14 \
     openpyxl==3.1.5 reportlab==5.0.1 pypdf==6.16.1
 
-RUN npm install -g bun @opencode-ai/cli@0.0.0-beta-19059 agent-browser
+RUN npm install -g bun @opencode/cli@2.1.2 agent-browser
 
 RUN mkdir -p /opt/doc-tools \
     && npm install --prefix /opt/doc-tools --no-audit --no-fund \
@@ -63,11 +84,24 @@ RUN cp -a /opt/agent-config-src/agents/. /opt/agents/ \
     && node /opt/agent-config-src/scripts/merge-registry.mjs /opt/agent-config-src/agents.json /opt/agent-config-src/private/agents.json /opt/agents/agents.json \
     && rm -rf /opt/agent-config-src /opt/agents/.gitkeep
 
+COPY --from=external-service-sdk /out/ /opt/opsiforce/external-service-sdk/
+COPY external-services/ /opt/opsiforce/external-services-src/
+RUN mkdir -p /opt/agents/external-service-builder/reference /opt/agents/external-service-builder/template/app/vendor \
+    && find /opt/opsiforce/external-services-src -mindepth 1 -maxdepth 1 -type d \
+       -exec cp -a {} /opt/agents/external-service-builder/reference/ \; \
+    && rm -rf /opt/opsiforce/external-services-src \
+    && cp /opt/opsiforce/external-service-sdk/external-service-sdk-*.tgz /opt/agents/external-service-builder/template/app/vendor/ \
+    && chmod -R a-w /opt/opsiforce/external-service-sdk /opt/agents/external-service-builder/reference
+
+COPY --from=opencode-plugins /out/ /opt/opsiforce/opencode-plugins/
+RUN chmod -R a-w /opt/opsiforce/opencode-plugins
+
 COPY agent-config/scripts/guard.sh /usr/local/bin/guard
+COPY agent-config/scripts/process-logs.sh /usr/local/bin/process-logs
 COPY agent-config/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY agent-config/scripts/agent-workspace-migrate.mjs /usr/local/bin/agent-workspace-migrate
 COPY agent-config/datasette-metadata.yml /opt/opencode/datasette-metadata.yml
-RUN chmod +x /usr/local/bin/guard /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
+RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep file \
@@ -80,9 +114,6 @@ RUN chmod +x /usr/local/bin/log-writer /usr/local/bin/agent-control
 ARG EXA_API_KEY=""
 ENV EXA_API_KEY=$EXA_API_KEY
 ENV NODE_OPTIONS=--max-http-header-size=131072
-
-HEALTHCHECK --interval=10s --timeout=3s --start-period=30s \
-  CMD wget -q --spider http://localhost:4096/api/health || exit 1
 
 EXPOSE 4096 3000 8080 8081 4910
 

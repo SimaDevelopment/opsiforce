@@ -1,6 +1,6 @@
 import { Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AllowsGatewayCaller } from '../auth/allows-gateway-caller.decorator';
+import { ServiceRoute } from '../auth/service-route.decorator';
 import { BuilderChatService } from '../../builder/builder-chat.service';
 import { Caller, chatProjectIdOf } from '../auth/caller';
 import { PublicApiController, PublicApiErrors, PublicResponse } from '../public-api.decorator';
@@ -13,8 +13,9 @@ export class MeController {
   constructor(private readonly builderChats: BuilderChatService) {}
 
   @Get()
-  @AllowsGatewayCaller()
+  @ServiceRoute({ summary: 'Who this Project acts as', allowedBy: [] })
   @ApiOperation({
+    operationId: 'get_me',
     summary: 'Get the current user',
     description:
       "Who the token belongs to, where it can act, and what it may do. The id is the platform user id used everywhere else in this API, not the subject of your token. `tenants` lists every tenant you belong to; `tenant` is the one this call used. Permissions are the can_* names you hold, sorted.\n\n**Use it for** three things: proving a freshly minted token works, discovering which tenant to send as x-tenant-name when you belong to several, and hiding actions the caller cannot perform — check for can_delete_project before offering a delete rather than letting it fail with a 403.\n\nA Builder chat's pod also reads `builderSubject` here, the Skill or Agent it was opened on, and `builderTestProject`, its one Test Project once it has created it.",

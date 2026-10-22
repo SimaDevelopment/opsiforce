@@ -2,8 +2,12 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { AgentConnectionService } from '../../agent-session/agent-connection.service';
 import type { ChatRow } from '../../builder/builder-chat.repository';
 import { BuilderChatService } from '../../builder/builder-chat.service';
+import { MAX_CREATED_PROJECTS, PublicApiSettings } from '../../external-services/configuration/public-api-settings';
 import { Perms } from '../../permission/permission.constants';
 import { AgentStatusService } from '../../project/agent-status.service';
+import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
+import { CreatedProjectsCapReached, type CreatedProjectsCap } from '../../project/project-limit';
+import { MAX_PROJECT_CHAIN_DEPTH } from '../../project/project.constants';
 import { ProjectService } from '../../project/project.service';
 import { isChatKind, TEST_PROJECT_KIND } from '../../project/project.types';
 import { ProjectEnvironmentService } from '../../project-environment/project-environment.service';
@@ -32,7 +36,9 @@ export class PublicProjectsService {
     private readonly projects: ProjectService,
     private readonly environments: ProjectEnvironmentService,
     private readonly connections: AgentConnectionService,
-    private readonly builderChats: BuilderChatService
+    private readonly builderChats: BuilderChatService,
+    private readonly provenance: ProjectProvenanceRepository,
+    private readonly publicApiSettings: PublicApiSettings
   ) {}
 
   async list(caller: Caller, query: ProjectListQuery): Promise<ProjectPageDto> {
@@ -48,21 +54,33 @@ export class PublicProjectsService {
   }
 
   async create(caller: Caller, body: CreateProject): Promise<ProjectDto> {
+    await this.refuseChainTooDeep(caller);
+    const createdProjectsCap = await this.createdProjectsCapOf(caller);
     const chat = body.kind === undefined ? null : await this.requireCallingBuilderChat(caller);
     if (chat) await this.requireChatMayTest(chat, body.agentId);
     const placement = await this.placement.resolve(caller, body);
     if (chat) await this.refuseSecondTestProject(caller, chat.id);
 
-    const created = await this.projects.create(
-      { title: body.title, description: body.description, timezone: body.timezone, agentId: body.agentId },
-      caller.tenant.id,
-      {
-        // ADR-0064 keeps a test Project out of every workspace, so placement applies only to ordinary ones.
-        ...(chat ? { kind: TEST_PROJECT_KIND } : { workspaceId: placement.workspaceId, folderId: placement.folderId }),
-        createdBy: caller.user.platformId,
-        createdByProjectId: caller.projectId ?? null,
-      }
-    );
+    const created = await this.projects
+      .create(
+        { title: body.title, description: body.description, timezone: body.timezone, agentId: body.agentId },
+        caller.tenant.id,
+        {
+          // ADR-0064 keeps a test Project out of every workspace, so placement applies only to ordinary ones.
+          ...(chat
+            ? { kind: TEST_PROJECT_KIND }
+            : { workspaceId: placement.workspaceId, folderId: placement.folderId }),
+          createdBy: caller.user.platformId,
+          createdByProjectId: caller.projectId ?? null,
+          createdProjectsCap,
+        }
+      )
+      .catch((error: unknown) => {
+        if (error instanceof CreatedProjectsCapReached) {
+          throw Errors.maxCreatedProjects(error.max, this.publicApiSettings.labelOf(MAX_CREATED_PROJECTS));
+        }
+        throw error;
+      });
 
     if (chat) await this.keepOnlyFirstTestProject(caller, chat.id, created.id);
 
@@ -70,6 +88,22 @@ export class PublicProjectsService {
     if (!row) throw new InternalServerErrorException(`Project ${created.id} vanished right after creation`);
     const [dto] = await this.toDtos([row]);
     return dto;
+  }
+
+  private async refuseChainTooDeep(caller: Caller): Promise<void> {
+    const callingProjectId = chatProjectIdOf(caller);
+    if (callingProjectId === null) return;
+    if ((await this.provenance.chainDepth(callingProjectId)) >= MAX_PROJECT_CHAIN_DEPTH) {
+      throw Errors.chainTooDeep(MAX_PROJECT_CHAIN_DEPTH);
+    }
+  }
+
+  private async createdProjectsCapOf(caller: Caller): Promise<CreatedProjectsCap | null> {
+    if (caller.source !== 'caller-identity' || !caller.projectId || !caller.projectEnvironmentId) return null;
+    return {
+      creatingProjectId: caller.projectId,
+      max: await this.publicApiSettings.maxCreatedProjectsOf(caller.projectEnvironmentId),
+    };
   }
 
   async updateTest(caller: Caller, projectId: string): Promise<void> {

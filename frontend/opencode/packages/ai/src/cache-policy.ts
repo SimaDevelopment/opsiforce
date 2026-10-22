@@ -11,7 +11,8 @@
 // Manual `cache: CacheHint` placements on individual parts are preserved and
 // count against the four-breakpoint budget; auto only fills remaining slots.
 import { CacheHint, type CachePolicy, type CachePolicyObject } from "./schema/options.js"
-import { LLMRequest, Message, ToolDefinition, type ContentPart } from "./schema/messages.js"
+import { LLMRequest, Message, ToolDefinition, type ContentPart, type ToolEntry } from "./schema/messages.js"
+import { effortUpdate } from "./effort-updates.js"
 
 const AUTO: CachePolicyObject = {
   tools: true,
@@ -37,11 +38,34 @@ const resolve = (policy: CachePolicy | undefined): CachePolicyObject => {
 // prefix caching, Gemini's implicit + out-of-band CachedContent). Skip the
 // whole policy pass for these — emitting hints would be harmless but pointless.
 const RESPECTS_INLINE_HINTS = new Set([
+  "alibaba-chat",
+  "alibaba-messages",
   "anthropic-messages",
+  "anthropic-compatible-messages",
+  "bedrock-mantle-messages",
+  "cloudflare-ai-gateway-messages",
   "google-vertex-messages",
+  "meta-messages",
+  "minimax-messages",
+  "moonshot-messages",
+  "vercel-ai-gateway-messages",
+  "zai-coding-messages",
   "bedrock-converse",
   "openrouter",
+  "digitalocean",
 ])
+
+// OpenRouter and Vercel AI Gateway upstreams other than Anthropic and Alibaba Qwen cache without breakpoints.
+// Gemini uses only the last breakpoint, so a conversation-tail breakpoint writes a new cache every step and costs
+// more than none. Qwen ignores breakpoints on tool definitions and caches tools with the system prompt.
+const QWEN: CachePolicyObject = { system: true, messages: { tail: 1 } }
+const gatewayPolicy = (modelID: string): CachePolicyObject => {
+  // `~anthropic/claude-sonnet-latest` style IDs are OpenRouter aliases for the latest model in a family.
+  const id = modelID.replace(/^~/, "")
+  if (id.startsWith("anthropic/")) return AUTO
+  if (id.startsWith("qwen/") || id.startsWith("alibaba/qwen")) return QWEN
+  return NONE
+}
 
 const makeHint = (ttlSeconds: number | undefined): CacheHint =>
   ttlSeconds !== undefined ? new CacheHint({ type: "ephemeral", ttlSeconds }) : new CacheHint({ type: "ephemeral" })
@@ -50,17 +74,23 @@ interface Budget {
   remaining: number
 }
 
-const markLastTool = (
-  tools: ReadonlyArray<ToolDefinition>,
-  hint: CacheHint,
-  budget: Budget,
-): ReadonlyArray<ToolDefinition> => {
-  if (tools.length === 0) return tools
-  const last = tools.length - 1
-  if (tools[last]!.cache || budget.remaining === 0) return tools
+const markLastTool = (tools: ReadonlyArray<ToolEntry>, hint: CacheHint, budget: Budget): ReadonlyArray<ToolEntry> => {
+  const target = tools.at(-1)
+  if (target === undefined) return tools
+  if (target.type === "namespace") {
+    const nested = markLastTool(target.tools, hint, budget)
+    return nested === target.tools ? tools : [...tools.slice(0, -1), { ...target, tools: nested }]
+  }
+  if (target.cache || budget.remaining === 0) return tools
   budget.remaining -= 1
-  return tools.map((tool, i) => (i === last ? new ToolDefinition({ ...tool, cache: hint }) : tool))
+  return [...tools.slice(0, -1), new ToolDefinition({ ...target, cache: hint })]
 }
+
+const countToolHints = (tools: ReadonlyArray<ToolEntry>): number =>
+  tools.reduce(
+    (count, tool) => count + (tool.type === "tool" ? (tool.cache === undefined ? 0 : 1) : countToolHints(tool.tools)),
+    0,
+  )
 
 const markSystemBoundaries = (system: LLMRequest["system"], hint: CacheHint, budget: Budget): LLMRequest["system"] => {
   if (system.length === 0) return system
@@ -115,14 +145,20 @@ const markMessages = (
     return markMessageAt(messages, lastIndexOfRole(messages, "user"), hint, budget)
   if (strategy === "latest-assistant")
     return markMessageAt(messages, lastIndexOfRole(messages, "assistant"), hint, budget)
-  const start = Math.max(0, messages.length - strategy.tail)
+  let start = messages.length
+  let remaining = strategy.tail
+  while (remaining > 0 && start > 0) {
+    start -= 1
+    if (effortUpdate(messages[start]!) === undefined) remaining -= 1
+  }
   let next = messages
-  for (let i = start; i < messages.length; i++) next = markMessageAt(next, i, hint, budget)
+  for (let i = start; i < messages.length; i++)
+    if (effortUpdate(messages[i]!) === undefined) next = markMessageAt(next, i, hint, budget)
   return next
 }
 
 const countHints = (request: LLMRequest) =>
-  request.tools.reduce((count, tool) => count + (tool.cache === undefined ? 0 : 1), 0) +
+  countToolHints(request.tools) +
   request.system.reduce((count, part) => count + (part.cache === undefined ? 0 : 1), 0) +
   request.messages.reduce(
     (count, message) =>
@@ -135,10 +171,7 @@ const countHints = (request: LLMRequest) =>
   )
 
 export const applyCachePolicy = (request: LLMRequest): LLMRequest => {
-  if (!RESPECTS_INLINE_HINTS.has(request.model.route.id)) return request
-  if (request.model.route.id === "openrouter" && (request.cache === undefined || request.cache === "auto"))
-    return request
-  const policy = resolve(request.cache)
+  const policy = selectPolicy(request)
   if (!policy.tools && !policy.system && !policy.messages) return request
 
   const hint = makeHint(policy.ttlSeconds)
@@ -149,4 +182,18 @@ export const applyCachePolicy = (request: LLMRequest): LLMRequest => {
 
   if (tools === request.tools && system === request.system && messages === request.messages) return request
   return LLMRequest.update(request, { tools, system, messages })
+}
+
+// A declared cache format overrides the route allowlist and its model-ID heuristics.
+const selectPolicy = (request: LLMRequest): CachePolicyObject => {
+  const format = request.model.compatibility?.cacheFormat
+  const route = request.model.route.id
+  const auto = request.cache === undefined || request.cache === "auto"
+  if (format === "alibaba") return auto ? QWEN : { ...resolve(request.cache), tools: false }
+  if (format === "anthropic") return resolve(request.cache)
+  if (!RESPECTS_INLINE_HINTS.has(route)) return NONE
+  if (!auto) return resolve(request.cache)
+  if (route === "openrouter" || route === "vercel-ai-gateway-messages") return gatewayPolicy(request.model.id)
+  if (route === "alibaba-chat") return request.model.id.toLowerCase().startsWith("qwen") ? QWEN : NONE
+  return AUTO
 }

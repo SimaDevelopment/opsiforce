@@ -1,13 +1,22 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
-import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
-import { readFile, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { db } from '../../db';
 import {
+  agentSettings,
   agents,
   projectEnvironments,
   projectGatewayKeys,
@@ -17,33 +26,38 @@ import {
   projects,
   tenants,
 } from '../../db/schema';
-import { resolvePreset } from '../pod/pod-classes';
+import { resolvePodSettings, sameResources, toK8sResources, type PodSettings } from '../pod/pod-classes';
+import { hasResources, podSettingsColumns } from '../pod/pod-settings-columns';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
-import { assertRoomForProject } from '../project/project-limit';
+import { assertRoomForCreatedProject, assertRoomForProject, type CreatedProjectsCap } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
 import { BifrostService } from '../bifrost/bifrost.service';
+import { retryBifrostWrite } from '../bifrost/bifrost-retries';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { DefaultsService } from '../defaults/defaults.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { EnvironmentService } from '../environment/environment.service';
-import { ExternalServiceProvisioningService } from '../external-services';
-import { agentDeclaresPlatformApi, type AgentModelSelection } from '../agent/agent-config';
+import { MAX_WARM_POOL_SIZE, readAgentPodSettings, readAgentPodSettingsFor } from '../agent/agent-pod-settings';
+import { warmPooledCustomAgentsWhere } from '../agent/agent-visibility';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
+import { PROJECT_LIFECYCLE, type ProjectLifecycle } from '../project/project-lifecycle';
 import { DeliveryService } from '../delivery/delivery.service';
-import type { DeliveryPlan } from '../delivery/delivery.types';
-import { PodReloadClient } from '../delivery/pod-reload.client';
+import { CUSTOM_AGENT_PACKAGE, type DeliveryPlan } from '../delivery/delivery.types';
+import { PodReloadClient, type NotifyTarget } from '../delivery/pod-reload.client';
 import {
   PROJECT_POOL_QUEUE,
   PROJECT_POOL_TEARDOWN_QUEUE,
   ProjectPoolJob,
+  type IntegrityJobData,
   type ProjectPoolJobData,
   type TeardownJobData,
 } from './project-pool.types';
+import { workspaceAtTarget, type WorkspaceTarget } from './workspace-at-target';
 
 const POOL_LEGACY_WARM_SELECTOR = 'app=opsiforce-agent,opsiforce.io/pool=warm';
 const STALE_CLAIMING_MS = 30 * 1000;
 const RECOVERY_INTERVAL_MS = 60 * 1000;
-const PATCH_BACKOFF_MS = [500, 1000, 2000];
 const STALE_PENDING_POD_MS = 90 * 1000;
 const POOL_PROVISION_READY_TIMEOUT_MS = 90 * 1000;
 
@@ -59,6 +73,8 @@ export interface PoolClaim {
   createdBy: string | null;
   createdByProjectId: string | null;
   kind: ProjectKind | null;
+  configureBeforeDelivery: ((projectEnvironmentId: string) => Promise<void>) | null;
+  createdProjectsCap: CreatedProjectsCap | null;
 }
 
 interface PendingRow {
@@ -70,19 +86,22 @@ interface PendingRow {
 
 type TeamPatchResult = 'patched' | 'clean-failed' | 'dirty';
 
+interface PooledAgent extends WorkspaceTarget {
+  name: string;
+  poolSize: number;
+  resources: PodSettings;
+}
+
 @Injectable()
 export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(ProjectPoolService.name);
   private readonly platformVersion: string;
   private readonly gatewayUrl: string;
-  private readonly externalServicesUrl: string;
+  private readonly runtimeProxyUrl: string;
+  private readonly agentImageVersion: string;
   private readonly storageMountPath: string;
   private readonly poolSizeOverride: number | null;
-  private agentTargetByName = new Map<string, number>();
-  private agentVersionByName = new Map<string, string>();
-  private agentModelSelectionByName = new Map<string, AgentModelSelection>();
-  private readonly agentIdToName = new Map<string, string>();
-  private readonly agentNameToId = new Map<string, string>();
+  private pooledAgents = new Map<string, PooledAgent>();
   private integrityTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -93,25 +112,27 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     private readonly podService: PodService,
     @Inject(forwardRef(() => BifrostService))
     private readonly bifrostService: BifrostService,
+    private readonly modelProviders: ModelProvidersService,
     private readonly gatewayKeyService: GatewayKeyService,
     private readonly defaultsService: DefaultsService,
     private readonly timeoutService: TimeoutService,
     private readonly environmentService: EnvironmentService,
-    private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     private readonly configService: ConfigService,
     private readonly agentReconciler: AgentReconcilerService,
     private readonly deliveryService: DeliveryService,
-    private readonly podReload: PodReloadClient
+    private readonly podReload: PodReloadClient,
+    @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
   ) {
     this.platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
-    this.externalServicesUrl = this.configService.get<string>('externalServicesUrl', '');
+    this.runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
+    this.agentImageVersion = this.configService.getOrThrow<string>('agentImageVersion');
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.poolSizeOverride = this.configService.get<number | null>('poolSizeOverride', null);
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    await this.cacheAgentIds();
+    await this.refreshPooledAgents();
     await this.queue.setGlobalConcurrency(1).catch((err) => {
       this.logger.warn(`Failed to set global pool queue concurrency: ${(err as Error).message}`);
     });
@@ -137,10 +158,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   async claimPending(agentId: string, claim: PoolClaim): Promise<string | null> {
-    const name = this.agentIdToName.get(agentId);
-    if (!name) return null;
-    if (agentDeclaresPlatformApi(name)) return null;
-
     const reserved = await this.reservePending(agentId, claim);
     if (!reserved) return null;
 
@@ -152,7 +169,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'unhealthy pod at claim').catch((err) => {
         this.logger.warn(`Inline teardown of ${reserved.id} failed: ${(err as Error).message}`);
       });
-      await this.replenishIfEnabled(name, reserved.agentId);
+      await this.requestReplenish(reserved.agentId);
       return null;
     }
 
@@ -187,11 +204,32 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'bifrost patch outcome unknown').catch(
           () => {}
         );
-        await this.replenishIfEnabled(name, reserved.agentId);
+        await this.requestReplenish(reserved.agentId);
       }
       return null;
     }
 
+    if (!(await this.modelProviders.writeProjectKeys(claim.tenantId, reserved.id))) {
+      this.logger.warn(`Reverting claim ${reserved.id}: its keys could not take the Organization's model providers`);
+      await this.revertReservation(reserved.id);
+      return null;
+    }
+
+    await this.lifecycle?.created(reserved.id).catch((err: Error) => {
+      this.logger.warn(`Claim ${reserved.id} could not configure the service it tests: ${err.message}`);
+    });
+    const configured = await (claim.configureBeforeDelivery?.(reserved.id) ?? Promise.resolve()).then(
+      () => true,
+      (err: Error) => {
+        this.logger.warn(`Claim ${reserved.id} could not write its starting Project configuration: ${err.message}`);
+        return false;
+      }
+    );
+    if (!configured) {
+      await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'configuration failed').catch(() => {});
+      await this.requestReplenish(reserved.agentId);
+      return null;
+    }
     const delivered = await this.deliveryService.deliverAtCreate(reserved.id).then(
       (plan) => this.announceToLivePod(plan, livePodIp),
       (err: Error) => {
@@ -201,9 +239,10 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     );
     if (!delivered) {
       await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'delivery failed').catch(() => {});
-      await this.replenishIfEnabled(name, reserved.agentId);
+      await this.requestReplenish(reserved.agentId);
       return null;
     }
+    await this.announceDelivered(reserved.id);
 
     const finalized = await this.finalizeClaim(reserved.id, claim, livePodIp).catch(() => false);
     if (!finalized) {
@@ -217,25 +256,26 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       }
       this.logger.warn(`Claim ${reserved.id} could not be finalized; tearing it down and falling back`);
       await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'finalize failed').catch(() => {});
-      await this.replenishIfEnabled(name, reserved.agentId);
+      await this.requestReplenish(reserved.agentId);
       return null;
     }
 
-    await this.replenishIfEnabled(name, reserved.agentId);
+    await this.requestReplenish(reserved.agentId);
     return reserved.id;
   }
 
-  private async replenishIfEnabled(agentName: string, agentId: string): Promise<void> {
-    if (this.effectiveTarget(agentName) <= 0) return;
+  private async requestReplenish(agentId: string): Promise<void> {
     await this.enqueueReplenish(agentId).catch((err) => {
       this.logger.warn(`Post-claim replenish enqueue failed for ${agentId}: ${(err as Error).message}`);
     });
   }
 
   async runReplenishJob(agentId: string): Promise<void> {
-    const name = this.agentIdToName.get(agentId);
-    if (!name) return;
-    const target = this.effectiveTarget(name);
+    await this.refreshPooledAgents();
+    const agent = this.pooledAgents.get(agentId);
+    if (!agent) return;
+    const { name } = agent;
+    const target = this.effectiveTarget(agentId);
     if (target === 0) return;
 
     let current = await this.countPoolSlots(agentId);
@@ -249,7 +289,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     while (deficit > 0 && guard < maxIterations) {
       guard++;
       try {
-        await this.createPendingProject(agentId, name);
+        await this.createPendingProject(agentId, agent);
       } catch (err) {
         this.logger.warn(`Failed to create pending project for ${name}: ${(err as Error).message}`);
       }
@@ -270,8 +310,31 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     await this.teardownExternalResources(data);
   }
 
-  async runIntegrityJob(triggeredBy: 'boot' | 'interval'): Promise<void> {
-    await this.cacheAgentIds();
+  async reconcileAgent(agentId: string): Promise<void> {
+    await this.queue.add(
+      ProjectPoolJob.Integrity,
+      { triggeredBy: 'agent-change' },
+      { jobId: `integrity__agent__${agentId}__${crypto.randomUUID()}`, removeOnComplete: true, removeOnFail: true }
+    );
+  }
+
+  async releaseAgentSlots(agentId: string): Promise<void> {
+    await db
+      .update(agentSettings)
+      .set({ warmPoolSize: 0, updatedAt: new Date() })
+      .where(eq(agentSettings.agentId, agentId));
+    const slots = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
+      .where(and(eq(projects.agentId, agentId), eq(projectEnvironments.status, ProjectStatus.Pending)));
+    for (const slot of slots) {
+      await this.destroyPoolSlot(slot.id, [ProjectStatus.Pending], 'agent deleted');
+    }
+  }
+
+  async runIntegrityJob(triggeredBy: IntegrityJobData['triggeredBy']): Promise<void> {
+    await this.refreshPooledAgents();
     await this.recoverClaimingRows();
     await this.reconcilePendingPods();
     await this.enqueueDeficitReplenishes();
@@ -310,38 +373,51 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async enqueueDeficitReplenishes(): Promise<void> {
-    for (const [name, agentId] of this.agentNameToId.entries()) {
-      const target = this.effectiveTarget(name);
+    for (const agentId of this.pooledAgents.keys()) {
+      const target = this.effectiveTarget(agentId);
       if (target === 0) continue;
       const current = await this.countPoolSlots(agentId);
       if (current < target) await this.enqueueReplenish(agentId);
     }
   }
 
+  private async announceDelivered(projectId: string): Promise<void> {
+    await this.lifecycle?.delivered(projectId).catch((err: Error) => {
+      this.logger.warn(`Claim ${projectId} could not start the configurations it inherited: ${err.message}`);
+    });
+  }
+
   /** The slot's opencode is already running, and a write from another node raises no file event in its pod. */
   private async announceToLivePod(plan: DeliveryPlan, podIp: string): Promise<boolean> {
-    if (plan.skills.length === 0) return true;
+    const targets: NotifyTarget[] = [
+      ...(plan.agentFile ? (['config', 'agents'] as const) : []),
+      ...(plan.skills.length > 0 ? (['skills'] as const) : []),
+    ];
+    if (targets.length === 0) return true;
+    await this.podReload.notify(plan.projectEnvironmentId, podIp, targets);
     try {
-      await this.podReload.notify(plan.projectEnvironmentId, podIp, ['skills']);
-      await this.podReload.confirmSkills(
-        podIp,
-        plan.skills.map((skill) => skill.name),
-        []
-      );
+      if (plan.agentFile) await this.podReload.confirmAgent(podIp, plan.agentFile.slug);
+      if (plan.skills.length > 0) {
+        await this.podReload.confirmSkills(
+          podIp,
+          plan.skills.map((skill) => skill.name),
+          []
+        );
+      }
       return true;
     } catch (err) {
-      this.logger.warn(
-        `Claim ${plan.projectEnvironmentId} did not serve its delivered skills: ${(err as Error).message}`
-      );
+      this.logger.warn(`Claim ${plan.projectEnvironmentId} did not serve what it delivered: ${(err as Error).message}`);
       return false;
     }
   }
 
   private async reservePending(agentId: string, claim: PoolClaim): Promise<PendingRow | null> {
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(claim.tenantId);
+    const resources = await readAgentPodSettings(agentId);
 
     return db.transaction(async (tx) => {
       await assertRoomForProject(tx, claim.tenantId, claim.kind);
+      await assertRoomForCreatedProject(tx, claim.createdProjectsCap);
       const reserved = await tx
         .select({
           id: projects.id,
@@ -351,11 +427,13 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         })
         .from(projects)
         .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
+        .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
         .where(
           and(
             eq(projectEnvironments.status, ProjectStatus.Pending),
             eq(projects.agentId, agentId),
-            isNotNull(projectEnvironments.podIp)
+            isNotNull(projectEnvironments.podIp),
+            hasResources(projectPodSettings, resources)
           )
         )
         .orderBy(asc(projects.createdAt))
@@ -365,6 +443,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       const row = reserved[0];
       if (!row) return null;
 
+      await tx.update(projectPodSettings).set(resources).where(eq(projectPodSettings.projectId, row.id));
       await tx
         .update(projects)
         .set({
@@ -484,20 +563,9 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     }
 
     const budgets = await this.defaultsService.getTenantBudgets(tenantId);
-    for (let attempt = 0; attempt < PATCH_BACKOFF_MS.length; attempt++) {
-      try {
-        await this.bifrostService.updateProjectResourceBudgets(projectId, teamId, budgets);
-        return true;
-      } catch (err) {
-        const delay = PATCH_BACKOFF_MS[attempt];
-        this.logger.warn(
-          `Bifrost budget patch attempt ${attempt + 1} failed (project=${projectId}): ${(err as Error).message}; retrying in ${delay}ms`
-        );
-        if (attempt < PATCH_BACKOFF_MS.length - 1) await sleep(delay);
-      }
-    }
-
-    return false;
+    return retryBifrostWrite(this.logger, `Bifrost budget patch (project=${projectId})`, () =>
+      this.bifrostService.updateProjectResourceBudgets(projectId, teamId, budgets)
+    );
   }
 
   private async patchBifrostTeamWithRetries(teamId: string | null, customerId: string): Promise<TeamPatchResult> {
@@ -507,18 +575,10 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       return 'dirty';
     }
 
-    for (let attempt = 0; attempt < PATCH_BACKOFF_MS.length; attempt++) {
-      try {
-        await this.bifrostService.reassignTeamCustomer(teamId, customerId);
-        return 'patched';
-      } catch (err) {
-        const delay = PATCH_BACKOFF_MS[attempt];
-        this.logger.warn(
-          `Bifrost team patch attempt ${attempt + 1} failed (team=${teamId}): ${(err as Error).message}; retrying in ${delay}ms`
-        );
-        if (attempt < PATCH_BACKOFF_MS.length - 1) await sleep(delay);
-      }
-    }
+    const patched = await retryBifrostWrite(this.logger, `Bifrost team patch (team=${teamId})`, () =>
+      this.bifrostService.reassignTeamCustomer(teamId, customerId)
+    );
+    if (patched) return 'patched';
 
     try {
       const assignedCustomerId = await this.bifrostService.getTeamCustomerId(teamId);
@@ -539,7 +599,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     return this.bifrostService.createTenantCustomer(tenantId, tenant.name, budgets);
   }
 
-  private async createPendingProject(agentId: string, agentName: string): Promise<void> {
+  private async createPendingProject(agentId: string, agent: PooledAgent): Promise<void> {
     const id = crypto.randomUUID();
     const directory = `projects/${id}`;
     const timeouts = await this.defaultsService.getGlobalTimeouts();
@@ -561,11 +621,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         timezone: 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({
-        projectId: id,
-        podClass: 'small',
-        ...resolvePreset('small'),
-      });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...agent.resources });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -577,8 +633,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         platformVersion: this.platformVersion,
       });
     });
-
-    await this.externalServiceProvisioning.provisionEnvironment(id);
 
     try {
       if (this.bifrostService.isEnabled()) {
@@ -593,10 +647,11 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
 
       await this.podService.createAssignedPod(id, directory, id, {
         ...bifrostOptions,
-        agentName,
+        agentName: agent.packageName,
+        resources: toK8sResources(agent.resources),
         gatewayApiKey: gatewayApiKey ?? undefined,
         gatewayUrl: this.gatewayUrl,
-        externalServicesUrl: this.externalServicesUrl,
+        runtimeProxyUrl: this.runtimeProxyUrl,
         controlToken: crypto.randomBytes(32).toString('hex'),
       });
 
@@ -606,7 +661,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .update(projectEnvironments)
         .set({ podIp, updatedAt: new Date() })
         .where(and(eq(projectEnvironments.id, id), eq(projectEnvironments.status, ProjectStatus.Pending)));
-      this.logger.log(`Pool project ${id} ready (agent=${agentName})`);
+      this.logger.log(`Pool project ${id} ready (agent=${agent.name})`);
     } catch (err) {
       this.logger.warn(`Failed to provision pool project ${id}: ${(err as Error).message}`);
       await this.destroyPoolSlot(id, [ProjectStatus.Pending], 'provisioning failed').catch(() => {});
@@ -704,7 +759,17 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
           await this.destroyAndReplenish(row.id, 'recovery: bifrost patch failed permanently');
           continue;
         }
-        await this.deliveryService.deliverAtCreate(row.id);
+        if (!(await this.modelProviders.writeProjectKeys(row.tenantId, row.id))) {
+          await this.destroyAndReplenish(row.id, 'recovery: model provider sync failed permanently');
+          continue;
+        }
+        const plan = await this.deliveryService.deliverAtCreate(row.id);
+        const podIp = await this.readReadyPodIp(row.id);
+        if (!podIp || !(await this.announceToLivePod(plan, podIp))) {
+          await this.destroyAndReplenish(row.id, 'recovery: the pod did not serve what was delivered');
+          continue;
+        }
+        await this.announceDelivered(row.id);
         const finalized = await this.finalizeRecoveredClaim(row.id, row.tenantId);
         if (finalized) {
           await this.timeoutService.touch(row.id).catch((err) => {
@@ -775,12 +840,15 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         directory: projectEnvironments.directory,
         agentId: projects.agentId,
         podIp: projectEnvironments.podIp,
+        resources: podSettingsColumns(projectPodSettings),
       })
       .from(projects)
       .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
+      .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
       .where(eq(projectEnvironments.status, ProjectStatus.Pending))
       .orderBy(asc(projects.createdAt));
 
+    const keptByAgent = new Map<string, number>();
     for (const row of pending) {
       const podName = this.podService.assignedPodName(row.id);
       const pod = await this.podService.getPod(podName).catch(() => null);
@@ -802,11 +870,25 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         }
         continue;
       }
-      const agentName = this.agentIdToName.get(row.agentId);
-      if (!agentName || !(await this.workspaceAtTarget(row.directory, agentName))) {
+      const agent = this.pooledAgents.get(row.agentId);
+      if (!agent) {
+        await this.enqueueRecycle(row.id, 'agent no longer pooled');
+        continue;
+      }
+      const kept = keptByAgent.get(row.agentId) ?? 0;
+      if (kept >= this.effectiveTarget(row.agentId)) {
+        await this.enqueueRecycle(row.id, 'above pool size');
+        continue;
+      }
+      if (!sameResources(row.resources, agent.resources)) {
+        await this.enqueueRecycle(row.id, 'agent resources changed');
+        continue;
+      }
+      if (!(await workspaceAtTarget(join(this.storageMountPath, row.directory), agent))) {
         await this.enqueueRecycle(row.id, 'agent template drift');
         continue;
       }
+      keptByAgent.set(row.agentId, kept + 1);
       const podIp = pod.status?.podIP ?? null;
       if (podIp && podIp !== row.podIp) {
         await db
@@ -851,75 +933,43 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     );
   }
 
-  private async cacheAgentIds(): Promise<void> {
+  private async refreshPooledAgents(): Promise<void> {
     await this.agentReconciler.ready();
     const rows = await db
       .select({
         id: agents.id,
         name: agents.name,
-        poolSize: agents.poolSize,
+        origin: agents.origin,
+        warmPoolSize: agentSettings.warmPoolSize,
         version: agents.version,
         model: agents.model,
         variant: agents.variant,
       })
       .from(agents)
-      .where(and(isNull(agents.tenantId), eq(agents.origin, 'built_in')));
+      .leftJoin(agentSettings, eq(agentSettings.agentId, agents.id))
+      .where(or(and(isNull(agents.tenantId), eq(agents.origin, 'built_in')), warmPooledCustomAgentsWhere()));
 
-    const targets = new Map<string, number>();
-    const versions = new Map<string, string>();
-    const models = new Map<string, AgentModelSelection>();
+    const podSettingsByAgent = await readAgentPodSettingsFor(rows.map((row) => row.id));
+    const pooled = new Map<string, PooledAgent>();
     for (const row of rows) {
-      this.agentIdToName.set(row.id, row.name);
-      this.agentNameToId.set(row.name, row.id);
-      targets.set(row.name, row.poolSize);
-      if (row.version) versions.set(row.name, row.version);
-      if (row.model) {
-        models.set(row.name, { model: row.model, ...(row.variant ? { variant: row.variant } : {}) });
-      }
+      const builtIn = row.origin === 'built_in';
+      const poolSize = row.warmPoolSize ?? 0;
+      pooled.set(row.id, {
+        name: row.name,
+        packageName: builtIn ? row.name : CUSTOM_AGENT_PACKAGE,
+        poolSize: builtIn ? poolSize : Math.min(poolSize, MAX_WARM_POOL_SIZE),
+        resources: podSettingsByAgent.get(row.id) ?? resolvePodSettings(),
+        contentVersion: builtIn ? row.version : this.agentImageVersion,
+        modelSelection:
+          builtIn && row.model ? { model: row.model, ...(row.variant ? { variant: row.variant } : {}) } : null,
+      });
     }
-    this.agentTargetByName = targets;
-    this.agentVersionByName = versions;
-    this.agentModelSelectionByName = models;
+    this.pooledAgents = pooled;
   }
 
-  private effectiveTarget(agentName: string): number {
-    const declared = this.agentTargetByName.get(agentName) ?? 0;
+  private effectiveTarget(agentId: string): number {
+    const declared = this.pooledAgents.get(agentId)?.poolSize ?? 0;
     const cap = this.poolSizeOverride;
     return cap !== null ? Math.min(declared, cap) : declared;
   }
-
-  private async workspaceAtTarget(directory: string, agentName: string): Promise<boolean> {
-    const targetVersion = this.agentVersionByName.get(agentName);
-    const modelSelection = this.agentModelSelectionByName.get(agentName);
-    if (!targetVersion && !modelSelection) return true;
-    if (targetVersion) {
-      const ledgerPath = join(this.storageMountPath, directory, '.opsiforce', 'agents', `${agentName}.json`);
-      try {
-        const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as { contentVersion?: string };
-        if (ledger.contentVersion !== targetVersion) return false;
-      } catch {
-        return false;
-      }
-    }
-
-    if (!modelSelection) return true;
-    const configPath = join(this.storageMountPath, directory, '.opencode', 'opencode.json');
-    try {
-      const config = JSON.parse(await readFile(configPath, 'utf8')) as {
-        model?: string;
-        agents?: Record<string, { model?: string } | undefined>;
-      };
-      const agentRef = config.agents?.[agentName]?.model ?? '';
-      const [agentModel, agentVariant] = agentRef.split('#');
-      if (config.model !== modelSelection.model || agentModel !== modelSelection.model) return false;
-      if (modelSelection.variant && agentVariant !== modelSelection.variant) return false;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

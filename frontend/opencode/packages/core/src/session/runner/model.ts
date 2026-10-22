@@ -1,9 +1,9 @@
 export * as SessionRunnerModel from "./model.js"
 
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { LanguageModel } from "@opencode-ai/ai"
-import { Model } from "@opencode-ai/schema/model"
-import { Provider } from "@opencode-ai/schema/provider"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { LanguageModel } from "@opencode/ai"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ModelResolver } from "../../model-resolver.js"
 import { SessionSchema } from "../schema.js"
@@ -29,13 +29,6 @@ export class ModelUnavailableError extends Schema.TaggedError<ModelUnavailableEr
     return `Model unavailable: ${this.providerID}/${this.modelID}`
   }
 }
-export const VariantUnavailableError = ModelResolver.VariantUnavailableError
-export type VariantUnavailableError = ModelResolver.VariantUnavailableError
-export const UnsupportedPackageError = ModelResolver.UnsupportedPackageError
-export type UnsupportedPackageError = ModelResolver.UnsupportedPackageError
-export const UnresolvedProviderVariablesError = ModelResolver.UnresolvedProviderVariablesError
-export type UnresolvedProviderVariablesError = ModelResolver.UnresolvedProviderVariablesError
-
 export type Error = ModelNotSelectedError | ModelUnavailableError | ModelResolver.Error
 export type Resolved = ModelResolver.Resolved
 
@@ -57,6 +50,8 @@ export const resolved = (
     readonly variant?: Model.VariantID
     readonly cost: Model.Info["cost"]
     readonly limit: Model.Info["limit"]
+    readonly compaction?: Provider.Compaction
+    readonly transport?: Provider.Transport
   },
 ): Resolved => ({
   model,
@@ -68,6 +63,8 @@ export const resolved = (
   capabilities: options.capabilities,
   cost: options.cost,
   limit: options.limit,
+  compaction: options.compaction,
+  transport: options.transport,
 })
 
 const layer = Layer.effect(

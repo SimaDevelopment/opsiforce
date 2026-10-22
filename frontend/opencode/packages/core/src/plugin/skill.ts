@@ -2,8 +2,8 @@
 
 export * as SkillPlugin from "./skill.js"
 
-import { define, type Context } from "@opencode-ai/plugin/effect/plugin"
-import { Document } from "@opencode-ai/schema/config"
+import { define, type Context } from "@opencode/plugin/effect/plugin"
+import { Document } from "@opencode/schema/config"
 import { Effect } from "effect"
 import { AbsolutePath } from "../schema.js"
 import { Skill } from "../skill.js"
@@ -30,7 +30,7 @@ export const Plugin = define({
           id: Skill.ID.make("opencode"),
           name: Skill.Name.make("OpenCode"),
           description: OpencodeDescription,
-          location: AbsolutePath.make("/builtin/opencode.md"),
+          path: AbsolutePath.make("/builtin/opencode.md"),
           content: OpencodeContent,
         }),
       )
@@ -39,8 +39,7 @@ export const Plugin = define({
           id: Skill.ID.make("report"),
           name: Skill.Name.make("Report"),
           description: REPORT_DESCRIPTION,
-          slash: true,
-          location: AbsolutePath.make("/builtin/report.md"),
+          path: AbsolutePath.make("/builtin/report.md"),
           content: reportContent,
         }),
       )
@@ -52,6 +51,9 @@ const reportContentWithDiagnostics = Effect.fn("SkillPlugin.reportContentWithDia
   app: Context["app"],
 ) {
   const plugins = yield* configuredPlugins()
+  // Under emulation on Windows ARM64, os.arch() reads x64 but PROCESSOR_IDENTIFIER still names the ARM host.
+  const emulated =
+    process.platform === "win32" && os.arch() === "x64" && process.env.PROCESSOR_IDENTIFIER?.startsWith("ARM")
   return [
     ReportContent,
     "",
@@ -61,7 +63,7 @@ const reportContentWithDiagnostics = Effect.fn("SkillPlugin.reportContentWithDia
     "",
     `- opencode version: ${app.version}`,
     `- install/channel: ${app.channel}`,
-    `- OS: ${os.type()} ${os.release()} (${os.platform()} ${os.arch()})`,
+    `- OS: ${os.type()} ${os.release()} (${os.platform()} ${os.arch()}${emulated ? ", emulated on ARM64" : ""})`,
     `- Terminal: ${terminal()}`,
     `- Shell: ${shell()}`,
     `- Active plugins: ${plugins.length === 0 ? "None found in config" : plugins.join(", ")}`,

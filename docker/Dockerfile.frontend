@@ -9,6 +9,7 @@ ENV NODE_OPTIONS="--max-http-header-size=128000"
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn ./.yarn
 COPY ${PKG_PREFIX}frontend ./packages/opsiforce/frontend
+COPY ${PKG_PREFIX}external-service-sdk ./packages/opsiforce/external-service-sdk
 
 RUN yarn workspaces focus --all
 
@@ -22,6 +23,8 @@ ARG VITE_VSCODE_DOMAIN=localhost:3003
 ENV VITE_VSCODE_DOMAIN=$VITE_VSCODE_DOMAIN
 ARG VITE_DB_DOMAIN=localhost:3004
 ENV VITE_DB_DOMAIN=$VITE_DB_DOMAIN
+ARG VITE_BRAND_MANIFEST=
+ENV VITE_BRAND_MANIFEST=$VITE_BRAND_MANIFEST
 
 RUN yarn build
 

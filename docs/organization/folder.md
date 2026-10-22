@@ -5,11 +5,11 @@ terms: [Folder]
 
 # Folder
 
-> How are [Projects](../../CONTEXT.md) grouped inside a Workspace by a single-level label, and what does that label change about who sees them?
+> How are [Projects](../../GLOSSARY.md) grouped inside a Workspace by a single-level label, and what does that label change about who sees them?
 
 ## How it works
 
-- A [Folder](../../CONTEXT.md) is a named, single-level grouping of Projects inside one [Workspace](../../CONTEXT.md); a Project sits either directly in its Workspace or in exactly one of its Folders.
+- A [Folder](../../GLOSSARY.md) is a named, single-level grouping of Projects inside one [Workspace](../../GLOSSARY.md); a Project sits either directly in its Workspace or in exactly one of its Folders.
 - A Folder is a label, not ownership: it carries no members and no permissions, so visibility follows the Workspace and moving a Project into a Folder changes nothing about who sees it.
 - Folder names are unique within a Workspace, compared case-insensitively.
 - Anyone who can open the Workspace can create, rename, delete and move its Folders; for a shared Workspace that includes holders of `can_manage_workspaces` who are not members.
@@ -20,7 +20,7 @@ terms: [Folder]
 
 - When a Folder is deleted, its Projects are released to the Workspace; nothing else is removed.
 - When a Folder is moved to the Workspace it is already in, nothing changes.
-- When a Folder is moved into a [Personal Workspace](../../CONTEXT.md), the move is refused.
+- When a Folder is moved into a [Personal Workspace](../../GLOSSARY.md), the move is refused.
 - When a Workspace is deleted, its Folders are deleted with it.
 
 ## Code

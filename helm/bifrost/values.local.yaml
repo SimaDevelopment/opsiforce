@@ -4,7 +4,7 @@ service:
 fullnameOverride: opsiforce-bifrost
 
 image:
-  tag: "v2.0.0"
+  tag: "v2.3.2"
 
 replicaCount: 1
 
@@ -39,7 +39,7 @@ postgresql:
     passwordKey: password
 
 bifrost:
-  sourceOfTruth: "config.json"
+  sourceOfTruth: "split"
   encryptionKeySecret:
     name: opsiforce-bifrost-encryption
     key: key
@@ -50,9 +50,12 @@ bifrost:
     passwordKey: password
   client:
     enableLogging: true
+    disableContentLogging: true
     logRetentionDays: 7
     allowDirectKeys: false
     enforceAuthOnInference: true
+    compat:
+      forceReasoningOnlyModelsToResponses: false
   providers:
     openai:
       keys:
@@ -87,6 +90,7 @@ bifrost:
             - gpt-5.6-sol
             - gpt-5.6-sol-fast
             - gpt-6-astra
+            - gpt-6.1-sol
             - gpt-5.5
             - gpt-5.4
             - gpt-5.4-mini
@@ -95,7 +99,8 @@ bifrost:
             - gpt-5.2
             - codex-auto-review
       network_config:
-        base_url: "http://host.minikube.internal:8455"
+        base_url: "http://opsiforce-linked-account-proxy:8455/v1"
+        allow_private_network: true
         default_request_timeout_in_seconds: 1200
         max_retries: 2
         retry_backoff_initial_ms: 500

@@ -1,10 +1,10 @@
+import type { FileSystem } from "@opencode/core/filesystem"
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Config } from "@opencode-ai/schema/config"
-import { Money } from "@opencode-ai/schema/money"
+import { Event } from "@opencode/schema/config"
+import { Money } from "@opencode/schema/money"
 import {
-  Cause,
   DateTime,
   Deferred,
   Duration,
@@ -22,24 +22,24 @@ import {
   Stream,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { Agent } from "@opencode-ai/core/agent"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Global } from "@opencode-ai/util/global"
-import { LocationServiceMap, type LocationServices } from "@opencode-ai/core/location-services"
-import { LocationActivity } from "@opencode-ai/core/location-activity"
-import { Location } from "@opencode-ai/core/location"
-import { LocationWatcher } from "@opencode-ai/core/filesystem/location-watcher"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { Model } from "@opencode-ai/core/model"
-import { Project } from "@opencode-ai/core/project"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { Workspace } from "@opencode-ai/core/workspace"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
+import { Agent } from "@opencode/core/agent"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
+import { LocationServiceMap, type LocationServices } from "@opencode/core/location-services"
+import { LocationActivity } from "@opencode/core/location-activity"
+import { Location } from "@opencode/core/location"
+import { Config } from "@opencode/core/config"
+import { LocationWatcher } from "@opencode/core/filesystem/location-watcher"
+import { Plugin } from "@opencode/core/plugin"
+import { Model } from "@opencode/core/model"
+import { Project } from "@opencode/core/project"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { Workspace } from "@opencode/core/workspace"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { tmpdir, tmpdirScoped } from "./fixture/tmpdir"
 import { tempGlobalLayer } from "./fixture/global"
 import { offlineModels } from "./fixture/models"
@@ -60,15 +60,19 @@ const activityLocations = Layer.effect(
   LocationServiceMap.Service,
   LayerMap.make(
     (ref) =>
+      // LocationActivity reads each location's config during its sweep.
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
-      Layer.succeed(
-        Location.Service,
-        Location.Service.of({
-          directory: ref.directory,
-          workspaceID: ref.workspaceID,
-          project: { id: Project.ID.global, directory: ref.directory, canonical: ref.directory },
-        }),
-      ) as unknown as Layer.Layer<LocationServices>,
+      Layer.merge(
+        Layer.succeed(
+          Location.Service,
+          Location.Service.of({
+            directory: ref.directory,
+            workspaceID: ref.workspaceID,
+            project: { id: Project.ID.global, directory: ref.directory, canonical: ref.directory },
+          }),
+        ),
+        Config.testLayer(),
+      ) as unknown as Layer.Layer<LocationServices, FileSystem.DirectoryNotFoundError>,
     { idleTimeToLive: Duration.infinity },
   ),
 )
@@ -79,11 +83,10 @@ const itWithActivity = testEffect(
 )
 
 describe("LocationServiceMap", () => {
-  for (const failure of ["file", "permissions", "config reference"] as const) {
+  for (const failure of ["file", "permissions"] as const) {
     for (const invalidate of [false, true]) {
       // The file-path fixture boots on Windows rather than failing during
-      // discovery. The config-reference case covers repair on every OS.
-      // Windows does not enforce POSIX directory modes, and root bypasses them.
+      // discovery. Windows does not enforce POSIX directory modes, and root bypasses them.
       const test =
         (failure === "file" && process.platform === "win32") ||
         (failure === "permissions" && (process.platform === "win32" || process.getuid?.() === 0))
@@ -102,20 +105,8 @@ describe("LocationServiceMap", () => {
             yield* Effect.promise(() => fs.mkdir(directory, { mode: 0o000 }))
             yield* Effect.addFinalizer(() => Effect.promise(() => fs.chmod(directory, 0o755)))
           }
-          if (failure === "config reference") {
-            yield* Effect.promise(() => fs.mkdir(directory))
-            yield* Effect.promise(() =>
-              fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ username: "{file:username.txt}" })),
-            )
-          }
           const first = yield* Effect.exit(load)
           expect(Exit.isFailure(first)).toBe(true)
-          if (failure === "config reference" && Exit.isFailure(first)) {
-            expect(Cause.squash(first.cause)).toMatchObject({
-              name: "ConfigInvalidError",
-              data: { message: expect.stringContaining('bad file reference: "{file:username.txt}"') },
-            })
-          }
           if (!invalidate) expect(yield* locations.contextEffectOption(ref).pipe(Effect.scoped)).toEqual(Option.none())
 
           if (failure === "file") {
@@ -123,9 +114,6 @@ describe("LocationServiceMap", () => {
             yield* Effect.promise(() => fs.mkdir(directory))
           }
           if (failure === "permissions") yield* Effect.promise(() => fs.chmod(directory, 0o755))
-          if (failure === "config reference") {
-            yield* Effect.promise(() => fs.writeFile(path.join(directory, "username.txt"), "test-user"))
-          }
           expect((yield* Effect.promise(() => fs.stat(directory))).isDirectory()).toBe(true)
           if (invalidate) yield* locations.invalidate(ref)
           const repaired = yield* Effect.exit(load)
@@ -136,8 +124,8 @@ describe("LocationServiceMap", () => {
     }
   }
 
-  for (const failure of ["file", "missing", "config reference"] as const) {
-    // A file-path Location boots on Windows; use the missing config reference there.
+  for (const failure of ["file", "missing"] as const) {
+    // A file-path Location boots on Windows; the missing directory covers it there.
     const test = failure === "file" && process.platform === "win32" ? it.live.skip : it.live
     test(`keeps the repaired graph after concurrent ${failure} failures release`, () =>
       Effect.gen(function* () {
@@ -146,12 +134,6 @@ describe("LocationServiceMap", () => {
         const ref = Location.Ref.make({ directory: AbsolutePath.make(directory) })
         const locations = yield* LocationServiceMap.Service
         if (failure === "file") yield* Effect.promise(() => fs.writeFile(directory, "file"))
-        if (failure === "config reference") {
-          yield* Effect.promise(() => fs.mkdir(directory))
-          yield* Effect.promise(() =>
-            fs.writeFile(path.join(directory, "opencode.json"), JSON.stringify({ username: "{file:username.txt}" })),
-          )
-        }
 
         const scopes = yield* Effect.forEach(Array.from({ length: 8 }), () =>
           Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void)),
@@ -163,10 +145,7 @@ describe("LocationServiceMap", () => {
         )
         expect(failures.every(Exit.isFailure)).toBe(true)
         if (failure === "file") yield* Effect.promise(() => fs.rm(directory))
-        if (failure !== "config reference") yield* Effect.promise(() => fs.mkdir(directory))
-        if (failure === "config reference") {
-          yield* Effect.promise(() => fs.writeFile(path.join(directory, "username.txt"), "test-user"))
-        }
+        yield* Effect.promise(() => fs.mkdir(directory))
         const repaired = yield* locations.contextEffect(ref)
 
         yield* Effect.forEach(scopes, (scope) => Scope.close(scope, Exit.void))
@@ -282,7 +261,8 @@ describe("LocationServiceMap", () => {
 
       yield* read
       yield* TestClock.adjust("59 minutes")
-      yield* bus.publish(Catalog.Event.Updated, {}, { location: ref })
+      yield* bus.publish(Provider.Event.Updated, {}, { location: ref })
+      yield* bus.publish(Model.Event.Updated, {}, { location: ref })
       yield* TestClock.adjust("2 minutes")
       expect(Array.from(yield* RcMap.keys(locations.rcMap))).toEqual([])
 
@@ -363,19 +343,19 @@ describe("LocationServiceMap", () => {
             const firstContext = yield* locations.contextEffect(firstRef)
             const secondContext = yield* locations.contextEffect(secondRef)
             const received = { first: 0, second: 0 }
-            yield* bus.subscribe(Config.Event.Updated).pipe(
+            yield* bus.subscribe(Event.Updated).pipe(
               Stream.runForEach(() => Effect.sync(() => received.first++)),
               Effect.provideContext(firstContext),
               Effect.forkScoped({ startImmediately: true }),
             )
-            yield* bus.subscribe(Config.Event.Updated).pipe(
+            yield* bus.subscribe(Event.Updated).pipe(
               Stream.runForEach(() => Effect.sync(() => received.second++)),
               Effect.provideContext(secondContext),
               Effect.forkScoped({ startImmediately: true }),
             )
             yield* Effect.sleep("10 millis")
 
-            yield* bus.publish(Config.Event.Updated, {}, { location: firstRef })
+            yield* bus.publish(Event.Updated, {}, { location: firstRef })
             yield* Effect.sleep("10 millis")
 
             expect(received).toEqual({ first: 1, second: 0 })
@@ -450,7 +430,7 @@ describe("LocationServiceMap", () => {
     ),
   )
 
-  it.live("isolates catalog state by location", () =>
+  it.live("isolates provider state by location", () =>
     Effect.acquireRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       (dirs) => Effect.promise(() => Promise.all(dirs.map((dir) => dir[Symbol.asyncDispose]())).then(() => undefined)),
@@ -460,13 +440,13 @@ describe("LocationServiceMap", () => {
           const update = (directory: string, providerID: Provider.ID) =>
             Effect.gen(function* () {
               yield* Reference.Service
-              const catalog = yield* Catalog.Service
-              yield* catalog.transform((editor) => editor.provider.update(providerID, () => {}))
+              const providers = yield* Provider.Service
+              yield* providers.transform((editor) => editor.update(providerID, () => {}))
               const plugins = yield* Plugin.Service
               yield* plugins.awaitActivation
               const registry = yield* Tool.Service
               return {
-                providers: yield* catalog.provider.all(),
+                providers: yield* providers.all(),
                 tools: yield* toolDefinitions(registry),
               }
             }).pipe(
@@ -568,7 +548,7 @@ describe("LocationServiceMap", () => {
             ),
           )
           const failure = yield* Effect.gen(function* () {
-            const catalog = yield* Catalog.Service
+            const modelState = yield* Model.Service
             const models = yield* SessionRunnerModel.Service
             return yield* models.resolve(
               Session.Info.make({
@@ -584,7 +564,7 @@ describe("LocationServiceMap", () => {
                 time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                 location,
               }),
-              catalog.model.available,
+              modelState.available,
             )
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
 
@@ -611,7 +591,7 @@ describe("LocationServiceMap", () => {
             ["google-vertex-anthropic", "google-vertex"],
           ] as const) {
             const failure = yield* Effect.gen(function* () {
-              const catalog = yield* Catalog.Service
+              const modelState = yield* Model.Service
               const models = yield* SessionRunnerModel.Service
               return yield* models.resolve(
                 Session.Info.make({
@@ -627,7 +607,7 @@ describe("LocationServiceMap", () => {
                   time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                   location,
                 }),
-                catalog.model.available,
+                modelState.available,
               )
             }).pipe(Effect.provide(LocationServiceMap.Service.get(location)), Effect.flip)
 
@@ -654,12 +634,13 @@ describe("LocationServiceMap", () => {
         Effect.gen(function* () {
           const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
           const resolved = yield* Effect.gen(function* () {
-            const catalog = yield* Catalog.Service
-            yield* catalog.transform((editor) => {
-              editor.provider.update(Provider.ID.make("aliased"), (provider) => {
-                provider.package = Provider.aisdk("@ai-sdk/openai")
+            const providers = yield* Provider.Service
+            const modelState = yield* Model.Service
+            yield* providers.transform((editor) => {
+              editor.update(Provider.ID.make("aliased"), (provider) => {
+                provider.package = "@opencode/ai/providers/openai"
               })
-              editor.model.update(Provider.ID.make("aliased"), Model.ID.make("fast"), (model) => {
+              editor.models.update(Provider.ID.make("aliased"), Model.ID.make("fast"), (model) => {
                 // Catalog id and package model id intentionally differ, like gpt-5.5-fast -> gpt-5.5.
                 model.modelID = Model.ID.make("base")
                 model.variants = [{ id: Model.VariantID.make("high") }]
@@ -681,7 +662,7 @@ describe("LocationServiceMap", () => {
                 time: { created: DateTime.makeUnsafe(0), updated: DateTime.makeUnsafe(0) },
                 location,
               }),
-              catalog.model.available,
+              modelState.available,
             )
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
 

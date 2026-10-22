@@ -1,5 +1,5 @@
 import type { Effect, Scope, Stream } from "effect"
-import type { Headers } from "effect/unstable/http"
+import type { Headers } from "effect/http"
 import type { AIError, HttpContext } from "../../schema/index.js"
 
 export interface WebSocketChannelExecutor {
@@ -20,7 +20,7 @@ export interface WebSocketChannelExchange {
   readonly connect: {
     readonly url: string
     readonly headers: Headers.Headers
-    /** Provider-safe connection age after which Core should rotate before sending. */
+    /** Provider-safe connection age after which the channel executor should reconnect before sending. */
     readonly rotateAfterMs?: number
   }
   readonly fallback: () => Stream.Stream<string, AIError>

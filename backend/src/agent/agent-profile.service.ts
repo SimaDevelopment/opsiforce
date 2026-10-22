@@ -1,32 +1,61 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../db';
-import { agentProfileSkills, agentProfiles, environments, skillVersions, skills } from '../../db/schema';
+import {
+  agentProfileSkills,
+  agentProfiles,
+  environments,
+  skillVersions,
+  skills,
+  type AgentServiceSettings,
+} from '../../db/schema';
 import {
   assertDevelopmentProfile,
   builtInProfileFor,
   developmentEnvironmentId,
   type AgentProfileRow,
 } from '../store/agent-profile.repository';
-import { visibilityIncoherent } from '../store/store-errors';
-import { assertSkillVisibleToUser, type SkillRow } from '../store/skill-visibility';
+import { ServiceSkillAvailability } from '../store/service-skill-availability';
+import {
+  fieldValueSettingProblems,
+  ServiceSwitchCatalog,
+  settingsWithinGrants,
+  type ServiceSwitches,
+} from '../store/service-switch-catalog';
+import { serviceSkillUnavailable, skillRetired, visibilityIncoherent } from '../store/store-errors';
+import { assertSkillVisibleToUser, isRetiredSkill, isServiceSkill, type SkillRow } from '../store/skill-visibility';
+import { packageSkillNames } from '../store/skill-tree';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
 import { templateDamaged } from '../agent-template/agent-template.errors';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { compareTemplates } from '../agent-template/agent-template.types';
 import { lockAgentTemplate } from '../common/locks';
+import type { AgentBundleSkillReference, SkillPin } from './agent-bundle';
+import { serviceSettingsLeftOut, serviceSettingsOfUnavailableService, type AgentImportNote } from './agent-import';
 import { canEditAgent } from './agent-visibility';
-import { duplicateSkillName, notPublishable } from './agent-errors';
-import { assertModelSelection } from './agent-models';
+import { ModelProvidersService } from '../model-provider/model-provider.service';
+import {
+  builtInKeepsProjectConfiguration,
+  duplicateSkillName,
+  modelUnreachable,
+  notPublishable,
+  fieldSettingsNeedProjectPermission,
+  serviceSettingsInvalid,
+  serviceSettingsUnavailable,
+  shippedSkillName,
+} from './agent-errors';
+import { assertModelSelection, baseFormatOfModel } from './agent-models';
 import { AgentRepository } from './agent.repository';
 import {
   PLATFORM_SKILL_NAME,
   type AgentCaller,
   type AgentProfileSkillResponse,
   type AgentRow,
+  type AgentServiceSettingsView,
   type PublishAgentDto,
   type PublishAgentResponse,
   type SetAgentSkillDto,
+  type SetServiceSettingsDto,
   type UpdateAgentProfileDto,
 } from './agent.types';
 
@@ -40,6 +69,8 @@ interface CarriedRow {
   skillId: string;
   name: string;
   skillVersionId: string;
+  externalServiceId: string | null;
+  serviceSettings: AgentServiceSettings | null;
 }
 
 @Injectable()
@@ -47,8 +78,15 @@ export class AgentProfileService {
   constructor(
     private readonly repository: AgentRepository,
     private readonly skillDeliveries: SkillDeliveryService,
-    private readonly templates: AgentTemplateStore
+    private readonly templates: AgentTemplateStore,
+    private readonly modelProviders: ModelProvidersService,
+    private readonly serviceSkillAvailability: ServiceSkillAvailability,
+    private readonly serviceSwitches: ServiceSwitchCatalog
   ) {}
+
+  private async serviceAvailable(tenantId: string, externalServiceId: string): Promise<boolean> {
+    return (await this.serviceSkillAvailability.availableServiceIds(tenantId)).has(externalServiceId);
+  }
 
   async targetProfile(agent: AgentRow, tenantId: string): Promise<AgentProfileRow> {
     if (agent.origin === 'built_in') return builtInProfileFor(agent.id, tenantId);
@@ -69,10 +107,17 @@ export class AgentProfileService {
 
     const profile = await this.targetProfile(agent, caller.tenantId);
     await assertDevelopmentProfile(profile);
+    if (dto.model !== profile.model) await this.assertModelReachable(caller.tenantId, dto.model ?? '');
     await db
       .update(agentProfiles)
       .set({ promptBody: dto.promptBody ?? '', model: dto.model, variant, updatedAt: new Date() })
       .where(eq(agentProfiles.id, profile.id));
+  }
+
+  async assertModelReachable(tenantId: string, model: string): Promise<void> {
+    if (!baseFormatOfModel(model)) return;
+    const reachable = await this.modelProviders.reachableModels(tenantId);
+    if (!reachable.includes(model)) throw modelUnreachable(model);
   }
 
   async listSkills(agent: AgentRow, caller: AgentCaller): Promise<AgentProfileSkillResponse[]> {
@@ -88,6 +133,7 @@ export class AgentProfileService {
   ): Promise<AgentProfileSkillResponse[]> {
     this.assertProfileWritable(agent, caller);
     const skill = await assertSkillVisibleToUser(caller.tenantId, caller.userId, skillId);
+    if (isRetiredSkill(skill)) throw skillRetired(skill.name);
     if (skill.disabled) {
       throw new ForbiddenException({
         code: 'skill_disabled',
@@ -95,9 +141,15 @@ export class AgentProfileService {
       });
     }
     if (skill.visibility === 'private') assertAgentCarriesNoPrivateSkill(agent, [skill.name]);
+    if (agent.origin === 'built_in' && packageSkillNames(agent.name).has(skill.name)) {
+      throw shippedSkillName(skill.name);
+    }
+    if (isServiceSkill(skill) && !(await this.serviceAvailable(caller.tenantId, skill.externalServiceId))) {
+      throw serviceSkillUnavailable(skill.name);
+    }
 
     const profile = await this.targetProfile(agent, caller.tenantId);
-    const versionId = await this.resolveVersion(skill, dto.versionId);
+    const versionId = await this.resolveVersion(skill, isServiceSkill(skill) ? undefined : dto.versionId);
 
     const carried = await this.repository.carriedSkillNames(profile.id);
     const clash = carried.get(skill.name);
@@ -110,7 +162,7 @@ export class AgentProfileService {
         target: [agentProfileSkills.profileId, agentProfileSkills.skillId],
         set: { skillVersionId: versionId, addedAt: new Date() },
       });
-    await this.skillDeliveries.enqueueForAgent(agent.id, caller.tenantId);
+    await this.reachProjectsOf(agent, caller.tenantId, skill);
 
     return this.listSkills(agent, caller);
   }
@@ -129,9 +181,81 @@ export class AgentProfileService {
     await db
       .delete(agentProfileSkills)
       .where(and(eq(agentProfileSkills.profileId, profile.id), eq(agentProfileSkills.skillId, skill.id)));
-    await this.skillDeliveries.enqueueForAgent(agent.id, caller.tenantId);
+    await this.reachProjectsOf(agent, caller.tenantId, skill);
 
     return this.listSkills(agent, caller);
+  }
+
+  async serviceSettings(agent: AgentRow, caller: AgentCaller, skillId: string): Promise<AgentServiceSettingsView> {
+    const { service, pin } = await this.carriedService(agent, caller, skillId);
+    return { service, settings: pin.serviceSettings };
+  }
+
+  async setServiceSettings(
+    agent: AgentRow,
+    caller: AgentCaller,
+    skillId: string,
+    dto: SetServiceSettingsDto,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<AgentProfileSkillResponse[]> {
+    this.assertProfileWritable(agent, caller);
+    const { service, pin, profile } = await this.carriedService(agent, caller, skillId);
+    const settings = submittedFieldValueSettings(service.manifest, dto, pin.name, grants);
+    await db
+      .update(agentProfileSkills)
+      .set({ serviceSettings: settings })
+      .where(and(eq(agentProfileSkills.profileId, profile.id), eq(agentProfileSkills.skillId, pin.skillId)));
+    return this.listSkills(agent, caller);
+  }
+
+  async pinsWithinGrants(
+    tenantId: string,
+    references: AgentBundleSkillReference[],
+    grants: { canConfigureProjects: boolean }
+  ): Promise<{ pins: SkillPin[]; notes: AgentImportNote[] }> {
+    const pins: SkillPin[] = [];
+    const notes: AgentImportNote[] = [];
+    for (const { name, skillId, skillVersionId, externalServiceId, serviceSettings } of references) {
+      if (!serviceSettings || grants.canConfigureProjects) {
+        pins.push({ skillId, skillVersionId, serviceSettings });
+        continue;
+      }
+      const service = externalServiceId
+        ? await this.serviceSwitches.availableService(tenantId, externalServiceId)
+        : null;
+      if (!service) {
+        notes.push(serviceSettingsOfUnavailableService(name));
+        pins.push({ skillId, skillVersionId, serviceSettings: null });
+        continue;
+      }
+      const granted = settingsWithinGrants(service.manifest, serviceSettings, grants);
+      if (granted.dropped.length > 0) {
+        notes.push(serviceSettingsLeftOut(name));
+      }
+      pins.push({ skillId, skillVersionId, serviceSettings: granted.settings });
+    }
+    return { pins, notes };
+  }
+
+  private async carriedService(agent: AgentRow, caller: AgentCaller, skillId: string) {
+    if (agent.origin === 'built_in') throw builtInKeepsProjectConfiguration(agent.displayName ?? agent.name);
+    const profile = await this.targetProfile(agent, caller.tenantId);
+    const [pin] = await db
+      .select({
+        skillId: agentProfileSkills.skillId,
+        name: skills.name,
+        externalServiceId: skills.externalServiceId,
+        serviceSettings: agentProfileSkills.serviceSettings,
+      })
+      .from(agentProfileSkills)
+      .innerJoin(skills, eq(skills.id, agentProfileSkills.skillId))
+      .where(and(eq(agentProfileSkills.profileId, profile.id), eq(agentProfileSkills.skillId, skillId)));
+    if (!pin?.externalServiceId) {
+      throw new NotFoundException(`Agent \`${agent.name}\` carries no Service skill ${skillId}`);
+    }
+    const service = await this.serviceSwitches.availableService(caller.tenantId, pin.externalServiceId);
+    if (!service) throw serviceSettingsUnavailable(pin.name);
+    return { service, pin, profile };
   }
 
   async publish(agent: AgentRow, caller: AgentCaller, dto: PublishAgentDto): Promise<PublishAgentResponse> {
@@ -152,7 +276,8 @@ export class AgentProfileService {
 
     assertAgentCarriesNoPrivateSkill(agent, await this.repository.privateSkillNames(source.id));
 
-    return db.transaction(async (tx) => {
+    let servicesChanged = false;
+    const published = await db.transaction(async (tx) => {
       await lockAgentTemplate(tx, agent.id);
       const templates = await this.templates.hashes(agent.id);
       const sourceTemplate = templates.get(source.environmentId) ?? null;
@@ -171,6 +296,7 @@ export class AgentProfileService {
         ...diff(existing, source, before, after),
         template: compareTemplates(sourceTemplate?.hash ?? null, templates.get(target.id)?.hash ?? null),
       };
+      servicesChanged = !sameServiceSkills(before, after);
       if (existing && isNoOp(applied)) return { applied };
 
       const profileId = existing?.id ?? crypto.randomUUID();
@@ -197,14 +323,26 @@ export class AgentProfileService {
       }
 
       if (after.length > 0) {
-        await tx
-          .insert(agentProfileSkills)
-          .values(after.map((row) => ({ profileId, skillId: row.skillId, skillVersionId: row.skillVersionId })));
+        await tx.insert(agentProfileSkills).values(
+          after.map((row) => ({
+            profileId,
+            skillId: row.skillId,
+            skillVersionId: row.skillVersionId,
+            serviceSettings: row.serviceSettings,
+          }))
+        );
       }
 
       await this.templates.publishLink(tx, agent.id, source.environmentId, target.id);
       return { applied };
     });
+    if (servicesChanged) await this.skillDeliveries.enqueueServiceSkillsForAgent(agent.id, caller.tenantId);
+    return published;
+  }
+
+  private async reachProjectsOf(agent: AgentRow, tenantId: string, skill: SkillRow): Promise<void> {
+    if (isServiceSkill(skill)) await this.skillDeliveries.enqueueServiceSkillsForAgent(agent.id, tenantId);
+    else await this.skillDeliveries.enqueueForAgent(agent.id, tenantId);
   }
 
   assertProfileWritable(agent: AgentRow, caller: AgentCaller): void {
@@ -229,16 +367,46 @@ export class AgentProfileService {
   }
 }
 
+function submittedFieldValueSettings(
+  manifest: ServiceSwitches,
+  dto: SetServiceSettingsDto,
+  skillName: string,
+  grants: { canConfigureProjects: boolean }
+): AgentServiceSettings {
+  if (!grants.canConfigureProjects) throw fieldSettingsNeedProjectPermission(skillName);
+  const values = dto?.values;
+  if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+    throw serviceSettingsInvalid(['values must be an object of Project-form field values']);
+  }
+  const problems = fieldValueSettingProblems(manifest, values as Record<string, unknown>);
+  if (problems.length > 0) throw serviceSettingsInvalid(problems);
+  return values as AgentServiceSettings;
+}
+
 async function carriedRows(tx: typeof db, profileId: string): Promise<CarriedRow[]> {
   return tx
     .select({
       skillId: agentProfileSkills.skillId,
       name: skills.name,
       skillVersionId: agentProfileSkills.skillVersionId,
+      externalServiceId: skills.externalServiceId,
+      serviceSettings: agentProfileSkills.serviceSettings,
     })
     .from(agentProfileSkills)
     .innerJoin(skills, eq(skills.id, agentProfileSkills.skillId))
     .where(eq(agentProfileSkills.profileId, profileId));
+}
+
+function serviceSkillsKey(rows: CarriedRow[]): string {
+  return rows
+    .filter((row) => row.externalServiceId !== null)
+    .map((row) => row.skillId)
+    .toSorted()
+    .join('\n');
+}
+
+function sameServiceSkills(before: CarriedRow[], after: CarriedRow[]): boolean {
+  return serviceSkillsKey(before) === serviceSkillsKey(after);
 }
 
 function isNoOp(applied: PublishAgentResponse['applied']): boolean {
@@ -249,7 +417,8 @@ function isNoOp(applied: PublishAgentResponse['applied']): boolean {
     (applied.template === 'same' || applied.template === 'none') &&
     added.length === 0 &&
     removed.length === 0 &&
-    repinned.length === 0
+    repinned.length === 0 &&
+    applied.serviceSettings.length === 0
   );
 }
 
@@ -278,5 +447,15 @@ function diff(
         })
         .map((row) => row.name),
     },
+    serviceSettings: after
+      .filter((row) => {
+        const was = wasPinned.get(row.skillId);
+        return was !== undefined && !sameServiceSettings(was.serviceSettings, row.serviceSettings);
+      })
+      .map((row) => row.name),
   };
+}
+
+function sameServiceSettings(a: AgentServiceSettings | null, b: AgentServiceSettings | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }

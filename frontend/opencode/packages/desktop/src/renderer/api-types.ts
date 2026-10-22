@@ -1,7 +1,6 @@
-import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
-import type { DesktopNativeBundle } from "@opencode-ai/app/i18n/desktop-native"
-import type { UpdaterState } from "@opencode-ai/app/updater"
-import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
+import type { DesktopMenuAction } from "@opencode/app/desktop-menu"
+import type { DesktopNativeBundle } from "@opencode/app/i18n/desktop-native"
+import type { WindowBootstrap } from "../shared/window-bootstrap"
 import type {
   ClipboardImage,
   DirectoryPickerOptions,
@@ -13,37 +12,27 @@ import type {
   TitlebarTheme,
 } from "../shared/ipc-contract"
 
-export type WslServersAPI = WslServersPlatform
-export type UpdaterAPI = {
-  subscribe(cb: (state: UpdaterState) => void): Promise<() => void>
-  check(): Promise<UpdaterState>
-  install(): Promise<void>
-}
-
 export type ElectronAPI = {
   awaitInitialization(): Promise<ServerReadyData>
   reconnectService(): Promise<ServerReadyData>
-  wslServers: WslServersAPI
-  updater: UpdaterAPI
   consumeInitialDeepLinks(): Promise<string[]>
-  getDefaultServerUrl(): Promise<string | null>
-  setDefaultServerUrl(url: string | null): Promise<void>
   isFirstLaunchOnboardingPending(): Promise<boolean>
   finishFirstLaunchOnboarding(createDefaultProject: boolean): Promise<string | null>
   checkAppExists(appName: string): Promise<boolean>
   resolveAppPath(appName: string): Promise<string | null>
-  storeGet(name: string, key: string): Promise<string | null>
-  storeSet(name: string, key: string, value: string): Promise<void>
-  storeDelete(name: string, key: string): Promise<void>
+  storeItems(name: string): Promise<{ items: Record<string, string>; revision: number }>
+  storeUpdate(name: string, insert: Record<string, string>, remove: string[]): Promise<number>
   storeClear(name: string): Promise<void>
-  storeKeys(name: string): Promise<string[]>
-  storeLength(name: string): Promise<number>
+  onStoreChanged(
+    cb: (name: string, insert: Record<string, string>, remove: string[], revision: number) => void,
+  ): () => void
   draftGet(key: string): Promise<string | null>
-  draftSet(key: string, value: string): Promise<void>
+  draftSet(key: string, value: string, strict: boolean): Promise<string[]>
   draftDelete(key: string): Promise<void>
   draftBlobPut(data: ArrayBuffer): Promise<string>
   draftBlobGet(id: string): Promise<ArrayBuffer | null>
   getWindowID(): string
+  getWindowBootstrap(): WindowBootstrap
   themeReady(): Promise<void>
   onMenuCommand(cb: (id: string) => void): () => void
   onDeepLink(cb: (urls: string[]) => void): () => void
@@ -54,6 +43,7 @@ export type ElectronAPI = {
   getPathForFile(file: File): string
   saveFile(opts: SaveFilePickerOptions, content: string): Promise<boolean>
   openExternal(url: string): void
+  openBrowser(url: string): Promise<boolean>
   openLocalFile(url: string): void
   openPath(path: string, app?: string): Promise<string | undefined>
   revealPath(path: string): Promise<boolean>

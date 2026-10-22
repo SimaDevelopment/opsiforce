@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FALLBACK_APP_PORT, agentAppPort, sharedAppPort, readMergedAgentRegistry } from '../src/agent/agent-config';
 import { buildPodSpec, type PodTemplateOptions } from '../src/pod/pod.template';
 import { resolvePreset, toK8sResources } from '../src/pod/pod-classes';
+import { packageSkillNames } from '../src/store/skill-tree';
 
 const agentConfig = join(process.cwd(), '..', 'agent-config');
 const entrypoint = readFileSync(join(agentConfig, 'scripts', 'entrypoint.sh'), 'utf8');
@@ -61,7 +62,8 @@ describe('the platform skill', () => {
     expect(named).toContain('OPSIFORCE_ENV');
     expect(named).toContain('SERVICE_GATEWAY_URL');
     expect(named).toContain('SERVICE_GATEWAY_API_KEY');
-    expect(named).toContain('EXTERNAL_SERVICES_URL');
+    expect(named).toContain('EXTERNAL_SERVICES_HOST');
+    expect(named).not.toContain('EXTERNAL_SERVICES_URL');
     expect(named).toContain('APP_LLM_BASE_URL');
     expect(named).toContain('APP_LLM_API_KEY');
 
@@ -76,8 +78,40 @@ describe('the platform skill', () => {
     expect(platformSkill).toContain('/workspace/generated_files/');
     expect(platformSkill).toContain('app/opsiforce.env.json');
     expect(platformSkill).toContain('/workspace/data/database.db');
+    expect(platformSkill).toContain('/workspace/data/logs/');
     expect(platformSkill).toContain('/workspace/data/external-services.db');
     expect(platformSkill).toContain('websearch');
+  });
+
+  it('carries the one External Services section every Service skill leans on', () => {
+    const [, section] = /^## External Services[^\n]*\n([\s\S]*?)^## /m.exec(platformSkill) ?? [];
+
+    expect(section).toBeDefined();
+    expect(section).toContain('https://<slug>.$EXTERNAL_SERVICES_HOST');
+    expect(section).toContain('/.well-known/opsiforce');
+    expect(section).toContain('Authorization: Bearer $SERVICE_GATEWAY_API_KEY');
+    expect(section).toMatch(/never in a URL/);
+    expect(section).toContain('Opsiforce-Outcome');
+    expect(section).toMatch(/never retry/i);
+    expect(section).toContain("configure this Project's External Services");
+    expect(section).toContain('`data`');
+    expect(section).toContain('Development changes go live on Publish');
+  });
+
+  it('leaves the Operation-era calls and refusal codes behind', () => {
+    for (const retired of [
+      'EXTERNAL_SERVICES_URL',
+      'openapi.json',
+      'callService',
+      '/calls',
+      'operation-off',
+      'out-of-bounds',
+      'configuration-incomplete',
+      'service-starting',
+      'x-opsiforce-via',
+    ]) {
+      expect(platformSkill, retired).not.toContain(retired);
+    }
   });
 
   it('makes a first-time setup atomic and runs a root-refusing service as its own user', () => {
@@ -88,10 +122,83 @@ describe('the platform skill', () => {
   it('owns the observability schemas and queries that left the sqlite skill', () => {
     const sqliteSkill = readFileSync(join(agentConfig, 'skills', 'sqlite', 'SKILL.md'), 'utf8');
 
-    for (const table of ['app_requests', 'process_logs', 'process_events']) {
-      expect(platformSkill).toContain(table);
-      expect(sqliteSkill).not.toContain(table);
+    expect(platformSkill).toContain('app_requests');
+    expect(sqliteSkill).not.toContain('app_requests');
+    expect(platformSkill).toContain('process-logs --events --since 2m');
+    expect(sqliteSkill).not.toContain('process-logs');
+  });
+
+  it('reads process output from log files, not from tables that no longer exist', () => {
+    for (const table of ['process_logs', 'process_events']) {
+      expect(platformSkill).not.toContain(table);
     }
+    expect(platformSkill).toContain('/workspace/data/logs/');
+  });
+});
+
+describe('the inbound skills that became Service skills', () => {
+  it('ship in no package, so the content sweep removes them once from every workspace that owned them', () => {
+    for (const agent of Object.keys(readMergedAgentRegistry().agents)) {
+      const shipped = packageSkillNames(agent);
+      expect(shipped.has('incoming-email'), agent).toBe(false);
+      expect(shipped.has('whatsapp'), agent).toBe(false);
+    }
+  });
+
+  it('are given by no agents.json entry: an Agent gets a Service skill through the Store, a Project through its configuration', () => {
+    for (const [agent, entry] of Object.entries(readMergedAgentRegistry().agents)) {
+      expect(Object.keys(entry), agent).not.toContain('skills');
+    }
+  });
+});
+
+const OBSERVER_DIRECTORY = '/opt/opsiforce/opencode-plugins/observer';
+const GPT_6_MODELS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-sol-fast'];
+const CLAUDE_EFFORT_OPT_OUTS = ['claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1'];
+
+interface OpencodeProvider {
+  settings?: Record<string, unknown>;
+  models: Record<string, { settings?: Record<string, unknown>; compatibility?: Record<string, unknown> }>;
+}
+
+describe.each(['opencode.json', 'opencode.local.json'])('the opencode config %s', (file) => {
+  const config = JSON.parse(readFileSync(join(agentConfig, file), 'utf8')) as {
+    plugins?: string[];
+    providers: Record<string, OpencodeProvider>;
+  };
+  const { openai, anthropic } = config.providers;
+
+  it('sends OpenAI over HTTP, loads the observer once and switches off opencode’s own tools plugin', () => {
+    expect(openai.settings?.transport).toBe('http');
+    expect(config.plugins?.filter((entry) => entry === OBSERVER_DIRECTORY)).toHaveLength(1);
+    expect(config.plugins).toContain('-opencode.tools');
+  });
+
+  it('opts the named models out of the terse verbosity default and of in-place effort updates', () => {
+    for (const model of GPT_6_MODELS) {
+      expect(openai.models[model]?.settings?.textVerbosity, model).toBe('medium');
+      expect(openai.models[model]?.compatibility?.supportsEffortUpdates, model).toBe(false);
+    }
+    for (const model of CLAUDE_EFFORT_OPT_OUTS) {
+      expect(anthropic.models[model]?.compatibility?.supportsEffortUpdates, model).toBe(false);
+    }
+  });
+
+  it('sets no Anthropic reasoningEffort, a setting the Anthropic protocol never reads', () => {
+    expect(JSON.stringify(anthropic)).not.toContain('reasoningEffort');
+  });
+});
+
+describe('the opencode plugins', () => {
+  it('build against the plugin API of the opencode the agent image installs', () => {
+    const dockerfile = readFileSync(join(process.cwd(), '..', 'docker', 'Dockerfile.agent'), 'utf8');
+    const { devDependencies } = JSON.parse(
+      readFileSync(join(process.cwd(), '..', 'opencode-plugins', 'package.json'), 'utf8')
+    ) as { devDependencies: Record<string, string> };
+    const [, cli] = /@opencode\/cli@(\S+)/.exec(dockerfile) ?? [];
+
+    expect(cli).toBeDefined();
+    expect(devDependencies['@opencode/plugin']).toBe(cli);
   });
 });
 
@@ -138,57 +245,26 @@ describe('the app port', () => {
   });
 });
 
-describe('the platform-api credential in the pod', () => {
-  const platformApi = {
-    platformApiKey: 'gw-platform',
-    platformApiUrl: 'http://opsiforce-backend:3001/api/v1',
-    runtimeProxyUrl: 'http://proxy-agent:3005',
-  };
+describe('the pod credentials for the platform', () => {
+  const service = { gatewayApiKey: 'gw-service', gatewayUrl: 'http://gw/api/gateway' };
 
-  it('reaches a pod that holds a platform-api key', () => {
-    const withKey = environmentOf(buildPodSpec(baseOptions(platformApi)));
-
-    expect(withKey.get('OPSIFORCE_API_KEY')).toBe('gw-platform');
-    expect(withKey.get('OPSIFORCE_API_URL')).toBe('http://opsiforce-backend:3001/api/v1');
-  });
-
-  it('carries the runtime proxy origin beside the platform API base', () => {
-    const withKey = environmentOf(buildPodSpec(baseOptions(platformApi)));
-
-    expect(withKey.get('OPSIFORCE_RUNTIME_PROXY_URL')).toBe('http://proxy-agent:3005');
-  });
-
-  it('is absent from every other pod', () => {
-    const ordinary = environmentOf(buildPodSpec(baseOptions()));
-
-    expect(ordinary.has('OPSIFORCE_API_KEY')).toBe(false);
-    expect(ordinary.has('OPSIFORCE_API_URL')).toBe(false);
-    expect(ordinary.has('OPSIFORCE_RUNTIME_PROXY_URL')).toBe(false);
-  });
-
-  it('is absent when the key exists but no base URL is configured', () => {
-    const halfConfigured = environmentOf(buildPodSpec(baseOptions({ platformApiKey: 'gw-platform' })));
-
-    expect(halfConfigured.has('OPSIFORCE_API_KEY')).toBe(false);
-  });
-
-  it('is absent when the key and base URL exist but no runtime proxy origin does', () => {
-    const halfConfigured = environmentOf(
-      buildPodSpec(
-        baseOptions({ platformApiKey: 'gw-platform', platformApiUrl: 'http://opsiforce-backend:3001/api/v1' })
-      )
-    );
-
-    expect(halfConfigured.has('OPSIFORCE_API_KEY')).toBe(false);
-    expect(halfConfigured.has('OPSIFORCE_API_URL')).toBe(false);
-  });
-
-  it('never rides on the service gateway variables', () => {
-    const env = environmentOf(
-      buildPodSpec(baseOptions({ ...platformApi, gatewayApiKey: 'gw-service', gatewayUrl: 'http://gw/api/gateway' }))
-    );
+  it('gives every pod the runtime proxy origin beside its one service key', () => {
+    const env = environmentOf(buildPodSpec(baseOptions({ ...service, runtimeProxyUrl: 'http://proxy-agent:3005' })));
 
     expect(env.get('SERVICE_GATEWAY_API_KEY')).toBe('gw-service');
-    expect(env.get('OPSIFORCE_API_KEY')).toBe('gw-platform');
+    expect(env.get('OPSIFORCE_RUNTIME_PROXY_URL')).toBe('http://proxy-agent:3005');
+  });
+
+  it('leaves the runtime proxy origin out when none is configured', () => {
+    const env = environmentOf(buildPodSpec(baseOptions(service)));
+
+    expect(env.has('OPSIFORCE_RUNTIME_PROXY_URL')).toBe(false);
+  });
+
+  it('never hands a pod a second key or the platform API base', () => {
+    const env = environmentOf(buildPodSpec(baseOptions({ ...service, runtimeProxyUrl: 'http://proxy-agent:3005' })));
+
+    expect(env.has('OPSIFORCE_API_KEY')).toBe(false);
+    expect(env.has('OPSIFORCE_API_URL')).toBe(false);
   });
 });

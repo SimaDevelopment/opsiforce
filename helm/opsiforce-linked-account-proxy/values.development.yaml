@@ -1,0 +1,24 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/simadevelopment/opsiforce
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+config:
+  backendUrl: "http://opsiforce-backend-opsiforce-backend-development:3001"
+
+existingSecret: opsiforce-linked-account-proxy-service-token
+
+# Keep development workloads in Helsinki, on cloud or dedicated workers.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: topology.kubernetes.io/region
+              operator: In
+              values:
+                - hel1

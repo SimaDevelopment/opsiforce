@@ -1,3 +1,5 @@
+import type { SkillsOffCarryLine } from '../delivery/environment-skills';
+import type { ProjectConfigurationCarryLine } from '../external-services';
 import type { ProjectStatus } from '../project/project.types';
 
 export const PROJECT_PUBLISH_QUEUE = 'project-publish';
@@ -70,6 +72,8 @@ export interface PublishFormResponse {
   schedules: PublishFormScheduleOption[];
 }
 
+export type PublishReportLine = ProjectConfigurationCarryLine | SkillsOffCarryLine;
+
 export interface PublishJobResponse {
   id: string;
   projectEnvironmentId: string;
@@ -77,6 +81,7 @@ export interface PublishJobResponse {
   status: PublishStatus;
   commitSha: string | null;
   error: string | null;
+  report: PublishReportLine[];
   createdAt: Date;
   updatedAt: Date;
 }

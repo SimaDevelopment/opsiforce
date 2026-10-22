@@ -1,16 +1,16 @@
 import { describe, expect } from "bun:test"
 import { and, eq } from "drizzle-orm"
 import { Cause, Context, DateTime, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Event } from "@opencode-ai/schema/event"
-import { Model } from "@opencode-ai/schema/model"
-import { Money } from "@opencode-ai/schema/money"
-import { Project } from "@opencode-ai/schema/project"
-import { Provider } from "@opencode-ai/schema/provider"
-import { ID, Info, Output } from "@opencode-ai/schema/shell"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
+import { Agent } from "@opencode/schema/agent"
+import { Event } from "@opencode/schema/event"
+import { Model } from "@opencode/schema/model"
+import { Money } from "@opencode/schema/money"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { ID, Info, Output } from "@opencode/schema/shell"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
 import { Bus } from "../src/bus.js"
 import { Database } from "../src/database/database.js"
 import { EventTable } from "../src/event/sql.js"
@@ -63,7 +63,7 @@ const skillInfo = Skill.Info.make({
   id: Skill.ID.make("guide"),
   name: Skill.Name.make("Guide"),
   description: "Session guidance",
-  location: AbsolutePath.make("/skills/guide/SKILL.md"),
+  path: AbsolutePath.make("/skills/guide/SKILL.md"),
   content: "  Raw guidance\n",
 })
 
@@ -166,7 +166,7 @@ const setup = Effect.fnUntraced(function* (options?: {
 })
 
 describe("Session-owned handles", () => {
-  it.live("owns state changes and message editing without caller services or Location acquisition", () =>
+  it.live("owns state changes and message reads without caller services or Location acquisition", () =>
     Effect.gen(function* () {
       const fixture = yield* setup()
       const handle = fixture.sessions.forSession(sessionID)
@@ -177,6 +177,7 @@ describe("Session-owned handles", () => {
         assistantMessageID: messageID,
         agent: Agent.ID.make("build"),
         model: { ...model, id: Model.ID.make("initial-model") },
+        started: 0,
       })
       yield* fixture.bus.publish(SessionEvent.Step.Ended, {
         sessionID,
@@ -191,7 +192,7 @@ describe("Session-owned handles", () => {
         .where(eq(SessionTable.id, sessionID))
         .run()
         .pipe(Effect.orDie)
-      const { rename, switchAgent, switchModel, view, message, updateMessage } = handle
+      const { rename, switchAgent, switchModel, view, message } = handle
 
       yield* Effect.gen(function* () {
         yield* rename({ title: "Renamed" })
@@ -200,9 +201,7 @@ describe("Session-owned handles", () => {
         yield* switchModel({ model })
         yield* view({ idle: 0 })
         yield* view({ idle: 0 })
-        const content = [SessionMessage.AssistantText.make({ type: "text", text: "Edited" })]
-        expect((yield* updateMessage({ messageID, content })).content).toEqual(content)
-        expect(yield* message(messageID)).toMatchObject({ type: "assistant", content })
+        expect(yield* message(messageID)).toMatchObject({ type: "assistant", content: [] })
       }).pipe(Effect.satisfiesServicesType<never>(), Effect.setContext(Context.empty()))
 
       const session = yield* handle.get()
@@ -370,12 +369,12 @@ describe("Session-owned handles", () => {
         }),
       )
       const initial = SessionMessage.ID.make("msg_owned_skill_initial")
-      yield* skill({ id: initial, skill: skillInfo.id, resume: false }).pipe(
+      yield* skill({ messageID: initial, skill: skillInfo.id, resume: false }).pipe(
         Effect.satisfiesServicesType<never>(),
         Effect.setContext(Context.empty()),
       )
       const moved = SessionMessage.ID.make("msg_owned_skill_moved")
-      const activation = skill({ id: moved, skill: skillInfo.id, resume: false })
+      const activation = skill({ messageID: moved, skill: skillInfo.id, resume: false })
       const destination = Location.Ref.make({ directory: AbsolutePath.make("/project/moved") })
       yield* fixture.bus.publish(SessionEvent.Moved, {
         sessionID,
@@ -469,12 +468,12 @@ describe("Session-owned handles", () => {
       )
       const { skill } = fixture.sessions.forSession(sessionID)
 
-      yield* skill({ id: SessionMessage.ID.make("msg_skill_no_resume"), skill: skillInfo.id, resume: false })
+      yield* skill({ messageID: SessionMessage.ID.make("msg_skill_no_resume"), skill: skillInfo.id, resume: false })
       expect(calls).toEqual(["published:evt_skill_no_resume"])
       yield* Effect.forEach(
         [
-          { id: SessionMessage.ID.make("msg_skill_default_resume"), skill: skillInfo.id },
-          { id: SessionMessage.ID.make("msg_skill_explicit_resume"), skill: skillInfo.id, resume: true },
+          { messageID: SessionMessage.ID.make("msg_skill_default_resume"), skill: skillInfo.id },
+          { messageID: SessionMessage.ID.make("msg_skill_explicit_resume"), skill: skillInfo.id, resume: true },
         ],
         (input) => skill(input).pipe(Effect.scoped, Effect.forkScoped, Effect.flatMap(Fiber.join)),
       )
@@ -532,7 +531,7 @@ describe("Session-owned handles", () => {
       })
       const shell = yield* fixture.sessions
         .forSession(sessionID)
-        .shell({ id: Event.ID.make("evt_owned_shell"), command: started.command })
+        .shell({ id: SessionMessage.ID.make("msg_owned_shell"), command: started.command })
         .pipe(Effect.forkScoped)
       yield* Deferred.await(blocked)
 
@@ -617,7 +616,7 @@ describe("Session-owned handles", () => {
       const joining = yield* Deferred.make<void>()
       const drains: SessionSchema.ID[] = []
       const resumes: SessionSchema.ID[] = []
-      const interrupts: Array<{ sessionID: SessionSchema.ID; options?: { readonly continue?: boolean } }> = []
+      const interrupts: Array<{ sessionID: SessionSchema.ID; options?: { readonly resume?: boolean } }> = []
       const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, never>({
         drain: (id) =>
           Effect.sync(() => void drains.push(id)).pipe(
@@ -658,10 +657,10 @@ describe("Session-owned handles", () => {
       yield* fixture.sessions.forSession(sessionID).wait()
       expect(drains).toEqual([sessionID])
       expect(yield* coordinator.active).toEqual(new Set())
-      expect(yield* fixture.sessions.forSession(sessionID).interrupt({ continue: true })).toBe(false)
+      expect(yield* fixture.sessions.forSession(sessionID).interrupt({ resume: true })).toBe(false)
       expect(yield* fixture.sessions.forSession(sessionID).interrupt()).toBe(false)
       expect(interrupts).toEqual([
-        { sessionID, options: { continue: true } },
+        { sessionID, options: { resume: true } },
         { sessionID, options: undefined },
       ])
       expect(fixture.locations).toEqual([])

@@ -9,11 +9,14 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { configuration } from '../src/config/configuration';
+import { PublicApiSettings } from '../src/external-services/configuration/public-api-settings';
 import { ProxyController } from '../src/proxy/proxy.controller';
 import { ProjectStatus } from '../src/project/project.types';
 import { PodService } from '../src/pod/pod.service';
 import { ProjectEnvironmentService } from '../src/project-environment/project-environment.service';
 import { DomainTestModule } from './support/domain-module';
+import { EveryServiceAvailableModule } from './support/every-service-available';
+import { PublicApiConfigurationDoubleModule } from './support/public-api-configuration-double';
 import type { FakePodService } from './support/infra-fakes';
 import { startFakePod, type FakePod } from './support/fake-pod';
 import {
@@ -22,10 +25,8 @@ import {
   createTenant,
   createProject,
   createSharedWorkspace,
-  platformApiKeyFor,
   privateWorkspaceCountOf,
   privateWorkspaceIdOf,
-  serviceKeyFor,
   setChatSubjectVisibility,
   stampProjectKind,
   type MemberFixture,
@@ -37,7 +38,11 @@ import { waitFor } from './support/wait-for';
 
 const CONTROL_TOKEN = 'proxy-control-token-for-tests';
 
-@Module({ controllers: [ProxyController] })
+/** Pod keys at the runtime proxy are covered by `external-services/runtime-proxy.test.ts`; these cases are people. */
+@Module({
+  controllers: [ProxyController],
+  providers: [{ provide: PublicApiSettings, useValue: { of: () => Promise.resolve(null) } }],
+})
 class ProxyTestModule {}
 
 let pod: FakePod;
@@ -54,6 +59,8 @@ beforeAll(async () => {
     imports: [
       ConfigModule.forRoot({ isGlobal: true, load: [configuration], ignoreEnvFile: true }),
       DomainTestModule,
+      EveryServiceAvailableModule,
+      PublicApiConfigurationDoubleModule,
       ProxyTestModule,
     ],
   }).compile();
@@ -84,10 +91,7 @@ function ensure(environmentId: string, headers: Record<string, string>, surface 
   });
 }
 
-async function runningProjectIn(
-  tenant: TenantFixture,
-  options: ProjectFixtureOptions = {}
-): Promise<string> {
+async function runningProjectIn(tenant: TenantFixture, options: ProjectFixtureOptions = {}): Promise<string> {
   const projectId = await createProject(app, tenant, options);
   const podName = pods.assignedPodName(projectId);
   await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
@@ -166,49 +170,6 @@ describe('authorizing a runtime through the proxy ensure call', () => {
       headers: member.headers,
       payload: { surface: 'agent' },
     });
-
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('lets a pod reach the runtime of a Project it created', async () => {
-    const tenant = await createTenant(app);
-    const creator = await addMember(app, tenant);
-    const callerProjectId = await runningProjectIn(tenant, { createdBy: creator.userId });
-    const key = await platformApiKeyFor(app, tenant, callerProjectId);
-    const childId = await runningProjectIn(tenant, {
-      createdBy: creator.userId,
-      createdByProjectId: callerProjectId,
-    });
-
-    const res = await ensure(childId, { authorization: `Bearer ${key}` });
-
-    expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ state: 'ready' });
-  });
-
-  it('refuses a pod the runtime of a sibling Project it did not create', async () => {
-    const tenant = await createTenant(app);
-    const creator = await addMember(app, tenant);
-    const callerProjectId = await runningProjectIn(tenant, { createdBy: creator.userId });
-    const key = await platformApiKeyFor(app, tenant, callerProjectId);
-    const siblingId = await runningProjectIn(tenant, { createdBy: creator.userId });
-
-    const res = await ensure(siblingId, { authorization: `Bearer ${key}` });
-
-    expect(res.statusCode).toBe(403);
-  });
-
-  it('refuses a pod holding only a service gateway key', async () => {
-    const tenant = await createTenant(app);
-    const creator = await addMember(app, tenant);
-    const callerProjectId = await runningProjectIn(tenant, { createdBy: creator.userId });
-    const serviceKey = await serviceKeyFor(app, tenant, callerProjectId);
-    const childId = await runningProjectIn(tenant, {
-      createdBy: creator.userId,
-      createdByProjectId: callerProjectId,
-    });
-
-    const res = await ensure(childId, { authorization: `Bearer ${serviceKey}` });
 
     expect(res.statusCode).toBe(401);
   });
@@ -380,23 +341,6 @@ describe('identity side effects of reaching a runtime', () => {
       headers: { 'x-proxy-control-token': CONTROL_TOKEN },
       payload: { surface: 'app' },
     });
-
-    expect(res.statusCode).toBe(201);
-  });
-
-  it('lets the chat pod reach the test Project it created', async () => {
-    const tenant = await createTenant(app);
-    const creator = await addMember(app, tenant);
-    const chatId = await runningProjectIn(tenant, { createdBy: creator.userId });
-    await stampProjectKind(chatId, 'agent_builder_chat');
-    const key = await platformApiKeyFor(app, tenant, chatId);
-    const testProjectId = await runningProjectIn(tenant, {
-      createdBy: creator.userId,
-      createdByProjectId: chatId,
-    });
-    await stampProjectKind(testProjectId, 'test');
-
-    const res = await ensure(testProjectId, { authorization: `Bearer ${key}` });
 
     expect(res.statusCode).toBe(201);
   });

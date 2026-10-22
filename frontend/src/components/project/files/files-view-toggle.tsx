@@ -1,7 +1,12 @@
 import { LayoutGrid, List } from '~/components/icons';
-import { cn } from '~/lib/cn';
+import { ViewToggle, type ViewToggleOption } from '~/components/ui/view-toggle';
 
 export type FilesViewMode = 'table' | 'cards';
+
+const FILES_VIEW_OPTIONS: ViewToggleOption<FilesViewMode>[] = [
+  { value: 'table', label: 'Table view', icon: List },
+  { value: 'cards', label: 'Card view', icon: LayoutGrid },
+];
 
 export interface FilesViewToggleProps {
   mode: FilesViewMode;
@@ -9,32 +14,5 @@ export interface FilesViewToggleProps {
 }
 
 export function FilesViewToggle(props: FilesViewToggleProps) {
-  const buttonClass = (mode: FilesViewMode) =>
-    cn(
-      'p-1 rounded',
-      props.mode === mode ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'
-    );
-
-  return (
-    <div class="flex items-center rounded-md border border-border p-0.5 shrink-0">
-      <button
-        type="button"
-        class={buttonClass('table')}
-        title="Table view"
-        aria-pressed={props.mode === 'table'}
-        onClick={() => props.onChange('table')}
-      >
-        <List class="w-3.5 h-3.5" />
-      </button>
-      <button
-        type="button"
-        class={buttonClass('cards')}
-        title="Card view"
-        aria-pressed={props.mode === 'cards'}
-        onClick={() => props.onChange('cards')}
-      >
-        <LayoutGrid class="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
+  return <ViewToggle value={props.mode} options={FILES_VIEW_OPTIONS} onChange={props.onChange} />;
 }

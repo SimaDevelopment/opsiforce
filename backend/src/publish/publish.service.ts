@@ -16,7 +16,6 @@ import { projectDuplicateJobs, projectEnvironments, projectPublishJobs, projectS
 import { readEnvJson } from '../common/env-file';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { EnvironmentService } from '../environment/environment.service';
-import { ExternalServiceProvisioningService } from '../external-services';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { ProjectStatus } from '../project/project.types';
 import { ACTIVE_DUPLICATE_STATUSES } from '../project/project-duplicate.types';
@@ -27,6 +26,7 @@ import {
   PublishFormResponse,
   PublishJobData,
   PublishJobResponse,
+  PublishReportLine,
   PublishStatus,
   PublishTarget,
 } from './publish.types';
@@ -41,7 +41,6 @@ export class PublishService implements OnApplicationBootstrap {
     private readonly configService: ConfigService,
     private readonly environmentService: EnvironmentService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
-    private readonly externalServiceProvisioning: ExternalServiceProvisioningService,
     @InjectQueue(PROJECT_PUBLISH_QUEUE)
     private readonly queue: Queue<PublishJobData>
   ) {
@@ -191,8 +190,6 @@ export class PublishService implements OnApplicationBootstrap {
         }
         throw err;
       }
-
-      await this.externalServiceProvisioning.provisionEnvironment(projectEnvironmentId);
     }
 
     const publishJobId = crypto.randomUUID();
@@ -347,6 +344,7 @@ function toResponse(row: typeof projectPublishJobs.$inferSelect): PublishJobResp
     status: row.status as PublishStatus,
     commitSha: row.commitSha,
     error: row.error,
+    report: row.report as PublishReportLine[],
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

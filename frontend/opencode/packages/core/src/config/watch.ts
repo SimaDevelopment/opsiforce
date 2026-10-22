@@ -1,16 +1,18 @@
 export * as ConfigWatch from "./watch.js"
 
 import path from "path"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { FSUtil } from "@opencode/util/fs-util"
 import type { Watcher } from "../filesystem/watcher.js"
 import type { ConfigDiscovery } from "./discovery.js"
 
 export function plan(sources: ConfigDiscovery.Sources) {
   const directories = [
+    ...(sources.system?.present ? [sources.system.path] : []),
     ...(sources.global ? [sources.global] : []),
     ...sources.project.filter((root) => root.present).map((root) => root.path),
   ]
   const files = [
+    ...(sources.system ? [sources.system.path] : []),
     ...sources.direct,
     ...sources.project.map((root) => root.path),
     ...sources.claude,
@@ -27,7 +29,7 @@ export function plan(sources: ConfigDiscovery.Sources) {
       ...directories.map((path) => ({
         path,
         type: "directory" as const,
-        ignore: ["node_modules", ".git", "**/{node_modules,.git}/**"],
+        ignore: FSUtil.ignoreGlobs,
       })),
       ...Array.from(parents, ([parent, files]) => ({
         path: parent,

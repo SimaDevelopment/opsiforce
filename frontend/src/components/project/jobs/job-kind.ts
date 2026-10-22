@@ -3,7 +3,13 @@ import type { QueryClient } from '@tanstack/solid-query';
 import { Copy, Download, ExternalLink, Layers, Package, Rocket, RotateCcw } from '~/components/icons';
 import { appPublicUrl } from '~/lib/app-url';
 import { environmentKeys } from '~/api/environments';
-import { publishEventsUrl, publishKeys, type PublishJob, type PublishJobStatus } from '~/api/publish';
+import {
+  publishEventsUrl,
+  publishKeys,
+  type PublishJob,
+  type PublishJobStatus,
+  type PublishReportLine,
+} from '~/api/publish';
 import { duplicateEventsUrl, type DuplicateJob, type DuplicateJobStatus } from '~/api/duplicate';
 import { exportEventsUrl, triggerExportDownload, type ExportJob, type ExportJobStatus } from '~/api/export';
 import { importEventsUrl, type ImportJob } from '~/api/import';
@@ -58,6 +64,7 @@ export interface JobDisplay {
   progressPercent: number;
   error: string | null;
   notice: string | null;
+  report?: string[];
   accentPulse: boolean;
   dismissLabel?: string;
   dismissWhileRunning?: boolean;
@@ -100,6 +107,20 @@ function runningStepLabel(steps: { label: string }[], index: number): string {
   return `${steps[index]?.label ?? 'Working'} · step ${index + 1} of ${steps.length}`;
 }
 
+function publishReportText(line: PublishReportLine, environmentName: string): string {
+  if (line.kind === 'skills-off') {
+    const changes = [
+      line.switchedOff.length > 0 ? `switched off ${line.switchedOff.join(', ')}` : '',
+      line.switchedOn.length > 0 ? `switched back on ${line.switchedOn.join(', ')}` : '',
+    ].filter(Boolean);
+    return `Skills in ${environmentName} now match Development: ${changes.join('; ')}.`;
+  }
+  if (line.outcome === 'failed') {
+    return `${line.displayName}: its configuration couldn't be copied to ${environmentName} (${line.code}); Development keeps receiving.`;
+  }
+  return `${line.displayName}: configuration copied to ${environmentName}.`;
+}
+
 const publishAdapter: JobKindAdapter<TrackedPublish> = {
   describe(entry) {
     const job = entry.job;
@@ -134,6 +155,7 @@ const publishAdapter: JobKindAdapter<TrackedPublish> = {
       progressPercent: ((runningIndex + 1) / PUBLISH_STEPS.length) * 100,
       error: job?.error ?? null,
       notice: null,
+      report: (job?.report ?? []).map((line) => publishReportText(line, entry.title)),
       accentPulse: true,
     };
   },

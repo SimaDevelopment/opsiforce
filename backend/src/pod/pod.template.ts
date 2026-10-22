@@ -1,4 +1,5 @@
 import * as k8s from '@kubernetes/client-node';
+import { agentSecurityContext } from './agent-security-context';
 import { agentAppPort } from '../agent/agent-config';
 import { appPublicUrl } from '../common/app-host';
 import type { K8sResourceRequirements } from './pod-classes';
@@ -19,6 +20,8 @@ export interface PodTemplateOptions {
   appsHostname?: string;
   imagePullPolicy: string;
   resources: K8sResourceRequirements;
+  runtimeClassName?: string;
+  privileged?: boolean;
   nodeSelector?: Record<string, string>;
   tolerations?: Array<Record<string, string>>;
   affinity?: Record<string, unknown>;
@@ -30,15 +33,27 @@ export interface PodTemplateOptions {
   bifrostBackendApiKey?: string;
   gatewayApiKey?: string;
   gatewayUrl?: string;
-  platformApiKey?: string;
-  platformApiUrl?: string;
   runtimeProxyUrl?: string;
-  externalServicesUrl?: string;
+  externalServicesHost?: string;
+  serviceWebhookUrl?: string;
+  caBundleConfigMap?: string;
   controlToken?: string;
   controlPort?: number;
 }
 
+const CA_BUNDLE_VOLUME = 'ca-bundle';
+const CA_BUNDLE_DIRECTORY = '/etc/opsiforce/ca';
+const CA_BUNDLE_FILE = `${CA_BUNDLE_DIRECTORY}/ca-certificates.crt`;
+const CA_BUNDLE_VARIABLES = [
+  'SSL_CERT_FILE',
+  'CURL_CA_BUNDLE',
+  'GIT_SSL_CAINFO',
+  'NODE_EXTRA_CA_CERTS',
+  'REQUESTS_CA_BUNDLE',
+];
+
 export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
+  const securityContext = agentSecurityContext(options.runtimeClassName, options.privileged);
   const resolvedAgentName = options.agentName || 'app-builder';
   const appPort = agentAppPort(resolvedAgentName);
   const routingId = options.environmentId ?? options.projectId;
@@ -67,6 +82,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       },
     },
     spec: {
+      ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }
         : {}),
@@ -78,6 +94,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       initContainers: [
         {
           name: 'init-config',
+          ...(securityContext ? { securityContext } : {}),
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
           env: [{ name: 'AGENT_NAME', value: resolvedAgentName }],
@@ -95,6 +112,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       containers: [
         {
           name: 'opencode',
+          ...(securityContext ? { securityContext } : {}),
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
           workingDir: '/workspace',
@@ -153,34 +171,43 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                     value: options.gatewayApiKey,
                   },
                   { name: 'SERVICE_GATEWAY_URL', value: options.gatewayUrl },
-                  {
-                    name: 'EXTERNAL_SERVICES_URL',
-                    value: options.externalServicesUrl ?? '',
-                  },
+                  ...(options.externalServicesHost
+                    ? [{ name: 'EXTERNAL_SERVICES_HOST', value: options.externalServicesHost }]
+                    : []),
+                  ...(options.serviceWebhookUrl
+                    ? [{ name: 'SERVICE_WEBHOOK_URL', value: options.serviceWebhookUrl }]
+                    : []),
                 ]
               : []),
-            ...(options.platformApiKey && options.platformApiUrl && options.runtimeProxyUrl
-              ? [
-                  { name: 'OPSIFORCE_API_KEY', value: options.platformApiKey },
-                  { name: 'OPSIFORCE_API_URL', value: options.platformApiUrl },
-                  { name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl },
-                ]
+            ...(options.caBundleConfigMap ? CA_BUNDLE_VARIABLES.map((name) => ({ name, value: CA_BUNDLE_FILE })) : []),
+            ...(options.runtimeProxyUrl
+              ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),
           ],
-          volumeMounts,
+          volumeMounts: options.caBundleConfigMap
+            ? [...volumeMounts, { name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
+            : volumeMounts,
           readinessProbe: {
             httpGet: {
-              path: '/api/health',
+              path: '/api/info',
               port: options.agentPort,
             },
             initialDelaySeconds: 5,
-            periodSeconds: 5,
-            timeoutSeconds: 5,
+            // Builds can briefly stall the agent. Opsiforce may recreate unready
+            // pods, so require sustained failures before removing readiness.
+            periodSeconds: 10,
+            timeoutSeconds: 10,
+            failureThreshold: 12,
           },
           resources: options.resources,
         },
       ],
-      volumes: [buildStorageVolume(options)],
+      volumes: [
+        buildStorageVolume(options),
+        ...(options.caBundleConfigMap
+          ? [{ name: CA_BUNDLE_VOLUME, configMap: { name: options.caBundleConfigMap } }]
+          : []),
+      ],
       restartPolicy: 'Always',
     },
   };

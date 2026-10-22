@@ -2,13 +2,19 @@ import { Button } from '~/components/ui/button';
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
+import { onEnvironmentIdle } from '~/api/agent-status';
 import { Permission } from '~/constants/permissions';
 import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
 import { useProjectEnvironments } from '~/api/environments';
 import { deletionCoversPath } from '~/api/files';
 import { Spinner } from '~/components/ui/spinner';
-import { ProjectHeader, type ProjectSurfaceSlots, type ProjectTab } from '~/components/project/project-header';
+import {
+  PROJECT_TAB_LABELS,
+  ProjectHeader,
+  type ProjectSurfaceSlots,
+  type ProjectTab,
+} from '~/components/project/project-header';
 import { ProjectChatTab } from '~/components/project/project-chat-tab';
 import { ProjectCodeTab } from '~/components/project/project-code-tab';
 import { ProjectDbTab } from '~/components/project/project-db-tab';
@@ -33,6 +39,8 @@ export interface ProjectViewProps extends ProjectSurfaceSlots {
   footer?: JSX.Element;
   onStatusEvent?: () => void;
   onPreviewVisible?: () => void;
+  showSkillsAndServices?: boolean;
+  servesApp?: boolean;
 }
 
 export function ProjectView(props: ProjectViewProps) {
@@ -54,7 +62,13 @@ export function ProjectView(props: ProjectViewProps) {
     if (previewed && deletionCoversPath(deletedPath, previewed)) closePreview();
   };
 
+  let closePreviewOverlay: () => void = () => {};
+  const onCloseOverlayRef = (fn: () => void) => {
+    closePreviewOverlay = fn;
+  };
+
   const selectTab = (tab: ProjectTab) => {
+    closePreviewOverlay();
     setActiveTab(tab);
     setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
   };
@@ -104,11 +118,10 @@ export function ProjectView(props: ProjectViewProps) {
     projectId: props.projectId,
     environmentId: activeEnvironmentId,
     status: connectionStatus,
-    currentTitle: () => statusQuery.data?.title,
     initialPrompt: () => props.initialPrompt(),
     onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
-  const app = () => statusQuery.data?.app;
+  const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
   const previewVisible = () => app()?.exists === true || previewRequest() !== null;
 
   createEffect(
@@ -137,10 +150,10 @@ export function ProjectView(props: ProjectViewProps) {
     reloadPreview = fn;
   };
 
-  const handleAgentIdle = () => {
+  onEnvironmentIdle(activeEnvironmentId, () => {
     reloadPreview();
     setAgentIdleToken((token) => token + 1);
-  };
+  });
 
   createEffect(() => {
     const unregister = jobDock.registerProjectView(props.projectId, {
@@ -186,7 +199,7 @@ export function ProjectView(props: ProjectViewProps) {
         </Show>
       </div>
 
-      <div class="flex-1 min-h-0 flex">
+      <div class="relative flex-1 min-h-0 flex">
         <div
           class={cn('relative flex min-h-0', contentFills() ? 'flex-1 min-w-0' : 'shrink-0', strip && 'snap-start')}
           style={contentFills() || !chatColumn ? undefined : { width: `${chatColumn.width()}px` }}
@@ -214,9 +227,9 @@ export function ProjectView(props: ProjectViewProps) {
                     <ProjectChatTab
                       projectId={props.projectId}
                       environmentId={activeEnvironmentId()}
+                      environmentName={activeEnvironment()?.name ?? 'Development'}
+                      showSkillsAndServices={props.showSkillsAndServices ?? true}
                       router={router()}
-                      currentTitle={statusQuery.data?.title ?? null}
-                      onAgentIdle={handleAgentIdle}
                       onPreviewFile={previewFile}
                     />
                   )}
@@ -274,6 +287,8 @@ export function ProjectView(props: ProjectViewProps) {
             previewRequest={previewRequest()}
             onClosePreview={closePreview}
             onReloadRef={onReloadRef}
+            onCloseOverlayRef={onCloseOverlayRef}
+            overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
             column={
               strip && {
                 storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,

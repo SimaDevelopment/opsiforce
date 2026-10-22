@@ -1,0 +1,53 @@
+{
+  "sdk": 2,
+  "displayName": "Incoming email",
+  "description": "Receive email, with attachments, at a Project's own address.",
+  "inbound": true,
+  "serviceForm": [
+    {
+      "key": "receivingDomain",
+      "type": "text",
+      "label": "Receiving domain",
+      "help": "The Mailgun domain whose catch-all Route forwards every recipient to this service's webhook URL.",
+      "required": true,
+      "validate": { "format": "hostname" }
+    },
+    {
+      "key": "signingKey",
+      "type": "secret",
+      "label": "Webhook signing key",
+      "help": "The Mailgun account's HTTP webhook signing key.",
+      "required": true
+    },
+    {
+      "key": "maxAttachmentMb",
+      "type": "number",
+      "label": "Largest attachment (MB)",
+      "help": "Larger attachments are left out of the stored email and listed under omittedAttachments.",
+      "default": 25,
+      "min": 1,
+      "max": 25,
+      "integer": true
+    }
+  ],
+  "projectForm": [
+    {
+      "key": "localPart",
+      "type": "text",
+      "label": "Address",
+      "generate": { "length": 16, "alphabet": "lowercaseAlphanumeric", "unique": true }
+    },
+    {
+      "key": "address",
+      "type": "info",
+      "label": "Email address",
+      "template": "{{localPart}}@{{serviceConfiguration.receivingDomain}}"
+    }
+  ],
+  "events": {
+    "email.received": {
+      "title": "Email received",
+      "description": "An email arrived at the Project's address; its data is described in the Service skill."
+    }
+  }
+}

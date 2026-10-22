@@ -1,13 +1,14 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Perms } from '../../src/permission/permission.constants';
 import { defaultEnvironmentId, seedBuilderChat, seedLiveAgent, seedWorkspaceProject } from '../support/agent-fixtures';
 import {
   addMember,
   createTenant,
-  platformApiKeyFor,
+  callerIdentityFor,
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
@@ -25,8 +26,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, readFile, default: { ...actual, readFile } };
 });
 
-function bearer(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}` };
+function asCaller(callerIdentity: string): Record<string, string> {
+  return { [callerIdentityHeader]: callerIdentity };
 }
 
 interface ProfileBody {
@@ -49,7 +50,7 @@ describe('PUT /agents/:id/template', () => {
     await writeFile(join(templateDir, path), content);
   }
 
-  function save(headers: Record<string, string> = bearer(chatKey)) {
+  function save(headers: Record<string, string> = asCaller(chatKey)) {
     return app.inject({ method: 'PUT', url: `/api/v1/agents/${agentId}/template`, headers });
   }
 
@@ -63,7 +64,7 @@ describe('PUT /agents/:id/template', () => {
     const chat = await seedBuilderChat(tenant.tenantId, agentId, creator.userId);
     chatId = chat.chatId;
     templateDir = chat.templateDir;
-    chatKey = await platformApiKeyFor(app, tenant, chatId);
+    chatKey = callerIdentityFor(app, tenant, chatId);
   });
 
   beforeEach(async () => {
@@ -88,7 +89,7 @@ describe('PUT /agents/:id/template', () => {
       warnings: [],
     });
 
-    const detail = await app.inject({ method: 'GET', url: `/api/v1/agents/${agentId}`, headers: bearer(chatKey) });
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/agents/${agentId}`, headers: asCaller(chatKey) });
     const developmentId = await defaultEnvironmentId(tenant.tenantId);
     const profiles = detail.json<{ profiles: ProfileBody[] }>().profiles;
     expect(profiles.find((profile) => profile.environmentId === developmentId)?.template).toEqual({
@@ -145,8 +146,8 @@ describe('PUT /agents/:id/template', () => {
 
     const callers = [
       creator.headers,
-      bearer(await platformApiKeyFor(app, tenant, otherChat.chatId)),
-      bearer(await platformApiKeyFor(app, tenant, testProjectId)),
+      asCaller(callerIdentityFor(app, tenant, otherChat.chatId)),
+      asCaller(callerIdentityFor(app, tenant, testProjectId)),
     ];
     for (const headers of callers) {
       const res = await save(headers);

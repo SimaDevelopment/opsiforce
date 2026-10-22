@@ -1,6 +1,7 @@
 import { Show, For, createSignal, createMemo, createEffect } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { createAppQuery } from '~/lib/create-app-query';
+import { createDocumentTitle } from '~/lib/create-document-title';
 import { Link, useNavigate, useSearch } from '@tanstack/solid-router';
 import { scheduleApi, type Schedule, type ScheduleExecution, type UpdateScheduleDto } from '~/api/client';
 import { useEnvironments, useProjectEnvironments } from '~/api/environments';
@@ -42,6 +43,7 @@ function cronToHuman(expr: string): string {
 }
 
 export function SchedulesPage() {
+  createDocumentTitle(() => 'Schedules');
   const qc = useQueryClient();
   const search = useSearch({ from: '/schedules' });
   const navigate = useNavigate();
@@ -174,12 +176,12 @@ export function SchedulesPage() {
       <Show
         when={isScoped()}
         fallback={
-          <p class="text-xs text-muted-foreground mb-5 ml-8">
+          <p class="text-xs text-muted-foreground mb-5 sm:ml-8">
             Automated tasks that run on a recurring schedule. Pick an environment to see its schedules.
           </p>
         }
       >
-        <p class="text-xs text-muted-foreground mb-5 ml-8">
+        <p class="text-xs text-muted-foreground mb-5 sm:ml-8">
           <Show when={scopedProjectTitle()} fallback="Automated tasks for this environment.">
             {(title) => (
               <>
@@ -337,7 +339,7 @@ function ScheduleTableSection(props: {
 
       <Show when={count() > 0}>
         <div class="rounded-lg border border-border overflow-hidden bg-card">
-          <Table>
+          <Table layout="responsive">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -356,7 +358,7 @@ function ScheduleTableSection(props: {
                   <TableRow>
                     <TableCell class="font-medium">{s.name}</TableCell>
                     <Show when={props.showProject}>
-                      <TableCell>
+                      <TableCell label="Project">
                         <Link
                           to="/projects/$projectId"
                           params={{ projectId: s.projectId }}
@@ -367,13 +369,15 @@ function ScheduleTableSection(props: {
                         </Link>
                       </TableCell>
                     </Show>
-                    <TableCell>
+                    <TableCell label="Schedule">
                       <span class="text-xs" title={s.cronPattern}>
                         {cronToHuman(s.cronPattern)}
                       </span>
                     </TableCell>
-                    <TableCell class="text-xs text-muted-foreground">{s.timeZone}</TableCell>
-                    <TableCell>
+                    <TableCell label="Timezone" class="text-xs text-muted-foreground">
+                      {s.timeZone}
+                    </TableCell>
+                    <TableCell label="Active">
                       <Switch checked={s.isActive} onChange={() => props.onToggle(s)} disabled={props.updating}>
                         <SwitchControl>
                           <SwitchThumb />

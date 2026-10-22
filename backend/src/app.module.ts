@@ -28,6 +28,7 @@ import { AgentModule } from './agent/agent.module';
 import { StoreModule } from './store/store.module';
 import { BuilderModule } from './builder/builder.module';
 import { DeliveryModule } from './delivery/delivery.module';
+import { ProjectSkillsModule } from './project-skills/project-skills.module';
 import { AgentUpdateModule } from './agent-update/agent-update.module';
 import { PRIVATE_MODULES } from './private-loader';
 import { ProjectPoolModule } from './pool/project-pool.module';
@@ -36,9 +37,14 @@ import { ProjectEnvironmentModule } from './project-environment/project-environm
 import { PublishModule } from './publish/publish.module';
 import { ProjectExportModule } from './export/project-export.module';
 import { AdminModule } from './admin/admin.module';
-import { ExternalServicesModule } from './external-services';
+import { CallLogCleanupModule, ExternalServicesModule } from './external-services';
+import { CustomServicesModule } from './external-services/custom/custom-services.module';
+import { DoorbellQueueModule } from './external-services/doorbell/doorbell-queue.module';
+import { DoorbellModule } from './external-services/doorbell/doorbell.module';
 import { StorageModule } from './storage/storage.module';
 import { LimitModule } from './limit/limit.module';
+import { LinkedAccountsModule } from './linked-accounts/linked-accounts.module';
+import { ModelProvidersModule } from './model-provider/model-provider.module';
 import { PublicApiModule } from './public-api/public-api.module';
 
 function parseRedisUrl(url: string) {
@@ -78,6 +84,7 @@ function parseRedisUrl(url: string) {
     StoreModule,
     BuilderModule,
     DeliveryModule,
+    ProjectSkillsModule,
     TimeoutModule,
     ProxyModule,
     FilesModule,
@@ -96,9 +103,15 @@ function parseRedisUrl(url: string) {
     PublishModule,
     ProjectExportModule,
     AdminModule,
+    DoorbellQueueModule,
     ExternalServicesModule,
+    CustomServicesModule,
+    CallLogCleanupModule,
+    DoorbellModule,
     StorageModule,
     LimitModule,
+    ModelProvidersModule,
+    LinkedAccountsModule,
     PublicApiModule,
   ],
   controllers: [HealthController],

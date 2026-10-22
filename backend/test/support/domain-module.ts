@@ -24,10 +24,12 @@ import { AGENT_WORKSPACE_UPDATE_QUEUE } from '../../src/agent-update/agent-updat
 import { DefaultsService } from '../../src/defaults/defaults.service';
 import { DeliveryRepository } from '../../src/delivery/delivery.repository';
 import { DeliveryService } from '../../src/delivery/delivery.service';
+import { EnvironmentSkillsService } from '../../src/delivery/environment-skills';
 import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
 import { PodReloadClient } from '../../src/delivery/pod-reload.client';
 import { SkillDeliveryRepository } from '../../src/delivery/skill-delivery.repository';
 import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
+import { SkillSwitchRepository } from '../../src/delivery/skill-switch.repository';
 import { WorkspaceWriter } from '../../src/delivery/workspace-writer';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
@@ -36,7 +38,8 @@ import { ForwardedIdentityService } from '../../src/identity/forwarded-identity.
 import { PermissionGuard } from '../../src/permission/permission.guard';
 import { AppReadinessService } from '../../src/project/app-readiness.service';
 import { AppService } from '../../src/project/app.service';
-import { AgentStatusService } from '../../src/project/agent-status.service';
+import { AgentObservationsService } from '../../src/project/agent-observations.service';
+import { AGENT_STATUS_TIMER, AgentStatusService } from '../../src/project/agent-status.service';
 import { ProjectAuthService } from '../../src/project/project-auth.service';
 import { ProjectEventsService } from '../../src/project/project-events.service';
 import { ProjectProvenanceRepository } from '../../src/project/project-provenance.repository';
@@ -49,6 +52,8 @@ import { PROJECT_IMPORT_QUEUE } from '../../src/project/project-import.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../../src/project-environment/environment-variables.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
+import { PROJECT_POOL_QUEUE, PROJECT_POOL_TEARDOWN_QUEUE } from '../../src/pool/project-pool.types';
+import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { PodCacheService } from '../../src/pod/pod.cache.service';
 import { PodService } from '../../src/pod/pod.service';
 import { ProxyService } from '../../src/proxy/proxy.service';
@@ -58,11 +63,11 @@ import { TimeoutService } from '../../src/timeout/timeout.service';
 import { UserService } from '../../src/user/user.service';
 import { WorkspaceService } from '../../src/workspace/workspace.service';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
-import { ExternalServiceProvisioningService } from '../../src/external-services';
+import { EXTERNAL_SERVICE_DOORBELL_QUEUE } from '../../src/external-services/doorbell/doorbell.types';
 import {
   FakeAgentUpdateK8sService,
   FakeBifrostService,
-  FakeExternalServiceProvisioningService,
+  FakeCoalescingQueue,
   FakePodCacheService,
   FakePodService,
   FakeProjectAuthService,
@@ -71,6 +76,7 @@ import {
   FakeQueue,
   FakeScheduleService,
   FakeTimeoutService,
+  fakeTimer,
 } from './infra-fakes';
 
 const REAL_SERVICES = [
@@ -79,6 +85,7 @@ const REAL_SERVICES = [
   AgentConnectionService,
   AgentExportService,
   AgentImportService,
+  AgentObservationsService,
   AgentProfileService,
   AgentReconcilerService,
   AgentRepository,
@@ -95,10 +102,12 @@ const REAL_SERVICES = [
   DeliveryRepository,
   DeliveryService,
   EnvironmentService,
+  EnvironmentSkillsService,
   EnvironmentVariablesService,
   ForwardedIdentityService,
   GatewayKeyService,
   GitService,
+  ModelProvidersService,
   PermissionGuard,
   PodOpencodeClient,
   PodReloadClient,
@@ -111,6 +120,7 @@ const REAL_SERVICES = [
   ProxyService,
   SkillDeliveryRepository,
   SkillDeliveryService,
+  SkillSwitchRepository,
   SkillPublishService,
   SkillReconcilerService,
   SkillRepository,
@@ -124,7 +134,6 @@ const REAL_SERVICES = [
 const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: AgentUpdateK8sService, useClass: FakeAgentUpdateK8sService },
   { provide: BifrostService, useClass: FakeBifrostService },
-  { provide: ExternalServiceProvisioningService, useClass: FakeExternalServiceProvisioningService },
   { provide: PodCacheService, useClass: FakePodCacheService },
   { provide: PodService, useClass: FakePodService },
   { provide: ProjectAuthService, useClass: FakeProjectAuthService },
@@ -136,13 +145,20 @@ const FAKED_SERVICES: { provide: InjectionToken; useClass: Type }[] = [
   { provide: getQueueToken(PROJECT_IMPORT_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(AGENT_WORKSPACE_UPDATE_QUEUE), useClass: FakeQueue },
   { provide: getQueueToken(SKILL_DELIVERY_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(PROJECT_POOL_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(PROJECT_POOL_TEARDOWN_QUEUE), useClass: FakeQueue },
+  { provide: getQueueToken(EXTERNAL_SERVICE_DOORBELL_QUEUE), useClass: FakeCoalescingQueue },
 ];
 
-export const DOMAIN_TEST_PROVIDERS: Provider[] = [...REAL_SERVICES, ...FAKED_SERVICES];
+export const DOMAIN_TEST_PROVIDERS: Provider[] = [
+  ...REAL_SERVICES,
+  ...FAKED_SERVICES,
+  { provide: AGENT_STATUS_TIMER, useFactory: fakeTimer },
+];
 
 @Global()
 @Module({
   providers: DOMAIN_TEST_PROVIDERS,
-  exports: [...REAL_SERVICES, ...FAKED_SERVICES.map(({ provide }) => provide)],
+  exports: [...REAL_SERVICES, ...FAKED_SERVICES.map(({ provide }) => provide), AGENT_STATUS_TIMER],
 })
 export class DomainTestModule {}

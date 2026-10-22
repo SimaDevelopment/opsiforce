@@ -4,9 +4,9 @@ import { DataProvider } from "../context/data"
 import type { SessionUserActions } from "../message/current-message"
 import type { SessionUserPresentation } from "../timeline/session-timeline"
 import { SessionTimeline } from "../timeline/session-timeline"
-import { FileComponentProvider } from "@opencode-ai/ui/context/file"
-import { Button } from "@opencode-ai/ui/button"
-import { Show, createSignal, type JSX } from "solid-js"
+import { FileComponentProvider } from "@opencode/ui/context/file"
+import { Button } from "@opencode/ui/button"
+import { Show, createMemo, createSignal, type JSX } from "solid-js"
 import { CURRENT_SESSION_ID, STORY_TIME } from "./current-session-fixtures"
 
 export function CurrentSessionProviders(props: { document: SessionDocument; children: JSX.Element }) {
@@ -62,6 +62,7 @@ export function CurrentSessionProviders(props: { document: SessionDocument; chil
         },
         session_diff: { [CURRENT_SESSION_ID]: props.document.diffs },
       }}
+      turnDiff={{ get: () => props.document.diffs, load: () => {} }}
     >
       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
     </DataProvider>
@@ -76,9 +77,13 @@ export function CurrentSessionTimelineStory(props: {
   width?: string
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
+  turnDiffs?: boolean
 }) {
+  // Inline story documents rebuild their messages on every prop read, and the timeline projection keys text by identity.
+  const document = createMemo(() => props.document)
   const [revision, setRevision] = createSignal(1)
   const [activity, setActivity] = createSignal("No local action")
+
   const actions = {
     openAttachment: (file) => {
       setActivity(`Opened ${file.name ?? file.mime}`)
@@ -87,6 +92,7 @@ export function CurrentSessionTimelineStory(props: {
       setActivity(`Selected revert boundary ${input.messageID}`)
     },
   } satisfies SessionUserActions
+
   const reset = () => {
     setActivity("No local action")
     setRevision((value) => value + 1)
@@ -107,13 +113,14 @@ export function CurrentSessionTimelineStory(props: {
         <Show when={revision()} keyed>
           {(revision) => (
             <div data-story-revision={revision}>
-              <CurrentSessionProviders document={props.document}>
+              <CurrentSessionProviders document={document()}>
                 <SessionTimeline
-                  document={props.document}
+                  document={document()}
                   presentation={props.presentation}
                   actions={actions}
                   shellToolDefaultOpen={props.shellToolDefaultOpen}
                   editToolDefaultOpen={props.editToolDefaultOpen}
+                  turnDiffs={props.turnDiffs}
                 />
               </CurrentSessionProviders>
             </div>

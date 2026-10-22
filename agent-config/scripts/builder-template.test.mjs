@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { createServer } from "node:http"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test, { after, before, describe } from "node:test"
 import { fileURLToPath } from "node:url"
+import { createContext, createSummary, provisionWorkspace, reconcileContent } from "./agent-workspace-migrate.mjs"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.join(here, "..", "agents", "skill-agent-builder")
@@ -76,6 +78,7 @@ describe("api.sh", () => {
   let server
   let origin
   const seen = []
+  let reloadsLeft = 0
 
   before(async () => {
     server = createServer((request, response) => {
@@ -90,6 +93,12 @@ describe("api.sh", () => {
           contentType: request.headers["content-type"],
           body: Buffer.concat(chunks).toString("utf8"),
         })
+        if (request.url.endsWith("/reloading") && reloadsLeft > 0) {
+          reloadsLeft -= 1
+          response.writeHead(503, { "content-type": "application/problem+json", "retry-after": "1" })
+          response.end('{"code":"service-reloading"}')
+          return
+        }
         response.writeHead(201, { "content-type": "application/json" })
         response.end('{"id":"p_1"}')
       })
@@ -107,9 +116,9 @@ describe("api.sh", () => {
     const child = spawn("sh", [apiScript, ...args], {
       env: {
         ...process.env,
-        OPSIFORCE_API_URL: `${origin}/api/v1`,
+        PUBLIC_API_URL: `${origin}/api/v1`,
         OPSIFORCE_RUNTIME_PROXY_URL: origin,
-        OPSIFORCE_API_KEY: "gw-test",
+        SERVICE_GATEWAY_API_KEY: "gw-test",
         ...env,
       },
     })
@@ -120,19 +129,28 @@ describe("api.sh", () => {
     return new Promise((resolve) => child.on("close", (status) => resolve({ status, stdout, stderr })))
   }
 
-  test("sends a GET to the platform API with the bearer", async () => {
-    const result = await run(["call", "GET", "/skills?filter=built_in"])
+  test("calls a Public API path on its Service host with the service key and no body", async () => {
+    const result = await run(["GET", "/me"])
 
     assert.equal(result.status, 0, result.stderr)
     assert.equal(result.stdout, '{"id":"p_1"}')
     const last = seen.at(-1)
     assert.equal(last.method, "GET")
-    assert.equal(last.url, "/api/v1/skills?filter=built_in")
+    assert.equal(last.url, "/api/v1/me")
     assert.equal(last.authorization, "Bearer gw-test")
+    assert.equal(last.contentType, undefined)
+    assert.equal(last.body, "")
+  })
+
+  test("refuses to guess the Service host in a pod with no EXTERNAL_SERVICES_HOST", async () => {
+    const result = await run(["GET", "/me"], { PUBLIC_API_URL: "", EXTERNAL_SERVICES_HOST: "" })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /EXTERNAL_SERVICES_HOST/)
   })
 
   test("sends an inline JSON body as JSON", async () => {
-    await run(["call", "POST", "/projects", '{"title":"Test","kind":"test"}'])
+    await run(["POST", "/projects", '{"title":"Test","kind":"test"}'])
 
     const last = seen.at(-1)
     assert.equal(last.method, "POST")
@@ -142,14 +160,24 @@ describe("api.sh", () => {
   })
 
   test("sends a @file body from disk", async () => {
-    await run(["call", "PUT", "/agents/a1/profile", `@${path.join(here, "..", "agent-image-version.json")}`])
+    await run(["PUT", "/agents/a_1/profile", `@${path.join(here, "..", "agent-image-version.json")}`])
 
     const last = seen.at(-1)
-    assert.equal(last.method, "PUT")
-    assert.ok(JSON.parse(last.body).version, "the file's contents should be the request body")
+    assert.ok(JSON.parse(last.body).version, "the file's contents should be the input")
   })
 
-  test("resolves a runtime baseUrl against the runtime proxy origin, not the platform API", async () => {
+  test("waits out a 503 that names a Retry-After, then answers", async () => {
+    reloadsLeft = 1
+    const before = seen.length
+
+    const result = await run(["POST", "/reloading"])
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, '{"id":"p_1"}')
+    assert.equal(seen.length - before, 2)
+  })
+
+  test("resolves a runtime baseUrl against the runtime proxy origin with the same key", async () => {
     await run(["runtime", "/api/proxy/env-1", "POST", "/api/session/ses_1/prompt", '{"text":"hi"}'])
 
     const last = seen.at(-1)
@@ -181,18 +209,18 @@ describe("api.sh", () => {
   })
 
   test("prints a status code alone", async () => {
-    assert.equal((await run(["status", "GET", "/me"])).stdout.trim(), "201")
+    assert.equal((await run(["status", "GET", "/projects/p_1"])).stdout.trim(), "201")
   })
 
-  test("refuses to run in a pod that holds no platform-api key", async () => {
-    const result = await run(["call", "GET", "/me"], { OPSIFORCE_API_KEY: "" })
+  test("refuses to run in a pod that holds no service key", async () => {
+    const result = await run(["GET", "/me"], { SERVICE_GATEWAY_API_KEY: "" })
 
     assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /OPSIFORCE_API_KEY/)
+    assert.match(result.stderr, /SERVICE_GATEWAY_API_KEY/)
   })
 
   test("refuses an unknown command instead of guessing", async () => {
-    const result = await run(["publish", "GET", "/me"])
+    const result = await run(["publish", "/me"])
 
     assert.equal(result.status, 2)
     assert.match(result.stderr, /unknown command/)
@@ -542,7 +570,11 @@ describe("evidence.sh", () => {
   function evidence(args) {
     return runScript("sh", [evidenceScript, ...args], {
       cwd: workspace,
-      env: { OPSIFORCE_API_URL: `${origin}/api/v1`, OPSIFORCE_RUNTIME_PROXY_URL: origin, OPSIFORCE_API_KEY: "gw-test" },
+      env: {
+        PUBLIC_API_URL: `${origin}/api/v1`,
+        OPSIFORCE_RUNTIME_PROXY_URL: origin,
+        SERVICE_GATEWAY_API_KEY: "gw-test",
+      },
     })
   }
 
@@ -665,9 +697,9 @@ describe("turn.sh", () => {
   })
 
   const env = (extra = {}) => ({
-    OPSIFORCE_API_URL: `${origin}/api/v1`,
+    PUBLIC_API_URL: `${origin}/api/v1`,
     OPSIFORCE_RUNTIME_PROXY_URL: origin,
-    OPSIFORCE_API_KEY: "gw-test",
+    SERVICE_GATEWAY_API_KEY: "gw-test",
     TURN_POLL: "1",
     ...extra,
   })
@@ -811,45 +843,44 @@ describe("tp.sh", () => {
           response.writeHead(status, { "content-type": "application/json" })
           response.end(payload === undefined ? "" : JSON.stringify(payload))
         }
-        const route = `${request.method} ${url.pathname}`
-        if (route === "GET /api/v1/me") {
-          return send(200, {
-            builderSubject: world.subject,
-            builderTestProject: world.testProject ? { id: world.testProject } : null,
-          })
-        }
-        if (route === "POST /api/v1/projects") {
-          if (world.createAnswer) return send(...world.createAnswer)
-          world.exists = true
-          return send(201, { id: "tp-1" })
-        }
-        const project = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)(\/.*)?$/)
-        if (project) {
-          const [, id, rest = ""] = project
-          if (!world.exists || id !== "tp-1") return send(404, { code: "project-not-found" })
-          if (request.method === "GET" && rest === "") {
-            const status = world.statuses.length > 1 ? world.statuses.shift() : world.statuses[0]
-            return send(200, { id, disabled: world.disabled, environments: [{ id: "env-1", status }] })
+        const api = "/api/v1"
+        if (url.pathname.startsWith(`${api}/`)) {
+          const route = `${request.method} ${url.pathname.slice(api.length)}`
+          if (route === "GET /me") {
+            return send(200, {
+              builderSubject: world.subject,
+              builderTestProject: world.testProject ? { id: world.testProject } : null,
+            })
           }
-          if (request.method === "POST" && rest === "/restart") {
+          if (route === "POST /projects") {
+            if (world.createAnswer) return send(...world.createAnswer)
+            world.exists = true
+            return send(201, { id: "tp-1" })
+          }
+          if (!world.exists || !route.includes("/projects/tp-1")) return send(404, { code: "project-not-found" })
+          if (route === "GET /projects/tp-1") {
+            const status = world.statuses.length > 1 ? world.statuses.shift() : world.statuses[0]
+            return send(200, { id: "tp-1", disabled: world.disabled, environments: [{ id: "env-1", status }] })
+          }
+          if (route === "POST /projects/tp-1/restart") {
             world.statuses = world.afterRestart ?? ["active"]
             return send(204)
           }
-          if (request.method === "POST" && rest === "/test/update") return send(204)
-          if (request.method === "POST" && rest === "/test/reset") {
+          if (route === "POST /projects/tp-1/test/update") return send(204)
+          if (route === "POST /projects/tp-1/test/reset") {
             world.boundSession = null
             world.sessions.shift()
             return send(204)
           }
-          if (request.method === "POST" && rest === "/environments/env-1/connect") {
+          if (route === "POST /projects/tp-1/environments/env-1/connect") {
             if (world.connectRefusals > 0) {
               world.connectRefusals -= 1
-              return send(503, { code: "environment-starting" })
+              return send(503, { type: "urn:opsiforce:error:environment-starting" })
             }
             world.boundSession ??= world.sessions[0]
             return send(200, { baseUrl: prefix, openapiUrl: `${prefix}/openapi.json`, sessionId: world.boundSession })
           }
-          return send(404, {})
+          return send(404, { type: "urn:opsiforce:error:route-not-found" })
         }
         if (!url.pathname.startsWith(prefix)) return send(404, {})
         const runtime = `${request.method} ${url.pathname.slice(prefix.length)}`
@@ -916,9 +947,9 @@ describe("tp.sh", () => {
     runScript(posixShell, [testProjectScript, ...args], {
       cwd: root,
       env: {
-        OPSIFORCE_API_URL: `${origin}/api/v1`,
+        PUBLIC_API_URL: `${origin}/api/v1`,
         OPSIFORCE_RUNTIME_PROXY_URL: origin,
-        OPSIFORCE_API_KEY: "gw-test",
+        SERVICE_GATEWAY_API_KEY: "gw-test",
         TP_POLL: "0",
         TP_ATTEMPTS: "5",
         TURN_POLL: "1",
@@ -1181,5 +1212,79 @@ describe("check-expectations.mjs", () => {
 
     assert.equal(result.status, 1)
     assert.match(result.stdout, /scratch\/expectations\.md: missing/)
+  })
+})
+
+describe("the template files migration", () => {
+  const templateDir = path.join(packageRoot, "template")
+  const migrationDir = path.join(packageRoot, "migrations", "20261022_current_template_files")
+  const migration = JSON.parse(readFileSync(path.join(migrationDir, "migration.json"), "utf8"))
+  const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest("hex")
+
+  function templateFiles(directory, prefix = "") {
+    const found = []
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) found.push(...templateFiles(path.join(directory, entry.name), relative))
+      else found.push(relative)
+    }
+    return found.toSorted()
+  }
+
+  function provisionedChat(t) {
+    const root = mkdtempSync(path.join(tmpdir(), "builder-chat-"))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    const opencodeRoot = path.join(root, "opencode")
+    mkdirSync(opencodeRoot)
+    writeFileSync(path.join(opencodeRoot, "opencode.json"), "{}")
+    const context = createContext({
+      AGENT_NAME: "skill-agent-builder",
+      WORKSPACE: path.join(root, "workspace"),
+      AGENTS_ROOT: path.dirname(packageRoot),
+      OPENCODE_ROOT: opencodeRoot,
+      AGENT_IMAGE_VERSION: "test",
+    })
+    mkdirSync(context.workspace)
+    return context
+  }
+
+  test("refreshes every template file and accepts its current content, so a chat created today migrates cleanly", () => {
+    assert.deepEqual(migration.operations.map((operation) => operation.target), templateFiles(templateDir))
+    for (const operation of migration.operations) {
+      assert.equal(operation.type, "copy")
+      assert.equal(path.join(migrationDir, operation.source), path.join(templateDir, operation.target))
+      assert.ok(
+        operation.managedChecksums.includes(sha256(path.join(templateDir, operation.target))),
+        `${operation.target} changed: add its new sha256 to managedChecksums and ship a new migration for chats behind it`,
+      )
+    }
+  })
+
+  test("brings back a missing file and keeps an edited one as a conflict, which holds back the pod recreate", async (t) => {
+    const context = provisionedChat(t)
+    await provisionWorkspace(context, createSummary(context))
+    rmSync(path.join(context.workspace, "scripts", "tp.sh"))
+    writeFileSync(path.join(context.workspace, "scripts", "api.sh"), "# edited in this chat\n")
+
+    const summary = await reconcileContent(context, createSummary(context), { withMigrations: true })
+
+    assert.equal(summary.status, "conflict")
+    assert.deepEqual(summary.conflicts, [
+      { migrationId: migration.id, path: "scripts/api.sh", reason: "checksum mismatch" },
+    ])
+    assert.equal(summary.requiresPodRecreate, false)
+    assert.equal(readFileSync(path.join(context.workspace, "scripts", "api.sh"), "utf8"), "# edited in this chat\n")
+    assert.equal(sha256(path.join(context.workspace, "scripts", "tp.sh")), sha256(path.join(templateDir, "scripts", "tp.sh")))
+  })
+
+  test("applies on a chat laid from the current template and recreates its pod", async (t) => {
+    const context = provisionedChat(t)
+    await provisionWorkspace(context, createSummary(context))
+
+    const summary = await reconcileContent(context, createSummary(context), { withMigrations: true })
+
+    assert.equal(summary.status, "applied")
+    assert.ok(summary.appliedMigrations.includes(migration.id))
+    assert.equal(summary.requiresPodRecreate, true)
   })
 })
