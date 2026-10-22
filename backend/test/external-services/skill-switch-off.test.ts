@@ -103,7 +103,7 @@ async function republish(skill: { id: string; name: string }, body: string): Pro
 async function runningProject(ofAgentId = agentId): Promise<string> {
   const projectId = await createProject(app, tenant, { agentId: ofAgentId });
   const pods = app.get<FakePodService>(PodService);
-  await app.get(ProjectEnvironmentService).patch(projectId, { status: ProjectStatus.Active, podIp: '127.0.0.1' });
+  await app.get(ProjectEnvironmentService).patch(projectId, { status: ProjectStatus.Active });
   pods.setPod(pods.assignedPodName(projectId), '127.0.0.1', CONTROL_TOKEN);
   pod.serveSkills(() => installedSkillNames(projectId));
   return projectId;

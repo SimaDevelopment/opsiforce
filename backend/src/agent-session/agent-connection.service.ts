@@ -8,7 +8,6 @@ import { lockEnvironmentSession, type DbExecutor } from '../common/locks';
 import { runtimeBaseUrl, runtimeOpenapiUrl } from '../common/runtime-urls';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { ProjectStatus } from '../project/project.types';
-import { ProxyService } from '../proxy/proxy.service';
 import { ProjectService } from '../project/project.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { AgentSessionGateway } from './agent-session.gateway';
@@ -22,7 +21,6 @@ export interface ConnectOptions {
 
 interface EnvironmentBinding {
   id: string;
-  podIp: string | null;
   sessionId: string | null;
   status: ProjectStatus;
   disabled: boolean;
@@ -36,7 +34,6 @@ export class AgentConnectionService {
   constructor(
     private readonly gateway: AgentSessionGateway,
     private readonly pod: PodOpencodeClient,
-    private readonly proxy: ProxyService,
     @Inject(forwardRef(() => ProjectService))
     private readonly projectService: ProjectService,
     private readonly deliveryService: DeliveryService,
@@ -50,41 +47,36 @@ export class AgentConnectionService {
     const ready = await this.gateway.wakeForConnection(env, deadline);
 
     return this.reportingPodFailures(ready.id, async () => {
-      const build = await this.readBuild(this.proxy.resolveUpstreamForProject(ready), deadline);
-      const bound = await deadline.run(() => this.bindPrimarySession(ready, deadline), connectionBudgetExhausted);
+      const build = await this.readBuild(ready.id, deadline);
+      const sessionId = await deadline.run(() => this.bindPrimarySession(ready, deadline), connectionBudgetExhausted);
       const latest = await deadline.run(() => readBinding(db, ready.id), connectionBudgetExhausted);
-      assertCurrentBinding(latest, bound.podIp);
+      assertCurrentBinding(latest);
       deadline.assertUnspent(connectionBudgetExhausted);
 
       return {
         environmentId: ready.id,
         baseUrl: runtimeBaseUrl(ready.id),
         openapiUrl: runtimeOpenapiUrl(ready.id),
-        sessionId: bound.sessionId,
+        sessionId,
         build,
       };
     });
   }
 
-  private async bindPrimarySession(
-    ready: ProjectEnvironmentContext,
-    deadline: Deadline
-  ): Promise<{ sessionId: string; upstream: string; podIp: string }> {
+  private async bindPrimarySession(ready: ProjectEnvironmentContext, deadline: Deadline): Promise<string> {
     const current = await readBinding(db, ready.id);
-    assertCurrentBinding(current, ready.podIp);
-    const upstream = this.proxy.resolveUpstreamForProject(current);
-    const bound = (sessionId: string) => ({ sessionId, upstream, podIp: current.podIp });
+    assertCurrentBinding(current);
     const scope = describe(ready);
 
     if (current.sessionId !== null) {
       deadline.assertUnspent(connectionBudgetExhausted);
-      const remembered = await this.pod.getSessionIfPresent(upstream, current.sessionId, {
+      const remembered = await this.pod.getSessionIfPresent(ready.id, current.sessionId, {
         signal: deadline.signal(),
       });
       if (remembered && isRootSession(remembered)) {
         this.logger.log(`${scope}: kept remembered session ${remembered.id}`);
-        await this.pinAgent(ready, upstream, remembered, deadline);
-        return bound(remembered.id);
+        await this.pinAgent(ready, remembered, deadline);
+        return remembered.id;
       }
       this.logger.warn(
         `${scope}: remembered session ${current.sessionId} ${describeMismatch(remembered)}; resolving again`
@@ -92,13 +84,13 @@ export class AgentConnectionService {
     }
 
     deadline.assertUnspent(connectionBudgetExhausted);
-    const oldest = await this.pod.oldestRootSession(upstream, { signal: deadline.signal() });
+    const oldest = await this.pod.oldestRootSession(ready.id, { signal: deadline.signal() });
     if (oldest) {
-      await this.pinAgent(ready, upstream, oldest, deadline);
-      return bound(await this.rebind(ready, current.sessionId, oldest.id));
+      await this.pinAgent(ready, oldest, deadline);
+      return this.rebind(ready, current.sessionId, oldest.id);
     }
 
-    return bound(await this.createPrimarySession(ready, upstream, deadline));
+    return this.createPrimarySession(ready, deadline);
   }
 
   private async rebind(ready: ProjectEnvironmentContext, observed: string | null, next: string): Promise<string> {
@@ -120,11 +112,7 @@ export class AgentConnectionService {
     return sessionId;
   }
 
-  private async createPrimarySession(
-    ready: ProjectEnvironmentContext,
-    upstream: string,
-    deadline: Deadline
-  ): Promise<string> {
+  private async createPrimarySession(ready: ProjectEnvironmentContext, deadline: Deadline): Promise<string> {
     const scope = describe(ready);
     return db.transaction(async (tx) => {
       deadline.assertUnspent(connectionBudgetExhausted);
@@ -132,21 +120,21 @@ export class AgentConnectionService {
       deadline.assertUnspent(connectionBudgetExhausted);
 
       const current = await readBinding(tx, ready.id);
-      assertCurrentBinding(current, ready.podIp);
+      assertCurrentBinding(current);
 
       if (current.sessionId !== null) {
-        const remembered = await this.pod.getSessionIfPresent(upstream, current.sessionId, {
+        const remembered = await this.pod.getSessionIfPresent(ready.id, current.sessionId, {
           signal: deadline.signal(),
         });
         if (remembered && isRootSession(remembered)) {
           this.logger.log(`${scope}: kept session ${remembered.id} bound by a concurrent connection`);
-          await this.pinAgent(ready, upstream, remembered, deadline);
+          await this.pinAgent(ready, remembered, deadline);
           return remembered.id;
         }
       }
 
       deadline.assertUnspent(connectionBudgetExhausted);
-      const adopted = await this.pod.oldestRootSession(upstream, { signal: deadline.signal() });
+      const adopted = await this.pod.oldestRootSession(ready.id, { signal: deadline.signal() });
       if (adopted) {
         this.logger.log(
           `${scope}: adopted oldest root session ${adopted.id} under lock (previously ${current.sessionId ?? 'none'})`
@@ -154,8 +142,8 @@ export class AgentConnectionService {
       }
       const session =
         adopted ??
-        (await this.pod.createSession(upstream, await this.agentSlug(ready.id), { signal: deadline.signal() }));
-      if (adopted) await this.pinAgent(ready, upstream, adopted, deadline);
+        (await this.pod.createSession(ready.id, await this.agentSlug(ready.id), { signal: deadline.signal() }));
+      if (adopted) await this.pinAgent(ready, adopted, deadline);
       if (!adopted) {
         const message = `${scope}: created session ${session.id} because the runtime reported no root session (previously ${current.sessionId ?? 'none'})`;
         if (current.sessionId === null) this.logger.log(message);
@@ -168,16 +156,11 @@ export class AgentConnectionService {
   }
 
   /** A Project has one Agent, so an adopted session carrying none is re-pointed at it (ADR-0060). */
-  private async pinAgent(
-    ready: ProjectEnvironmentContext,
-    upstream: string,
-    session: SessionInfo,
-    deadline: Deadline
-  ): Promise<void> {
+  private async pinAgent(ready: ProjectEnvironmentContext, session: SessionInfo, deadline: Deadline): Promise<void> {
     if (typeof session.agent === 'string' && session.agent.length > 0) return;
     const agent = await this.agentSlug(ready.id);
     deadline.assertUnspent(connectionBudgetExhausted);
-    await this.pod.switchSessionAgent(upstream, session.id, agent, { signal: deadline.signal() });
+    await this.pod.switchSessionAgent(ready.id, session.id, agent, { signal: deadline.signal() });
     this.logger.log(`${describe(ready)}: re-pointed session ${session.id} at agent ${agent}`);
   }
 
@@ -185,10 +168,10 @@ export class AgentConnectionService {
     return this.deliveryService.runtimeAgentSlugFor(environmentId);
   }
 
-  private async readBuild(upstream: string, deadline: Deadline): Promise<string | null> {
+  private async readBuild(environmentId: string, deadline: Deadline): Promise<string | null> {
     deadline.assertUnspent(connectionBudgetExhausted);
     try {
-      const info = await this.pod.info(upstream, { signal: deadline.signal() });
+      const info = await this.pod.info(environmentId, { signal: deadline.signal() });
       return info.version ?? null;
     } catch (error) {
       if (error instanceof PodResponded && error.status === 503) throw new EnvironmentNotRunning('starting');
@@ -216,7 +199,6 @@ async function readBinding(executor: DbExecutor, environmentId: string): Promise
   const [row] = await executor
     .select({
       id: projectEnvironments.id,
-      podIp: projectEnvironments.podIp,
       sessionId: projectEnvironments.sessionId,
       status: projectEnvironments.status,
       disabled: projects.disabled,
@@ -246,14 +228,9 @@ function connectionBudgetExhausted(): PodTimeout {
   return new PodTimeout('The connection budget ran out before the runtime answered');
 }
 
-function assertCurrentBinding(
-  current: EnvironmentBinding | null,
-  podIp: string | null
-): asserts current is EnvironmentBinding & { podIp: string } {
+function assertCurrentBinding(current: EnvironmentBinding | null): asserts current is EnvironmentBinding {
   if (!current) throw new EnvironmentNotRunning('not-found');
   if (current.disabled) throw new EnvironmentNotRunning('disabled');
   if (current.status === ProjectStatus.Failed) throw new EnvironmentNotRunning('failed');
-  if (current.status !== ProjectStatus.Active || !current.podIp || current.podIp !== podIp) {
-    throw new EnvironmentNotRunning('starting');
-  }
+  if (current.status !== ProjectStatus.Active) throw new EnvironmentNotRunning('starting');
 }

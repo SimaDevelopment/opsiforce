@@ -13,6 +13,7 @@ import { PodReloadClient, type NotifyTarget } from '../delivery/pod-reload.clien
 import { SkillSwitchRepository } from '../delivery/skill-switch.repository';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { hasRunningPod } from '../project-environment/running-pod';
 import { ProjectStatus } from '../project/project.types';
 import { AgentUpdateK8sService } from './agent-update.k8s.service';
 import { AgentUpdateService } from './agent-update.service';
@@ -318,16 +319,16 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     env: ProjectEnvironmentContext,
     summary: AgentWorkspaceMigrationSummary
   ): Promise<boolean> {
-    if (!env.podIp || summary.requiresPodRecreate) return true;
+    if (!hasRunningPod(env) || summary.requiresPodRecreate) return true;
     const { written, removed } = summary.ownedSkills;
     const skillsChanged = written.length > 0 || removed.length > 0;
     const targets: NotifyTarget[] = ['agents'];
     if (summary.configChanged) targets.push('config');
     if (skillsChanged) targets.push('skills');
-    if (!(await this.podReload.notify(env.id, env.podIp, targets))) return false;
+    if (!(await this.podReload.notify(env.id, targets))) return false;
     if (!skillsChanged) return true;
     try {
-      await this.podReload.confirmSkills(env.podIp, written, removed);
+      await this.podReload.confirmSkills(env.id, written, removed);
       return true;
     } catch (err) {
       this.logger.warn(`Environment ${env.id} did not serve the Job's skills: ${(err as Error).message}`);
@@ -433,8 +434,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     return AgentUpdateStatus.Applied;
   }
 
-  private needsDeferredReload(env: { podIp: string | null }, summary: AgentWorkspaceMigrationSummary): boolean {
-    if (!env.podIp) return false;
+  private needsDeferredReload(env: ProjectEnvironmentContext, summary: AgentWorkspaceMigrationSummary): boolean {
+    if (!hasRunningPod(env)) return false;
     return summary.requiresPodRecreate;
   }
 

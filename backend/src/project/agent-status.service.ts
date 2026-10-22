@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, fo
 import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { hasRunningPod } from '../project-environment/running-pod';
 import { TimeoutService } from '../timeout/timeout.service';
 import { ProjectEventsService } from './project-events.service';
 import { AgentStatus, ProjectStatus } from './project.types';
@@ -156,9 +157,7 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async reconcile(): Promise<void> {
-    const envs = (await this.projectEnvironmentService.listByStatus(ProjectStatus.Active)).filter(
-      (env) => !env.disabled && env.podIp
-    );
+    const envs = (await this.projectEnvironmentService.listByStatus(ProjectStatus.Active)).filter(hasRunningPod);
     if (envs.length === 0) return;
 
     const results = await Promise.allSettled(envs.map((env) => this.reconcileEnvironment(env)));
@@ -192,7 +191,7 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
 
   private async retryReconcileEnvironment(envId: string): Promise<void> {
     const env = await this.projectEnvironmentService.findByIdOrNull(envId).catch(() => null);
-    if (!env || env.disabled || env.status !== ProjectStatus.Active || !env.podIp) {
+    if (!env || !hasRunningPod(env)) {
       this.reconcileRetries.delete(envId);
       return;
     }
@@ -205,8 +204,4 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
       this.scheduleReconcileRetry(envId);
     }
   }
-}
-
-function hasRunningPod(env: ProjectEnvironmentContext): boolean {
-  return !env.disabled && env.status === ProjectStatus.Active && !!env.podIp;
 }

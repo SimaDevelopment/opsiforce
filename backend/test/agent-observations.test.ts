@@ -201,9 +201,7 @@ describe('the re-read while Working', () => {
     const project = await seam.createRunningProject();
     await seam.runStarted(project, 'ses_a');
     seam.pod.setActive(['ses_a']);
-    await seam.app
-      .get(ProjectEnvironmentService)
-      .patch(project.environmentId, { status: ProjectStatus.Suspended, podIp: null });
+    await seam.app.get(ProjectEnvironmentService).patch(project.environmentId, { status: ProjectStatus.Suspended });
 
     await seam.rereadClock.elapse();
 

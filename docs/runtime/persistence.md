@@ -19,7 +19,7 @@ adrs: [0042]
 
 ### Replacement and resume
 
-- A replacement pod carries the same deterministic name, mounts the same directory, and starts OpenCode against the persisted XDG state; the backend caches the new IP and flips the environment to `active`, and the frontend reconnects ([Pod Lifecycle](pod-lifecycle.md)).
+- A replacement pod carries the same deterministic name, mounts the same directory, and starts OpenCode against the persisted XDG state; the backend flips the environment to `active` once the pod is Ready, and the frontend reconnects ([Pod Lifecycle](pod-lifecycle.md)).
 - The primary [Session](../../GLOSSARY.md) binding is resolved during a [Connection](../public-api/connection.md) against the environment's live root sessions, so a replacement pod resumes the same conversation and a stale id never leaks into a freshly published environment.
 
 ### Cleanup

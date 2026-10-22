@@ -253,7 +253,7 @@ export class PublishService implements OnApplicationBootstrap {
       });
     if (createdEnvironmentId) {
       await this.projectEnvironmentService
-        .patch(createdEnvironmentId, { status: ProjectStatus.Failed, podIp: null })
+        .patch(createdEnvironmentId, { status: ProjectStatus.Failed })
         .catch(() => undefined);
     }
   }

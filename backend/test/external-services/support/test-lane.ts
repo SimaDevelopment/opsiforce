@@ -32,7 +32,7 @@ export async function runningDevelopment(
 ): Promise<BuilderDevelopment> {
   const [environment] = await db
     .update(projectEnvironments)
-    .set({ status: 'active', podIp: '127.0.0.1' })
+    .set({ status: 'active' })
     .where(and(eq(projectEnvironments.projectId, builderChatId), eq(projectEnvironments.isDefault, true)))
     .returning({
       id: projectEnvironments.id,

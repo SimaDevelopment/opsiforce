@@ -41,6 +41,8 @@ export interface PodTemplateOptions {
   controlPort?: number;
 }
 
+export const AGENT_PODS_SERVICE = 'opsiforce-agents';
+
 const CA_BUNDLE_VOLUME = 'ca-bundle';
 const CA_BUNDLE_DIRECTORY = '/etc/opsiforce/ca';
 const CA_BUNDLE_FILE = `${CA_BUNDLE_DIRECTORY}/ca-certificates.crt`;
@@ -82,6 +84,8 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       },
     },
     spec: {
+      hostname: options.podName,
+      subdomain: AGENT_PODS_SERVICE,
       ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }

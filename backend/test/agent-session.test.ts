@@ -66,11 +66,11 @@ function callsSince(route: Parameters<FakePod['requestsTo']>[0]): () => number {
   return () => pod.requestsTo(route).length - before;
 }
 
-async function markNextPodReady(projectId: string, podIp = '127.0.0.1'): Promise<void> {
+async function markNextPodReady(projectId: string): Promise<void> {
   const podName = harness.fakes.pods.assignedPodName(projectId);
   const before = harness.fakes.pods.callsTo('waitForReady').length;
   await waitFor(() => harness.fakes.pods.callsTo('waitForReady').length > before);
-  harness.fakes.pods.markPodReady(podName, podIp);
+  harness.fakes.pods.markPodReady(podName);
   await waitFor(
     async () => (await harness.projectEnvironments.findByIdOrNull(projectId))?.status === ProjectStatus.Active
   );
@@ -89,12 +89,8 @@ async function environmentOf(environmentId: string): Promise<ProjectEnvironmentC
   return env;
 }
 
-async function setStatus(
-  environmentId: string,
-  status: ProjectStatus,
-  podIp: string | null = null
-): Promise<ProjectEnvironmentContext> {
-  await harness.projectEnvironments.patch(environmentId, { status, podIp });
+async function setStatus(environmentId: string, status: ProjectStatus): Promise<ProjectEnvironmentContext> {
+  await harness.projectEnvironments.patch(environmentId, { status });
   return environmentOf(environmentId);
 }
 
@@ -226,7 +222,7 @@ describe('connecting to a project environment', () => {
     expect(error).toBeInstanceOf(EnvironmentNotRunning);
     expect(error).toMatchObject({ state: 'starting' });
     expect(Date.now() - startedAt).toBeLessThan(4_000);
-    await setStatus(env.id, ProjectStatus.Active, '127.0.0.1');
+    await setStatus(env.id, ProjectStatus.Active);
   });
 
   it('reports a budget spent on a ready runtime as a timeout, not as a startup state', async () => {
@@ -249,7 +245,7 @@ describe('connecting to a project environment', () => {
     controller.abort();
 
     await expect(connecting).rejects.toBeInstanceOf(EnvironmentNotRunning);
-    await setStatus(env.id, ProjectStatus.Active, '127.0.0.1');
+    await setStatus(env.id, ProjectStatus.Active);
   });
 
   it('applies a pending agent reload before answering', async () => {
@@ -282,14 +278,13 @@ describe('connecting to a project environment', () => {
     if (!shuttingDown) throw new Error('the running project has no pod');
     shuttingDown.metadata = { ...shuttingDown.metadata, deletionTimestamp: new Date() };
     const starting = await setStatus(env.id, ProjectStatus.Starting);
-    const replaced = markNextPodReady(env.id, '127.0.0.2');
+    const replaced = markNextPodReady(env.id);
 
     const ensured = await harness.agentSessions.ensureAgentSurface(starting);
 
     expect(ensured.state).toBe('starting');
     await replaced;
-    expect((await environmentOf(env.id)).podIp).toBe('127.0.0.2');
-    await setStatus(env.id, ProjectStatus.Active, '127.0.0.1');
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Active);
   });
 
   it('applies the same reload gate on the proxy controller path', async () => {
@@ -359,7 +354,7 @@ describe('resolving the primary session', () => {
     const client = harness.moduleRef.get(PodOpencodeClient);
 
     const error: unknown = await client
-      .oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 })
+      .oldestRootSession(randomUUID(), { maxPages: 1 })
       .catch((reason: unknown) => reason);
 
     expect(error).toBeInstanceOf(PodTimeout);
@@ -371,7 +366,7 @@ describe('resolving the primary session', () => {
     const client = harness.moduleRef.get(PodOpencodeClient);
     const listed = callsSince('session.list');
 
-    const found = await client.oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 });
+    const found = await client.oldestRootSession(randomUUID(), { maxPages: 1 });
 
     expect(found?.id).toBe(oldest.id);
     expect(listed()).toBe(2);

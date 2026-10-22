@@ -114,7 +114,6 @@ export async function addServiceEnvironment(
     directory,
     platformVersion: '0.0.0-test',
     status: 'active',
-    podIp: '127.0.0.1',
     deployedCommitSha: PUBLISHED_COMMIT,
   });
   const key = await app.get(GatewayKeyService).createKey(builderChatId, projectEnvironmentId, tenantId);
@@ -191,7 +190,7 @@ export async function saveConsumerConfiguration(
 export async function suspendServicePod(projectEnvironmentId: string): Promise<void> {
   await db
     .update(projectEnvironments)
-    .set({ status: 'suspended', podIp: null })
+    .set({ status: 'suspended' })
     .where(eq(projectEnvironments.id, projectEnvironmentId));
 }
 
