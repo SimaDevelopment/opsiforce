@@ -26,7 +26,10 @@ const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'a'.repeat(64);
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
-const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
+const OPENAI_FAMILY = {
+  allowed_models: [...servedModelsOf(BASE_FORMATS.openai), ...BASE_FORMATS.openai.imageModels],
+  key_ids: ['*'],
+};
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -591,7 +594,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   describe('at boot, after Bifrost lost the sign-in', () => {
     function repointAtBoot(): Promise<void> {
-      return app.get(LinkedAccountsService).repointConnectedAccounts();
+      return app.get(LinkedAccountsService).reconcileConnectedAccounts();
     }
 
     it('points a Connected custom-openai-1 reset to its Helm entry back at the proxy with a new lap_ key', async () => {
@@ -656,6 +659,32 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       expect(bifrost.writes.slice(writesBefore)).toEqual([]);
       expect(callerSecret()).toBe(secret);
       expect(await storedHash()).toBe(hash);
+    });
+
+    it('brings a Connected account created before image calls up to date and gives its keys the image models', async () => {
+      const admin = await platformAdmin();
+      const tenant = await createTenant(app);
+      const projectId = await projectOf(tenant);
+      await signIn(admin);
+      const provider = bifrost.providerNamed('custom-openai-1');
+      const written = (provider?.updated ?? provider?.created)?.custom_provider_config as Record<string, unknown>;
+      written.allowed_requests = { ...(written.allowed_requests as Record<string, unknown>), image_generation: false };
+      const secret = callerSecret();
+
+      await repointAtBoot();
+
+      const updated = bifrost.providerNamed('custom-openai-1')?.updated?.custom_provider_config as Record<
+        string,
+        unknown
+      >;
+      expect(updated.allowed_requests).toMatchObject({ image_generation: true, image_edit: true });
+      expect(bifrost.providerNamed('custom-openai-1')?.baseUrl).toBe(PROXY_URL);
+      expect(callerSecret()).toBe(secret);
+      expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
+        provider: 'custom-openai-1',
+        weight: 1,
+        ...OPENAI_FAMILY,
+      });
     });
 
     it('leaves an account that is not signed in alone', async () => {

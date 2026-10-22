@@ -33,6 +33,7 @@ function providerSummaryOf(provider: BifrostProviderResponse): BifrostProviderSu
     status: provider.provider_status ?? null,
     keyLess: provider.custom_provider_config?.is_key_less === true,
     listsModels: provider.custom_provider_config?.allowed_requests?.list_models !== false,
+    servesImages: provider.custom_provider_config?.allowed_requests?.image_generation === true,
   };
 }
 

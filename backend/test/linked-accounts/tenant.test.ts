@@ -23,7 +23,10 @@ const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'b'.repeat(64);
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
-const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
+const OPENAI_FAMILY = {
+  allowed_models: [...servedModelsOf(BASE_FORMATS.openai), ...BASE_FORMATS.openai.imageModels],
+  key_ids: ['*'],
+};
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 const TENANT_ACCOUNT = { email: 'team@acme.test', accountId: 'chatgpt-account-acme' };

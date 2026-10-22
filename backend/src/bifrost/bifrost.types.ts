@@ -14,7 +14,7 @@ export interface BifrostProviderResponse {
   custom_provider_config?: {
     base_provider_type?: string | null;
     is_key_less?: boolean | null;
-    allowed_requests?: { list_models?: boolean | null } | null;
+    allowed_requests?: { list_models?: boolean | null; image_generation?: boolean | null } | null;
   } | null;
 }
 
@@ -25,6 +25,7 @@ export interface BifrostProviderSummary {
   status: string | null;
   keyLess: boolean;
   listsModels: boolean;
+  servesImages: boolean;
 }
 
 export interface BifrostAllowedRequests {
@@ -34,6 +35,8 @@ export interface BifrostAllowedRequests {
   responses: boolean;
   responses_stream: boolean;
   count_tokens: boolean;
+  image_generation?: boolean;
+  image_edit?: boolean;
 }
 
 export interface BifrostNetworkConfig {
