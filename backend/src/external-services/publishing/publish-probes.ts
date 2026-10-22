@@ -89,6 +89,7 @@ export class PublishProbes {
       const res = await this.pods.podFetch(pod, '/', {
         headers: probe.headers,
         signal: AbortSignal.timeout(PUBLISH_PROBE_TIMEOUT_MS),
+        redirect: 'manual',
       });
       await res.body?.cancel();
       answer = { status: res.status, outcome: res.headers.get(OUTCOME_HEADER) };
