@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 
 const V1MigrationProgress = Schema.Struct({
   label: Schema.String,
@@ -19,7 +19,7 @@ export const MigrationGroup = HttpApiGroup.make("server.migration")
       success: V1MigrationStatus,
     }).annotateMerge(
       OpenApi.annotations({
-        identifier: "v2.experimental.migration.v1.status",
+        identifier: "experimental.migration.v1.status",
         summary: "Get V1 migration status",
         description: "Return the progress of the V1 to V2 session history migration.",
       }),

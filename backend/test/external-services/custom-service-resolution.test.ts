@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { sdkPackageVersion } from '@opsiforce/external-service-sdk/server';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
@@ -139,7 +140,7 @@ describe("an Organization's Custom External Services next to the built-ins", () 
         builderChatId: service.builderChatId,
         published: true,
         disabled: false,
-        sdkVersion: '2.0.0',
+        sdkVersion: sdkPackageVersion,
         hidesBuiltIn: false,
         webhookUrl: `${PUBLIC_URL}/api/external-services/webhooks/${service.id}`,
         serviceConfiguration: { values: {}, missing: ['apiToken'] },

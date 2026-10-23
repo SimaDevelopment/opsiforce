@@ -23,7 +23,10 @@ function rawTextPlugin(): Plugin {
   }
 }
 
-function appAssetsPlugin(archive: string): Plugin {
+/** The web UI archive's SEA asset key. The prelude leaves it in place, and the server reads it from SEA memory. */
+export const appArchiveAsset = "app-archive.bin"
+
+function appAssetsPlugin(): Plugin {
   return {
     name: "opencode:app-assets",
     resolveId(id) {
@@ -31,7 +34,13 @@ function appAssetsPlugin(archive: string): Plugin {
     },
     load(id) {
       if (id !== "\0virtual:opencode-app-assets") return
-      return `export default ${JSON.stringify(archive)}`
+      return `import { readFileSync } from "node:fs"
+import path from "node:path"
+import { getRawAsset, isSea } from "node:sea"
+export default () =>
+  isSea()
+    ? new Uint8Array(getRawAsset(${JSON.stringify(appArchiveAsset)}))
+    : readFileSync(path.join(process.env.OPENCODE_NODE_ASSETS_DIR, ${JSON.stringify(appArchiveAsset)}))`
     },
   }
 }
@@ -158,12 +167,12 @@ const __filename = import.meta.filename
 const __dirname = import.meta.dirname
 const require = __cjs_mod__.createRequire(import.meta.url)
 const __ocPluginModules = ${JSON.stringify({
-    "@opencode-ai/plugin": "opencode:plugin-v2",
-    "@opencode-ai/plugin/promise/plugin": "opencode:plugin-promise-plugin",
-    "@opencode-ai/plugin/promise/tool": "opencode:plugin-promise-tool",
-    "@opencode-ai/plugin/effect": "opencode:plugin-v2-effect",
-    "@opencode-ai/plugin/effect/plugin": "opencode:plugin-v2-effect-plugin",
-    "@opencode-ai/plugin/effect/tool": "opencode:plugin-v2-effect-tool",
+    "@opencode/plugin": "opencode:plugin-v2",
+    "@opencode/plugin/promise/plugin": "opencode:plugin-promise-plugin",
+    "@opencode/plugin/promise/tool": "opencode:plugin-promise-tool",
+    "@opencode/plugin/effect": "opencode:plugin-v2-effect",
+    "@opencode/plugin/effect/plugin": "opencode:plugin-v2-effect-plugin",
+    "@opencode/plugin/effect/tool": "opencode:plugin-v2-effect-tool",
   })}
 const __ocPluginSources = ${JSON.stringify({
     "opencode:plugin-v2": promiseModule,
@@ -205,6 +214,7 @@ const __ocPersistentPty = ${JSON.stringify(opencodePtyAsset)}
 if (__ocIsSea()) {
   const __ocPtySpawnHelper = ${JSON.stringify(nodePtySpawnHelper)}
   for (const __ocKey of __ocAssetKeys()) {
+    if (__ocKey === ${JSON.stringify(appArchiveAsset)}) continue
     const __ocTarget = __ocPath.join(__ocAssetRoot, __ocKey)
     if (__ocExists(__ocTarget)) continue
     __ocMkdir(__ocPath.dirname(__ocTarget), { recursive: true })
@@ -241,16 +251,16 @@ if (process.platform === "linux") process.env.OPENTUI_LIBC = "glibc"`
 export type NodeBuildInput = {
   readonly version: string
   readonly channel: string
+  readonly highlights?: string
   readonly assetHash: string
   readonly target: NodeTarget
-  readonly appArchive: string
 }
 
 export function mainConfig(input: NodeBuildInput): UserConfig {
   return defineConfig({
     root: dir,
     plugins: [
-      appAssetsPlugin(input.appArchive),
+      appAssetsPlugin(),
       rawTextPlugin(),
       runtimeRequirePlugin(),
       fffNodePlugin(),
@@ -269,6 +279,7 @@ export function mainConfig(input: NodeBuildInput): UserConfig {
       OPENCODE_CLI_NAME: JSON.stringify("opencode2-node"),
       OPENCODE_CHANNEL: JSON.stringify(input.channel),
       OPENCODE_ARTIFACT: JSON.stringify("cli-node"),
+      ...(input.highlights ? { OPENCODE_RELEASE_HIGHLIGHTS: JSON.stringify(input.highlights) } : {}),
       OPENCODE_LIBC: input.target.platform === "linux" ? JSON.stringify("glibc") : "undefined",
       FFF_LIBC: input.target.platform === "linux" ? JSON.stringify("gnu") : "undefined",
       "process.env.WS_NO_BUFFER_UTIL": JSON.stringify("1"),
@@ -292,5 +303,4 @@ export default mainConfig({
   channel: process.env.OPENCODE_CHANNEL ?? "local",
   assetHash: "local",
   target: nodeTarget(process.platform, process.arch),
-  appArchive: "",
 })

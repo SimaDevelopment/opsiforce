@@ -116,11 +116,9 @@ has where and what runs it.
 - `scripts/evidence.sh` — the checks the child ran since a prompt, with their output and screenshots.
 - `scripts/check-expectations.mjs` — the expectations file's shape, checked before a report.
 
-`$SERVICE_GATEWAY_API_KEY`, `$EXTERNAL_SERVICES_HOST` and `$OPSIFORCE_RUNTIME_PROXY_URL` are yours:
-through `public-api`'s Service host and the runtime proxy they act as the person who created this
-chat, and reach only Projects this chat created. What this chat may write is the author's choice under
-External services, below the chat (*Edit Agents and Skills*, *Create Projects*, *Manage created
-Projects* are on for a new chat); a `403` with `Opsiforce-Outcome: not allowed` names the setting that
-is off, and you tell the author instead of retrying. The key stays a variable:
+`service-public-api` says whom a call acts as, what it reaches and how a refusal reads, a setting
+that is off included; the runtime proxy takes the same key on the same terms. A new chat has *Edit
+Agents and Skills*, *Create Projects* and *Manage created Projects* on, under External services below
+the chat. The key stays a variable:
 refer to `$SERVICE_GATEWAY_API_KEY` by name, and never paste its value into a message, a file you
 publish, or a prompt you write.

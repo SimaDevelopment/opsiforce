@@ -13,7 +13,7 @@
     "serve": "external-service-cli serve"
   },
   "dependencies": {
-    "@opsiforce/external-service-sdk": "file:./vendor/external-service-sdk-2.0.1.tgz"
+    "@opsiforce/external-service-sdk": "file:./vendor/external-service-sdk-2.1.0.tgz"
   },
   "dependenciesMeta": {
     "@opsiforce/external-service-sdk": {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { PlatformScope } from '../tenant/tenant.decorator';
@@ -7,10 +7,14 @@ import { PlatformModelProvidersService } from './platform-model-providers.servic
 import type {
   ConnectionTestPassed,
   EditModelProviderConnectionDto,
+  SetModelProviderModelsDto,
   ModelProviderConnectionDto,
   NewModelProviderDto,
+  PlatformModelProviderAccessView,
   PlatformModelProviderCreationRules,
   PlatformModelProvidersView,
+  SetModelProviderAccessDto,
+  SetModelProviderAvailabilityModeDto,
 } from './model-provider.types';
 
 @Controller('platform-model-providers')
@@ -30,6 +34,28 @@ export class PlatformModelProvidersController {
     return this.platformService.rules();
   }
 
+  @Get('access')
+  access(): Promise<PlatformModelProviderAccessView> {
+    return this.platformService.access();
+  }
+
+  @Put(':name/availability')
+  setAvailabilityMode(
+    @Param('name') name: string,
+    @Body() body: SetModelProviderAvailabilityModeDto | undefined
+  ): Promise<PlatformModelProviderAccessView> {
+    return this.platformService.setAvailabilityMode(name, body);
+  }
+
+  @Put(':name/access/:tenantId')
+  setAccess(
+    @Param('name') name: string,
+    @Param('tenantId') tenantId: string,
+    @Body() body: SetModelProviderAccessDto | undefined
+  ): Promise<PlatformModelProviderAccessView> {
+    return this.platformService.setAccess(name, tenantId, body);
+  }
+
   @Post('test')
   @HttpCode(200)
   test(@Body() body: NewModelProviderDto | undefined): Promise<ConnectionTestPassed> {
@@ -47,6 +73,14 @@ export class PlatformModelProvidersController {
     @Body() body: EditModelProviderConnectionDto | undefined
   ): Promise<PlatformModelProvidersView> {
     return this.platformService.editConnection(name, body);
+  }
+
+  @Put(':name/models')
+  setModels(
+    @Param('name') name: string,
+    @Body() body: SetModelProviderModelsDto | undefined
+  ): Promise<PlatformModelProvidersView> {
+    return this.platformService.setModels(name, body);
   }
 
   @Post(':name/re-enter-key')

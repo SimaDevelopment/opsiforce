@@ -24,7 +24,6 @@ import type {
   BifrostProviderKeySummary,
   UpdateBifrostProviderRequest,
 } from './bifrost.types';
-import { BACKEND_PROVIDER_CONFIGS } from './bifrost.providers';
 
 function providerSummaryOf(provider: BifrostProviderResponse): BifrostProviderSummary {
   return {
@@ -33,6 +32,8 @@ function providerSummaryOf(provider: BifrostProviderResponse): BifrostProviderSu
     baseUrl: provider.network_config?.base_url || null,
     status: provider.provider_status ?? null,
     keyLess: provider.custom_provider_config?.is_key_less === true,
+    listsModels: provider.custom_provider_config?.allowed_requests?.list_models !== false,
+    servesImages: provider.custom_provider_config?.allowed_requests?.image_generation === true,
   };
 }
 
@@ -306,6 +307,10 @@ export class BifrostService {
     await this.request('PUT', `/api/providers/${encodeURIComponent(provider)}/keys/${encodeURIComponent(keyId)}`, key);
   }
 
+  async deleteProviderKey(provider: string, keyId: string): Promise<void> {
+    await this.request('DELETE', `/api/providers/${encodeURIComponent(provider)}/keys/${encodeURIComponent(keyId)}`);
+  }
+
   async createProvider(payload: CreateBifrostProviderRequest): Promise<void> {
     await this.request('POST', '/api/providers', payload);
   }
@@ -363,7 +368,7 @@ export class BifrostService {
     const payload: CreateVirtualKeyRequest = {
       name: `project-${projectId.slice(0, 8)}-${keyType}`,
       description: `Virtual key (${keyType}) for project ${projectId}${tenantId ? ` (tenant: ${tenantId})` : ' (pool)'}`,
-      provider_configs: keyType === 'backend' ? BACKEND_PROVIDER_CONFIGS : [],
+      provider_configs: [],
       budgets: [this.budgetFor(budgets, keyType)],
       ...(teamId ? { team_id: teamId } : {}),
     };

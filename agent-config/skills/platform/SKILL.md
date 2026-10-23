@@ -117,13 +117,13 @@ The platform's own values below are real environment variables: read those from 
 
 ## AI runs on the gateway — never locally
 
-`APP_LLM_BASE_URL` and `APP_LLM_API_KEY` are an **OpenAI-compatible** endpoint. Point any OpenAI SDK or a plain `curl` at it, from app code or straight from your shell, for chat and text, structured output, streaming, vision, image generation, transcription and speech.
+`APP_LLM_BASE_URL` and `APP_LLM_API_KEY` are an **OpenAI-compatible** endpoint serving GPT and Claude models. Point the `openai` SDK or a plain `curl` at it, from app code or straight from your shell, for text, structured output, streaming, vision, image generation, transcription and speech. The Organization chooses which providers serve each model family, and two rules keep every call on that choice: name models by their **bare id** (`gpt-6.1-sol`, `claude-sonnet-5-5`), since a `provider/` prefix pins a single provider; and make every text call a **streamed Responses call** (`/responses` with `"stream": true`), OpenAI's recommended API, which every provider serves.
 
 ```bash
-curl -s "$APP_LLM_BASE_URL/chat/completions" \
+curl -sN "$APP_LLM_BASE_URL/responses" \
   -H "Authorization: Bearer $APP_LLM_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"openai/gpt-5.6-sol","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"gpt-6.1-sol","input":"hello","stream":true,"store":false}'
 ```
 
 Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call. `OPENAI_API_KEY` and `OPENAI_BASE_URL` are your own chat credentials — never route an App through them.
@@ -287,7 +287,7 @@ An App built before Events existed reads the older `messages` / `attachments` ta
 
 These capabilities exist and are delivered as skills that can be added to an agent. If one is not in your skill list, the capability is still real — say so, and the user can have it added.
 
-- **AI gateway recipes** — worked examples for chat, structured output, streaming, vision, image generation, transcription and text-to-speech against `APP_LLM_BASE_URL`.
+- **AI gateway recipes** — worked examples for text generation, structured output, streaming, multi-turn conversations, tool calling, vision, image generation, transcription and text-to-speech against `APP_LLM_BASE_URL`.
 - **External Services** — the outside systems this platform and this Organization connect: what may arrive into the App and what an agent or App may call. An Agent knows a service through its `service-<slug>` skill: one the Agent carries, or one this project gets once the service is configured here. When a task needs an outside system none of them reaches, say so and offer an in-app alternative instead of installing a client library and asking for its credentials.
 - **Schedules** — recurring background work, run on a cron schedule by the platform.
 - **Browser testing** — a headless browser in the pod for walking the real user flow and seeing what the user sees.

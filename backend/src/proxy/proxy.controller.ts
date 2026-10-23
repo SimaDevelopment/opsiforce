@@ -125,15 +125,6 @@ export class ProxyController {
     await this.projectService.touchEnvironmentActivity(environmentId, activityForSurface(surface));
   }
 
-  @Post('projects/:environmentId/prompt')
-  async stampLastPrompt(
-    @Param('environmentId') environmentId: string,
-    @Headers('x-proxy-control-token') token: string | undefined
-  ): Promise<void> {
-    this.assertToken(token);
-    await this.projectService.stampLastPromptByEnvId(environmentId);
-  }
-
   private toEnsureResponse(
     surface: ProxySurface,
     ensured: EnsureEnvironmentResult,

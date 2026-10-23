@@ -22,6 +22,7 @@ import type { JsonObject } from '../common/json';
 import { lockPlatformModelProviders, type DbExecutor } from '../common/locks';
 import { timingSafeStringEqual } from '../common/secret-crypto';
 import { BASE_FORMATS } from '../model-provider/base-formats';
+import type { BifrostProviderSpec } from '../model-provider/bifrost-provider-shape';
 import { ModelProviderConnectionsService } from '../model-provider/model-provider-connections.service';
 import { ModelProviderKeyModelsService } from '../model-provider/model-provider-key-models.service';
 import { ModelProvidersService } from '../model-provider/model-provider.service';
@@ -67,7 +68,7 @@ const SIGN_IN_ENDED_MESSAGE = 'This Linked account needs to be signed in again';
 const NOT_REFRESHED_MESSAGE = 'The Linked account could not be refreshed';
 const PASTED_TOKEN_EXPIRED_REASON = 'The pasted access token has expired';
 const NO_USAGE_MESSAGE = 'OpenAI did not return this account’s usage; try again';
-const CHAT_KEYS_NOT_UPDATED_MESSAGE =
+const KEYS_NOT_UPDATED_MESSAGE =
   'The account is signed in, but the model gateway did not take it yet; sign in again to retry';
 
 interface PendingSignIn {
@@ -128,7 +129,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     await this.resealUnplacedSignIns();
-    void this.repointConnectedAccounts().then(() => this.keyModels.reconcileKeyModels(readModelCatalog()));
+    void this.reconcileConnectedAccounts().then(() => this.keyModels.applyModelCatalog(readModelCatalog()));
   }
 
   private async resealUnplacedSignIns(): Promise<void> {
@@ -139,15 +140,20 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     }
   }
 
-  async repointConnectedAccounts(): Promise<void> {
+  async reconcileConnectedAccounts(): Promise<void> {
     if (!this.connections.isBifrostConfigured()) return;
     try {
       const connected = await db
-        .select({ ownerId: modelProviders.id, bifrostProvider: modelProviders.bifrostProvider })
+        .select({
+          ownerId: modelProviders.id,
+          bifrostProvider: modelProviders.bifrostProvider,
+          vendor: linkedAccounts.vendor,
+        })
         .from(linkedAccounts)
         .innerJoin(modelProviders, eq(modelProviders.id, linkedAccounts.modelProviderId))
         .where(isNotNull(linkedAccounts.credential));
-      for (const account of connected) await this.repointIfLost(account.ownerId, account.bifrostProvider);
+      for (const account of connected)
+        await this.reconcileWithBifrost(account.ownerId, account.bifrostProvider, account.vendor);
     } catch (err) {
       this.logger.warn(
         `Connected Linked accounts were not checked against Bifrost; retried at next boot: ${(err as Error).message}`
@@ -155,8 +161,11 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     }
   }
 
-  private async repointIfLost(ownerId: string, bifrostProvider: string): Promise<void> {
-    if (await this.connections.servesThroughLinkedAccountProxy(bifrostProvider)) return;
+  private async reconcileWithBifrost(ownerId: string, bifrostProvider: string, vendor: string): Promise<void> {
+    if (await this.connections.servesThroughLinkedAccountProxy(bifrostProvider)) {
+      await this.alignRequestTypes(vendor, bifrostProvider);
+      return;
+    }
     const callerSecret = newCallerSecret();
     const connected = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -176,6 +185,21 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     this.logger.log(
       `The Linked account of ${bifrostProvider} had lost its sign-in in Bifrost and is repointed at the Linked-account proxy`
     );
+  }
+
+  private async alignRequestTypes(vendor: string, bifrostProvider: string): Promise<void> {
+    const spec = this.linkedAccountSpecOf(vendor, bifrostProvider);
+    if (!(await this.connections.updateLinkedAccountRequestsIfOutdated(spec))) return;
+    if (!(await this.rewriteKeysOfTenantsUsing(bifrostProvider))) {
+      await this.keyModels.rewriteEveryTenantsKeysAtNextCatalogCheck();
+      return;
+    }
+    this.logger.log(`${bifrostProvider} now takes every request type a Linked account serves`);
+  }
+
+  private linkedAccountSpecOf(vendor: string, bifrostProvider: string): BifrostProviderSpec {
+    const format = BASE_FORMATS[VENDOR_BASE_FORMAT[this.vendors.adapterOf(vendor).vendor]];
+    return this.connections.linkedAccountSpec(bifrostProvider, format);
   }
 
   isProxyServiceToken(token: string | undefined): boolean {
@@ -291,7 +315,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
         .set({ credential: null, statusReason: null, pendingSignIn: null })
         .where(eq(linkedAccounts.modelProviderId, ownerId));
       if (row.credential) {
-        await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, bifrostProvider);
+        await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, bifrostProvider);
         this.logger.log(`The Linked account of ${bifrostProvider} is disconnected`);
       }
       return this.viewOf(vendor, disconnected, null);
@@ -448,7 +472,7 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
       .select({ bifrostProvider: modelProviders.bifrostProvider })
       .from(modelProviders)
       .where(eq(modelProviders.id, row.modelProviderId));
-    if (owner) await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, owner.bifrostProvider);
+    if (owner) await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, owner.bifrostProvider);
     this.logger.warn(
       `The Linked account of ${owner?.bifrostProvider ?? row.modelProviderId} needs signing in again: ${reason}`
     );
@@ -539,16 +563,17 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
 
   private async serveThroughProxy(vendor: string, bifrostProvider: string, callerSecret: string | null): Promise<void> {
     if (callerSecret) {
-      const format = BASE_FORMATS[VENDOR_BASE_FORMAT[this.vendors.adapterOf(vendor).vendor]];
-      await this.connections.pointAtLinkedAccountProxy(
-        this.connections.linkedAccountSpec(bifrostProvider, format),
-        callerSecret
-      );
+      await this.connections.pointAtLinkedAccountProxy(this.linkedAccountSpecOf(vendor, bifrostProvider), callerSecret);
     }
-    const rewritten = await retryBifrostWrite(this.logger, `Chat key rewrite (provider=${bifrostProvider})`, () =>
-      this.modelProvidersService.lockAndRewriteChatKeysOfTenantsUsing(bifrostProvider)
+    if (!(await this.rewriteKeysOfTenantsUsing(bifrostProvider))) {
+      throw new ServiceUnavailableException(KEYS_NOT_UPDATED_MESSAGE);
+    }
+  }
+
+  private rewriteKeysOfTenantsUsing(bifrostProvider: string): Promise<boolean> {
+    return retryBifrostWrite(this.logger, `Chat key rewrite (provider=${bifrostProvider})`, () =>
+      this.modelProvidersService.lockAndRewriteKeysOfTenantsUsing(bifrostProvider)
     );
-    if (!rewritten) throw new ServiceUnavailableException(CHAT_KEYS_NOT_UPDATED_MESSAGE);
   }
 
   private async pollVendor(adapter: VendorAdapter, pending: PendingSignIn): Promise<SignInPoll> {
@@ -618,10 +643,10 @@ export class LinkedAccountsService implements OnApplicationBootstrap {
     if (existing) return existing;
     const [created] = await tx
       .insert(modelProviders)
-      .values({ tenantId: null, bifrostProvider: name, enabled: true, weight: STARTING_WEIGHT })
+      .values({ tenantId: null, bifrostProvider: name, chatEnabled: true, chatWeight: STARTING_WEIGHT })
       .returning({ id: modelProviders.id });
     if (!created) throw new Error(`The platform row of ${name} was not created`);
-    await this.modelProvidersService.rewriteChatKeysOfTenantsUsing(tx, name);
+    await this.modelProvidersService.rewriteKeysOfTenantsUsing(tx, name);
     return created.id;
   }
 

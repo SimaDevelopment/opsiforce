@@ -1,5 +1,5 @@
 import { type ComponentProps, type JSX, Show, splitProps } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@opencode/ui/icon"
 import { useI18n } from "../../context/i18n"
 import "./text-input.css"
 
@@ -10,6 +10,8 @@ export interface TextInputProps extends Omit<ComponentProps<"input">, "type"> {
   showCopyButton?: boolean
   /** Show the trailing clear action. */
   showClearButton?: boolean
+  /** Icon used by the trailing clear action. */
+  clearIcon?: ComponentProps<typeof Icon>["name"]
   /** Accessible label for the copy button. */
   copyLabel?: string
   /** Accessible label for the clear button. */
@@ -27,12 +29,14 @@ export interface TextInputProps extends Omit<ComponentProps<"input">, "type"> {
 
 export function TextInput(props: TextInputProps) {
   const i18n = useI18n()
+
   const [local, inputProps] = splitProps(props, [
     "class",
     "classList",
     "leadingIcon",
     "showCopyButton",
     "showClearButton",
+    "clearIcon",
     "copyLabel",
     "clearLabel",
     "onCopyClick",
@@ -86,12 +90,14 @@ export function TextInput(props: TextInputProps) {
           onClick={(event) => {
             if (local.showClearButton) {
               local.onClearClick?.(event)
+
               return
             }
+
             local.onCopyClick?.(event)
           }}
         >
-          <Icon name={local.showClearButton ? "xmark-small" : "copy"} />
+          <Icon name={local.showClearButton ? (local.clearIcon ?? "xmark-small") : "copy"} />
         </button>
       </Show>
     </div>

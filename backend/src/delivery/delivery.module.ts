@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { BullBoardModule } from '@bull-board/nestjs';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { PodOpencodeClient } from '../agent-session/pod-opencode.client';
+import { GitModule } from '../git/git.module';
 import { PodModule } from '../pod/pod.module';
 import { DeliveryRepository } from './delivery.repository';
 import { DeliveryService } from './delivery.service';
@@ -19,6 +20,7 @@ import { WorkspaceWriter } from './workspace-writer';
 @Global()
 @Module({
   imports: [
+    GitModule,
     PodModule,
     BullModule.registerQueue({ name: SKILL_DELIVERY_QUEUE }),
     BullBoardModule.forFeature({ name: SKILL_DELIVERY_QUEUE, adapter: BullMQAdapter }),

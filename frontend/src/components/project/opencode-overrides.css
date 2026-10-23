@@ -1,0 +1,86 @@
+.oc-chat-only header[data-slot='titlebar-v2'],
+.oc-chat-only button[aria-label='More options'],
+.oc-chat-only button[aria-label='Session details'],
+.oc-chat-only div[data-session-title] h1,
+.oc-chat-only [data-slot='session-project-trigger'],
+.oc-chat-only [data-slot='session-review-toggle'],
+.oc-chat-only [data-action='composer-attach'],
+.oc-chat-only [data-slot='session-side-panel-presence'],
+.oc-chat-only [data-slot='terminal-panel-presence'],
+.oc-chat-only [data-slot='session-mobile-view-navigation'],
+.oc-chat-only [data-component='composer-suggestions'] [data-suggestion-id='terminal.toggle'],
+.oc-chat-only [data-component='composer-suggestions'] [data-suggestion-id='btw.ask'],
+.oc-chat-only [data-component='composer-suggestions'] [data-suggestion-id='provider.connect'],
+.oc-chat-only aside[aria-label='Development performance diagnostics'],
+.oc-chat-only aside[aria-label='Provider performance diagnostics'],
+[data-option-key='action:manage'] {
+  display: none !important;
+}
+
+.oc-chat-only [data-slot='session-chat-panel'] {
+  width: 100% !important;
+  flex: 1 1 auto !important;
+}
+
+.oc-chat-only [data-component='tooltip-v2-trigger']:has(> button[aria-label='Toggle session context']),
+.oc-chat-only button[aria-label='Toggle session context'] {
+  pointer-events: none;
+}
+
+.oc-chat-only main {
+  border-top: none !important;
+}
+
+.oc-chat-only {
+  overflow: hidden !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  --container-session: 800px;
+}
+
+@media (min-width: 96rem) {
+  .oc-chat-only {
+    --container-session: 1000px;
+  }
+}
+
+.oc-chat-only [data-component='session-composer-dock'] > div {
+  padding-inline: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .oc-chat-only [data-component='session-composer-dock'] > div {
+    padding-inline: 1.5rem;
+  }
+
+  .oc-chat-only .md\:max-w-session {
+    max-width: var(--container-session);
+  }
+}
+
+.oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) {
+  overflow: hidden;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) > div {
+  min-width: 0;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) > div > button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.oc-chat-only [data-component='composer'] div:has(+ div > [data-action='composer-model']) {
+  flex-shrink: 3;
+}
+
+.oc-chat-only [data-component='composer'] div:has(> [data-action='composer-model']) + div {
+  flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  .oc-chat-only [data-action='composer-model'] [data-component='provider-icon'] {
+    display: none;
+  }
+}

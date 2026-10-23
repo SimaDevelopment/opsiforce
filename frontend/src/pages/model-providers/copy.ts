@@ -14,17 +14,19 @@ export const TIPS = {
     'It is the only provider of this format taking requests, so every request goes here whatever its weight.',
   builtIn:
     'Provided by Opsiforce. You decide whether it is on and how many requests it gets; Opsiforce manages its connection.',
+  noAccessHere:
+    'Built-in model providers this organization has no access to. It sends them no requests, and its admins don’t see them; you see them because you manage Built-in model providers. Give access under Organization access in the ⋮ menu.',
   custom: 'Added by this organization. Only this organization can use it.',
   notMetered:
     'Not metered: the model gateway prices this provider’s requests at $0, so they count for nothing against any organization’s or project’s budget.',
   fixedBuiltIn:
-    'Every organization has it, and transcription and apps use it, so it always points at the vendor’s API and can’t be deleted. Only its key can be replaced.',
-  globalChoice:
-    'Created as a Built-in model provider named opsiforce-<name>, shared by every organization, including new ones.',
+    'Every organization has it and transcription depends on it, so it always points at the vendor’s API and can’t be deleted. Only its key can be replaced.',
+  chosenDescription:
+    'Only the organizations you choose get it, switched off at weight 1, and their admins turn it on. To give it to more organizations later, use Organization access in its menu.',
   globalDescription:
     'Every organization gets it switched off at weight 1, and only its own admin can turn it on. Deleting it removes it from every organization.',
-  format: (label: string) =>
-    `Every ${label} model request goes to one of the model providers below that is on, chosen by weight. If it fails, it is retried on the others that are on.`,
+  routing:
+    'Each model request goes to one model provider of its format that is on, picked by weight. If the request fails, it is retried on the other providers of that format that are on.',
   status: {
     working: 'The model gateway reports this provider as working.',
     failing:
@@ -50,12 +52,14 @@ export const KIND_LABEL: Record<ModelProviderKind, string> = {
   'official-api-key': 'Official API key',
   'compatible-endpoint': 'Compatible endpoint',
   'linked-account': 'Linked account',
+  'azure-foundry': 'Azure AI Foundry',
 };
 
 export const KIND_HINT: Record<ModelProviderKind, string> = {
   'official-api-key': 'A key for the vendor’s own API',
-  'compatible-endpoint': 'Azure, a proxy, or any gateway that speaks this format',
+  'compatible-endpoint': 'A proxy or any gateway that speaks this format',
   'linked-account': 'A ChatGPT plan, signed in once',
+  'azure-foundry': 'GPT and Claude deployments in your Azure resource',
 };
 
 export const BASE_URL_PLACEHOLDER: Record<BaseFormatId, string> = {
@@ -65,6 +69,6 @@ export const BASE_URL_PLACEHOLDER: Record<BaseFormatId, string> = {
 
 export const BASE_URL_HINT: Record<BaseFormatId, string> = {
   openai:
-    'An https:// URL, the one an OpenAI client takes as its base URL (usually ending in /v1). For Azure, use https://<resource>.openai.azure.com/openai/v1/ and name deployments after model ids.',
+    'An https:// URL, the one an OpenAI client takes as its base URL (usually ending in /v1). For Azure AI Foundry, connect with Azure AI Foundry instead.',
   anthropic: 'An https:// URL, the one an Anthropic client takes as its base URL. Requests go to …/v1/messages.',
 };

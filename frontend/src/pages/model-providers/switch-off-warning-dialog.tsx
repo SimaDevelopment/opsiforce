@@ -13,7 +13,7 @@ export function SwitchOffWarningDialog(props: {
       open={props.agents !== null}
       onOpenChange={(open) => !open && props.onClose()}
       title={`No ${props.formatLabel} model provider will be on`}
-      description={`These Agents use ${props.formatLabel} models, which stop working in your organization once this is saved. Nothing about the Agents is changed.`}
+      description={`These Agents use ${props.formatLabel} models, which stop working in your organization once you save. Saving doesn’t change the Agents themselves.`}
       confirmLabel="Save anyway"
       variant="destructive"
       onConfirm={() => props.onSaveAnyway()}
@@ -22,7 +22,9 @@ export function SwitchOffWarningDialog(props: {
         <For each={props.agents ?? []}>
           {(agent) => (
             <li class="flex items-center justify-between gap-2">
-              <span class="min-w-0 truncate">{agent.name}</span>
+              <span class="min-w-0 truncate" title={agent.name}>
+                {agent.name}
+              </span>
               <span class="shrink-0 text-xs text-muted-foreground">
                 {agent.origin === 'built_in' ? 'Built-in Agent' : 'Custom Agent'}
               </span>

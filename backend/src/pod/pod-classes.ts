@@ -8,6 +8,8 @@ export interface PodResources {
   memoryLimitMib: number;
 }
 
+export type PodSettings = PodResources & { podClass: PodClass };
+
 export interface PodClassBounds {
   min: PodResources;
   max: PodResources;
@@ -35,9 +37,61 @@ export function resolvePreset(preset: PodPreset): PodResources {
 }
 
 /** Preset projects follow the current catalog; custom projects retain saved values. */
-export function resolveStoredPodResources(settings?: PodResources & { podClass: PodClass }): PodResources {
+export function resolveStoredPodResources(settings?: PodSettings): PodResources {
   if (!settings) return resolvePreset('small');
   return isPreset(settings.podClass) ? resolvePreset(settings.podClass) : settings;
+}
+
+export interface PodClassSelection {
+  podClass: PodClass;
+  cpuMillicores?: number;
+  memoryRequestMib?: number;
+  memoryLimitMib?: number;
+}
+
+export class InvalidPodClassSelection extends Error {}
+
+export function resolvePodClassSelection(selection: PodClassSelection): PodResources {
+  if (selection.podClass === 'custom') {
+    if (
+      typeof selection.cpuMillicores !== 'number' ||
+      typeof selection.memoryRequestMib !== 'number' ||
+      typeof selection.memoryLimitMib !== 'number'
+    ) {
+      throw new InvalidPodClassSelection(
+        'Custom pod class requires numeric cpuMillicores, memoryRequestMib, and memoryLimitMib'
+      );
+    }
+    return clampCustom({
+      cpuMillicores: selection.cpuMillicores,
+      memoryRequestMib: selection.memoryRequestMib,
+      memoryLimitMib: selection.memoryLimitMib,
+    });
+  }
+  if (!isPreset(selection.podClass)) {
+    throw new InvalidPodClassSelection(`Unknown pod class: ${String(selection.podClass)}`);
+  }
+  return resolvePreset(selection.podClass);
+}
+
+export function isDefaultPodSettings(settings: PodSettings): boolean {
+  return settings.podClass === POD_CLASS_DEFAULT;
+}
+
+export function resolvePodSettings(stored?: PodSettings): PodSettings {
+  return { podClass: stored?.podClass ?? POD_CLASS_DEFAULT, ...resolveStoredPodResources(stored) };
+}
+
+export function podSettingsForSelection(selection: PodClassSelection): PodSettings {
+  return { podClass: selection.podClass, ...resolvePodClassSelection(selection) };
+}
+
+export function sameResources(a: PodResources, b: PodResources): boolean {
+  return (
+    a.cpuMillicores === b.cpuMillicores &&
+    a.memoryRequestMib === b.memoryRequestMib &&
+    a.memoryLimitMib === b.memoryLimitMib
+  );
 }
 
 function clampValue(value: number, min: number, max: number): number {

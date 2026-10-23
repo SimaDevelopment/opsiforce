@@ -131,9 +131,14 @@ export function WorkspacesPage() {
                           <span class="tabular-nums">{ws.projectCount}</span>
                         </span>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => setOpenSettingsId(ws.id)}>
-                        <Settings class="w-3.5 h-3.5 mr-1.5" />
-                        Configure
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label="Configure"
+                        onClick={() => setOpenSettingsId(ws.id)}
+                      >
+                        <Settings class="w-3.5 h-3.5 sm:mr-1.5" />
+                        <span class="hidden sm:inline">Configure</span>
                       </Button>
                     </div>
                   )}

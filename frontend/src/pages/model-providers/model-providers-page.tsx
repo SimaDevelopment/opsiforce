@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { useBlocker } from '@tanstack/solid-router';
+import { useBlocker, useNavigate, useSearch } from '@tanstack/solid-router';
 import {
   BASE_FORMAT_IDS,
   usePlatformModelProviders,
@@ -19,10 +19,20 @@ import { Spinner } from '~/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
 import { BuiltInPlatformDetails, BuiltInPlatformPills, BuiltInRowMenu, builtInFormatOf } from './built-in-row';
 import { TIPS } from './copy';
+import {
+  AUDIENCE_DESCRIPTION,
+  AUDIENCE_LABEL,
+  AUDIENCES,
+  routingOf,
+  splitRowOf,
+  type Audience,
+  type DirtyAudiences,
+} from './audience';
+import { BASE_FORMAT_LABEL, carriesTraffic } from './traffic-split';
 import { FormatCard } from './format-card';
 import { CustomProviderMenu, ReenterKeyButton } from './custom-provider-menu';
 import { LinkedAccountSignIn, LinkedAccountStatus } from './linked-account-sign-in';
-import { BuiltInPill, LabelWithTip, ProviderPill, StatusBadge, isCustomRow } from './provider-widgets';
+import { BuiltInPill, InfoTip, LabelWithTip, ProviderPill, StatusBadge, isCustomRow } from './provider-widgets';
 
 interface Access {
   canSwitch: boolean;
@@ -36,7 +46,7 @@ export function ModelProvidersPage() {
     <SettingsSection
       icon={Waypoints}
       title="Model providers"
-      description="Where this organization's model requests go. Each format splits its requests across the model providers that are on, by weight."
+      description="Where this organization’s model requests go. Each format splits its requests across the model providers that are on, by weight."
     >
       <Show
         when={
@@ -69,8 +79,21 @@ function ModelProviderCards(props: Access) {
   const formats = (): BaseFormatId[] => tenantView.data?.baseFormats ?? [...BASE_FORMAT_IDS];
   const builtInsOf = (format: BaseFormatId | null) => builtIns().filter((row) => builtInFormatOf(row) === format);
   const missingBuiltIns = () => builtInsOf(null).filter((builtIn) => !rows().some((row) => row.name === builtIn.name));
-  const [dirtyFormats, setDirtyFormats] = createStore<Partial<Record<BaseFormatId, boolean>>>({});
-  const anyDirty = () => Object.values(dirtyFormats).some(Boolean);
+  const search = useSearch({ from: '/settings/model-providers' });
+  const navigate = useNavigate();
+  const audience = (): Audience => (search().routing === 'apps' ? 'apps' : 'agents');
+  const setAudience = (next: Audience) =>
+    void navigate({
+      to: '/settings/model-providers',
+      search: (previous) => ({ ...previous, routing: next === 'apps' ? 'apps' : undefined }),
+      replace: true,
+    });
+  const [dirtyFormats, setDirtyFormats] = createStore<Partial<Record<BaseFormatId, DirtyAudiences>>>({});
+  const dirtyAudience = (target: Audience) => Object.values(dirtyFormats).some((dirty) => dirty?.[target]);
+  const anyDirty = () => AUDIENCES.some(dirtyAudience);
+  const reaches = (format: BaseFormatId, target: Audience) =>
+    rows().some((row) => row.baseFormat === format && carriesTraffic(splitRowOf(row, routingOf(row), target)));
+  const formatsAppsCantUse = () => formats().filter((format) => reaches(format, 'agents') && !reaches(format, 'apps'));
 
   function retry() {
     if (props.canSwitch) void tenantView.refetch();
@@ -95,14 +118,23 @@ function ModelProviderCards(props: Access) {
         </div>
       </Match>
       <Match when={!reachable()}>
-        <UnreachableGateway rows={rows()} builtIns={props.canSwitch ? [] : builtIns()} canSwitch={props.canSwitch} />
+        <UnreachableGateway />
       </Match>
       <Match when={true}>
         <div class="space-y-4">
+          <Show when={props.canSwitch}>
+            <AudienceSwitch
+              value={audience()}
+              onChange={setAudience}
+              dirty={dirtyAudience}
+              appsMissing={formatsAppsCantUse()}
+            />
+          </Show>
           <For each={formats()}>
             {(format) => (
               <FormatCard
                 format={format}
+                audience={audience()}
                 rows={rows().filter((row) => row.baseFormat === format)}
                 builtIns={builtInsOf(format)}
                 canSwitch={props.canSwitch}
@@ -124,9 +156,70 @@ function ModelProviderCards(props: Access) {
   );
 }
 
+function AudienceSwitch(props: {
+  value: Audience;
+  onChange: (audience: Audience) => void;
+  dirty: (audience: Audience) => boolean;
+  appsMissing: BaseFormatId[];
+}) {
+  return (
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span id="routing-audience-label" class="text-xs font-medium text-foreground">
+        Route requests from
+      </span>
+      <div
+        role="group"
+        aria-labelledby="routing-audience-label"
+        class="inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground"
+      >
+        <For each={AUDIENCES}>
+          {(audience) => (
+            <button
+              type="button"
+              aria-pressed={props.value === audience}
+              class="inline-flex h-7 items-center gap-1.5 rounded-md px-4 text-xs font-medium transition-[color,background-color,box-shadow] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+              onClick={() => props.onChange(audience)}
+            >
+              {AUDIENCE_LABEL[audience]}
+              <Show when={audience === 'apps' && props.appsMissing.length > 0}>
+                <AlertTriangle class="h-3 w-3 text-amber-600" aria-hidden="true" />
+                <span class="sr-only">(no provider for some formats)</span>
+              </Show>
+              <Show when={props.dirty(audience)}>
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                <span class="sr-only">(unsaved changes)</span>
+              </Show>
+            </button>
+          )}
+        </For>
+      </div>
+      <InfoTip content={TIPS.routing} label="How requests are split between model providers" />
+      <p class="basis-full text-xs text-muted-foreground" aria-live="polite">
+        {AUDIENCE_DESCRIPTION[props.value]} Saving a card saves its Agent and App routing together.
+      </p>
+      <Show when={props.appsMissing.length > 0}>
+        <p class="basis-full text-xs text-amber-700 dark:text-amber-500">
+          Apps can’t use {props.appsMissing.map((format) => BASE_FORMAT_LABEL[format]).join(' or ')} models: no model
+          provider of that format is on for Apps.
+          <Show when={props.value !== 'apps'}>
+            {' '}
+            <button
+              type="button"
+              class="font-medium underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onClick={() => props.onChange('apps')}
+            >
+              Choose providers for Apps
+            </button>
+          </Show>
+        </p>
+      </Show>
+    </div>
+  );
+}
+
 function UnsavedChangesGuard(props: { dirty: () => boolean }) {
   const blocker = useBlocker({
-    shouldBlockFn: () => props.dirty(),
+    shouldBlockFn: ({ current, next }) => props.dirty() && current.pathname !== next.pathname,
     enableBeforeUnload: () => props.dirty(),
     withResolver: true,
   });
@@ -145,21 +238,14 @@ function UnsavedChangesGuard(props: { dirty: () => boolean }) {
   );
 }
 
-function UnreachableGateway(props: {
-  rows: TenantModelProvider[];
-  builtIns: PlatformModelProvider[];
-  canSwitch: boolean;
-}) {
+function UnreachableGateway() {
   return (
-    <div class="space-y-4">
-      <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span>
-          The model gateway can’t be reached, so statuses are Unknown and changes can’t be saved until it is back.
-        </span>
-      </div>
-      <ReadOnlyProviders rows={props.rows} builtIns={[]} extraBuiltIns={props.builtIns} canSwitch={props.canSwitch} />
-    </div>
+    <output class="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border py-10 text-center">
+      <Spinner label="Connecting to the model gateway…" />
+      <span class="max-w-sm text-xs text-muted-foreground">
+        Model providers show here as soon as the gateway answers. This page checks again every 10 seconds.
+      </span>
+    </output>
   );
 }
 
@@ -200,7 +286,7 @@ function ReadOnlyProviders(props: {
   const builtInOf = (name: string) => props.builtIns.find((builtIn) => builtIn.name === name);
 
   return (
-    <Table>
+    <Table layout="responsive">
       <TableHeader>
         <TableRow>
           <TableHead>Model provider</TableHead>
@@ -233,7 +319,7 @@ function ReadOnlyProviders(props: {
                   </div>
                 </Show>
               </TableCell>
-              <TableCell>
+              <TableCell label="Status">
                 <Show when={row.kind === 'linked-account'} fallback={<StatusBadge status={row.status} />}>
                   <LinkedAccountStatus
                     scope="tenant"
@@ -243,8 +329,12 @@ function ReadOnlyProviders(props: {
                   />
                 </Show>
               </TableCell>
-              <TableCell class="text-xs tabular-nums">{row.weight}</TableCell>
-              <TableCell class="text-xs">{row.enabled ? 'On' : 'Off'}</TableCell>
+              <TableCell label="Weight" class="text-xs tabular-nums">
+                {row.chatWeight}
+              </TableCell>
+              <TableCell label="On" class="text-xs">
+                {row.chatEnabled ? 'On' : 'Off'}
+              </TableCell>
               <TableCell>
                 <Show when={props.actionable}>
                   <Show
@@ -276,7 +366,7 @@ function ReadOnlyProviders(props: {
                 </div>
                 <BuiltInPlatformDetails row={builtIn} editable={props.actionable === true} />
               </TableCell>
-              <TableCell>
+              <TableCell label="Status">
                 <Show when={builtIn.linkedAccountVendor} fallback={<StatusBadge status={builtIn.status} />}>
                   <LinkedAccountStatus
                     scope="platform"

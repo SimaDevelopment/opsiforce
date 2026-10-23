@@ -8,6 +8,7 @@ import {
   type ParentProps,
   type Accessor,
 } from 'solid-js';
+import { createMediaQuery } from '@solid-primitives/media';
 import { cn } from '~/lib/cn';
 import { createResizablePanel, type ResizablePanel } from '~/lib/create-resizable-panel';
 import { createPersistedSignal } from '~/lib/persisted-signal';
@@ -28,23 +29,11 @@ interface SidebarStore {
   sidebarResize: ResizablePanel;
 }
 
-function createIsMobile(breakpoint = 768) {
-  const [isMobile, setIsMobile] = createSignal(typeof window !== 'undefined' ? window.innerWidth < breakpoint : false);
-  createEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
-    setIsMobile(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener('change', handler);
-    onCleanup(() => mql.removeEventListener('change', handler));
-  });
-  return isMobile;
-}
-
 let _store: SidebarStore | null = null;
 
 function initStore(): SidebarStore {
   return createRoot(() => {
-    const isMobile = createIsMobile();
+    const isMobile = createMediaQuery('(max-width: 767px)');
     const [openMobile, setOpenMobile] = createSignal(false);
 
     const [_open, _setOpen] = createPersistedSignal<boolean>('sidebar:state', true, {
@@ -73,6 +62,7 @@ function initStore(): SidebarStore {
           e.preventDefault();
           toggleSidebar();
         }
+        if (e.key === 'Escape' && openMobile()) setOpenMobile(false);
       };
       window.addEventListener('keydown', handler);
       onCleanup(() => window.removeEventListener('keydown', handler));
@@ -129,7 +119,7 @@ export function Sidebar(
               : 'shrink-0 transition-[width] duration-200 ease-linear',
           local.class
         )}
-        style={{ width: isMobile() ? 'var(--sidebar-width)' : sidebarWidth() }}
+        style={{ width: isMobile() ? 'min(var(--sidebar-width), 85vw)' : sidebarWidth() }}
         data-state={isMobile() ? 'expanded' : state()}
         data-collapsible={!isMobile() && state() === 'collapsed' ? collapsible() : ''}
       >

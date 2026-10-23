@@ -6,13 +6,13 @@ kind: operations
 
 > Move an existing environment's traffic onto Settings → Model providers, and its `custom-openai-1` off the hosted Codex OAuth Dock, without a gap.
 
-The Bifrost Helm values keep declaring the platform's `openai`, `anthropic` and, in production, `custom-openai-1`, and Bifrost runs with the `split` source of truth, so a provider or key written through the Admin API survives a restart while its Helm entry is unchanged ([ADR-0077](../adr/0077-model-providers-live-in-bifrost-with-a-thin-row-projected-into-chat-keys.md)).
+The Bifrost Helm values keep declaring the platform's `openai`, `anthropic` and, in production, `custom-openai-1`, and Bifrost runs with the `split` source of truth, so a provider or key written through the Admin API survives a restart while its Helm entry is unchanged ([ADR-0077](../adr/0077-model-providers-live-in-bifrost-with-a-thin-row-projected-into-project-keys.md)).
 
 ## Prerequisites
 
 - An environment that already runs Opsiforce, with Organizations in its database. A fresh install skips this page: its backend adopts the Helm-declared `openai` and `anthropic` at first boot ([LLM Gateway](../gateways/llm-gateway.md)).
 - `kubectl` pointed at the environment's cluster, with read access to its Secrets and permission to port-forward, plus `curl` and Node 24.
-- The environment's Bifrost running the image pinned in `helm/bifrost/values.{prod,local}.yaml` (`v2.2.6`), with `opsiforce-bifrost-admin-auth` and `opsiforce-bifrost-provider-keys` in its namespace.
+- The environment's Bifrost running the image pinned in `helm/bifrost/values.{prod,local,azure}.yaml` (`v2.3.2`), with `opsiforce-bifrost-admin-auth` and `opsiforce-bifrost-provider-keys` in its namespace.
 - For step 5, a user holding `can_manage_platform_model_providers` (the Keycloak group `opsiforce_platform_admin` or `opsiforce_manage_platform_model_providers`) and the ChatGPT account `custom-openai-1` serves today.
 
 ## Steps

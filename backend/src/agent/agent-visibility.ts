@@ -92,6 +92,21 @@ export function tenantStartableAgentsWhere(tenantId: string): SQL | undefined {
   return and(or(builtIn, custom), not(agentDisabledIn(tenantId)));
 }
 
+export function warmPooledCustomAgentsWhere(): SQL | undefined {
+  return and(
+    eq(agents.origin, 'custom'),
+    sql`exists (
+      select 1 from ${agentSettings}
+      where ${agentSettings.agentId} = ${agents.id} and ${agentSettings.warmPoolSize} > 0
+    )`,
+    customAgentHasDefaultProfile(),
+    sql`not exists (
+      select 1 from ${tenantDisabledAgents}
+      where ${tenantDisabledAgents.agentId} = ${agents.id} and ${tenantDisabledAgents.tenantId} = ${agents.tenantId}
+    )`
+  );
+}
+
 export function canDuplicateAgent(agent: AgentRow): boolean {
   return agent.origin === 'custom' || !isBuilderAgentName(agent.name);
 }
@@ -122,7 +137,7 @@ function startableAgentsWhere(tenantId: string, userId: string | null, customPro
   return and(visibleAgentsWhere(tenantId, userId ?? ''), or(liveBuiltInAgentsWhere(), custom));
 }
 
-function customAgentHasDefaultProfile(): SQL {
+export function customAgentHasDefaultProfile(): SQL {
   return sql`exists (
     select 1
     from ${agentSettings}

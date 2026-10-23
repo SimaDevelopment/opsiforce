@@ -8,12 +8,10 @@
 #   sh scripts/api.sh status GET /projects/<projectId>                 # print the HTTP status only
 #   sh scripts/api.sh runtime /api/proxy/<envId> POST /api/session/<ses>/prompt '{"text":"hello"}'
 #
-# `<METHOD> <path> [json]` calls the Opsiforce Public API on its Service host,
-# https://public-api.$EXTERNAL_SERVICES_HOST/api/v1<path> (docs at /api/v1/docs on the main host), and waits out a 503
-# that names a Retry-After, up to three times. `runtime` talks to a Test Project's opencode runtime
-# through the runtime proxy at $OPSIFORCE_RUNTIME_PROXY_URL, whose baseUrl a Connection reports. Both
-# send $SERVICE_GATEWAY_API_KEY, this pod's one key: the API acts as the human who created this chat
-# and reaches only Projects this chat created. $API_MAX_TIME, when set, bounds each request in seconds.
+# `<METHOD> <path> [json]` is one call on `public-api`'s Service host, as the `service-public-api`
+# skill describes, and waits out a 503 that names a Retry-After, up to three times. `runtime` talks to
+# a Test Project's opencode runtime through the runtime proxy at $OPSIFORCE_RUNTIME_PROXY_URL, whose
+# baseUrl a Connection reports, with the same key. $API_MAX_TIME, when set, bounds each request in seconds.
 set -eu
 
 : "${SERVICE_GATEWAY_API_KEY:?SERVICE_GATEWAY_API_KEY is not set}"

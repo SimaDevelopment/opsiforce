@@ -266,7 +266,7 @@ function NewProjectsSetting(props: {
 
   const choose = async (environment: Environment) => {
     try {
-      await updateSettings.mutateAsync(environment.id);
+      await updateSettings.mutateAsync({ defaultEnvironmentId: environment.id });
       toast.success(`New projects start from ${environment.name}`);
     } catch (caught) {
       toast.error(caught instanceof ApiError ? caught.message : 'The setting could not be saved.');

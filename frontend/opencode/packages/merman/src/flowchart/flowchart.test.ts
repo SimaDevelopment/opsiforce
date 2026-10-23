@@ -875,6 +875,63 @@ describe("FlowchartDiagram", () => {
     expect(output.match(/[▼◀]/g)).toHaveLength(3)
   })
 
+  test("orders rank nodes to remove crossings between branches", () => {
+    const content = `flowchart TD
+  A{Question} -->|Path one| B[Step one]
+  A -->|Path two| C[Step two]
+  B --> D{Check one}
+  D -->|No| E{Retry one}
+  E -->|No| B
+  C --> F{Check two}
+  F -->|No| G{Retry two}
+  G -->|No| C
+  E -->|Yes| H[Rethink]
+  G -->|Yes| H
+  H --> A
+  D -->|Yes| I([Done])
+  F -->|Yes| I`
+    const layout = layoutFlowchartDiagram(content, { compact: true, layoutMaxWidth: 120 })
+    const left = (id: string) => layout.bounds.get(id)!.left
+
+    expect(left("E")).toBeLessThan(left("I"))
+    expect(left("I")).toBeLessThan(left("G"))
+    expectDiagram(renderFlowchartDiagram(content, { compact: true, layoutMaxWidth: 120 })).toEqualDiagram(`
+                                    ╭─────────╮
+                                  ╭─╯         ╰─╮
+                                  │  Question   │◀──────────────────────────╮
+                                  ╰─╮         ╭─╯                           │
+                                    ╰────┬────╯                             │
+                           ╭─ Path one ──┴── Path two ───╮                  │
+                           │                             │                  │
+                           ▼                             ▼                  │
+                     ╭──────────╮                  ╭──────────╮             │
+      ╭──── No ─────▶│ Step one │                  │ Step two │◀──── No ────┤
+      │              ╰─────┬────╯                  ╰─────┬────╯             │
+      │                    │                             │                  │
+      │                    │                           ╭─╯                  │
+      │                    ▼                           ▼                    │
+      │               ╭─────────╮                 ╭─────────╮               │
+      │             ╭─╯         ╰─╮             ╭─╯         ╰─╮             │
+      │             │  Check one  │             │  Check two  │             │
+      │             ╰─╮         ╭─╯             ╰─╮         ╭─╯             │
+      │               ╰────┬────╯                 ╰────┬────╯               │
+      │          ╭── No ───┴──── Yes ─────┬─── Yes ────┴─── No ───╮         │
+      │          │                        │                       │         │
+      │          ▼                        │                       ▼         │
+      │     ╭─────────╮                   ▼                  ╭─────────╮    │
+      │   ╭─╯         ╰─╮             ╭──────╮             ╭─╯         ╰─╮  │
+      ╰───┤  Retry one  │             │ Done │             │  Retry two  ├──┤
+          ╰─╮         ╭─╯             ╰──────╯             ╰─╮         ╭─╯  │
+            ╰────┬────╯                                      ╰────┬────╯    │
+                 │                                                │         │
+                 ╰───────── Yes ─────────┬───────── Yes ──────────╯         │
+                                         ▼                                  │
+                                    ╭─────────╮                             │
+                                    │ Rethink ├─────────────────────────────╯
+                                    ╰─────────╯
+    `)
+  })
+
   test("routes transitive horizontal shortcuts around intermediate stages", () => {
     const content = `flowchart LR
   A[Start] --> B[Validate]
@@ -1278,6 +1335,119 @@ flowchart TD
       { from: "B", to: "C", label: "retry", style: "dashed" },
       { from: "C", to: "D", label: "done", style: "thick" },
     ])
+  })
+
+  test("expands & node groups into fan-in and fan-out edges", () => {
+    const diagram = parseMermaidFlowchartDiagram(`flowchart LR
+  N[Native] & M[Mapped] & O --> LM["LanguageModel"]
+  LM -->|prepare| REQ & LOG`)
+
+    expect(diagram.nodes).toEqual([
+      { id: "N", label: "Native", shape: "box" },
+      { id: "M", label: "Mapped", shape: "box" },
+      { id: "O", label: "O", shape: "box" },
+      { id: "LM", label: "LanguageModel", shape: "box" },
+      { id: "REQ", label: "REQ", shape: "box" },
+      { id: "LOG", label: "LOG", shape: "box" },
+    ])
+    expect(diagram.edges).toEqual([
+      { from: "N", to: "LM", label: "" },
+      { from: "M", to: "LM", label: "" },
+      { from: "O", to: "LM", label: "" },
+      { from: "LM", to: "REQ", label: "prepare" },
+      { from: "LM", to: "LOG", label: "prepare" },
+    ])
+  })
+
+  test("expands & groups on both sides of an edge and through a chain", () => {
+    const diagram = parseMermaidFlowchartDiagram(`flowchart LR
+  A & B --> C & D --> E`)
+
+    expect(diagram.edges).toEqual([
+      { from: "A", to: "C", label: "" },
+      { from: "A", to: "D", label: "" },
+      { from: "B", to: "C", label: "" },
+      { from: "B", to: "D", label: "" },
+      { from: "C", to: "E", label: "" },
+      { from: "D", to: "E", label: "" },
+    ])
+  })
+
+  test("declares every node of a bare & group inside the current subgraph", () => {
+    const diagram = parseMermaidFlowchartDiagram(`flowchart TD
+  subgraph Runtime
+    A[Alpha] & B[Beta]:::focus
+  end
+  A --> B`)
+
+    expect(diagram.nodes).toEqual([
+      { id: "A", label: "Alpha", shape: "box" },
+      { id: "B", label: "Beta", shape: "box" },
+    ])
+    expect(diagram.subgraphs?.[0]?.nodeIds).toEqual(["A", "B"])
+  })
+
+  test("keeps & inside quoted or bracketed labels as label text", () => {
+    const diagram = parseMermaidFlowchartDiagram(`flowchart LR
+  A["Fetch & parse"] & B[R&D] --> C[Done &amp; dusted]`)
+
+    expect(diagram.nodes).toEqual([
+      { id: "A", label: "Fetch & parse", shape: "box" },
+      { id: "B", label: "R&D", shape: "box" },
+      { id: "C", label: "Done & dusted", shape: "box" },
+    ])
+    expect(diagram.edges).toEqual([
+      { from: "A", to: "C", label: "" },
+      { from: "B", to: "C", label: "" },
+    ])
+  })
+
+  test("keeps & inside edge labels as label text", () => {
+    const diagram = parseMermaidFlowchartDiagram(`flowchart LR
+  X[a & b] -->|x & y| Y`)
+
+    expect(diagram.nodes.find((node) => node.id === "X")?.label).toBe("a & b")
+    expect(diagram.edges).toEqual([{ from: "X", to: "Y", label: "x & y" }])
+  })
+
+  test("treats apostrophes in labels as text rather than string delimiters", () => {
+    const diagram = parseMermaidFlowchartDiagram(`flowchart LR
+  CS[Console's own schema copy] -. validates .-> CFG
+  A[Bob's] & B[Al's] --> C[it's done; ship]`)
+
+    expect(diagram.nodes).toEqual([
+      { id: "CS", label: "Console's own schema copy", shape: "box" },
+      { id: "CFG", label: "CFG", shape: "box" },
+      { id: "A", label: "Bob's", shape: "box" },
+      { id: "B", label: "Al's", shape: "box" },
+      { id: "C", label: "it's done; ship", shape: "box" },
+    ])
+    expect(diagram.edges).toEqual([
+      { from: "CS", to: "CFG", label: "validates", style: "dashed" },
+      { from: "A", to: "C", label: "" },
+      { from: "B", to: "C", label: "" },
+    ])
+  })
+
+  test("rejects empty & group members", () => {
+    for (const statement of ["A & --> B", "& A --> B", "A --> B &", "A &"]) {
+      expect(() => parseMermaidFlowchartDiagram(`flowchart LR\n  ${statement}`)).toThrow(
+        `Unsupported syntax in flowchart diagram at line 2: "${statement}"`,
+      )
+    }
+  })
+
+  test("renders a fan-in expressed with & the same as separate edge statements", () => {
+    const grouped = renderFlowchartDiagram(`flowchart LR
+  N & M & O --> LM[LanguageModel] --> REQ[LLMRequest]`)
+    const separate = renderFlowchartDiagram(`flowchart LR
+  N --> LM[LanguageModel]
+  M --> LM
+  O --> LM
+  LM --> REQ[LLMRequest]`)
+
+    expect(grouped).toBe(separate)
+    expect(grouped).toContain("LanguageModel")
   })
 
   test("parses chained undirected solid edges", () => {

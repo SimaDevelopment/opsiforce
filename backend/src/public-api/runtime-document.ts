@@ -14,8 +14,8 @@ const RUNTIME_DESCRIPTION = [
   "The Agent runtime's own API — the conversation itself. This is opencode, reached through the runtime proxy, in opencode's own paths, bodies, responses and event framing. Nothing here is re-shaped, filtered or renamed by the platform.",
   '**This document is a snapshot**, vendored from the opencode build this deployment ships, and served by the platform so you can read it without waking an environment. The authoritative document for a *running* environment is the `openapiUrl` that `connect` reports, served by that pod at that build.',
   '**Get here first.** Call `POST /api/v1/projects/{id}/environments/{environmentId}/connect` on the Platform API. It wakes the environment, binds the primary Session every surface shares, and reports the runtime build. Then set the `environmentId` server variable above, and use the Session id that call gave you.',
-  '**Two things to know.** `wait` means the Session went idle, not that your prompt succeeded — read the outcome from the messages or the events. And send your own `id` on a prompt so a retry is harmless: the runtime returns the first admission again for the same id and body, and conflicts on a different one.',
-  '**The platform does not version this surface.** It is the protocol of the deployed build and moves when the agent image does, so the compatibility policy on the Platform API does not cover it. Treat `@opencode-ai/client` and the runtime as a pairing you verify together.',
+  "**Two things to know.** A prompt's outcome comes from this API's events, following the recipe in the Platform API overview at `/api/v1/docs`. And send your own `id` on a prompt so a retry is harmless: the runtime returns the first admission again for the same id and body, and conflicts on a different one.",
+  '**The platform does not version this surface.** It is the protocol of the deployed build and moves when the agent image does, so the compatibility policy on the Platform API does not cover it. Treat `@opencode/client` and the runtime as a pairing you verify together.',
 ].join('\n\n');
 
 function withPlatformDiscovery(document: OpenAPIObject): OpenAPIObject {

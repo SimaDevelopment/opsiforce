@@ -1,15 +1,17 @@
 import { createMemo, For, Show, createEffect, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { TextAttributes, ScrollBoxRenderable } from "@opentui/core"
-import type { SessionInfo } from "@opencode-ai/client"
+import { useRenderer } from "@opentui/solid"
+import type { SessionInfo } from "@opencode/client"
 import { useRoute, useRouteData } from "../../../context/route"
 import { useData } from "../../../context/data"
 import { useClient } from "../../../context/client"
 import { useTheme } from "../../../context/theme"
+import { useStorage } from "../../../context/storage"
 import { Locale } from "../../../util/locale"
 import { Keymap } from "../../../context/keymap"
-import { useComposerTab } from "./index"
-import { withTimestampedFallback } from "@opencode-ai/util/session-title-fallback"
+import { useComposerTab } from "./context"
+import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
 import { sessionFamily } from "../../../util/session"
 
 interface SubagentEntry {
@@ -22,6 +24,7 @@ interface SubagentEntry {
 }
 
 export function SubagentsTab(props: { sessionID: string }) {
+  const renderer = useRenderer()
   const route = useRouteData("session")
   const data = useData()
   const client = useClient()
@@ -31,7 +34,9 @@ export function SubagentsTab(props: { sessionID: string }) {
   const shortcuts = Keymap.useShortcuts()
 
   const session = createMemo(() => data.session.get(props.sessionID))
-  const [store, setStore] = createStore({ selected: 0, active: true })
+  const [store, setStore] = createStore({ selected: 0 })
+  // The session route remounts on navigation, so the filter lives in TUI memory and only ctrl+a changes it.
+  const [filter, updateFilter] = useStorage().memory("subagents-filter", { initial: { active: true } })
 
   const entries = createMemo<SubagentEntry[]>(() => {
     const current = session()
@@ -56,7 +61,7 @@ export function SubagentsTab(props: { sessionID: string }) {
       },
     )
 
-    return result.filter((entry) => (store.active ? entry.status === "running" : entry.status !== "running"))
+    return result.filter((entry) => (filter.active ? entry.status === "running" : entry.status !== "running"))
   })
 
   let selectedSessionID = ""
@@ -70,7 +75,7 @@ export function SubagentsTab(props: { sessionID: string }) {
     if (!active) {
       if (wasActive) {
         selectedSessionID = ""
-        setStore({ selected: 0, active: true })
+        setStore("selected", 0)
       }
       wasActive = false
       return
@@ -84,7 +89,7 @@ export function SubagentsTab(props: { sessionID: string }) {
       const scrollCurrentIntoView = () => scrollToIndex(next, true)
       scrollCurrentIntoView()
       // The remounted scrollbox finishes layout on the next frame and resets its scroll position.
-      requestAnimationFrame(() => requestAnimationFrame(scrollCurrentIntoView))
+      renderer.requestAnimationFrame(() => renderer.requestAnimationFrame(scrollCurrentIntoView))
     }
     wasActive = true
     if (store.selected >= list.length) moveTo(Math.max(0, list.length - 1))
@@ -121,7 +126,7 @@ export function SubagentsTab(props: { sessionID: string }) {
             ? [{ label: "interrupt", shortcut: shortcuts.get("composer.subagent.interrupt") ?? "" }]
             : []),
           {
-            label: `show ${store.active ? "inactive" : "active"}`,
+            label: `show ${filter.active ? "inactive" : "active"}`,
             shortcut: shortcuts.get("composer.subagent.toggle-activity") ?? "",
           },
         ]
@@ -172,7 +177,8 @@ export function SubagentsTab(props: { sessionID: string }) {
         group: "Composer",
         bind: "ctrl+a",
         run() {
-          setStore({ selected: 0, active: !store.active })
+          updateFilter((draft) => (draft.active = !draft.active))
+          setStore("selected", 0)
           scroll?.scrollTo(0)
         },
       },
@@ -194,7 +200,7 @@ export function SubagentsTab(props: { sessionID: string }) {
       <scrollbox scrollbarOptions={{ visible: false }} maxHeight={5} ref={(r: ScrollBoxRenderable) => (scroll = r)}>
         <Show
           when={entries().length > 0}
-          fallback={<text fg={theme.text.subdued}> No {store.active ? "active" : "inactive"} subagents</text>}
+          fallback={<text fg={theme.text.muted}> No {filter.active ? "active" : "inactive"} subagents</text>}
         >
           <For each={entries()}>
             {(entry, index) => {
@@ -213,9 +219,9 @@ export function SubagentsTab(props: { sessionID: string }) {
                       ? theme.background.action.primary.focused
                       : entry.current
                         ? theme.background.action.primary.selected
-                        : theme.background.action.primary.default
+                        : theme.background.action.primary.base
                   }
-                  onMouseOver={() => setStore("selected", index())}
+                  onMouseMove={() => setStore("selected", index())}
                   onMouseUp={() => {
                     setStore("selected", index())
                     navigate({ type: "session", sessionID: entry.sessionID })
@@ -228,7 +234,7 @@ export function SubagentsTab(props: { sessionID: string }) {
                           ? theme.text.action.primary.focused
                           : entry.current
                             ? theme.text.action.primary.selected
-                            : theme.text.action.primary.default
+                            : theme.text.action.primary.base
                       }
                       attributes={active() ? TextAttributes.BOLD : undefined}
                       wrapMode="none"
@@ -238,7 +244,7 @@ export function SubagentsTab(props: { sessionID: string }) {
                     </text>
                   </box>
                   <Show when={status()}>
-                    <text fg={active() ? theme.text.action.primary.focused : theme.text.subdued} wrapMode="none">
+                    <text fg={active() ? theme.text.action.primary.focused : theme.text.muted} wrapMode="none">
                       {status()}
                     </text>
                   </Show>

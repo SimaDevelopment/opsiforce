@@ -8,16 +8,16 @@ The conversation is the protocol of the deployed build, not a platform-owned con
 
 | | Version | Where it is pinned |
 |---|---|---|
-| Runtime | `@opencode-ai/cli@0.0.0-beta-19059` | `docker/Dockerfile.agent` |
-| Client | `@opencode-ai/client@0.0.0-beta-19059` | this `package.json` |
+| Runtime | `@opencode/cli@2.1.2` | `docker/Dockerfile.agent` |
+| Client | `@opencode/client@2.1.2` | this `package.json` |
 
-Both are published from the same upstream build, so the version strings match exactly. Install it as an ordinary dependency:
+Both are published from the same upstream release, so the version strings match exactly, and `connect` reports the same string as `build`. Install it as an ordinary dependency:
 
 ```bash
-npm install @opencode-ai/client@0.0.0-beta-19059
+npm install @opencode/client@2.1.2
 ```
 
-Import `OpenCode` from it and call `OpenCode.make({ baseUrl, fetch })` — that is the whole entry point. Do **not** reach for `@opencode-ai/sdk`: its published `1.18.x` line is a different, older API, and its `create()` starts an *embedded* opencode rather than connecting to a remote one.
+Import `OpenCode` from it and call `OpenCode.make({ baseUrl, fetch })` — that is the whole entry point. `baseUrl` is the resolved `/api/proxy/{environmentId}` URL as `connect` returned it; the client keeps that prefix. Do **not** reach for `@opencode/sdk`: it hosts an *embedded* opencode in your process rather than connecting to a remote one.
 
 When the agent image moves, change both rows together and re-run this example; that is step 4 of [the bump runbook](../../operations/upgrade-opencode.md).
 
@@ -36,13 +36,18 @@ Node 22.6 or newer (the scripts run TypeScript directly with `--experimental-str
 
 ## Checking it against a runtime
 
-`npm test` runs the adapter against a stub server with Node's own test runner and no extra dependency. It covers what the adapter has to get right: the runtime prefix is restored and never doubled, query strings and bodies survive, the bearer token cannot leak to another origin or follow a redirect, retry guidance is read before the generated client converts the status, and a cancelled stream closes its body.
+`npm test` runs the example against a stub server with Node's own test runner and no extra dependency. It covers what the example has to get right: native prompts go out authenticated under the runtime prefix, a prompt's outcome is read from its own delivery and the outcome event after it (not from an earlier turn or another Session), an ambiguous admission is replayed with the same id and body, cancelling stops the wait, the bearer token cannot leak to another origin or follow a redirect, and retry guidance is read before the generated client converts the status.
+
+## Learning a prompt's outcome
+
+`runtime.ts` follows the event recipe in [Connection](../connection.md#then-it-is-opencode). `POST /api/experimental/session/{sessionID}/wait` (`session.wait` in the client) is an experimental shortcut that returns once the Session is idle, which is not your prompt's outcome.
 
 ## What it demonstrates
 
 - **Discovery is origin-relative.** `platform.resolve()` resolves a descriptor URL against the one origin this client was configured with and refuses anything that lands elsewhere, so the bearer token can only ever reach that origin.
 - **Connect before chatting.** One call wakes the environment, binds the primary Session and reports the runtime build. It is retried while the answer is "still starting", because that is transient and the call duplicates nothing.
-- **The URL adapter.** The generated client builds `new URL(descriptor.path, baseUrl)` with a root-relative path, which discards the `/api/proxy/{environmentId}` prefix (upstream `anomalyco/opencode#46498`). `runtime.ts` puts it back, and only when it is missing, so a retry cannot double it. Query parameters, bodies, cancellation and SSE pass through untouched.
+- **The client's `fetch` is the platform's.** Every runtime call goes through `Platform.fetch`, which adds the bearer token, refuses other origins and redirects, and retries safe reads on a transient answer. Query parameters, bodies, cancellation and SSE pass through untouched.
+- **The event recipe.** `promptForOutcome()` subscribes first, prompts with its own id, and reports the outcome event that follows that prompt's delivery.
 - **Asymmetric retry.** Safe reads and the connection retry on a transient answer, waiting for as long as the server's own `Retry-After` says (both delay-seconds and HTTP-date forms). A prompt is replayed only with its **original id and body**, which the runtime treats as the same admission rather than a second turn. Interrupt and other writes are not retried at all.
 - **Cancellation.** One `AbortController` ties the event stream and every call to it, so Ctrl-C ends the run instead of orphaning a stream.
 

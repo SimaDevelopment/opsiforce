@@ -8,21 +8,30 @@ export interface TenantModelProviderView {
   kind?: ModelProviderKind | null;
   baseUrl?: string;
   baseFormat: BaseFormatId | null;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
+  backendEnabled: boolean;
+  backendWeight: number;
   status: ModelProviderStatus;
+  servedModels?: string[];
+  connection?: AzureConnectionView;
 }
 
 export interface TenantModelProvidersView {
   bifrostReachable: boolean;
   baseFormats: BaseFormatId[];
+  catalogModels: Record<BaseFormatId, string[]>;
   providers: TenantModelProviderView[];
 }
 
+export type AvailabilityMode = 'every' | 'chosen';
+
 export interface ModelProviderSwitch {
   name: string;
-  enabled: boolean;
-  weight: number;
+  chatEnabled?: boolean;
+  chatWeight?: number;
+  backendEnabled?: boolean;
+  backendWeight?: number;
 }
 
 export interface SaveBaseFormatDto {
@@ -34,6 +43,7 @@ export const MIN_WEIGHT = 0;
 export const MAX_WEIGHT = 100;
 export const STARTING_WEIGHT = 1;
 export const WEIGHT_RULE_MESSAGE = 'At least one enabled provider needs a weight above 0';
+export const APP_WEIGHT_RULE_MESSAGE = 'At least one provider on for Apps needs an App weight above 0';
 export const BIFROST_UNREACHABLE_MESSAGE = "The model gateway can't be reached, so changes can't be saved";
 
 export const CUSTOM_MODEL_PROVIDER_LIMIT = 10;
@@ -43,6 +53,9 @@ export interface ModelProviderConnectionDto {
   kind: string;
   key: string;
   baseUrl?: string;
+  models?: string[];
+  endpoint?: string;
+  deployments?: Record<string, string>;
 }
 
 export interface NewModelProviderDto extends ModelProviderConnectionDto {
@@ -52,6 +65,12 @@ export interface NewModelProviderDto extends ModelProviderConnectionDto {
 export interface EditModelProviderConnectionDto {
   key: string;
   baseUrl?: string;
+  endpoint?: string;
+}
+
+export interface SetModelProviderModelsDto {
+  models: string[] | null;
+  deployments?: Record<string, string>;
 }
 
 export interface ModelProviderCreationRules {
@@ -59,6 +78,7 @@ export interface ModelProviderCreationRules {
   customProviderLimit: number;
   customProviderCount: number;
   kindsByFormat: Record<BaseFormatId, ModelProviderKind[]>;
+  catalogModels: Record<BaseFormatId, string[]>;
 }
 
 export interface ConnectionTestPassed {
@@ -73,7 +93,14 @@ export interface PlatformModelProviderView {
   status: ModelProviderStatus;
   fixed: boolean;
   notMetered: boolean;
+  servedModels?: string[];
+  connection?: AzureConnectionView;
   linkedAccountVendor?: VendorId;
+}
+
+export interface AzureConnectionView {
+  models: string[];
+  deployments: Record<string, string>;
 }
 
 export interface PlatformModelProvidersView {
@@ -85,4 +112,31 @@ export interface PlatformModelProviderCreationRules {
   namePrefix: string;
   nameMaxLength: number;
   kindsByFormat: Record<BaseFormatId, ModelProviderKind[]>;
+  catalogModels: Record<BaseFormatId, string[]>;
+}
+
+export interface ModelProviderAccessProvider {
+  name: string;
+  baseFormats: BaseFormatId[];
+  mode: AvailabilityMode;
+}
+
+export interface TenantModelProviderAccess {
+  tenantId: string;
+  name: string;
+  displayName: string;
+  withheld: string[];
+}
+
+export interface PlatformModelProviderAccessView {
+  providers: ModelProviderAccessProvider[];
+  tenants: TenantModelProviderAccess[];
+}
+
+export interface SetModelProviderAccessDto {
+  withheld: boolean;
+}
+
+export interface SetModelProviderAvailabilityModeDto {
+  mode: AvailabilityMode;
 }

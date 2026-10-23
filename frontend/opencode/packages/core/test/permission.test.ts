@@ -1,21 +1,21 @@
-import { describe, expect } from "bun:test"
-import { Cause, Deferred, Effect, Fiber, Layer } from "effect"
-import { Agent } from "@opencode-ai/core/agent"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { Location } from "@opencode-ai/core/location"
-import { Permission } from "@opencode-ai/core/permission"
-import { PermissionTable } from "@opencode-ai/core/permission/sql"
-import { PermissionSaved } from "@opencode-ai/core/permission/saved"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { ShellParse } from "@opencode-ai/core/shell/parse"
+import { describe, expect, test } from "bun:test"
+import { Cause, Deferred, Effect, Fiber, Layer, Schema } from "effect"
+import { Agent } from "@opencode/core/agent"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { Location } from "@opencode/core/location"
+import { Permission } from "@opencode/core/permission"
+import { PermissionTable } from "@opencode/core/permission/sql"
+import { PermissionSaved } from "@opencode/core/permission/saved"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { ShellParse } from "@opencode/core/shell/parse"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -148,6 +148,14 @@ describe("Permission", () => {
     }),
   )
 
+  test("matches Windows rule resources against slash-normalized file access resources", () => {
+    const rules: Permission.Ruleset = [
+      { action: "external_directory", resource: "C:\\Users\\x\\proj\\*", effect: "allow" },
+    ]
+    expect(Permission.evaluate("external_directory", "C:/Users/x/proj/src/*", rules).effect).toBe("allow")
+    expect(Permission.evaluate("external_directory", "C:/Users/x/other/*", rules).effect).toBe("ask")
+  })
+
   it.effect("allows managed output reads without granting external directory access", () =>
     Effect.gen(function* () {
       yield* setup([
@@ -224,6 +232,34 @@ describe("Permission", () => {
     }),
   )
 
+  it.effect("merges session rules after agent rules and before saved approvals", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const { db } = yield* Database.Service
+      const service = yield* Permission.Service
+      const setSession = (permission: Permission.Ruleset) =>
+        db
+          .update(SessionTable)
+          .set({ permission })
+          .where(eq(SessionTable.id, Session.ID.make("ses_test")))
+          .run()
+          .pipe(Effect.orDie)
+
+      yield* setSession([{ action: "edit", resource: "/original/**", effect: "deny" }])
+      expect(yield* service.ask(assertion({ action: "edit", resources: ["/original/src/index.ts"] }))).toMatchObject({
+        effect: "deny",
+      })
+
+      yield* setRules([])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "bash", resources: ["pwd"] })
+      yield* setSession([{ action: "bash", resource: "*", effect: "deny" }])
+      expect(yield* service.ask(assertion({ action: "bash", resources: ["pwd"] }))).toMatchObject({ effect: "deny" })
+      yield* setSession([{ action: "bash", resource: "*", effect: "ask" }])
+      expect(yield* service.ask(assertion({ action: "bash", resources: ["pwd"] }))).toMatchObject({ effect: "allow" })
+    }),
+  )
+
   it.effect("uses saved bash approvals while preserving configured deny precedence", () =>
     Effect.gen(function* () {
       yield* setup()
@@ -257,6 +293,33 @@ describe("Permission", () => {
       yield* Fiber.join(fiber)
       expect(yield* service.list()).toEqual([])
       expect(yield* service.get(request.id)).toBeUndefined()
+    }),
+  )
+
+  it.effect("drops undefined metadata values so pending requests encode as JSON", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      // Tools copy optional model inputs straight into metadata, so omitted inputs arrive as undefined values.
+      const { service, request } = yield* waitForRequest({
+        action: "glob",
+        resources: ["/project"],
+        metadata: { root: "/project", path: undefined, hidden: undefined, limit: undefined },
+      })
+      expect(request.metadata).toStrictEqual({ root: "/project" })
+      expect(yield* service.forSession(request.sessionID)).toEqual([request])
+      // HttpApi encodes JSON success bodies through Schema.toCodecJson, which rejects undefined values in Unknown.
+      const encode = Schema.encodeEffect(Schema.toCodecJson(Schema.Struct({ data: Schema.Array(Permission.Request) })))
+      expect(yield* encode({ data: yield* service.forSession(request.sessionID) })).toEqual({
+        data: [
+          {
+            id: request.id,
+            sessionID: request.sessionID,
+            action: "glob",
+            resources: ["/project"],
+            metadata: { root: "/project" },
+          },
+        ],
+      })
     }),
   )
 
@@ -301,10 +364,44 @@ describe("Permission", () => {
       ).toMatchObject([{ action: "read", resource: "src/*" }])
       const saved = yield* PermissionSaved.Service
       const id = (yield* saved.list())[0]!.id
-      expect(yield* saved.list()).toEqual([{ id, projectID: Project.ID.global, action: "read", resource: "src/*" }])
+      expect(yield* saved.list()).toMatchObject([
+        { id, projectID: Project.ID.global, action: "read", resource: "src/*" },
+      ])
       yield* service.assert(assertion({ id: Permission.ID.create("per_next"), resources: ["src/next.ts"] }))
       yield* saved.remove(id)
       expect(yield* saved.list()).toEqual([])
+    }),
+  )
+
+  it.effect("edits saved approvals and enforces the edited rule", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const saved = yield* PermissionSaved.Service
+      const service = yield* Permission.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "read", resources: ["src/*", "docs/*"] })
+      const src = (yield* saved.list()).find((item) => item.resource === "src/*")
+
+      expect(yield* saved.update({ id: src!.id, resource: "src/allowed.ts" })).toMatchObject({
+        id: src!.id,
+        projectID: Project.ID.global,
+        action: "read",
+        resource: "src/allowed.ts",
+      })
+      expect(
+        yield* service.ask(assertion({ id: Permission.ID.create("per_allowed"), resources: ["src/allowed.ts"] })),
+      ).toMatchObject({ effect: "allow" })
+      expect(
+        yield* service.ask(assertion({ id: Permission.ID.create("per_other"), resources: ["src/other.ts"] })),
+      ).toMatchObject({ effect: "ask" })
+
+      expect(yield* saved.update({ id: src!.id, resource: "docs/*" }).pipe(Effect.flip)).toMatchObject({
+        _tag: "PermissionSaved.ConflictError",
+        id: src!.id,
+        resource: "docs/*",
+      })
+      expect(
+        yield* saved.update({ id: PermissionSaved.ID.make("psv_missing"), action: "edit" }).pipe(Effect.flip),
+      ).toMatchObject({ _tag: "PermissionSaved.NotFoundError" })
     }),
   )
 

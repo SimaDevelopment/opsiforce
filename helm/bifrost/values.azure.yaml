@@ -4,7 +4,7 @@ service:
 fullnameOverride: opsiforce-bifrost
 
 image:
-  tag: "v2.0.0"
+  tag: "v2.3.2"
 
 replicaCount: 1
 
@@ -25,10 +25,15 @@ autoscaling:
 
 storage:
   mode: postgres
+  # Separate runtime pools: at most 20 connections per pod in total.
   configStore:
     enabled: true
+    maxOpenConns: 10
+    maxIdleConns: 2
   logsStore:
     enabled: true
+    maxOpenConns: 10
+    maxIdleConns: 2
 
 vectorStore:
   enabled: false
@@ -38,7 +43,8 @@ postgresql:
   enabled: false
   external:
     enabled: true
-    host: postgres-cluster-pooler-pooler-rw.postgres.svc.cluster.local
+    # Follow the CNPG primary directly; avoid stale PgBouncer plans after migrations.
+    host: postgres-cluster-rw.postgres.svc.cluster.local
     port: 5432
     user: postgres
     database: bifrost
@@ -47,7 +53,7 @@ postgresql:
     passwordKey: password
 
 bifrost:
-  sourceOfTruth: "config.json"
+  sourceOfTruth: "split"
   encryptionKeySecret:
     name: opsiforce-bifrost-encryption
     key: key
@@ -59,9 +65,12 @@ bifrost:
   client:
     dropExcessRequests: true
     enableLogging: true
+    disableContentLogging: true
     logRetentionDays: 7
     allowDirectKeys: false
     enforceAuthOnInference: true
+    compat:
+      forceReasoningOnlyModelsToResponses: false
   providers:
     custom-openai-1:
       keys:

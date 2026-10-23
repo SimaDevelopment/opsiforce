@@ -36,8 +36,18 @@ beforeEach(() => {
 });
 
 describe('body rewrite', () => {
-  it('defaults instructions to an empty string, turns storage off, forces streaming and drops max_output_tokens', async () => {
-    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, max_output_tokens: 512 });
+  it('defaults instructions to an empty string, turns storage off, forces streaming and drops what ChatGPT refuses', async () => {
+    const res = await proxy.sendLikeBifrost({
+      model: 'gpt-5.6-sol',
+      input: USER_TURN,
+      max_output_tokens: 512,
+      temperature: 0.2,
+      top_p: 0.9,
+      user: 'app-user-7',
+      metadata: { feature: 'review' },
+      safety_identifier: 'app-user-7',
+      truncation: 'auto',
+    });
     await res.text();
 
     expect(proxy.upstream.requests).toHaveLength(1);
@@ -47,6 +57,7 @@ describe('body rewrite', () => {
       instructions: '',
       store: false,
       stream: true,
+      prompt_cache_key: expect.stringMatching(/^lap-[0-9a-f]{32}$/),
     });
   });
 
@@ -112,11 +123,21 @@ describe('upstream headers', () => {
     expect(request?.body.prompt_cache_key).toBe('ses_eb77bb310ffeMdyelnVWjuZJZ8');
   });
 
-  it('sends no session-id when the caller gives no prompt cache key', async () => {
-    const res = await proxy.sendLikeBifrost({ model: 'gpt-6.1-sol', input: USER_TURN, prompt_cache_key: '' });
-    await res.text();
+  it('derives a cache key from how the conversation starts when the caller gives none, so its later turns share it', async () => {
+    const reply = { role: 'assistant', content: 'Hello!' };
+    const nextTurn = { role: 'user', content: [{ type: 'input_text', text: 'And again' }] };
+    const otherConversation = [{ role: 'user', content: [{ type: 'input_text', text: 'Something else' }] }];
+    for (const input of [USER_TURN, [...USER_TURN, reply, nextTurn], otherConversation]) {
+      await (await proxy.sendLikeBifrost({ model: 'gpt-6.1-sol', input, prompt_cache_key: '' })).text();
+    }
 
-    expect(proxy.upstream.requests[0]?.headers).not.toHaveProperty('session-id');
+    const [first, later, other] = proxy.upstream.requests.map(
+      (upstreamRequest) => upstreamRequest.headers['session-id']
+    );
+    expect(first).toMatch(/^lap-[0-9a-f]{32}$/);
+    expect(later).toBe(first);
+    expect(other).not.toBe(first);
+    expect(proxy.upstream.requests[0]?.body.prompt_cache_key).toBe(first);
   });
 });
 
@@ -201,6 +222,24 @@ describe('responses', () => {
     });
   });
 
+  it('answers a rate limit with 429 to a caller that does not stream too', async () => {
+    proxy.upstream.respondWith(
+      respondWithEventStream([
+        {
+          event: 'response.failed',
+          data: {
+            type: 'response.failed',
+            response: { id: 'resp_1', status: 'failed', error: { code: 'usage_limit_reached', message: 'Limit hit.' } },
+          },
+        },
+      ])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN });
+
+    expect(res.status).toBe(429);
+  });
+
   it('answers a server failure before any output with 502', async () => {
     proxy.upstream.respondWith(
       respondWithEventStream([{ event: 'error', data: { type: 'error', code: 'server_error', message: 'Try again.' } }])
@@ -209,6 +248,57 @@ describe('responses', () => {
     const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
 
     expect(res.status).toBe(502);
+  });
+
+  it('answers overload signals before any output with 502, whether coded or only worded, so the gateway fails over', async () => {
+    const overloads = [
+      { type: 'error', code: 'server_is_overloaded', message: 'Our servers are currently overloaded.' },
+      { type: 'error', code: 'slow_down', message: 'Slow down.' },
+      { type: 'error', message: 'The selected model is at capacity. Please try a different model.' },
+      { type: 'error', message: 'An error occurred while processing your request. Please try again.' },
+    ];
+    const statuses: number[] = [];
+    for (const overload of overloads) {
+      proxy.upstream.respondWith(respondWithEventStream([{ event: 'error', data: overload }]));
+      const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+      await res.text();
+      statuses.push(res.status);
+    }
+
+    expect(statuses).toEqual([502, 502, 502, 502]);
+  });
+
+  it('answers a response that completes with neither output nor usage with 502', async () => {
+    proxy.upstream.respondWith(
+      respondWithEventStream([
+        {
+          event: 'response.created',
+          data: { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
+        },
+        {
+          event: 'response.completed',
+          data: { type: 'response.completed', response: { id: 'resp_1', status: 'completed', output: [] } },
+        },
+      ])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: { type: 'empty_upstream_response' } });
+  });
+
+  it('answers an upstream 400 that only says the model is at capacity with 502, keeping its body', async () => {
+    const capacity = '{"error":{"message":"The selected model is at capacity.","type":"invalid_request_error"}}';
+    proxy.upstream.respondWith((res) => {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(capacity);
+    });
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(502);
+    expect(await res.text()).toBe(capacity);
   });
 
   it('keeps streaming an error that arrives after output has started', async () => {
@@ -232,6 +322,37 @@ describe('responses', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/json');
     expect(await res.json()).toEqual(COMPLETED_RESPONSE);
+  });
+
+  it('answers 502 to a caller that does not stream when the stream stops before the response completes', async () => {
+    proxy.upstream.respondWith(respondWithEventStream(CHATGPT_STREAM.slice(0, 2)));
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: { code: 'stream_incomplete' } });
+  });
+
+  it('answers a failure after output with an HTTP error to a caller that does not stream', async () => {
+    proxy.upstream.respondWith(
+      respondWithEventStream([
+        ...CHATGPT_STREAM.slice(0, 2),
+        { event: 'error', data: { type: 'error', error: { type: 'server_error', message: 'Stream broke.' } } },
+      ])
+    );
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: { type: 'server_error', message: 'Stream broke.' } });
+  });
+
+  it('answers 502 to a stream that ends with only its preamble', async () => {
+    proxy.upstream.respondWith(respondWithEventStream(CHATGPT_STREAM.slice(0, 1)));
+
+    const res = await proxy.sendLikeBifrost({ model: 'gpt-5.6-sol', input: USER_TURN, stream: true });
+
+    expect(res.status).toBe(502);
   });
 
   it('passes an upstream error through with its status, content type and body text', async () => {

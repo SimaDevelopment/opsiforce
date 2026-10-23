@@ -2,12 +2,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
-import { catalogModelIdsOf } from '../../src/agent/agent-models';
+import { appliedModelCatalog, linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
+import { readModelCatalog } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { LinkedAccountsService } from '../../src/linked-accounts/linked-accounts.service';
+import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
+import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { Perms } from '../../src/permission/permission.constants';
 import { DOCK_BASE_URL, startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { FAKE_USER_CODE, startFakeChatGptAuth, type FakeChatGptAuth } from './support/fake-chatgpt-auth';
@@ -19,13 +21,18 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 
 const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
 const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'a'.repeat(64);
-const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
+const OPENAI_FAMILY = {
+  allowed_models: [...servedModelsOf(BASE_FORMATS.openai), ...BASE_FORMATS.openai.imageModels],
+  key_ids: ['*'],
+};
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -78,7 +85,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
-    await holdEveryChatKey();
+    await holdEveryProjectKey();
   });
 
   afterEach(async () => {
@@ -151,11 +158,8 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
     return res.json<{ id: string }>().id;
   }
 
-  async function holdEveryChatKey(): Promise<void> {
-    const keys = await db
-      .select({ id: projectVirtualKeys.bifrostKeyId })
-      .from(projectVirtualKeys)
-      .where(eq(projectVirtualKeys.keyType, 'chat'));
+  async function holdEveryProjectKey(): Promise<void> {
+    const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
     bifrost.holdVirtualKeys(keys.map((key) => key.id));
   }
 
@@ -206,7 +210,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           id: expect.any(String),
           name: 'custom-openai-1-key',
           value: { value: expect.stringMatching(/^lap_[A-Za-z0-9_-]{40,}$/), type: 'plain_text' },
-          models: OPENAI_CATALOG_IDS,
+          models: ['*'],
           weight: 1,
           enabled: true,
         },
@@ -310,13 +314,13 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           custom_provider_config: { base_provider_type: 'openai', allowed_requests: { list_models: false } },
         });
         expect(bifrost.providerNamed('custom-openai-1')?.keys).toMatchObject([
-          { value: { value: expect.stringMatching(/^lap_/), type: 'plain_text' }, models: OPENAI_CATALOG_IDS },
+          { value: { value: expect.stringMatching(/^lap_/), type: 'plain_text' }, models: ['*'] },
         ]);
         const rows = await db
-          .select({ enabled: modelProviders.enabled, weight: modelProviders.weight })
+          .select({ chatEnabled: modelProviders.chatEnabled, chatWeight: modelProviders.chatWeight })
           .from(modelProviders)
           .where(and(isNull(modelProviders.tenantId), eq(modelProviders.bifrostProvider, 'custom-openai-1')));
-        expect(rows).toEqual([{ enabled: true, weight: 1 }]);
+        expect(rows).toEqual([{ chatEnabled: true, chatWeight: 1 }]);
       } finally {
         await db.delete(modelProviders).where(eq(modelProviders.bifrostProvider, 'custom-openai-1'));
         if (platformRow) await db.insert(modelProviders).values(platformRow);
@@ -343,11 +347,11 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
           provider: 'custom-openai-1',
           weight: 1,
-          ...CATALOG_WIDE,
+          ...OPENAI_FAMILY,
         });
         const page = await app.inject({ method: 'GET', url: '/api/model-providers', headers: orgAdmin.headers });
         expect(page.json<{ providers: unknown[] }>().providers).toContainEqual(
-          expect.objectContaining({ name: 'custom-openai-1', enabled: true, weight: 1 })
+          expect.objectContaining({ name: 'custom-openai-1', chatEnabled: true, chatWeight: 1 })
         );
       } finally {
         await db.delete(modelProviders).where(eq(modelProviders.bifrostProvider, 'custom-openai-1'));
@@ -462,7 +466,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
         headers: orgAdmin.headers,
-        payload: { providers: [{ name: 'custom-openai-1', enabled: true, weight: 2 }] },
+        payload: { providers: [{ name: 'custom-openai-1', chatEnabled: true, chatWeight: 2 }] },
       });
 
       expect(saved.statusCode, saved.body).toBe(200);
@@ -488,7 +492,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
           provider: 'custom-openai-1',
           weight: 1,
-          ...CATALOG_WIDE,
+          ...OPENAI_FAMILY,
         });
       }
 
@@ -498,7 +502,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
         headers: orgAdmin.headers,
-        payload: { providers: [{ name: 'openai', enabled: true, weight: 0 }] },
+        payload: { providers: [{ name: 'openai', chatEnabled: true, chatWeight: 0 }] },
       });
       expect(saved.statusCode, saved.body).toBe(200);
       expect(chatProvidersOf(firstProject)).not.toContain('custom-openai-1');
@@ -593,7 +597,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   describe('at boot, after Bifrost lost the sign-in', () => {
     function repointAtBoot(): Promise<void> {
-      return app.get(LinkedAccountsService).repointConnectedAccounts();
+      return app.get(LinkedAccountsService).reconcileConnectedAccounts();
     }
 
     it('points a Connected custom-openai-1 reset to its Helm entry back at the proxy with a new lap_ key', async () => {
@@ -617,7 +621,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
           id: expect.any(String),
           name: 'custom-openai-1-key',
           value: { value: expect.stringMatching(/^lap_[A-Za-z0-9_-]{40,}$/), type: 'plain_text' },
-          models: OPENAI_CATALOG_IDS,
+          models: ['*'],
           weight: 1,
           enabled: true,
         },
@@ -658,6 +662,68 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       expect(bifrost.writes.slice(writesBefore)).toEqual([]);
       expect(callerSecret()).toBe(secret);
       expect(await storedHash()).toBe(hash);
+    });
+
+    it('brings a Connected account created before image calls up to date and gives its keys the image models', async () => {
+      const admin = await platformAdmin();
+      const tenant = await createTenant(app);
+      const projectId = await projectOf(tenant);
+      await signIn(admin);
+      const provider = bifrost.providerNamed('custom-openai-1');
+      const written = (provider?.updated ?? provider?.created)?.custom_provider_config as Record<string, unknown>;
+      written.allowed_requests = { ...(written.allowed_requests as Record<string, unknown>), image_generation: false };
+      const secret = callerSecret();
+
+      await repointAtBoot();
+
+      const updated = bifrost.providerNamed('custom-openai-1')?.updated?.custom_provider_config as Record<
+        string,
+        unknown
+      >;
+      expect(updated.allowed_requests).toMatchObject({ image_generation: true, image_edit: true });
+      expect(bifrost.providerNamed('custom-openai-1')?.baseUrl).toBe(PROXY_URL);
+      expect(callerSecret()).toBe(secret);
+      expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
+        provider: 'custom-openai-1',
+        weight: 1,
+        ...OPENAI_FAMILY,
+      });
+    });
+
+    it('leaves a key rewrite that fails at boot to the catalog check, which then gives the keys the image models', async () => {
+      const admin = await platformAdmin();
+      const projectId = await projectOf(await createTenant(app));
+      await signIn(admin);
+      const keyModels = app.get(ModelProviderKeyModelsService);
+      await db.delete(appliedModelCatalog);
+      await keyModels.rewriteKeysForChangedCatalog(readModelCatalog());
+      const provider = bifrost.providerNamed('custom-openai-1');
+      const written = (provider?.updated ?? provider?.created)?.custom_provider_config as Record<string, unknown>;
+      written.allowed_requests = { ...(written.allowed_requests as Record<string, unknown>), image_generation: false };
+      await app.get(ModelProvidersService).lockAndRewriteKeysOfTenantsUsing('custom-openai-1');
+      const chatKeyHasImageModels = () =>
+        bifrost
+          .chatKeyOf(projectId)
+          .provider_configs.some(
+            (config) => config.provider === 'custom-openai-1' && config.allowed_models?.includes('gpt-image-2')
+          );
+      expect(chatKeyHasImageModels()).toBe(false);
+
+      bifrost.refuseProviderConfigWrites();
+      try {
+        await repointAtBoot();
+      } finally {
+        bifrost.acceptProviderConfigWrites();
+      }
+      const afterFailedBoot = chatKeyHasImageModels();
+      await keyModels.rewriteKeysForChangedCatalog(readModelCatalog());
+
+      expect(afterFailedBoot).toBe(false);
+      expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
+        provider: 'custom-openai-1',
+        weight: 1,
+        ...OPENAI_FAMILY,
+      });
     });
 
     it('leaves an account that is not signed in alone', async () => {

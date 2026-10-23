@@ -1,11 +1,11 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { Context, Effect, Layer } from "effect"
-import { Reactivity } from "effect/unstable/reactivity"
-import { SqlClient } from "effect/unstable/sql"
-import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
+import { Reactivity } from "effect/reactivity"
+import { SqlClient } from "effect/sql"
+import { classifySqliteError, SqlError } from "effect/sql/SqlError"
 import { Sqlite } from "./sqlite.js"
 
-const TypeId = "~@opencode-ai/core/database/SqliteNode" as const
+const TypeId = "~@opencode/core/database/SqliteNode" as const
 
 export const supportsTuningPragmas = true
 

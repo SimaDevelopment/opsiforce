@@ -3,7 +3,9 @@ import { Dynamic } from 'solid-js/web';
 import { useNavigate } from '@tanstack/solid-router';
 import { Badge } from '~/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
-import { ArrowUp, Box, Cable, Globe, Lock, Package, Search } from '~/components/icons';
+import { ArrowUp, ArrowUpDown, Box, Cable, Globe, Lock, Package, Search } from '~/components/icons';
+import type { Environment } from '~/api/environments';
+import { EnvironmentBadge } from '~/components/environment-badge';
 import { cn } from '~/lib/cn';
 
 export const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -175,7 +177,7 @@ export function EmptyState(props: { icon: Component<{ class?: string }>; title: 
       <Dynamic component={props.icon} class="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
       <p class="text-sm text-muted-foreground">{props.title}</p>
       <Show when={props.hint}>
-        <p class="mt-1 text-xs text-muted-foreground/60">{props.hint}</p>
+        <p class="mt-1 text-xs text-muted-foreground">{props.hint}</p>
       </Show>
     </div>
   );
@@ -201,7 +203,7 @@ export function FilterChips<T extends string>(props: {
                 'cursor-pointer rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
                 'has-[:focus-visible]:outline-none has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring',
                 checked()
-                  ? 'border-primary bg-primary/10 text-foreground'
+                  ? 'border-foreground/25 bg-muted text-foreground'
                   : 'border-border text-muted-foreground hover:bg-accent'
               )}
             >
@@ -249,5 +251,67 @@ export function SearchInput(props: { value: string; onInput: (value: string) => 
         )}
       />
     </div>
+  );
+}
+
+export function SortSelect<T extends string>(props: {
+  options: { id: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <label class="relative inline-flex h-9 shrink-0 items-center">
+      <span class="sr-only">Sort by</span>
+      <ArrowUpDown class="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+      <select
+        name="sort"
+        value={props.value}
+        onChange={(event) => props.onChange(event.currentTarget.value as T)}
+        class={cn(
+          'h-9 cursor-pointer appearance-none rounded-md border border-input bg-background py-0 pl-8 pr-3 text-sm text-foreground shadow-sm outline-none transition-colors hover:bg-accent/40',
+          'focus-visible:ring-1 focus-visible:ring-ring'
+        )}
+      >
+        <For each={props.options}>{(option) => <option value={option.id}>{option.label}</option>}</For>
+      </select>
+    </label>
+  );
+}
+
+export function ListToolbar(props: { search: JSX.Element; sort: JSX.Element; filters: JSX.Element }) {
+  return (
+    <div class="mb-4 flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        {props.search}
+        {props.sort}
+      </div>
+      {props.filters}
+    </div>
+  );
+}
+
+export function EnvironmentList(props: {
+  environments: Environment[];
+  defaultEnvironmentId: string | null;
+  defaultExplanation?: (environment: Environment) => string;
+  label: string;
+}) {
+  return (
+    <ul class="flex flex-wrap items-center gap-2" aria-label={props.label}>
+      <For each={props.environments}>
+        {(environment) => (
+          <li class="inline-flex items-center gap-1">
+            <EnvironmentBadge environment={environment} />
+            <Show when={environment.id === props.defaultEnvironmentId}>
+              <DefaultEnvironmentMark
+                environmentName={environment.name}
+                explanation={props.defaultExplanation?.(environment)}
+                plain
+              />
+            </Show>
+          </li>
+        )}
+      </For>
+    </ul>
   );
 }

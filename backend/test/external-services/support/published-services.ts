@@ -3,6 +3,7 @@ import { createServer, type AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { sdkPackageVersion } from '@opsiforce/external-service-sdk/server';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { environments, projectEnvironments } from '../../../db/schema';
@@ -82,7 +83,7 @@ export async function writeServiceFiles(
     JSON.stringify({
       name: 'opsiforce-external-service',
       dependencies: {
-        '@opsiforce/external-service-sdk': `file:./vendor/external-service-sdk-${options.sdkVersion ?? '2.0.0'}.tgz`,
+        '@opsiforce/external-service-sdk': `file:./vendor/external-service-sdk-${options.sdkVersion ?? sdkPackageVersion}.tgz`,
       },
     })
   );

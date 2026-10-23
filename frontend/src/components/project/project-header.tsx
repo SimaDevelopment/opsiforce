@@ -1,4 +1,4 @@
-import { Show, createSignal, untrack, type JSX } from 'solid-js';
+import { Show, createSignal, untrack, type Component, type JSX } from 'solid-js';
 import { useQueryClient } from '@tanstack/solid-query';
 import { usePermissions } from '~/api/permissions';
 import { Permission } from '~/constants/permissions';
@@ -13,6 +13,13 @@ import type { ProjectStatus } from '~/api/client';
 import type { ProjectEnvironment } from '~/api/environments';
 
 export type ProjectTab = 'chat' | 'files' | 'code' | 'db';
+
+export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
+  chat: 'Chat',
+  files: 'Files',
+  code: 'Code',
+  db: 'DB',
+};
 
 export interface ProjectSurfaceSlots {
   headerLabel?: JSX.Element;
@@ -50,30 +57,22 @@ export function ProjectHeader(props: ProjectHeaderProps) {
   };
 
   return (
-    <div class="flex items-center justify-between gap-2 pl-3 pr-5 py-2 bg-background border-b border-border shrink-0">
+    <div class="flex items-center justify-between gap-2 px-3 sm:pr-5 py-2 bg-background border-b border-border shrink-0">
       <div class="flex items-center gap-2 min-w-0">
         {props.headerLabel}
-        <Tabs value={props.activeTab} onChange={(v) => props.onActiveTabChange(v as ProjectTab)} class="w-auto">
+        <Tabs
+          value={props.activeTab}
+          onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
+          class="w-auto shrink-0"
+        >
           <TabsList class="w-auto">
-            <TabsTrigger value="chat" class="flex-none gap-1.5">
-              <MessageSquare class="w-3.5 h-3.5" />
-              Chat
-            </TabsTrigger>
-            <TabsTrigger value="files" class="flex-none gap-1.5">
-              <Files class="w-3.5 h-3.5" />
-              Files
-            </TabsTrigger>
+            <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
+            <ProjectTabTrigger value="files" icon={Files} onPress={props.onActiveTabChange} />
             <Show when={props.showAgentTabs && canViewCode()}>
-              <TabsTrigger value="code" class="flex-none gap-1.5">
-                <CodeIcon class="w-3.5 h-3.5" />
-                Code
-              </TabsTrigger>
+              <ProjectTabTrigger value="code" icon={CodeIcon} onPress={props.onActiveTabChange} />
             </Show>
             <Show when={props.showAgentTabs && canViewDb()}>
-              <TabsTrigger value="db" class="flex-none gap-1.5">
-                <Database class="w-3.5 h-3.5" />
-                DB
-              </TabsTrigger>
+              <ProjectTabTrigger value="db" icon={Database} onPress={props.onActiveTabChange} />
             </Show>
           </TabsList>
         </Tabs>
@@ -111,6 +110,26 @@ export function ProjectHeader(props: ProjectHeaderProps) {
         />
       </div>
     </div>
+  );
+}
+
+function ProjectTabTrigger(props: {
+  value: ProjectTab;
+  icon: Component<{ class?: string }>;
+  onPress: (tab: ProjectTab) => void;
+}) {
+  const label = () => PROJECT_TAB_LABELS[props.value];
+  return (
+    <TabsTrigger
+      value={props.value}
+      class="flex-none gap-1.5"
+      aria-label={label()}
+      title={label()}
+      onClick={() => props.onPress(props.value)}
+    >
+      <props.icon class="w-3.5 h-3.5" />
+      <span class="hidden sm:inline">{label()}</span>
+    </TabsTrigger>
   );
 }
 

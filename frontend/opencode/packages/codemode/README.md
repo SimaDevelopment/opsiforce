@@ -1,4 +1,4 @@
-# @opencode-ai/codemode
+# @opencode/codemode
 
 This is our take on code mode: a lightweight, pure interpreter for a JavaScript-like language built around calling
 tools. It supports familiar JavaScript syntax with a few key differences and limitations. See the
@@ -13,8 +13,8 @@ The idea of code mode was originally introduced by Cloudflare. See
 
 ## How it differs from JavaScript
 
-- **Only supported APIs are available.** Programs can use the provided tools and supported JavaScript built-ins. APIs
-  such as `fetch`, timers, `process`, filesystem access, imports, and modules are unavailable.
+- **Only supported APIs are available.** Programs can use the provided tools, supported JavaScript built-ins, and the
+  globals the host adds through extensions. Timers, `process`, filesystem access, imports, and modules are unavailable.
 - **Unfinished work is interrupted.** Tool calls and async functions start when called. When the program finishes,
   anything still running is interrupted. Unhandled rejections from un-awaited promises are returned as warnings.
 - **REPL-style results.** Without an explicit `return`, the final top-level expression becomes the result. `undefined`
@@ -26,7 +26,7 @@ Unsupported syntax returns an `UnsupportedSyntax` diagnostic with a source locat
 ## Quick Start
 
 ```ts
-import { CodeMode, Namespace, Tool } from "@opencode-ai/codemode"
+import { CodeMode, Namespace, Tool } from "@opencode/codemode"
 import { Effect, Schema } from "effect"
 
 const lookupOrder = Tool.make({
@@ -88,8 +88,25 @@ runtime.catalog() // structured tool descriptions
 runtime.execute(source) // Effect<CodeMode.Result, never, ToolServices>
 ```
 
-The Effect environment is inferred from the supplied tools. `onToolCallStart` observes admitted calls with decoded
-input; `onToolCallEnd` observes settled outcomes and duration. Both hooks return Effects and must not fail.
+The Effect environment is inferred from the supplied tools. `hooks` surround every call the program makes into the
+host: `tool.before`/`tool.after` receive `{ name, input }` with decoded input, `extension.before`/`extension.after`
+receive `{ extension, name, args }`. An `after` hook also receives how the call ended (`success` with its value,
+`failure` with its error, or `interrupted`). A failing `before` hook denies the call, and the program catches the
+failure as a thrown error.
+
+### `Extension.make`
+
+Extensions are host functions a program calls directly as globals, such as `fetch`. Unlike tools they are not in the
+catalog, not counted against `maxToolCalls`, and not described to the model; the host decides what they mean.
+
+```ts
+const web = Extension.make({ name: "web", globals: { fetch: (url: string) => globalThis.fetch(url) } })
+const runtime = CodeMode.make({ tools, extensions: [web] })
+```
+
+Every value crossing in either direction is converted, never shared: arguments come in as copies, results go out as
+copies, and a function inside a result is callable the same way. A global that shadows a built-in or another
+extension throws at `CodeMode.make`.
 
 ### OpenAPI tools
 

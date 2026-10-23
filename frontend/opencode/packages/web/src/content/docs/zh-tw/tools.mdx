@@ -18,7 +18,7 @@ description: 管理 LLM 可以使用的工具。
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "edit": "deny",
-    "bash": "ask",
+    "shell": "ask",
     "webfetch": "allow"
   }
 }
@@ -45,7 +45,7 @@ description: 管理 LLM 可以使用的工具。
 
 ---
 
-### bash
+### shell
 
 在專案環境中執行 shell 指令。
 
@@ -53,7 +53,7 @@ description: 管理 LLM 可以使用的工具。
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "bash": "allow"
+    "shell": "allow"
   }
 }
 ```

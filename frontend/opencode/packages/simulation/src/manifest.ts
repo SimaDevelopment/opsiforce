@@ -1,7 +1,7 @@
 import { homedir } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { Config, Effect, FileSystem, Schema } from "effect"
-import { PositiveInt } from "@opencode-ai/core/schema"
+import { PositiveInt } from "@opencode/core/schema"
 
 const InstanceName = Schema.String.check(
   Schema.makeFilter((value) =>
@@ -70,11 +70,11 @@ export const resolve = Effect.fn("DriveManifest.resolve")(function* () {
   const name = yield* Config.schema(InstanceName, "OPENCODE_DRIVE").pipe(Effect.mapError(configError))
   if (name === "1") return defaults
 
-  const state = yield* Config.string("XDG_STATE_HOME").pipe(
+  const state = yield* Config.String("XDG_STATE_HOME").pipe(
     Config.withDefault(join(homedir(), ".local", "state")),
     Effect.mapError(configError),
   )
-  const directory = yield* Config.string("DRIVE_REGISTRY_DIR").pipe(
+  const directory = yield* Config.String("DRIVE_REGISTRY_DIR").pipe(
     Config.withDefault(join(state, "opencode-drive", "instances")),
     Effect.mapError(configError),
   )

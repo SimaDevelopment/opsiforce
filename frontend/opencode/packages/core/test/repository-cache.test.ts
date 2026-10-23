@@ -3,20 +3,20 @@ import fs from "fs/promises"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Clock, Duration, Effect, Layer } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Global } from "@opencode-ai/util/global"
-import { Repository } from "@opencode-ai/core/repository"
-import { RepositoryCache } from "@opencode-ai/core/repository-cache"
-import { Database } from "@opencode-ai/core/database/database"
-import { KV } from "@opencode-ai/core/kv"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Global } from "@opencode/util/global"
+import { Repository } from "@opencode/core/repository"
+import { RepositoryCache } from "@opencode/core/repository-cache"
+import { Database } from "@opencode/core/database/database"
+import { KV } from "@opencode/core/kv"
+import { LayerNode } from "@opencode/util/effect/layer-node"
 import { branch, commit, git, read, withRemote } from "./fixture/git"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(Layer.empty)
 
 // Cold Git setup and cloning can exceed Bun's five-second default on Windows.
-setDefaultTimeout(15_000)
+setDefaultTimeout(30_000)
 
 describe("RepositoryCache", () => {
   it.live("persists the daily throttle across cache recreation and serializes competing refreshes", () =>

@@ -2,7 +2,8 @@ import { For, Match, Show, Switch as SolidSwitch, type JSX } from 'solid-js';
 import type { ModelProviderKind, ModelProviderStatus, TenantModelProvider } from '~/api/model-providers';
 import { Info } from '~/components/icons';
 import { Badge } from '~/components/ui/badge';
-import { Switch, SwitchControl, SwitchThumb } from '~/components/ui/switch';
+import { Switch as KobalteSwitch } from '@kobalte/core/switch';
+import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from '~/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/cn';
 import { KIND_LABEL, STATUS_LABEL, TIPS } from './copy';
@@ -102,28 +103,29 @@ export function StatusBadge(props: { status: ModelProviderStatus }) {
   );
 }
 
+function ShareLabel(props: { label: string; tip: string; muted?: boolean }) {
+  return (
+    <span class={cn('inline-flex items-center gap-1 text-xs', props.muted ? 'text-muted-foreground' : 'tabular-nums')}>
+      {props.label}
+      <InfoTip content={props.tip} label="What this share means" />
+    </span>
+  );
+}
+
 export function ShareText(props: { row: SplitRow; rows: SplitRow[] }) {
   return (
     <SolidSwitch>
       <Match when={!props.row.enabled}>
-        <Tip content={TIPS.off} class="text-xs text-muted-foreground">
-          Off
-        </Tip>
+        <ShareLabel label="Off" tip={TIPS.off} muted />
       </Match>
       <Match when={!carriesTraffic(props.row)}>
-        <Tip content={TIPS.notInTraffic} class="text-xs text-muted-foreground">
-          None
-        </Tip>
+        <ShareLabel label="None" tip={TIPS.notInTraffic} muted />
       </Match>
       <Match when={props.row.weight === 0 && shareOf(props.row, props.rows) === 1}>
-        <Tip content={TIPS.onlyInTraffic} class="text-xs tabular-nums">
-          {formatShare(1)}
-        </Tip>
+        <ShareLabel label={formatShare(1)} tip={TIPS.onlyInTraffic} />
       </Match>
       <Match when={props.row.weight === 0}>
-        <Tip content={TIPS.backup} class="text-xs text-muted-foreground underline decoration-dotted underline-offset-2">
-          Backup
-        </Tip>
+        <ShareLabel label="Backup" tip={TIPS.backup} muted />
       </Match>
       <Match when={true}>
         <Tip content={TIPS.share} class="text-xs tabular-nums">
@@ -170,6 +172,35 @@ export function OnOffSwitch(props: {
   );
 }
 
+export function LabelledSwitch(props: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <Switch
+      checked={props.checked}
+      onChange={props.onChange}
+      disabled={props.disabled}
+      class="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1"
+    >
+      <SwitchControl>
+        <SwitchThumb />
+      </SwitchControl>
+      <SwitchLabel class="mr-0 cursor-pointer text-xs font-normal">{props.label}</SwitchLabel>
+      <Show when={props.hint}>
+        {(hint) => (
+          <KobalteSwitch.Description class="col-start-2 text-xs text-muted-foreground">
+            {hint()}
+          </KobalteSwitch.Description>
+        )}
+      </Show>
+    </Switch>
+  );
+}
+
 export function WeightInput(props: {
   value: number;
   onChange: (value: number) => void;
@@ -186,10 +217,11 @@ export function WeightInput(props: {
       max={MAX_WEIGHT}
       step={1}
       aria-label={props.label}
+      aria-invalid={!Number.isInteger(props.value) || props.value < MIN_WEIGHT || props.value > MAX_WEIGHT}
       disabled={props.disabled}
       value={props.value}
       onInput={(event) => props.onChange(event.currentTarget.valueAsNumber)}
-      class="h-7 w-16 rounded-md border border-input bg-background px-2 py-1 text-xs tabular-nums shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      class="h-7 w-16 rounded-md border border-input bg-background aria-[invalid=true]:border-destructive px-2 py-1 text-xs tabular-nums shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
     />
   );
 }

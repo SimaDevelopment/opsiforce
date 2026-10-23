@@ -1,10 +1,8 @@
 import { Show, createMemo, createSignal, onCleanup, onMount, untrack, type Component } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { BaseRouterProps } from '@solidjs/router';
-import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection } from '@opencode-ai/app';
-import { useGlobal } from '@opencode-ai/app/runtime/server/runtime';
-import { BASE_FORMAT_IDS, useReachableBaseFormats } from '~/api/model-providers';
-import { useSyncProjectTitle } from '~/api/projects';
+import { AppBaseProviders, AppInterface, PlatformProvider, ServerConnection } from '@opencode/app';
+import { useReachableModels } from '~/api/model-providers';
 import { FileUpload } from '~/components/file-upload';
 import { ExternalServicesButton } from './external-services/external-services-button';
 import { SkillsButton } from './skills/skills-button';
@@ -14,54 +12,24 @@ import { WorkspaceFileLinks } from './workspace-file-links';
 import { OpencodeOverrides } from './opencode-overrides';
 import { createProxyPlatform } from './platform';
 
-function OpenCodeEventBridge(props: {
-  server: ServerConnection.Any;
-  onIdle: () => void;
-  onTitle: (title: string) => void;
-}) {
-  const global = useGlobal();
-  const ctx = untrack(() => global.ensureServerCtx(props.server));
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const unsubIdle = ctx.sdk.event.on('session.status', (event) => {
-    if (event.data.status.type !== 'idle') return;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => props.onIdle(), 1500);
-  });
-  const unsubTitle = ctx.sdk.event.on('session.renamed', (event) => {
-    if (ctx.data.session.get(event.data.sessionID)?.parentID) return;
-    props.onTitle(event.data.title);
-  });
-  onCleanup(() => {
-    unsubIdle();
-    unsubTitle();
-    if (timer) clearTimeout(timer);
-  });
-  return null;
-}
-
 export interface ProjectChatTabProps {
   projectId: string;
   environmentId: string;
   environmentName: string;
   showSkillsAndServices: boolean;
   router: Component<BaseRouterProps>;
-  currentTitle: string | null;
-  onAgentIdle: () => void;
   onPreviewFile: (path: string) => void;
 }
 
 export function ProjectChatTab(props: ProjectChatTabProps) {
-  const syncTitle = useSyncProjectTitle();
   const url = untrack(() => `${window.location.origin}/api/proxy/${props.environmentId}`);
   const server: ServerConnection.Http = { type: 'http', http: { url } };
-  const serverKey = ServerConnection.Key.make(url);
-  const platform = createProxyPlatform(url);
+  const platform = createProxyPlatform();
   const router = untrack(() => props.router);
-  const onTitle = (title: string) => syncTitle(props.projectId, title, props.currentTitle);
-  const reachableFormats = useReachableBaseFormats();
-  const unreachableProviders = createMemo<ReadonlySet<string>>(() => {
-    const reachable = reachableFormats.data;
-    return new Set(reachable ? BASE_FORMAT_IDS.filter((format) => !reachable.includes(format)) : []);
+  const reachableModelsQuery = useReachableModels();
+  const reachableModels = createMemo<ReadonlySet<string> | undefined>(() => {
+    const reachable = reachableModelsQuery.data;
+    return reachable ? new Set(reachable) : undefined;
   });
 
   let embedHost!: HTMLDivElement;
@@ -111,9 +79,8 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
       () => (
         <PlatformProvider value={platform}>
           <AppBaseProviders>
-            <AppInterface defaultServer={serverKey} servers={[server]} router={router}>
-              <OpencodeOverrides server={server} hiddenProviders={unreachableProviders} />
-              <OpenCodeEventBridge server={server} onIdle={() => props.onAgentIdle()} onTitle={onTitle} />
+            <AppInterface servers={[server]} router={router}>
+              <OpencodeOverrides server={server} reachableModels={reachableModels} />
             </AppInterface>
           </AppBaseProviders>
         </PlatformProvider>

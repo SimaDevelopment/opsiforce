@@ -603,6 +603,7 @@ export class RunFooter implements FooterApi {
     }
 
     this.finishStartup()
+    if (this.miniSettings().tools === "hide" && toolTranscript(commit)) return
     const last = this.queue.at(-1)
     const merged = last ? coalesceProgressCommit(last, commit) : undefined
     if (merged) this.queue[this.queue.length - 1] = merged
@@ -1143,7 +1144,11 @@ export class RunFooter implements FooterApi {
     this.prompts.clear()
     this.closes.clear()
     this.scrollback.destroy()
-    for (const theme of [...this.themes]) this.destroyTheme(theme)
+    void this.renderer.closed
+      .catch(() => {})
+      .then(() => {
+        for (const theme of [...this.themes]) this.destroyTheme(theme)
+      })
   }
 
   // Drains the commit queue to scrollback. The surface manager owns grouping,
@@ -1166,6 +1171,10 @@ export class RunFooter implements FooterApi {
         this.flushError = error
       })
   }
+}
+
+function toolTranscript(commit: StreamCommit) {
+  return commit.kind === "tool" || commit.partID?.startsWith("skill:")
 }
 
 /** @internal Exported for queue identity regression tests. */

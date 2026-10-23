@@ -10,12 +10,12 @@
 //   /permission [kind] → triggers a permission request variant
 //   /form [kind]       → triggers a canonical Form request variant
 //   /fmt <kind>   → emits a specific tool/text type (text, reasoning, shell,
-//                   write, edit, patch, subagent, question, error, mix)
+//                   write, edit, patch, subagent, todo, question, error, mix)
 //
 // Demo mode handles permission and Form replies locally, completing or failing
 // the synthetic tool parts through the same callbacks used by the live footer.
 import path from "path"
-import type { JsonValue, SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { JsonValue, SessionMessageAssistantTool } from "@opencode/client/promise"
 import { parseSlashHead } from "../prompt/parse"
 import { writeSessionOutput } from "./stream"
 import { toolCommit, toolFinalPhase } from "./stream-v2.subagent"
@@ -42,6 +42,7 @@ const KINDS = [
   "edit",
   "patch",
   "subagent",
+  "todo",
   "question",
   "error",
   "mix",
@@ -565,6 +566,17 @@ function emitTask(state: State): void {
   })
 }
 
+function emitTodo(state: State): void {
+  const todos = [
+    { content: "Trigger permission UI", status: "completed" },
+    { content: "Trigger question UI", status: "in_progress" },
+    { content: "Tune tool formatting", status: "pending" },
+    { content: "Rewrite the renderer", status: "cancelled" },
+  ]
+  const ref = make(state, "todowrite", { todos })
+  doneTool(state, ref, { output: "1 completed, 1 in progress, 1 pending, 1 cancelled", metadata: { todos } })
+}
+
 function emitQuestionTool(state: State): void {
   const ref = make(state, "question", {
     questions: [
@@ -872,6 +884,11 @@ async function emitFmt(state: State, kind: string, body: string, signal?: AbortS
     return true
   }
 
+  if (kind === "todo") {
+    emitTodo(state)
+    return true
+  }
+
   if (kind === "question") {
     emitQuestionTool(state)
     return true
@@ -892,6 +909,7 @@ async function emitFmt(state: State, kind: string, body: string, signal?: AbortS
     emitEdit(state)
     emitPatch(state)
     emitTask(state)
+    emitTodo(state)
     emitQuestionTool(state)
     emitError(state, "demo mixed scenario error")
     return true
@@ -1006,14 +1024,14 @@ export function createRunDemo(input: Input) {
 
   const permission = (input: PermissionReply): boolean => {
     const item = state.perms.get(input.requestID)
-    if (!item || !input.reply) {
+    if (!item || !input.decision) {
       return false
     }
 
     state.perms.delete(input.requestID)
     clearBlocker(state)
 
-    if (input.reply === "reject") {
+    if (input.decision === "reject") {
       failTool(state, item.ref, input.message || "permission rejected")
       return true
     }

@@ -7,8 +7,8 @@
 // the current browse position. When the user arrows up at cursor offset 0,
 // the current draft is saved and history begins. Arrowing past the end
 // restores the draft.
-export { displayCharAt, displaySlice, mentionTriggerIndex, slashTriggerIndex } from "../prompt/display"
-import { stringWidth } from "../util/string-width"
+export { mentionTriggerIndex, slashTriggerIndex } from "../prompt/display"
+import { measureEditText, type WidthMethod } from "@opentui/core"
 import type { RunPrompt } from "./types"
 
 const HISTORY_LIMIT = 200
@@ -35,6 +35,30 @@ export function promptCopy(prompt: RunPrompt): RunPrompt {
   }
 }
 
+// Part ranges are textarea offsets, so shift by the measured offset rather than string length.
+export function promptAppend(prompt: RunPrompt, following: RunPrompt, widthMethod: WidthMethod): RunPrompt {
+  const text = prompt.text ? `${prompt.text}\n\n` : ""
+  const offset = measureEditText(text, { widthMethod })
+  const shift = <T extends { start: number; end: number }>(range: T) => ({
+    ...range,
+    start: range.start + offset,
+    end: range.end + offset,
+  })
+  const command = prompt.text ? prompt.command : following.command
+  return {
+    text: text + following.text,
+    parts: [
+      ...structuredClone(prompt.parts),
+      ...structuredClone(following.parts).map((part) => {
+        if (!part.source) return part
+        if (part.type === "file") return { ...part, source: { ...part.source, text: shift(part.source.text) } }
+        return { ...part, source: shift(part.source) }
+      }),
+    ],
+    ...(command ? { command } : {}),
+  }
+}
+
 export function promptSame(a: RunPrompt, b: RunPrompt): boolean {
   return (
     a.mode === b.mode &&
@@ -44,9 +68,11 @@ export function promptSame(a: RunPrompt, b: RunPrompt): boolean {
   )
 }
 
+export const EXIT_COMMANDS = ["exit", "quit", "q"]
+
 export function isExitCommand(input: string): boolean {
   const text = input.trim().toLowerCase()
-  return text === "/exit" || text === "/quit" || text === ":q"
+  return text === ":q" || EXIT_COMMANDS.some((name) => text === `/${name}`)
 }
 
 export function isNewCommand(input: string): boolean {
@@ -100,7 +126,13 @@ export function pushPromptHistory(state: PromptHistoryState, prompt: RunPrompt):
   }
 }
 
-export function movePromptHistory(state: PromptHistoryState, dir: -1 | 1, text: string, cursor: number): PromptMove {
+export function movePromptHistory(
+  state: PromptHistoryState,
+  dir: -1 | 1,
+  text: string,
+  cursor: number,
+  widthMethod: WidthMethod,
+): PromptMove {
   if (state.items.length === 0) {
     return { state, apply: false }
   }
@@ -109,7 +141,7 @@ export function movePromptHistory(state: PromptHistoryState, dir: -1 | 1, text: 
     return { state, apply: false }
   }
 
-  if (dir === 1 && cursor !== stringWidth(text)) {
+  if (dir === 1 && cursor !== measureEditText(text, { widthMethod })) {
     return { state, apply: false }
   }
 
@@ -143,7 +175,7 @@ export function movePromptHistory(state: PromptHistoryState, dir: -1 | 1, text: 
         index: null,
       },
       text: state.draft,
-      cursor: stringWidth(state.draft),
+      cursor: measureEditText(state.draft, { widthMethod }),
       apply: true,
     }
   }
@@ -154,7 +186,7 @@ export function movePromptHistory(state: PromptHistoryState, dir: -1 | 1, text: 
       index: idx,
     },
     text: state.items[idx].text,
-    cursor: dir === -1 ? 0 : stringWidth(state.items[idx].text),
+    cursor: dir === -1 ? 0 : measureEditText(state.items[idx].text, { widthMethod }),
     apply: true,
   }
 }

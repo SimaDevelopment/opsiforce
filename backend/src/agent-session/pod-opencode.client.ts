@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { OpencodeErrorBody, PodResponded, PodTimeout, PodUnreachable } from './agent-session.errors';
 import type { JsonObject } from '../common/json';
-import type { RuntimeHealth, SessionInfo } from './agent-session.types';
+import type { RuntimeInfo, SessionInfo } from './agent-session.types';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_SESSION_LIST_PAGES = 100;
@@ -100,8 +100,8 @@ export class PodOpencodeClient {
     }
   }
 
-  async health(upstream: string, options: CallOptions = {}): Promise<RuntimeHealth> {
-    return this.call<RuntimeHealth>(upstream, '/api/health', options);
+  async info(upstream: string, options: CallOptions = {}): Promise<RuntimeInfo> {
+    return this.call<RuntimeInfo>(upstream, '/api/info', options);
   }
 
   /**
@@ -111,6 +111,11 @@ export class PodOpencodeClient {
   async skillIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
     const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/skill', options);
     return (listed.data ?? []).flatMap((skill) => (skill.id === undefined ? [] : [skill.id]));
+  }
+
+  async agentIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
+    const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/agent', options);
+    return (listed.data ?? []).flatMap((agent) => (agent.id === undefined ? [] : [agent.id]));
   }
 
   async activeSessions(upstream: string, timeoutMs: number): Promise<string[]> {

@@ -13,7 +13,7 @@ export interface AppPreviewPaneProps {
   environmentSlug: string | null;
   appName?: string;
   switcher?: JSX.Element;
-  onCollapse: () => void;
+  onCollapse?: () => void;
   onReloadRef?: (reload: () => void) => void;
 }
 
@@ -61,9 +61,13 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
     <>
       <div class="h-8 flex items-center gap-2 px-1.5 bg-sidebar border-b border-border shrink-0">
         <div class="flex flex-1 min-w-0 items-center gap-1">
-          <ToolbarButton onClick={props.onCollapse} tooltip="Close panel">
-            <PanelRightClose class="w-3.5 h-3.5" />
-          </ToolbarButton>
+          <Show when={props.onCollapse}>
+            {(collapse) => (
+              <ToolbarButton onClick={collapse()} tooltip="Close panel">
+                <PanelRightClose class="w-3.5 h-3.5" />
+              </ToolbarButton>
+            )}
+          </Show>
           <span class="text-xs font-medium text-muted-foreground truncate">
             {activeEnv()?.appName || props.appName || 'App'}
           </span>

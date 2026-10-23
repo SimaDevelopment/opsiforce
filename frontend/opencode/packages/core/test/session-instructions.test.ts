@@ -2,35 +2,35 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { DateTime, Effect, Layer } from "effect"
-import { Agent } from "@opencode-ai/core/agent"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Config } from "@opencode-ai/core/config"
-import { Database } from "@opencode-ai/core/database/database"
-import { Bus } from "@opencode-ai/core/bus"
-import { FSUtil } from "@opencode-ai/util/fs-util"
-import { Global } from "@opencode-ai/util/global"
-import { Image } from "@opencode-ai/core/image"
-import { Location } from "@opencode-ai/core/location"
-import { LocationMutation } from "@opencode-ai/core/location-mutation"
-import { Model } from "@opencode-ai/core/model"
-import { Permission } from "@opencode-ai/core/permission"
-import { Project } from "@opencode-ai/core/project"
-import { Provider } from "@opencode-ai/core/provider"
-import { ReadTool } from "@opencode-ai/core/tool/plugin/read"
-import { ReadToolFileSystem } from "@opencode-ai/core/tool/read-filesystem"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionInstructions } from "@opencode-ai/core/session/instructions"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Session } from "@opencode-ai/core/session"
-import { toLLMMessages } from "@opencode-ai/core/session/runner/to-llm-message"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
-import { Tool } from "@opencode-ai/core/tool"
+import { Agent } from "@opencode/core/agent"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Config } from "@opencode/core/config"
+import { Database } from "@opencode/core/database/database"
+import { Bus } from "@opencode/core/bus"
+import { FSUtil } from "@opencode/util/fs-util"
+import { Global } from "@opencode/util/global"
+import { Image } from "@opencode/core/image"
+import { Location } from "@opencode/core/location"
+import { FileAccess } from "@opencode/core/file-access"
+import { Model } from "@opencode/core/model"
+import { Permission } from "@opencode/core/permission"
+import { Project } from "@opencode/core/project"
+import { Provider } from "@opencode/core/provider"
+import { ReadTool } from "@opencode/core/tool/plugin/read"
+import { ReadToolFileSystem } from "@opencode/core/tool/read-filesystem"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionInstructions } from "@opencode/core/session/instructions"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionStore } from "@opencode/core/session/store"
+import { Session } from "@opencode/core/session"
+import { toLLMMessages } from "@opencode/core/session/runner/to-llm-message"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { Tool } from "@opencode/core/tool"
 import { tempLocationLayer } from "./fixture/location"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { testEffect } from "./lib/effect"
 import { permissionLayer } from "./lib/permission"
 import { globalProjectNode } from "./lib/project"
@@ -42,7 +42,7 @@ const readToolNode = makeLocationNode({
   deps: [
     Tool.node,
     ReadToolFileSystem.node,
-    LocationMutation.node,
+    FileAccess.node,
     Image.node,
     Permission.node,
     SessionInstructions.node,
@@ -64,7 +64,7 @@ const testLayer = AppNodeBuilder.build(
     Session.node,
     Location.node,
     FSUtil.node,
-    LocationMutation.node,
+    FileAccess.node,
     ReadToolFileSystem.node,
     readToolNode,
     Tool.node,
@@ -89,10 +89,15 @@ const identity = {
   agent: Agent.ID.make("build"),
   messageID: SessionMessage.ID.make("msg_nearby"),
 }
-const readCall = (sessionID: Session.ID, id: string, readPath: string): Parameters<Tool.Snapshot["execute"]>[0] => ({
+const readCall = (
+  sessionID: Session.ID,
+  id: string,
+  readPath: string,
+  page: ReadToolFileSystem.PageInput = {},
+): Parameters<Tool.Snapshot["execute"]>[0] => ({
   sessionID,
   ...identity,
-  call: { type: "tool-call", id, name: "read", input: { path: readPath } },
+  call: { type: "tool-call", id, name: "read", input: { path: readPath, ...page } },
 })
 
 const writeAgents = (file: string, content: string) => Effect.promise(() => fs.writeFile(file, content))
@@ -131,7 +136,7 @@ describe("SessionInstructions", () => {
       yield* writeAgents(rootPath, "root-instructions")
       yield* writeAgents(subPath, "sub-instructions")
       yield* writeAgents(deepPath, "deep-instructions")
-      yield* writeAgents(otherPath, "other-instructions")
+      yield* writeAgents(otherPath, "other-instructions\nmore rules")
       yield* Effect.promise(() => fs.writeFile(path.resolve(dir, "sub", "deep", "file.txt"), "file content"))
       yield* Effect.promise(() => fs.writeFile(path.resolve(dir, "sub", "other", "file2.txt"), "file content 2"))
 
@@ -155,13 +160,23 @@ describe("SessionInstructions", () => {
       expect(firstInjected[0]!.metadata).toEqual({ instruction: { paths: [deepPath, subPath] } })
       expect(firstInjected[0]!.text).not.toContain("root-instructions")
 
+      // Neither a full nor a partial read adds an automatic copy of the file itself.
+      const read = yield* executeTool(registry, readCall(sessionID, "call-direct", "sub/other/AGENTS.md"))
+      expect(read.content?.[0]).toMatchObject({ type: "text", text: expect.stringContaining("more rules") })
+      const partial = yield* executeTool(
+        registry,
+        readCall(sessionID, "call-partial", "sub/other/AGENTS.md", { limit: 1 }),
+      )
+      expect(partial.metadata).toEqual({ truncated: true })
+      expect(yield* synthetics(sessionID)).toHaveLength(1)
+
       // A sibling read under sub/other discovers only the new AGENTS.md; sub is already
       // injected for this session so it is not re-emitted, and the root is still excluded.
       yield* executeTool(registry, readCall(sessionID, "call-other", "sub/other/file2.txt"))
 
       const secondInjected = yield* synthetics(sessionID)
       expect(secondInjected).toHaveLength(2)
-      expect(secondInjected[1]!.text).toBe(`Instructions from: ${otherPath}\nother-instructions`)
+      expect(secondInjected[1]!.text).toBe(`Instructions from: ${otherPath}\nother-instructions\nmore rules`)
       expect(secondInjected[1]!.description).toBe(`Loaded ${path.relative(dir, otherPath)}`)
       expect(secondInjected[1]!.metadata).toEqual({ instruction: { paths: [otherPath] } })
       expect(secondInjected.some((message) => message.text.includes("root-instructions"))).toBe(false)
@@ -251,8 +266,8 @@ describe("SessionInstructions", () => {
 
       // A completed compaction truncates model-visible history at its boundary, dropping
       // the synthetic that carried sub's instructions.
-      yield* bus.publish(SessionEvent.Compaction.Started, { sessionID, reason: "manual", recent: "" })
-      yield* bus.publish(SessionEvent.Compaction.Ended, { sessionID, reason: "manual", text: "summary", recent: "" })
+      yield* bus.publish(SessionEvent.Compaction.Started, { sessionID, reason: "manual" })
+      yield* bus.publish(SessionEvent.Compaction.Ended, { sessionID, reason: "manual", text: "summary" })
       expect(yield* synthetics(sessionID)).toHaveLength(0)
 
       // The model no longer has the rules, so the next read under the subtree must

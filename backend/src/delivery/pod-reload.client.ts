@@ -25,6 +25,12 @@ export class SkillsNotLive extends Error {
   }
 }
 
+export class AgentNotLive extends Error {
+  constructor(readonly slug: string) {
+    super(`The pod did not serve the delivered agent ${slug}`);
+  }
+}
+
 @Injectable()
 export class PodReloadClient {
   private readonly logger = new Logger(PodReloadClient.name);
@@ -79,6 +85,17 @@ export class PodReloadClient {
       if (missing.length === 0 && unexpected.length === 0) return;
     }
     throw new SkillsNotLive(missing, unexpected);
+  }
+
+  async confirmAgent(podIp: string, slug: string): Promise<void> {
+    for (let attempt = 0; attempt < Math.max(1, this.confirmAttempts); attempt += 1) {
+      if (attempt > 0) await sleep(this.confirmPollMs);
+      const served = await this.opencode.agentIds(`http://${podIp}:${this.agentPort}`, {
+        timeoutMs: CONFIRM_TIMEOUT_MS,
+      });
+      if (served.includes(slug)) return;
+    }
+    throw new AgentNotLive(slug);
   }
 
   private async readControlToken(projectEnvironmentId: string): Promise<string | null> {

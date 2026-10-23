@@ -1,6 +1,6 @@
 export * as ConfigCompactionPlugin from "./compaction.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Config } from "../../config.js"
 import { SessionCompaction } from "../../session/compaction.js"
@@ -18,7 +18,7 @@ export const Plugin = define({
         editor.configure({
           ...(entry.info.compaction.auto === undefined ? {} : { auto: entry.info.compaction.auto }),
           ...(entry.info.compaction.buffer === undefined ? {} : { buffer: entry.info.compaction.buffer }),
-          ...(entry.info.compaction.keep?.tokens === undefined ? {} : { tokens: entry.info.compaction.keep.tokens }),
+          ...(entry.info.compaction.keep?.tokens === undefined ? {} : { keep: entry.info.compaction.keep.tokens }),
         })
       }
     })

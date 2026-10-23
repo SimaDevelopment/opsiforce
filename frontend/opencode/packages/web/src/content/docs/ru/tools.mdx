@@ -18,7 +18,7 @@ description: Управляйте инструментами, которые м�
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "edit": "deny",
-    "bash": "ask",
+    "shell": "ask",
     "webfetch": "allow"
   }
 }
@@ -45,7 +45,7 @@ description: Управляйте инструментами, которые м�
 
 ---
 
-### bash
+### shell
 
 Выполняйте shell-команды в среде вашего проекта.
 
@@ -53,7 +53,7 @@ description: Управляйте инструментами, которые м�
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "bash": "allow"
+    "shell": "allow"
   }
 }
 ```

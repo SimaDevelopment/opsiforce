@@ -3,9 +3,11 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { MAX_BODY_BYTES, PORT, resolveBackend } from './config.ts';
 import type { BackendConfig } from './config.ts';
 import { CredentialUnavailableError, UnknownCallerError, createCredentialSource } from './credentials.ts';
-import type { CallerCredentials, CredentialSource, LinkedAccountCredential } from './credentials.ts';
-import { sendError, sendJson } from './http.ts';
+import type { CallerAccess, CredentialSource, LinkedAccountCredential } from './credentials.ts';
+import { isRecord, sendError, sendJson } from './http.ts';
 import type { JsonRecord } from './http.ts';
+import { UnsupportedImagesRequestError, editRequestOf, generationRequestOf } from './images.ts';
+import type { ImagesRequest } from './images.ts';
 import { proxyVendorAdapterOf } from './vendors.ts';
 import type { ProxyVendorAdapter } from './vendors.ts';
 
@@ -14,14 +16,9 @@ class PayloadTooLargeError extends Error {}
 const CALLER_SECRET_PREFIX = 'lap_';
 const BEARER_PREFIX = 'Bearer ';
 
-interface ResolvedCaller {
-  credentials: CallerCredentials;
-  credential: LinkedAccountCredential;
+interface ResolvedCaller extends CallerAccess {
   adapter: ProxyVendorAdapter;
 }
-
-const isRecord = (value: unknown): value is JsonRecord =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 async function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
   const declared = Number(req.headers['content-length']);
@@ -80,7 +77,7 @@ async function resolveCaller(
   return { credentials, credential, adapter };
 }
 
-function handleModels(res: ServerResponse, caller: ResolvedCaller): void {
+function handleModels(_req: IncomingMessage, res: ServerResponse, caller: ResolvedCaller): void {
   const created = Math.floor(Date.now() / 1000);
   sendJson(res, 200, {
     object: 'list',
@@ -88,36 +85,96 @@ function handleModels(res: ServerResponse, caller: ResolvedCaller): void {
   });
 }
 
-async function handleResponses(
-  req: IncomingMessage,
-  res: ServerResponse,
-  maxBodyBytes: number,
-  caller: ResolvedCaller
-): Promise<void> {
-  let raw: Buffer;
+async function bodyOf(req: IncomingMessage, res: ServerResponse, maxBodyBytes: number): Promise<Buffer | null> {
   try {
-    raw = await readBody(req, maxBodyBytes);
+    return await readBody(req, maxBodyBytes);
   } catch (error: unknown) {
     if (error instanceof PayloadTooLargeError) {
       sendError(res, 413, { message: error.message, type: 'payload_too_large' });
-      return;
+      return null;
     }
     sendError(res, 400, { message: 'Failed to read the request body.', type: 'invalid_request' });
-    return;
+    return null;
   }
+}
+
+function jsonObjectOf(raw: Buffer, res: ServerResponse): JsonRecord | null {
   let parsed: unknown;
   try {
     parsed = raw.length > 0 ? JSON.parse(raw.toString('utf-8')) : {};
   } catch {
     sendError(res, 400, { message: 'The request body must be valid JSON.', type: 'invalid_request' });
-    return;
+    return null;
   }
   if (!isRecord(parsed)) {
     sendError(res, 400, { message: 'The request body must be a JSON object.', type: 'invalid_request' });
-    return;
+    return null;
   }
-  await caller.adapter.forward(parsed, res, caller.credentials, caller.credential);
+  return parsed;
 }
+
+type ImagesRequestParser = (req: IncomingMessage, raw: Buffer, res: ServerResponse) => Promise<ImagesRequest | null>;
+
+const generationOf: ImagesRequestParser = async (_req, raw, res) => {
+  const body = jsonObjectOf(raw, res);
+  return body && generationRequestOf(body);
+};
+
+const editOf: ImagesRequestParser = async (req, raw) => {
+  const form = await new Request('http://linked-account-proxy/', {
+    method: 'POST',
+    headers: { 'content-type': req.headers['content-type'] ?? '' },
+    body: raw,
+  }).formData();
+  return editRequestOf(form);
+};
+
+type RouteHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  caller: ResolvedCaller,
+  maxBodyBytes: number
+) => void | Promise<void>;
+
+const jsonPost =
+  (forwardOf: (adapter: ProxyVendorAdapter) => ProxyVendorAdapter['forward']): RouteHandler =>
+  async (req, res, caller, maxBodyBytes) => {
+    const raw = await bodyOf(req, res, maxBodyBytes);
+    const body = raw && jsonObjectOf(raw, res);
+    if (body) await forwardOf(caller.adapter)(body, res, caller);
+  };
+
+const imagesPost =
+  (parse: ImagesRequestParser, unreadableBody: string): RouteHandler =>
+  async (req, res, caller, maxBodyBytes) => {
+    const raw = await bodyOf(req, res, maxBodyBytes);
+    if (!raw) return;
+    let request: ImagesRequest | null;
+    try {
+      request = await parse(req, raw, res);
+    } catch (error: unknown) {
+      const message = error instanceof UnsupportedImagesRequestError ? error.message : unreadableBody;
+      sendError(res, 400, { message, type: 'invalid_request_error' });
+      return;
+    }
+    if (request) await caller.adapter.forwardImages(request, res, caller);
+  };
+
+const CALLER_ROUTES: { method: string; pathSuffix: string; handle: RouteHandler }[] = [
+  { method: 'GET', pathSuffix: '/models', handle: handleModels },
+  { method: 'POST', pathSuffix: '/responses', handle: jsonPost((adapter) => adapter.forward) },
+  { method: 'POST', pathSuffix: '/chat/completions', handle: jsonPost((adapter) => adapter.forwardChatCompletions) },
+  {
+    method: 'POST',
+    pathSuffix: '/images/generations',
+    handle: imagesPost(generationOf, 'The request body must be valid JSON.'),
+  },
+  {
+    method: 'POST',
+    pathSuffix: '/images/edits',
+    handle: imagesPost(editOf, 'The request body must be multipart form data.'),
+  },
+];
 
 function requestPath(req: IncomingMessage): string {
   const url = req.url ?? '/';
@@ -125,25 +182,15 @@ function requestPath(req: IncomingMessage): string {
   return queryIndex === -1 ? url : url.slice(0, queryIndex);
 }
 
-type CallerRoute = 'models' | 'responses';
-
-function callerRouteOf(method: string, path: string): CallerRoute | null {
-  if (method === 'GET' && path.endsWith('/models')) return 'models';
-  if (method === 'POST' && path.endsWith('/responses')) return 'responses';
-  return null;
-}
-
 async function handleCallerRequest(
   req: IncomingMessage,
   res: ServerResponse,
   source: CredentialSource,
   maxBodyBytes: number,
-  route: CallerRoute
+  handle: RouteHandler
 ): Promise<void> {
   const caller = await resolveCaller(req, res, source);
-  if (!caller) return;
-  if (route === 'models') handleModels(res, caller);
-  else await handleResponses(req, res, maxBodyBytes, caller);
+  if (caller) await handle(req, res, caller, maxBodyBytes);
 }
 
 function handleRequest(
@@ -159,12 +206,12 @@ function handleRequest(
     sendJson(res, 200, { status: 'ok' });
     return;
   }
-  const route = callerRouteOf(method, path);
+  const route = CALLER_ROUTES.find((candidate) => candidate.method === method && path.endsWith(candidate.pathSuffix));
   if (!route) {
     sendError(res, 404, { message: 'Not found.', type: 'not_found' });
     return;
   }
-  handleCallerRequest(req, res, source, maxBodyBytes, route).catch(() => {
+  handleCallerRequest(req, res, source, maxBodyBytes, route.handle).catch(() => {
     if (res.headersSent) res.destroy();
     else sendError(res, 500, { message: 'Internal proxy error.', type: 'linked_account_proxy_error' });
   });

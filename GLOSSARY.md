@@ -31,15 +31,23 @@ The most of one kind of thing an Organization may hold at once. An Organization 
 _Avoid_: Quota, Cap, Plan limit (non-canonical); Default (a Limit is enforced on every create, not copied into new entities)
 
 **Model provider**:
-One upstream an Organization's Agents may send model traffic to, switched on or off and weighted within its Base format. Its key, URL and Base format live only in the LLM gateway; the platform keeps the ones new Organizations start with.
+One upstream an Organization's Agents and Apps may send model traffic to, switched on or off and weighted within its Base format, separately for Agents and for Apps. Its key, URL and Base format live only in the LLM gateway; the platform keeps the ones new Organizations start with.
 _Avoid_: Provider slot, Organization provider setting
 
 **Opsiforce model provider**:
 A Model provider the platform gives every Organization rather than one the Organization added. The Organization switches and weights it but never sees how it connects. The UI labels it Built-in.
 _Avoid_: Platform provider (the platform's own row that new Organizations start from), Shared provider
 
+**Azure connection**:
+A Model provider that reaches one Azure AI Foundry resource, serving only the catalog models chosen for it, from either Base format, with its own switches and weights for each format it serves. The platform's are Opsiforce model providers and an Organization's own are Custom model providers; both are added from Settings.
+_Avoid_: Deployment-managed model provider, Azure provider (the gateway has one, which every Azure connection shares), Azure deployment (one model on the resource)
+
+**Withheld**:
+An Opsiforce model provider an Organization doesn't have, because a platform admin removed its access there, or because it is offered only to chosen Organizations and that one isn't among them: it carries none of that Organization's traffic and its admin doesn't see it. An Organization added later gets a provider offered to every Organization and is withheld from one offered to chosen ones.
+_Avoid_: Disabled, Hidden, Blocked (an Organization's own switch only turns a provider off)
+
 **Custom model provider**:
-A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint or a Linked account, and its name and Base format are fixed once it exists.
+A Model provider an Organization added itself, which only that Organization can use. It connects by an Official API key, a Compatible endpoint, a Linked account or an Azure connection, serves every model of its Base format or only the ones chosen for it, and its name and Base format are fixed once it exists, except an Azure connection's formats, which follow its models.
 _Avoid_: Own provider, BYOK provider
 
 **Official API key**:
@@ -160,7 +168,7 @@ An opt-in App Auth setting, available only in manual mode, that passes the signe
 _Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
 
 **Resources**:
-The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike).
+The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources — from the agent image for a Built-in Agent (Small unless it declares otherwise), set per Custom Agent — copied once and the Project's own from then on.
 _Avoid_: Pod class (the internal identifier — never user-facing); Environment size (collides with Environment); Tier, Machine size, Compute (non-canonical — say Resources)
 
 ### Agents
@@ -197,6 +205,10 @@ _Avoid_: Deploy, Release, Promote (reserved against the environment vocabulary);
 The Environment a Custom Agent's new Projects are created from — their Agent Profile and Template both — one per Agent, set by a holder of `can_manage_agents`. It is never Development: a new Custom Agent defaults to Production, so it reaches the picker only after its first Publish (Agent). Until the Agent has an Agent Profile there, the Agent is not offered in the picker at all.
 _Avoid_: Default Environment unqualified (the tenant registry's default row is Development, a different concept); Active environment (the workspace's current view)
 
+**Ready Projects**:
+The Projects an Agent keeps already running, so creating one hands back a live environment instead of starting a pod; the UI sets their number as "Keep N ready". A Custom Agent keeps 0 to 3, set beside its Resources and kept only while the Agent can start Projects; a Built-in Agent's number comes from the agent image and is shared by every Organization. Each Ready Project holds a pod at the Agent's Resources and belongs to no Organization until claimed, and an Organization's Custom Agents together stay within its Ready Projects Limit. A copy of the Agent keeps the number unless the person copying changes it. Its technical name is **warm pool** — the `warm_pool` Limit key, the `warm_pool_size` column, the code and the API — which must never surface in user-facing copy.
+_Avoid_: Warm pool, warm pods (internal names only — never user-facing); Pool size; Pre-warmed Projects, Standby Projects
+
 **Disable (Agent)**:
 An Organization taking an Agent out of use for itself — one of its own Custom Agents or a Built-in Agent it does not want: hidden from the Agent picker and closed to new Projects, while existing Projects keep running unchanged. Reversible by Enable. Another Organization is unaffected. An Organization always keeps at least one Agent enabled that new Projects can start on — a Built-in Agent, or a public Custom Agent published to its Default environment — and the Skill & Agent Builder is never disabled. A Custom Agent never published beyond Development, or disabled, can be deleted outright once no Project runs on it, and its Test Projects go with it; a Built-in Agent that leaves the registry simply stops being offered.
 _Avoid_: Delete (the permanent sibling); Archive, Deactivate (non-canonical)
@@ -226,8 +238,8 @@ The three things the platform needs from an App to run it in any stack: an execu
 _Avoid_: Start command (startup.sh already is one); Health check route (no route is required); Manifest (the meta file holds a name and description only)
 
 **Agent Status**:
-Whether an Agent is **Working** — processing a run it was prompted to do, including any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. Distinct from Keep-alive's *agent activity*, which is the user's traffic touching the pod — not the Agent thinking.
-_Avoid_: Agent activity (a Keep-alive kind — user-driven traffic, a different concept); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
+Whether an Agent is **Working** — processing a run it was prompted to do, including the runs of sub-agents it started, even after its own run has ended, and any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. A Working Agent counts as Keep-alive's *Agent activity*, so it keeps its pod up; Agent activity is wider than Working (it also covers the user's own traffic).
+_Avoid_: Agent activity (the Keep-alive kind that Working feeds, not a synonym for it); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
 
 **Prompt**:
 The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project. A Prompt sent while the Agent is already working is either _steered_ (folded into the running turn) or _queued_ (starts the next turn once the Agent is idle); a queued Prompt waits until a new turn begins.
@@ -380,7 +392,7 @@ The values filled into an External Service's Service form, one per service and o
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, and Publish carries Development's forward.
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
 _Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
 **Disconnect (External Service)**:
@@ -500,8 +512,8 @@ What one supervised process in a pod printed, with its lifecycle events (started
 _Avoid_: Observability database (process output is in no database); container logs (what Kubernetes keeps, gone with the pod)
 
 **Keep-alive activity**:
-The traffic that keeps a ProjectEnvironment's pod running, of two kinds: **agent activity** — the user working through the agent (chat, the code editor, the database viewer, file uploads) — and **app activity** — the running App's own traffic (its public and preview URLs, and scheduled runs). Each kind has its own idle timeout; the pod is suspended only once both kinds have been idle past their timeouts. "Why a pod is still alive" is always one of these two, never a finer reason.
-_Avoid_: Chat (one input to agent activity, not a category of its own); Heartbeat, Ping (non-canonical)
+The traffic that keeps a ProjectEnvironment's pod running, of two kinds: **Agent activity** — the user working through the Agent (chat, the code editor, the database viewer, file uploads), and the Agent itself while its Agent Status is Working — and **App activity** — the running App's own traffic (its public and preview URLs, and scheduled runs). Each kind has its own idle timeout, and an Agent's idle timeout counts from when it goes Idle; the pod is suspended only once both kinds have been idle past their timeouts. "Why a pod is still alive" is always one of these two, never a finer reason.
+_Avoid_: Chat (one input to Agent activity, not a category of its own); Heartbeat, Ping (non-canonical)
 
 ### Administration
 
@@ -534,7 +546,7 @@ Disk usage on the shared volume that belongs to no Organization: the **pool** (l
 _Avoid_: Platform storage (reads as "all storage on the platform", which this is not); System storage (non-canonical); Orphaned (one bucket within, not the whole)
 
 **Pods**:
-The view of an Organization's running environment pods — one row per running ProjectEnvironment, grouped by Project — showing each pod's status, age, Resources, configured timeouts, and live Keep-alive activity (when it was last kept alive and by which kind). Read-only; the first page within Admin.
+The view of an Organization's running environment pods — one row per running ProjectEnvironment, grouped by Project — showing each pod's status, age, Resources, configured timeouts, and live Keep-alive activity (when it was last kept alive and by which kind) — and, separately, the Ready Projects its Custom Agents keep. Read-only; the first page within Admin.
 _Avoid_: Pod class (the Resources identifier — a different thing); Resources (the size policy, not the running instances); Instances (non-canonical)
 
 **Deployment branding**:

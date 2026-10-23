@@ -1,11 +1,10 @@
 export * as Skill from "./skill.js"
 
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import type { FSUtil } from "@opencode-ai/util/fs-util"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { FSUtil } from "@opencode/util/fs-util"
 import path from "path"
 import { Context, Effect, Layer, Types } from "effect"
-import type { Agent } from "@opencode-ai/schema/agent"
-import { Skill } from "@opencode-ai/schema/skill"
+import { Skill } from "@opencode/schema/skill"
 import { Bus } from "./bus.js"
 import { Permission } from "./permission.js"
 import { State } from "./state.js"
@@ -29,13 +28,13 @@ export type ID = Skill.ID
 export const Name = Skill.Name
 export type Name = Skill.Name
 
-export { Event } from "@opencode-ai/schema/skill"
+export { Event } from "@opencode/schema/skill"
 
-export const available = (skills: ReadonlyArray<Info>, agent: Agent.Info) =>
-  skills.filter((skill) => Permission.evaluate("skill", skill.id, agent.permissions).effect !== "deny")
+export const available = (skills: ReadonlyArray<Info>, permissions: Permission.Ruleset) =>
+  skills.filter((skill) => Permission.evaluate("skill", skill.id, permissions).effect !== "deny")
 
 export const toModelOutput = (skill: Info, files: ReadonlyArray<string>) => {
-  const directory = path.dirname(skill.location)
+  const directory = path.dirname(skill.path)
   return [
     `<skill_content name="${skill.name}">`,
     `# Skill: ${skill.name}`,
@@ -54,10 +53,16 @@ export const toModelOutput = (skill: Info, files: ReadonlyArray<string>) => {
 }
 
 export const prepare = Effect.fn("Skill.prepare")(function* (fs: FSUtil.Interface, skill: Info) {
-  const directory = path.dirname(skill.location)
+  const directory = path.dirname(skill.path)
   const files =
-    path.basename(skill.location) === "SKILL.md"
-      ? (yield* fs.scan("**/*", { cwd: directory, absolute: true, include: "file", dot: true }))
+    path.basename(skill.path) === "SKILL.md"
+      ? (yield* fs.scan("**/*", {
+          cwd: directory,
+          absolute: true,
+          include: "file",
+          dot: true,
+          ignore: FSUtil.ignoreGlobs,
+        }))
           .filter((file) => path.basename(file) !== "SKILL.md")
           .toSorted()
           .slice(0, 10)

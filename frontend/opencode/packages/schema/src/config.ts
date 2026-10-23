@@ -14,12 +14,14 @@ import { ConfigLSP } from "./config/lsp.js"
 import { ConfigMCP } from "./config/mcp.js"
 import { ConfigModel } from "./config/model.js"
 import { ConfigPlugin } from "./config/plugin.js"
+import { ConfigPolicy } from "./config/policy.js"
 import { ConfigProvider } from "./config/provider.js"
 import { ConfigReference } from "./config/reference.js"
 import { ConfigWebSearch } from "./config/websearch.js"
 import { ConfigToolOutput } from "./config/tool-output.js"
 import { ConfigWatcher } from "./config/watcher.js"
 import { ConfigWarming } from "./config/warming.js"
+import { ConfigWorktree } from "./config/worktree.js"
 
 export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: optional(Schema.String).annotate({
@@ -34,8 +36,8 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   default_agent: Schema.String.pipe(optional).annotate({
     description: "Default primary agent to use when no session agent is selected",
   }),
-  update: Schema.Literals(["disable", "notify"]).pipe(optional).annotate({
-    description: "Disable updates or notify when one is available",
+  update: Schema.Literals(["disable", "notify", "auto"]).pipe(optional).annotate({
+    description: "Disable updates, notify when one is available, or install updates automatically",
   }),
   share: Schema.Literals(["manual", "auto", "disabled"]).pipe(optional).annotate({
     description: "Control whether sessions may be shared manually, automatically, or not at all",
@@ -52,6 +54,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   permissions: Permission.Ruleset.pipe(optional).annotate({
     description: "Ordered tool permission rules applied to agent tool use",
+  }),
+  policies: ConfigPolicy.Info.pipe(Schema.Array, optional).annotate({
+    description: "Ordered policies controlling access to providers, tools, and integrations",
   }),
   agents: Schema.Record(Schema.String, ConfigAgent.Info).pipe(optional).annotate({
     description: "Named built-in agent overrides and custom agent definitions",
@@ -98,12 +103,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   plugins: ConfigPlugin.Plugins.pipe(optional).annotate({
     description: "Ordered plugin enablement directives and external package declarations",
   }),
+  worktree: ConfigWorktree.Info.pipe(optional).annotate({
+    description: "Directory defaults for local worktree creation",
+  }),
   warming: ConfigWarming.Warming.pipe(optional).annotate({
     description: "Keep recently active sessions warm with transient model requests (default: false)",
   }),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(optional),
   experimental: ConfigExperimental.Info.pipe(optional),
 }) {}
+
+export const Patch = Schema.Struct({
+  shell: Schema.NullOr(Schema.String),
+}).annotate({ identifier: "Config.Patch" })
+export interface Patch extends Schema.Schema.Type<typeof Patch> {}
 
 export class Document extends Schema.Class<Document>("Config.Document")({
   type: Schema.Literal("document"),
@@ -116,17 +129,7 @@ export class Directory extends Schema.Class<Directory>("Config.Directory")({
   path: AbsolutePath,
 }) {}
 
-export class AgentsDirectory extends Schema.Class<AgentsDirectory>("Config.AgentsDirectory")({
-  type: Schema.Literal("agents"),
-  path: AbsolutePath,
-}) {}
-
-export class ClaudeDirectory extends Schema.Class<ClaudeDirectory>("Config.ClaudeDirectory")({
-  type: Schema.Literal("claude"),
-  path: AbsolutePath,
-}) {}
-
-export const Entry = Schema.Union([Document, Directory, AgentsDirectory, ClaudeDirectory]).annotate({
+export const Entry = Schema.Union([Document, Directory]).annotate({
   identifier: "Config.Entry",
 })
 export type Entry = typeof Entry.Type

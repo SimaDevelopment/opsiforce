@@ -104,6 +104,9 @@ import {
   type PodClassCatalog,
   type PodResources,
 } from '../pod/pod-classes';
+import { readAgentPodSettings } from '../agent/agent-pod-settings';
+import { podSettingsFromRequest } from '../pod/pod-class-request';
+import { podSettingsColumns } from '../pod/pod-settings-columns';
 
 const APP_NAME_MIN_LENGTH = 1;
 const APP_NAME_MAX_LENGTH = 80;
@@ -226,10 +229,7 @@ const projectSelectFields = {
   timezone: projectSettings.timezone,
   requestLogMode: projectSettings.requestLogMode,
   requestLogBodyLimit: projectSettings.requestLogBodyLimit,
-  podClass: projectPodSettings.podClass,
-  cpuMillicores: projectPodSettings.cpuMillicores,
-  memoryRequestMib: projectPodSettings.memoryRequestMib,
-  memoryLimitMib: projectPodSettings.memoryLimitMib,
+  ...podSettingsColumns(projectPodSettings),
   hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`.as('has_app'),
   appName: projectApps.name,
   appDescription: projectApps.description,
@@ -269,6 +269,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly projectEventsService: ProjectEventsService,
     private readonly appService: AppService,
     private readonly appReadiness: AppReadinessService,
+    @Inject(forwardRef(() => AgentStatusService))
     private readonly agentStatusService: AgentStatusService,
     private readonly agentService: AgentService,
     private readonly environmentService: EnvironmentService,
@@ -540,6 +541,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
+    const podSettings = await readAgentPodSettings(agentId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, kind);
@@ -564,11 +566,7 @@ export class ProjectService implements OnApplicationBootstrap {
         timezone: dto?.timezone || 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({
-        projectId: id,
-        podClass: 'small',
-        ...resolvePreset('small'),
-      });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...podSettings });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -774,7 +772,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
-    const podResources = this.resolveImportedResources(resources);
+    const podResources = await this.resolveImportedResources(resources, agentId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId);
@@ -854,10 +852,10 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.findOne(id, tenantId);
   }
 
-  private resolveImportedResources(resources: ExportManifestResources | null): {
-    podClass: PodClass;
-    resources: PodResources;
-  } {
+  private async resolveImportedResources(
+    resources: ExportManifestResources | null,
+    agentId: string
+  ): Promise<{ podClass: PodClass; resources: PodResources }> {
     if (resources?.podClass === 'custom') {
       return {
         podClass: 'custom',
@@ -871,7 +869,8 @@ export class ProjectService implements OnApplicationBootstrap {
     if (resources && isPreset(resources.podClass)) {
       return { podClass: resources.podClass, resources: resolvePreset(resources.podClass) };
     }
-    return { podClass: 'small', resources: resolvePreset('small') };
+    const { podClass, ...agentResources } = await readAgentPodSettings(agentId);
+    return { podClass, resources: agentResources };
   }
 
   async getSchedulesForExport(projectEnvironmentId: string): Promise<ExportManifestSchedule[]> {
@@ -1149,53 +1148,40 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.findOne(id, tenantId);
   }
 
+  async nameAfterPrimarySession(envId: string, sessionId: string, title: string): Promise<void> {
+    const [named] = await db
+      .update(projects)
+      .set({ title, updatedAt: new Date() })
+      .from(projectEnvironments)
+      .where(
+        and(
+          eq(projectEnvironments.id, envId),
+          eq(projectEnvironments.sessionId, sessionId),
+          eq(projects.id, projectEnvironments.projectId),
+          isNull(projects.title)
+        )
+      )
+      .returning({ id: projects.id });
+    if (named) await this.projectEventsService.publish(named.id);
+  }
+
   getPodClassCatalog(): PodClassCatalog {
     return buildPodClassCatalog();
   }
 
   async updatePodClass(id: string, dto: UpdateProjectPodClassDto, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
-    const resources = this.resolvePodClassResources(dto);
-
     await db
       .update(projectPodSettings)
-      .set({ podClass: dto.podClass, ...resources })
+      .set(podSettingsFromRequest(dto))
       .where(eq(projectPodSettings.projectId, project.id));
 
     return this.findOne(id, tenantId);
   }
 
-  private resolvePodClassResources(dto: UpdateProjectPodClassDto): PodResources {
-    if (dto.podClass === 'custom') {
-      if (
-        typeof dto.cpuMillicores !== 'number' ||
-        typeof dto.memoryRequestMib !== 'number' ||
-        typeof dto.memoryLimitMib !== 'number'
-      ) {
-        throw new BadRequestException(
-          'Custom pod class requires numeric cpuMillicores, memoryRequestMib, and memoryLimitMib'
-        );
-      }
-      return clampCustom({
-        cpuMillicores: dto.cpuMillicores,
-        memoryRequestMib: dto.memoryRequestMib,
-        memoryLimitMib: dto.memoryLimitMib,
-      });
-    }
-    if (!isPreset(dto.podClass)) {
-      throw new BadRequestException(`Unknown pod class: ${String(dto.podClass)}`);
-    }
-    return resolvePreset(dto.podClass);
-  }
-
   private async podResourcesForProject(projectId: string): Promise<K8sResourceRequirements> {
     const [row] = await db
-      .select({
-        podClass: projectPodSettings.podClass,
-        cpuMillicores: projectPodSettings.cpuMillicores,
-        memoryRequestMib: projectPodSettings.memoryRequestMib,
-        memoryLimitMib: projectPodSettings.memoryLimitMib,
-      })
+      .select(podSettingsColumns(projectPodSettings))
       .from(projectPodSettings)
       .where(eq(projectPodSettings.projectId, projectId));
     return toK8sResources(resolveStoredPodResources(row));
@@ -1745,7 +1731,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const podName = this.podService.assignedPodName(env.id);
     const pod = await this.readPodOrNull(podName);
 
-    if (!pod) {
+    if (!pod || pod.metadata?.deletionTimestamp) {
       this.spawnStartupWorker(env.id);
       return { state: 'starting', env };
     }
@@ -1900,10 +1886,8 @@ export class ProjectService implements OnApplicationBootstrap {
       this.logger.warn(`Failed to create Bifrost resources for project ${projectId}: ${(err as Error).message}`);
       return;
     }
-    if (!(await this.modelProviders.writeProjectChatKey(tenantId, projectId))) {
-      throw new InternalServerErrorException(
-        "Could not give the Project's chat key the Organization's model providers"
-      );
+    if (!(await this.modelProviders.writeProjectKeys(tenantId, projectId))) {
+      throw new InternalServerErrorException("Could not give the Project's keys the Organization's model providers");
     }
   }
 
@@ -2303,51 +2287,49 @@ export class ProjectService implements OnApplicationBootstrap {
     const podName = this.podService.assignedPodName(envId);
     const recreateRequested = this.recreateRequests.delete(envId);
     const existingPod = await this.readPodOrNull(podName);
-    if (existingPod && !existingPod.metadata?.deletionTimestamp) {
-      if (recreateRequested) {
+    if (recreateRequested || existingPod?.metadata?.deletionTimestamp) {
+      try {
+        await this.podService.deletePodAndWait(podName);
+      } catch (err) {
+        await this.handleStartupFailure(envId, podName, err);
+        return;
+      }
+    } else if (existingPod) {
+      const existingPodIp = existingPod.status?.podIP ?? null;
+      if (this.podService.isPodReady(existingPod) && existingPodIp) {
+        await this.markEnvironmentActive(envId, existingPodIp, podName);
+        return;
+      }
+
+      const failure = this.podService.inspectFailureReason(existingPod);
+      if (failure === 'ImagePullBackOff') {
+        await this.handleStartupFailure(
+          envId,
+          podName,
+          new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
+        );
+        return;
+      }
+      if (failure === 'Unschedulable' && this.podService.podAgeMs(existingPod) > UNSCHEDULABLE_STARTUP_GRACE_MS) {
+        await this.handleStartupFailure(
+          envId,
+          podName,
+          new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
+        );
+        return;
+      }
+
+      if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
         try {
-          await this.podService.deletePod(podName);
+          const podIp = await this.podService.waitForReady(podName);
+          await this.markEnvironmentActive(envId, podIp, podName);
         } catch (err) {
           await this.handleStartupFailure(envId, podName, err);
-          return;
         }
-      } else {
-        const existingPodIp = existingPod.status?.podIP ?? null;
-        if (this.podService.isPodReady(existingPod) && existingPodIp) {
-          await this.markEnvironmentActive(envId, existingPodIp, podName);
-          return;
-        }
-
-        const failure = this.podService.inspectFailureReason(existingPod);
-        if (failure === 'ImagePullBackOff') {
-          await this.handleStartupFailure(
-            envId,
-            podName,
-            new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
-          );
-          return;
-        }
-        if (failure === 'Unschedulable' && this.podService.podAgeMs(existingPod) > UNSCHEDULABLE_STARTUP_GRACE_MS) {
-          await this.handleStartupFailure(
-            envId,
-            podName,
-            new PodStartupFailedError(podName, failure, this.podService.inspectFailureMessage(existingPod))
-          );
-          return;
-        }
-
-        if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
-          try {
-            const podIp = await this.podService.waitForReady(podName);
-            await this.markEnvironmentActive(envId, podIp, podName);
-          } catch (err) {
-            await this.handleStartupFailure(envId, podName, err);
-          }
-          return;
-        }
-
-        await this.safeDeletePod(podName, `CrashLoopBackOff recreate for environment ${envId}`);
+        return;
       }
+
+      await this.safeDeletePod(podName, `CrashLoopBackOff recreate for environment ${envId}`);
     }
 
     if (!current.tenantId) {

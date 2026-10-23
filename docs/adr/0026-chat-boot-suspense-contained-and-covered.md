@@ -9,12 +9,12 @@ opencode's `AppInterface` has no `Suspense` boundary at its router root and gate
 Two timing details are load-bearing:
 
 - **The root is created one macrotask after mount** (`setTimeout(0)`). Solid transitions are global to the runtime, not per root; a root created while the platform's route transition is still pending gets its boot captured by that transition and deadlocks on client-side navigation with cold persistence.
-- **The embed's inputs are captured once per mount.** `server`, `serverKey`, `router` and the title-sync callback are snapshotted when `ProjectChatTab` mounts; the embed root is not reactive to platform props. An environment switch unmounts the component (the connection hook resets its router to null), which disposes the root and re-arms everything for the new environment.
+- **The embed's inputs are captured once per mount.** `server` and `router` are snapshotted when `ProjectChatTab` mounts; the embed root is not reactive to platform props. An environment switch unmounts the component (the connection hook resets its router to null), which disposes the root and re-arms everything for the new environment.
 
 Inside the embed root:
 
-- `OpenCodeEventBridge` (preview reload on session idle, title sync) and `OpencodeOverrides` are children of `AppInterface`, above opencode's route-level server providers, so `useServerSDK()` is unavailable to them. They resolve the server context through `useGlobal().ensureServerCtx(server)`, read untracked because the whole root is recreated rather than updated when the connection changes.
-- Hooks needing platform context (`useSyncProjectTitle`) are called in `ProjectChatTab` itself and handed into the root as closures — the embed root has no access to the platform app's contexts.
+- `OpencodeOverrides` is a child of `AppInterface`, above opencode's route-level server providers, so `useServerSDK()` is unavailable to it. It resolves the server context through `useGlobal().ensureServerCtx(server)`, read untracked because the whole root is recreated rather than updated when the connection changes.
+- Hooks needing platform context (`useReachableBaseFormats`) are called in `ProjectChatTab` itself and handed into the root as signals — the embed root has no access to the platform app's contexts.
 
 ## Covering the boot gap
 

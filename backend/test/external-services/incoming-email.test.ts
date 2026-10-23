@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,9 +10,11 @@ import { createExternalServicesTestApp, type ExternalServicesTestApp } from './s
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
+  forgetProjectConfiguration,
   platformOperator,
   storedPlatformServiceConfiguration,
 } from './support/fixtures';
+import { storedProjectConfiguration } from './support/gate';
 import { callThroughGate } from './support/gate-proxy';
 import {
   configuringProject,
@@ -84,7 +87,7 @@ describe('incoming email on a deployment upgraded with the Mailgun settings', ()
     }
   });
 
-  it('writes nothing without the settings, so email stays Needs setup and its webhook answers 503', async () => {
+  it('writes nothing without the settings, so email stays Needs setup, connects no new Project and its webhook answers 503', async () => {
     const before = await bootWith({ domain: '', signingKey: '' });
     await forgetPlatformServiceConfiguration(EMAIL_SERVICE);
     await before.close();
@@ -93,6 +96,8 @@ describe('incoming email on a deployment upgraded with the Mailgun settings', ()
     try {
       await unset.listen();
       expect(await storedPlatformServiceConfiguration(EMAIL_SERVICE)).toBeNull();
+      const project = await configuringProject(unset.app);
+      expect(await storedProjectConfiguration(EMAIL_SERVICE, project.projectEnvironmentId)).toBeNull();
       const res = await sendMail(unset.app, { to: `abcdefghijklmnop@${RECEIVING_DOMAIN}` });
       expect(res.status).toBe(503);
     } finally {
@@ -137,11 +142,32 @@ describe('receiving email at a Project environment address, through the built-in
     return callThroughGate(app, { credential: `Bearer ${project.key}`, slug: EMAIL_SERVICE }, '/address');
   }
 
-  it('gives an environment an address once its configuration is saved, and tells it on the Service host', async () => {
+  it('connects a new Project from the start: an address on the Service host and the Service skill', async () => {
     const project = await configuringProject(app);
 
-    const unsaved = await readProjectService(app, project, serviceId);
-    expect(unsaved.json().projectConfiguration.values.localPart).toBeUndefined();
+    const view = (await readProjectService(app, project, serviceId)).json().projectConfiguration;
+    expect(view.values.localPart).toMatch(/^[a-z0-9]{16}$/);
+    const told = await addressOf(project);
+    expect(told.status).toBe(200);
+    expect(await told.json()).toEqual({ address: `${view.values.localPart}@${RECEIVING_DOMAIN}` });
+    expect(
+      existsSync(
+        join(
+          storageRoot,
+          'projects',
+          project.projectEnvironmentId,
+          '.opencode/skills',
+          `service-${EMAIL_SERVICE}`,
+          'SKILL.md'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it('gives an environment without a configuration an address once one is saved', async () => {
+    const project = await configuringProject(app);
+    await forgetProjectConfiguration(EMAIL_SERVICE, project.projectEnvironmentId);
+
     const notConnected = await addressOf(project);
     expect(notConnected.status).toBe(403);
     expect(notConnected.headers.get('opsiforce-outcome')).toBe('not connected');
@@ -149,9 +175,7 @@ describe('receiving email at a Project environment address, through the built-in
     const saved = await saveProjectService(app, project, serviceId, {});
     const localPart = saved.json().projectConfiguration.values.localPart as string;
     expect(localPart).toMatch(/^[a-z0-9]{16}$/);
-    const told = await addressOf(project);
-    expect(told.status).toBe(200);
-    expect(await told.json()).toEqual({ address: `${localPart}@${RECEIVING_DOMAIN}` });
+    expect(await (await addressOf(project)).json()).toEqual({ address: `${localPart}@${RECEIVING_DOMAIN}` });
   });
 
   it('gives the configuration dialog the receiving domain its address template needs, and no secret', async () => {
@@ -228,6 +252,7 @@ describe('receiving email at a Project environment address, through the built-in
 
   it('moves an existing address into a Project configuration that receives, keeping it claimed', async () => {
     const project = await configuringProject(app);
+    await forgetProjectConfiguration(EMAIL_SERVICE, project.projectEnvironmentId);
     await storeV1Address(project.projectEnvironmentId, `k3p9x2mq7fd41abv@${RECEIVING_DOMAIN}`);
 
     await runAddressMigration();
@@ -246,6 +271,7 @@ describe('receiving email at a Project environment address, through the built-in
 
   it('keeps the local part of an address on another domain, now on the configured one', async () => {
     const project = await configuringProject(app);
+    await forgetProjectConfiguration(EMAIL_SERVICE, project.projectEnvironmentId);
     await storeV1Address(project.projectEnvironmentId, 'Q1W2E3R4T5Y6U7I8@old-mail.example.test');
 
     await runAddressMigration();

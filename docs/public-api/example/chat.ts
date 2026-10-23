@@ -1,5 +1,5 @@
 import { Platform, sleep, type JsonValue } from './platform.ts';
-import { runtimeClient } from './runtime.ts';
+import { promptForOutcome, runtimeClient, type TurnOutcome } from './runtime.ts';
 
 interface Agent {
   id: string;
@@ -43,16 +43,14 @@ print(`Connected: session ${connection.sessionId}, runtime build ${connection.bu
 const opencode = runtimeClient(platform, connection);
 const sessionID = connection.sessionId;
 print(`Runtime spec: ${platform.resolve(connection.openapiUrl).href}`);
-const events = opencode.event.subscribe({ signal: run.signal });
-const watching = watch(events, sessionID);
-const promptId = messageId();
 const text = process.env.OPSIFORCE_PROMPT ?? 'In one sentence, what is in this workspace?';
-const admitted = await admit(() =>
-  opencode.session.prompt({ sessionID, id: promptId, text }, { signal: run.signal })
+const { admitted, turn } = await promptForOutcome(
+  opencode,
+  { sessionID, id: messageId(), text },
+  { signal: run.signal, admit, onEvent: (event) => print(`  event ${event.type}`) }
 );
 print(`Prompt ${admitted.id} admitted as ${admitted.delivery}`);
-await opencode.session.wait({ sessionID }, { signal: run.signal });
-print('Session is idle');
+print(`Turn ${turn.outcome}${outcomeDetail(turn)}`);
 
 const page = await opencode.message.list({ sessionID, limit: 5, order: 'desc' }, { signal: run.signal });
 print(`Last ${page.data.length} messages:`);
@@ -66,7 +64,6 @@ const parked = await opencode.session.inbox.list({ sessionID }, { signal: run.si
 print(`Inbox: ${parked.length} parked prompt(s)`);
 
 run.abort(new Error('done'));
-await watching.catch(() => undefined);
 
 function required(name: string): string {
   const value = process.env[name];
@@ -101,15 +98,14 @@ async function admit<T>(send: () => Promise<T>): Promise<T> {
   }
 }
 
-async function watch(events: AsyncIterable<{ type: string }>, sessionID: string): Promise<void> {
-  for await (const event of events) {
-    const scoped = 'properties' in event ? (event.properties as { sessionID?: string }) : undefined;
-    if (scoped?.sessionID !== undefined && scoped.sessionID !== sessionID) continue;
-    print(`  event ${event.type}`);
-  }
+function outcomeDetail(turn: TurnOutcome): string {
+  if (turn.outcome === 'failed') return `: ${turn.error.message}`;
+  if (turn.outcome === 'interrupted') return ` (${turn.reason})`;
+  return '';
 }
 
-function summarise(message: { type: string; text?: string; content?: JsonValue }): string {
+function summarise(message: { type: string; text?: string; content?: JsonValue; outcome?: string }): string {
+  if (message.type === 'idle') return `turn ended: ${message.outcome ?? 'unknown'}`;
   const parts = Array.isArray(message.content) ? message.content : [];
   const fromParts = parts
     .filter((part): part is { type: string; text: string } => isTextPart(part))

@@ -1,15 +1,15 @@
 import path from "path"
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
-import { Agent } from "@opencode-ai/core/agent"
-import { Bus } from "@opencode-ai/core/bus"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Location } from "@opencode-ai/core/location"
-import { Permission } from "@opencode-ai/core/permission"
-import { AgentPlugin } from "@opencode-ai/core/plugin/agent"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Global } from "@opencode-ai/util/global"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Location } from "@opencode/core/location"
+import { Permission } from "@opencode/core/permission"
+import { AgentPlugin } from "@opencode/core/plugin/agent"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Global } from "@opencode/util/global"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 import { agentHost, host } from "./plugin/host"
@@ -167,7 +167,7 @@ describe("Agent", () => {
     }),
   )
 
-  it.effect("applies managed external directories without opting built-in agents into bash", () =>
+  it.effect("allows external directories without opting built-in agents into bash", () =>
     Effect.gen(function* () {
       const agent = yield* Agent.Service
       yield* AgentPlugin.Plugin.effect(
@@ -202,11 +202,15 @@ describe("Agent", () => {
       ).toBe("allow")
       expect(Permission.evaluate("external_directory", path.join(global.config, "*"), permissions).effect).toBe("allow")
       expect(Permission.evaluate("external_directory", path.join(global.tmp, "*"), permissions).effect).toBe("allow")
+      expect(Permission.evaluate("external_directory", "/outside/*", permissions).effect).toBe("allow")
       const explore = yield* agent.get(Agent.ID.make("explore"))
+      expect(Permission.evaluate("shell", "git log -5", explore?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("edit", "src/index.ts", explore?.permissions ?? []).effect).toBe("deny")
       expect(Permission.evaluate("read", ".env", explore?.permissions ?? []).effect).toBe("ask")
       expect(Permission.evaluate("read", ".env.local", explore?.permissions ?? []).effect).toBe("ask")
       expect(Permission.evaluate("read", ".env.example", explore?.permissions ?? []).effect).toBe("allow")
       expect(Permission.evaluate("read", "src/index.ts", explore?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("external_directory", "/outside/*", explore?.permissions ?? []).effect).toBe("allow")
       for (const item of agents) {
         expect(item.permissions.some((rule) => rule.action === "bash" && rule.effect !== "deny")).toBe(false)
       }

@@ -6,9 +6,10 @@
 import type {
   AgentInfo,
   CommandInfo,
-  FormCancelInput,
+  ConfigEntry,
+  SessionFormCancelInput,
   FormInfo,
-  FormReplyInput,
+  SessionFormReplyInput,
   IntegrationInfo,
   LocationRef,
   LocationGetOutput,
@@ -28,6 +29,7 @@ import type {
   SessionMessageAssistantText,
   SessionMessageAssistantTool,
   SessionInfo,
+  SessionListInput,
   SessionInboxInfo,
   SessionInboxCompaction,
   ShellInfo,
@@ -37,9 +39,9 @@ import type {
   OpenCodeClient,
   WebSearchProvider,
 } from "../promise"
-import { Worktree } from "@opencode-ai/schema/worktree"
-import { SessionID } from "@opencode-ai/schema/session-id"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { Worktree } from "@opencode/schema/worktree"
+import { SessionID } from "@opencode/schema/session-id"
+import { SessionMessage } from "@opencode/schema/session-message"
 import {
   isFormAlreadySettledError,
   isFormNotFoundError,
@@ -47,15 +49,23 @@ import {
   type SessionPromptInput,
 } from "../promise"
 import { createStore, produce, reconcile } from "solid-js/store"
-import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
+import type { SessionInbox } from "@opencode/schema/session-inbox"
 import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 
 export type DataSessionStatus = "idle" | "running"
+/**
+ * Where a pending user prompt stands relative to the runner: `starting` is promoted at the next idle boundary,
+ * `steering` waits for the next step boundary of an execution that already delivered input, `stranded` outlived an
+ * execution that ended without delivering it, and `queued` waits for every steer to drain.
+ */
+export type DataPendingStatus = "starting" | "steering" | "stranded" | "queued"
 type OpenCodeEventMap = { [Type in OpenCodeEvent["type"]]: Extract<OpenCodeEvent, { type: Type }> }
 
 export type CreateDataInput = {
   readonly api: () => OpenCodeClient
   readonly directory: string
+  /** Raw-message window used for an initial transcript read. Older pages retain their normal size. */
+  readonly initialMessageLimit?: () => number
   readonly event: {
     readonly on: <Type extends OpenCodeEvent["type"]>(
       type: Type,
@@ -72,6 +82,8 @@ export type CreateDataInput = {
 
 const messageIDFromEvent = (eventID: string) => eventID.replace(/^evt_/, "msg_")
 const messagePageLimit = 20
+// Trailing window for event bursts that each ask for the same refetch.
+export const settleMs = 150
 
 // Global MCP elicitations temporarily use "global" instead of a real session ID, so the
 // server cannot recover their Location when settling them. Preserve the event Location
@@ -84,6 +96,7 @@ type LocationData = {
   vcs?: VcsInfo
   agent?: AgentInfo[]
   command?: CommandInfo[]
+  config?: ConfigEntry[]
   integration?: IntegrationInfo[]
   mcpServer?: McpServer[]
   mcpResource?: McpResource[]
@@ -125,7 +138,28 @@ export function locationKey(location: LocationRef) {
 }
 
 function locationQuery(ref: LocationRef) {
-  return { directory: ref.directory, workspace: ref.workspaceID }
+  return { directory: ref.directory }
+}
+
+function optimisticFiles(files: SessionPromptInput["files"]) {
+  const items = files?.flatMap((file) => {
+    if (!file.uri.startsWith("data:")) return []
+    const comma = file.uri.indexOf(",")
+    if (comma < 0) return []
+    const header = file.uri.slice(5, comma)
+    const parts = header.split(";")
+    if (!parts.slice(1).some((part) => part.toLowerCase() === "base64")) return []
+    const item: NonNullable<Extract<SessionInboxInfo, { type: "user" }>["payload"]["files"]>[number] = {
+      data: file.uri.slice(comma + 1),
+      mime: parts[0] || "application/octet-stream",
+      source: { type: "inline" },
+    }
+    if (file.name !== undefined) item.name = file.name
+    if (file.description !== undefined) item.description = file.description
+    if (file.mention !== undefined) item.mention = { ...file.mention }
+    return [item]
+  })
+  return items?.length ? items : undefined
 }
 
 function formRequestOptions(sessionID: string, ref?: LocationRef) {
@@ -133,18 +167,23 @@ function formRequestOptions(sessionID: string, ref?: LocationRef) {
   return {
     headers: {
       "x-opencode-directory": encodeURIComponent(ref.directory),
-      ...(ref.workspaceID ? { "x-opencode-workspace": ref.workspaceID } : {}),
     },
   }
 }
 
 function createSync() {
-  type Pending = { promise: Promise<void>; invalidated: boolean }
+  // `started` is false while a reload waits for the load it replaces. Invalidations that land in
+  // that window are already covered, since the reload has not read anything yet.
+  type Pending = { promise: Promise<void>; invalidated: boolean; started: boolean }
   const state = new Map<string, true | Pending>()
   const start = (key: string, load: () => Promise<void>, wait?: Promise<void>) => {
-    const entry: Pending = { promise: Promise.resolve(), invalidated: false }
+    const entry: Pending = { promise: Promise.resolve(), invalidated: false, started: !wait }
     state.set(key, entry)
-    entry.promise = (wait ? wait.catch(() => undefined).then(load) : load())
+    const run = () => {
+      entry.started = true
+      return load()
+    }
+    entry.promise = (wait ? wait.catch(() => undefined).then(run) : run())
       .then(() => {
         if (state.get(key) === entry && !entry.invalidated) state.set(key, true)
       })
@@ -176,16 +215,18 @@ function createSync() {
       if (key) {
         const active = state.get(key)
         if (active === true) state.delete(key)
-        if (active !== undefined && active !== true) active.invalidated = true
+        if (active !== undefined && active !== true && active.started) active.invalidated = true
         return
       }
       state.forEach((active, current) => {
         if (active === true) state.delete(current)
-        if (active !== true) active.invalidated = true
+        if (active !== true && active.started) active.invalidated = true
       })
     },
   }
 }
+
+const CHILD_PAGE = 200
 
 export function createData(config: CreateDataInput) {
   const api = config.api
@@ -199,6 +240,20 @@ export function createData(config: CreateDataInput) {
       if (config.onError) return config.onError(error)
       console.error("Failed to refresh client data", error)
     })
+  }
+
+  // Runs `load` once a burst of same-key events goes quiet, so N events cost one refetch.
+  const settling = new Map<string, ReturnType<typeof setTimeout>>()
+  onCleanup(() => settling.forEach((timer) => clearTimeout(timer)))
+  function settle(key: string, load: () => Promise<unknown>) {
+    clearTimeout(settling.get(key))
+    settling.set(
+      key,
+      setTimeout(() => {
+        settling.delete(key)
+        refresh(load)
+      }, settleMs),
+    )
   }
 
   const [store, setStore] = createStore<Store>({
@@ -227,6 +282,7 @@ export function createData(config: CreateDataInput) {
   const messageIndex = new Map<string, Map<string, number>>()
   const sync = createSync()
   let activeUpdates: Map<string, DataSessionStatus | undefined> | undefined
+  const pendingUpdates = new Map<string, Map<string, SessionInboxInfo | SessionInbox.Delivery | undefined>>()
 
   function setSessionActive(sessionID: string, status: DataSessionStatus) {
     activeUpdates?.set(sessionID, status)
@@ -235,6 +291,7 @@ export function createData(config: CreateDataInput) {
 
   function removePending(sessionID: string, inboxID?: string) {
     if (!inboxID) return
+    pendingUpdates.get(sessionID)?.set(inboxID, undefined)
     if (store.session.pending[sessionID]?.some((item) => item.id === inboxID))
       setStore(
         "session",
@@ -269,7 +326,7 @@ export function createData(config: CreateDataInput) {
     return true
   }
 
-  function settleForm(input: FormCancelInput, ref: LocationRef | undefined, request: Promise<void>) {
+  function settleForm(input: SessionFormCancelInput, ref: LocationRef | undefined, request: Promise<void>) {
     return request
       .catch((error: unknown) => {
         if ((!isFormNotFoundError(error) && !isFormAlreadySettledError(error)) || error.id !== input.formID) throw error
@@ -284,6 +341,7 @@ export function createData(config: CreateDataInput) {
   function updatePending(sessionID: string, inboxID: string, delivery: SessionInbox.Delivery) {
     const index = store.session.pending[sessionID]?.findIndex((item) => item.id === inboxID) ?? -1
     const item = store.session.pending[sessionID]?.[index]
+    pendingUpdates.get(sessionID)?.set(inboxID, item ? { ...item, delivery } : delivery)
     if (index < 0 || !item || item.delivery === delivery) return
     setStore("session", "pending", sessionID, index, { ...item, delivery })
   }
@@ -364,8 +422,8 @@ export function createData(config: CreateDataInput) {
     message.update(item.sessionID, (draft, index) => {
       const row =
         item.type === "user"
-          ? { id: item.id, type: "user" as const, ...item.payload, time: { created: item.timeCreated } }
-          : { id: item.id, type: "synthetic" as const, ...item.payload, time: { created: item.timeCreated } }
+          ? { id: item.id, type: "user" as const, ...item.payload, time: { created: item.time.created } }
+          : { id: item.id, type: "synthetic" as const, ...item.payload, time: { created: item.time.created } }
       const position = index.get(item.id)
       if (position === undefined) return message.append(draft, index, row)
       draft[position] = row
@@ -463,6 +521,16 @@ export function createData(config: CreateDataInput) {
     const created = new Map<string, number>()
     messageIndex.set(sessionID, created)
     return created
+  }
+
+  // Every direct subagent, not only the server's default first page, so a root's family cost
+  // counts all of them. Pages stay newest first, the order the family index has always used.
+  async function listChildren(input: SessionListInput): Promise<SessionInfo[]> {
+    const page = await api().session.list(input)
+
+    if (page.data.length < CHILD_PAGE || !page.cursor.next) return page.data
+
+    return [...page.data, ...(await listChildren({ cursor: page.cursor.next, limit: CHILD_PAGE }))]
   }
 
   // Walk parentID upward through loaded session info to the family root. When a
@@ -634,7 +702,8 @@ export function createData(config: CreateDataInput) {
         })
         return
       }
-      case "session.model.selected":
+      case "session.model.selected": {
+        const previous = event.data.previous ?? store.session.info[event.data.sessionID]?.model
         if (store.session.info[event.data.sessionID])
           setStore("session", "info", event.data.sessionID, "model", event.data.model)
         if (!store.session.message[event.data.sessionID]) return
@@ -642,11 +711,12 @@ export function createData(config: CreateDataInput) {
           id: messageIDFromEvent(event.id),
           type: "model-switched",
           model: event.data.model,
+          previous,
           time: { created: event.created },
         })
         refresh(() =>
           api()
-            .session.message({ sessionID: event.data.sessionID, messageID: messageIDFromEvent(event.id) })
+            .session.message.get({ sessionID: event.data.sessionID, messageID: messageIDFromEvent(event.id) })
             .then((item) => {
               message.update(event.data.sessionID, (draft, index) => {
                 const position = index.get(item.id)
@@ -656,6 +726,7 @@ export function createData(config: CreateDataInput) {
             }),
         )
         return
+      }
       case "session.renamed": {
         // Preserve the live title when it races the session's initial read.
         refresh(() => {
@@ -669,6 +740,18 @@ export function createData(config: CreateDataInput) {
         })
         return
       }
+      case "session.permissions":
+        if (store.session.info[event.data.sessionID])
+          setStore("session", "info", event.data.sessionID, "permissions", event.data.permissions)
+        return
+      case "session.archived":
+        if (store.session.info[event.data.sessionID])
+          setStore("session", "info", event.data.sessionID, "time", "archived", event.created)
+        return
+      case "session.unarchived":
+        if (store.session.info[event.data.sessionID])
+          setStore("session", "info", event.data.sessionID, "time", "archived", undefined)
+        return
       case "session.moved": {
         const current = store.session.info[event.data.sessionID]
         if (current) {
@@ -697,7 +780,6 @@ export function createData(config: CreateDataInput) {
           const explicit = event.data.adopted?.includes(info.projectID)
           const directory = explicit ? store.project.info[info.projectID]?.canonical : info.location.directory
           if (!directory) {
-            if (info.location.workspaceID) continue
             result.session.invalidate(sessionID)
             refresh(() => result.session.sync(sessionID))
             continue
@@ -706,7 +788,6 @@ export function createData(config: CreateDataInput) {
             {
               projectID: info.projectID,
               directory,
-              workspaceID: info.location.workspaceID,
             },
             event.data,
           )
@@ -742,12 +823,14 @@ export function createData(config: CreateDataInput) {
       }
       case "session.inbox.enqueued": {
         outbox.delete(event.data.inboxID)
-        admitLocal({
+        const item = {
           id: event.data.inboxID,
           sessionID: event.data.sessionID,
-          timeCreated: event.created,
+          time: { created: event.created },
           ...event.data.item,
-        })
+        }
+        pendingUpdates.get(item.sessionID)?.set(item.id, item)
+        admitLocal(item)
         if (event.data.item.type === "compaction") {
           const active = compacting.get(event.data.sessionID)
           active?.observed.add(event.data.inboxID)
@@ -803,16 +886,6 @@ export function createData(config: CreateDataInput) {
           match.time.completed = event.created
         })
         return
-      case "session.message.content.updated": {
-        if (store.session.message[event.data.sessionID])
-          message.editAssistant(event.data.sessionID, event.data.messageID, (assistant) => {
-            assistant.content = [...event.data.content]
-          })
-        if (!sync.pending(`session.message:${event.data.sessionID}`)) return
-        result.session.message.invalidate(event.data.sessionID)
-        refresh(() => result.session.message.sync(event.data.sessionID))
-        return
-      }
       case "session.step.started":
         message.update(event.data.sessionID, (draft, index) => {
           const position = index.get(event.data.assistantMessageID)
@@ -824,7 +897,8 @@ export function createData(config: CreateDataInput) {
             existing.error = undefined
             existing.finish = undefined
             existing.rawFinish = undefined
-            existing.providerState = undefined
+            existing.native = undefined
+            existing.time.created = event.data.started
             existing.time.streamed = undefined
             existing.time.completed = undefined
             if (event.data.snapshot) existing.snapshot = { ...existing.snapshot, start: event.data.snapshot }
@@ -843,7 +917,7 @@ export function createData(config: CreateDataInput) {
             metadata: event.metadata,
             content: [],
             snapshot: event.data.snapshot ? { start: event.data.snapshot } : undefined,
-            time: { created: event.created },
+            time: { created: event.data.started },
           })
         })
         return
@@ -857,7 +931,7 @@ export function createData(config: CreateDataInput) {
           assistant.time.completed = event.created
           assistant.finish = event.data.finish
           assistant.rawFinish = event.data.rawFinish
-          assistant.providerState = event.data.providerState
+          assistant.native = event.data.native
           assistant.cost = event.data.cost
           assistant.tokens = event.data.tokens
           if (event.data.snapshot) assistant.snapshot = { ...assistant.snapshot, end: event.data.snapshot }
@@ -869,7 +943,7 @@ export function createData(config: CreateDataInput) {
           assistant.time.completed = event.created
           assistant.finish = event.data.finish ?? "error"
           assistant.rawFinish = event.data.rawFinish
-          assistant.providerState = event.data.providerState
+          assistant.native = event.data.native
           assistant.error = event.data.error
           assistant.retry = undefined
           if (event.data.cost !== undefined && event.data.tokens !== undefined) {
@@ -918,7 +992,7 @@ export function createData(config: CreateDataInput) {
         message.editTool(event.data.sessionID, event.data.assistantMessageID, event.data.id, (tool) => {
           tool.time.ran = event.created
           tool.executed = event.data.executed
-          tool.providerState = event.data.state
+          tool.native = event.data.native
           tool.state = { status: "running", input: event.data.input, metadata: {} }
         })
         return
@@ -937,7 +1011,7 @@ export function createData(config: CreateDataInput) {
             content: [...event.data.content],
           }
           tool.executed = event.data.executed || tool.executed === true
-          tool.providerResultState = event.data.resultState
+          if (event.data.native) tool.native = { ...tool.native, ...event.data.native }
           tool.time.completed = event.created
         })
         return
@@ -952,7 +1026,7 @@ export function createData(config: CreateDataInput) {
             content: event.data.content,
           }
           tool.executed = event.data.executed || tool.executed === true
-          tool.providerResultState = event.data.resultState
+          if (event.data.native) tool.native = { ...tool.native, ...event.data.native }
           tool.time.completed = event.created
         })
         return
@@ -961,7 +1035,7 @@ export function createData(config: CreateDataInput) {
           assistant.content.push({
             type: "reasoning",
             text: "",
-            state: event.data.state,
+            native: event.data.native,
             time: { created: event.created },
           })
         })
@@ -975,7 +1049,7 @@ export function createData(config: CreateDataInput) {
         message.editReasoning(event.data.sessionID, event.data.assistantMessageID, (reasoning) => {
           reasoning.text = event.data.text
           reasoning.time = { created: reasoning.time?.created ?? event.created, completed: event.created }
-          if (event.data.state !== undefined) reasoning.state = event.data.state
+          if (event.data.native !== undefined) reasoning.native = event.data.native
         })
         return
       case "session.retry.scheduled":
@@ -994,7 +1068,6 @@ export function createData(config: CreateDataInput) {
           status: "running",
           reason: event.data.reason,
           summary: "",
-          recent: event.data.recent ?? "",
           time: { created: event.created },
         })
         if (event.data.inputID) compacting.get(event.data.sessionID)?.observed.add(event.data.inputID)
@@ -1008,6 +1081,32 @@ export function createData(config: CreateDataInput) {
           if (currentAssistant) currentAssistant.retry = undefined
         })
         if (event.type === "session.execution.interrupted" && event.data.reason === "shutdown") return
+        // Mirror the projected idle marker so turn boundaries match before the next message read.
+        message.insert(event.data.sessionID, {
+          id: messageIDFromEvent(event.id),
+          type: "idle",
+          outcome:
+            event.type === "session.execution.succeeded"
+              ? "succeeded"
+              : event.type === "session.execution.failed"
+                ? "failed"
+                : "interrupted",
+          ...(event.type === "session.execution.failed" ? { error: event.data.error } : {}),
+          time: { created: event.created },
+        })
+        if (
+          store.session.message[event.data.sessionID]?.some(
+            (item) =>
+              item.type === "assistant" &&
+              item.content.some(
+                (part) =>
+                  part.type === "tool" && (part.state.status === "streaming" || part.state.status === "running"),
+              ),
+          )
+        ) {
+          sync.invalidate(`session.message:${event.data.sessionID}`)
+          refresh(() => result.session.message.sync(event.data.sessionID))
+        }
         // An event can overtake the first read; queue a revalidation when that read is still active.
         if (!store.session.info[event.data.sessionID] && !sync.has(`session:${event.data.sessionID}`)) return
         result.session.invalidate(event.data.sessionID)
@@ -1058,9 +1157,10 @@ export function createData(config: CreateDataInput) {
               status: "completed",
               reason: event.data.reason,
               model: event.data.model,
-              providerState: event.data.providerState,
+              native: event.data.native,
               summary: event.data.text,
-              recent: event.data.recent,
+              cost: event.data.cost,
+              tokens: event.data.tokens,
             })
             return
           }
@@ -1070,9 +1170,10 @@ export function createData(config: CreateDataInput) {
             status: "completed",
             reason: event.data.reason,
             model: event.data.model,
-            providerState: event.data.providerState,
+            native: event.data.native,
             summary: event.data.text,
-            recent: event.data.recent,
+            cost: event.data.cost,
+            tokens: event.data.tokens,
             time: { created: event.created },
           })
         })
@@ -1092,6 +1193,8 @@ export function createData(config: CreateDataInput) {
               message: "Compaction failed before recording an error",
             },
             metadata: current?.type === "compaction" ? current.metadata : event.metadata,
+            cost: event.data.cost,
+            tokens: event.data.tokens,
             time: current?.type === "compaction" ? current.time : { created: event.created },
           }
           if (current?.type === "compaction") {
@@ -1150,10 +1253,13 @@ export function createData(config: CreateDataInput) {
     if (!event.location) return
     const location = event.location
     switch (event.type) {
-      case "catalog.updated":
-        result.location.model.invalidate(location)
+      case "provider.updated":
         result.location.provider.invalidate(location)
-        refresh(() => Promise.all([result.location.model.sync(location), result.location.provider.sync(location)]))
+        refresh(() => result.location.provider.sync(location))
+        break
+      case "model.updated":
+        result.location.model.invalidate(location)
+        refresh(() => result.location.model.sync(location))
         break
       case "agent.updated":
         result.location.agent.invalidate(location)
@@ -1215,14 +1321,20 @@ export function createData(config: CreateDataInput) {
         )
         break
       case "config.updated":
+        result.location.config.invalidate(location)
+        if (result.location.config.list(location) !== undefined || sync.has(`location.config:${locationKey(location)}`))
+          refresh(() => result.location.config.sync(location))
+        refresh(() => result.location.websearch.refresh(location))
+        break
       case "websearch.updated":
         refresh(() => result.location.websearch.refresh(location))
         break
       // Authenticating an MCP integration reconnects its server, which emits mcp.status.changed,
-      // so the mcp list syncs here rather than off integration.updated.
+      // so the mcp list syncs here rather than off integration.updated. The server emits one event
+      // per MCP server as each settles, so a location booting nine servers emitted nine refetches.
       case "mcp.status.changed":
         result.location.mcp.server.invalidate(location)
-        refresh(() => result.location.mcp.server.sync(location))
+        settle(`mcp.status:${locationKey(location)}`, () => result.location.mcp.server.sync(location))
         break
       case "mcp.resources.changed":
         result.location.mcp.resource.invalidate(location)
@@ -1259,7 +1371,7 @@ export function createData(config: CreateDataInput) {
   const vcs = locationResource("vcs", (location) => api().vcs.get({ location }))
   const shells = locationResource("shell", async (location) => {
     const response = await api().shell.list({ location })
-    const ref = { directory: response.location.directory, workspaceID: response.location.workspaceID }
+    const ref = { directory: response.location.directory }
     return {
       location: response.location,
       data: Object.fromEntries(response.data.map((info) => [info.id, { ...info, location: ref }])),
@@ -1314,6 +1426,11 @@ export function createData(config: CreateDataInput) {
       status(sessionID: string) {
         return store.session.active[sessionID] ?? "idle"
       },
+      active() {
+        return Object.entries(store.session.active).flatMap(([sessionID, status]) =>
+          status === "running" ? [sessionID] : [],
+        )
+      },
       // Inputs are the pending user and synthetic items; compactions are control items.
       input: {
         list(sessionID: string) {
@@ -1331,25 +1448,59 @@ export function createData(config: CreateDataInput) {
         list(sessionID: string) {
           return store.session.pending[sessionID] ?? []
         },
+        // An execution's idle boundary promotes every pending steer at once, so a steer only waits behind work
+        // once the current execution has delivered input.
+        status(sessionID: string, inboxID: string): DataPendingStatus | undefined {
+          const pending = store.session.pending[sessionID] ?? []
+          const item = pending.find((entry) => entry.id === inboxID && entry.type === "user")
+          if (!item) return undefined
+          if (item.delivery === "queue") return "queued"
+          const messages = store.session.message[sessionID] ?? []
+          const boundary = messages.findLastIndex((entry) => entry.type === "idle")
+          if ((store.session.active[sessionID] ?? "idle") === "idle")
+            return boundary >= 0 && item.time.created <= messages[boundary].time.created ? "stranded" : "starting"
+          return messages
+            .slice(boundary + 1)
+            .some((entry) => entry.type === "user" && !pending.some((other) => other.id === entry.id))
+            ? "steering"
+            : "starting"
+        },
         sync(sessionID: string) {
           return sync.run(`session.pending:${sessionID}`, async () => {
-            const pending = await api().session.inbox.list({ sessionID })
-            // A positive read acknowledges admission even when its SSE echo is delayed.
-            pending.forEach((item) => outbox.delete(item.id))
-            // Compactions also coalesce by Session, not just by the proposed ID.
-            if (pending.some((item) => item.type === "compaction"))
-              store.session.pending[sessionID]
-                ?.filter((item) => item.type === "compaction")
-                .forEach((item) => outbox.delete(item.id))
-            // Keep optimistic rows still awaiting their echo: this fetch may
-            // have raced ahead of an in-flight admission the server does not
-            // know about yet.
-            const inflight = (store.session.pending[sessionID] ?? []).filter((item) => outbox.has(item.id))
-            const merged = inflight.length === 0 ? pending : [...pending, ...inflight]
-            batch(() => {
-              setStore("session", "pending", sessionID, reconcile(merged))
-              merged.forEach(materializeInboxMessage)
-            })
+            const updates = new Map<string, SessionInboxInfo | SessionInbox.Delivery | undefined>()
+            pendingUpdates.set(sessionID, updates)
+            try {
+              const snapshot = await api().session.inbox.list({ sessionID })
+              // Events can overtake this HTTP response on a remote connection.
+              // Reconcile them before an older snapshot can resurrect delivered input.
+              const current = new Map(snapshot.map((item) => [item.id, item]))
+              updates.forEach((item, id) => {
+                if (item === undefined) current.delete(id)
+                else if (typeof item === "string") {
+                  const existing = current.get(id)
+                  if (existing) current.set(id, { ...existing, delivery: item })
+                } else current.set(id, item)
+              })
+              const pending = [...current.values()]
+              // A positive read acknowledges admission even when its SSE echo is delayed.
+              pending.forEach((item) => outbox.delete(item.id))
+              // Compactions also coalesce by Session, not just by the proposed ID.
+              if (pending.some((item) => item.type === "compaction"))
+                store.session.pending[sessionID]
+                  ?.filter((item) => item.type === "compaction")
+                  .forEach((item) => outbox.delete(item.id))
+              // Keep optimistic rows still awaiting their echo: this fetch may
+              // have raced ahead of an in-flight admission the server does not
+              // know about yet.
+              const inflight = (store.session.pending[sessionID] ?? []).filter((item) => outbox.has(item.id))
+              const merged = inflight.length === 0 ? pending : [...pending, ...inflight]
+              batch(() => {
+                setStore("session", "pending", sessionID, reconcile(merged))
+                merged.forEach(materializeInboxMessage)
+              })
+            } finally {
+              if (pendingUpdates.get(sessionID) === updates) pendingUpdates.delete(sessionID)
+            }
           })
         },
         invalidate(sessionID: string) {
@@ -1423,7 +1574,7 @@ export function createData(config: CreateDataInput) {
           admitLocal({
             id,
             sessionID: input.sessionID,
-            timeCreated: Date.now(),
+            time: { created: Date.now() },
             type: "compaction",
             delivery: "steer",
             payload: {},
@@ -1470,21 +1621,25 @@ export function createData(config: CreateDataInput) {
           !messageIndex.get(request.sessionID)?.has(id) &&
           !store.session.pending[request.sessionID]?.some((item) => item.id === id)
         if (fresh) {
+          const files = optimisticFiles(request.files)
+          const payload: Extract<SessionInboxInfo, { type: "user" }>["payload"] = {
+            text: request.text,
+            agents: request.agents?.map((agent) => ({ ...agent })),
+            metadata: request.metadata,
+          }
+          if (files) payload.files = files
           outbox.add(id)
           admitLocal({
             id,
             sessionID: request.sessionID,
-            timeCreated: Date.now(),
+            time: { created: Date.now() },
             type: "user",
             delivery: request.delivery ?? "steer",
-            // Files and skills stay off the optimistic row: their durable
+            // File-URI attachments and skills stay off the optimistic row: their durable
             // forms are server-loaded (content, mime, resolution), so they
-            // fill in when the echo upserts the row.
-            payload: {
-              text: request.text,
-              agents: request.agents?.map((agent) => ({ ...agent })),
-              metadata: request.metadata,
-            },
+            // fill in when the echo upserts the row. Inline data URLs already carry
+            // their mime and base64 payload, so they render immediately.
+            payload,
           })
         }
         return sendAdmission(
@@ -1505,11 +1660,7 @@ export function createData(config: CreateDataInput) {
         return sync.run(options?.children ? `session.family:${sessionID}` : `session:${sessionID}`, async () => {
           const [info, children] = await Promise.all([
             api().session.get({ sessionID }),
-            options?.children
-              ? api()
-                  .session.list({ parentID: sessionID, order: "desc" })
-                  .then((response) => response.data)
-              : [],
+            options?.children ? listChildren({ parentID: sessionID, order: "desc", limit: CHILD_PAGE }) : [],
           ])
           const sessions = [info, ...children]
           batch(() => {
@@ -1541,7 +1692,11 @@ export function createData(config: CreateDataInput) {
         },
         sync(sessionID: string) {
           return sync.run(`session.message:${sessionID}`, async () => {
-            const response = await api().message.list({ sessionID, limit: messagePageLimit, order: "desc" })
+            const response = await api().message.list({
+              sessionID,
+              limit: config.initialMessageLimit?.() ?? messagePageLimit,
+              order: "desc",
+            })
             const fetched = response.data.toReversed()
             // Same protection as the pending sync: a re-fetch racing an
             // admission must not wipe its local transcript row.
@@ -1555,9 +1710,11 @@ export function createData(config: CreateDataInput) {
               (item) => !ids.has(item.id) && (outbox.has(item.id) || admitted.has(item.id)),
             )
             const messages = local.length === 0 ? fetched : [...fetched, ...local]
-            messageIndex.set(sessionID, new Map(messages.map((message, index) => [message.id, index])))
-            setStore("session", "message", sessionID, reconcile(messages))
-            setStore("session", "messageCursor", sessionID, response.cursor.next ?? undefined)
+            batch(() => {
+              messageIndex.set(sessionID, new Map(messages.map((message, index) => [message.id, index])))
+              setStore("session", "message", sessionID, reconcile(messages))
+              setStore("session", "messageCursor", sessionID, response.cursor.next ?? undefined)
+            })
           })
         },
         more(sessionID: string) {
@@ -1639,6 +1796,11 @@ export function createData(config: CreateDataInput) {
         list(sessionID: string) {
           return store.session.permission[sessionID]
         },
+        sessions() {
+          return Object.entries(store.session.permission).flatMap(([sessionID, requests]) =>
+            requests.length > 0 ? [sessionID] : [],
+          )
+        },
         sync(sessionID: string) {
           return sync.run(`session.permission:${sessionID}`, async () => {
             setStore("session", "permission", sessionID, await api().permission.list({ sessionID }))
@@ -1664,16 +1826,20 @@ export function createData(config: CreateDataInput) {
           const key = locationKey(ref)
           return forms?.filter((form) => form.location && locationKey(form.location) === key)
         },
+        sessions() {
+          return Object.entries(store.session.form).flatMap(([sessionID, forms]) =>
+            sessionID !== "global" && forms.length > 0 ? [sessionID] : [],
+          )
+        },
         sync(sessionID: string, ref?: LocationRef) {
           const key = `session.form:${sessionID}:${sessionID === "global" ? locationKey(ref ?? defaultLocation()) : ""}`
           return sync.run(key, async () => {
             if (sessionID === "global") {
-              const response = await api().form.request.list({
+              const response = await api().form.list({
                 location: locationQuery(ref ?? defaultLocation()),
               })
               const location = {
                 directory: response.location.directory,
-                workspaceID: response.location.workspaceID,
               }
               const locationID = locationKey(location)
               setStore("session", "form", sessionID, [
@@ -1684,7 +1850,7 @@ export function createData(config: CreateDataInput) {
               ])
               return
             }
-            setStore("session", "form", sessionID, await api().form.list({ sessionID }))
+            setStore("session", "form", sessionID, await api().session.form.list({ sessionID }))
           })
         },
         invalidate(sessionID: string, ref?: LocationRef) {
@@ -1692,17 +1858,19 @@ export function createData(config: CreateDataInput) {
             `session.form:${sessionID}:${sessionID === "global" ? locationKey(ref ?? defaultLocation()) : ""}`,
           )
         },
-        reply(input: FormReplyInput, ref?: LocationRef) {
-          return settleForm(input, ref, api().form.reply(input, formRequestOptions(input.sessionID, ref)))
+        reply(input: SessionFormReplyInput, ref?: LocationRef) {
+          return settleForm(input, ref, api().session.form.reply(input, formRequestOptions(input.sessionID, ref)))
         },
-        cancel(input: FormCancelInput, ref?: LocationRef) {
-          return settleForm(input, ref, api().form.cancel(input, formRequestOptions(input.sessionID, ref)))
+        cancel(input: SessionFormCancelInput, ref?: LocationRef) {
+          return settleForm(input, ref, api().session.form.cancel(input, formRequestOptions(input.sessionID, ref)))
         },
       },
     },
     project: {
       list() {
-        return Object.values(store.project.info).toSorted((a, b) => b.time.updated - a.time.updated)
+        return Object.values(store.project.info)
+          .filter((project) => project.time.archived === undefined)
+          .toSorted((a, b) => b.time.active - a.time.active)
       },
       get(projectID: string) {
         return store.project.info[projectID]
@@ -1762,7 +1930,7 @@ export function createData(config: CreateDataInput) {
           if (!store.location[key]) setStore("location", key, {})
           setStore("location", key, "info", location)
           if (!ref) {
-            setDefaultLocation({ directory: location.directory, workspaceID: location.workspaceID })
+            setDefaultLocation({ directory: location.directory })
           }
         })
       },
@@ -1790,6 +1958,7 @@ export function createData(config: CreateDataInput) {
         result.location.vcs.invalidate(location)
         result.location.agent.invalidate(location)
         result.location.command.invalidate(location)
+        result.location.config.invalidate(location)
         result.location.integration.invalidate(location)
         result.location.mcp.server.invalidate(location)
         result.location.mcp.resource.invalidate(location)
@@ -1803,6 +1972,10 @@ export function createData(config: CreateDataInput) {
       vcs: { info: vcs.list, sync: vcs.sync, invalidate: vcs.invalidate },
       agent: locationResource("agent", (location) => api().agent.list({ location })),
       command: locationResource("command", (location) => api().command.list({ location })),
+      config: locationResource("config", async (location) => ({
+        location: { directory: location.directory },
+        data: await api().config.get({ location }),
+      })),
       integration: locationResource("integration", (location) => api().integration.list({ location })),
       mcp: {
         server: locationResource("mcpServer", (location) => api().mcp.list({ location })),

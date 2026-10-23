@@ -36,7 +36,7 @@ function AdminLayout() {
   });
 
   return (
-    <div class="flex h-full w-full flex-col overflow-hidden md:flex-row">
+    <div class="flex h-full w-full flex-col overflow-hidden lg:flex-row">
       <Show when={!permissions.isPending && permittedTabs().length > 0}>
         <SectionRail tabs={permittedTabs()} groupOrder={ADMIN_GROUP_ORDER} />
       </Show>

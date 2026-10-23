@@ -7,13 +7,21 @@ export type {
   RouteDefaultsInput,
   AnyRoute,
   Interface as LLMClientShape,
-  Service as LLMClientService,
+  LLMClientService,
   StreamOptions,
+  CompactMethod,
+  CompactionOperations,
+  CompactionRequest,
+  CheckpointRequest,
+  EndpointCompactOptions,
+  TriggerCompactOptions,
 } from "./client.js"
 export * from "./executor.js"
 export { Auth } from "./auth.js"
 export { AuthOptions } from "./auth-options.js"
 export { Endpoint } from "./endpoint.js"
+export { MediaRoute } from "./media.js"
+export { MediaProtocol } from "./media-protocol.js"
 export { Framing } from "./framing.js"
 export { Protocol } from "./protocol.js"
 export { HttpTransport, WebSocketTransport } from "./transport/index.js"

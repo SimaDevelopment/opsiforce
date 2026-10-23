@@ -10,28 +10,42 @@ export type BaseFormatId = (typeof BASE_FORMAT_IDS)[number];
 
 export type ModelProviderStatus = 'working' | 'failing' | 'not-signed-in' | 'needs-sign-in' | 'missing' | 'unknown';
 
-export type ModelProviderKind = 'official-api-key' | 'compatible-endpoint' | 'linked-account';
+export type ModelProviderKind = 'official-api-key' | 'compatible-endpoint' | 'linked-account' | 'azure-foundry';
+
+export type AvailabilityMode = 'every' | 'chosen';
+
+export interface AzureConnection {
+  models: string[];
+  deployments: Record<string, string>;
+}
 
 export interface TenantModelProvider {
   name: string;
   kind?: ModelProviderKind | null;
   baseUrl?: string;
   baseFormat: BaseFormatId | null;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
+  backendEnabled: boolean;
+  backendWeight: number;
   status: ModelProviderStatus;
+  servedModels?: string[];
+  connection?: AzureConnection;
 }
 
 export interface TenantModelProviders {
   bifrostReachable: boolean;
   baseFormats: BaseFormatId[];
+  catalogModels: Record<BaseFormatId, string[]>;
   providers: TenantModelProvider[];
 }
 
 export interface ModelProviderSwitch {
   name: string;
-  enabled: boolean;
-  weight: number;
+  chatEnabled?: boolean;
+  chatWeight?: number;
+  backendEnabled?: boolean;
+  backendWeight?: number;
 }
 
 export interface ModelProviderCreationRules {
@@ -39,6 +53,7 @@ export interface ModelProviderCreationRules {
   customProviderLimit: number;
   customProviderCount: number;
   kindsByFormat: Record<BaseFormatId, ModelProviderKind[]>;
+  catalogModels: Record<BaseFormatId, string[]>;
 }
 
 export interface ModelProviderConnection {
@@ -46,15 +61,27 @@ export interface ModelProviderConnection {
   kind: ModelProviderKind;
   key: string;
   baseUrl?: string;
+  models?: string[];
+  endpoint?: string;
+  deployments?: Record<string, string>;
 }
+
+export type NewProviderAvailability = { mode: 'every' } | { mode: 'chosen'; tenantIds: string[] };
 
 export interface NewModelProvider extends ModelProviderConnection {
   name: string;
+  availability?: NewProviderAvailability;
 }
 
 export interface ModelProviderConnectionEdit {
   key: string;
   baseUrl?: string;
+  endpoint?: string;
+}
+
+export interface ModelProviderModels {
+  models: string[] | null;
+  deployments?: Record<string, string>;
 }
 
 export interface PlatformModelProvider {
@@ -65,6 +92,8 @@ export interface PlatformModelProvider {
   status: ModelProviderStatus;
   fixed: boolean;
   notMetered: boolean;
+  servedModels?: string[];
+  connection?: AzureConnection;
   linkedAccountVendor?: LinkedAccountVendor;
 }
 
@@ -78,6 +107,7 @@ export interface NewLinkedAccount {
   kind: 'linked-account';
   vendor: LinkedAccountVendor;
   name: string;
+  availability?: NewProviderAvailability;
 }
 
 export type NewCustomModelProvider = NewModelProvider | NewLinkedAccount;
@@ -86,6 +116,7 @@ export interface PlatformModelProviderCreationRules {
   namePrefix: string;
   nameMaxLength: number;
   kindsByFormat: Record<BaseFormatId, ModelProviderKind[]>;
+  catalogModels: Record<BaseFormatId, string[]>;
 }
 
 export type ModelProviderScope = 'tenant' | 'platform';
@@ -132,22 +163,47 @@ export interface AffectedAgent {
 
 export const AGENTS_AFFECTED_CODE = 'agents_affected';
 
+export interface ModelProviderAccessProvider {
+  name: string;
+  baseFormats: BaseFormatId[];
+  mode: AvailabilityMode;
+}
+
+export interface TenantModelProviderAccess {
+  tenantId: string;
+  name: string;
+  displayName: string;
+  withheld: string[];
+}
+
+export interface PlatformModelProviderAccess {
+  providers: ModelProviderAccessProvider[];
+  tenants: TenantModelProviderAccess[];
+}
+
 const tenantModelProvidersKey = ['model-providers'] as const;
-const reachableBaseFormatsKey = ['model-providers', 'reachable-formats'] as const;
+const reachableModelsKey = ['model-providers', 'reachable-models'] as const;
 const creationRulesKey = ['model-providers', 'creation-rules'] as const;
 const platformModelProvidersKey = ['platform-model-providers'] as const;
 const platformCreationRulesKey = ['platform-model-providers', 'creation-rules'] as const;
-
+const platformAccessKey = ['platform-model-providers', 'access'] as const;
 const SCOPE_PATH: Record<ModelProviderScope, string> = {
   tenant: '/model-providers',
   platform: '/platform-model-providers',
 };
+
+const UNREACHABLE_GATEWAY_RECHECK_MS = 10_000;
+
+function recheckWhileUnreachable(query: { state: { data?: { bifrostReachable: boolean } } }): number | false {
+  return query.state.data?.bifrostReachable === false ? UNREACHABLE_GATEWAY_RECHECK_MS : false;
+}
 
 export function useTenantModelProviders(enabled: () => boolean = () => true) {
   return createAppQuery(() => ({
     queryKey: tenantModelProvidersKey,
     queryFn: () => api.get<TenantModelProviders>('/model-providers'),
     enabled: enabled(),
+    refetchInterval: recheckWhileUnreachable,
   }));
 }
 
@@ -170,15 +226,15 @@ export function useSaveBaseFormat() {
   }));
 }
 
-export function useReachableBaseFormats() {
+export function useReachableModels() {
   return createAppQuery(() => ({
-    queryKey: reachableBaseFormatsKey,
-    queryFn: () => api.get<BaseFormatId[]>('/model-providers/reachable-formats'),
+    queryKey: reachableModelsKey,
+    queryFn: () => api.get<string[]>('/model-providers/reachable-models'),
   }));
 }
 
 function invalidateReachability(qc: ReturnType<typeof useQueryClient>) {
-  void qc.invalidateQueries({ queryKey: reachableBaseFormatsKey });
+  void qc.invalidateQueries({ queryKey: reachableModelsKey });
   void qc.invalidateQueries({ queryKey: agentKeys.models() });
   void qc.invalidateQueries({ queryKey: transcriptionAvailabilityKey });
 }
@@ -196,6 +252,7 @@ export function usePlatformModelProviders(enabled: () => boolean = () => true) {
     queryKey: platformModelProvidersKey,
     queryFn: () => api.get<PlatformModelProviders>('/platform-model-providers'),
     enabled: enabled(),
+    refetchInterval: recheckWhileUnreachable,
   }));
 }
 
@@ -207,11 +264,47 @@ export function usePlatformModelProviderCreationRules(enabled: () => boolean = (
   }));
 }
 
+export function usePlatformModelProviderAccess(enabled: () => boolean = () => true) {
+  return createAppQuery(() => ({
+    queryKey: platformAccessKey,
+    queryFn: () => api.get<PlatformModelProviderAccess>('/platform-model-providers/access'),
+    enabled: enabled(),
+  }));
+}
+
+export function useSetAvailabilityMode() {
+  const qc = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: (vars: { name: string; mode: AvailabilityMode }) =>
+      api.put<PlatformModelProviderAccess>(`/platform-model-providers/${encodeURIComponent(vars.name)}/availability`, {
+        mode: vars.mode,
+      }),
+    onSuccess: (view: PlatformModelProviderAccess) => qc.setQueryData(platformAccessKey, view),
+  }));
+}
+
+export function useSetModelProviderAccess() {
+  const qc = useQueryClient();
+  return createMutation(() => ({
+    mutationFn: (vars: { name: string; tenantId: string; withheld: boolean }) =>
+      api.put<PlatformModelProviderAccess>(
+        `/platform-model-providers/${encodeURIComponent(vars.name)}/access/${encodeURIComponent(vars.tenantId)}`,
+        { withheld: vars.withheld }
+      ),
+    onSuccess: (view: PlatformModelProviderAccess) => {
+      qc.setQueryData(platformAccessKey, view);
+      void qc.invalidateQueries({ queryKey: tenantModelProvidersKey, exact: true });
+      invalidateReachability(qc);
+    },
+  }));
+}
+
 function useApplyView(scope: ModelProviderScope) {
   const qc = useQueryClient();
   return (view: TenantModelProviders | PlatformModelProviders) => {
     if (scope === 'platform') {
       qc.setQueryData(platformModelProvidersKey, view);
+      void qc.invalidateQueries({ queryKey: platformAccessKey });
       void qc.invalidateQueries({ queryKey: tenantModelProvidersKey, exact: true });
     } else {
       qc.setQueryData(tenantModelProvidersKey, view);
@@ -243,6 +336,18 @@ export function useEditModelProviderConnection(scope: ModelProviderScope = 'tena
       api.patch<TenantModelProviders | PlatformModelProviders>(
         `${SCOPE_PATH[scope]}/${encodeURIComponent(vars.name)}`,
         vars.edit
+      ),
+    onSuccess: applyView,
+  }));
+}
+
+export function useSetModelProviderModels(scope: ModelProviderScope = 'tenant') {
+  const applyView = useApplyView(scope);
+  return createMutation(() => ({
+    mutationFn: (vars: { name: string; choice: ModelProviderModels }) =>
+      api.put<TenantModelProviders | PlatformModelProviders>(
+        `${SCOPE_PATH[scope]}/${encodeURIComponent(vars.name)}/models`,
+        vars.choice
       ),
     onSuccess: applyView,
   }));

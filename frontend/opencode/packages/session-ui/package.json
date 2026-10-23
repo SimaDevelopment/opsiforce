@@ -1,6 +1,6 @@
 {
-  "name": "@opencode-ai/session-ui",
-  "version": "1.18.15",
+  "name": "@opencode/session-ui",
+  "version": "2.1.2",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -47,7 +47,7 @@
   },
   "scripts": {
     "generate:progress-indicator": "bun script/generate-session-progress-indicator.ts",
-    "typecheck": "tsgo -b",
+    "typecheck": "tsc -b",
     "test": "bun test src --only-failures",
     "test:components": "playwright test --config playwright.components.config.ts",
     "test:components:ui": "playwright test --config playwright.components.config.ts --ui"
@@ -57,15 +57,15 @@
     "@playwright/test": "catalog:",
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",
-    "@typescript/native-preview": "catalog:",
+    "@typescript/native": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "catalog:"
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@opencode-ai/client": "workspace:*",
-    "@opencode-ai/ui": "workspace:*",
-    "@opencode-ai/util": "workspace:*",
+    "@opencode/client": "workspace:*",
+    "@opencode/ui": "workspace:*",
+    "@opencode/util": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@shikijs/stream": "catalog:",
     "@solid-primitives/event-listener": "catalog:",

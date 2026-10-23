@@ -2,13 +2,14 @@ import { expect, spyOn, test } from "bun:test"
 import { InputRenderable, TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { createEventStream, createFetch, directory, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
 
 test.each(["success", "failure", "home"])("Copy session ID from Ctrl+P (%s)", async (mode) => {
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 100, height: 30, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   Object.defineProperty(setup.renderer, "capabilities", { get: () => null })
   const copy = spyOn(setup.renderer, "copyToClipboardOSC52").mockReturnValue(mode === "success")

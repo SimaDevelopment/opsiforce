@@ -9,6 +9,7 @@ function target() {
     prompt: [{ type: "text", content: "", start: 0, end: 0 }],
     cursor: 0,
   })
+
   return {
     prompt: store,
     capture: {
@@ -27,6 +28,7 @@ describe("Composer attachment ownership", () => {
         const second = target()
         const stored = Promise.withResolvers<{ id: string; url: string }>()
         let active = first.capture
+
         const attachments = createComposerAttachments({
           capture: () => active,
           editor: () => document.createElement("div"),
@@ -34,10 +36,15 @@ describe("Composer attachment ownership", () => {
           addPart: () => false,
           setDraggingType() {},
           directory: () => "C:/repo",
+          destination: () => ({
+            input: { image: true, pdf: true },
+            local: false,
+            upload: () => Promise.reject(new Error("native attachments must not upload")),
+          }),
           isDialogActive: () => false,
-          warn() {},
           duplicate() {},
           onError: rejectTest,
+          onUploadError: rejectTest,
           store: () => stored.promise,
         })
 

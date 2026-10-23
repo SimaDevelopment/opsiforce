@@ -3,7 +3,7 @@ import * as NodeSink from "@effect/platform-node/NodeSink"
 import * as NodeStream from "@effect/platform-node/NodeStream"
 import { Deferred, Effect, Exit, FileSystem, Layer, Path, PlatformError, Predicate, Sink, Stream } from "effect"
 import type { Scope } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import {
   ChildProcessSpawner,
   ExitCode,
@@ -11,7 +11,7 @@ import {
   makeHandle,
   ProcessId,
   type ChildProcessHandle,
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
 // ast-grep-ignore: no-star-import
 import * as NodeChildProcess from "node:child_process"
 import { PassThrough } from "node:stream"
@@ -83,6 +83,15 @@ const toPlatformError = (
     syscall: err.syscall,
     cause: err,
   })
+}
+
+export class KilledBySignal extends Error {
+  readonly signal: NodeJS.Signals
+
+  constructor(signal: NodeJS.Signals) {
+    super(`Process interrupted due to receipt of signal: '${signal}'`)
+    this.signal = signal
+  }
 }
 
 type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
@@ -471,13 +480,8 @@ const makeCrossSpawnSpawner = Effect.gen(function* () {
             }),
             exitCode: Effect.flatMap(completion, ([code, signal]) => {
               if (Predicate.isNotNull(code)) return Effect.succeed(ExitCode(code))
-              return Effect.fail(
-                toPlatformError(
-                  "exitCode",
-                  new Error(`Process interrupted due to receipt of signal: '${signal}'`),
-                  command,
-                ),
-              )
+              // Node reports a signal whenever the exit code is null.
+              return Effect.fail(toPlatformError("exitCode", new KilledBySignal(signal!), command))
             }),
             kill: (opts?: ChildProcess.KillOptions) => stop(command, proc, closed, stopOutput, opts),
             unref: Effect.sync(() => {

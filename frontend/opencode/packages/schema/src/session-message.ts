@@ -19,8 +19,9 @@ import { Money } from "./money.js"
 import { Snapshot } from "./snapshot.js"
 import { TokenUsage } from "./token-usage.js"
 
-export const ID = Schema.String.check(Schema.isStartsWith("msg_")).pipe(
+export const ID = Schema.String.check(Schema.isStartingWith("msg_")).pipe(
   Schema.brand("Session.Message.ID"),
+  Schema.annotate({ identifier: "Session.Message.ID" }),
   statics((schema) => ({
     create: () => schema.make("msg_" + ascending()),
     fromEvent: (eventID: Event.ID) => schema.make(eventID.replace(/^evt_/, "msg_")),
@@ -34,10 +35,14 @@ const Base = {
   time: Schema.Struct({ created: DateTimeUtcFromMillis }),
 }
 
-export const ProviderState = Schema.Record(Schema.String, Schema.Unknown).annotate({
-  identifier: "Session.Message.ProviderState",
+/**
+ * Provider-owned replay data, keyed by the producing provider's metadata fields and echoed back verbatim. A tool's
+ * result data is merged into its call data, so adapters must not reuse a key with a different value across the two.
+ */
+export const Native = Schema.Record(Schema.String, Schema.Unknown).annotate({
+  identifier: "Session.Message.Native",
 })
-export type ProviderState = typeof ProviderState.Type
+export type Native = typeof Native.Type
 
 export interface AgentSelected extends Schema.Schema.Type<typeof AgentSelected> {}
 export const AgentSelected = Schema.Struct({
@@ -162,8 +167,7 @@ export const AssistantTool = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   executed: Schema.Boolean.pipe(optional),
-  providerState: ProviderState.pipe(optional),
-  providerResultState: ProviderState.pipe(optional),
+  native: Native.pipe(optional),
   state: ToolState,
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,
@@ -176,14 +180,14 @@ export interface AssistantText extends Schema.Schema.Type<typeof AssistantText> 
 export const AssistantText = Schema.Struct({
   type: Schema.tag("text"),
   text: Schema.String,
-  state: ProviderState.pipe(optional),
+  native: Native.pipe(optional),
 }).annotate({ identifier: "Session.Message.Assistant.Text" })
 
 export interface AssistantReasoning extends Schema.Schema.Type<typeof AssistantReasoning> {}
 export const AssistantReasoning = Schema.Struct({
   type: Schema.tag("reasoning"),
   text: Schema.String,
-  state: ProviderState.pipe(optional),
+  native: Native.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,
     completed: DateTimeUtcFromMillis.pipe(optional),
@@ -221,7 +225,8 @@ export const Assistant = Schema.Struct({
   }).pipe(optional),
   finish: FinishReason.pipe(optional),
   rawFinish: Schema.String.pipe(optional),
-  providerState: ProviderState.pipe(optional),
+  /** Step-level native data, such as a provider's reason for blocking a response. */
+  native: Native.pipe(optional),
   cost: Money.USD.pipe(optional),
   tokens: TokenUsage.Info.pipe(optional),
   error: SessionError.Error.pipe(optional),
@@ -236,13 +241,18 @@ export const Assistant = Schema.Struct({
 
 const CompactionBase = { type: Schema.tag("compaction"), ...Base }
 
+/** Usage of the compaction request itself, not the size of the resulting context. */
+const CompactionUsage = {
+  cost: Money.USD.pipe(optional),
+  tokens: TokenUsage.Info.pipe(optional),
+}
+
 export interface CompactionRunning extends Schema.Schema.Type<typeof CompactionRunning> {}
 export const CompactionRunning = Schema.Struct({
   ...CompactionBase,
   status: Schema.tag("running"),
   reason: Schema.Literals(["auto", "manual"]),
   summary: Schema.String,
-  recent: Schema.String,
 }).annotate({ identifier: "Session.Message.Compaction.Running" })
 
 export interface CompactionCompleted extends Schema.Schema.Type<typeof CompactionCompleted> {}
@@ -251,9 +261,10 @@ export const CompactionCompleted = Schema.Struct({
   status: Schema.tag("completed"),
   reason: Schema.Literals(["auto", "manual"]),
   model: Model.Ref.pipe(optional),
-  providerState: ProviderState.pipe(optional),
+  /** A provider compaction stores its replacement window in `native.messages`, replayed instead of `summary`. */
+  native: Native.pipe(optional),
   summary: Schema.String,
-  recent: Schema.String,
+  ...CompactionUsage,
 }).annotate({ identifier: "Session.Message.Compaction.Completed" })
 
 export interface CompactionFailed extends Schema.Schema.Type<typeof CompactionFailed> {}
@@ -262,6 +273,7 @@ export const CompactionFailed = Schema.Struct({
   status: Schema.tag("failed"),
   reason: Schema.Literals(["auto", "manual"]),
   error: SessionError.Error,
+  ...CompactionUsage,
 }).annotate({ identifier: "Session.Message.Compaction.Failed" })
 
 export const Compaction = Schema.Union([CompactionRunning, CompactionCompleted, CompactionFailed]).pipe(
@@ -269,6 +281,19 @@ export const Compaction = Schema.Union([CompactionRunning, CompactionCompleted, 
   Schema.annotate({ identifier: "Session.Message.Compaction" }),
 )
 export type Compaction = CompactionRunning | CompactionCompleted | CompactionFailed
+
+/**
+ * Marks the Session going idle: every step since the previous marker belongs to
+ * one turn, including prompts steered in while it was busy. A shutdown does not
+ * record one, since the resumed execution continues the same turn.
+ */
+export interface Idle extends Schema.Schema.Type<typeof Idle> {}
+export const Idle = Schema.Struct({
+  ...Base,
+  type: Schema.tag("idle"),
+  outcome: Schema.Literals(["succeeded", "failed", "interrupted"]),
+  error: SessionError.Error.pipe(optional),
+}).annotate({ identifier: "Session.Message.Idle" })
 
 export const Info = Schema.Union([
   AgentSelected,
@@ -281,6 +306,7 @@ export const Info = Schema.Union([
   Shell,
   Assistant,
   Compaction,
+  Idle,
 ]).annotate({ identifier: "Session.Message.Info" })
 export type Info =
   | AgentSelected
@@ -293,4 +319,5 @@ export type Info =
   | Shell
   | Assistant
   | Compaction
+  | Idle
 export type Type = Info["type"]

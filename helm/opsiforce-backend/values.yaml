@@ -43,8 +43,6 @@ config:
   bifrostPodProxyUrl: ""
   bifrostAdminUsername: ""
   bifrostAdminPassword: ""
-  bifrostUpstreamProvider: ""
-  bifrostFallbackProvider: ""
   gatewayUrl: ""
   runtimeProxyUrl: ""
   externalServicesHost: ""

@@ -4,7 +4,7 @@ import { text } from 'node:stream/consumers';
 import { parseJson, type JsonObject, type JsonValue } from './json';
 
 export type FakePodRoute =
-  | 'health'
+  | 'info'
   | 'session.list'
   | 'session.create'
   | 'session.get'
@@ -63,7 +63,7 @@ export interface SessionInfo extends JsonObject {
 export interface InboxEntry extends JsonObject {
   id: string;
   sessionID: string;
-  timeCreated: number;
+  time: { created: number };
   type: 'user';
   payload: JsonObject;
   delivery: 'steer' | 'queue';
@@ -83,7 +83,7 @@ export interface FakePod {
   addSession: (overrides?: Partial<SessionInfo>) => SessionInfo;
   setMessages: (sessionId: string, page: MessagePage) => void;
   setActive: (sessionIds: string[]) => void;
-  setHealth: (health: { status: number; body: JsonValue }) => void;
+  setInfo: (info: { status: number; body: JsonValue }) => void;
   serveSkills: (provider: () => string[] | Promise<string[]>) => void;
   script: (route: FakePodRoute, script: RouteScript) => void;
   clearScripts: () => void;
@@ -133,9 +133,13 @@ interface RouteMatch {
 function matchRoute(method: string, pathname: string): RouteMatch {
   const unscoped = (route: FakePodRoute | 'unknown'): RouteMatch => ({ route, sessionId: null, inboxId: null });
 
-  if (pathname === '/api/health' && method === 'GET') return unscoped('health');
+  if (pathname === '/api/info' && method === 'GET') return unscoped('info');
   if (pathname === '/api/event' && method === 'GET') return unscoped('event');
   if (pathname === '/api/session/active' && method === 'GET') return unscoped('session.active');
+  const experimentalWait = /^\/api\/experimental\/session\/([^/]+)\/wait$/.exec(pathname);
+  if (experimentalWait && method === 'POST') {
+    return { route: 'session.wait', sessionId: decodeURIComponent(experimentalWait[1]), inboxId: null };
+  }
   if (pathname === '/api/skill' && method === 'GET') return unscoped('skill.list');
   if (pathname === '/notify-config-change' && method === 'POST') return unscoped('notify.configChange');
   if (pathname === '/api/session') {
@@ -158,7 +162,6 @@ function matchRoute(method: string, pathname: string): RouteMatch {
   if (rest === '/agent' && method === 'POST') return scopedTo('session.switchAgent');
   if (rest === '/prompt' && method === 'POST') return scopedTo('session.prompt');
   if (rest === '/message' && method === 'GET') return scopedTo('session.message');
-  if (rest === '/wait' && method === 'POST') return scopedTo('session.wait');
   if (rest === '/interrupt' && method === 'POST') return scopedTo('session.interrupt');
   if (rest === '/inbox' && method === 'GET') return scopedTo('session.inbox');
 
@@ -230,7 +233,10 @@ export async function startFakePod(): Promise<FakePod> {
   const scripts = new Map<FakePodRoute, RouteScript>();
   const streams = new Set<ServerResponse>();
   let active: string[] = [];
-  let health: { status: number; body: JsonValue } = { status: 200, body: { healthy: true, version: '1.18.4', pid: 1 } };
+  let info: { status: number; body: JsonValue } = {
+    status: 200,
+    body: { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } },
+  };
   let skillProvider: () => string[] | Promise<string[]> = noSkills;
   let replayed: FakePodEvent[] = [];
   let sessionCounter = 0;
@@ -296,7 +302,7 @@ export async function startFakePod(): Promise<FakePod> {
         const entry: InboxEntry = {
           id,
           sessionID: session.id,
-          timeCreated: Date.now(),
+          time: { created: Date.now() },
           type: 'user',
           payload,
           delivery: delivery === 'steer' ? 'steer' : 'queue',
@@ -354,8 +360,8 @@ export async function startFakePod(): Promise<FakePod> {
         return sendJson(res, 404, podErrors.unknown(`No route for ${request.method} ${request.path}`));
       case 'event':
         return openStream(res);
-      case 'health':
-        return sendJson(res, health.status, health.body);
+      case 'info':
+        return sendJson(res, info.status, info.body);
       case 'session.list': {
         const query = request.query.cursor === undefined ? request.query : decodeListCursor(request.query.cursor);
         const wantsRoots = query.parentID === 'null';
@@ -456,8 +462,8 @@ export async function startFakePod(): Promise<FakePod> {
     setActive: (sessionIds) => {
       active = [...sessionIds];
     },
-    setHealth: (next) => {
-      health = next;
+    setInfo: (next) => {
+      info = next;
     },
     serveSkills: (provider) => {
       skillProvider = provider;

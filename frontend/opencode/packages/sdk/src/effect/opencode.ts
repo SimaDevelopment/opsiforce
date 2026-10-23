@@ -1,10 +1,11 @@
 export * as OpenCode from "./opencode"
 
-import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/effect"
-import type { Workspace } from "@opencode-ai/core/workspace"
+import { OpenCode, type OpenCodeClient } from "@opencode/client/effect"
+import type { Session } from "@opencode/core/session"
+import type { Workspace } from "@opencode/core/workspace"
 import { Context, Effect, Layer } from "effect"
 import type { Config, Scope } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { EmbeddedHost } from "../internal/host"
 import type { SdkInstances } from "../internal/instances"
 
@@ -16,7 +17,11 @@ export type InstanceOptions<R = never> = SdkInstances.Options<R>
 export type InstanceConfiguration = SdkInstances.Configuration
 
 export type Interface = Omit<OpenCodeClient, "plugin" | "workspace"> & {
-  readonly sessions: OpenCodeClient["session"]
+  readonly sessions: Omit<OpenCodeClient["session"], "create" | "get" | "move"> & {
+    readonly create: Session.Interface["create"]
+    readonly get: (input: { readonly sessionID: Session.ID }) => ReturnType<Session.Interface["get"]>
+    readonly move: Session.Interface["move"]
+  }
   readonly events: OpenCodeClient["event"]
   readonly workspace: {
     readonly create: Workspace.Interface["create"]
@@ -46,7 +51,12 @@ export const create: <R = never>(
 
   return {
     ...client,
-    sessions: client.session,
+    sessions: {
+      ...client.session,
+      create: host.sessions.create,
+      get: (input: { readonly sessionID: Session.ID }) => host.sessions.get(input.sessionID),
+      move: host.sessions.move,
+    },
     events: client.event,
     workspace: {
       create: host.workspace.create,
@@ -57,7 +67,7 @@ export const create: <R = never>(
   }
 })
 
-export class Service extends Context.Service<Service, Interface>()("@opencode-ai/sdk/OpenCode") {}
+export class Service extends Context.Service<Service, Interface>()("@opencode/sdk/OpenCode") {}
 
 export const layer = <R = never>(
   options: CreateOptions<R> = {},

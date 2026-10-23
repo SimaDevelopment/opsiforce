@@ -119,9 +119,16 @@ export function modelCatalogResponse(catalog = readModelCatalog()): ModelCatalog
     .toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
-export function catalogOfFormats(formats: BaseFormatId[], catalog = readModelCatalog()): ModelCatalog {
-  const keys = new Set(formats.map((format) => BASE_FORMATS[format].modelCatalogKey));
-  return Object.fromEntries(Object.entries(catalog).filter(([key]) => keys.has(key)));
+export function catalogOfModels(modelRefs: string[], catalog = readModelCatalog()): ModelCatalog {
+  const wanted = new Set(modelRefs);
+  return Object.fromEntries(
+    Object.entries(catalog).flatMap(([providerId, provider]) => {
+      const models = Object.entries(provider.models ?? {}).filter(([modelId]) =>
+        wanted.has(`${providerId}/${modelId}`)
+      );
+      return models.length > 0 ? [[providerId, { ...provider, models: Object.fromEntries(models) }]] : [];
+    })
+  );
 }
 
 export function baseFormatOfModel(model: string): BaseFormatId | null {

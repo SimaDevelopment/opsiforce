@@ -1,11 +1,11 @@
 export * as Tool from "./tool.js"
-export { CallID, Content, Error, FileContent, TextContent } from "@opencode-ai/schema/tool"
-export type { Context, Metadata, Namespace, Options, Result } from "@opencode-ai/schema/tool"
+export { CallID, Content, Error, FileContent, TextContent } from "@opencode/schema/tool"
+export type { Context, Metadata, Namespace, Options, Result } from "@opencode/schema/tool"
 
-import { ToolDefinition, type ToolCall } from "@opencode-ai/ai"
-import { Tool } from "@opencode-ai/schema/tool"
+import { ToolDefinition, type ToolCall } from "@opencode/ai"
+import { Tool } from "@opencode/schema/tool"
 import { Context, Effect, Layer, Result, Schema, SchemaIssue, Types } from "effect"
-import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
+import { makeLocationNode } from "@opencode/util/effect/app-node"
 import type { Agent } from "./agent.js"
 import { CodeModeCatalog } from "./codemode/catalog.js"
 import { CodeModeTool } from "./codemode/tool.js"
@@ -39,6 +39,7 @@ type Data = {
 }
 
 export interface Interface extends State.Transformable<Editor> {
+  readonly list: () => Effect.Effect<ReadonlyArray<Tool.Info & { readonly id: string }>>
   readonly snapshot: (permissions?: Permission.Ruleset) => Effect.Effect<Snapshot>
 }
 
@@ -154,6 +155,9 @@ const layer = Layer.effect(
       }
     })
 
+    let catalog:
+      | { data: Data; names: string; inventory: CodeModeTool.Inventory; value: CodeModeCatalog.Inventory }
+      | undefined
     const state = State.create<Data, Editor>({
       name: "tool",
       initial: () => ({
@@ -201,8 +205,9 @@ const layer = Layer.effect(
           editor.tools.delete(id)
         },
       }),
-      notify: (value) =>
-        Effect.forEach(
+      notify: (value) => {
+        catalog = undefined
+        return Effect.forEach(
           value.errors,
           ({ kind, name, namespace, error }) =>
             Effect.logError(`Skipping invalid ${kind} registration`, {
@@ -211,25 +216,32 @@ const layer = Layer.effect(
               error: error.message,
             }),
           { discard: true },
-        ),
+        )
+      },
     })
 
     return Service.of({
       transform: state.transform,
       reload: state.reload,
+      list: () => Effect.sync(() => Array.from(state.get().tools.values())),
       snapshot: Effect.fn("Tool.snapshot")((permissions) =>
         Effect.sync(() => {
+          const data = state.get()
           const active = new Map<string, Tool.Info>()
           const rules = permissions ?? []
-          for (const [name, tool] of state.get().tools) {
+          for (const [name, tool] of data.tools) {
             if (whollyDisabled(tool.options?.permission ?? name, rules)) continue
             active.set(name, tool)
           }
           const direct = new Map(Array.from(active).filter(([, tool]) => tool.options?.codemode === false))
           const codeModeTools = new Map(Array.from(active).filter(([, tool]) => tool.options?.codemode !== false))
-          const namespaces = state.get().namespaces
-          const codeModeInventory = { tools: codeModeTools, namespaces }
+          const names = Array.from(codeModeTools.keys()).join("\0")
           const codeModeEnabled = !whollyDisabled("execute", rules)
+          // Discovery is immutable for a registry revision and visible tool set. Keep request
+          // definitions/executors fresh, but share the inventory, whose prepared runtime and much
+          // larger rendered catalog are cached by identity, across steps.
+          const cached = catalog?.data === data && catalog.names === names ? catalog : undefined
+          const codeModeInventory = cached?.inventory ?? { tools: codeModeTools, namespaces: data.namespaces }
           const codeModeTool = codeModeEnabled
             ? CodeModeTool.create(codeModeInventory, (name, tool, input, context) =>
                 beforeExecute(name, input, context).pipe(
@@ -237,7 +249,10 @@ const layer = Layer.effect(
                 ),
               )
             : undefined
-          const codeModeCatalog = codeModeEnabled ? CodeModeTool.catalog(codeModeInventory) : undefined
+          const codeModeCatalog = !codeModeEnabled
+            ? undefined
+            : (cached?.value ?? CodeModeTool.catalog(codeModeInventory))
+          if (codeModeCatalog) catalog = { data, names, inventory: codeModeInventory, value: codeModeCatalog }
           return {
             ...(codeModeCatalog === undefined ? {} : { codeModeCatalog }),
             definitions: [
@@ -264,7 +279,9 @@ const layer = Layer.effect(
                 return yield* executeTool(codeModeTool, name, event.input, context)
               const tool = direct.get(name)
               if (tool) return yield* executeTool(tool, name, event.input, context)
-              return yield* new Tool.Error({ message: `Unknown tool: ${name}` })
+              return yield* new Tool.Error({
+                message: `No tool named "${name}" is currently available. Please use a tool from the available tool list.`,
+              })
             }),
           }
         }),
@@ -292,7 +309,7 @@ function registrationError(tool: Tool.Info) {
     if (error) return error
   }
   const name = normalizedName(tool)
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) return new RegistrationError({ name, message: `Invalid tool name: ${name}` })
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) return new RegistrationError({ name, message: `Invalid tool name: ${name}` })
   const id = effectiveName(tool)
   if (tool.options?.codemode === false && id === "execute")
     return new RegistrationError({ name: id, message: 'Tool name "execute" is reserved for CodeMode' })
@@ -305,7 +322,7 @@ function registrationError(tool: Tool.Info) {
 }
 
 function namespaceError(name: string) {
-  if (name.split(".").every((segment) => /^[A-Za-z0-9_-]{1,64}$/.test(segment))) return
+  if (name.split(".").every((segment) => /^[A-Za-z0-9_-]+$/.test(segment))) return
   return new RegistrationError({ name, message: `Invalid tool namespace: ${JSON.stringify(name)}` })
 }
 

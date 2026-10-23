@@ -60,11 +60,29 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
     )
   })
 
+  const idle = (outcome: SessionMessage.Idle["outcome"], error?: SessionMessage.Idle["error"]) =>
+    clearCurrentRetry.pipe(
+      Effect.andThen(
+        adapter.appendMessage(
+          SessionMessage.Idle.make({
+            id: SessionMessage.ID.fromEvent(event.id),
+            type: "idle",
+            outcome,
+            error,
+            metadata: event.metadata,
+            time: { created },
+          }),
+        ),
+      ),
+    )
+
   const project = pipe(
     Match.type<SessionEvent.DurableEvent>(),
     Match.discriminatorsExhaustive("type")({
       "session.created": () => Effect.void,
       "session.viewed": () => Effect.void,
+      "session.archived": () => Effect.void,
+      "session.unarchived": () => Effect.void,
       "session.message.content.updated": (event) =>
         updateOwnedAssistant(event.data.messageID, (draft) => {
           draft.content = castDraft(
@@ -116,6 +134,8 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           )
         }),
       "session.renamed": () => Effect.void,
+      "session.metadata.updated": () => Effect.void,
+      "session.permissions": () => Effect.void,
       "session.deleted": () => Effect.void,
       "session.forked": () => Effect.void,
       "session.inbox.delivered": () => Effect.void,
@@ -123,9 +143,11 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
       "session.inbox.cancelled": () => Effect.void,
       "session.inbox.delivery.changed": () => Effect.void,
       "session.execution.started": () => Effect.void,
-      "session.execution.succeeded": () => clearCurrentRetry,
-      "session.execution.failed": () => clearCurrentRetry,
-      "session.execution.interrupted": () => clearCurrentRetry,
+      "session.execution.succeeded": () => idle("succeeded"),
+      "session.execution.failed": (event) => idle("failed", event.data.error),
+      // Shutdown keeps the execution claim and the resumed drain continues the turn.
+      "session.execution.interrupted": (event) =>
+        event.data.reason === "shutdown" ? clearCurrentRetry : idle("interrupted"),
       "session.instructions.updated": (event) => {
         if (event.data.text === undefined) return Effect.void
         return adapter.appendMessage(
@@ -134,7 +156,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
             type: "system",
             text: event.data.text,
             description: `Instructions updated: ${Object.keys(event.data.delta).join(", ")}`,
-            metadata: event.metadata,
+            metadata: { ...event.metadata, notice: "instructions", instructionSources: Object.keys(event.data.delta) },
             time: { created },
           }),
         )
@@ -204,7 +226,8 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
                 draft.error = undefined
                 draft.finish = undefined
                 draft.rawFinish = undefined
-                draft.providerState = undefined
+                draft.native = undefined
+                draft.time.created = DateTime.makeUnsafe(event.data.started)
                 draft.time.streamed = undefined
                 draft.time.completed = undefined
                 if (event.data.snapshot) draft.snapshot = { ...draft.snapshot, start: event.data.snapshot }
@@ -228,7 +251,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
               agent: event.data.agent,
               model: event.data.model,
               metadata: event.metadata,
-              time: { created },
+              time: { created: DateTime.makeUnsafe(event.data.started) },
               content: [],
               snapshot: event.data.snapshot ? { start: event.data.snapshot } : undefined,
             }),
@@ -244,7 +267,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           draft.time.completed = created
           draft.finish = event.data.finish
           draft.rawFinish = event.data.rawFinish
-          draft.providerState = castDraft(event.data.providerState)
+          draft.native = castDraft(event.data.native)
           draft.cost = event.data.cost
           draft.tokens = event.data.tokens
           projectTerminalSnapshot(draft, event)
@@ -255,7 +278,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           draft.time.completed = created
           draft.finish = event.data.finish ?? "error"
           draft.rawFinish = event.data.rawFinish
-          draft.providerState = castDraft(event.data.providerState)
+          draft.native = castDraft(event.data.native)
           draft.error = castDraft(event.data.error)
           draft.retry = undefined
           if (event.data.cost !== undefined && event.data.tokens !== undefined) {
@@ -275,7 +298,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           const match = latestText(draft)
           if (match) {
             match.text = event.data.text
-            match.state = castDraft(event.data.state)
+            match.native = castDraft(event.data.native)
           }
         })
       },
@@ -305,7 +328,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           const match = latestTool(draft, event.data.id)
           if (match) {
             match.executed = event.data.executed
-            match.providerState = event.data.state
+            match.native = event.data.native
             match.time.ran = created
             match.state = castDraft(
               SessionMessage.ToolStateRunning.make({
@@ -324,7 +347,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           const match = latestTool(draft, event.data.id)
           if (match && match.state.status === "running") {
             match.executed = event.data.executed || match.executed === true
-            match.providerResultState = event.data.resultState
+            if (event.data.native) match.native = { ...match.native, ...event.data.native }
             match.time.completed = created
             match.state = castDraft(
               SessionMessage.ToolStateCompleted.make({
@@ -342,7 +365,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           const match = latestTool(draft, event.data.id)
           if (match && (match.state.status === "streaming" || match.state.status === "running")) {
             match.executed = event.data.executed || match.executed === true
-            match.providerResultState = event.data.resultState
+            if (event.data.native) match.native = { ...match.native, ...event.data.native }
             match.time.completed = created
             match.state = castDraft(
               SessionMessage.ToolStateError.make({
@@ -363,7 +386,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
               SessionMessage.AssistantReasoning.make({
                 type: "reasoning",
                 text: "",
-                state: event.data.state,
+                native: event.data.native,
                 time: { created },
               }),
             ),
@@ -376,7 +399,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           if (match) {
             match.text = event.data.text
             match.time = { created: match.time?.created ?? created, completed: created }
-            if (event.data.state !== undefined) match.state = event.data.state
+            if (event.data.native !== undefined) match.native = event.data.native
           }
         })
       },
@@ -398,7 +421,6 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
             metadata: event.metadata,
             reason: event.data.reason,
             summary: "",
-            recent: event.data.recent ?? "",
             time: { created },
           }),
         ),
@@ -409,11 +431,13 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
             yield* adapter.updateCompaction({
               ...current,
               status: "completed",
+              metadata: event.metadata ? { ...current.metadata, ...event.metadata } : current.metadata,
               reason: event.data.reason,
               model: event.data.model,
-              providerState: event.data.providerState,
+              native: event.data.native,
               summary: event.data.text,
-              recent: event.data.recent,
+              cost: event.data.cost,
+              tokens: event.data.tokens,
             })
             return
           }
@@ -425,9 +449,10 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
               metadata: event.metadata,
               reason: event.data.reason,
               model: event.data.model,
-              providerState: event.data.providerState,
+              native: event.data.native,
               summary: event.data.text,
-              recent: event.data.recent,
+              cost: event.data.cost,
+              tokens: event.data.tokens,
               time: { created },
             }),
           )
@@ -442,6 +467,8 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
             metadata: current?.metadata ?? event.metadata,
             reason: event.data.reason,
             error: event.data.error,
+            cost: event.data.cost,
+            tokens: event.data.tokens,
             time: current?.time ?? { created },
           })
           if (current?.status === "running") return yield* adapter.updateCompaction(failed)

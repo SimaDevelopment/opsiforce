@@ -1,17 +1,21 @@
 import { expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
-import { Global } from "@opencode-ai/util/global"
+import { Global } from "@opencode/util/global"
 import { Effect, FileSystem } from "effect"
 import { createEventStream, createFetch, json } from "./fixture/tui-client"
 import { tmpdir } from "./fixture/fixture"
+import { takeDraft } from "../src/component/prompt/draft-stash"
 
 test("stats shows only this year and returns after errors or success", async () => {
+  // Other app tests can leave a home draft in the process-wide stash.
+  takeDraft(undefined)
   await using state = await tmpdir()
-  const setup = await createTestRenderer({ width: 100, height: 34, useThread: false, kittyKeyboard: true })
+  const setup = await createTestRenderer({ width: 100, height: 34, kittyKeyboard: true })
+  await setup.renderer.setupTerminal()
   setup.renderer.start()
   const requests: URL[] = []
   const calls = createFetch((url) => {
-    if (url.pathname !== "/api/session/stats") return undefined
+    if (url.pathname !== "/api/experimental/session/stats") return undefined
     requests.push(url)
     if (requests.length === 1) return json({ message: "offline" }, { status: 503 })
     return json({
@@ -38,7 +42,7 @@ test("stats shows only this year and returns after errors or success", async () 
       app: { name: "test", version: "test", channel: "test" },
       server: { endpoint: { url: server.url.toString() } },
       config: {
-        get: async () => ({ animations: false, tabs: { enabled: false } }),
+        get: async () => ({ animations: false, tabs: { mode: "off" } }),
         update: async () => ({}),
       },
       packages: { prepare: async () => ({ directory: "" }) },

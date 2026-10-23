@@ -18,11 +18,17 @@ export async function resolveLimit(executor: DbExecutor, tenantId: string, key: 
   return platform?.value ?? null;
 }
 
-export async function assertWithinLimit(executor: DbExecutor, tenantId: string, key: LimitKey): Promise<void> {
+export async function assertWithinLimit(
+  executor: DbExecutor,
+  tenantId: string,
+  key: LimitKey,
+  adding = 1
+): Promise<void> {
   await lockTenantLimit(executor, tenantId, key);
+  if (adding <= 0) return;
   const limit = await resolveLimit(executor, tenantId, key);
   if (limit === null) return;
-  if ((await LIMITS[key].count(executor, tenantId)) >= limit) throw new LimitReachedException(key, limit);
+  if ((await LIMITS[key].count(executor, tenantId)) + adding > limit) throw new LimitReachedException(key, limit);
 }
 
 export async function limitUsage(executor: DbExecutor, tenantId: string): Promise<LimitUsage[]> {

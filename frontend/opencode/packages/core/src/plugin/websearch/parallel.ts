@@ -1,8 +1,8 @@
 export * as WebSearchParallel from "./parallel.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema, Scope } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { HttpClient } from "effect/http"
 import { App } from "../../app.js"
 import { WebSearchMcp } from "./mcp.js"
 

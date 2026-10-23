@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { EffectDrizzleSqlite } from "@opencode-ai/core/database/drizzle"
-import { Database } from "@opencode-ai/core/database/database"
-import { DatabaseMigration } from "@opencode-ai/core/database/migration"
-import { V1Migration } from "@opencode-ai/core/database/v1-migration"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionSchema } from "@opencode-ai/core/session/schema"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Global } from "@opencode-ai/util/global"
+import { EffectDrizzleSqlite } from "@opencode/core/database/drizzle"
+import { Database } from "@opencode/core/database/database"
+import { DatabaseMigration } from "@opencode/core/database/migration"
+import { V1Migration } from "@opencode/core/database/v1-migration"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionSchema } from "@opencode/core/session/schema"
+import { SessionTable } from "@opencode/core/session/sql"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Global } from "@opencode/util/global"
 import { Effect, Fiber, Layer, Logger, Schedule, Schema, Scope } from "effect"
 import { eq, sql } from "drizzle-orm"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
+import type { SqlClient } from "effect/sql/SqlClient"
 import { tmpdir } from "./fixture/tmpdir"
 import path from "path"
 
@@ -337,8 +337,8 @@ describe("V1Migration.transformSession", () => {
       agent: "build",
       model: { id: "model", providerID: "provider", variant: "fast" },
       content: [
-        { type: "text", text: "", state: { separator: true } },
-        { type: "reasoning", text: "think", state: { provider: 1 }, time: { created: 21, completed: 22 } },
+        { type: "text", text: "", native: { separator: true } },
+        { type: "reasoning", text: "think", native: { provider: 1 }, time: { created: 21, completed: 22 } },
       ],
       snapshot: { start: "snap_start", end: "snap_end", files: ["a.ts", "b.ts", "c.ts"] },
       finish: "stop",
@@ -430,7 +430,7 @@ describe("V1Migration.transformSession", () => {
     })
     expect(content[2]).toMatchObject({
       id: "completed",
-      providerState: { provider: true },
+      native: { provider: true },
       state: {
         status: "completed",
         content: [
@@ -466,6 +466,101 @@ describe("V1Migration.transformSession", () => {
         metadata: { output: { nested: true } },
       },
       time: { created: 38, completed: 39 },
+    })
+  })
+
+  test("appends a legacy tool notice naming only the renamed or removed tools that were called", () => {
+    const parent = user("msg_000000000060aaaaaaaaaaaaaa")
+    const message = assistant("msg_000000000061aaaaaaaaaaaaaa", parent.id)
+    const call = (id: string, tool: string) =>
+      part(id, message.id, {
+        type: "tool",
+        callID: id,
+        tool,
+        state: { status: "completed", input: {}, output: "ok", title: tool, metadata: {}, time: { start: 1, end: 2 } },
+      })
+    const result = transform(
+      [parent, message],
+      [
+        call("prt_1", "bash"),
+        call("prt_2", "read"),
+        call("prt_3", "glob"),
+        call("prt_4", "todowrite"),
+        call("prt_5", "task"),
+        call("prt_6", "apply_patch"),
+      ],
+    )
+    expect(result.messages.map((row) => [row.type, row.seq])).toEqual([
+      ["user", 0],
+      ["assistant", 1],
+      ["system", 2],
+    ])
+    expect(result.messages[2]).toMatchObject({
+      session_id: "ses_test",
+      time_created: 20,
+      time_updated: 21,
+      data: {
+        text: [
+          "The available tools have changed.",
+          "The following tools were renamed and must be called by their new names: `bash` is now `shell`; `task` is now `subagent`; `apply_patch` is now `patch`.",
+          "The `subagent` tool takes `agent` instead of `subagent_type` and `sessionID` instead of `task_id`.",
+          "The `read` tool now takes `path` instead of `filePath`.",
+          "The `todowrite` tool is no longer available by default. Only call it if it is in your tool list.",
+        ].join("\n\n"),
+        time: { created: 20 },
+      },
+    })
+    expect(result.messages[2]?.id).toMatch(/^msg_/)
+    expect(result.watermark).toBe(2)
+  })
+
+  test("omits the legacy tool notice when no legacy tools were called or they precede a compaction", () => {
+    const parent = user("msg_000000000062aaaaaaaaaaaaaa")
+    const message = assistant("msg_000000000063aaaaaaaaaaaaaa", parent.id)
+    const call = (id: string, messageID: string, tool: string) =>
+      part(id, messageID, {
+        type: "tool",
+        callID: id,
+        tool,
+        state: { status: "completed", input: {}, output: "ok", title: tool, metadata: {}, time: { start: 1, end: 2 } },
+      })
+    expect(transform([parent, message], [call("prt_1", message.id, "glob")]).messages.map((row) => row.type)).toEqual([
+      "user",
+      "assistant",
+    ])
+
+    const compact = user("msg_000000000064aaaaaaaaaaaaaa", {}, 30)
+    const summary = assistant("msg_000000000065aaaaaaaaaaaaaa", compact.id, { summary: true }, 31)
+    const later = user("msg_000000000066aaaaaaaaaaaaaa", {}, 40)
+    const answer = assistant("msg_000000000067aaaaaaaaaaaaaa", later.id, {}, 41)
+    const result = transform(
+      [parent, message, compact, summary, later, answer],
+      [
+        call("prt_1", message.id, "bash"),
+        part("prt_2", compact.id, { type: "compaction", auto: true }),
+        part("prt_3", summary.id, { type: "text", text: "summary" }),
+        part("prt_4", later.id, { type: "text", text: "again" }),
+        call("prt_5", answer.id, "skill"),
+        call("prt_6", answer.id, "bash"),
+        call("prt_7", answer.id, "edit"),
+        call("prt_8", answer.id, "write"),
+      ],
+    )
+    expect(result.messages.map((row) => row.type)).toEqual([
+      "user",
+      "assistant",
+      "compaction",
+      "user",
+      "assistant",
+      "system",
+    ])
+    expect(result.messages[5]?.data).toMatchObject({
+      text: [
+        "The available tools have changed.",
+        "The `bash` tool is now `shell` and must be called by that name.",
+        "The following tools now take `path` instead of `filePath`: `edit`, `write`.",
+        "The `skill` tool now takes `id` instead of `name`.",
+      ].join("\n\n"),
     })
   })
 
@@ -556,7 +651,7 @@ describe("V1Migration.transformSession", () => {
       id: compact.id,
       time_created: 3,
       time_updated: 6,
-      data: { status: "completed", reason: "manual", summary: "summary", recent: "" },
+      data: { status: "completed", reason: "manual", summary: "summary" },
     })
   })
 
@@ -582,8 +677,9 @@ describe("V1Migration.transformSession", () => {
     expect(result.messages[2].data).toMatchObject({
       reason: "auto",
       summary: "summary",
-      recent: "[User]: question\n\n[Assistant]: answer",
+      metadata: { recent: "[User]: question\n\n[Assistant]: answer" },
     })
+    expect(result.messages[2].data).not.toHaveProperty("recent")
     expect(result.session.agent).toBe("existing")
     expect(result.session.model).toEqual(existing.model)
   })

@@ -22,6 +22,8 @@ const OC_PACKAGE_DIRS: Record<string, string> = {
   protocol: "protocol",
   ai: "ai",
   codemode: "codemode",
+  "gui-extensions": "gui-extensions",
+  "plugin-browser": "plugin-browser",
 };
 
 const exportsCache = new Map<string, Record<string, unknown> | null>();
@@ -100,18 +102,15 @@ export function opencodeResolver(): Plugin {
     name: "opencode-resolver",
     enforce: "pre",
     resolveId(source) {
-      if (source === "virtual:vite-opencode-picker/client") return "\0opencode-picker-stub";
-      if (!source.startsWith("@opencode-ai/")) return null;
-      const rest = source.slice("@opencode-ai/".length);
+      if (!source.startsWith("@opencode/")) return null;
+      const [specifier, query] = source.split("?", 2);
+      const rest = specifier.slice("@opencode/".length);
       const [name, ...segments] = rest.split("/");
       const pkgDir = OC_PACKAGE_DIRS[name];
       if (!pkgDir) return null;
       const subpath = segments.join("/");
-      return resolveFromExports(pkgDir, subpath) ?? resolveFromSource(pkgDir, subpath);
-    },
-    load(id) {
-      if (id === "\0opencode-picker-stub") return "export default {};";
-      return null;
+      const resolved = resolveFromExports(pkgDir, subpath) ?? resolveFromSource(pkgDir, subpath);
+      return resolved && query !== undefined ? `${resolved}?${query}` : resolved;
     },
   };
 }

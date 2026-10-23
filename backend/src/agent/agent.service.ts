@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -16,6 +18,16 @@ import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { lockAgentTemplate } from '../common/locks';
 import type { TemplateSaveResult } from '../agent-template/agent-template.types';
 import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
+import { ProjectPoolService } from '../pool/project-pool.service';
+import { isPostgresError, PG_FOREIGN_KEY_VIOLATION } from '../common/postgres-errors';
+import { podSettingsFromRequest } from '../pod/pod-class-request';
+import { DEFAULT_AGENT_PROJECT_SETTINGS, settingsForCopy } from './agent-copy-settings';
+import {
+  readAgentPodSettings,
+  validWarmPoolSize,
+  writeAgentPodSettings,
+  writeWarmPoolSize,
+} from './agent-pod-settings';
 import { SkillDeliveryRepository } from '../delivery/skill-delivery.repository';
 import { packageSkillNames } from '../store/skill-tree';
 import { developmentEnvironmentId } from '../store/agent-profile.repository';
@@ -79,6 +91,8 @@ import {
   type SetServiceSettingsDto,
   type UpdateAgentDto,
   type UpdateAgentProfileDto,
+  type AgentCopyGrants,
+  type UpdateAgentPodClassDto,
   type UpdateAgentSettingsDto,
 } from './agent.types';
 
@@ -92,8 +106,19 @@ const AGENT_CATALOG_COLUMNS: CatalogColumns = {
   createdBy: agents.createdBy,
 };
 
+function agentBeingClaimed(): ConflictException {
+  return new ConflictException({
+    code: 'agent_in_use',
+    message: 'A Project is being created from this agent right now; try deleting it again in a moment',
+  });
+}
+
+const DELETE_ATTEMPTS = 3;
+
 @Injectable()
 export class AgentService {
+  private readonly logger = new Logger(AgentService.name);
+
   constructor(
     private readonly repository: AgentRepository,
     private readonly profiles: AgentProfileService,
@@ -101,7 +126,8 @@ export class AgentService {
     private readonly templates: AgentTemplateStore,
     private readonly bundleReader: AgentBundleReader,
     private readonly bundles: AgentBundleWriter,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly pool: ProjectPoolService
   ) {}
 
   async findAll(caller: AgentCaller): Promise<AgentResponse[]> {
@@ -157,6 +183,7 @@ export class AgentService {
         settings.defaultEnvironmentId
       ),
       settings,
+      podSettings: await readAgentPodSettings(agent.id),
       profiles,
       shippedSkills:
         agent.origin === 'built_in' ? await this.repository.shippedSkills(packageSkillNames(agent.name)) : [],
@@ -180,6 +207,7 @@ export class AgentService {
         profile: { promptBody: '', model, variant },
         skills: [],
         template: null,
+        projectSettings: DEFAULT_AGENT_PROJECT_SETTINGS,
       },
       pins: [],
     });
@@ -220,6 +248,7 @@ export class AgentService {
       if (environment.isDevelopment) throw developmentNotDefault();
       patch.defaultEnvironmentId = environment.id;
     }
+    const warmPoolSize = dto.warmPoolSize === undefined ? undefined : validWarmPoolSize(dto.warmPoolSize);
 
     if (
       Object.keys(patch).length > 0 &&
@@ -227,7 +256,24 @@ export class AgentService {
     ) {
       throw lastAgentUnpublished(agent.displayName ?? agent.name);
     }
+    if (warmPoolSize !== undefined) {
+      await db.transaction((tx) => writeWarmPoolSize(tx, caller.tenantId, agent.id, warmPoolSize));
+    }
+    if (Object.keys(patch).length > 0 || warmPoolSize !== undefined) await this.reconcilePool(agent.id);
     return this.findOne(caller, agentId);
+  }
+
+  async updatePodClass(caller: AgentCaller, agentId: string, dto: UpdateAgentPodClassDto): Promise<AgentDetail> {
+    const agent = await this.assertEditable(caller, agentId);
+    await writeAgentPodSettings(db, agent.id, podSettingsFromRequest(dto));
+    await this.reconcilePool(agent.id);
+    return this.findOne(caller, agentId);
+  }
+
+  async reconcilePool(agentId: string): Promise<void> {
+    await this.pool.reconcileAgent(agentId).catch((err: Error) => {
+      this.logger.warn(`Could not reconcile the warm pool of agent ${agentId}: ${err.message}`);
+    });
   }
 
   async setVisibility(caller: AgentCaller, agentId: string, dto: SetAgentVisibilityDto): Promise<AgentDetail> {
@@ -249,15 +295,17 @@ export class AgentService {
     caller: AgentCaller,
     agentId: string,
     dto: DuplicateAgentDto,
-    grants: { canConfigureProjects: boolean }
+    grants: AgentCopyGrants
   ): Promise<AgentDuplicateResult> {
     const source = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
     if (!canDuplicateAgent(source)) throw notDuplicable(source.displayName ?? source.name);
     const { displayName } = await this.bundles.availableName(caller.tenantId, dto.displayName ?? '');
 
-    const bundle = await this.bundleReader.read(source, caller.tenantId);
+    const read = await this.bundleReader.read(source, caller.tenantId);
+    const bundle = { ...read, projectSettings: settingsForCopy(read.projectSettings, dto) };
     const { pins, notes } = await this.profiles.pinsWithinGrants(caller.tenantId, bundle.skills, grants);
     const copyId = await this.bundles.write(caller, { displayName, bundle, pins });
+    if (bundle.projectSettings.warmPoolSize > 0) await this.reconcilePool(copyId);
     return { agent: await this.findOne(caller, copyId), notes };
   }
 
@@ -269,6 +317,7 @@ export class AgentService {
     } else if (!(await this.repository.disableUnlessLast(caller.tenantId, agent.id, caller.userId))) {
       throw lastAgent(agent.displayName ?? agent.name);
     }
+    if (agent.origin === 'custom') await this.reconcilePool(agent.id);
     return this.findOne(caller, agentId);
   }
 
@@ -289,11 +338,24 @@ export class AgentService {
 
     const testProjects = await this.repository.testProjectIds(agent.id, caller.tenantId);
     await removeProjects(agent.builderChatId ? [...testProjects, agent.builderChatId] : testProjects);
-    await db.transaction(async (tx) => {
-      await lockAgentTemplate(tx, agent.id);
-      await tx.delete(agents).where(eq(agents.id, agent.id));
-    });
+    await this.deleteReleasingWarmSlots(agent.id);
     await this.templates.removeAgent(agent.id);
+  }
+
+  private async deleteReleasingWarmSlots(agentId: string): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      await this.pool.releaseAgentSlots(agentId);
+      try {
+        await db.transaction(async (tx) => {
+          await lockAgentTemplate(tx, agentId);
+          await tx.delete(agents).where(eq(agents.id, agentId));
+        });
+        return;
+      } catch (err) {
+        if (!isPostgresError(err, PG_FOREIGN_KEY_VIOLATION)) throw err;
+        if (attempt === DELETE_ATTEMPTS) throw agentBeingClaimed();
+      }
+    }
   }
 
   async updateProfile(caller: AgentCaller, agentId: string, dto: UpdateAgentProfileDto): Promise<AgentDetail> {
@@ -374,7 +436,9 @@ export class AgentService {
 
   async publish(caller: AgentCaller, agentId: string, dto: PublishAgentDto): Promise<PublishAgentResponse> {
     const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
-    return this.profiles.publish(agent, caller, dto);
+    const published = await this.profiles.publish(agent, caller, dto);
+    await this.reconcilePool(agent.id);
+    return published;
   }
 
   async delivery(caller: AgentCaller, agentId: string): Promise<AgentDeliveryResponse> {

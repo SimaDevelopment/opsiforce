@@ -1,4 +1,4 @@
-import { convertToOpenAICompatibleChatMessages } from "@opencode-ai/core/github-copilot/chat/convert-to-openai-compatible-chat-messages"
+import { convertToOpenAICompatibleChatMessages } from "@opencode/core/github-copilot/chat/convert-to-openai-compatible-chat-messages"
 import { describe, test, expect } from "bun:test"
 
 describe("system messages", () => {
@@ -472,6 +472,48 @@ describe("reasoning (copilot-specific)", () => {
         tool_calls: undefined,
         reasoning_text: "Just thinking, no response yet",
         reasoning_opaque: "sig-abc",
+      },
+    ])
+  })
+
+  test("should replay interleaved reasoning as concatenated text with the latest reasoning_opaque", () => {
+    const result = convertToOpenAICompatibleChatMessages([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "reasoning",
+            text: "Read the readme first.",
+            providerOptions: { copilot: { reasoningOpaque: "opaque-first" } },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call_first",
+            toolName: "read_file",
+            input: { filePath: "/README.md" },
+            providerOptions: { copilot: { reasoningOpaque: "opaque-first" } },
+          },
+          {
+            type: "reasoning",
+            text: "Then the manifest.",
+            providerOptions: { copilot: { reasoningOpaque: "opaque-second" } },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call_second",
+            toolName: "read_file",
+            input: { filePath: "/package.json" },
+            providerOptions: { copilot: { reasoningOpaque: "opaque-second" } },
+          },
+        ],
+      },
+    ])
+
+    expect(result).toMatchObject([
+      {
+        role: "assistant",
+        reasoning_text: "Read the readme first.Then the manifest.",
+        reasoning_opaque: "opaque-second",
       },
     ])
   })

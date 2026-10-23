@@ -5,7 +5,8 @@ import { Schema } from "effect"
 import type { Platform } from "@/runtime/platform/platform"
 import { createComposerReady, createComposerState } from "@/composer/state"
 import { ServerScope } from "@/runtime/server/scope"
-import { createDraftStore } from "@/runtime/persistence/drafts"
+import { createDraftStore, resolveBlobUrl } from "@/runtime/persistence/drafts"
+import { flushPersisted } from "@/runtime/persistence/persist"
 import { Persist, persisted } from "@/runtime/persistence/storage"
 
 let read: ((value: string | null) => void) | undefined
@@ -39,12 +40,14 @@ describe("prompt persistence", () => {
     async (raw) => {
       const store = createDraftStore({
         get: async () => raw,
-        set: async () => undefined,
+        set: async () => [],
         remove: async () => undefined,
         putBlob: async () => "unused",
         getBlob: async () => null,
       })
+
       const model = { providerID: "provider", modelID: "model", variant: "high" }
+
       const root = createRoot((dispose) => ({
         dispose,
         session: createComposerState(
@@ -54,6 +57,7 @@ describe("prompt persistence", () => {
           { ...platform, draftStore: store },
         ),
       }))
+
       await root.session.ready.promise
       expect(root.session.current()).toEqual([{ type: "text", content: "initial prompt", start: 0, end: 14 }])
       expect(root.session.cursor()).toBe(14)
@@ -65,16 +69,23 @@ describe("prompt persistence", () => {
   test("decodes hydrated images and writes canonical blob references through draft storage", async () => {
     const documents = new Map<string, string>()
     const blobs = new Map<string, Blob>()
+
     const store = createDraftStore({
       get: async (key) => documents.get(key) ?? null,
-      set: async (key, value) => void documents.set(key, value),
+      set: async (key, value) => {
+        documents.set(key, value)
+
+        return []
+      },
       remove: async (key) => void documents.delete(key),
       putBlob: async (blob) => {
         blobs.set("composer-image", blob)
+
         return "composer-image"
       },
       getBlob: async (id) => blobs.get(id) ?? null,
     })
+
     const target = Persist.draft("draft-schema-image", "prompt")
     const key = `${target.storage}:${target.key}`
     await store.setItem(
@@ -91,6 +102,7 @@ describe("prompt persistence", () => {
         ],
       }),
     )
+
     const root = createRoot((dispose) => ({
       dispose,
       session: createComposerState(ServerScope.local, { draftID: "draft-schema-image" }, undefined, {
@@ -98,17 +110,15 @@ describe("prompt persistence", () => {
         draftStore: store,
       }),
     }))
+
     await root.session.ready.promise
+    // Bytes stay in the store until the image is shown or sent.
     expect(root.session.current()).toEqual([
-      {
-        type: "image",
-        id: "image",
-        filename: "image.png",
-        mime: "image/png",
-        blob: { id: "composer-image", url: expect.stringMatching(/^blob:/) },
-      },
+      { type: "image", id: "image", filename: "image.png", mime: "image/png", blob: { id: "composer-image", url: "" } },
     ])
+    expect(await resolveBlobUrl(root.session.current()[0]!.blob)).toStartWith("blob:")
     root.session.set([{ type: "text", content: "hello", start: 0, end: 5 }, ...root.session.current()])
+    flushPersisted()
     await Bun.sleep(0)
     expect(documents.get(key)).toContain("hello")
     expect(documents.get(key)).toContain('"blob":{"id":"composer-image"}')
@@ -151,6 +161,7 @@ describe("prompt persistence", () => {
 
         createEffect(() => {
           if (!ready()) return
+
           try {
             expect(session.current()[0]).toMatchObject({ type: "text", content: "persisted draft" })
             dispose()
@@ -166,13 +177,19 @@ describe("prompt persistence", () => {
 
   test("relocates a current prompt into the draft store", async () => {
     const documents = new Map<string, string>()
+
     const store = createDraftStore({
       get: async (key) => documents.get(key) ?? null,
-      set: async (key, value) => void documents.set(key, value),
+      set: async (key, value) => {
+        documents.set(key, value)
+
+        return []
+      },
       remove: async (key) => void documents.delete(key),
       putBlob: async () => "blob",
       getBlob: async () => null,
     })
+
     const target = Persist.draft("draft-relocate", "prompt")
     const key = `${target.storage}:${target.key}`
     localStorage.setItem(
@@ -188,6 +205,7 @@ describe("prompt persistence", () => {
       ...platform,
       draftStore: store,
     })
+
     await session.ready.promise
 
     expect(session.current()[0]).toMatchObject({ type: "text", content: "relocated draft" })
@@ -197,13 +215,19 @@ describe("prompt persistence", () => {
 
   test("relocates a previous prompt key into the draft store", async () => {
     const documents = new Map<string, string>()
+
     const store = createDraftStore({
       get: async (key) => documents.get(key) ?? null,
-      set: async (key, value) => void documents.set(key, value),
+      set: async (key, value) => {
+        documents.set(key, value)
+
+        return []
+      },
       remove: async (key) => void documents.delete(key),
       putBlob: async () => "blob",
       getBlob: async () => null,
     })
+
     const dir = "encoded-directory"
     const oldKey = `${dir}/prompt.v2`
     const target = Persist.prompt(Persist.serverScoped(ServerScope.local, dir, undefined, "prompt"))
@@ -226,16 +250,22 @@ describe("prompt persistence", () => {
   })
 })
 
-test("moves image data URLs into blobs and hydrates object URLs", async () => {
+test("moves image data URLs into blobs and resolves object URLs on demand", async () => {
   const documents = new Map<string, string>()
   const blobs = new Map<string, Blob>()
+
   const store = createDraftStore({
     get: async (key) => documents.get(key) ?? null,
-    set: async (key, value) => void documents.set(key, value),
+    set: async (key, value) => {
+      documents.set(key, value)
+
+      return []
+    },
     remove: async (key) => void documents.delete(key),
     putBlob: async (blob) => {
       const id = String(blob.size)
       blobs.set(id, blob)
+
       return id
     },
     getBlob: async (id) => blobs.get(id) ?? null,
@@ -244,27 +274,35 @@ test("moves image data URLs into blobs and hydrates object URLs", async () => {
   await store.setItem("prompt", JSON.stringify({ prompt: [{ type: "image", dataUrl: "data:image/png;base64,YQ==" }] }))
   expect(documents.get("prompt")).not.toContain("dataUrl")
   const value = JSON.parse((await store.getItem("prompt"))!)
-  expect(value.prompt[0].blob.id).toBe("1")
-  expect(value.prompt[0].blob.url).toStartWith("blob:")
+  expect(value.prompt[0].blob).toEqual({ id: "1" })
+  expect(await resolveBlobUrl(value.prompt[0].blob)).toStartWith("blob:")
 })
 
 test("does not let delayed blob migration overwrite a newer draft", async () => {
   const documents = new Map<string, string>()
   const migration = Promise.withResolvers<void>()
+
   const store = createDraftStore({
     get: async () => null,
-    set: async (key, value) => void documents.set(key, value),
+    set: async (key, value) => {
+      documents.set(key, value)
+
+      return []
+    },
     remove: async () => undefined,
     putBlob: async () => {
       await migration.promise
+
       return "blob"
     },
     getBlob: async () => null,
   })
+
   const older = store.setItem(
     "prompt",
     JSON.stringify({ prompt: [{ type: "image", dataUrl: "data:image/png;base64,YQ==" }] }),
   )
+
   await Bun.sleep(0)
   await store.setItem("prompt", JSON.stringify({ prompt: [{ type: "text", content: "latest" }] }))
   migration.resolve()

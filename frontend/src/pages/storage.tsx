@@ -80,7 +80,7 @@ interface BucketRow {
 
 function bucketRows(buckets: PlatformStorageBuckets): BucketRow[] {
   return [
-    { label: 'Pool (unclaimed projects)', bytes: buckets.pool.bytes, error: buckets.pool.error, icon: Inbox },
+    { label: 'Ready Projects (not yet claimed)', bytes: buckets.pool.bytes, error: buckets.pool.error, icon: Inbox },
     {
       label: 'Tombstoned (deleted pool projects)',
       bytes: buckets.tombstoned.bytes,
@@ -141,7 +141,7 @@ export function StoragePage() {
 
   return (
     <div class="w-full overflow-y-auto h-full px-4 py-6">
-      <div class="flex items-center gap-3 mb-1">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
         <Database class="w-5 h-5 text-muted-foreground" />
         <h1 class="text-xl font-semibold">Storage</h1>
         <Show when={snapshot()}>{(view) => <CapacityBadge snapshot={view()} />}</Show>
@@ -157,7 +157,7 @@ export function StoragePage() {
         </Show>
       </div>
 
-      <p class="text-xs text-muted-foreground mb-4 ml-8">
+      <p class="text-xs text-muted-foreground mb-4 sm:ml-8">
         Disk usage on the shared storage volume, across all organizations.
       </p>
 
@@ -225,7 +225,7 @@ function CapacityBar(props: { snapshot: PlatformStorageView }) {
   const width = (bytes: number) => (scaleBytes() <= 0 ? 0 : (bytes / scaleBytes()) * 100);
 
   return (
-    <div class="ml-8 mb-6">
+    <div class="sm:ml-8 mb-6">
       <div class="flex h-3 rounded-full bg-muted overflow-hidden">
         <For each={tenantSegments()}>
           {(segment) => (
@@ -299,7 +299,7 @@ function RollupTable(props: { snapshot: PlatformStorageView }) {
 
   return (
     <div class="rounded-lg border border-border overflow-hidden bg-card">
-      <Table>
+      <Table layout="responsive" layoutPreferenceKey="opsiforce:admin:storage-layout">
         <TableHeader>
           <TableRow>
             <TableHead class="min-w-64">Name</TableHead>
@@ -346,15 +346,21 @@ function RollupTable(props: { snapshot: PlatformStorageView }) {
                                     </span>
                                   </div>
                                 </TableCell>
-                                <TableCell class="py-1.5 text-right text-xs tabular-nums text-muted-foreground">
+                                <TableCell
+                                  label="Size"
+                                  class="py-1.5 text-right text-xs tabular-nums text-muted-foreground"
+                                >
                                   <SizeValue bytes={environment.bytes} error={environment.error} />
                                 </TableCell>
-                                <TableCell class="py-1.5 text-right text-xs tabular-nums text-muted-foreground">
+                                <TableCell
+                                  label="Share"
+                                  class="py-1.5 text-right text-xs tabular-nums text-muted-foreground"
+                                >
                                   <Show when={!environment.error && environment.bytes !== null} fallback="—">
                                     {formatShare(environment.bytes ?? 0, shareBaseBytes())}
                                   </Show>
                                 </TableCell>
-                                <TableCell class="py-1.5">
+                                <TableCell label="Usage" class="py-1.5">
                                   <Show when={!environment.error && environment.bytes !== null}>
                                     <SizeBar bytes={environment.bytes ?? 0} max={largestTenantBytes()} />
                                   </Show>
@@ -383,7 +389,7 @@ function RollupTable(props: { snapshot: PlatformStorageView }) {
                 <span class="w-20 text-right text-xs tabular-nums text-muted-foreground">
                   {formatShare(unattributedBytes(), shareBaseBytes())}
                 </span>
-                <span class="min-w-40" />
+                <span class="min-w-40 max-md:hidden" />
               </div>
             </TableCell>
           </TableRow>
@@ -403,11 +409,13 @@ function RollupTable(props: { snapshot: PlatformStorageView }) {
                     </Show>
                   </div>
                 </TableCell>
-                <TableCell class="text-right text-sm tabular-nums">{formatBytes(bucket.bytes)}</TableCell>
-                <TableCell class="text-right text-xs tabular-nums text-muted-foreground">
+                <TableCell label="Size" class="text-right text-sm tabular-nums">
+                  {formatBytes(bucket.bytes)}
+                </TableCell>
+                <TableCell label="Share" class="text-right text-xs tabular-nums text-muted-foreground">
                   {formatShare(bucket.bytes, shareBaseBytes())}
                 </TableCell>
-                <TableCell>
+                <TableCell label="Usage">
                   <SizeBar bytes={bucket.bytes} max={largestTenantBytes()} />
                 </TableCell>
               </TableRow>
@@ -443,7 +451,7 @@ function UnaccountedRow(props: { snapshot: PlatformStorageView }) {
           </Tooltip>
         </div>
       </TableCell>
-      <TableCell class="text-right text-sm tabular-nums text-muted-foreground">
+      <TableCell label="Size" class="text-right text-sm tabular-nums text-muted-foreground">
         <Show
           when={!props.snapshot.capacitySuspect}
           fallback={
@@ -505,7 +513,7 @@ function TenantRow(props: {
           <span class="w-20 text-right text-xs tabular-nums text-muted-foreground">
             {formatShare(props.tenant.totalBytes, props.shareBaseBytes)}
           </span>
-          <span class="min-w-40" />
+          <span class="min-w-40 max-md:hidden" />
         </button>
       </TableCell>
     </TableRow>
@@ -625,11 +633,13 @@ function ProjectRow(props: {
           </Show>
         </div>
       </TableCell>
-      <TableCell class="text-right text-sm tabular-nums">{formatBytes(props.project.totalBytes)}</TableCell>
-      <TableCell class="text-right text-xs tabular-nums text-muted-foreground">
+      <TableCell label="Size" class="text-right text-sm tabular-nums">
+        {formatBytes(props.project.totalBytes)}
+      </TableCell>
+      <TableCell label="Share" class="text-right text-xs tabular-nums text-muted-foreground">
         {formatShare(props.project.totalBytes, props.shareBaseBytes)}
       </TableCell>
-      <TableCell>
+      <TableCell label="Usage">
         <SizeBar bytes={props.project.totalBytes} max={props.maxBytes} />
       </TableCell>
     </TableRow>
@@ -651,11 +661,13 @@ function TemplatesRow(props: { templates: PlatformStorageTemplates; shareBaseByt
             </Show>
           </div>
         </TableCell>
-        <TableCell class="text-right text-sm tabular-nums">{formatBytes(props.templates.bytes)}</TableCell>
-        <TableCell class="text-right text-xs tabular-nums text-muted-foreground">
+        <TableCell label="Size" class="text-right text-sm tabular-nums">
+          {formatBytes(props.templates.bytes)}
+        </TableCell>
+        <TableCell label="Share" class="text-right text-xs tabular-nums text-muted-foreground">
           {formatShare(props.templates.bytes, props.shareBaseBytes)}
         </TableCell>
-        <TableCell>
+        <TableCell label="Usage">
           <SizeBar bytes={props.templates.bytes} max={props.maxBytes} />
         </TableCell>
       </TableRow>
@@ -692,7 +704,7 @@ function MeasurementError(props: { label: string }) {
 function SizeBar(props: { bytes: number; max: number }) {
   const width = () => (props.max <= 0 ? 0 : Math.max((props.bytes / props.max) * 100, 1));
   return (
-    <div class="h-1.5 rounded-full bg-muted overflow-hidden max-w-40">
+    <div class="h-1.5 w-full rounded-full bg-muted overflow-hidden max-w-40">
       <div class="h-full rounded-full bg-indigo-500/70" style={{ width: `${width()}%` }} />
     </div>
   );

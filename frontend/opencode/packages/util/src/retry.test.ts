@@ -17,6 +17,49 @@ describe("client retry", () => {
     expect(failures).toHaveLength(3)
   })
 
+  test("retries a real network failure wrapped as the cause of a transport error", async () => {
+    const server = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        // Reset only once the request has arrived. Resetting on accept races the client's request
+        // write, and on Windows a lost race surfaces as a write or connect failure instead of a
+        // connection reset.
+        data(socket) {
+          socket.terminate()
+        },
+      },
+    })
+    const failures: unknown[] = []
+    try {
+      await expect(
+        retry(
+          () =>
+            fetch(`http://127.0.0.1:${server.port}/api/project`).catch((cause) => {
+              failures.push(cause)
+              throw new Error("Transport", { cause })
+            }),
+          { delay: 0 },
+        ),
+      ).rejects.toThrow("Transport")
+    } finally {
+      server.stop(true)
+    }
+    expect(failures).toHaveLength(3)
+    expect(failures.every((cause) => cause instanceof TypeError)).toBe(true)
+  })
+
+  test("does not retry a transport error whose cause is not transient", async () => {
+    const failures: string[] = []
+    await expect(
+      retry(async () => {
+        failures.push("attempt")
+        throw new Error("Transport", { cause: new Error("invalid response") })
+      }),
+    ).rejects.toThrow("Transport")
+    expect(failures).toHaveLength(1)
+  })
+
   test("does not retry other failures", async () => {
     const failures: string[] = []
     await expect(

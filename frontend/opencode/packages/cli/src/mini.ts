@@ -1,6 +1,7 @@
-import { Service, type Endpoint } from "@opencode-ai/client/effect/service"
-import { ClientError, OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
-import type { MiniFrontendInput } from "@opencode-ai/tui/mini"
+import { Service, type Endpoint } from "@opencode/client/effect/service"
+import { ClientError, OpenCode, type OpenCodeClient } from "@opencode/client/promise"
+import type { MiniFrontendInput } from "@opencode/tui/mini"
+import { noTimeoutFetch } from "@opencode/util/no-timeout-fetch"
 import { setTimeout } from "node:timers/promises"
 import { readStdin } from "./util/io"
 import { createMiniHost, INTERACTIVE_INPUT_ERROR, usingInteractiveStdin } from "./mini-host"
@@ -33,9 +34,9 @@ class MiniInputError extends Error {}
 export async function runMini(input: MiniCommandInput) {
   try {
     validate(input)
-    const result = await usingInteractiveStdin(async (terminal) => {
+    await usingInteractiveStdin(async (terminal) => {
       const initialInput = mergeInput(process.stdin.isTTY ? undefined : await readStdin(), input.prompt)
-      const frontendTask = import("@opencode-ai/tui/mini")
+      const frontendTask = import("@opencode/tui/mini")
       const directory = localDirectory()
       const connection = createMiniConnection(input.server)
       const sdk = connection.sdk
@@ -81,7 +82,7 @@ export async function runMini(input: MiniCommandInput) {
       const create = (
         client: OpenCodeClient,
         next: {
-          location: { directory: string; workspaceID?: string }
+          location: { directory: string }
           agent: string | undefined
           model: Model
           variant: string | undefined
@@ -90,7 +91,7 @@ export async function runMini(input: MiniCommandInput) {
       ) =>
         resolveSessionTarget({
           client,
-          location: { directory: next.location.directory, workspace: next.location.workspaceID },
+          location: { directory: next.location.directory },
           agent: next.agent,
           environment,
           model: next.model
@@ -127,7 +128,6 @@ export async function runMini(input: MiniCommandInput) {
         config: input.config,
       })
     })
-    if (result.exitCode !== 0) process.exit(result.exitCode)
   } catch (error) {
     if (error instanceof MiniInputError || (error instanceof Error && error.message === INTERACTIVE_INPUT_ERROR))
       fail(error.message)
@@ -141,6 +141,8 @@ export function createMiniConnection(input: MiniCommandInput["server"]) {
     OpenCode.make({
       baseUrl: endpoint.url,
       headers: Service.headers(endpoint),
+      // Session waits can remain idle until background work finishes.
+      fetch: noTimeoutFetch,
     })
   const reconnect = input.reconnect
   return {

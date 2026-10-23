@@ -1,29 +1,30 @@
+import type { FileSystem } from "@opencode/core/filesystem"
 import { describe, expect } from "bun:test"
 import path from "path"
 import { chmod, mkdir, readdir, rm } from "fs/promises"
 import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, LayerMap, Queue } from "effect"
-import { Worktree } from "@opencode-ai/schema/worktree"
-import { Workspace } from "@opencode-ai/schema/workspace"
-import { Bus } from "@opencode-ai/core/bus"
-import { Config } from "@opencode-ai/core/config"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Instance } from "@opencode-ai/core/instance"
-import { Location } from "@opencode-ai/core/location"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import type { LocationServices } from "@opencode-ai/core/location-services"
-import { Project } from "@opencode-ai/core/project"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionMove } from "@opencode-ai/core/session/move"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionRunner } from "@opencode-ai/core/session/runner/index"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import { Global } from "@opencode-ai/util/global"
+import { Worktree } from "@opencode/schema/worktree"
+import { Workspace } from "@opencode/schema/workspace"
+import { Bus } from "@opencode/core/bus"
+import { Config } from "@opencode/core/config"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Instance } from "@opencode/core/instance"
+import { Location } from "@opencode/core/location"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import type { LocationServices } from "@opencode/core/location-services"
+import { Project } from "@opencode/core/project"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionMove } from "@opencode/core/session/move"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionRunner } from "@opencode/core/session/runner/index"
+import { SessionStore } from "@opencode/core/session/store"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Global } from "@opencode/util/global"
 import { tempGlobalLayer } from "./fixture/global"
 import { offlineModels } from "./fixture/models"
 import { tmpdirScoped } from "./fixture/tmpdir"
@@ -58,7 +59,7 @@ const itWithActiveExecution = testEffect(
                   replacements: [Project.node.replace(globalProjectNode), offlineModels],
                 }),
                 Layer.succeed(SessionRunner.Service, { drain: () => Effect.never }),
-              ) as unknown as Layer.Layer<LocationServices>,
+              ) as unknown as Layer.Layer<LocationServices, FileSystem.DirectoryNotFoundError>,
           ),
         ),
       ),
@@ -68,7 +69,11 @@ const itWithActiveExecution = testEffect(
 const unavailableLocations = Layer.effect(
   LocationServiceMap.Service,
   LayerMap.make(
-    () => Layer.effectDiscard(Effect.fail(new Error("broken location"))) as unknown as Layer.Layer<LocationServices>,
+    () =>
+      Layer.effectDiscard(Effect.die(new Error("broken location"))) as unknown as Layer.Layer<
+        LocationServices,
+        FileSystem.DirectoryNotFoundError
+      >,
   ),
 )
 const itWithUnavailableDestination = testEffect(
@@ -210,7 +215,7 @@ describe("Session.move", () => {
           yield* Effect.promise(() => Promise.all([mkdir(source), mkdir(destination)]))
           if (broken)
             yield* Effect.promise(() =>
-              Bun.write(path.join(source, "opencode.json"), JSON.stringify({ instructions: ["{file:./missing.txt}"] })),
+              Bun.write(path.join(source, "opencode.json"), JSON.stringify({ instructions: ["{file:.}"] })),
             )
           const session = yield* Session.Service
           const execution = yield* SessionExecution.Service
@@ -266,7 +271,7 @@ describe("Session.move", () => {
           const source = Location.Ref.make({ directory: AbsolutePath.make(path.join(tmp.path, "source")) })
           const destination = AbsolutePath.make(path.join(tmp.path, "destination"))
           yield* Effect.promise(() => Promise.all([mkdir(source.directory), mkdir(destination)]))
-          const config = JSON.stringify({ instructions: ["{file:./missing.txt}"] })
+          const config = JSON.stringify({ instructions: ["{file:.}"] })
           if (!broken) yield* Effect.promise(() => Bun.write(path.join(source.directory, "opencode.json"), config))
           const selectedID = Session.ID.create()
           const replacements: LayerNode.Replacements = [
@@ -288,11 +293,7 @@ describe("Session.move", () => {
                           replacements: [
                             ...bindings,
                             ...(broken
-                              ? [
-                                  Config.node.replace(
-                                    Config.configured({ project: false, global: false, content: config }),
-                                  ),
-                                ]
+                              ? [Config.node.replace(Layer.effect(Config.Service, Effect.die("broken config")))]
                               : []),
                           ],
                         }),

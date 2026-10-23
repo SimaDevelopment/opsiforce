@@ -9,7 +9,13 @@ import {
 } from './harness.ts';
 import type { RunningProxy } from './harness.ts';
 
-const COMPLETED = { id: 'resp_1', object: 'response', status: 'completed', output: [] };
+const COMPLETED = {
+  id: 'resp_1',
+  object: 'response',
+  status: 'completed',
+  output: [],
+  usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
+};
 const CHATGPT_STREAM = [{ event: 'response.completed', data: { type: 'response.completed', response: COMPLETED } }];
 const REQUEST = { model: 'gpt-5.6-sol', input: [{ role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }] };
 

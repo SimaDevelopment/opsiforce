@@ -2,7 +2,7 @@ import type { BifrostAllowedRequests, BifrostRequestPathOverrides } from '../bif
 
 export type BaseFormatId = 'openai' | 'anthropic';
 
-export type ModelProviderKind = 'official-api-key' | 'compatible-endpoint' | 'linked-account';
+export type ModelProviderKind = 'official-api-key' | 'compatible-endpoint' | 'linked-account' | 'azure-foundry';
 
 export interface ConnectionTest {
   path: string;
@@ -19,6 +19,7 @@ export interface BaseFormat {
   bifrostBaseProviderType: BaseFormatId;
   opencodeProviderId: string;
   modelCatalogKey: string;
+  imageModels: readonly string[];
   officialApiUrl: string;
   connectionTest: ConnectionTest;
   compatibleEndpoint: CompatibleEndpointShape;
@@ -40,9 +41,11 @@ const RESPONSES_TRANSLATED_TO_CHAT_COMPLETIONS: BifrostAllowedRequests = {
   responses_stream: false,
 };
 
-const RESPONSES_STREAM_ONLY: BifrostAllowedRequests = {
+const LINKED_ACCOUNT_REQUESTS: BifrostAllowedRequests = {
   ...NATIVE_RESPONSES,
   responses: false,
+  image_generation: true,
+  image_edit: true,
 };
 
 const ANTHROPIC_NATIVE: BifrostAllowedRequests = { ...NATIVE_RESPONSES, count_tokens: true };
@@ -53,6 +56,7 @@ export const BASE_FORMATS: Record<BaseFormatId, BaseFormat> = {
     bifrostBaseProviderType: 'openai',
     opencodeProviderId: 'openai',
     modelCatalogKey: 'openai',
+    imageModels: ['gpt-image-2'],
     officialApiUrl: 'https://api.openai.com/v1',
     connectionTest: { path: '/models', headers: (key) => ({ authorization: `Bearer ${key}` }) },
     compatibleEndpoint: {
@@ -62,7 +66,7 @@ export const BASE_FORMATS: Record<BaseFormatId, BaseFormat> = {
     allowedRequestsByKind: {
       'official-api-key': NATIVE_RESPONSES,
       'compatible-endpoint': RESPONSES_TRANSLATED_TO_CHAT_COMPLETIONS,
-      'linked-account': RESPONSES_STREAM_ONLY,
+      'linked-account': LINKED_ACCOUNT_REQUESTS,
     },
   },
   anthropic: {
@@ -70,6 +74,7 @@ export const BASE_FORMATS: Record<BaseFormatId, BaseFormat> = {
     bifrostBaseProviderType: 'anthropic',
     opencodeProviderId: 'anthropic',
     modelCatalogKey: 'anthropic',
+    imageModels: [],
     officialApiUrl: 'https://api.anthropic.com/v1',
     connectionTest: {
       path: '/models',
@@ -97,11 +102,18 @@ const CREATABLE_KINDS = new Set<ModelProviderKind>(['official-api-key', 'compati
 const KEYED_KINDS = new Set<ModelProviderKind>(['official-api-key', 'compatible-endpoint']);
 
 export function creatableKinds(format: BaseFormat): ModelProviderKind[] {
-  return allowedKinds(format).filter((kind) => CREATABLE_KINDS.has(kind));
+  return [...allowedKinds(format).filter((kind) => CREATABLE_KINDS.has(kind)), 'azure-foundry'];
 }
 
 export function keyedKinds(format: BaseFormat): ModelProviderKind[] {
-  return creatableKinds(format).filter((kind) => KEYED_KINDS.has(kind));
+  return allowedKinds(format).filter((kind) => KEYED_KINDS.has(kind));
+}
+
+export function catalogModelsByFormat(modelsOf: (format: BaseFormat) => string[]): Record<BaseFormatId, string[]> {
+  return Object.fromEntries(BASE_FORMAT_IDS.map((id) => [id, modelsOf(BASE_FORMATS[id])])) as Record<
+    BaseFormatId,
+    string[]
+  >;
 }
 
 export function creatableKindsByFormat(): Record<BaseFormatId, ModelProviderKind[]> {

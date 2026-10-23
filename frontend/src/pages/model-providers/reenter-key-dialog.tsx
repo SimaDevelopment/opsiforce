@@ -11,13 +11,14 @@ import {
   type ModelProviderScope,
 } from '~/api/model-providers';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '~/components/ui/dialog';
 import {
   BaseUrlField,
   FixedValue,
   KeyField,
   KindChoice,
   RadioChoice,
+  FormError,
   errorMessage,
   isHttpsUrl,
 } from './connection-fields';
@@ -120,20 +121,16 @@ export function ReenterKeyDialog(props: {
             onInput={(key) => change({ key })}
             hint="Stored in the model gateway only; it is never shown again."
           />
-          <Show when={error()}>
-            <p class="break-words text-xs text-destructive" role="alert">
-              {error()}
-            </p>
-          </Show>
+          <FormError message={error()} />
         </div>
-        <div class="mt-4 flex justify-end gap-2">
+        <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>
           <Button size="sm" disabled={!complete()} loading={reenterKey.isPending} onClick={restore}>
             Test and restore
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

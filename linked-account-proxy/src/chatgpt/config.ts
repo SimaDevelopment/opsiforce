@@ -3,6 +3,8 @@ export const CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/respon
 export const ORIGINATOR = 'codex_cli_rs';
 export const USER_AGENT = 'opsiforce-linked-account-proxy';
 
+export const IMAGE_DRIVER_MODEL = 'gpt-5.6-luna';
+
 export const MODEL_CATALOG: readonly string[] = [
   'gpt-5.6-sol',
   'gpt-5.6-sol-fast',

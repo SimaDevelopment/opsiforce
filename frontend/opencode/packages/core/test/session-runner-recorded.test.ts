@@ -1,50 +1,51 @@
-import { HttpRecorder } from "@opencode-ai/http-recorder"
-import { OpenAIChat } from "@opencode-ai/ai/protocols/openai-chat"
-import { Auth, LLMClient, type LLMClientService, RequestExecutor } from "@opencode-ai/ai/route"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { EventTable } from "@opencode-ai/core/event/sql"
-import { Permission } from "@opencode-ai/core/permission"
-import { Agent } from "@opencode-ai/core/agent"
-import { Config } from "@opencode-ai/core/config"
-import { Project } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionRunCoordinator } from "@opencode-ai/core/session/run-coordinator"
-import { SessionRunner } from "@opencode-ai/core/session/runner/index"
-import { SessionRunnerLLM } from "@opencode-ai/core/session/runner/llm"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
-import { Tool } from "@opencode-ai/core/tool"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionStore } from "@opencode-ai/core/session/store"
-import { Location } from "@opencode-ai/core/location"
-import { InstructionBuiltIns } from "@opencode-ai/core/instructions/builtins"
-import { InstructionDiscovery } from "@opencode-ai/core/instruction-discovery"
-import { Instructions } from "@opencode-ai/core/instructions/index"
-import { SkillInstructions } from "@opencode-ai/core/skill/instructions"
-import { ReferenceInstructions } from "@opencode-ai/core/reference/instructions"
-import { McpInstructions } from "@opencode-ai/core/mcp/instructions"
-import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
-import { SystemPromptPlugin } from "@opencode-ai/core/plugin/system-prompt"
+import { HttpRecorder } from "@opencode/http-recorder"
+import { OpenAIChat } from "@opencode/ai/protocols/openai-chat"
+import { Auth, LLMClient, type LLMClientService, RequestExecutor } from "@opencode/ai/route"
+import { Model } from "@opencode/core/model"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNodePlatform } from "@opencode/core/effect/app-node-platform"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { EventTable } from "@opencode/core/event/sql"
+import { Permission } from "@opencode/core/permission"
+import { Agent } from "@opencode/core/agent"
+import { Config } from "@opencode/core/config"
+import { Project } from "@opencode/core/project"
+import { ProjectTable } from "@opencode/core/project/sql"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { Snapshot } from "@opencode/core/snapshot"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionRunCoordinator } from "@opencode/core/session/run-coordinator"
+import { SessionRunner } from "@opencode/core/session/runner/index"
+import { SessionRunnerLLM } from "@opencode/core/session/runner/llm"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import { Tool } from "@opencode/core/tool"
+import { SessionTable } from "@opencode/core/session/sql"
+import { SessionStore } from "@opencode/core/session/store"
+import { Location } from "@opencode/core/location"
+import { InstructionBuiltIns } from "@opencode/core/instructions/builtins"
+import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
+import { Instructions } from "@opencode/core/instructions/index"
+import { SkillInstructions } from "@opencode/core/skill/instructions"
+import { ReferenceInstructions } from "@opencode/core/reference/instructions"
+import { McpInstructions } from "@opencode/core/mcp/instructions"
+import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { OptimizePlugin } from "@opencode/core/plugin/optimize"
+import { IdentityPlugin } from "@opencode/core/plugin/identity"
 import { describe, expect } from "bun:test"
 import { eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 import path from "node:path"
 import { testEffect } from "./lib/effect"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { promptLocationNode } from "./fixture/prompt-location"
 import { permissionLayer } from "./lib/permission"
-import { agentHost, catalogHost, host } from "./plugin/host"
+import { agentHost, modelHost, host, noProviders } from "./plugin/host"
 
 const cassetteName = "session-runner/openai-chat-streams-text"
 const cassetteDirectory = path.resolve(import.meta.dir, "fixtures/recordings")
@@ -62,7 +63,7 @@ const model = OpenAIChat.route
     auth: Auth.bearer(process.env.OPENAI_API_KEY ?? "fixture"),
     generation: { maxTokens: 20, temperature: 0 },
   })
-  .model({ id: "gpt-4o-mini" })
+  .model({ id: "gpt-4o-mini", compatibility: { supportsPromptCacheKey: true } })
 const models = Layer.mock(SessionRunnerModel.Service)({
   resolve: () =>
     Effect.succeed(
@@ -85,19 +86,12 @@ const referenceInstructions = Layer.mock(ReferenceInstructions.Service, {
 })
 const mcpInstructions = Layer.mock(McpInstructions.Service, { load: () => Effect.succeed(Instructions.empty) })
 const config = Config.testLayer()
-const promptCatalog = Layer.mock(Catalog.Service, {
-  provider: {
-    get: () => Effect.undefined,
-    all: () => Effect.succeed([]),
-    available: () => Effect.succeed([]),
-  },
-  model: {
-    get: () => Effect.undefined,
-    all: () => Effect.succeed([]),
-    available: () => Effect.succeed([]),
-    default: () => Effect.undefined,
-    small: () => Effect.undefined,
-  },
+const promptModels = Layer.mock(Model.Service, {
+  get: () => Effect.undefined,
+  all: () => Effect.succeed([]),
+  available: () => Effect.succeed([]),
+  default: () => Effect.undefined,
+  small: () => Effect.undefined,
 })
 const runnerLayer = (llmClient: Layer.Layer<LLMClientService>) =>
   AppNodeBuilder.build(SessionRunnerLLM.node, [
@@ -141,7 +135,7 @@ const testLayer = (llmClient: Layer.Layer<LLMClientService>) =>
       SessionProjector.node,
       SessionStore.node,
       Agent.node,
-      Catalog.node,
+      Model.node,
       PluginHooks.node,
       Tool.node,
       SessionRunnerModel.node,
@@ -159,7 +153,7 @@ const testLayer = (llmClient: Layer.Layer<LLMClientService>) =>
       LocationServiceMap.node.replace(promptLocationNode),
       LayerNodePlatform.llmClient.replace(llmClient),
       Permission.node.replace(permission),
-      Catalog.node.replace(promptCatalog),
+      Model.node.replace(promptModels),
       SessionRunnerModel.node.replace(models),
       InstructionBuiltIns.node.replace(systemContext),
       InstructionDiscovery.node.replace(instructionContext),
@@ -180,7 +174,7 @@ describe("SessionRunnerLLM recorded", () => {
   it.effect("executes one recorded prompt through the recorded HTTP transport", () =>
     Effect.gen(function* () {
       const agents = yield* Agent.Service
-      const catalog = yield* Catalog.Service
+      const models = yield* Model.Service
       const hooks = yield* PluginHooks.Service
       yield* agents.transform((editor) =>
         editor.update(Agent.ID.make("build"), (agent) => {
@@ -190,10 +184,12 @@ describe("SessionRunnerLLM recorded", () => {
       )
       const pluginHost = host({
         agent: agentHost(agents),
-        catalog: catalogHost(catalog),
+        model: modelHost(models),
+        provider: noProviders,
         session: { hook: (name, callback) => hooks.register("session", name, callback) },
       })
-      yield* Effect.forEach(SystemPromptPlugin.Plugins, (plugin) => plugin.effect(pluginHost), { discard: true })
+      yield* Effect.forEach(OptimizePlugin.Plugins, (plugin) => plugin.effect(pluginHost), { discard: true })
+      yield* IdentityPlugin.Plugin.effect(pluginHost)
       const { db } = yield* Database.Service
       yield* db
         .insert(ProjectTable)

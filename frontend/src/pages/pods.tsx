@@ -11,6 +11,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
 import { KeepAliveCell } from '~/components/pods/keep-alive-cell';
 import { PodStatusCell } from '~/components/pods/pod-status-cell';
+import { WarmPoolTable } from '~/components/pods/warm-pool-table';
 import { AlertTriangle, Boxes, ChevronRight, ExternalLink, FolderKanban, RefreshCw } from '~/components/icons';
 
 const COLUMN_COUNT = 7;
@@ -25,6 +26,7 @@ export function PodsPage() {
   const dataUpdatedAt = () => pods.dataUpdatedAt;
 
   const groups = createMemo(() => pods.data?.projects ?? []);
+  const warmPool = createMemo(() => pods.data?.warmPool ?? []);
   const totalRunning = createMemo(() => groups().reduce((sum, group) => sum + group.environments.length, 0));
 
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set());
@@ -65,11 +67,11 @@ export function PodsPage() {
         </div>
       </div>
 
-      <p class="text-xs text-muted-foreground mb-3 ml-8">
+      <p class="text-xs text-muted-foreground mb-3 sm:ml-8">
         Running environment pods across this organization, grouped by project. Refreshes automatically.
       </p>
 
-      <div class="ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+      <div class="sm:ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
         <span class="inline-flex items-center gap-1.5">
           <span class="size-1.5 rounded-full bg-indigo-500" />
           Agent activity
@@ -89,13 +91,13 @@ export function PodsPage() {
         <ErrorState onRetry={() => pods.refetch()} />
       </Show>
 
-      <Show when={!pods.isPending && !pods.isError && groups().length === 0}>
+      <Show when={!pods.isPending && !pods.isError && groups().length === 0 && warmPool().length === 0}>
         <EmptyState />
       </Show>
 
       <Show when={!pods.isPending && !pods.isError && groups().length > 0}>
         <div class="rounded-lg border border-border overflow-hidden bg-card">
-          <Table>
+          <Table layout="responsive" layoutPreferenceKey="opsiforce:admin:pods-layout">
             <TableHeader>
               <TableRow>
                 <TableHead class="min-w-48">Environment</TableHead>
@@ -113,7 +115,7 @@ export function PodsPage() {
                   <>
                     <TableRow class="border-b-0 hover:bg-transparent">
                       <TableCell colspan={COLUMN_COUNT} class="bg-muted/40 py-2">
-                        <div class="flex items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                           <button
                             type="button"
                             onClick={() => toggleGroup(group.projectId)}
@@ -179,6 +181,10 @@ export function PodsPage() {
           </Table>
         </div>
       </Show>
+
+      <Show when={!pods.isPending && !pods.isError && warmPool().length > 0}>
+        <WarmPoolTable agents={warmPool()} />
+      </Show>
     </div>
   );
 }
@@ -202,7 +208,7 @@ function PodEnvRow(props: {
           </Show>
         </TableCell>
 
-        <TableCell>
+        <TableCell label="Status">
           <PodStatusCell
             status={props.row.status}
             drift={props.row.drift}
@@ -212,7 +218,7 @@ function PodEnvRow(props: {
           />
         </TableCell>
 
-        <TableCell>
+        <TableCell label="Age">
           <Tooltip>
             <TooltipTrigger as="span" class="text-xs tabular-nums text-muted-foreground">
               {formatDuration(liveAgeMs())}
@@ -225,7 +231,7 @@ function PodEnvRow(props: {
           </Tooltip>
         </TableCell>
 
-        <TableCell>
+        <TableCell label="Resources">
           <Tooltip>
             <TooltipTrigger as="span">
               <Badge variant="outline" class="text-[11px] font-normal">
@@ -239,7 +245,7 @@ function PodEnvRow(props: {
           </Tooltip>
         </TableCell>
 
-        <TableCell>
+        <TableCell label="Keep-alive">
           <KeepAliveCell
             keepAlive={props.row.keepAlive}
             timeout={props.row.timeout}
@@ -248,7 +254,7 @@ function PodEnvRow(props: {
           />
         </TableCell>
 
-        <TableCell>
+        <TableCell label="Timeout">
           <Tooltip>
             <TooltipTrigger as="div" class="text-xs tabular-nums text-muted-foreground">
               {formatDuration(props.row.timeout.agentIdleMs)}

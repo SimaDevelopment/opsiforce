@@ -1,5 +1,6 @@
-import { Effect, JsonSchema, Schema } from "effect"
-import { LLMClient, Service } from "./route/client.js"
+import { Effect, JsonSchema, Schema, Stream } from "effect"
+import { tryRequest } from "./media-model.js"
+import { LLMClient, Service, type StreamOptions } from "./route/client.js"
 import {
   GenerationOptions,
   HttpOptions,
@@ -12,9 +13,10 @@ import {
   LanguageModel,
   SystemPart,
   ToolChoice,
-  ToolDefinition,
+  ToolEntry,
   type ContentPart,
   type LanguageModelProviderOptions,
+  type ToolEntryInput,
 } from "./schema/index.js"
 import { make as makeTool, toDefinitions, type ToolSchema } from "./tool.js"
 
@@ -27,16 +29,33 @@ export type RequestInput<SelectedLanguageModel extends LanguageModel = LanguageM
   readonly system?: string | SystemPart | ReadonlyArray<SystemPart>
   readonly prompt?: string | ContentPart | ReadonlyArray<ContentPart>
   readonly messages?: ReadonlyArray<Message | Message.Input>
-  readonly tools?: ReadonlyArray<ToolDefinition.Input>
+  readonly tools?: ReadonlyArray<ToolEntryInput>
   readonly toolChoice?: ToolChoice.Input
   readonly generation?: GenerationOptions.Input
   readonly providerOptions?: NoInfer<LanguageModelProviderOptions<SelectedLanguageModel>>
   readonly http?: HttpOptions.Input
 }
 
-export const generate = LLMClient.generate
+export function generate<const Model extends LanguageModel>(
+  input: RequestInput<Model>,
+  options?: StreamOptions,
+): Effect.Effect<LLMResponse, AIError, Service>
+export function generate(input: LLMRequest, options?: StreamOptions): Effect.Effect<LLMResponse, AIError, Service>
+export function generate(input: RequestInput | LLMRequest, options?: StreamOptions) {
+  return requestEffect(input).pipe(Effect.flatMap((request) => LLMClient.generate(request, options)))
+}
 
-export const stream = LLMClient.stream
+export function stream<const Model extends LanguageModel>(
+  input: RequestInput<Model>,
+  options?: StreamOptions,
+): Stream.Stream<LLMEvent, AIError, Service>
+export function stream(input: LLMRequest, options?: StreamOptions): Stream.Stream<LLMEvent, AIError, Service>
+export function stream(input: RequestInput | LLMRequest, options?: StreamOptions) {
+  return Stream.unwrap(requestEffect(input).pipe(Effect.map((request) => LLMClient.stream(request, options))))
+}
+
+const requestEffect = (input: RequestInput | LLMRequest) =>
+  input instanceof LLMRequest ? Effect.succeed(input) : tryRequest(() => request(input))
 
 export const request = <const SelectedLanguageModel extends LanguageModel>(
   input: RequestInput<SelectedLanguageModel>,
@@ -56,11 +75,11 @@ export const request = <const SelectedLanguageModel extends LanguageModel>(
     ...rest,
     system: SystemPart.content(requestSystem),
     messages: [...(messages?.map(Message.make) ?? []), ...(prompt === undefined ? [] : [Message.user(prompt)])],
-    tools: tools?.map(ToolDefinition.make) ?? [],
+    tools: tools?.map(ToolEntry.make) ?? [],
     toolChoice: requestToolChoice ? ToolChoice.make(requestToolChoice) : undefined,
     generation: requestGeneration === undefined ? undefined : GenerationOptions.make(requestGeneration),
     providerOptions: requestProviderOptions,
-    http: requestHttp === undefined ? undefined : HttpOptions.make(requestHttp),
+    http: HttpOptions.make(requestHttp),
   })
 }
 

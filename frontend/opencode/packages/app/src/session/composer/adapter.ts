@@ -3,17 +3,17 @@ import type { ActiveComposerAdapter, ComposerControls } from "@/composer/adapter
 import { useComposerState } from "@/composer/persistence"
 import { useData } from "@/runtime/server/current"
 import { useServerSDK } from "@/runtime/server/client"
+import { createSessionMessageHandoff } from "@/session/handoff"
 import { useWorkspaceLocation } from "@/workspaces/location"
-import type { SessionModel } from "../model"
 
 export function createActiveComposerAdapter(input: {
-  session: SessionModel
+  sessionID: string
+  sessionKey: Accessor<string>
   controls: Accessor<ComposerControls>
   submitted: () => void
   setEditor: (element: HTMLDivElement) => void
 }) {
-  const id = input.session.identity.params.id
-  if (!id) throw new Error("Active Composer requires a Session ID")
+  const id = input.sessionID
 
   const prompt = useComposerState()
   prompt.current()
@@ -21,6 +21,7 @@ export function createActiveComposerAdapter(input: {
   const data = useData()
   const server = useServerSDK()
   const location = useWorkspaceLocation()
+
   const adapter: ActiveComposerAdapter = {
     kind: "active-session",
     state,
@@ -32,6 +33,7 @@ export function createActiveComposerAdapter(input: {
     session: () => ({
       id,
       directory: location().directory,
+      handoff: createSessionMessageHandoff(input.sessionKey(), id, server.event),
       api: server.api.session,
       data,
       current: () => data.session.get(id),
@@ -39,9 +41,10 @@ export function createActiveComposerAdapter(input: {
     }),
     interrupt: () =>
       server.api.session
-        .interrupt({ sessionID: id, continue: true })
+        .interrupt({ sessionID: id, resume: true })
         .then(() => undefined)
         .catch(() => undefined),
   }
+
   return adapter
 }

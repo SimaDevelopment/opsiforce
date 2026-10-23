@@ -1,7 +1,7 @@
 /* oxlint-disable */
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { EffectCache } from "drizzle-orm/cache/core/cache-effect"
 import { EffectLogger } from "drizzle-orm/effect-core"
 import { entityKind } from "drizzle-orm/entity"
@@ -37,7 +37,7 @@ export const DefaultServices = Layer.merge(EffectCache.Default, EffectLogger.Def
  * @example
  * ```ts
  * import { SqliteClient } from "@effect/sql-sqlite-node"
- * import { EffectDrizzleSqlite } from "@opencode-ai/core/database/drizzle"
+ * import { EffectDrizzleSqlite } from "@opencode/core/database/drizzle"
  * import { Effect } from "effect"
  *
  * const db = yield* EffectDrizzleSqlite.make({ relations }).pipe(

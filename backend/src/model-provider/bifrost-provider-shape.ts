@@ -25,9 +25,14 @@ export interface BifrostProviderSpec {
   adminTypedBaseUrl: string | null;
   backendWrittenBaseUrl?: string;
   standard?: boolean;
+  models?: string[];
 }
 
 const EVERY_MODEL = ['*'];
+
+export function standardProviderPayload(name: string): CreateBifrostProviderRequest {
+  return { provider: name, network_config: STANDARD_NETWORK_CONFIG };
+}
 
 export function bifrostProviderPayload(spec: BifrostProviderSpec): CreateBifrostProviderRequest {
   return { provider: spec.name, ...bifrostProviderUpdatePayload(spec) };
@@ -69,7 +74,7 @@ export function bifrostProviderKey(spec: BifrostProviderSpec, key: string): Crea
   return {
     name: bifrostProviderKeyName(spec.name),
     value: { value: key, type: 'plain_text' },
-    models: spec.standard ? EVERY_MODEL : servedModelsOf(spec.format),
+    models: spec.models ?? EVERY_MODEL,
     weight: 1,
     enabled: true,
   };

@@ -13,8 +13,7 @@ export interface SessionInfo {
   [key: string]: JsonValue | undefined;
 }
 
-export interface RuntimeHealth {
-  healthy?: boolean;
+export interface RuntimeInfo {
   version?: string;
   pid?: number;
 }

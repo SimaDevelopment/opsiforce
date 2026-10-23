@@ -1,11 +1,11 @@
 import { TextAttributes } from "@opentui/core"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { createResource, createMemo, createSignal, Match, Switch } from "solid-js"
-import { useDialog } from "../ui/dialog"
+import { DIALOG_LIST_INSET, useDialog } from "../ui/dialog"
 import { useTheme } from "../context/theme"
 import { errorMessage } from "../util/error"
 import { useData } from "../context/data"
-import type { LocationRef } from "@opencode-ai/client"
+import type { LocationRef } from "@opencode/client"
 
 export type DialogSkillProps = {
   location?: LocationRef
@@ -62,30 +62,30 @@ export function DialogSkill(props: DialogSkillProps) {
       emptyView={
         <Switch
           fallback={
-            <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>No skills available</text>
+            <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+              <text fg={theme.text.muted}>No skills available</text>
             </box>
           }
         >
           <Match when={showError()}>
-            <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.feedback.error.default} attributes={TextAttributes.BOLD}>
+            <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+              <text fg={theme.text.feedback.error.base} attributes={TextAttributes.BOLD}>
                 Could not load skills
               </text>
-              <text fg={theme.text.subdued}>{errorMessage(loadError())}</text>
-              <text fg={theme.text.subdued}>Close and reopen Skills to try again.</text>
+              <text fg={theme.text.muted}>{errorMessage(loadError())}</text>
+              <text fg={theme.text.muted}>Close and reopen Skills to try again.</text>
             </box>
           </Match>
           <Match when={skills.loading}>
-            <box paddingLeft={4} paddingRight={4}>
-              <text fg={theme.text.subdued}>Loading skills…</text>
+            <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+              <text fg={theme.text.muted}>Loading skills…</text>
             </box>
           </Match>
         </Switch>
       }
       noMatchView={
-        <box paddingLeft={4} paddingRight={4}>
-          <text fg={theme.text.subdued}>No skills found</text>
+        <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+          <text fg={theme.text.muted}>No skills found</text>
         </box>
       }
     />

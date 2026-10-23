@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
 import { Link, useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import {
@@ -48,6 +48,12 @@ import {
 import { ENTRY_SLUG_MAX_LENGTH, EntryNameField, isNameUnavailable } from '~/components/store/entry-name-field';
 import { EnvironmentList, EnvironmentSplit, type EnvironmentRowStatus } from '~/components/store/environment-list';
 import { InlineEdit } from '~/components/store/inline-edit';
+import { AgentSettingsDialog } from './agent-settings-dialog';
+import {
+  ProjectSettingsChoiceField,
+  createProjectSettingsChoice,
+} from '~/components/resources/project-settings-choice';
+import { AgentProjectDefaults } from '~/components/store/agent-project-defaults';
 import { OpenBuilderButton } from '~/components/store/open-builder-button';
 import {
   AlertTriangle,
@@ -61,6 +67,7 @@ import {
   Globe,
   Plus,
   Rocket,
+  Settings,
   Trash2,
 } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
@@ -109,7 +116,7 @@ export function AgentPage(props: AgentPageProps) {
 
   return (
     <div class="h-full overflow-y-auto bg-background">
-      <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <Link
           to={back().to}
           class={cn(
@@ -241,6 +248,7 @@ function AgentHeader(props: {
     null;
   const editable = () => props.canManage && props.agent.origin === 'custom';
   const name = () => props.agent.displayName ?? props.agent.name;
+  const [editingSettings, setEditingSettings] = createSignal(false);
 
   const save = async (patch: { displayName?: string; description?: string | null }) => {
     try {
@@ -301,6 +309,12 @@ function AgentHeader(props: {
             </span>
             <Show when={creator()}>{(creatorName) => <span> · created by {creatorName()}</span>}</Show>
           </div>
+          <AgentProjectDefaults
+            podSettings={props.agent.podSettings}
+            readyProjects={props.agent.settings.warmPoolSize}
+            imageOwned={props.agent.origin === 'built_in'}
+            onEdit={editable() ? () => setEditingSettings(true) : undefined}
+          />
         </div>
         <Show when={props.canManage}>
           <div class="flex shrink-0 flex-wrap items-center gap-2">
@@ -315,16 +329,25 @@ function AgentHeader(props: {
                 Publish
               </Button>
             </Show>
-            <AgentActionsMenu agent={props.agent} publishedBeyondDevelopment={props.publishedBeyondDevelopment} />
+            <AgentActionsMenu
+              agent={props.agent}
+              publishedBeyondDevelopment={props.publishedBeyondDevelopment}
+              onEditSettings={() => setEditingSettings(true)}
+            />
           </div>
         </Show>
       </div>
       <div class="mt-4 h-px bg-border" />
+      <AgentSettingsDialog agent={props.agent} open={editingSettings()} onOpenChange={setEditingSettings} />
     </header>
   );
 }
 
-function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopment: boolean }) {
+function AgentActionsMenu(props: {
+  agent: AgentDetail;
+  publishedBeyondDevelopment: boolean;
+  onEditSettings: () => void;
+}) {
   const [duplicating, setDuplicating] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
   const [widening, setWidening] = createSignal(false);
@@ -363,6 +386,11 @@ function AgentActionsMenu(props: { agent: AgentDetail; publishedBeyondDevelopmen
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
+        <Show when={props.agent.origin === 'custom'}>
+          <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
+            Settings
+          </ActionsMenuItem>
+        </Show>
         <Show when={props.agent.duplicable}>
           <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate
@@ -506,6 +534,20 @@ function DeleteAgentDialog(props: {
 function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const duplicate = useDuplicateAgent(() => props.agent.id);
+  const projectSettings = createProjectSettingsChoice();
+  createEffect(
+    on(
+      () => props.open,
+      (open) => {
+        if (!open) return;
+        const agent = untrack(() => props.agent);
+        projectSettings.reset(
+          { resources: agent.podSettings, warmPoolSize: agent.settings.warmPoolSize },
+          agent.settings.maxWarmPoolSize
+        );
+      }
+    )
+  );
   const sourceName = () => props.agent.displayName ?? props.agent.name;
   const [displayName, setDisplayName] = createSignal(`${sourceName()} copy`);
   const [error, setError] = createSignal<string | null>(null);
@@ -513,14 +555,17 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
 
   const slug = () => slugify(displayName().trim(), ENTRY_SLUG_MAX_LENGTH.agent);
   const unavailable = () => unavailableSlug() === slug();
-  const canSubmit = () => slug().length > 0 && !unavailable() && !duplicate.isPending;
+  const canSubmit = () => slug().length > 0 && !unavailable() && !duplicate.isPending && !projectSettings.invalid();
 
   const save = async (event: SubmitEvent) => {
     event.preventDefault();
     if (!canSubmit()) return;
     setError(null);
     try {
-      const { agent: copy, notes } = await duplicate.mutateAsync(displayName().trim());
+      const { agent: copy, notes } = await duplicate.mutateAsync({
+        displayName: displayName().trim(),
+        ...projectSettings.toChoice(),
+      });
       props.onOpenChange(false);
       toast.success(`Created ${copy.displayName ?? copy.name}`, {
         description: notes.map((note) => note.message).join('\n') || undefined,
@@ -537,7 +582,7 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent>
+      <DialogContent class="max-h-[85vh] max-w-xl overflow-y-auto" align="top">
         <form onSubmit={(event) => void save(event)}>
           <DialogHeader>
             <DialogTitle>Duplicate {sourceName()}</DialogTitle>
@@ -558,6 +603,13 @@ function DuplicateAgentDialog(props: { agent: AgentDetail; open: boolean; onOpen
                 setError(null);
               }}
             />
+            <div class="mt-4">
+              <ProjectSettingsChoiceField
+                choice={projectSettings}
+                sourceLabel="This agent"
+                disabled={duplicate.isPending}
+              />
+            </div>
             <Show when={error()}>
               <p class="mt-2 text-xs text-destructive" role="alert">
                 {error()}

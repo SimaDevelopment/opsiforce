@@ -1,7 +1,7 @@
 import { Show, createMemo, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ModelSelection } from "@/providers/models/selection"
-import { STORY_MODEL, emptySessionDocument, pendingAndQueuedDocument } from "@opencode-ai/session-ui/storybook"
+import { STORY_MODEL, emptySessionDocument, pendingAndQueuedDocument } from "@opencode/session-ui/storybook"
 import { Composer } from "./composer"
 import type { ComposerModel } from "./model"
 import { createComposerEditor } from "./editor/interaction"
@@ -9,7 +9,7 @@ import type { ComposerPersistedState, ComposerSuggestion } from "./types"
 import { buildPromptRequest } from "./request"
 import { promptLength } from "./prompt-parts"
 import { SessionPreview } from "@/session/story-model"
-import { Skill } from "@opencode-ai/schema/skill"
+import { Skill } from "@opencode/schema/skill"
 import { resolveSessionComposerSelection } from "@/session/composer/selection"
 
 const selectedModel = {
@@ -55,6 +55,10 @@ function ComposerStory(props: {
   label?: string
   inspectRequest?: boolean
   continueOnStop?: boolean
+  longLabels?: boolean
+  alternate?: "queue" | "steer"
+  manySuggestions?: boolean
+  suggestionBoundary?: () => HTMLElement | undefined
 }) {
   const [draft, setDraft] = createStore<ComposerPersistedState>({
     prompt: props.prompt ?? [{ type: "text", content: "", start: 0, end: 0 }],
@@ -62,15 +66,22 @@ function ComposerStory(props: {
     model: { providerID: STORY_MODEL.providerID, modelID: STORY_MODEL.id, variant: STORY_MODEL.variant },
     context: { items: props.comments ?? [] },
   })
+
   const [story, setStory] = createStore({
     activity: props.label ?? "Ready",
     variant: STORY_MODEL.variant,
   })
+
+  const modelOption = createMemo(() => ({
+    ...selectedModel,
+    name: props.longLabels ? "Claude Sonnet with an unusually long model name" : selectedModel.name,
+  }))
+
   const modelSelection = {
     ready: Object.assign(() => true, { promise: undefined }),
-    current: () => selectedModel,
-    recent: () => [selectedModel],
-    list: () => [selectedModel],
+    current: () => modelOption(),
+    recent: () => [modelOption()],
+    list: () => [modelOption()],
     cycle() {},
     set() {},
     visible: () => true,
@@ -84,10 +95,21 @@ function ComposerStory(props: {
       cycle() {},
     },
   } satisfies ModelSelection
+
   const commands: ComposerSuggestion[] = [
     { id: "command.test", kind: "command", label: "/test", trigger: "test", title: "Run tests" },
     { id: "command.review", kind: "command", label: "/review", trigger: "review", title: "Review changes" },
+    ...(props.manySuggestions
+      ? Array.from({ length: 12 }, (_, index) => ({
+          id: `command.example-${index}`,
+          kind: "command" as const,
+          label: `/example-${index}`,
+          trigger: `example-${index}`,
+          title: `Run example ${index}`,
+        }))
+      : []),
   ]
+
   const context: ComposerSuggestion[] = [
     {
       id: "file:src/app.tsx",
@@ -117,6 +139,7 @@ function ComposerStory(props: {
       },
     },
   ]
+
   const editor = createComposerEditor({
     store: [draft, setDraft],
     commands: () => commands,
@@ -126,7 +149,7 @@ function ComposerStory(props: {
       placeholder: () => "Ask anything, / for commands, @ for context...",
       agent: {
         options: () => [
-          { id: "build", label: "build" },
+          { id: "build", label: props.longLabels ? "Build agent with an unusually long name" : "build" },
           { id: "review", label: "review" },
         ],
         current: () => "build",
@@ -134,7 +157,8 @@ function ComposerStory(props: {
       },
       variant: {
         options: () => [
-          { id: "balanced", label: "balanced" },
+          { id: "default", label: "default" },
+          { id: "balanced", label: props.longLabels ? "Balanced reasoning with an extended label" : "balanced" },
           { id: "high", label: "high" },
         ],
         current: () => story.variant,
@@ -143,8 +167,21 @@ function ComposerStory(props: {
       submit: {
         stopping: () => !!props.stopping,
         working: () => !!props.working,
+        queue: props.alternate
+          ? {
+              count: () => 0,
+              delivery: () => (props.alternate === "queue" ? "steer" : "queue"),
+              alternate: () => props.alternate,
+              editing: () => undefined,
+              confirmEdit() {},
+              undoing: () => false,
+              cancelEdit() {},
+              editFirst: () => false,
+            }
+          : undefined,
         onSubmit: () => {
           const value = draft.prompt.map((part) => ("content" in part ? part.content : `[${part.filename}]`)).join("")
+
           const request = props.inspectRequest
             ? buildPromptRequest({
                 prompt: draft.prompt,
@@ -154,13 +191,17 @@ function ComposerStory(props: {
                 sessionDirectory: "C:/repo",
               })
             : undefined
+
           setDraft("prompt", [{ type: "text", content: "", start: 0, end: 0 }])
           setDraft("cursor", 0)
+
           if (props.failure) {
             setDraft("prompt", props.prompt ?? [{ type: "text", content: "", start: 0, end: 0 }])
             setStory("activity", "Submission failed; draft restored")
+
             return
           }
+
           setStory(
             "activity",
             request
@@ -169,10 +210,11 @@ function ComposerStory(props: {
           )
         },
         onStop: () =>
-          setStory("activity", props.continueOnStop ? "POST /interrupt · continue: true" : "Stop requested"),
+          setStory("activity", props.continueOnStop ? "POST /interrupt · resume: true" : "Stop requested"),
       },
     },
   })
+
   const model = {
     ...editor,
     model: { selection: modelSelection, paid: true, loading: false },
@@ -180,6 +222,7 @@ function ComposerStory(props: {
 
   onMount(() => {
     if (props.suggestions === "command") model.openCommands()
+
     if (props.suggestions === "context") model.openContext()
   })
 
@@ -188,7 +231,7 @@ function ComposerStory(props: {
       <output class="text-12-regular text-text-weak" aria-live="polite">
         {story.activity}
       </output>
-      <Composer model={model} borderUnderlay />
+      <Composer model={model} borderUnderlay suggestionBoundary={props.suggestionBoundary} />
     </div>
   )
 }
@@ -249,11 +292,60 @@ export const MixedAttachments = {
   ),
 }
 
+export const BrowserElementComment = {
+  render: () => (
+    <ComposerStory
+      prompt={text("Tidy up the settings page")}
+      comments={[
+        {
+          type: "note",
+          key: "note:story:c=save",
+          origin: "story",
+          label: "button.btn.primary",
+          icon: "select-element",
+          subject:
+            'the "button.btn.primary" element in browser tab tab_00000000-0000-4000-8000-000000000000 at http://localhost:5173/settings (role button; accessible name "Save changes"; selector "#settings > form > button.btn.primary")',
+          comment: "Match the secondary button height",
+          commentID: "save",
+        },
+        {
+          type: "file",
+          key: "comment:src/app.tsx",
+          path: "src/app.tsx",
+          selection: { startLine: 12, startChar: 0, endLine: 14, endChar: 0 },
+          comment: "Keep the normal flow flat",
+        },
+      ]}
+    />
+  ),
+}
+
 export const ModelAndVariant = { render: () => <ComposerStory prompt={text("Compare both variants")} /> }
 
 export const SlashSuggestions = { render: () => <ComposerStory suggestions="command" /> }
 
 export const ContextSuggestions = { render: () => <ComposerStory suggestions="context" /> }
+
+function ConstrainedCommandSuggestionsStory() {
+  let boundary: HTMLDivElement | undefined
+
+  return (
+    <div class="mx-auto w-full max-w-200">
+      <div ref={boundary} data-slot="composer-suggestion-boundary-story" class="h-60" />
+      <ComposerStory suggestions="command" manySuggestions suggestionBoundary={() => boundary} />
+    </div>
+  )
+}
+
+export const ConstrainedCommandSuggestions = { render: () => <ConstrainedCommandSuggestionsStory /> }
+
+export const DetachedCommandSuggestionBoundary = {
+  render: () => {
+    const detached = document.createElement("div")
+
+    return <ComposerStory suggestions="command" manySuggestions suggestionBoundary={() => detached} />
+  },
+}
 
 export const RunningAndStopping = { render: () => <ComposerStory working stopping label="Session is running" /> }
 
@@ -285,6 +377,21 @@ export const NarrowLayout = {
   render: () => (
     <div class="w-[340px]">
       <ComposerStory prompt={text("Verify the narrow Composer")} />
+    </div>
+  ),
+}
+
+export const ToolbarOverflow = {
+  args: { alternate: "queue" },
+  argTypes: { alternate: { control: "select", options: ["none", "queue", "steer"] } },
+  render: (args: { alternate: "none" | "queue" | "steer" }) => (
+    <div class="w-[min(420px,calc(100vw-80px))]">
+      <ComposerStory
+        longLabels
+        working
+        prompt={text("Keep all controls reachable when the toolbar overflows")}
+        alternate={args.alternate === "none" ? undefined : args.alternate}
+      />
     </div>
   ),
 }
@@ -371,6 +478,7 @@ function DemoFrame(props: { title: string; description: string; children: JSX.El
 
 function PendingInboxDemo() {
   const [store, setStore] = createStore({ hydrated: false })
+
   return (
     <DemoFrame
       title="Active pending-inbox hydration"
@@ -401,10 +509,12 @@ function PendingInboxDemo() {
 
 function ServerStatusDemo() {
   const [store, setStore] = createStore({ running: false, activity: "Idle from server projection" })
+
   const document = createMemo(() => ({
     ...emptySessionDocument,
     status: store.running ? ({ type: "busy" } as const) : ({ type: "idle" } as const),
   }))
+
   return (
     <DemoFrame
       title="Server-owned execution status"
@@ -439,12 +549,14 @@ function ServerStatusDemo() {
 
 function SelectionPrecedenceDemo() {
   const [store, setStore] = createStore({ durable: true })
+
   const selection = createMemo(() =>
     resolveSessionComposerSelection(
       store.durable ? { agent: "build", model: { id: "claude-sonnet-4", providerID: "anthropic" } } : undefined,
       { agent: "review", model: { modelID: "gpt-5", providerID: "openai" } },
     ),
   )
+
   return (
     <DemoFrame
       title="Durable Session selection precedence"

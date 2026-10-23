@@ -18,7 +18,7 @@ interface StatusVisual {
   bad: boolean;
 }
 
-function statusVisual(status: PodStatus): StatusVisual {
+export function statusVisual(status: PodStatus): StatusVisual {
   if (status.reason === 'CrashLoopBackOff') return { dot: 'bg-red-500', label: 'CrashLoopBackOff', bad: true };
   if (status.reason === 'ImagePullBackOff') return { dot: 'bg-red-500', label: 'Image pull error', bad: true };
   if (status.reason === 'Unschedulable') return { dot: 'bg-red-500', label: 'Unschedulable', bad: true };

@@ -1,4 +1,4 @@
-import { OpenCode, type OpenCodeEvent } from "@opencode-ai/client"
+import { OpenCode, type OpenCodeEvent } from "@opencode/client"
 
 export const worktree = "/tmp/opencode"
 export const directory = `${worktree}/packages/tui`
@@ -93,6 +93,8 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
     if (url.pathname === "/experimental/console") return json({ consoleManagedProviders: [], switchableOrgCount: 0 })
     if (url.pathname === "/experimental/capabilities") return json({ backgroundSubagents: true })
     if (url.pathname === "/path") return json({ home: "", state: "", config: "", worktree, directory })
+    if (url.pathname === "/api/info")
+      return json({ version: "test", pid: 0, urls: [], paths: { tmp: "/tmp" }, capabilities: { persistentPty: true } })
     if (url.pathname === "/api/location")
       return json({ directory, project: { id: "proj_test", directory: worktree, canonical: worktree } })
     if (url.pathname === "/api/plugin")
@@ -110,14 +112,13 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
         location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },
         data: [],
       })
-    if (url.pathname === "/api/project/current") return json({ id: "proj_test", directory: worktree })
     if (url.pathname === "/api/project") return json([])
-    if (url.pathname === "/api/worktree/proj_test") {
+    if (url.pathname === "/api/worktree") {
       if (request.method === "GET") return json([{ directory: worktree }])
       if (request.method === "POST") return json({ directory: `${worktree}/created` })
       return new Response(null, { status: 204 })
     }
-    if (url.pathname === "/api/worktree/proj_test/refresh") return new Response(null, { status: 204 })
+    if (url.pathname === "/api/worktree/refresh") return new Response(null, { status: 204 })
     if (url.pathname === "/api/shell")
       return json({
         location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },
@@ -134,6 +135,7 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
         data: { resources: [], templates: [] },
       })
     if (url.pathname === "/api/session") return json({ data: [], cursor: {} })
+    if (url.pathname === "/api/config") return json([])
     if (url.pathname === "/api/session/active") return json({ data: {} })
     if (request.method === "POST" && /^\/api\/session\/[^/]+\/model$/.test(url.pathname))
       return new Response(null, { status: 204 })
@@ -142,8 +144,9 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
         location: { directory, project: { id: "proj_test", directory: worktree, canonical: worktree } },
         data: [],
       })
-    if (url.pathname === "/api/form/request")
+    if (url.pathname === "/api/form")
       return json({ location: { directory, project: { id: "proj_test", directory: worktree } }, data: [] })
+    if (/^\/api\/session\/[^/]+\/permission$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/session\/[^/]+\/form$/.test(url.pathname)) return json({ data: [] })
     if (/^\/api\/experimental\/session\/[^/]+\/terminal$/.test(url.pathname)) return json({ data: [] })
     if (

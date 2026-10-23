@@ -1,9 +1,7 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { projectVirtualKeys } from '../../db/schema';
-import { catalogModelIdsOf } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
@@ -18,12 +16,17 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 
 const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'b'.repeat(64);
-const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
+const OPENAI_FAMILY = {
+  allowed_models: [...servedModelsOf(BASE_FORMATS.openai), ...BASE_FORMATS.openai.imageModels],
+  key_ids: ['*'],
+};
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 const TENANT_ACCOUNT = { email: 'team@acme.test', accountId: 'chatgpt-account-acme' };
@@ -32,8 +35,8 @@ interface ProviderRow {
   name: string;
   kind?: string | null;
   baseFormat: string | null;
-  enabled: boolean;
-  weight: number;
+  chatEnabled: boolean;
+  chatWeight: number;
   status: string;
 }
 
@@ -84,7 +87,7 @@ describe('an Organization signs in its own Linked account', () => {
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
     chatgpt.signInAs(TENANT_ACCOUNT);
-    await holdEveryChatKey();
+    await holdEveryProjectKey();
   });
 
   afterEach(() => {
@@ -116,11 +119,8 @@ describe('an Organization signs in its own Linked account', () => {
     return res.json<{ id: string }>().id;
   }
 
-  async function holdEveryChatKey(): Promise<void> {
-    const keys = await db
-      .select({ id: projectVirtualKeys.bifrostKeyId })
-      .from(projectVirtualKeys)
-      .where(eq(projectVirtualKeys.keyType, 'chat'));
+  async function holdEveryProjectKey(): Promise<void> {
+    const keys = await db.select({ id: projectVirtualKeys.bifrostKeyId }).from(projectVirtualKeys);
     bifrost.holdVirtualKeys(keys.map((key) => key.id));
   }
 
@@ -210,8 +210,10 @@ describe('an Organization signs in its own Linked account', () => {
         name: 'team-chatgpt',
         kind: 'linked-account',
         baseFormat: 'openai',
-        enabled: true,
-        weight: 1,
+        chatEnabled: true,
+        chatWeight: 1,
+        backendEnabled: false,
+        backendWeight: 1,
         status: 'not-signed-in',
       });
       const provider = bifrost.providerNamed(bifrostName);
@@ -225,7 +227,7 @@ describe('an Organization signs in its own Linked account', () => {
           id: expect.any(String),
           name: `${bifrostName}-key`,
           value: { value: expect.stringMatching(/^lap_[A-Za-z0-9_-]{40,}$/), type: 'plain_text' },
-          models: OPENAI_CATALOG_IDS,
+          models: ['*'],
           weight: 1,
           enabled: true,
         },
@@ -256,8 +258,8 @@ describe('an Organization signs in its own Linked account', () => {
       ]);
 
       expect(rules.json<{ kindsByFormat: Record<string, string[]> }>().kindsByFormat).toEqual({
-        openai: ['official-api-key', 'compatible-endpoint', 'linked-account'],
-        anthropic: ['official-api-key', 'compatible-endpoint'],
+        openai: ['official-api-key', 'compatible-endpoint', 'linked-account', 'azure-foundry'],
+        anthropic: ['official-api-key', 'compatible-endpoint', 'azure-foundry'],
       });
       expect(refused.map((res) => res.statusCode)).toEqual([400, 400, 400]);
       expect(bifrost.providerNamed(`${seeded.tenant.name}-team-chatgpt`)).toBeUndefined();
@@ -327,7 +329,7 @@ describe('an Organization signs in its own Linked account', () => {
       expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
         provider: bifrostName,
         weight: 1,
-        ...CATALOG_WIDE,
+        ...OPENAI_FAMILY,
       });
       const credential = await fetchCredential(callerSecretOf(bifrostName));
       expect(credential.statusCode, credential.body).toBe(200);
@@ -472,7 +474,7 @@ describe('an Organization signs in its own Linked account', () => {
           method: 'PUT',
           url: '/api/model-providers/formats/openai',
           headers: other.admin.headers,
-          payload: { providers: [{ name: bifrostName, enabled: true, weight: 5 }] },
+          payload: { providers: [{ name: bifrostName, chatEnabled: true, chatWeight: 5 }] },
         }),
         app.inject({
           method: 'DELETE',
@@ -520,7 +522,7 @@ describe('an Organization signs in its own Linked account', () => {
 
       const before = (await rowsOf(seeded.admin)).find((row) => row.name === 'team-chatgpt');
 
-      expect(before).toMatchObject({ enabled: true, weight: 1, status: 'not-signed-in' });
+      expect(before).toMatchObject({ chatEnabled: true, chatWeight: 1, status: 'not-signed-in' });
       expect(chatProvidersOf(projectId)).not.toContain(bifrostName);
 
       await signIn(seeded);
@@ -541,8 +543,8 @@ describe('an Organization signs in its own Linked account', () => {
         headers: seeded.admin.headers,
         payload: {
           providers: [
-            { name: 'openai', enabled: true, weight: 0 },
-            { name: 'custom-openai-1', enabled: false, weight: 1 },
+            { name: 'openai', chatEnabled: true, chatWeight: 0 },
+            { name: 'custom-openai-1', chatEnabled: false, chatWeight: 1 },
           ],
         },
       });
@@ -550,7 +552,7 @@ describe('an Organization signs in its own Linked account', () => {
 
       const openaiRows = (await rowsOf(seeded.admin)).filter((row) => row.baseFormat === 'openai');
 
-      expect(openaiRows.map((row) => [row.name, row.enabled, row.weight, row.status])).toEqual([
+      expect(openaiRows.map((row) => [row.name, row.chatEnabled, row.chatWeight, row.status])).toEqual([
         ['custom-openai-1', false, 1, 'working'],
         ['openai', true, 0, 'working'],
         ['team-chatgpt', true, 1, 'not-signed-in'],
@@ -570,8 +572,8 @@ describe('an Organization signs in its own Linked account', () => {
         headers: seeded.admin.headers,
         payload: {
           providers: [
-            { name: 'openai', enabled: false, weight: 0 },
-            { name: 'custom-openai-1', enabled: false, weight: 1 },
+            { name: 'openai', chatEnabled: false, chatWeight: 0 },
+            { name: 'custom-openai-1', chatEnabled: false, chatWeight: 1 },
           ],
         },
       });
@@ -590,7 +592,7 @@ describe('an Organization signs in its own Linked account', () => {
       const admin = await platformAdmin();
       const seeded = await seededTenant();
       const projectId = await projectOf(seeded.tenant);
-      await holdEveryChatKey();
+      await holdEveryProjectKey();
 
       const created = await app.inject({
         method: 'POST',
@@ -614,7 +616,7 @@ describe('an Organization signs in its own Linked account', () => {
         'not-signed-in'
       );
       expect(bifrost.providerNamed('opsiforce-capacity')?.keys).toMatchObject([
-        { value: { value: expect.stringMatching(/^lap_/), type: 'plain_text' }, models: OPENAI_CATALOG_IDS },
+        { value: { value: expect.stringMatching(/^lap_/), type: 'plain_text' }, models: ['*'] },
       ]);
       expect(await startSignIn(seeded.admin, 'opsiforce-capacity')).toMatchObject({ statusCode: 404 });
 
@@ -641,14 +643,14 @@ describe('an Organization signs in its own Linked account', () => {
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
         headers: seeded.admin.headers,
-        payload: { providers: [{ name: 'opsiforce-capacity', enabled: true, weight: 3 }] },
+        payload: { providers: [{ name: 'opsiforce-capacity', chatEnabled: true, chatWeight: 3 }] },
       });
 
       expect(switchedOn.statusCode, switchedOn.body).toBe(200);
       expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
         provider: 'opsiforce-capacity',
         weight: 3,
-        ...CATALOG_WIDE,
+        ...OPENAI_FAMILY,
       });
       const deleted = await app.inject({
         method: 'DELETE',

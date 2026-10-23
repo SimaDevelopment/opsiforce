@@ -7,7 +7,7 @@ import {
   type BaseFormatId,
   type PlatformModelProvider,
 } from '~/api/model-providers';
-import { EllipsisVertical, KeyRound, Pencil, Trash2 } from '~/components/icons';
+import { Boxes, EllipsisVertical, KeyRound, Pencil, Trash2, Users } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -23,7 +23,9 @@ import {
   LinkedAccountSignIn,
   useLinkedAccountActions,
 } from './linked-account-sign-in';
+import { ModelsDialog, type ModelsTarget } from './models-dialog';
 import { InfoTip, Tip } from './provider-widgets';
+import { TenantAccessDialog } from './tenant-access';
 import { ReenterKeyDialog } from './reenter-key-dialog';
 
 export const MENU_TRIGGER_CLASS =
@@ -41,7 +43,9 @@ function isLinkedAccountRow(row: PlatformModelProvider): boolean {
 
 function managedRow(row: PlatformModelProvider): ManagedBuiltIn | null {
   const { baseFormat } = row;
-  return (row.fixed || row.notMetered) && baseFormat !== null ? { ...row, baseFormat } : null;
+  return (row.fixed || row.notMetered || row.kind === 'azure-foundry') && baseFormat !== null
+    ? { ...row, baseFormat }
+    : null;
 }
 
 function NotMeteredPill() {
@@ -91,13 +95,60 @@ export function BuiltInPlatformDetails(props: { row: PlatformModelProvider; edit
   );
 }
 
+function TenantAccessItem(props: { onSelect: () => void }) {
+  return (
+    <DropdownMenuItem onSelect={() => props.onSelect()}>
+      <Users class="h-3.5 w-3.5" />
+      Organization access
+    </DropdownMenuItem>
+  );
+}
+
+export function ModelsItem(props: { onSelect: () => void }) {
+  return (
+    <DropdownMenuItem onSelect={() => props.onSelect()}>
+      <Boxes class="h-3.5 w-3.5" />
+      Choose models
+    </DropdownMenuItem>
+  );
+}
+
+function modelsTargetOf(row: PlatformModelProvider, baseFormat: BaseFormatId): ModelsTarget {
+  return {
+    name: row.name,
+    baseFormat,
+    kind: row.kind,
+    servedModels: row.servedModels,
+    connection: row.connection,
+  };
+}
+
+function PlatformModelsDialog(props: {
+  row: PlatformModelProvider;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Show when={builtInFormatOf(props.row)}>
+      {(baseFormat) => (
+        <ModelsDialog
+          row={modelsTargetOf(props.row, baseFormat())}
+          scope="platform"
+          open={props.open}
+          onOpenChange={props.onOpenChange}
+        />
+      )}
+    </Show>
+  );
+}
+
 export function BuiltInRowMenu(props: { row: PlatformModelProvider }) {
   return (
     <Show
       when={managedRow(props.row)}
       fallback={
-        <Show when={isLinkedAccountRow(props.row)}>
-          <LinkedAccountOnlyMenu name={props.row.name} />
+        <Show when={isLinkedAccountRow(props.row)} fallback={<AccessOnlyMenu row={props.row} />}>
+          <LinkedAccountOnlyMenu row={props.row} />
         </Show>
       }
     >
@@ -106,19 +157,50 @@ export function BuiltInRowMenu(props: { row: PlatformModelProvider }) {
   );
 }
 
-function LinkedAccountOnlyMenu(props: { name: string }) {
-  const actions = useLinkedAccountActions('platform', () => props.name);
+function AccessOnlyMenu(props: { row: PlatformModelProvider }) {
+  const [accessOpen, setAccessOpen] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} aria-label={`${props.row.name} actions`}>
+          <EllipsisVertical class="h-4 w-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <Show when={props.row.status !== 'missing' && builtInFormatOf(props.row)}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
+          <TenantAccessItem onSelect={() => setAccessOpen(true)} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
+      <TenantAccessDialog name={props.row.name} open={accessOpen()} onOpenChange={setAccessOpen} />
+    </>
+  );
+}
+
+function LinkedAccountOnlyMenu(props: { row: PlatformModelProvider }) {
+  const name = () => props.row.name;
+  const actions = useLinkedAccountActions('platform', name);
+  const [accessOpen, setAccessOpen] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
   return (
     <Show when={actions.connected() || !actions.signingIn()}>
       <DropdownMenu>
-        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} disabled={actions.busy()} aria-label={`${props.name} actions`}>
+        <DropdownMenuTrigger class={MENU_TRIGGER_CLASS} disabled={actions.busy()} aria-label={`${name()} actions`}>
           <EllipsisVertical class="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <LinkedAccountMenuItems actions={actions} />
+          <Show when={actions.connected()}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
+          <TenantAccessItem onSelect={() => setAccessOpen(true)} />
         </DropdownMenuContent>
       </DropdownMenu>
-      <DisconnectDialog scope="platform" name={props.name} actions={actions} />
+      <DisconnectDialog scope="platform" name={name()} actions={actions} />
+      <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
+      <TenantAccessDialog name={name()} open={accessOpen()} onOpenChange={setAccessOpen} />
     </Show>
   );
 }
@@ -127,11 +209,13 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
   const [confirming, setConfirming] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
   const [reentering, setReentering] = createSignal(false);
+  const [accessOpen, setAccessOpen] = createSignal(false);
+  const [modelsOpen, setModelsOpen] = createSignal(false);
   const rules = usePlatformModelProviderCreationRules();
   const deleteProvider = useDeleteModelProvider('platform');
   const name = () => props.row.name;
   const linked = () => isLinkedAccountRow(props.row);
-  const reentersKey = () => props.row.status === 'missing' && !linked();
+  const reentersKey = () => props.row.status === 'missing' && !linked() && props.row.kind !== 'azure-foundry';
   const linkedAccount = useLinkedAccountActions('platform', name, linked);
 
   function remove() {
@@ -171,6 +255,10 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
               </DropdownMenuItem>
             </Show>
           </Show>
+          <Show when={props.row.status !== 'missing'}>
+            <ModelsItem onSelect={() => setModelsOpen(true)} />
+          </Show>
+          <TenantAccessItem onSelect={() => setAccessOpen(true)} />
           <Show when={!props.row.fixed}>
             <DropdownMenuItem
               class="text-destructive data-[highlighted]:text-destructive"
@@ -207,6 +295,8 @@ function ManagedBuiltInMenu(props: { row: ManagedBuiltIn }) {
         fixedFormat={props.row.fixed ? props.row.baseFormat : undefined}
       />
       <DisconnectDialog scope="platform" name={name()} actions={linkedAccount} />
+      <PlatformModelsDialog row={props.row} open={modelsOpen()} onOpenChange={setModelsOpen} />
+      <TenantAccessDialog name={name()} open={accessOpen()} onOpenChange={setAccessOpen} />
     </>
   );
 }

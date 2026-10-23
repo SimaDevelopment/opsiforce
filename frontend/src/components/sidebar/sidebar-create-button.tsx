@@ -3,9 +3,9 @@ import { Plus } from '~/components/icons';
 
 const REVEAL_CLASS = {
   workspace:
-    'opacity-0 group-hover/wsrow:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent',
+    'opacity-0 group-hover/wsrow:opacity-100 pointer-coarse:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent',
   folder:
-    'opacity-0 group-hover/folderrow:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent',
+    'opacity-0 group-hover/folderrow:opacity-100 pointer-coarse:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent',
 } as const;
 
 export function SidebarCreateButton(props: {

@@ -1,22 +1,15 @@
 import type { Config, Path, Project, ProviderAuthResponse } from "@/runtime/server/types"
-import type {
-  LocationGetInput,
-  LocationGetOutput,
-  ProjectCurrentInput,
-  ProjectCurrentOutput,
-  ProjectListOutput,
-} from "@opencode-ai/client/promise"
+import type { LocationGetInput, LocationGetOutput, ProjectListOutput } from "@opencode/client/promise"
 import { showToast } from "@/shell/notifications/toast"
-import { getFilename } from "@opencode-ai/util/path"
-import { retry } from "@opencode-ai/util/retry"
+import { getFilename } from "@opencode/util/path"
+import { retry } from "@opencode/util/retry"
 import { reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State } from "./types"
 import { cmp, normalizeProjectInfo } from "./utils"
 import { formatServerError } from "@/runtime/server/errors"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
 import type { ServerScope } from "@/runtime/server/scope"
-import type { ServerApi } from "@/runtime/server/api"
-import { sameDirectory } from "@/workspaces/paths"
+import { withWorktreeInventory, worktreeInventoryKey } from "@/workspaces/inventory"
 
 type GlobalStore = {
   path: Path
@@ -29,12 +22,15 @@ type GlobalStore = {
 function waitForPaint() {
   return new Promise<void>((resolve) => {
     let done = false
+
     const finish = () => {
       if (done) return
       done = true
       resolve()
     }
+
     const timer = setTimeout(finish, 50)
+
     if (typeof requestAnimationFrame !== "function") return
     requestAnimationFrame(() => {
       setTimeout(() => {
@@ -62,44 +58,23 @@ export const loadGlobalConfigQuery = (scope: ServerScope) =>
 
 type ProjectApi = {
   readonly list: () => Promise<ProjectListOutput>
-  readonly current: (input?: ProjectCurrentInput) => Promise<ProjectCurrentOutput>
 }
-type WorktreeApi = Pick<ServerApi["worktree"], "list">
+
 type LocationApi = { readonly get: (input?: LocationGetInput) => Promise<LocationGetOutput> }
 
-export const loadProjectsQuery = (scope: ServerScope, projects: ProjectApi, worktrees: WorktreeApi) =>
+// Metadata only. Worktree inventories load per project when a view shows it (see workspaces/inventory).
+export const loadProjectsQuery = (scope: ServerScope, projects: ProjectApi) =>
   queryOptions({
     queryKey: [scope, "project"],
     queryFn: () =>
       retry(() =>
-        projects.list().then(async (items) => {
-          return (
-            await Promise.all(
-              items
-                .filter((project) => !!project?.id)
-                .map(async (project) => {
-                  const directories = await worktrees
-                    .list({ projectID: project.id })
-                    .catch(() => [
-                      { directory: project.canonical },
-                      ...(project.sandboxes ?? [])
-                        .filter((directory) => !sameDirectory(project.canonical, directory))
-                        .map((directory) => ({ directory })),
-                    ])
-                  return normalizeProjectInfo({
-                    ...project,
-                    sandboxes: directories
-                      .map((item) => item.directory)
-                      .filter((directory) => !sameDirectory(project.canonical, directory)),
-                    worktrees: directories,
-                  })
-                }),
-            )
-          )
+        projects.list().then((items) =>
+          items
+            .filter((project) => !!project?.id)
+            .map(normalizeProjectInfo)
             .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
-            .slice()
-            .sort((a, b) => cmp(a.id, b.id))
-        }),
+            .sort((a, b) => cmp(a.id, b.id)),
+        ),
       ),
   })
 
@@ -107,7 +82,6 @@ export async function bootstrapGlobal(input: {
   serverAPI: {
     readonly location: LocationApi
     readonly project: ProjectApi
-    readonly worktree: WorktreeApi
   }
   scope: ServerScope
   setGlobalStore: SetStoreFunction<GlobalStore>
@@ -117,10 +91,19 @@ export async function bootstrapGlobal(input: {
     () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope)),
     () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverAPI.location)),
     () =>
-      input.queryClient
-        .fetchQuery(loadProjectsQuery(input.scope, input.serverAPI.project, input.serverAPI.worktree))
-        .then((data) => input.setGlobalStore("project", data)),
+      input.queryClient.fetchQuery(loadProjectsQuery(input.scope, input.serverAPI.project)).then((data) =>
+        input.setGlobalStore(
+          "project",
+          data.map((project) =>
+            withWorktreeInventory(
+              project,
+              input.queryClient.getQueryData(worktreeInventoryKey(input.scope, project.id)),
+            ),
+          ),
+        ),
+      ),
   ]
+
   await runAll(slow)
 }
 
@@ -147,6 +130,7 @@ export async function bootstrapDirectory(input: {
   mcp: boolean
   api: {
     readonly project: ProjectApi
+    readonly location: LocationApi
   }
   store: Store<State>
   setStore: SetStoreFunction<State>
@@ -160,23 +144,27 @@ export async function bootstrapDirectory(input: {
 }) {
   const loading = input.store.status !== "complete"
   const seededProject = projectID(input.directory, input.global.project)
+
   if (seededProject) input.setStore("project", seededProject)
+
   if (Object.keys(input.store.config).length === 0 && Object.keys(input.global.config).length > 0) {
     input.setStore("config", reconcile(input.global.config, { merge: false }))
   }
+
   if (loading) input.setStore("status", "partial")
 
   const slow = [
     seededProject
       ? undefined
       : () =>
-          retry(() => input.api.project.current({ location: { directory: input.directory } })).then((project) =>
-            input.setStore("project", project.id),
+          retry(() => input.api.location.get({ location: { directory: input.directory } })).then((location) =>
+            input.setStore("project", location.project.id),
           ),
   ].filter((task): task is () => Promise<void> => !!task)
 
   await waitForPaint()
   const slowErrs = errors(await runAll(slow))
+
   if (slowErrs.length > 0) {
     console.error("Failed to finish bootstrap instance", slowErrs[0])
     const project = getFilename(input.directory)

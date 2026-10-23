@@ -57,6 +57,7 @@ export const serviceManifestSchema = z
         )
         .optional(),
       inbound: z.boolean().optional(),
+      connectedByDefault: z.boolean().optional(),
       serviceForm: formSchema.optional(),
       projectForm: formSchema.optional(),
       events: z.record(eventTypeSchema, eventSchema).optional(),

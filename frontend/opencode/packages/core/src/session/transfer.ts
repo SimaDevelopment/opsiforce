@@ -1,13 +1,13 @@
 export * as SessionTransfer from "./transfer.js"
 
-import { SessionTransfer } from "@opencode-ai/schema/session-transfer"
-import { Tool } from "@opencode-ai/schema/tool"
-import { Skill } from "@opencode-ai/schema/skill"
+import { SessionTransfer } from "@opencode/schema/session-transfer"
+import { Tool } from "@opencode/schema/tool"
+import { Skill } from "@opencode/schema/skill"
 import { eq } from "drizzle-orm"
 import { Clock, Context, DateTime, Effect, Layer, Schema } from "effect"
 import { map } from "effect/Array"
 import path from "path"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
@@ -103,6 +103,7 @@ const layer = Layer.effect(
               agent: input.data.info.agent,
               model: input.data.info.model,
               metadata: input.data.info.metadata,
+              permissions: input.data.info.permissions,
             },
             {
               location: input.location,
@@ -268,20 +269,17 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
           return {
             ...content,
             text: redact("text", message.id, content.text),
-            state: content.state ? { redacted: `text-state:${message.id}` } : undefined,
+            native: content.native ? { redacted: `text-native:${message.id}` } : undefined,
           }
         if (content.type === "reasoning")
           return {
             ...content,
             text: redact("reasoning", message.id, content.text),
-            state: content.state ? { redacted: `reasoning-state:${message.id}` } : undefined,
+            native: content.native ? { redacted: `reasoning-native:${message.id}` } : undefined,
           }
         return {
           ...content,
-          providerState: content.providerState ? { redacted: `tool-provider-state:${message.id}` } : undefined,
-          providerResultState: content.providerResultState
-            ? { redacted: `tool-provider-result-state:${message.id}` }
-            : undefined,
+          native: content.native ? { redacted: `tool-native:${message.id}` } : undefined,
           state: sanitizeToolState(message.id, content.state),
         }
       }),
@@ -296,10 +294,7 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
       ...message,
       metadata: meta,
       summary: redact("compaction-summary", message.id, message.summary),
-      recent: redact("compaction-recent", message.id, message.recent),
-      ...(message.status === "completed"
-        ? { providerState: metadata("compaction-provider-state", message.id, message.providerState) }
-        : {}),
+      ...(message.status === "completed" ? { native: metadata("compaction-native", message.id, message.native) } : {}),
     }
   }
   return { ...message, metadata: meta }

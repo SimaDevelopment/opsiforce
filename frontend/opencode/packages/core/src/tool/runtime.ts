@@ -1,7 +1,8 @@
-import type { ToolDefinition } from "@opencode-ai/ai"
-import { Tool } from "@opencode-ai/schema/tool"
+import type { ToolDefinition } from "@opencode/ai"
+import { emptyInputJsonSchema } from "@opencode/ai/tool"
+import { Tool } from "@opencode/schema/tool"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
-import { Cache, Effect, JsonSchema, Schema, SchemaIssue, SchemaRepresentation } from "effect"
+import { Cache, Effect, JsonPointer, JsonSchema, Schema, SchemaIssue, SchemaRepresentation } from "effect"
 import { $ZodType, toJSONSchema } from "zod/v4/core"
 
 const formatEffectIssues = SchemaIssue.makeFormatterStandardSchemaV1()
@@ -18,6 +19,7 @@ const jsonSchemas = Effect.runSync(
 )
 
 export const definition = (tool: Tool.Info<any, any>): ToolDefinition => ({
+  type: "tool",
   name: effectiveName(tool),
   description: tool.description,
   inputSchema: inputJsonSchema(tool.input),
@@ -154,7 +156,8 @@ const validateStandard = (
 const inputJsonSchema = (schema: Tool.ValueSchema<any>): JsonSchema.JsonSchema => {
   if (schema === undefined || schema === null) return {}
   if (isStandardSchema(schema)) return standardJsonSchema(schema, "input")
-  return Schema.isSchema(schema) ? toJsonSchema(schema) : schema
+  if (!Schema.isSchema(schema)) return schema
+  return emptyInputJsonSchema(schema) ?? toJsonSchema(schema)
 }
 
 const outputJsonSchema = (schema: Tool.ValueSchema<any>): JsonSchema.JsonSchema => {
@@ -169,7 +172,7 @@ const standardJsonSchema = (schema: StandardSchemaV1<any, any>, io: "input" | "o
 }
 
 const toJsonSchema = (schema: Schema.Top): JsonSchema.JsonSchema => {
-  const document = Schema.toJsonSchemaDocument(schema)
+  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
   // Effect emits valid JSON Schema that some inference providers handle poorly. Simplify it
   // without changing validation: `{ type: "integer", allOf: [{ minimum: 0 }] }` becomes
   // `{ type: "integer", minimum: 0 }` only when no keyword would be overwritten. Named schemas
@@ -219,8 +222,8 @@ const inlineLocalReferences = (
 
   const localDefinitions = definitions ?? (isRecord(value.$defs) ? value.$defs : undefined)
   if (typeof value.$ref === "string" && localDefinitions) {
-    const segment = value.$ref.match(/^#\/\$defs\/([^/]+)$/)?.[1]
-    const name = segment?.replaceAll("~1", "/").replaceAll("~0", "~")
+    const tokens = JsonPointer.parseUriFragment(value.$ref)
+    const name = tokens?.length === 2 && tokens[0] === "$defs" ? tokens[1] : undefined
     if (name && !seen.has(name)) {
       const target = localDefinitions[name]
       if (target) {

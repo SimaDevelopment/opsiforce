@@ -1,23 +1,26 @@
-import { AISDK } from "@opencode-ai/core/aisdk"
-import { App } from "@opencode-ai/core/app"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Session } from "@opencode-ai/schema/session"
+import { AISDK } from "@opencode/core/aisdk"
+import { App } from "@opencode/core/app"
+import { Agent } from "@opencode/schema/agent"
+import { Session } from "@opencode/core/session"
+import { Location } from "@opencode/core/location"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { Model } from "@opencode-ai/core/model"
-import { ModelResolver } from "@opencode-ai/core/model-resolver"
-import { Plugin } from "@opencode-ai/core/plugin"
-import { PluginHost } from "@opencode-ai/core/plugin/host"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
+import { Model } from "@opencode/core/model"
+import { ModelResolver } from "@opencode/core/model-resolver"
+import { Plugin } from "@opencode/core/plugin"
+import { PluginHost } from "@opencode/core/plugin/host"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
 import {
   copilotBaseURL,
   copilotEntitlementError,
   copilotFetch,
   GithubCopilotPlugin,
-} from "@opencode-ai/core/plugin/provider/github-copilot"
-import { Provider } from "@opencode-ai/core/provider"
-import { Integration } from "@opencode-ai/core/integration"
+  utilityTitle,
+} from "@opencode/core/plugin/provider/github-copilot"
+import { Message, SystemPart } from "@opencode/ai"
+import { Provider } from "@opencode/core/provider"
+import { Integration } from "@opencode/core/integration"
+import type { SessionRequestKind } from "@opencode/plugin/effect/session"
 import { fakeSelectorSdk } from "../fixture/selector"
 import { testEffect } from "../lib/effect"
 import { PluginTestLayer } from "./fixture"
@@ -34,6 +37,25 @@ function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Expected value")
   return value
 }
+
+const sessions = Effect.fn(function* () {
+  const service = yield* Session.Service
+  const location = yield* Location.Service
+  const parent = yield* service.create({ location: { directory: location.directory } })
+  const child = yield* service.create({ parentID: parent.id })
+  return { parent: parent.id, child: child.id }
+})
+
+const modelRequest = Effect.fn(function* (sessionID: Session.ID, kind: SessionRequestKind, agent = "build") {
+  const hooks = yield* PluginHooks.Service
+  return yield* hooks.trigger("session", "model.request", {
+    sessionID,
+    agent: Agent.ID.make(agent),
+    model: Model.Ref.make({ providerID: Provider.ID.githubCopilot, id: Model.ID.make("gpt-5.4") }),
+    kind,
+    headers: {},
+  })
+})
 
 describe("GithubCopilotPlugin", () => {
   test("prefers the account-specific Copilot API endpoint", () => {
@@ -135,6 +157,7 @@ describe("GithubCopilotPlugin", () => {
         sessionID: Session.ID.make("ses_test"),
         agent: Agent.ID.make("build"),
         model: Model.Ref.make({ providerID: Provider.ID.githubCopilot, id: Model.ID.make("claude-sonnet-4.5") }),
+        kind: "primary",
         request: new Request("https://api.githubcopilot.com/v1/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": "token" },
@@ -149,31 +172,169 @@ describe("GithubCopilotPlugin", () => {
     }),
   )
 
-  it.effect("classifies title generation as a background interaction", () =>
+  it.effect("classifies main-loop steps as agent interactions", () =>
     Effect.gen(function* () {
       yield* addPlugin()
-      const hooks = yield* PluginHooks.Service
-      const event = yield* hooks.trigger("session", "http.request", {
-        sessionID: Session.ID.make("ses_title"),
-        agent: Agent.ID.make("title"),
-        model: Model.Ref.make({ providerID: Provider.ID.githubCopilot, id: Model.ID.make("gpt-5.4-nano") }),
-        request: new Request("https://api.githubcopilot.com/chat/completions"),
-      })
-      expect(event.request.headers.get("x-interaction-type")).toBe("conversation-background")
+      const event = yield* modelRequest((yield* sessions()).parent, "primary")
+      expect(event.headers).toEqual({ "X-Interaction-Type": "conversation-agent", "X-Interaction-Id": event.sessionID })
     }),
   )
 
-  it.effect("classifies compaction requests", () =>
+  it.effect("classifies child-session steps as subagent interactions", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const ids = yield* sessions()
+      const event = yield* modelRequest(ids.child, "primary")
+      expect(event.headers).toEqual({
+        "X-Interaction-Type": "conversation-subagent",
+        "X-Interaction-Id": ids.parent,
+        "x-initiator": "agent",
+      })
+    }),
+  )
+
+  it.effect("classifies title generation as a background interaction", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const event = yield* modelRequest((yield* sessions()).parent, "title")
+      expect(event.headers).toEqual({
+        "X-Interaction-Type": "conversation-background",
+        "X-Interaction-Id": event.sessionID,
+        "x-initiator": "agent",
+      })
+    }),
+  )
+
+  it.effect("classifies compaction requests by kind rather than agent", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const ids = yield* sessions()
+      const event = yield* modelRequest(ids.child, "compaction", "build")
+      expect(event.headers).toEqual({
+        "X-Interaction-Type": "conversation-compaction",
+        "X-Interaction-Id": ids.parent,
+        "x-initiator": "agent",
+      })
+    }),
+  )
+
+  it.effect("does not classify by agent name", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const event = yield* modelRequest((yield* sessions()).parent, "primary", "compaction")
+      expect(event.headers).toEqual({ "X-Interaction-Type": "conversation-agent", "X-Interaction-Id": event.sessionID })
+    }),
+  )
+
+  it.effect("ignores other providers' model requests", () =>
     Effect.gen(function* () {
       yield* addPlugin()
       const hooks = yield* PluginHooks.Service
-      const event = yield* hooks.trigger("session", "http.request", {
-        sessionID: Session.ID.make("ses_compaction"),
-        agent: Agent.ID.make("compaction"),
-        model: Model.Ref.make({ providerID: Provider.ID.githubCopilot, id: Model.ID.make("gpt-5.4") }),
-        request: new Request("https://api.githubcopilot.com/responses"),
+      const event = yield* hooks.trigger("session", "model.request", {
+        sessionID: (yield* sessions()).parent,
+        agent: Agent.ID.make("build"),
+        model: Model.Ref.make({ providerID: Provider.ID.make("openai"), id: Model.ID.make("gpt-5.4") }),
+        kind: "primary",
+        headers: {},
       })
-      expect(event.request.headers.get("x-interaction-type")).toBe("conversation-compaction")
+      expect(event.headers).toEqual({})
+    }),
+  )
+
+  const titleRequest = {
+    sessionID: Session.ID.make("ses_title"),
+    system: [SystemPart.make("You are a title generator.")],
+    messages: [Message.user("how do I make my python script faster")],
+    options: { maxTokens: 32 },
+  }
+  const utilityInput = (send: (init?: RequestInit) => Response | Promise<Response>) => ({
+    baseURL: "https://api.individual.githubcopilot.com",
+    token: "token",
+    model: "gpt-4o-mini",
+    app: App.make({ name: "test", version: "1.2.3", channel: "beta" }),
+    fetch: async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => send(init),
+  })
+
+  it.live("names sessions with the utility model as a free background request", () =>
+    Effect.gen(function* () {
+      const seen: Array<{ url?: string; init?: RequestInit }> = []
+      const title = yield* utilityTitle(
+        {
+          ...utilityInput(() => Response.json({ choices: [{ message: { content: "  Speed Up Python Script\n" } }] })),
+          fetch: async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+            seen.push({ url: String(input), init })
+            return Response.json({ choices: [{ message: { content: "  Speed Up Python Script\n" } }] })
+          },
+        },
+        titleRequest,
+      )
+      expect(title).toBe("Speed Up Python Script")
+      expect(seen[0]?.url).toBe("https://api.individual.githubcopilot.com/chat/completions")
+      const headers = new Headers(seen[0]?.init?.headers)
+      expect(headers.get("authorization")).toBe("Bearer token")
+      expect(headers.get("x-interaction-type")).toBe("agent-session-name-generation")
+      expect(headers.get("x-interaction-id")).toBe("ses_title")
+      expect(headers.get("x-initiator")).toBe("agent")
+      expect(headers.get("x-github-api-version")).toBe("2026-08-01")
+      expect(JSON.parse(String(seen[0]?.init?.body))).toEqual({
+        model: "gpt-4o-mini",
+        stream: false,
+        max_tokens: 32,
+        messages: [
+          { role: "system", content: "You are a title generator." },
+          { role: "user", content: "how do I make my python script faster" },
+        ],
+      })
+    }),
+  )
+
+  it.live("fails the utility title on rate limits so the billable path can run", () =>
+    Effect.gen(function* () {
+      const error = yield* utilityTitle(
+        utilityInput(() => new Response("slow down", { status: 429 })),
+        titleRequest,
+      ).pipe(Effect.flip)
+      expect(String(error)).toContain("429")
+    }),
+  )
+
+  it.live("fails the utility title on an empty completion", () =>
+    Effect.gen(function* () {
+      const error = yield* utilityTitle(
+        utilityInput(() => Response.json({ choices: [{ message: { content: null } }] })),
+        titleRequest,
+      ).pipe(Effect.flip)
+      expect(String(error)).toContain("empty")
+    }),
+  )
+
+  it.live("keeps a declared agent initiator when the body looks user-initiated", () =>
+    Effect.gen(function* () {
+      const requests: Headers[] = []
+      const send = copilotFetch(
+        "token",
+        async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          requests.push(new Headers(init?.headers))
+          return Response.json({ ok: true })
+        },
+        App.make({ name: "test", version: "1.2.3", channel: "beta" }),
+      )
+      yield* Effect.promise(() =>
+        send("https://api.githubcopilot.com/chat/completions", {
+          method: "POST",
+          headers: { "x-initiator": "agent" },
+          body: JSON.stringify({ messages: [{ role: "user", content: "summarize" }] }),
+        }),
+      )
+      expect(requests[0]?.get("x-initiator")).toBe("agent")
+    }),
+  )
+
+  it.effect("classifies session generation requests as agent interactions", () =>
+    Effect.gen(function* () {
+      yield* addPlugin()
+      const event = yield* modelRequest((yield* sessions()).parent, "generate")
+      expect(event.headers).toEqual({ "X-Interaction-Type": "conversation-agent", "X-Interaction-Id": event.sessionID })
     }),
   )
 
@@ -206,16 +367,19 @@ describe("GithubCopilotPlugin", () => {
 
   it.effect("rewrites models.dev fallback models to the GitHub Copilot package", () =>
     Effect.gen(function* () {
-      const catalog = yield* Catalog.Service
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
       const aisdk = yield* AISDK.Service
-      yield* catalog.transform((catalog) => {
-        catalog.provider.update(Provider.ID.githubCopilot, () => {})
-        catalog.model.update(Provider.ID.githubCopilot, Model.ID.make("gpt-5.6-sol"), (model) => {
+      yield* providers.transform((editor) => {
+        editor.update(Provider.ID.githubCopilot, (provider) => {
+          provider.activation = "enabled"
+        })
+        editor.models.update(Provider.ID.githubCopilot, Model.ID.make("gpt-5.6-sol"), (model) => {
           model.package = Provider.aisdk("@ai-sdk/openai-compatible")
         })
       })
       yield* addPlugin()
-      const fallback = required(yield* catalog.model.get(Provider.ID.githubCopilot, Model.ID.make("gpt-5.6-sol")))
+      const fallback = required(yield* models.get(Provider.ID.githubCopilot, Model.ID.make("gpt-5.6-sol")))
       expect(fallback.package).toBe(Provider.aisdk("@ai-sdk/github-copilot"))
 
       const resolved = yield* ModelResolver.fromCatalogModel(fallback, undefined, {
@@ -323,6 +487,66 @@ describe("GithubCopilotPlugin", () => {
     }),
   )
 
+  it.effect("uses responses for Grok and MAI Code models and chat for Gemini", () =>
+    Effect.gen(function* () {
+      const aisdk = yield* AISDK.Service
+      const calls: string[] = []
+      yield* addPlugin()
+      yield* aisdk.runLanguage({
+        model: Model.Info.make({
+          ...Model.Info.default(Provider.ID.make("github-copilot"), Model.ID.make("grok-4.5")),
+          modelID: Model.ID.make("grok-4.5"),
+          package: "aisdk:test-provider",
+        }),
+        sdk: fakeSelectorSdk(calls),
+        options: {},
+      })
+      yield* aisdk.runLanguage({
+        model: Model.Info.make({
+          ...Model.Info.default(Provider.ID.make("github-copilot"), Model.ID.make("grok-4.6")),
+          modelID: Model.ID.make("grok-4.6"),
+          package: "aisdk:test-provider",
+        }),
+        sdk: fakeSelectorSdk(calls),
+        options: {},
+      })
+      yield* aisdk.runLanguage({
+        model: Model.Info.make({
+          ...Model.Info.default(Provider.ID.make("github-copilot"), Model.ID.make("gemini-3.8-flash")),
+          modelID: Model.ID.make("gemini-3.8-flash"),
+          package: "aisdk:test-provider",
+        }),
+        sdk: fakeSelectorSdk(calls),
+        options: {},
+      })
+      yield* aisdk.runLanguage({
+        model: Model.Info.make({
+          ...Model.Info.default(Provider.ID.make("github-copilot"), Model.ID.make("mai-code-1.1-flash")),
+          modelID: Model.ID.make("mai-code-1.1-flash"),
+          package: "aisdk:test-provider",
+        }),
+        sdk: fakeSelectorSdk(calls),
+        options: {},
+      })
+      yield* aisdk.runLanguage({
+        model: Model.Info.make({
+          ...Model.Info.default(Provider.ID.make("github-copilot"), Model.ID.make("gpt-4o")),
+          modelID: Model.ID.make("gpt-4o"),
+          package: "aisdk:test-provider",
+        }),
+        sdk: fakeSelectorSdk(calls),
+        options: {},
+      })
+      expect(calls).toEqual([
+        "responses:grok-4.5",
+        "responses:grok-4.6",
+        "chat:gemini-3.8-flash",
+        "responses:mai-code-1.1-flash",
+        "chat:gpt-4o",
+      ])
+    }),
+  )
+
   it.effect("uses advertised Copilot endpoint metadata before model ID fallbacks", () =>
     Effect.gen(function* () {
       const aisdk = yield* AISDK.Service
@@ -390,14 +614,17 @@ describe("GithubCopilotPlugin", () => {
 
   it.effect("disables gpt-5-chat-latest before Copilot language selection", () =>
     Effect.gen(function* () {
-      const catalog = yield* Catalog.Service
-      yield* catalog.transform((catalog) => {
-        catalog.provider.update(Provider.ID.make("github-copilot"), () => {})
-        catalog.model.update(Provider.ID.make("github-copilot"), Model.ID.make("gpt-5-chat-latest"), () => {})
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      yield* providers.transform((editor) => {
+        editor.update(Provider.ID.githubCopilot, (provider) => {
+          provider.activation = "enabled"
+        })
+        editor.models.update(Provider.ID.githubCopilot, Model.ID.make("gpt-5-chat-latest"), () => {})
       })
       yield* addPlugin()
       expect(
-        required(yield* catalog.model.get(Provider.ID.make("github-copilot"), Model.ID.make("gpt-5-chat-latest")))
+        required(yield* models.get(Provider.ID.githubCopilot, Model.ID.make("gpt-5-chat-latest")))
           .enabled,
       ).toBe(false)
     }),
@@ -405,14 +632,15 @@ describe("GithubCopilotPlugin", () => {
 
   it.effect("does not disable gpt-5-chat-latest for non-Copilot providers", () =>
     Effect.gen(function* () {
-      const catalog = yield* Catalog.Service
-      yield* catalog.transform((catalog) => {
-        catalog.provider.update(Provider.ID.make("custom-copilot"), () => {})
-        catalog.model.update(Provider.ID.make("custom-copilot"), Model.ID.make("gpt-5-chat-latest"), () => {})
+      const providers = yield* Provider.Service
+      const models = yield* Model.Service
+      yield* providers.transform((editor) => {
+        editor.update(Provider.ID.make("custom-copilot"), () => {})
+        editor.models.update(Provider.ID.make("custom-copilot"), Model.ID.make("gpt-5-chat-latest"), () => {})
       })
       yield* addPlugin()
       expect(
-        required(yield* catalog.model.get(Provider.ID.make("custom-copilot"), Model.ID.make("gpt-5-chat-latest")))
+        required(yield* models.get(Provider.ID.make("custom-copilot"), Model.ID.make("gpt-5-chat-latest")))
           .enabled,
       ).toBe(true)
     }),

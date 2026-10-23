@@ -7,6 +7,8 @@
 @source '../opencode/packages/ui/src';
 @source '../opencode/packages/session-ui/src';
 @import 'tw-animate-css';
+@import './components/project/opencode-overrides.css';
+@import './components/ui/table/table.css';
 
 @theme {
   --animate-publish-arrive: publish-arrive 0.9s ease-out 2;
@@ -88,7 +90,17 @@ body,
 #root {
   margin: 0;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: max(16px, 1em);
+  }
 }
 
 body {
@@ -102,11 +114,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  border-color: hsl(var(--border));
+@layer base {
+  html *,
+  html *::before,
+  html *::after {
+    box-sizing: border-box;
+    border-color: hsl(var(--border));
+  }
 }
 
 .sidebar-scroll::-webkit-scrollbar {
@@ -133,42 +147,6 @@ body {
 
 .ms-app .z-50 {
   z-index: 1000 !important;
-}
-
-.oc-chat-only header[data-slot='titlebar-v2'],
-.oc-chat-only button[aria-label='More options'],
-.oc-chat-only div[data-session-title] h1,
-.oc-chat-only [data-slot='session-project-trigger'],
-.oc-chat-only [data-slot='session-review-toggle'],
-.oc-chat-only [data-slot='session-chat-panel'] .h-12 > .shrink-0.flex.items-center.gap-2 > button,
-.oc-chat-only [data-action='composer-attach'],
-.oc-chat-only [data-slot='session-side-panel-presence'],
-[data-option-key='action:manage'] {
-  display: none !important;
-}
-
-.oc-chat-only
-  [data-slot='session-chat-panel']
-  .h-12
-  > .shrink-0.flex.items-center.gap-2
-  [data-component='tooltip-v2-trigger']
-  > button {
-  pointer-events: none;
-}
-
-.oc-chat-only [data-slot='session-chat-panel'] {
-  width: 100% !important;
-  flex: 1 1 auto !important;
-}
-
-.oc-chat-only main {
-  border-top: none !important;
-}
-
-.oc-chat-only {
-  overflow: hidden !important;
-  width: 100% !important;
-  min-width: 0 !important;
 }
 
 a[data-workspace-file-card] {

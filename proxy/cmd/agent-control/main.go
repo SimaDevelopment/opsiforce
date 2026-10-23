@@ -24,7 +24,6 @@ const appRootGuard = "webapp"
 func main() {
 	go runOpencodeAuthProxy()
 	go runReporter()
-	go runStatusWatcher()
 
 	token := os.Getenv("OPSIFORCE_CONTROL_TOKEN")
 	if token == "" {

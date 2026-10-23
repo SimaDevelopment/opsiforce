@@ -33,7 +33,7 @@ const bytea = customType<{ data: Buffer; default: false }>({
 
 export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "external_service_builder_chat" | "test"
 
-export type LimitKeyValue = "projects"
+export type LimitKeyValue = "projects" | "warm_pool"
 
 export const projectStatusEnum = pgEnum("project_status", [
   "starting",
@@ -128,6 +128,7 @@ export const agents = pgTable(
     version: text("version"),
     model: text("model"),
     variant: text("variant"),
+    // TODO: remove in the release after agent_settings.pool_size ships: unread; kept so backends of the previous release keep working during the rollout
     poolSize: integer("pool_size").notNull().default(0),
     builderChatId: text("builder_chat_id").references((): AnyPgColumn => projects.id, {
       onDelete: "set null",
@@ -925,7 +926,7 @@ export const globalLimits = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects')`),
+    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
     check("global_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -942,7 +943,7 @@ export const tenantLimits = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.limitKey] }),
-    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects')`),
+    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
     check("tenant_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -956,7 +957,18 @@ export const agentSettings = pgTable("agent_settings", {
   }),
   // TODO: remove in the release after External Services v2 ships: unread; kept so backends of the previous release keep working during the rollout
   platformApi: boolean("platform_api").notNull().default(false),
+  warmPoolSize: integer("warm_pool_size").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const agentPodSettings = pgTable("agent_pod_settings", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  podClass: podClassEnum("pod_class").notNull().default("small"),
+  cpuMillicores: integer("cpu_millicores").notNull(),
+  memoryRequestMib: integer("memory_request_mib").notNull(),
+  memoryLimitMib: integer("memory_limit_mib").notNull(),
 })
 
 export const agentProfiles = pgTable(
@@ -1183,13 +1195,51 @@ export const modelProviders = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
     bifrostProvider: text("bifrost_provider").notNull(),
-    enabled: boolean("enabled").notNull(),
-    weight: integer("weight").notNull(),
+    bifrostKey: text("bifrost_key"),
+    baseFormat: text("base_format").$type<"openai" | "anthropic">(),
+    chatEnabled: boolean("chat_enabled").notNull(),
+    chatWeight: integer("chat_weight").notNull(),
+    backendEnabled: boolean("backend_enabled").default(false).notNull(),
+    backendWeight: integer("backend_weight").default(1).notNull(),
   },
   (table) => [
-    unique("model_providers_tenant_id_bifrost_provider_unique").on(table.tenantId, table.bifrostProvider).nullsNotDistinct(),
-    check("model_providers_weight_check", sql`${table.weight} between 0 and 100`),
+    unique("model_providers_tenant_id_bifrost_provider_bifrost_key_base_format_unique")
+      .on(table.tenantId, table.bifrostProvider, table.bifrostKey, table.baseFormat)
+      .nullsNotDistinct(),
+    check("model_providers_chat_weight_check", sql`${table.chatWeight} between 0 and 100`),
+    check("model_providers_backend_weight_check", sql`${table.backendWeight} between 0 and 100`),
+    check("model_providers_base_format_check", sql`${table.baseFormat} in ('openai', 'anthropic')`),
   ],
+)
+
+export const modelProviderAvailability = pgTable(
+  "model_provider_availability",
+  {
+    name: text("name").primaryKey(),
+    mode: text("mode").$type<"every" | "chosen">().notNull(),
+  },
+  (table) => [check("model_provider_availability_mode_check", sql`${table.mode} in ('every', 'chosen')`)],
+)
+
+export const appliedModelCatalog = pgTable(
+  "applied_model_catalog",
+  {
+    id: boolean("id").primaryKey().default(true),
+    servedModels: jsonb("served_models").$type<Record<string, string[]>>().notNull(),
+    appliedAt: timestamp("applied_at").defaultNow().notNull(),
+  },
+  (table) => [check("applied_model_catalog_single_row_check", sql`${table.id}`)],
+)
+
+export const modelProviderAvailabilityTenants = pgTable(
+  "model_provider_availability_tenants",
+  {
+    name: text("name").notNull(),
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.name, table.tenantId] })],
 )
 
 export const linkedAccounts = pgTable("linked_accounts", {

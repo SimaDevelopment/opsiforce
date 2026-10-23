@@ -1,6 +1,6 @@
 import { Root } from "@kobalte/core/button"
 import { type ComponentProps, Show, splitProps } from "solid-js"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps } from "@opencode/ui/icon"
 import "./button.css"
 
 export interface ButtonProps
@@ -13,6 +13,7 @@ export interface ButtonProps
     | "warning"
     | "outline"
     | "contrast"
+    | "submit"
     | "ghost"
     | "ghost-muted"
     | "ghost-faint"
@@ -22,6 +23,7 @@ export interface ButtonProps
 
 export function Button(props: ButtonProps) {
   const [split, rest] = splitProps(props, ["variant", "size", "icon", "class", "classList"])
+
   return (
     <Root
       {...rest}

@@ -21,8 +21,8 @@ interface Journal {
 interface ProviderRow {
   tenant_id: string | null;
   bifrost_provider: string;
-  enabled: boolean;
-  weight: number;
+  chat_enabled: boolean;
+  chat_weight: number;
 }
 
 function maintenanceUrl(): string {
@@ -38,7 +38,7 @@ async function migrateTo(client: postgres.Sql, migrationsFolder: string): Promis
 async function providerRows(client: postgres.Sql): Promise<ProviderRow[]> {
   return [
     ...(await client<ProviderRow[]>`
-      SELECT tenant_id, bifrost_provider, enabled, weight FROM model_providers ORDER BY tenant_id NULLS FIRST, bifrost_provider`),
+      SELECT tenant_id, bifrost_provider, chat_enabled, chat_weight FROM model_providers ORDER BY tenant_id NULLS FIRST, bifrost_provider`),
   ];
 }
 
@@ -93,9 +93,9 @@ describe('the model providers migration', () => {
     await migrateTo(client, MIGRATIONS_FOLDER);
 
     expect(await providerRows(client)).toEqual([
-      { tenant_id: null, bifrost_provider: 'anthropic', enabled: true, weight: 1 },
-      { tenant_id: null, bifrost_provider: 'custom-openai-1', enabled: true, weight: 1 },
-      { tenant_id: null, bifrost_provider: 'openai', enabled: true, weight: 0 },
+      { tenant_id: null, bifrost_provider: 'anthropic', chat_enabled: true, chat_weight: 1 },
+      { tenant_id: null, bifrost_provider: 'custom-openai-1', chat_enabled: true, chat_weight: 1 },
+      { tenant_id: null, bifrost_provider: 'openai', chat_enabled: true, chat_weight: 0 },
     ]);
   });
 });

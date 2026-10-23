@@ -4,7 +4,7 @@ service:
 fullnameOverride: opsiforce-bifrost
 
 image:
-  tag: "v2.2.6"
+  tag: "v2.3.2"
 
 replicaCount: 1
 
@@ -50,9 +50,12 @@ bifrost:
     passwordKey: password
   client:
     enableLogging: true
+    disableContentLogging: true
     logRetentionDays: 7
     allowDirectKeys: false
     enforceAuthOnInference: true
+    compat:
+      forceReasoningOnlyModelsToResponses: false
   providers:
     openai:
       keys:

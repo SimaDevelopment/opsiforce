@@ -18,7 +18,7 @@ Koristite polje `permission` za kontrolu ponasanja alata. Za svaki alat mozete p
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "edit": "deny",
-    "bash": "ask",
+    "shell": "ask",
     "webfetch": "allow"
   }
 }
@@ -45,7 +45,7 @@ Ovo su svi ugradeni alati dostupni u OpenCode.
 
 ---
 
-### bash
+### shell
 
 Izvrsava shell komande u okruzenju projekta.
 
@@ -53,7 +53,7 @@ Izvrsava shell komande u okruzenju projekta.
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "bash": "allow"
+    "shell": "allow"
   }
 }
 ```

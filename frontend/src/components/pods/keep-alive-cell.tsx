@@ -31,7 +31,7 @@ export function KeepAliveCell(props: KeepAliveCellProps) {
   };
 
   return (
-    <div class="min-w-56 space-y-1.5">
+    <div class="w-full min-w-56 space-y-1.5">
       <div class="text-xs">
         <Show when={suspendsIn()} fallback={<span class="font-medium text-amber-600">Idle — suspending</span>}>
           {(value) => (

@@ -119,7 +119,7 @@ describe('the Skill & Agent Builder registry entry', () => {
 
   it('declares only the registry literals, never a Project configuration or a Skill', () => {
     expect(Object.keys(entry).toSorted()).toEqual(
-      ['default', 'description', 'model', 'name', 'poolSize', 'port', 'variant', 'version'].toSorted()
+      ['default', 'description', 'model', 'name', 'podClass', 'poolSize', 'port', 'variant', 'version'].toSorted()
     );
   });
 

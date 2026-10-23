@@ -3,6 +3,8 @@ import type { AgentServiceSettings } from '../../db/schema';
 import type { SkillFlags } from '../store/gate';
 import type { SwitchableService } from '../store/service-switch-catalog';
 import type { AgentImportNote } from './agent-import';
+import type { PodClassSelection, PodSettings } from '../pod/pod-classes';
+import type { AgentProjectSettingsChoice } from './agent-copy-settings';
 export type { AgentRow } from './agent-visibility';
 
 export interface AgentResponse {
@@ -55,6 +57,8 @@ export interface AgentProfileResponse {
 
 export interface AgentSettingsResponse {
   defaultEnvironmentId: string | null;
+  warmPoolSize: number;
+  maxWarmPoolSize: number;
 }
 
 export interface AgentSummary extends AgentResponse {
@@ -82,6 +86,7 @@ export interface ShippedSkillResponse {
 
 export interface AgentDetail extends AgentSummary {
   settings: AgentSettingsResponse;
+  podSettings: PodSettings;
   profiles: AgentProfileResponse[];
   shippedSkills: ShippedSkillResponse[];
   projectCount: number;
@@ -129,14 +134,21 @@ export interface PublishAgentDto {
 
 export interface UpdateAgentSettingsDto {
   defaultEnvironmentId?: string | null;
+  warmPoolSize?: number;
 }
+
+export type UpdateAgentPodClassDto = PodClassSelection;
 
 export interface SetAgentVisibilityDto {
   visibility: string;
 }
 
-export interface DuplicateAgentDto {
+export interface DuplicateAgentDto extends AgentProjectSettingsChoice {
   displayName: string;
+}
+
+export interface AgentCopyGrants {
+  canConfigureProjects: boolean;
 }
 
 export interface PublishAgentResponse {

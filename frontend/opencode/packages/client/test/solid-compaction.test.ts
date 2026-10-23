@@ -99,14 +99,32 @@ test.each(["started", "cancelled", "failed"])(
     if (kind === "started") {
       expect(fixture.data.session.message.list(sessionID)).toMatchObject([{ type: "compaction", status: "running" }])
       const model = { providerID: "demo", id: "model" }
-      const providerState = { responseId: "summary-response" }
+      const native = { messages: [] }
+      const tokens = { input: 10, output: 4, reasoning: 0, cache: { read: 3, write: 0 } }
       fixture.emit({
         ...event,
         type: "session.compaction.ended",
-        data: { sessionID, reason: "manual", model, providerState, text: "Summary", recent: "Recent" },
+        data: {
+          sessionID,
+          reason: "manual",
+          model,
+          native,
+          text: "Summary",
+          cost: 0.01,
+          tokens,
+        },
       })
+      // The live fold carries the provider window and request usage so the label matches a reloaded session.
       expect(fixture.data.session.message.list(sessionID)).toMatchObject([
-        { type: "compaction", status: "completed", summary: "Summary", model, providerState },
+        {
+          type: "compaction",
+          status: "completed",
+          summary: "Summary",
+          model,
+          native,
+          cost: 0.01,
+          tokens,
+        },
       ])
     }
   },
@@ -315,7 +333,7 @@ const event = { id: "evt_compact", created: 10, durable: { aggregateID: sessionI
 const item = (id: string, timeCreated = 10): SessionInboxCompaction => ({
   id,
   sessionID,
-  timeCreated,
+  time: { created: timeCreated },
   type: "compaction",
   delivery: "steer",
   payload: {},
