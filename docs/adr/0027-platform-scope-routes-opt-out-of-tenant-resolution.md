@@ -12,6 +12,6 @@ The route not needing a tenant is not the same as the *product* supporting tenan
 ## Consequences
 
 - Platform-scope permissions follow the naming precedent of `can_manage_platform_defaults`: the `platform_` segment marks the cross-Organization scope (first instance: `can_view_platform_storage`).
-- Each platform-scope permission gets its own standalone Keycloak group (first: `opsiforce_view_platform_storage`), listed in `OPSIFORCE_ALL_PERMISSIONS` but excluded from `OPSIFORCE_ADMIN_GROUP_PERMISSIONS` — same pattern as the external-services permissions, so the default admin bundle never grants cross-Organization visibility.
+- Each platform-scope permission gets its own standalone Keycloak group (first: `opsiforce_view_platform_storage`) and joins the `opsiforce_platform_admin` bundle (`OPSIFORCE_PLATFORM_ADMIN_GROUP_PERMISSIONS`), never `OPSIFORCE_ADMIN_GROUP_PERMISSIONS`, so the default admin bundle never grants cross-Organization visibility.
 - The standalone Quickstart's `static` auth mode mirrors every `Perms` value, so the local single-operator dev deployment holds platform-scope permissions automatically. This is accepted.
-- There is no "super admin" concept: the system keeps flat permissions, and cross-Organization capability is a property of individual permissions, not of a role.
+- There is no "super admin" in the code: the system keeps flat permissions, and cross-Organization capability is a property of individual permissions. The `opsiforce_platform_admin` group only grants them together.
