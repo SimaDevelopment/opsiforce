@@ -38,6 +38,12 @@ async function appThatRedirects(): Promise<{ url: (path: string) => URL; seen: S
       '/api/elsewhere': [302, 'http://example.org/'],
     };
     if (request.url === '/api/hang') return;
+    if (request.url === '/api/slow-body') {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.write('first ');
+      setTimeout(() => response.end('second'), 100);
+      return;
+    }
     if (request.url === '/api/odd-status') {
       response.writeHead(600);
       response.end();
@@ -140,6 +146,14 @@ describe('calling an App on its pod', () => {
     const response = await fetchAsLocalhost(url(`/api/compressed/${encoding}`));
 
     expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it('delivers the whole body when the App is still sending it after the call returns', async () => {
+    const { url } = await appThatRedirects();
+
+    const response = await fetchAsLocalhost(url('/api/slow-body'));
+
+    expect(await response.text()).toBe('first second');
   });
 
   it('returns the redirect itself when asked not to follow', async () => {
