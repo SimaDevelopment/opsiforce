@@ -120,7 +120,7 @@ export function SkillPage(props: SkillPageProps) {
 
   return (
     <div class="h-full overflow-y-auto bg-background">
-      <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <Show when={!skill.isError} fallback={<NotVisible />}>
           <Show
             when={skill.data}
