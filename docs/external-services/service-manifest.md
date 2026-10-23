@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [External Service, Built-in External Service, Service manifest, Service policy]
-adrs: [0046, 0082, 0095]
+adrs: [0046, 0082]
 ---
 
 # Service manifest
