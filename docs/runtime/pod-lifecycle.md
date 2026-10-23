@@ -54,7 +54,8 @@ adrs: [0019]
 - A pod delete event (kubectl, eviction, node drain, OOMKill) resolves the environment from the pod's label and, for an enabled `active` environment with live keep-alive timers whose pod is confirmed gone, flips it to `starting` and spawns the startup worker, so a pod with the same name is back against the persisted workspace within seconds ([ADR-0019](../adr/0019-externally-deleted-pods-recreated-eagerly.md)).
 - Self-inflicted deletions (suspend, restart, publish, disable) match zero rows in that flip because every internal flow moves the row out of `active` before deleting the pod.
 - A boot pass deletes orphaned agent pods, resumes workers for environments stranded in `starting`, and flips `active` environments whose pod is gone back to `starting`; only a confirmed absence counts, so a control-plane blip never mass-flips the fleet.
-- A pod in CrashLoopBackOff is given 60 seconds, then deleted and recreated; ImagePullBackOff is terminal and moves the environment to `failed` with a retry action.
+- A pod in CrashLoopBackOff is given 60 seconds, then deleted and recreated; ImagePullBackOff is terminal and moves the environment to `failed` with a Restart action.
+- A Ready pod whose runtime answers a [Connection](../public-api/connection.md)'s `GET /api/info` with anything but 200 — a pod still on an older build, or a wedged runtime — is recreated, and connect answers starting meanwhile; connections that meet the same pod together recreate it once. When the pod that replaced it refuses too within ten minutes, the environment moves to `failed` and that pod is deleted, so a recreate never loops.
 
 ### Suspension
 
@@ -72,7 +73,7 @@ Statuses of a ProjectEnvironment.
 | `starting` | A pod should exist; each access checks Kubernetes and answers 503 until Ready |
 | `active` | Pod Ready, IP cached, serving; both keep-alive timers running |
 | `publishing` | Files are being swapped and the pod rebuilt by a [Publish](../projects/publish.md) |
-| `failed` | The image cannot be pulled; a retry action recreates the pod |
+| `failed` | The image cannot be pulled, or a replacement pod's runtime refused too; Restart recreates the pod |
 | disabled | Project-level flag: every environment's pod is torn down and auto-wake is blocked until an admin re-enables |
 
 ## Edge cases

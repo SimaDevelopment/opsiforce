@@ -189,15 +189,38 @@ describe('connecting to a project environment', () => {
     pod.setInfo({ status: 200, body: runtimeInfo });
   });
 
-  it('treats a runtime that is not serving yet as a starting environment, not a connection', async () => {
+  it('replaces a ready pod whose runtime refuses to identify itself, and answers starting meanwhile', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 404, body: { message: 'Not Found' } });
+
+    expect(await stateOfConnect(env)).toBe('starting');
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Starting);
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
+
+    pod.setInfo({ status: 200, body: runtimeInfo });
+    await markNextPodReady(env.id);
+    expect(await stateOfConnect(await environmentOf(env.id))).toBe('ready');
+  });
+
+  it('replaces a refusing pod once when two connections meet it together', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 503, body: runtimeInfo });
+
+    expect(await Promise.all([stateOfConnect(env), stateOfConnect(env)])).toEqual(['starting', 'starting']);
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
+  });
+
+  it('fails the environment when the pod that replaced a refusing runtime refuses too', async () => {
     const env = await createRunningProject();
     pod.setInfo({ status: 503, body: runtimeInfo });
 
-    const error: unknown = await harness.agentConnections.connect(env).catch((reason: unknown) => reason);
-    pod.setInfo({ status: 200, body: runtimeInfo });
+    expect(await stateOfConnect(env)).toBe('starting');
+    await markNextPodReady(env.id);
 
-    expect(error).toBeInstanceOf(EnvironmentNotRunning);
-    expect(error).toMatchObject({ state: 'starting' });
+    expect(await stateOfConnect(await environmentOf(env.id))).toBe('failed');
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Failed);
   });
 
   it('maps every non-running environment state to a typed error', async () => {
@@ -641,13 +664,12 @@ describe('reporting a pod failure back to the environment', () => {
     expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Active);
   });
 
-  it('reports a runtime whose service failed to start and restarts the environment', async () => {
+  it('restarts the environment when its pod is gone and the runtime it reached failed to start', async () => {
     const env = await createRunningProject();
     await harness.fakes.pods.deletePod(harness.fakes.pods.assignedPodName(env.id));
     pod.setInfo({ status: 500, body: runtimeInfo });
 
-    await expect(harness.agentConnections.connect(env)).rejects.toMatchObject({ status: 500 });
-    pod.setInfo({ status: 200, body: runtimeInfo });
+    expect(await stateOfConnect(env)).toBe('starting');
     await waitFor(async () => (await environmentOf(env.id)).status === ProjectStatus.Starting);
   });
 

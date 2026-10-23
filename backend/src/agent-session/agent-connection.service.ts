@@ -50,7 +50,7 @@ export class AgentConnectionService {
     const ready = await this.gateway.wakeForConnection(env, deadline);
 
     return this.reportingPodFailures(ready.id, async () => {
-      const build = await this.readBuild(this.proxy.resolveUpstreamForProject(ready), deadline);
+      const build = await this.readBuild(ready, deadline);
       const bound = await deadline.run(() => this.bindPrimarySession(ready, deadline), connectionBudgetExhausted);
       const latest = await deadline.run(() => readBinding(db, ready.id), connectionBudgetExhausted);
       assertCurrentBinding(latest, bound.podIp);
@@ -185,13 +185,15 @@ export class AgentConnectionService {
     return this.deliveryService.runtimeAgentSlugFor(environmentId);
   }
 
-  private async readBuild(upstream: string, deadline: Deadline): Promise<string | null> {
+  private async readBuild(ready: ProjectEnvironmentContext, deadline: Deadline): Promise<string | null> {
     deadline.assertUnspent(connectionBudgetExhausted);
     try {
-      const info = await this.pod.info(upstream, { signal: deadline.signal() });
+      const info = await this.pod.info(this.proxy.resolveUpstreamForProject(ready), { signal: deadline.signal() });
       return info.version ?? null;
     } catch (error) {
-      if (error instanceof PodResponded && error.status === 503) throw new EnvironmentNotRunning('starting');
+      if (error instanceof PodResponded) {
+        throw new EnvironmentNotRunning(await this.projectService.replaceRefusingRuntime(ready.id));
+      }
       throw error;
     }
   }

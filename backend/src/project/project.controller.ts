@@ -37,6 +37,7 @@ import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { isServiceAccountRequest } from '../identity/forwarded-identity.service';
 import { ProjectEventsService } from './project-events.service';
 import { AgentConnectionService } from '../agent-session/agent-connection.service';
+import { mappingConnectionRefusals } from '../agent-session/connection-refusals';
 import type { AgentConnection } from '../agent-session/agent-session.types';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../project-environment/environment-variables.service';
@@ -389,7 +390,9 @@ export class ProjectController {
       throw new NotFoundException(`Environment ${environmentId} does not belong to project ${id}`);
     }
 
-    return withConnectionCancellation(reply.raw, (signal) => this.agentConnections.connect(environment, { signal }));
+    return mappingConnectionRefusals(() =>
+      withConnectionCancellation(reply.raw, (signal) => this.agentConnections.connect(environment, { signal }))
+    );
   }
 
   @Delete(':id/environments/:environmentId')
