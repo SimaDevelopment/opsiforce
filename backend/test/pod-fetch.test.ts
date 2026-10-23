@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { brotliCompressSync, deflateSync, gzipSync, zstdCompressSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fetchAsLocalhost } from '../src/pod/pod-fetch';
 
@@ -42,6 +43,12 @@ async function appThatRedirects(): Promise<{ url: (path: string) => URL; seen: S
       response.end();
       return;
     }
+    const encoding = request.url?.match(/^\/api\/compressed\/(.+)$/)?.[1];
+    if (encoding) {
+      response.writeHead(200, { 'content-type': 'application/json', 'content-encoding': encoding });
+      response.end(compressors[encoding](Buffer.from(JSON.stringify({ ok: true }))));
+      return;
+    }
     const redirect = redirects[request.url ?? ''];
     if (redirect) {
       response.writeHead(redirect[0], { location: redirect[1] });
@@ -56,6 +63,13 @@ async function appThatRedirects(): Promise<{ url: (path: string) => URL; seen: S
   const { port } = server.address() as AddressInfo;
   return { url: (path) => new URL(`http://127.0.0.1:${port}${path}`), seen };
 }
+
+const compressors: Record<string, (body: Buffer) => Buffer> = {
+  gzip: gzipSync,
+  deflate: deflateSync,
+  br: brotliCompressSync,
+  zstd: zstdCompressSync,
+};
 
 const post = { method: 'POST', body: 'payload', headers: { 'content-type': 'text/plain' } };
 
@@ -119,6 +133,15 @@ describe('calling an App on its pod', () => {
 
     await expect(fetchAsLocalhost(url('/api/odd-status'))).rejects.toBeInstanceOf(RangeError);
     expect((await fetchAsLocalhost(url('/api/job/'))).status).toBe(200);
+  });
+
+  it.each(Object.keys(compressors))('decodes a %s-compressed answer', async (encoding) => {
+    const { url } = await appThatRedirects();
+
+    const response = await fetchAsLocalhost(url(`/api/compressed/${encoding}`));
+
+    expect(await response.json()).toEqual({ ok: true });
+    expect(response.headers.get('content-encoding')).toBeNull();
   });
 
   it('returns the redirect itself when asked not to follow', async () => {

@@ -1,5 +1,6 @@
 import { request, type IncomingMessage } from 'node:http';
-import { Readable } from 'node:stream';
+import { pipeline, Readable, type Transform } from 'node:stream';
+import { createBrotliDecompress, createUnzip, createZstdDecompress } from 'node:zlib';
 
 export interface PodRequestInit {
   method?: string;
@@ -19,6 +20,13 @@ const BODY_HEADERS = new Set([
   'content-location',
 ]);
 const MAX_REDIRECTS = 20;
+const DECODERS: Record<string, (() => Transform) | undefined> = {
+  gzip: createUnzip,
+  'x-gzip': createUnzip,
+  deflate: createUnzip,
+  br: createBrotliDecompress,
+  zstd: createZstdDecompress,
+};
 
 export async function fetchAsLocalhost(url: URL, init: PodRequestInit = {}): Promise<Response> {
   let target = url;
@@ -69,9 +77,12 @@ function send(url: URL, init: PodRequestInit): Promise<Response> {
         incoming = response;
         try {
           const status = response.statusCode ?? 502;
-          const body = NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(response) as ReadableStream<Uint8Array>);
+          const headers = headersOf(response);
+          const body = NULL_BODY_STATUSES.has(status)
+            ? null
+            : (Readable.toWeb(decoded(response, headers)) as ReadableStream<Uint8Array>);
           if (body === null) response.resume();
-          resolve(new Response(body, { status, statusText: response.statusMessage, headers: headersOf(response) }));
+          resolve(new Response(body, { status, statusText: response.statusMessage, headers }));
         } catch (error) {
           response.destroy();
           reject(error);
@@ -84,6 +95,18 @@ function send(url: URL, init: PodRequestInit): Promise<Response> {
     outgoing.on('error', reject);
     outgoing.end(init.body);
   });
+}
+
+function decoded(response: IncomingMessage, headers: Headers): Readable {
+  const codings = (headers.get('content-encoding') ?? '')
+    .split(',')
+    .map((coding) => coding.trim().toLowerCase())
+    .filter(Boolean);
+  const decoders = codings.toReversed().flatMap((coding) => DECODERS[coding] ?? []);
+  if (decoders.length === 0 || decoders.length !== codings.length) return response;
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  return decoders.reduce<Readable>((source, decoder) => pipeline(source, decoder(), () => undefined), response);
 }
 
 function headersOf(response: IncomingMessage): Headers {
