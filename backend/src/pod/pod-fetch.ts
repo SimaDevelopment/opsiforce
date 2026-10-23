@@ -1,6 +1,4 @@
-import { request, type IncomingMessage } from 'node:http';
-import { pipeline, Readable, type Transform } from 'node:stream';
-import { createBrotliDecompress, createUnzip, createZstdDecompress } from 'node:zlib';
+import { Agent, buildConnector, fetch } from 'undici';
 
 export interface PodRequestInit {
   method?: string;
@@ -10,109 +8,30 @@ export interface PodRequestInit {
   redirect?: 'follow' | 'manual';
 }
 
-const NULL_BODY_STATUSES = new Set([204, 205, 304]);
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const BODY_HEADERS = new Set([
-  'content-type',
-  'content-length',
-  'content-encoding',
-  'content-language',
-  'content-location',
-]);
-const MAX_REDIRECTS = 20;
-const DECODERS: Record<string, (() => Transform) | undefined> = {
-  gzip: createUnzip,
-  'x-gzip': createUnzip,
-  deflate: createUnzip,
-  br: createBrotliDecompress,
-  zstd: createZstdDecompress,
-};
+const connect = buildConnector({});
+const podAgents = new Map<string, Agent>();
 
-export async function fetchAsLocalhost(url: URL, init: PodRequestInit = {}): Promise<Response> {
-  let target = url;
-  let current = init;
-  for (let redirects = 0; ; redirects += 1) {
-    const response = await send(target, current);
-    const next =
-      current.redirect === 'manual' || redirects === MAX_REDIRECTS ? null : sameAppRedirect(target, response);
-    if (!next) return response;
-    await response.body?.cancel();
-    current = redirectedInit(current, response.status);
-    target = next;
-  }
+export function fetchAsLocalhost(url: URL, init: PodRequestInit = {}): Promise<Response> {
+  const presented = new URL(`${url.pathname}${url.search}`, `http://localhost:${url.port}`);
+  return fetch(presented, { ...init, dispatcher: agentFor(url) }) as unknown as Promise<Response>;
 }
 
-function sameAppRedirect(target: URL, response: Response): URL | null {
-  const location = response.headers.get('location');
-  if (!REDIRECT_STATUSES.has(response.status) || !location) return null;
-  const presented = new URL(`${target.pathname}${target.search}`, `http://localhost:${target.port}`);
-  const next = new URL(location, presented);
-  if (next.origin !== presented.origin && next.origin !== target.origin) return null;
-  return new URL(`${next.pathname}${next.search}`, target);
-}
-
-function redirectedInit(init: PodRequestInit, status: number): PodRequestInit {
-  const method = init.method ?? 'GET';
-  const becomesGet = status === 303 ? method !== 'HEAD' : (status === 301 || status === 302) && method === 'POST';
-  if (!becomesGet) return init;
-  return { ...init, method: 'GET', body: undefined, headers: withoutBodyHeaders(init.headers) };
-}
-
-function withoutBodyHeaders(headers: Record<string, string> = {}): Record<string, string> {
-  return Object.fromEntries(Object.entries(headers).filter(([name]) => !BODY_HEADERS.has(name.toLowerCase())));
-}
-
-function send(url: URL, init: PodRequestInit): Promise<Response> {
-  const { signal } = init;
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    let incoming: IncomingMessage | undefined;
-    const outgoing = request(
-      url,
-      { method: init.method ?? 'GET', headers: { ...init.headers, host: `localhost:${url.port}` } },
-      (response) => {
-        incoming = response;
-        try {
-          const status = response.statusCode ?? 502;
-          const headers = headersOf(response);
-          const body = NULL_BODY_STATUSES.has(status)
-            ? null
-            : (Readable.toWeb(decoded(response, headers)) as ReadableStream<Uint8Array>);
-          if (body === null) response.resume();
-          resolve(new Response(body, { status, statusText: response.statusMessage, headers }));
-        } catch (error) {
-          response.destroy();
-          reject(error);
+function agentFor(pod: URL): Agent {
+  let agent = podAgents.get(pod.host);
+  if (!agent) {
+    agent = new Agent({
+      connect: (options, callback) => {
+        if (options.hostname !== 'localhost' || options.port !== pod.port) {
+          callback(
+            new Error(`The App is only reachable as localhost:${pod.port}, not ${options.host ?? options.hostname}`),
+            null
+          );
+          return;
         }
-      }
-    );
-    const abort = () => (incoming ?? outgoing).destroy(signal?.reason);
-    signal?.addEventListener('abort', abort, { once: true });
-    outgoing.once('close', () => signal?.removeEventListener('abort', abort));
-    outgoing.on('error', reject);
-    outgoing.end(init.body);
-  });
-}
-
-function decoded(response: IncomingMessage, headers: Headers): Readable {
-  const codings = (headers.get('content-encoding') ?? '')
-    .split(',')
-    .map((coding) => coding.trim().toLowerCase())
-    .filter(Boolean);
-  const decoders = codings.toReversed().flatMap((coding) => DECODERS[coding] ?? []);
-  if (decoders.length === 0 || decoders.length !== codings.length) return response;
-  headers.delete('content-encoding');
-  headers.delete('content-length');
-  return decoders.reduce<Readable>((source, decoder) => pipeline(source, decoder(), () => undefined), response);
-}
-
-function headersOf(response: IncomingMessage): Headers {
-  const headers = new Headers();
-  for (let index = 0; index < response.rawHeaders.length; index += 2) {
-    headers.append(response.rawHeaders[index], response.rawHeaders[index + 1]);
+        connect({ ...options, hostname: pod.hostname, host: pod.host }, callback);
+      },
+    });
+    podAgents.set(pod.host, agent);
   }
-  return headers;
+  return agent;
 }
