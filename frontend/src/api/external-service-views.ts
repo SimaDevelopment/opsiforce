@@ -68,8 +68,12 @@ export interface CustomServiceSummary extends ExternalServiceSummary {
   origin: 'custom';
   builderChatId: string;
   published: boolean;
+  publishedEnvironmentIds: string[];
+  defaultEnvironmentId: string | null;
   disabled: boolean;
   hidesBuiltIn: boolean;
+  createdBy: string | null;
+  createdAt: string;
 }
 
 export interface SdkStatus {

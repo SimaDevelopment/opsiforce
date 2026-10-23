@@ -24,9 +24,9 @@ export function StoreNav() {
   const isActive = (to: string) => storeSectionForPath(location().pathname)?.to === to;
 
   return (
-    <nav aria-label="Store" class="shrink-0 border-b border-border bg-background">
-      <div class="mx-auto flex w-full max-w-5xl items-center px-4 py-2 sm:px-6">
-        <div class="inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground">
+    <nav aria-label="Store" class="shrink-0 bg-background shadow-[inset_0_-1px_0_var(--color-border)]">
+      <div class="mx-auto w-full max-w-6xl overflow-x-auto px-4 [scrollbar-width:none] sm:px-6">
+        <div class="flex items-center gap-5">
           <For each={sections()}>
             {(section) => (
               <Link
@@ -34,12 +34,14 @@ export function StoreNav() {
                 search={{ filter: 'all', q: '' }}
                 aria-current={isActive(section.to) ? 'page' : undefined}
                 class={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-all',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  isActive(section.to) ? 'bg-background text-foreground shadow-sm' : 'hover:text-foreground'
+                  'inline-flex h-11 shrink-0 items-center gap-2 text-sm font-medium transition-[color,box-shadow]',
+                  'focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                  isActive(section.to)
+                    ? 'text-foreground shadow-[inset_0_-2px_0_var(--color-primary)]'
+                    : 'text-muted-foreground hover:text-foreground hover:shadow-[inset_0_-2px_0_var(--color-border)]'
                 )}
               >
-                <Dynamic component={section.icon} class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <Dynamic component={section.icon} class="h-4 w-4 shrink-0" aria-hidden="true" />
                 {section.label}
               </Link>
             )}

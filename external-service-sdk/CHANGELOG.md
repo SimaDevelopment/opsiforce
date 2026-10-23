@@ -2,6 +2,10 @@
 
 Minor versions only add optional things; a service written for `2.0.0` runs on every `2.x`. A change that breaks the wire or the manifest is a new `sdk` major.
 
+## 2.1.0
+
+- `"connectedByDefault": true` in the manifest connects every new Project to the service while it is Available: the Project starts with a Project configuration made from the Project form's defaults and generated values, as if a person had saved it.
+
 ## 2.0.1
 
 - A caller that hangs up during a streamed upload no longer crashes the service: the upload to the upstream is cancelled and every other request keeps being answered.

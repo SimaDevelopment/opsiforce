@@ -3,7 +3,6 @@ import type { ErrorBody, JsonRecord } from './http.ts';
 
 export class UnsupportedChatRequestError extends Error {}
 
-const INSTRUCTION_ROLES = new Set(['system', 'developer']);
 const PASSED_THROUGH_FIELDS = ['model', 'parallel_tool_calls', 'service_tier', 'prompt_cache_key'];
 
 function textOf(content: unknown): string {
@@ -40,10 +39,21 @@ function inputPartOf(part: unknown): JsonRecord {
   throw new UnsupportedChatRequestError(`Message content parts of type ${String(part.type)} are not supported.`);
 }
 
-function userContentOf(content: unknown): string | JsonRecord[] {
+function inputContentOf(content: unknown, role: string): string | JsonRecord[] {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.map(inputPartOf);
-  throw new UnsupportedChatRequestError('A user message needs string or array content.');
+  throw new UnsupportedChatRequestError(`A ${role} message needs string or array content.`);
+}
+
+function isTextPart(part: unknown): part is { type: 'text'; text: string } {
+  return isRecord(part) && part.type === 'text' && typeof part.text === 'string';
+}
+
+function systemTextOf(content: unknown): { text: string; textOnly: boolean } {
+  if (typeof content === 'string') return { text: content, textOnly: true };
+  if (!Array.isArray(content)) return { text: '', textOnly: false };
+  const textParts = content.filter(isTextPart);
+  return { text: textParts.map((part) => part.text).join(''), textOnly: textParts.length === content.length };
 }
 
 function functionCallOf(toolCall: unknown): JsonRecord {
@@ -61,7 +71,7 @@ function functionCallOf(toolCall: unknown): JsonRecord {
 function inputItemsOf(message: JsonRecord): JsonRecord[] {
   switch (message.role) {
     case 'user':
-      return [{ role: 'user', content: userContentOf(message.content) }];
+      return [{ role: 'user', content: inputContentOf(message.content, 'user') }];
     case 'assistant': {
       const text = textOf(message.content);
       const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls.map(functionCallOf) : [];
@@ -73,32 +83,32 @@ function inputItemsOf(message: JsonRecord): JsonRecord[] {
       return [
         { type: 'function_call_output', call_id: message.tool_call_id, output: textOf(message.content) || '(empty)' },
       ];
-    case 'system':
     case 'developer':
-      return [{ role: 'developer', content: textOf(message.content) }];
+      return [{ role: 'developer', content: inputContentOf(message.content, 'developer') }];
     default:
       throw new UnsupportedChatRequestError(`Messages with role ${String(message.role)} are not supported.`);
   }
 }
 
-function conversationOf(messages: unknown): { instructions: string; input: JsonRecord[] } {
+function conversationOf(messages: unknown, keepSystemInInput: boolean): { instructions: string; input: JsonRecord[] } {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new UnsupportedChatRequestError('messages must be a non-empty array.');
   }
-  const records = messages.map((message) => {
+  const systemTexts: string[] = [];
+  const input: JsonRecord[] = [];
+  for (const message of messages) {
     if (!isRecord(message)) throw new UnsupportedChatRequestError('Every message must be an object.');
-    return message;
-  });
-  const leading = records.findIndex((message) => !INSTRUCTION_ROLES.has(String(message.role)));
-  const instructionCount = leading === -1 ? records.length : leading;
-  return {
-    instructions: records
-      .slice(0, instructionCount)
-      .map((message) => textOf(message.content))
-      .filter(Boolean)
-      .join('\n\n'),
-    input: records.slice(instructionCount).flatMap(inputItemsOf),
-  };
+    if (message.role !== 'system') {
+      input.push(...inputItemsOf(message));
+      continue;
+    }
+    const { text, textOnly } = systemTextOf(message.content);
+    if (text) systemTexts.push(text);
+    if (keepSystemInInput || !textOnly) {
+      input.push({ role: 'developer', content: inputContentOf(message.content, 'system') });
+    }
+  }
+  return { instructions: systemTexts.join('\n\n'), input };
 }
 
 function functionToolOf(tool: unknown): JsonRecord {
@@ -134,14 +144,14 @@ function textFormatOf(responseFormat: unknown): JsonRecord | undefined {
 export function responsesRequestOf(chat: JsonRecord): JsonRecord {
   if (typeof chat.n === 'number' && chat.n > 1)
     throw new UnsupportedChatRequestError('Only one choice (n = 1) is supported.');
-  const { instructions, input } = conversationOf(chat.messages);
+  const format = textFormatOf(chat.response_format);
+  const { instructions, input } = conversationOf(chat.messages, format?.type === 'json_object');
   const request: JsonRecord = { instructions, input, store: false, stream: true };
   for (const field of PASSED_THROUGH_FIELDS) if (chat[field] !== undefined) request[field] = chat[field];
   if (Array.isArray(chat.tools) && chat.tools.length > 0) request.tools = chat.tools.map(functionToolOf);
   if (chat.tool_choice !== undefined) request.tool_choice = toolChoiceOf(chat.tool_choice);
   if (typeof chat.reasoning_effort === 'string') request.reasoning = { effort: chat.reasoning_effort };
   else if (isRecord(chat.reasoning)) request.reasoning = chat.reasoning;
-  const format = textFormatOf(chat.response_format);
   const verbosity = typeof chat.verbosity === 'string' ? chat.verbosity : undefined;
   if (format || verbosity) request.text = { ...(format ? { format } : {}), ...(verbosity ? { verbosity } : {}) };
   return request;

@@ -110,8 +110,9 @@ describe('chat request conversion', () => {
     expect(proxy.upstream.requests[0]?.headers['session-id']).toBe('conversation-7');
     expect(proxy.upstream.requests[0]?.body).toEqual({
       model: 'gpt-6.1-sol',
-      instructions: 'You are terse.\n\nAnswer in French.',
+      instructions: 'You are terse.\n\nBe brief.',
       input: [
+        { role: 'developer', content: [{ type: 'input_text', text: 'Answer in French.' }] },
         {
           role: 'user',
           content: [
@@ -121,7 +122,6 @@ describe('chat request conversion', () => {
         },
         { type: 'function_call', call_id: 'call_1', name: 'look', arguments: '{}' },
         { type: 'function_call_output', call_id: 'call_1', output: 'a red square' },
-        { role: 'developer', content: 'Be brief.' },
       ],
       reasoning: { effort: 'high' },
       prompt_cache_key: 'conversation-7',
@@ -182,6 +182,82 @@ describe('chat request conversion', () => {
     expect(audio.status).toBe(400);
     expect(await audio.json()).toMatchObject({ error: { type: 'invalid_request_error' } });
     expect(proxy.upstream.requests).toHaveLength(0);
+  });
+});
+
+describe('system messages', () => {
+  const upstreamBody = () => proxy.upstream.requests[0]?.body;
+
+  it('sends empty instructions when the conversation has no system message', async () => {
+    await (await sendChat({ model: 'gpt-6.1-sol', messages: QUESTION })).text();
+
+    expect(upstreamBody()?.instructions).toBe('');
+    expect(upstreamBody()?.input).toEqual(QUESTION);
+  });
+
+  it('moves a text-only system message into instructions without repeating it in the input', async () => {
+    await (
+      await sendChat({
+        model: 'gpt-6.1-sol',
+        messages: [
+          { role: 'system', content: 'Unique system prefix for token accounting.' },
+          { role: 'user', content: 'hello' },
+        ],
+      })
+    ).text();
+
+    expect(upstreamBody()?.instructions).toBe('Unique system prefix for token accounting.');
+    expect(upstreamBody()?.input).toEqual([{ role: 'user', content: 'hello' }]);
+  });
+
+  it('also keeps the system message in the input as a developer message in JSON mode, where ChatGPT looks for the word json', async () => {
+    await (
+      await sendChat({
+        model: 'gpt-6.1-sol',
+        messages: [
+          { role: 'system', content: 'Return JSON only.' },
+          { role: 'user', content: 'symbol data' },
+        ],
+        response_format: { type: 'json_object' },
+      })
+    ).text();
+
+    expect(upstreamBody()?.instructions).toBe('Return JSON only.');
+    expect(upstreamBody()?.input).toEqual([
+      { role: 'developer', content: 'Return JSON only.' },
+      { role: 'user', content: 'symbol data' },
+    ]);
+    expect(upstreamBody()?.text).toEqual({ format: { type: 'json_object' } });
+  });
+
+  it('keeps a system message carrying an image in the input, with its text also in instructions', async () => {
+    await (
+      await sendChat({
+        model: 'gpt-6.1-sol',
+        messages: [
+          {
+            role: 'system',
+            content: [
+              { type: 'text', text: 'Inspect this reference image.' },
+              { type: 'image_url', image_url: { url: 'https://example.com/reference.png' } },
+            ],
+          },
+          { role: 'user', content: 'hello' },
+        ],
+      })
+    ).text();
+
+    expect(upstreamBody()?.instructions).toBe('Inspect this reference image.');
+    expect(upstreamBody()?.input).toEqual([
+      {
+        role: 'developer',
+        content: [
+          { type: 'input_text', text: 'Inspect this reference image.' },
+          { type: 'input_image', image_url: 'https://example.com/reference.png', detail: 'auto' },
+        ],
+      },
+      { role: 'user', content: 'hello' },
+    ]);
   });
 });
 

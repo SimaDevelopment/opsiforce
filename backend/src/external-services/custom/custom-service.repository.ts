@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { db } from '../../../db';
-import { externalServices, projects } from '../../../db/schema';
+import { externalServices, projectEnvironments, projects } from '../../../db/schema';
 
 export interface CustomServiceRow {
   id: string;
@@ -11,6 +11,8 @@ export interface CustomServiceRow {
   builderChatId: string;
   defaultEnvironmentId: string | null;
   disabled: boolean;
+  createdBy: string | null;
+  createdAt: Date;
 }
 
 export interface NewCustomService {
@@ -42,6 +44,8 @@ const customColumns = {
   builderChatId: externalServices.builderChatId,
   defaultEnvironmentId: externalServices.defaultEnvironmentId,
   disabled: projects.disabled,
+  createdBy: externalServices.createdBy,
+  createdAt: externalServices.createdAt,
 };
 
 interface CustomColumns {
@@ -52,6 +56,8 @@ interface CustomColumns {
   builderChatId: string | null;
   defaultEnvironmentId: string | null;
   disabled: boolean;
+  createdBy: string | null;
+  createdAt: Date;
 }
 
 function customRowOf(row: CustomColumns): CustomServiceRow {
@@ -63,6 +69,8 @@ function customRowOf(row: CustomColumns): CustomServiceRow {
     builderChatId: row.builderChatId ?? '',
     defaultEnvironmentId: row.defaultEnvironmentId,
     disabled: row.disabled,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
   };
 }
 
@@ -114,6 +122,26 @@ export class CustomServiceRepository {
       .where(eq(externalServices.tenantId, tenantId))
       .orderBy(asc(externalServices.slug));
     return rows.map(customRowOf);
+  }
+
+  async publishedEnvironmentIds(builderChatIds: string[]): Promise<Map<string, string[]>> {
+    const published = new Map<string, string[]>();
+    if (builderChatIds.length === 0) return published;
+    const rows = await db
+      .select({ builderChatId: projectEnvironments.projectId, environmentId: projectEnvironments.environmentId })
+      .from(projectEnvironments)
+      .where(
+        and(
+          inArray(projectEnvironments.projectId, builderChatIds),
+          eq(projectEnvironments.isDefault, false),
+          isNotNull(projectEnvironments.deployedCommitSha)
+        )
+      );
+    for (const { builderChatId, environmentId } of rows) {
+      if (!builderChatId || !environmentId) continue;
+      published.set(builderChatId, [...(published.get(builderChatId) ?? []), environmentId]);
+    }
+    return published;
   }
 
   async renameSlugWhileUnpublished(tenantId: string, id: string, slug: string): Promise<boolean> {

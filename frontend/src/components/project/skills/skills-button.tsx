@@ -4,7 +4,7 @@ import { Pager, createOffsetPages } from '~/components/pager';
 import { usePermissions } from '~/api/permissions';
 import { useProjectExternalServices, type ProjectEnvironmentRef } from '~/api/project-external-services';
 import { isOn, useProjectSkills, useSwitchSkill, type EnvironmentSkill } from '~/api/project-skills';
-import { STRIP_BUTTON_CLASS } from '~/components/composer-strip';
+import { STRIP_BUTTON_CLASS, STRIP_COUNT_CLASS } from '~/components/composer-strip';
 import { ServiceIcon } from '~/components/external-service/service-marks';
 import { AlertTriangle, ChevronDown, Files, LoaderCircle, Lock, Package } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
@@ -87,10 +87,15 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
   return (
     <Show when={skills().length > 0}>
       <Popover placement="top-start" open={popoverOpen()} onOpenChange={setPopoverOpen}>
-        <PopoverTrigger class={STRIP_BUTTON_CLASS}>
+        <PopoverTrigger
+          class={STRIP_BUTTON_CLASS}
+          aria-label={`Skills, ${onCount()} of ${skills().length} on`}
+          title={`${onCount()} of ${skills().length} Skills on`}
+        >
           <Files class="h-3.5 w-3.5" aria-hidden="true" />
-          <span>
-            Skills · {onCount()} of {skills().length} on
+          <span>Skills</span>
+          <span class={STRIP_COUNT_CLASS}>
+            {onCount()}/{skills().length}
           </span>
           <ChevronDown class="h-3 w-3 opacity-60" aria-hidden="true" />
         </PopoverTrigger>

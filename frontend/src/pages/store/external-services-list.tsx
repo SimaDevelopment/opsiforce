@@ -6,7 +6,9 @@ import {
   useTenantServices,
   type ExternalServiceSummary,
 } from '~/api/external-service-views';
+import { useEnvironments, type Environment } from '~/api/environments';
 import { usePermissions } from '~/api/permissions';
+import { useCurrentUser } from '~/api/user';
 import { canManageExternalService, canSeeExternalServices } from '~/components/external-service/service-access';
 import { NewExternalServiceDialog } from '~/components/external-service/new-external-service-dialog';
 import { ImportServiceDialog } from '~/components/external-service/service-copy-dialogs';
@@ -16,38 +18,56 @@ import { SettingsSection } from '~/components/settings/settings-section';
 import {
   DisabledBadge,
   EmptyState,
+  EnvironmentList,
   ErrorState,
   FilterChips,
+  ListToolbar,
   OriginBadge,
   RowLink,
+  RowList,
   SearchInput,
+  SortSelect,
 } from '~/components/store/store-list';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
 import { Cable, ChevronRight, Plus, Upload } from '~/components/icons';
-import { createSearchDraft } from './store-filters';
+import { SORT_OPTIONS, createSearchDraft, sortStoreRows, validateSort, type StoreSort } from './store-filters';
 
-export const EXTERNAL_SERVICE_FILTERS = ['all', 'built_in', 'custom', 'needs_setup'] as const;
+export const EXTERNAL_SERVICE_FILTERS = [
+  'all',
+  'mine',
+  'built_in',
+  'custom',
+  'not_published',
+  'needs_setup',
+  'disabled',
+] as const;
 
 export type ExternalServiceFilter = (typeof EXTERNAL_SERVICE_FILTERS)[number];
 
 export interface ExternalServicesListSearch {
   filter: ExternalServiceFilter;
   q: string;
+  sort: StoreSort;
 }
 
 export function validateExternalServicesSearch(
   search: Record<string, unknown> & SearchSchemaInput
 ): ExternalServicesListSearch {
   const filter = EXTERNAL_SERVICE_FILTERS.find((candidate) => candidate === search.filter);
-  return { filter: filter ?? 'all', q: typeof search.q === 'string' ? search.q : '' };
+  return { filter: filter ?? 'all', q: typeof search.q === 'string' ? search.q : '', sort: validateSort(search) };
 }
 
-const FILTER_OPTIONS: { id: ExternalServiceFilter; label: string; operatorsOnly?: boolean }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'built_in', label: 'Built-in' },
-  { id: 'custom', label: 'Custom' },
-  { id: 'needs_setup', label: 'Needs setup', operatorsOnly: true },
+type Audience = 'everyone' | 'operators' | 'tenantAdmins';
+
+const FILTER_OPTIONS: { id: ExternalServiceFilter; label: string; audience: Audience }[] = [
+  { id: 'all', label: 'All', audience: 'everyone' },
+  { id: 'mine', label: 'Created by me', audience: 'tenantAdmins' },
+  { id: 'built_in', label: 'Built-in', audience: 'everyone' },
+  { id: 'custom', label: 'Custom', audience: 'everyone' },
+  { id: 'not_published', label: 'Not published', audience: 'tenantAdmins' },
+  { id: 'needs_setup', label: 'Needs setup', audience: 'operators' },
+  { id: 'disabled', label: 'Disabled', audience: 'tenantAdmins' },
 ];
 
 interface ServiceRow extends ExternalServiceSummary {
@@ -55,6 +75,10 @@ interface ServiceRow extends ExternalServiceSummary {
   viewOnly: boolean;
   disabled: boolean;
   hidesBuiltIn: boolean;
+  createdBy: string | null;
+  createdAt: string | null;
+  publishedEnvironmentIds: string[] | null;
+  defaultEnvironmentId: string | null;
   href: string;
 }
 
@@ -69,6 +93,10 @@ function rowOf(service: ExternalServiceSummary, state: Pick<ServiceRow, 'needsSe
     icon: service.icon,
     disabled: custom?.disabled ?? false,
     hidesBuiltIn: custom?.hidesBuiltIn ?? false,
+    createdBy: custom?.createdBy ?? null,
+    createdAt: custom?.createdAt ?? null,
+    publishedEnvironmentIds: custom?.publishedEnvironmentIds ?? null,
+    defaultEnvironmentId: custom?.defaultEnvironmentId ?? null,
     href: `/store/external-services/${service.id}`,
     ...state,
   };
@@ -77,11 +105,19 @@ function rowOf(service: ExternalServiceSummary, state: Pick<ServiceRow, 'needsSe
 function matchesQuery(row: ServiceRow, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
-  return row.displayName.toLowerCase().includes(needle) || row.slug.includes(needle);
+  return (
+    row.displayName.toLowerCase().includes(needle) ||
+    row.slug.includes(needle) ||
+    row.description.toLowerCase().includes(needle)
+  );
 }
 
-function matchesFilter(row: ServiceRow, filter: ExternalServiceFilter): boolean {
+function matchesFilter(row: ServiceRow, filter: ExternalServiceFilter, userId: string | undefined): boolean {
+  if (filter === 'disabled') return row.disabled;
+  if (row.disabled) return false;
+  if (filter === 'mine') return !!userId && row.createdBy === userId;
   if (filter === 'built_in' || filter === 'custom') return row.origin === filter;
+  if (filter === 'not_published') return row.publishedEnvironmentIds?.length === 0;
   if (filter === 'needs_setup') return row.needsSetup;
   return true;
 }
@@ -89,19 +125,30 @@ function matchesFilter(row: ServiceRow, filter: ExternalServiceFilter): boolean 
 export function ExternalServicesListPage(props: {
   filter: ExternalServiceFilter;
   query: string;
+  sort: StoreSort;
   onFilter: (filter: ExternalServiceFilter) => void;
   onQuery: (query: string) => void;
+  onSort: (sort: StoreSort) => void;
 }) {
   const { permissions, hasPermission } = usePermissions();
   const isOperator = () => canManageExternalService('built_in', hasPermission);
   const isTenantAdmin = () => canManageExternalService('custom', hasPermission);
   const operatorServices = useOperatorServices(isOperator);
   const tenantServices = useTenantServices(isTenantAdmin);
+  const environments = useEnvironments();
+  const currentUser = useCurrentUser();
   const search = createSearchDraft(
     () => props.query,
     (query) => props.onQuery(query)
   );
-  const filter = () => (props.filter === 'needs_setup' && !isOperator() ? 'all' : props.filter);
+  const filterOptions = () =>
+    FILTER_OPTIONS.filter(
+      (option) =>
+        option.audience === 'everyone' ||
+        (option.audience === 'operators' && isOperator()) ||
+        (option.audience === 'tenantAdmins' && isTenantAdmin())
+    );
+  const filter = () => (filterOptions().some((option) => option.id === props.filter) ? props.filter : 'all');
 
   const loading = () =>
     permissions.data === undefined ||
@@ -120,14 +167,18 @@ export function ExternalServicesListPage(props: {
         rowOf(service, { needsSetup: false, viewOnly: !canManageExternalService(service.origin, hasPermission) })
       );
     }
-    return rows.toSorted((a, b) => a.displayName.localeCompare(b.displayName));
+    return rows;
   });
 
   const rows = createMemo(() =>
-    allRows().filter((row) => matchesFilter(row, filter()) && matchesQuery(row, props.query))
+    sortStoreRows(
+      allRows().filter((row) => matchesFilter(row, filter(), currentUser.data?.id) && matchesQuery(row, props.query)),
+      props.sort,
+      { label: (row) => row.displayName, createdAt: (row) => row.createdAt }
+    )
   );
   const pages = createOffsetPages(rows);
-  createEffect(on([filter, () => props.query], () => pages.toFirst(), { defer: true }));
+  createEffect(on([filter, () => props.query, () => props.sort], () => pages.toFirst(), { defer: true }));
 
   const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
   const [createOpen, setCreateOpen] = createSignal(false);
@@ -164,15 +215,18 @@ export function ExternalServicesListPage(props: {
           />
         }
       >
-        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <SearchInput value={search.draft()} onInput={search.onInput} label="Search External Services" />
-          <FilterChips
-            label="Filter External Services"
-            options={FILTER_OPTIONS.filter((option) => isOperator() || !option.operatorsOnly)}
-            value={filter()}
-            onChange={props.onFilter}
-          />
-        </div>
+        <ListToolbar
+          search={<SearchInput value={search.draft()} onInput={search.onInput} label="Search External Services" />}
+          sort={<SortSelect options={SORT_OPTIONS} value={props.sort} onChange={props.onSort} />}
+          filters={
+            <FilterChips
+              label="Filter External Services"
+              options={filterOptions()}
+              value={filter()}
+              onChange={props.onFilter}
+            />
+          }
+        />
 
         <Show when={!failed()} fallback={<ErrorState message="The External Services could not be loaded." />}>
           <Show
@@ -195,14 +249,14 @@ export function ExternalServicesListPage(props: {
                 </Show>
               }
             >
-              <div class="overflow-hidden rounded-xl border border-border bg-card">
-                <div class="divide-y divide-border">
-                  <For each={pages.page()}>{(row) => <ServiceListRow row={row} />}</For>
-                </div>
+              <RowList>
+                <For each={pages.page()}>
+                  {(row) => <ServiceListRow row={row} environments={environments.data ?? []} />}
+                </For>
                 <Show when={pages.needsPager()}>
                   <Pager {...pages.pagerProps()} />
                 </Show>
-              </div>
+              </RowList>
             </Show>
           </Show>
         </Show>
@@ -214,14 +268,44 @@ export function ExternalServicesListPage(props: {
   );
 }
 
-function ServiceListRow(props: { row: ServiceRow }) {
+function ServiceEnvironments(props: { row: ServiceRow; environments: Environment[] }) {
+  const development = () => props.environments.find((environment) => environment.isDefault);
+  const holding = () =>
+    props.environments.filter(
+      (environment) => environment.isDefault || props.row.publishedEnvironmentIds?.includes(environment.id)
+    );
+  const notPublished = () => props.row.publishedEnvironmentIds?.length === 0;
+
+  return (
+    <Show
+      when={props.row.publishedEnvironmentIds}
+      fallback={<div class="mt-1.5 text-xs text-muted-foreground">Every environment</div>}
+    >
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <EnvironmentList
+          environments={holding()}
+          defaultEnvironmentId={props.row.defaultEnvironmentId}
+          defaultExplanation={(environment) => `Callers reach ${environment.name}.`}
+          label="Environments holding this service"
+        />
+        <Show when={notPublished() && development()}>
+          <span class="text-xs text-muted-foreground">Not published yet</span>
+        </Show>
+      </div>
+    </Show>
+  );
+}
+
+function ServiceListRow(props: { row: ServiceRow; environments: Environment[] }) {
   return (
     <RowLink href={props.row.href} class="p-4">
       <ServiceIcon icon={props.row.icon} name={props.row.displayName} class="h-4 w-4" />
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span class="text-sm font-medium">{props.row.displayName}</span>
-          <span class="font-mono text-[11px] text-muted-foreground">{props.row.slug}</span>
+          <span class="font-mono text-[11px] text-muted-foreground" translate="no">
+            {props.row.slug}
+          </span>
           <OriginBadge origin={props.row.origin} />
           <Show when={props.row.disabled}>
             <DisabledBadge />
@@ -230,7 +314,10 @@ function ServiceListRow(props: { row: ServiceRow }) {
             <NeedsSetupBadge />
           </Show>
         </div>
-        <div class="mt-0.5 truncate text-xs text-muted-foreground">{props.row.description}</div>
+        <Show when={props.row.description}>
+          <div class="mt-0.5 truncate text-xs text-muted-foreground">{props.row.description}</div>
+        </Show>
+        <ServiceEnvironments row={props.row} environments={props.environments} />
         <Show when={props.row.hidesBuiltIn}>
           <div class="mt-1.5 text-xs text-amber-800">
             A built-in service now has this name too. It stays hidden in your Organization, so your agents keep reaching

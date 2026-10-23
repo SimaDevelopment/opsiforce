@@ -31,6 +31,9 @@
         "inbound": {
           "type": "boolean"
         },
+        "connectedByDefault": {
+          "type": "boolean"
+        },
         "serviceForm": {
           "maxItems": 100,
           "type": "array",

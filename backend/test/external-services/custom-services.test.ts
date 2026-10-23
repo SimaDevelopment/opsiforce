@@ -230,8 +230,12 @@ describe("listing an Organization's Custom External Services", () => {
       icon: null,
       builderChatId: service.builderChatId,
       published: false,
+      publishedEnvironmentIds: [],
+      defaultEnvironmentId: null,
       disabled: false,
       hidesBuiltIn: false,
+      createdBy: admin.userId,
+      createdAt: expect.any(String),
     });
     expect(other.json().map((entry: { id: string }) => entry.id)).not.toContain(service.id);
   });

@@ -9,6 +9,7 @@ import { TENANT_SERVICES } from './support/custom-services';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
+  forgetProjectConfiguration,
   tenantAdmin,
   type PersonFixture,
 } from './support/fixtures';
@@ -66,6 +67,7 @@ describe('a built-in’s Calls and Usage, recorded by the built-ins adapter', ()
     admin = await tenantAdmin(app);
     receiving = await consumerIn(app, admin.tenant);
     unconnected = await consumerIn(app, admin.tenant);
+    await forgetProjectConfiguration(EMAIL_SERVICE, unconnected.projectEnvironmentId);
     localPart = (await saveConsumerConfiguration(app, receiving, EMAIL_SERVICE, {})).values.localPart as string;
 
     const told = await callThroughGate(

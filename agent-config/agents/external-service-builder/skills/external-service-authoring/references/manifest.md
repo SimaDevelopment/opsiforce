@@ -24,7 +24,9 @@ which live in `service.ts`. `yarn check` runs every rule below and prints each p
 - Required: `sdk` (always `2`), `displayName` (at most 80 characters), `description` (plain text, at
   most 300).
 - Optional: `icon` (a relative `.svg` path), `inbound` (`true` when the service has a webhook handler,
-  `references/inbound.md`), `serviceForm`, `projectForm`, `events`, `$schema`.
+  `references/inbound.md`), `connectedByDefault` (`true` connects every new Project to the service with
+  its Project form untouched; leave it out unless every Project works with no choice made), `serviceForm`,
+  `projectForm`, `events`, `$schema`.
 - Never `name` (the slug is the service's identity), `version` (Publish records the manifest hash), or
   `operations`, `bounds` and `$defs`: what a request may do is the routes' checks.
 - The whole file is at most 256 KB. `yarn types` turns it into `service.types.ts`: both configurations

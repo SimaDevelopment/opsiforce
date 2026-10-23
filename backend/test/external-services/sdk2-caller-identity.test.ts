@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { verifyCallerIdentity } from '@opsiforce/external-service-sdk/server';
+import { sdkPackageVersion, verifyCallerIdentity } from '@opsiforce/external-service-sdk/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServiceProjectConfigs, type JsonValue } from '../../db/schema';
@@ -297,7 +297,7 @@ describe('an SDK 2 service reached through the Gate', () => {
       expect(res.status).toBe(200);
       const described = await res.json();
       expect(described).toMatchObject({
-        sdk: '2.0.0',
+        sdk: sdkPackageVersion,
         settingsLink: `${PUBLIC_URL}/projects/${consumer.projectId}?configure=boards`,
         configuration: {
           boardIds: { label: 'Boards', value: ['b2'] },

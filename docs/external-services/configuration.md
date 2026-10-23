@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [Form, Service configuration, Project configuration, Available]
-adrs: [0079, 0080, 0089]
+adrs: [0079, 0080, 0089, 0095]
 ---
 
 # Configuration
@@ -20,7 +20,7 @@ adrs: [0079, 0080, 0089]
 ### Reading against a changed manifest
 
 - Stored values are kept as saved and read against the current manifest tolerantly: a field's `was` moves an old value to its new key, a value that no longer fits counts as missing (a required one makes the configuration "Needs attention", naming each such field by its labels, such as "Numbers › Number", and the service's SDK refuse that ProjectEnvironment's calls as incomplete), and removed keys stay stored but are never delivered ([ADR-0079](../adr/0079-a-changed-service-manifest-reads-old-configurations-tolerantly-and-a-publish-writes-each-new-fields-default-into-them.md)).
-- A new Project configuration starts from the Project form's defaults; a new Skill & Agent Builder chat starts with a `public-api` one whose authoring, Create Projects and Manage created Projects settings are on ([Public API built-in](public-api.md)).
+- A new Project configuration starts from the Project form's defaults. Every new Project, of any Agent, starts with one for each Available service whose manifest sets `"connectedByDefault": true` (Incoming email), written and announced like the Service settings (Agent) below, which overlay it; a Disconnect stays ([ADR-0095](../adr/0095-a-service-manifest-can-connect-every-new-project-to-the-service.md)). A new Skill & Agent Builder chat starts with a `public-api` one whose authoring, Create Projects and Manage created Projects settings are on ([Public API built-in](public-api.md)).
 - A Project of a Custom Agent starts with a stored Project configuration for every Available service whose [Service settings (Agent)](../../GLOSSARY.md) its Agent Profile holds: on create (UI, Public API, Workspace) and for the Agent's [Test Project](../agent-system/test-project.md) it is written before the Agent's files are delivered and announced after, for a Project Duplicate or Import once the files are in place, its Service skills delivered before the hook runs. It holds the Project form's defaults overlaid with the settings' field values, ignoring any key the service no longer offers as a setting. No target is picked. A complete configuration runs `onProjectConfigurationSaved` as the platform, naming no person; a failure is the usual "Saved, but …" and the Project is still created. One a required target leaves "Needs attention" runs no hook until someone saves it with the targets picked ([ADR-0089](../adr/0089-a-custom-agents-service-settings-seed-a-real-project-configuration-in-every-new-project.md)).
 
 ### Read by the service
@@ -57,7 +57,7 @@ adrs: [0079, 0080, 0089]
 
 - `backend/src/external-services/configuration/` — both stores, the form save, generated values, Rotate, hooks, the cascade, tolerant reads and Available.
 - `backend/src/external-services/http/` — the operator, Organization and chat bar routes.
-- `backend/src/external-services/test-lane/configurations-at-create.ts` — the configurations a new Project starts with: the service under test and a Custom Agent's Service settings (Agent).
+- `backend/src/external-services/test-lane/configurations-at-create.ts` — the configurations a new Project starts with: the service under test, a Custom Agent's Service settings (Agent) and every service that connects new Projects.
 - `backend/src/sealing/secret-sealer.ts` — the place-bound sealing.
 - `frontend/src/components/external-service-form/` — the one renderer every Form goes through.
 - `frontend/src/components/project/external-services/` — the chat bar button and the Project configuration dialog.

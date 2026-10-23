@@ -36,8 +36,8 @@ export const FileUpload: Component<{
 
   return (
     <>
-      <div class="shrink-0 border-t border-border bg-background px-2 py-2">
-        <div class="w-full px-1 sm:px-3 md:mx-auto md:max-w-[1000px]">
+      <div class="shrink-0 border-t border-border bg-background py-2">
+        <div class="w-full px-4 md:mx-auto md:max-w-(--container-session) md:px-6">
           <Show
             when={!upload.uploading()}
             fallback={

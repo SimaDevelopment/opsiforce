@@ -15,8 +15,10 @@ function StoreSkills() {
     <SkillsListPage
       filter={search().filter}
       query={search().q}
+      sort={search().sort}
       onFilter={(filter) => navigate({ search: (prev) => ({ ...prev, filter }), replace: true })}
       onQuery={(q) => navigate({ search: (prev) => ({ ...prev, q }), replace: true })}
+      onSort={(sort) => navigate({ search: (prev) => ({ ...prev, sort }), replace: true })}
     />
   );
 }

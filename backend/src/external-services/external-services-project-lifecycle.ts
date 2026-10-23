@@ -27,16 +27,16 @@ export class ExternalServicesProjectLifecycle implements ProjectLifecycle {
   ) {}
 
   async created(projectEnvironmentId: string): Promise<void> {
-    await this.configurationsAtCreate.startFromAgentSettings(projectEnvironmentId);
+    await this.configurationsAtCreate.startConfigurations(projectEnvironmentId);
     await this.configurationsAtCreate.configureServiceUnderTest(projectEnvironmentId);
   }
 
   delivered(projectEnvironmentId: string): Promise<void> {
-    return this.configurationsAtCreate.announceAgentSettings(projectEnvironmentId);
+    return this.configurationsAtCreate.announceStartedConfigurations(projectEnvironmentId);
   }
 
   copied(projectEnvironmentId: string): Promise<void> {
-    return this.configurationsAtCreate.startCopiedFromAgentSettings(projectEnvironmentId);
+    return this.configurationsAtCreate.startCopiedConfigurations(projectEnvironmentId);
   }
 
   updated(projectEnvironmentId: string): Promise<void> {

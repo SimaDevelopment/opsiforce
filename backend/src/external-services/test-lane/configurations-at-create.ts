@@ -3,6 +3,7 @@ import { valueFieldsOf } from '@opsiforce/external-service-sdk/platform';
 import type { AgentServiceSettings } from '../../../db/schema';
 import { errorMessage } from '../../common/error-message';
 import { DeliveryService } from '../../delivery/delivery.service';
+import type { ServiceSkillAudience } from '../../delivery/service-skill-source';
 import { SkillDeliveryService } from '../../delivery/skill-delivery.service';
 import { ProjectConfigurationSaveHooks } from '../configuration/project-configuration-save-hooks';
 import type { ConfigurationValues } from '../configuration/configuration-values';
@@ -16,9 +17,9 @@ import { servableOrNone } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
 import { settableFieldValues } from '../../store/service-switch-catalog';
 
-interface SettingsOfService {
+interface StartingConfiguration {
   service: RegisteredService;
-  settings: AgentServiceSettings;
+  start: ProjectConfigurationStart;
 }
 
 function formDefaultsOf(service: RegisteredService): ConfigurationValues {
@@ -29,8 +30,9 @@ function formDefaultsOf(service: RegisteredService): ConfigurationValues {
   );
 }
 
-function startOf({ service, settings }: SettingsOfService): ProjectConfigurationStart {
-  return { values: { ...formDefaultsOf(service), ...settableFieldValues(service.manifest, settings) } };
+function startOf(service: RegisteredService, settings: AgentServiceSettings | undefined): ProjectConfigurationStart {
+  const carried = settings ? settableFieldValues(service.manifest, settings) : {};
+  return { values: { ...formDefaultsOf(service), ...carried } };
 }
 
 @Injectable()
@@ -54,14 +56,14 @@ export class ConfigurationsAtCreate {
     await this.projectConfigurationStore.startWith(service, projectEnvironmentId);
   }
 
-  async startFromAgentSettings(projectEnvironmentId: string): Promise<void> {
-    for (const carried of await this.agentSettingsOf(projectEnvironmentId)) {
-      await this.projectConfigurationStore.startWith(carried.service, projectEnvironmentId, startOf(carried));
+  async startConfigurations(projectEnvironmentId: string): Promise<void> {
+    for (const { service, start } of await this.startingConfigurationsOf(projectEnvironmentId)) {
+      await this.projectConfigurationStore.startWith(service, projectEnvironmentId, start);
     }
   }
 
-  async announceAgentSettings(projectEnvironmentId: string): Promise<void> {
-    for (const { service } of await this.agentSettingsOf(projectEnvironmentId)) {
+  async announceStartedConfigurations(projectEnvironmentId: string): Promise<void> {
+    for (const { service } of await this.startingConfigurationsOf(projectEnvironmentId)) {
       try {
         const current = await this.projectConfigurationStore.read(service, projectEnvironmentId);
         if (current.missing.length > 0) continue;
@@ -74,10 +76,10 @@ export class ConfigurationsAtCreate {
     }
   }
 
-  async startCopiedFromAgentSettings(projectEnvironmentId: string): Promise<void> {
-    await this.startFromAgentSettings(projectEnvironmentId);
+  async startCopiedConfigurations(projectEnvironmentId: string): Promise<void> {
+    await this.startConfigurations(projectEnvironmentId);
     await this.deliverServiceSkills(projectEnvironmentId);
-    await this.announceAgentSettings(projectEnvironmentId);
+    await this.announceStartedConfigurations(projectEnvironmentId);
   }
 
   private async deliverServiceSkills(projectEnvironmentId: string): Promise<void> {
@@ -89,21 +91,24 @@ export class ConfigurationsAtCreate {
     }
   }
 
-  private async agentSettingsOf(projectEnvironmentId: string): Promise<SettingsOfService[]> {
+  private async startingConfigurationsOf(projectEnvironmentId: string): Promise<StartingConfiguration[]> {
     const audience = await this.delivery.serviceAudienceFor(projectEnvironmentId);
-    if (audience?.agentOrigin !== 'custom') return [];
+    if (!audience) return [];
+    const settingsByServiceId = await this.agentSettingsOf(audience);
+    const starting: StartingConfiguration[] = [];
+    for (const available of await this.availability.availableToTenant(audience.tenantId)) {
+      const settings = settingsByServiceId.get(available.id);
+      if (!settings && !available.manifest.connectedByDefault) continue;
+      const service = await servableOrNone(this.registry.byIdForEnvironment(projectEnvironmentId, available.id));
+      if (service) starting.push({ service, start: startOf(service, settings) });
+    }
+    return starting;
+  }
+
+  private async agentSettingsOf(audience: ServiceSkillAudience): Promise<Map<string, AgentServiceSettings>> {
+    if (audience.agentOrigin !== 'custom') return new Map();
     const profileId = await profileIdAt(audience.agentId, audience.environmentId);
     const carried = profileId ? await serviceSettingsCarriedBy(profileId) : [];
-    if (carried.length === 0) return [];
-    const available = new Set(
-      (await this.availability.availableToTenant(audience.tenantId)).map((service) => service.id)
-    );
-    const configured: SettingsOfService[] = [];
-    for (const { externalServiceId, serviceSettings } of carried) {
-      if (!available.has(externalServiceId)) continue;
-      const service = await servableOrNone(this.registry.byIdForEnvironment(projectEnvironmentId, externalServiceId));
-      if (service) configured.push({ service, settings: serviceSettings });
-    }
-    return configured;
+    return new Map(carried.map(({ externalServiceId, serviceSettings }) => [externalServiceId, serviceSettings]));
   }
 }

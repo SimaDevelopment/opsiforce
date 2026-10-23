@@ -1,7 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../../db';
-import { externalServiceConfigs, externalServices, type JsonValue } from '../../../db/schema';
+import {
+  externalServiceConfigs,
+  externalServiceProjectConfigs,
+  externalServices,
+  type JsonValue,
+} from '../../../db/schema';
 import { Perms } from '../../../src/permission/permission.constants';
 import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../../support/project-fixtures';
 
@@ -40,6 +45,17 @@ export async function forgetPlatformServiceConfiguration(slug: string): Promise<
   await db
     .delete(externalServiceConfigs)
     .where(eq(externalServiceConfigs.externalServiceId, await builtInServiceId(slug)));
+}
+
+export async function forgetProjectConfiguration(slug: string, projectEnvironmentId: string): Promise<void> {
+  await db
+    .delete(externalServiceProjectConfigs)
+    .where(
+      and(
+        eq(externalServiceProjectConfigs.externalServiceId, await builtInServiceId(slug)),
+        eq(externalServiceProjectConfigs.projectEnvironmentId, projectEnvironmentId)
+      )
+    );
 }
 
 export async function storedPlatformServiceConfiguration(slug: string): Promise<Record<string, JsonValue> | null> {
