@@ -10,12 +10,17 @@ export interface CustomServiceSummary {
   icon: string | null;
   builderChatId: string;
   published: boolean;
+  publishedEnvironmentIds: string[];
+  defaultEnvironmentId: string | null;
   disabled: boolean;
   hidesBuiltIn: boolean;
+  createdBy: string | null;
+  createdAt: string;
 }
 
 export interface CustomServiceSummaryContext {
   published?: RegisteredService;
+  publishedEnvironmentIds?: string[];
   hidesBuiltIn?: boolean;
 }
 
@@ -32,7 +37,12 @@ export function customServiceSummaryOf(
     icon: context.published?.icon ?? null,
     builderChatId: row.builderChatId,
     published: row.defaultEnvironmentId !== null,
+    publishedEnvironmentIds:
+      context.publishedEnvironmentIds ?? (row.defaultEnvironmentId ? [row.defaultEnvironmentId] : []),
+    defaultEnvironmentId: row.defaultEnvironmentId,
     disabled: row.disabled,
     hidesBuiltIn: context.hidesBuiltIn ?? false,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt.toISOString(),
   };
 }

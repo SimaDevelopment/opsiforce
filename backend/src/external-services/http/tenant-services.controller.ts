@@ -63,12 +63,14 @@ export class TenantServicesController {
       this.customServices.listForTenant(tenant.tenantId),
       this.registry.listForTenant(tenant.tenantId),
     ]);
+    const publishedIn = await this.customServices.publishedEnvironmentIds(rows.map((row) => row.builderChatId));
     const builtInSlugs = new Set(this.registry.list().map((service) => service.slug));
     return [
       ...builtIns,
       ...rows.map((row) =>
         customServiceSummaryOf(row, {
           published: callable.find((service) => service.id === row.id),
+          publishedEnvironmentIds: publishedIn.get(row.builderChatId) ?? [],
           hidesBuiltIn: builtInSlugs.has(row.slug),
         })
       ),

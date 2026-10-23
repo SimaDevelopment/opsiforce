@@ -1,10 +1,11 @@
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import { toast } from 'solid-sonner';
 import { ApiError } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import { useImportSkill, useSkills, type Skill } from '~/api/skills';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
+import { Pager, createOffsetPages } from '~/components/pager';
 import { SettingsSection } from '~/components/settings/settings-section';
 import { CreateEntryDialog } from '~/components/store/create-entry-dialog';
 import {
@@ -12,17 +13,19 @@ import {
   EmptyState,
   ErrorState,
   FilterChips,
+  ListToolbar,
   OriginBadge,
   ServiceMark,
   RowLink,
   RowList,
   SearchInput,
+  SortSelect,
   UpdateBadge,
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ChevronRight, Files, Plus, Upload } from '~/components/icons';
 import { Permission } from '~/constants/permissions';
-import { createSearchDraft, filterOptions, type StoreListProps } from './store-filters';
+import { SORT_OPTIONS, createSearchDraft, filterOptions, sortStoreRows, type StoreListProps } from './store-filters';
 
 export function SkillsListPage(props: StoreListProps) {
   const { hasPermission } = usePermissions();
@@ -32,12 +35,17 @@ export function SkillsListPage(props: StoreListProps) {
     (query) => props.onQuery(query)
   );
   const filter = () => (props.filter === 'disabled' && !canManage() ? 'all' : props.filter);
-  const skills = useSkills(
-    filter,
-    () => props.query
-  );
+  const skills = useSkills(filter, () => props.query);
   const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
   const [createOpen, setCreateOpen] = createSignal(false);
+  const sorted = createMemo(() =>
+    sortStoreRows(skills.data ?? [], props.sort, {
+      label: (skill) => skill.displayName ?? skill.name,
+      createdAt: (skill) => (skill.origin === 'built_in' ? null : skill.createdAt),
+    })
+  );
+  const pages = createOffsetPages(() => sorted());
+  createEffect(on([filter, () => props.query, () => props.sort], () => pages.toFirst(), { defer: true }));
 
   return (
     <SettingsSection
@@ -57,15 +65,18 @@ export function SkillsListPage(props: StoreListProps) {
         </Show>
       }
     >
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchInput value={search.draft()} onInput={search.onInput} label="Search skills" />
-        <FilterChips
-          label="Filter skills"
-          options={filterOptions(canManage())}
-          value={filter()}
-          onChange={props.onFilter}
-        />
-      </div>
+      <ListToolbar
+        search={<SearchInput value={search.draft()} onInput={search.onInput} label="Search skills" />}
+        sort={<SortSelect options={SORT_OPTIONS} value={props.sort} onChange={props.onSort} />}
+        filters={
+          <FilterChips
+            label="Filter skills"
+            options={filterOptions(canManage())}
+            value={filter()}
+            onChange={props.onFilter}
+          />
+        }
+      />
 
       <Show when={!skills.isError} fallback={<ErrorState message="The skills could not be loaded." />}>
         <Show
@@ -76,13 +87,14 @@ export function SkillsListPage(props: StoreListProps) {
             </div>
           }
         >
-          {(rows) => (
-            <Show when={rows().length > 0} fallback={<SkillsEmptyState narrowed={narrowed()} />}>
-              <RowList>
-                <For each={rows()}>{(skill) => <SkillRow skill={skill} />}</For>
-              </RowList>
-            </Show>
-          )}
+          <Show when={sorted().length > 0} fallback={<SkillsEmptyState narrowed={narrowed()} />}>
+            <RowList>
+              <For each={pages.page()}>{(skill) => <SkillRow skill={skill} />}</For>
+              <Show when={pages.needsPager()}>
+                <Pager {...pages.pagerProps()} />
+              </Show>
+            </RowList>
+          </Show>
         </Show>
       </Show>
 
@@ -96,7 +108,11 @@ function SkillsEmptyState(props: { narrowed: boolean }) {
     <Show
       when={props.narrowed}
       fallback={
-        <EmptyState icon={Files} title="No skills yet." hint="New skill writes one with the Builder, or import a .skill archive." />
+        <EmptyState
+          icon={Files}
+          title="No skills yet."
+          hint="New skill writes one with the Builder, or import a .skill archive."
+        />
       }
     >
       <EmptyState icon={Files} title="No skills match." hint="Try another filter, or clear the search." />
@@ -111,7 +127,10 @@ function SkillRow(props: { skill: Skill }) {
       <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Show when={props.skill.displayName} fallback={<span class="font-mono text-sm font-medium">{props.skill.name}</span>}>
+          <Show
+            when={props.skill.displayName}
+            fallback={<span class="font-mono text-sm font-medium">{props.skill.name}</span>}
+          >
             {(displayName) => (
               <>
                 <span class="text-sm font-medium">{displayName()}</span>
