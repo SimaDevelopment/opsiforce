@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { agents, skills } from '../../db/schema';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
-import { Perms } from '../../src/permission/permission.constants';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import {
   addMember,
@@ -57,11 +56,11 @@ describe('what a builder chat may write through public-api', () => {
     app = harness.app;
     await harness.listen();
     tenant = await createTenant(app);
-    creator = await addMember(app, tenant, [Perms.manageSkills, Perms.manageAgents]);
+    creator = await addMember(app, tenant, ['can_manage_skills', 'can_manage_agents']);
     human = proxyHeaders({
       userId: creator.keycloakId,
       tenants: [tenant.name],
-      permissions: [Perms.usePublicApi, Perms.manageSkills, Perms.manageAgents],
+      permissions: ['can_use_public_api', 'can_manage_skills', 'can_manage_agents'],
     });
   });
 

@@ -6,7 +6,6 @@ import { usePermissions } from '~/api/permissions';
 import { useCurrentUser } from '~/api/user';
 import { useCreateDefaultProject } from '~/api/default-project-target';
 import { limitRefusalMessage } from '~/api/limits';
-import { Permission } from '~/constants/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
 import {
@@ -66,7 +65,7 @@ export function AppSidebar() {
 
   const projectCreateDisabled = () => createDefaultProject.isPending() || !createDefaultProject.hasDestination();
   const menuDisabled = () =>
-    projectCreateDisabled() && !hasPermission(Permission.importProject) && !hasPermission(Permission.manageWorkspaces);
+    projectCreateDisabled() && !hasPermission('can_import_project') && !hasPermission('can_manage_workspaces');
 
   const handleCreateProject = async (agentId: string) => {
     try {
@@ -138,8 +137,8 @@ export function AppSidebar() {
           </div>
           <CreateMenu
             disabled={projectCreateDisabled()}
-            canCreateWorkspace={hasPermission(Permission.manageWorkspaces)}
-            canImport={hasPermission(Permission.importProject)}
+            canCreateWorkspace={hasPermission('can_manage_workspaces')}
+            canImport={hasPermission('can_import_project')}
             agents={agents.data}
             onCreateProject={handleCreateProject}
             onOpenCreateWorkspace={() => setCreateWorkspaceOpen(true)}
@@ -161,8 +160,8 @@ export function AppSidebar() {
         <div class="hidden group-data-[collapsible=icon]/sidebar:flex justify-center pb-2">
           <CreateMenu
             disabled={projectCreateDisabled()}
-            canCreateWorkspace={hasPermission(Permission.manageWorkspaces)}
-            canImport={hasPermission(Permission.importProject)}
+            canCreateWorkspace={hasPermission('can_manage_workspaces')}
+            canImport={hasPermission('can_import_project')}
             agents={agents.data}
             onCreateProject={handleCreateProject}
             onOpenCreateWorkspace={() => setCreateWorkspaceOpen(true)}
@@ -243,7 +242,7 @@ export function AppSidebar() {
                     Admin
                   </DropdownMenuItem>
                 </Show>
-                <Show when={hasPermission(Permission.manageSchedules)}>
+                <Show when={hasPermission('can_manage_schedules')}>
                   <DropdownMenuItem onSelect={() => navigate({ to: '/schedules' })}>
                     <Calendar class="w-4 h-4 text-muted-foreground" />
                     Schedules

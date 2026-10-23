@@ -10,7 +10,6 @@ import { usePermissions } from '~/api/permissions';
 import { ServiceIcon } from '~/components/external-service/service-marks';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { AlertTriangle, Cable, ChevronDown, ChevronRight } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
 import { ProjectConfigurationDialog } from './project-configuration-dialog';
 import { STRIP_BUTTON_CLASS, STRIP_COUNT_CLASS } from '~/components/composer-strip';
@@ -74,7 +73,7 @@ export function ExternalServicesButton(props: {
   const services = () => list.data?.services ?? [];
   const [popoverOpen, setPopoverOpen] = createSignal(false);
   const [openServiceId, setOpenServiceId] = createSignal<string | null>(null);
-  const canManageAgents = () => hasPermission(Permission.manageAgents);
+  const canManageAgents = () => hasPermission('can_manage_agents');
   const attentionCount = () => services().filter((service) => needsAttention(service.configuration)).length;
   const names = () =>
     services()

@@ -1,16 +1,12 @@
 import type { ExternalServiceOrigin } from '~/api/external-service-views';
-import { Permission } from '~/constants/permissions';
-
-type HasPermission = (permission: string) => boolean;
+import type { HasPermission } from '~/constants/permissions';
 
 export function canSeeExternalServices(hasPermission: HasPermission): boolean {
-  return (
-    hasPermission(Permission.managePlatformExternalServices) || hasPermission(Permission.manageTenantExternalServices)
-  );
+  return hasPermission('can_manage_platform_external_services') || hasPermission('can_manage_tenant_external_services');
 }
 
 export function canManageExternalService(origin: ExternalServiceOrigin, hasPermission: HasPermission): boolean {
   return origin === 'built_in'
-    ? hasPermission(Permission.managePlatformExternalServices)
-    : hasPermission(Permission.manageTenantExternalServices);
+    ? hasPermission('can_manage_platform_external_services')
+    : hasPermission('can_manage_tenant_external_services');
 }

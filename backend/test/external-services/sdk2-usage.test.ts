@@ -10,7 +10,6 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServiceUsage } from '../../db/schema';
-import { Perms } from '../../src/permission/permission.constants';
 import { addMember } from '../support/project-fixtures';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
 import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
@@ -299,7 +298,7 @@ describe('the Usage an SDK 2 service keeps, read by the backend', () => {
   });
 
   it('is read with the same permission as the Calls tab', async () => {
-    const member = await addMember(app, admin.tenant, [Perms.usePublicApi]);
+    const member = await addMember(app, admin.tenant, ['can_use_public_api']);
 
     expect((await read(`${TENANT_SERVICES}/${service.id}/usage`, member)).statusCode).toBe(403);
   });

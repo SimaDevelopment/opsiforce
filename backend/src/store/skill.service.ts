@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
-import { Perms } from '../permission/permission.constants';
 import { CATALOG_LIST_FILTERS } from './catalog-filters';
 import { packSkill, SkillArchiveError, unpackSkill, type SkillTree } from './gate';
 import { isTextFile } from './gate/skill-tree';
@@ -74,7 +73,7 @@ export class SkillService {
 
   async list(caller: SkillCaller, rawFilter: string | undefined, query: string | undefined): Promise<SkillSummary[]> {
     const filter = parseFilter(rawFilter);
-    if (filter === 'disabled' && !caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
+    if (filter === 'disabled' && !caller.canManageSkills) throw new MissingPermissionException('can_manage_skills');
 
     const rows = await this.repository.list(caller.tenantId, caller.userId, filter, query);
     const availability = await this.availability(caller.tenantId);
@@ -329,7 +328,7 @@ export class SkillService {
     if (!canDisableSkill(skill, caller.userId)) {
       throw notDisableable('The `platform` skill stays enabled: every agent carries it to know how the platform works');
     }
-    if (!caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
+    if (!caller.canManageSkills) throw new MissingPermissionException('can_manage_skills');
     return skill;
   }
 

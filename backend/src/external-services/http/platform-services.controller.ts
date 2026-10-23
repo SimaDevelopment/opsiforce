@@ -11,7 +11,6 @@ import {
   UseFilters,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
-import { Perms } from '../../permission/permission.constants';
 import { RequirePermission } from '../../permission/permission.guard';
 import { PlatformScope } from '../../tenant/tenant.decorator';
 import { InvalidConfigurationFilter } from '../configuration/invalid-configuration.error';
@@ -26,7 +25,7 @@ import {
 
 @Controller('external-services/platform/services')
 @PlatformScope()
-@RequirePermission(Perms.managePlatformExternalServices)
+@RequirePermission('can_manage_platform_external_services')
 @UseFilters(InvalidConfigurationFilter)
 export class PlatformServicesController {
   constructor(

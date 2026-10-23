@@ -17,7 +17,6 @@ import {
   workspaceMembers,
   workspaces,
 } from '../../db/schema';
-import { Perms } from '../permission/permission.constants';
 import { ProjectService } from '../project/project.service';
 import { TenantService } from '../tenant/tenant.service';
 import type { CreateProjectDto, ProjectResponse } from '../project/project.types';
@@ -432,7 +431,7 @@ export class WorkspaceService {
     const { workspaceId, projectId, tenantId, userId, canManageWorkspaces, canMoveProjectsBetweenWorkspaces } = params;
 
     if (workspaceId === null && !canManageWorkspaces) {
-      throw new ForbiddenException(`Missing permission: ${Perms.manageWorkspaces}`);
+      throw new ForbiddenException('Missing permission: can_manage_workspaces');
     }
 
     const project = canManageWorkspaces
@@ -512,7 +511,7 @@ export class WorkspaceService {
     const movePermWaived = sourceOwnedByCaller || targetOwnedByCaller;
 
     if (isCrossWorkspace && !canManageWorkspaces && !movePermWaived && !canMoveProjectsBetweenWorkspaces) {
-      throw new ForbiddenException(`Missing permission: ${Perms.moveProjectsBetweenWorkspaces}`);
+      throw new ForbiddenException('Missing permission: can_move_projects_between_workspaces');
     }
 
     const targetVisible = targetOwnedByCaller || (canManageWorkspaces && target.type === 'shared');

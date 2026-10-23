@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseFilters } from '@nestjs/common';
-import { Perms } from '../../permission/permission.constants';
 import { RequirePermission } from '../../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../../user/user.decorator';
@@ -10,7 +9,7 @@ import type { CustomServiceSummary } from './custom-service-summary';
 import { CustomServices, type NewCustomServiceRequest } from './custom-services.service';
 
 @Controller('external-services/services')
-@RequirePermission(Perms.manageTenantExternalServices)
+@RequirePermission('can_manage_tenant_external_services')
 @UseFilters(CustomServiceRefusalFilter)
 export class CustomServicesController {
   constructor(

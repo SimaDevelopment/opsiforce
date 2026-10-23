@@ -1,5 +1,5 @@
 import { Boxes, Database } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
+import type { HasPermission } from '~/constants/permissions';
 import { firstPermittedRailTab, railTabForPath, type RailTab } from '~/constants/section-rail';
 
 export const ADMIN_GROUP_ORDER = ['Operations'] as const;
@@ -11,7 +11,7 @@ export const ADMIN_TABS: RailTab[] = [
     description: 'Running environment pods and their live keep-alive activity.',
     group: 'Operations',
     icon: Boxes,
-    isPermitted: (has) => has(Permission.viewPods),
+    isPermitted: (has) => has('can_view_pods'),
   },
   {
     to: '/admin/storage',
@@ -19,11 +19,11 @@ export const ADMIN_TABS: RailTab[] = [
     description: 'Disk usage on the shared storage volume, across all organizations.',
     group: 'Operations',
     icon: Database,
-    isPermitted: (has) => has(Permission.viewPlatformStorage),
+    isPermitted: (has) => has('can_view_platform_storage'),
   },
 ];
 
-export function firstPermittedAdminTab(hasPermission: (permission: string) => boolean): RailTab | undefined {
+export function firstPermittedAdminTab(hasPermission: HasPermission): RailTab | undefined {
   return firstPermittedRailTab(ADMIN_TABS, hasPermission);
 }
 

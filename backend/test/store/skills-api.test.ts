@@ -17,7 +17,6 @@ import {
   users,
 } from '../../db/schema';
 import { RELAXED_PERMISSION_KEY } from '../../src/permission/permission.guard';
-import { Perms } from '../../src/permission/permission.constants';
 import { unpackSkill } from '../../src/store/gate';
 import { reservedSkillNames } from '../../src/store/skill-reconciler.service';
 import { SkillsController } from '../../src/store/skills.controller';
@@ -95,7 +94,7 @@ describe('the SkillsController permission surface', () => {
   const readRoutes = ['list', 'findOne', 'listAgents', 'listVersions', 'listFiles', 'export'];
 
   it('carries a class-level @RequirePermission for can_manage_skills', () => {
-    expect(Reflect.getMetadata('requiredPermission', SkillsController)).toBe(Perms.manageSkills);
+    expect(Reflect.getMetadata('requiredPermission', SkillsController)).toBe('can_manage_skills');
   });
 
   it('relaxes exactly the read routes', () => {
@@ -702,7 +701,7 @@ describe('disabling a built-in skill for one Organization (ADR-0072)', () => {
     expect((await service.findOne(author, skillId)).disableable).toBe(true);
     expect(await code(service.setDisabled(author, platform.skillId, true))).toBe('not_disableable');
     await expect(service.setDisabled({ ...author, canManageSkills: false }, skillId, true)).rejects.toThrow(
-      Perms.manageSkills
+      'can_manage_skills'
     );
   });
 });

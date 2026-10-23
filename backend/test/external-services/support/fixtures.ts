@@ -7,7 +7,6 @@ import {
   externalServices,
   type JsonValue,
 } from '../../../db/schema';
-import { Perms } from '../../../src/permission/permission.constants';
 import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../../support/project-fixtures';
 
 export interface PersonFixture extends MemberFixture {
@@ -21,15 +20,15 @@ async function personWith(app: INestApplication, permissions: string[]): Promise
 }
 
 export function platformOperator(app: INestApplication): Promise<PersonFixture> {
-  return personWith(app, [Perms.managePlatformExternalServices]);
+  return personWith(app, ['can_manage_platform_external_services']);
 }
 
 export function tenantAdmin(app: INestApplication): Promise<PersonFixture> {
-  return personWith(app, [Perms.manageTenantExternalServices]);
+  return personWith(app, ['can_manage_tenant_external_services']);
 }
 
 export function memberWithout(app: INestApplication): Promise<PersonFixture> {
-  return personWith(app, [Perms.usePublicApi]);
+  return personWith(app, ['can_use_public_api']);
 }
 
 export async function builtInServiceId(slug: string): Promise<string> {

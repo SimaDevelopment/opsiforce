@@ -15,7 +15,6 @@ import {
   skills,
 } from '../../db/schema';
 import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
-import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectController } from '../../src/project/project.controller';
 import { ProjectService } from '../../src/project/project.service';
@@ -135,7 +134,10 @@ describe('disabling and enabling a Custom External Service', () => {
   }
 
   async function builderChatLifecycle(action: 'disable' | 'enable') {
-    const projectAdmin = await addMember(app, admin.tenant, [Perms.manageTenantExternalServices, Perms.disableProject]);
+    const projectAdmin = await addMember(app, admin.tenant, [
+      'can_manage_tenant_external_services',
+      'can_disable_project',
+    ]);
     return app.inject({
       method: 'POST',
       url: `/api/projects/${service.builderChatId}/${action}`,
@@ -625,9 +627,9 @@ describe('deleting a Custom External Service', () => {
 
   it("refuses the Project routes' Delete of its builder chat and of the chat's environments", async () => {
     const projectAdmin = await addMember(app, admin.tenant, [
-      Perms.manageTenantExternalServices,
-      Perms.deleteProject,
-      Perms.deleteEnvironment,
+      'can_manage_tenant_external_services',
+      'can_delete_project',
+      'can_delete_environment',
     ]);
 
     const chat = await app.inject({

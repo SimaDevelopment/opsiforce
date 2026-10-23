@@ -7,7 +7,6 @@ import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { BASE_FORMATS } from '../../src/model-provider/base-formats';
 import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
-import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost, type FakeProviderConfig } from '../support/fake-bifrost';
 import {
   addMember,
@@ -86,7 +85,7 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
     );
     app = harness.app;
     agentId = await createAgent();
-    platformAdmin = await addMember(app, await createTenant(app), [Perms.managePlatformModelProviders]);
+    platformAdmin = await addMember(app, await createTenant(app), ['can_manage_platform_model_providers']);
     vendor.servedOverHttpsAt(AZURE_HOST);
   });
 
@@ -106,7 +105,7 @@ describe('Azure connections: named keys of the gateway’s one azure provider', 
 
   async function seededTenant(): Promise<SeededTenant> {
     const tenant = await createTenant(app);
-    const admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+    const admin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/projects',

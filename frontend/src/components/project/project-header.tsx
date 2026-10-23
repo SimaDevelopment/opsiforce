@@ -1,7 +1,6 @@
 import { Show, createSignal, untrack, type Component, type JSX } from 'solid-js';
 import { useQueryClient } from '@tanstack/solid-query';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { projectKeys, useProject, useRenameProject } from '~/api/projects';
 import { projectTitleOf } from '~/lib/project-title';
 import { Code as CodeIcon, Database, Files, MessageSquare } from '~/components/icons';
@@ -45,8 +44,8 @@ export interface ProjectHeaderProps extends ProjectSurfaceSlots {
 
 export function ProjectHeader(props: ProjectHeaderProps) {
   const { hasPermission } = usePermissions();
-  const canViewCode = () => hasPermission(Permission.viewCodeTab);
-  const canViewDb = () => hasPermission(Permission.viewDbTab);
+  const canViewCode = () => hasPermission('can_view_code_tab');
+  const canViewDb = () => hasPermission('can_view_db_tab');
   const projectQuery = useProject(() => props.projectId);
   const project = () => projectQuery.data;
 

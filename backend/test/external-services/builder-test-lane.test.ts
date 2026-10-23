@@ -17,7 +17,6 @@ import { ServiceSkillReach } from '../../src/external-services/knowledge/service
 import { ServiceDefaultEnvironments } from '../../src/external-services/publishing/service-default-environments';
 import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
 import { ProjectService } from '../../src/project/project.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { ensureBuiltInAgent } from '../support/agent-fixtures';
 import type { FakeQueue } from '../support/infra-fakes';
 import { waitFor } from '../support/wait-for';
@@ -596,8 +595,8 @@ describe("the External Service Builder's test lane", () => {
 
     it('lists the service under test in the Test Project chat bar as enabled and connected', async () => {
       const member = await addMember(app, admin.tenant, [
-        Perms.manageTenantExternalServices,
-        Perms.configureProjectExternalServices,
+        'can_manage_tenant_external_services',
+        'can_configure_project_external_services',
       ]);
 
       const res = await app.inject({
