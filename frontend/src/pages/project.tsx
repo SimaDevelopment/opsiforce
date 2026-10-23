@@ -3,7 +3,6 @@ import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, t
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
 import { onEnvironmentIdle } from '~/api/agent-status';
-import { Permission } from '~/constants/permissions';
 import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
 import { useProjectEnvironments } from '~/api/environments';
@@ -47,8 +46,8 @@ export function ProjectView(props: ProjectViewProps) {
   const navigate = useNavigate();
   const jobDock = useJobDock();
   const { hasPermission } = usePermissions();
-  const canViewCode = () => hasPermission(Permission.viewCodeTab);
-  const canViewDb = () => hasPermission(Permission.viewDbTab);
+  const canViewCode = () => hasPermission('can_view_code_tab');
+  const canViewDb = () => hasPermission('can_view_db_tab');
 
   const [activeTab, setActiveTab] = createSignal<ProjectTab>('chat');
   const [visitedTabs, setVisitedTabs] = createSignal<Set<ProjectTab>>(new Set<ProjectTab>(['chat']));

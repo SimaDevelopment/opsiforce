@@ -6,7 +6,6 @@ import { Secret } from '@opsiforce/external-service-sdk';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ProjectConfigurationCarry } from '../../src/external-services/configuration/project-configuration-carry';
 import { ExternalServicesProjectLifecycle } from '../../src/external-services/external-services-project-lifecycle';
-import { Perms } from '../../src/permission/permission.constants';
 import { addMember } from '../support/project-fixtures';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
@@ -118,7 +117,7 @@ describe('form calls and save hooks of an SDK 2 service', () => {
     const consumer = await consumerIn(app, admin.tenant);
     project = {
       ...consumer,
-      configurer: await addMember(app, consumer.tenant, [Perms.configureProjectExternalServices]),
+      configurer: await addMember(app, consumer.tenant, ['can_configure_project_external_services']),
     };
   });
 

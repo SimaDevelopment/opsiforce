@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
-import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { AgentCallerRefusalGuard } from './agent-caller-refusal.guard';
@@ -15,7 +14,7 @@ import type {
 } from './model-provider.types';
 
 @Controller('model-providers')
-@RequirePermission(Perms.manageTenantModelProviders)
+@RequirePermission('can_manage_tenant_model_providers')
 @UseGuards(AgentCallerRefusalGuard)
 export class ModelProviderCreationController {
   constructor(private readonly creationService: ModelProviderCreationService) {}

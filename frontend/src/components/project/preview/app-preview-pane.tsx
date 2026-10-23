@@ -3,7 +3,6 @@ import { Check, Copy, ExternalLink, LoaderCircle, PanelRightClose, Pencil, Refre
 import { ToolbarButton } from '~/components/ui/toolbar-button';
 import { appPublicUrl } from '~/lib/app-url';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { useProjectEnvironments } from '~/api/environments';
 import { EditAppDialog } from '../edit-app-dialog';
 
@@ -23,7 +22,7 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
   const [editAppOpen, setEditAppOpen] = createSignal(false);
 
   const { hasPermission } = usePermissions();
-  const canEditAppDetails = () => hasPermission(Permission.editAppDetails);
+  const canEditAppDetails = () => hasPermission('can_edit_app_details');
   const environments = useProjectEnvironments(() => props.projectId, { enabled: canEditAppDetails });
   const activeEnv = () => environments.data?.find((e) => e.id === props.environmentId);
   const showEditAction = () => canEditAppDetails() && activeEnv()?.hasApp === true;

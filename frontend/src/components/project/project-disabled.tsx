@@ -3,7 +3,6 @@ import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { toast } from 'solid-sonner';
 import { limitRefusalMessage } from '~/api/limits';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { api, type Project } from '~/api/client';
 import { projectKeys } from '~/api/projects';
 import { Ban } from '~/components/icons';
@@ -12,7 +11,7 @@ import { Button } from '~/components/ui/button';
 export function ProjectDisabled(props: { projectId: string }) {
   const qc = useQueryClient();
   const { hasPermission } = usePermissions();
-  const canDisable = () => hasPermission(Permission.disableProject);
+  const canDisable = () => hasPermission('can_disable_project');
 
   const enableProject = createMutation(() => ({
     mutationFn: () => api.post<Project>(`/projects/${props.projectId}/enable`),

@@ -13,7 +13,6 @@ import { AgentProfileService } from '../../src/agent/agent-profile.service';
 import type { AgentCaller, AgentRow } from '../../src/agent/agent.types';
 import { ProjectService } from '../../src/project/project.service';
 import { TEST_PROJECT_KIND } from '../../src/project/project.types';
-import { Perms } from '../../src/permission/permission.constants';
 import { productionEnvironmentId } from '../../src/store/agent-profile.repository';
 import { ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../support/project-fixtures';
@@ -58,7 +57,7 @@ describe("a Custom Agent's service settings", () => {
   beforeEach(async () => {
     forgetRecordedHooks();
     tenant = await createTenant(app);
-    manager = await addMember(app, tenant, [Perms.manageAgents, Perms.configureProjectExternalServices]);
+    manager = await addMember(app, tenant, ['can_manage_agents', 'can_configure_project_external_services']);
     const seeded = await seedLiveAgent(tenant.tenantId, manager.userId);
     agent = await agentRow(seeded.id);
     await profiles().setSkill(agent, managerCaller(), serviceSkillId, {});
@@ -263,7 +262,7 @@ describe("a Custom Agent's service settings", () => {
 
     async function importer(): Promise<AgentCaller> {
       const target = await createTenant(app);
-      const member = await addMember(app, target, [Perms.manageAgents, Perms.manageSkills]);
+      const member = await addMember(app, target, ['can_manage_agents', 'can_manage_skills']);
       return { tenantId: target.tenantId, userId: member.userId, canManageAgents: true };
     }
 
@@ -292,7 +291,7 @@ describe("a Custom Agent's service settings", () => {
 
   it('exposes no service settings through the Public API', async () => {
     await setSettings({ greeting: 'hello' });
-    const caller = await addMember(app, tenant, [Perms.usePublicApi, Perms.manageAgents]);
+    const caller = await addMember(app, tenant, ['can_use_public_api', 'can_manage_agents']);
 
     const document = await app.inject({ method: 'GET', url: '/api/v1/openapi.json' });
     const skillsRead = await app.inject({

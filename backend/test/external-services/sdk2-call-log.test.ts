@@ -10,7 +10,6 @@ import {
   type CallRow,
 } from '@opsiforce/external-service-sdk/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Perms } from '../../src/permission/permission.constants';
 import { addMember } from '../support/project-fixtures';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
@@ -302,7 +301,7 @@ describe('the Call log an SDK 2 service writes, read by the backend', () => {
     await callAs(first, '/mine');
     await callAs(second, '/theirs');
     pod.flushRecords();
-    const member = await addMember(app, admin.tenant, [Perms.usePublicApi]);
+    const member = await addMember(app, admin.tenant, ['can_use_public_api']);
 
     const { calls } = await page(environmentCallLog(first), member);
 

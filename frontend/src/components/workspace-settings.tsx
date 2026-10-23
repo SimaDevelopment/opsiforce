@@ -8,7 +8,6 @@ import {
   useWorkspaceMembers,
   useWorkspaceProjects,
 } from '~/api/workspaces';
-import { Permission } from '~/constants/permissions';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Button } from '~/components/ui/button';
@@ -25,7 +24,7 @@ export function WorkspaceSettings(props: {
   onDeleted?: () => void;
 }) {
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageWorkspaces);
+  const canManage = () => hasPermission('can_manage_workspaces');
 
   const workspaceId = () => props.workspaceId;
   const workspace = useWorkspace(workspaceId);

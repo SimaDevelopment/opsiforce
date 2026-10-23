@@ -32,7 +32,6 @@ import { TenantService } from '../tenant/tenant.service';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { UserService } from '../user/user.service';
 import { RequirePermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { isServiceAccountRequest } from '../identity/forwarded-identity.service';
 import { ProjectEventsService } from './project-events.service';
@@ -73,10 +72,10 @@ export class ProjectController {
   }
 
   private async assertCanCreatePublicProject(tenantId: string, req: FastifyRequest): Promise<void> {
-    if (hasPermission(getGroupsHeader(req), Perms.manageWorkspaces)) return;
+    if (hasPermission(getGroupsHeader(req), 'can_manage_workspaces')) return;
     if (isServiceAccountRequest(req)) return;
     if (await this.tenantService.isPrivateWorkspaceEnabled(tenantId)) {
-      throw new ForbiddenException(`Missing permission: ${Perms.manageWorkspaces}`);
+      throw new ForbiddenException('Missing permission: can_manage_workspaces');
     }
   }
 
@@ -174,7 +173,7 @@ export class ProjectController {
   }
 
   @Get(':id/environments/:environmentId/auth')
-  @RequirePermission(Perms.manageProjectAuthSettings)
+  @RequirePermission('can_manage_project_auth_settings')
   async getAuth(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
@@ -186,7 +185,7 @@ export class ProjectController {
   }
 
   @Put(':id/environments/:environmentId/auth')
-  @RequirePermission(Perms.manageProjectAuthSettings)
+  @RequirePermission('can_manage_project_auth_settings')
   async updateAuth(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
@@ -199,7 +198,7 @@ export class ProjectController {
   }
 
   @Put(':id/logging')
-  @RequirePermission(Perms.manageProjectLoggingSettings)
+  @RequirePermission('can_manage_project_logging_settings')
   async updateLogging(
     @Param('id') id: string,
     @Body() dto: UpdateProjectLoggingDto,
@@ -211,7 +210,7 @@ export class ProjectController {
   }
 
   @Put(':id/pod-class')
-  @RequirePermission(Perms.manageProjectPodSettings)
+  @RequirePermission('can_manage_project_pod_settings')
   async updatePodClass(
     @Param('id') id: string,
     @Body() dto: UpdateProjectPodClassDto,
@@ -223,14 +222,14 @@ export class ProjectController {
   }
 
   @Delete(':id')
-  @RequirePermission(Perms.deleteProject)
+  @RequirePermission('can_delete_project')
   async remove(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
     await this.gateUnlessServiceBuilder(id, tenant, user, DELETE_SERVICE_FROM_ITS_PAGE);
     return this.projectService.remove(id, tenant.tenantId);
   }
 
   @Post(':id/duplicate')
-  @RequirePermission(Perms.duplicateProject)
+  @RequirePermission('can_duplicate_project')
   async duplicate(
     @Param('id') id: string,
     @Body() dto: DuplicateProjectDto | undefined,
@@ -242,7 +241,7 @@ export class ProjectController {
   }
 
   @Get(':id/duplicate/job/stream')
-  @RequirePermission(Perms.duplicateProject)
+  @RequirePermission('can_duplicate_project')
   async duplicateJobStream(
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext,
@@ -291,21 +290,21 @@ export class ProjectController {
   }
 
   @Post(':id/disable')
-  @RequirePermission(Perms.disableProject)
+  @RequirePermission('can_disable_project')
   async disable(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
     await this.gate(id, tenant, user);
     return this.projectService.disable(id, tenant.tenantId);
   }
 
   @Post(':id/enable')
-  @RequirePermission(Perms.disableProject)
+  @RequirePermission('can_disable_project')
   async enable(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
     await this.gate(id, tenant, user);
     return this.projectService.enable(id, tenant.tenantId);
   }
 
   @Post(':id/restart')
-  @RequirePermission(Perms.restartProject)
+  @RequirePermission('can_restart_project')
   async restart(@Param('id') id: string, @CurrentTenant() tenant: TenantContext, @CurrentUser() user: UserContext) {
     await this.gate(id, tenant, user);
     return this.projectService.restart(id, tenant.tenantId);
@@ -322,7 +321,7 @@ export class ProjectController {
   }
 
   @Post(':id/environments/:environmentId/restart')
-  @RequirePermission(Perms.restartProject)
+  @RequirePermission('can_restart_project')
   async restartEnvironment(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
@@ -346,7 +345,7 @@ export class ProjectController {
   }
 
   @Get(':id/environments/:environmentId/variables')
-  @RequirePermission(Perms.manageEnvironmentVariables)
+  @RequirePermission('can_manage_environment_variables')
   async getEnvironmentVariables(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
@@ -358,7 +357,7 @@ export class ProjectController {
   }
 
   @Put(':id/environments/:environmentId/variables')
-  @RequirePermission(Perms.manageEnvironmentVariables)
+  @RequirePermission('can_manage_environment_variables')
   async updateEnvironmentVariables(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
@@ -393,7 +392,7 @@ export class ProjectController {
   }
 
   @Delete(':id/environments/:environmentId')
-  @RequirePermission(Perms.deleteEnvironment)
+  @RequirePermission('can_delete_environment')
   async removeEnvironment(
     @Param('id') id: string,
     @Param('environmentId') environmentId: string,
@@ -406,7 +405,7 @@ export class ProjectController {
   }
 
   @Patch(':id/app')
-  @RequirePermission(Perms.editAppDetails)
+  @RequirePermission('can_edit_app_details')
   async updateApp(
     @Param('id') id: string,
     @Body() dto: UpdateAppDto,

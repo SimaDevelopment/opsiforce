@@ -4,11 +4,15 @@ import type { Readable } from 'node:stream';
 import { ProjectImportUploadService } from './project-import-upload.service';
 import type { CreateImportUploadDto, CreateImportUploadResult } from './project-import.types';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
+import type { Permission } from '../permission/permission.constants';
 import { RequireAnyPermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 
 const CHUNK_DIGEST_HEADER = 'x-chunk-sha256';
-const IMPORT_UPLOAD_PERMISSIONS = [Perms.importProject, Perms.manageAgents, Perms.manageTenantExternalServices];
+const IMPORT_UPLOAD_PERMISSIONS: readonly Permission[] = [
+  'can_import_project',
+  'can_manage_agents',
+  'can_manage_tenant_external_services',
+];
 
 interface ChunkRequest extends FastifyRequest {
   body: Readable;

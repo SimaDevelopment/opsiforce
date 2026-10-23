@@ -4,7 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db } from '../../db';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import { defaultEnvironmentId, seedLiveAgent } from '../support/agent-fixtures';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
@@ -179,7 +178,7 @@ describe('GET /api/v1/agents', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({
       type: 'urn:opsiforce:error:permission-denied',
-      permission: Perms.usePublicApi,
+      permission: 'can_use_public_api',
     });
   });
 });

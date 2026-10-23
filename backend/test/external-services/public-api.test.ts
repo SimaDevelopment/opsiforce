@@ -13,7 +13,6 @@ import {
   PublicApiSettings,
 } from '../../src/external-services/configuration/public-api-settings';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
-import { Perms } from '../../src/permission/permission.constants';
 import { ProjectEventsService } from '../../src/project/project-events.service';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { seedLiveAgent } from '../support/agent-fixtures';
@@ -131,8 +130,8 @@ describe('the Public API on its Service host', () => {
     app = harness.app;
     await harness.listen();
     tenant = await createTenant(app);
-    creator = await addMember(app, tenant, [Perms.deleteProject]);
-    admin = await addMember(app, tenant, [Perms.manageTenantExternalServices]);
+    creator = await addMember(app, tenant, ['can_delete_project']);
+    admin = await addMember(app, tenant, ['can_manage_tenant_external_services']);
     agentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
   });
 
@@ -337,7 +336,7 @@ describe('the Public API on its Service host', () => {
 
       await setMemberPermissions(tenant, creator, []);
       const refused = await call(caller, 'DELETE', `/api/v1/projects/${target}`);
-      await setMemberPermissions(tenant, creator, [Perms.deleteProject]);
+      await setMemberPermissions(tenant, creator, ['can_delete_project']);
       const allowed = await call(caller, 'DELETE', `/api/v1/projects/${target}`);
 
       expect(refused.status).toBe(403);

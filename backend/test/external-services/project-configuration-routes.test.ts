@@ -5,7 +5,6 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentProfileSkills, skills } from '../../db/schema';
 import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
-import { Perms } from '../../src/permission/permission.constants';
 import { builtInProfileFor } from '../../src/store/agent-profile.repository';
 import type { FakeQueue } from '../support/infra-fakes';
 import {
@@ -53,8 +52,8 @@ describe('the Project configuration routes behind the chat bar', () => {
       await configurePlatformService(app, FIXTURE_SERVICE, READY_FIXTURE_CRM)
     ) as [string, string];
     caller = await gateCaller(app);
-    member = await addMember(app, caller.tenant, [Perms.usePublicApi]);
-    configurer = await addMember(app, caller.tenant, [Perms.configureProjectExternalServices]);
+    member = await addMember(app, caller.tenant, ['can_use_public_api']);
+    configurer = await addMember(app, caller.tenant, ['can_configure_project_external_services']);
   });
 
   function servicesUrl(projectId = caller.projectId, projectEnvironmentId = caller.projectEnvironmentId): string {
@@ -224,7 +223,7 @@ describe('the Project configuration routes behind the chat bar', () => {
 
   it('answers 404 to someone who cannot open the Project', async () => {
     const otherTenant = await createTenant(app);
-    const outsider = await addMember(app, otherTenant, [Perms.configureProjectExternalServices]);
+    const outsider = await addMember(app, otherTenant, ['can_configure_project_external_services']);
 
     expect((await readAs(outsider)).statusCode).toBe(404);
     expect((await readAs(outsider, servicesUrl())).statusCode).toBe(404);
@@ -232,7 +231,7 @@ describe('the Project configuration routes behind the chat bar', () => {
   });
 
   it("answers 404 to a member of the Organization for a Project in someone else's private workspace", async () => {
-    const owner = await addMember(app, caller.tenant, [Perms.configureProjectExternalServices]);
+    const owner = await addMember(app, caller.tenant, ['can_configure_project_external_services']);
     const privateProjectId = await createProject(app, caller.tenant, {
       workspaceId: await privateWorkspaceIdOf(app, caller.tenant, owner),
     });

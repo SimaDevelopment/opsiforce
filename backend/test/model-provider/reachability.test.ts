@@ -7,7 +7,6 @@ import { agentProfiles, environments } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { AgentController } from '../../src/agent/agent.controller';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { TranscriptionAvailabilityController } from '../../src/transcription/transcription-availability.controller';
 import { TranscriptionAvailabilityService } from '../../src/transcription/transcription-availability.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
@@ -74,7 +73,7 @@ describe('reachability of Base formats', () => {
     const tenant = await createTenant(app);
     return {
       tenant,
-      admin: await addMember(app, tenant, [Perms.manageTenantModelProviders]),
+      admin: await addMember(app, tenant, ['can_manage_tenant_model_providers']),
       member: await addMember(app, tenant, []),
     };
   }
@@ -176,7 +175,7 @@ describe('reachability of Base formats', () => {
   describe('choosing an Agent Profile model', () => {
     async function authoredAgent() {
       const seeded = await seededTenant();
-      const author = await addMember(app, seeded.tenant, [Perms.manageAgents]);
+      const author = await addMember(app, seeded.tenant, ['can_manage_agents']);
       const agent = await seedLiveAgent(seeded.tenant.tenantId, author.userId);
       return { ...seeded, author, agentId: agent.id };
     }

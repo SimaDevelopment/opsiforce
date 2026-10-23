@@ -13,7 +13,6 @@ import { builderChatPublicApiSettings } from '../external-services/configuration
 import { ProjectConfigurationStore } from '../external-services/configuration/project-configuration.store';
 import { ServiceRegistry } from '../external-services/registry/service-registry';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
-import { Perms } from '../permission/permission.constants';
 import { ProjectService } from '../project/project.service';
 import { EXTERNAL_SERVICE_CHAT_KIND, ProjectStatus, type ChatKind } from '../project/project.types';
 import { canEditSkill, findVisibleSkill } from '../store/skill-visibility';
@@ -85,10 +84,10 @@ function isClaimable(target: SubjectRow): target is ClaimableSubjectRow {
 }
 
 function requirePermissionFor(caller: BuilderChatCaller, type: BuilderSubjectType): void {
-  if (type === 'agent' && !caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
-  if (type === 'skill' && !caller.canManageSkills) throw new MissingPermissionException(Perms.manageSkills);
+  if (type === 'agent' && !caller.canManageAgents) throw new MissingPermissionException('can_manage_agents');
+  if (type === 'skill' && !caller.canManageSkills) throw new MissingPermissionException('can_manage_skills');
   if (type === 'external_service' && !caller.canManageTenantExternalServices) {
-    throw new MissingPermissionException(Perms.manageTenantExternalServices);
+    throw new MissingPermissionException('can_manage_tenant_external_services');
   }
 }
 

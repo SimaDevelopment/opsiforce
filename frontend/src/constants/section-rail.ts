@@ -1,4 +1,5 @@
 import type { Component } from 'solid-js';
+import type { HasPermission } from '~/constants/permissions';
 
 export interface RailTab {
   to: string;
@@ -6,13 +7,10 @@ export interface RailTab {
   description: string;
   group: string;
   icon: Component<{ class?: string }>;
-  isPermitted: (hasPermission: (permission: string) => boolean) => boolean;
+  isPermitted: (hasPermission: HasPermission) => boolean;
 }
 
-export function firstPermittedRailTab(
-  tabs: RailTab[],
-  hasPermission: (permission: string) => boolean
-): RailTab | undefined {
+export function firstPermittedRailTab(tabs: RailTab[], hasPermission: HasPermission): RailTab | undefined {
   return tabs.find((tab) => tab.isPermitted(hasPermission));
 }
 

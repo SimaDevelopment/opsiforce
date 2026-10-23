@@ -59,7 +59,6 @@ import {
   Terminal,
   Trash2,
 } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
 import { createDocumentTitle } from '~/lib/create-document-title';
 import { formatDate } from '~/lib/format-date';
@@ -86,7 +85,7 @@ const CREATED_VIA_LABELS: Record<string, string> = {
 
 export function SkillPage(props: SkillPageProps) {
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageSkills);
+  const canManage = () => hasPermission('can_manage_skills');
   const skillId = () => props.skillId;
 
   const skill = useSkill(skillId);
