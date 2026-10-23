@@ -12,8 +12,9 @@ Inside Opsiforce, three places need every permission name: the backend's guards,
 - **The static identity holds every permission except `can_manage_users`.**
   - Tilt computes the list from the file when it loads, passes it to the chart, and reloads when the file changes. The chart's own default is an empty list.
   - Static mode has no identity provider. `can_manage_users` only opens a Users page that embeds User Management, which static mode does not deploy.
+- **The Azure deployment's admin group holds the whole list.** Its deploy workflow builds `SSO_GROUP_MAP` from `PERMISSIONS`, so a new permission reaches that deployment's admins with no edit there.
 - **Keycloak stays separate.** The configurator under `packages/infra/pulumi/keycloak-configurator/` keeps its own role list and bundles, written by hand from `PERMISSIONS`, and deploys through its own workflow.
-- **The file stays self-contained.** It has no imports and uses only erasable TypeScript, because Node strips its types for Tilt and the frontend's `tsc` checks against it.
+- **The file stays self-contained.** It has no imports and uses only erasable TypeScript, because Node strips its types for Tilt and for the Azure deploy workflow, and the frontend's `tsc` checks against it.
 
 ## Considered options
 
@@ -28,6 +29,6 @@ Inside Opsiforce, three places need every permission name: the backend's guards,
 
 - Adding a permission is one entry in `PERMISSIONS` for Opsiforce, plus a role and a bundle entry in the Keycloak configurator. Only the Keycloak side can still drift: a permission missing there hides its feature from everyone in that deployment.
 - A Keycloak role has to reach production no later than the Opsiforce release that gates on it.
-- Moving or renaming `permission.constants.ts` breaks the frontend's typecheck and Tilt, each with an error.
+- Moving or renaming `permission.constants.ts`, or the `PERMISSIONS` export, breaks the frontend's typecheck, Tilt and the Azure deploy workflow, each with an error.
 - Renaming a permission's `can_*` string makes `tsc` flag every guard and gate that names it, to be fixed by hand.
-- A standalone install that maps its identity provider's groups through `SSO_GROUP_MAP` lists permission names in its own configuration, outside the list, so renaming a permission means renaming it there too.
+- A standalone install that writes its own `SSO_GROUP_MAP` lists permission names outside the list, so renaming a permission means renaming it there too.
