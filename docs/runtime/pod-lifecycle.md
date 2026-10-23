@@ -55,7 +55,7 @@ adrs: [0019, 0094]
 - Self-inflicted deletions (suspend, restart, publish, disable) match zero rows in that flip because every internal flow moves the row out of `active` before deleting the pod.
 - A boot pass deletes orphaned agent pods, resumes workers for environments stranded in `starting`, and flips `active` environments whose pod is gone back to `starting`; only a confirmed absence counts, so a control-plane blip never mass-flips the fleet.
 - A pod in CrashLoopBackOff is given 60 seconds, then deleted and recreated; ImagePullBackOff is terminal and moves the environment to `failed` with a Restart action.
-- A Ready pod whose runtime answers a [Connection](../public-api/connection.md)'s `GET /api/info` with anything but 200 — a pod still on an older build, or a wedged runtime — is recreated, and connect answers starting meanwhile; connections that meet the same pod together recreate it once. When the pod that replaced it refuses too within ten minutes, the environment moves to `failed` and that pod is deleted, so a recreate never loops.
+- A Ready pod whose runtime answers a [Connection](../public-api/connection.md)'s `GET /api/info` with anything but 200 — a pod still on an older build, or a wedged runtime — is asked again for up to ten seconds, capped at half of connect's remaining budget, then recreated while connect answers starting; connections that meet the same pod together recreate it once. When the pod that replaced it refuses too within ten minutes, the environment moves to `failed` and that pod is deleted, so a recreate never loops.
 
 ### Suspension
 

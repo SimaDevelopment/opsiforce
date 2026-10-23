@@ -1,52 +1,125 @@
-import { HttpException } from '@nestjs/common';
-import { describe, expect, it } from 'vitest';
+import { Module } from '@nestjs/common';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PodService } from '../src/pod/pod.service';
+import { ProjectController } from '../src/project/project.controller';
+import { ProjectStatus } from '../src/project/project.types';
+import { ProjectEnvironmentService } from '../src/project-environment/project-environment.service';
+import { createPublicApiTestApp, type PublicApiTestApp } from './public-api/support/app';
+import { podErrors, startFakePod, type FakePod } from './support/fake-pod';
+import type { FakePodService } from './support/infra-fakes';
 import {
-  EnvironmentNotRunning,
-  PodResponded,
-  PodTimeout,
-  PodUnreachable,
-} from '../src/agent-session/agent-session.errors';
-import { mappingConnectionRefusals } from '../src/agent-session/connection-refusals';
-import { LockNotAvailable } from '../src/common/locks';
+  addMember,
+  createProject,
+  createTenant,
+  disableProject,
+  type MemberFixture,
+  type TenantFixture,
+} from './support/project-fixtures';
+import { waitFor } from './support/wait-for';
 
-async function failingWith(error: unknown): Promise<never> {
-  throw error;
-}
+@Module({ controllers: [ProjectController] })
+class ProjectRoutes {}
 
-async function refusalOf(error: unknown): Promise<{ status: number; code: unknown }> {
-  try {
-    await mappingConnectionRefusals(() => failingWith(error));
-  } catch (refusal) {
-    if (!(refusal instanceof HttpException)) throw refusal;
-    return { status: refusal.getStatus(), code: (refusal.getResponse() as { code?: unknown }).code };
-  }
-  throw new Error('The connection was not refused');
-}
+const runtimeInfo = { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } };
 
 describe('refusing a connection on the internal connect route', () => {
-  it('answers a starting environment with a 503 the client waits out', async () => {
-    expect(await refusalOf(new EnvironmentNotRunning('starting'))).toEqual({
-      status: 503,
-      code: 'environment_starting',
-    });
+  let pod: FakePod;
+  let harness: PublicApiTestApp;
+  let app: NestFastifyApplication;
+  let pods: FakePodService;
+  let environments: ProjectEnvironmentService;
+  let tenant: TenantFixture;
+  let member: MemberFixture;
+
+  beforeAll(async () => {
+    pod = await startFakePod();
+    harness = await createPublicApiTestApp(
+      {
+        AGENT_PORT: String(pod.port),
+        AGENT_WAKE_HOLD_MS: '600',
+        AGENT_WAKE_POLL_MS: '100',
+        AGENT_RUNTIME_REFUSAL_GRACE_MS: '100',
+      },
+      [ProjectRoutes]
+    );
+    app = harness.app;
+    pods = app.get<PodService, FakePodService>(PodService);
+    environments = app.get(ProjectEnvironmentService);
+    tenant = await createTenant(app);
+    member = await addMember(app, tenant);
   });
 
-  it('names every other environment state and agent failure instead of answering 500', async () => {
-    expect(await refusalOf(new EnvironmentNotRunning('disabled'))).toEqual({
-      status: 409,
-      code: 'environment_disabled',
-    });
-    expect(await refusalOf(new EnvironmentNotRunning('failed'))).toEqual({ status: 409, code: 'environment_failed' });
-    expect(await refusalOf(new EnvironmentNotRunning('not-found'))).toEqual({ status: 404, code: 'not_found' });
-    expect(await refusalOf(new PodTimeout('slow'))).toEqual({ status: 504, code: 'agent_timeout' });
-    expect(await refusalOf(new LockNotAvailable('session'))).toEqual({ status: 504, code: 'agent_timeout' });
-    expect(await refusalOf(new PodUnreachable('refused'))).toEqual({ status: 502, code: 'agent_unreachable' });
-    expect(await refusalOf(new PodResponded(500, null, ''))).toEqual({ status: 502, code: 'agent_unreachable' });
+  afterAll(async () => {
+    await harness.close();
+    await pod.stop().catch(() => undefined);
   });
 
-  it('leaves an unrelated failure alone', async () => {
-    const failure = new Error('database down');
+  beforeEach(() => {
+    pod.clearScripts();
+    pod.setInfo({ status: 200, body: runtimeInfo });
+  });
 
-    await expect(mappingConnectionRefusals(() => failingWith(failure))).rejects.toBe(failure);
+  async function runningProject(): Promise<string> {
+    const projectId = await createProject(app, tenant);
+    const podName = pods.assignedPodName(projectId);
+    await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
+    pods.markPodReady(podName, '127.0.0.1');
+    await waitFor(async () => (await environments.findByIdOrNull(projectId))?.status === ProjectStatus.Active);
+    return projectId;
+  }
+
+  async function connect(projectId: string): Promise<{ status: number; code: unknown }> {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/environments/${projectId}/connect`,
+      headers: member.headers,
+    });
+    return { status: res.statusCode, code: res.json<{ code?: unknown }>().code };
+  }
+
+  it('answers an environment still starting when the budget runs out with a 503 the client waits out', async () => {
+    const projectId = await runningProject();
+    await pods.deletePod(pods.assignedPodName(projectId));
+    await environments.patch(projectId, { status: ProjectStatus.Starting });
+
+    expect(await connect(projectId)).toEqual({ status: 503, code: 'environment_starting' });
+  });
+
+  it('names a disabled environment', async () => {
+    const projectId = await runningProject();
+    await disableProject(projectId);
+
+    expect(await connect(projectId)).toEqual({ status: 409, code: 'environment_disabled' });
+  });
+
+  it('names a failed environment', async () => {
+    const projectId = await runningProject();
+    await environments.patch(projectId, { status: ProjectStatus.Failed });
+
+    expect(await connect(projectId)).toEqual({ status: 409, code: 'environment_failed' });
+  });
+
+  it('answers starting while it replaces a ready pod whose runtime refuses to identify itself', async () => {
+    const projectId = await runningProject();
+    const deleted = pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 503, body: runtimeInfo });
+
+    expect(await connect(projectId)).toEqual({ status: 503, code: 'environment_starting' });
+    expect(pods.callsTo('deletePod').length - deleted).toBe(1);
+  });
+
+  it('answers 500 unexpected, as the public API does, when the runtime rejects a request without failing', async () => {
+    const projectId = await runningProject();
+    pod.script('session.list', { status: 400, body: podErrors.invalidRequest('bad cursor', 'cursor'), once: true });
+
+    expect(await connect(projectId)).toEqual({ status: 500, code: 'unexpected' });
+  });
+
+  it('answers 502 when the pod cannot be reached', async () => {
+    const projectId = await runningProject();
+    await pod.stop();
+
+    expect(await connect(projectId)).toEqual({ status: 502, code: 'agent_unreachable' });
   });
 });

@@ -75,6 +75,7 @@ export const configuration = () => {
     agentControlPort: parseInt(process.env.AGENT_CONTROL_PORT || '4910', 10),
     agentWakeHoldMs: parseInt(process.env.AGENT_WAKE_HOLD_MS || '30000', 10),
     agentWakePollMs: parseInt(process.env.AGENT_WAKE_POLL_MS || '1000', 10),
+    agentRuntimeRefusalGraceMs: parseInt(process.env.AGENT_RUNTIME_REFUSAL_GRACE_MS || '10000', 10),
     skillDeliveryConfirmAttempts: parseInt(process.env.SKILL_DELIVERY_CONFIRM_ATTEMPTS || '10', 10),
     skillDeliveryConfirmPollMs: parseInt(process.env.SKILL_DELIVERY_CONFIRM_POLL_MS || '1000', 10),
     appPort: sharedAppPort(),

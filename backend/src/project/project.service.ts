@@ -64,6 +64,7 @@ import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { hasRunningPod } from '../project-environment/running-pod';
+import type { EnvironmentNotRunningState } from '../agent-session/agent-session.errors';
 import type {
   ExportManifestAppDetails,
   ExportManifestResources,
@@ -1675,27 +1676,35 @@ export class ProjectService implements OnApplicationBootstrap {
     return this.handleProxyFailureForEnvironment(env);
   }
 
-  async replaceRefusingRuntime(envId: string): Promise<'starting' | 'failed'> {
+  async replaceRefusingRuntime(envId: string): Promise<Extract<EnvironmentNotRunningState, 'starting' | 'failed'>> {
     const env = await this.projectEnvironmentService.findById(envId);
     const podName = this.podService.assignedPodName(env.id);
     const pod = await this.readPodOrNull(podName);
     const podUid = pod?.metadata?.uid;
-    if (!pod || !podUid || !this.podService.isPodReady(pod)) {
+    if (!hasRunningPod(env) || !pod || !podUid || !this.podService.isPodReady(pod)) {
       await this.handleProxyFailureForEnvironment(env);
       return 'starting';
     }
 
+    this.forgetExpiredRuntimeReplacements();
     const replaced = this.runtimeReplacements.get(env.id);
     if (replaced?.podUid === podUid) return 'starting';
-    if (replaced && Date.now() - replaced.at < RUNTIME_REPLACEMENT_WINDOW_MS) {
+    if (replaced) {
+      if (!(await this.failRefusingEnvironment(env, podName))) return 'starting';
       this.runtimeReplacements.delete(env.id);
-      return (await this.failRefusingEnvironment(env, podName)) ? 'failed' : 'starting';
+      return 'failed';
     }
 
     this.runtimeReplacements.set(env.id, { podUid, at: Date.now() });
     this.logger.warn(`Pod ${podName} is ready but its runtime refused to identify itself; recreating it`);
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
     return 'starting';
+  }
+
+  private forgetExpiredRuntimeReplacements(): void {
+    for (const [envId, replacement] of this.runtimeReplacements) {
+      if (Date.now() - replacement.at >= RUNTIME_REPLACEMENT_WINDOW_MS) this.runtimeReplacements.delete(envId);
+    }
   }
 
   private async failRefusingEnvironment(env: ProjectEnvironmentContext, podName: string): Promise<boolean> {

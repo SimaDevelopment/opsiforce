@@ -17,6 +17,11 @@ interface EnvironmentRef {
   environmentId: string;
 }
 
+function useCanRestart(): () => boolean {
+  const { hasPermission } = usePermissions();
+  return () => hasPermission(Permission.restartProject);
+}
+
 function RestartProjectButton(props: EnvironmentRef & { variant?: 'default' | 'outline' }) {
   const restart = useRestartProjectEnvironment();
 
@@ -72,8 +77,7 @@ export function ProjectDisabled(props: { projectId: string }) {
 }
 
 export function ProjectFailed(props: EnvironmentRef) {
-  const { hasPermission } = usePermissions();
-  const canRestart = () => hasPermission(Permission.restartProject);
+  const canRestart = useCanRestart();
 
   return (
     <ProjectStatePanel
@@ -90,8 +94,7 @@ export function ProjectFailed(props: EnvironmentRef) {
 }
 
 export function ProjectConnectionProblem(props: EnvironmentRef & { problem: ConnectionProblem; onRetry: () => void }) {
-  const { hasPermission } = usePermissions();
-  const canRestart = () => hasPermission(Permission.restartProject);
+  const canRestart = useCanRestart();
 
   return (
     <Show

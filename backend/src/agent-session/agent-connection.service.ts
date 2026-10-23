@@ -1,3 +1,4 @@
+import { setTimeout } from 'node:timers/promises';
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, isNull, type SQL } from 'drizzle-orm';
@@ -30,6 +31,8 @@ interface EnvironmentBinding {
 export class AgentConnectionService {
   private readonly logger = new Logger(AgentConnectionService.name);
   private readonly budgetMs: number;
+  private readonly pollMs: number;
+  private readonly refusalGraceMs: number;
 
   constructor(
     private readonly gateway: AgentSessionGateway,
@@ -40,6 +43,8 @@ export class AgentConnectionService {
     configService: ConfigService
   ) {
     this.budgetMs = configService.getOrThrow<number>('agentWakeHoldMs');
+    this.pollMs = configService.getOrThrow<number>('agentWakePollMs');
+    this.refusalGraceMs = configService.getOrThrow<number>('agentRuntimeRefusalGraceMs');
   }
 
   async connect(env: ProjectEnvironmentContext, options: ConnectOptions = {}): Promise<AgentConnection> {
@@ -47,7 +52,9 @@ export class AgentConnectionService {
     const ready = await this.gateway.wakeForConnection(env, deadline);
 
     return this.reportingPodFailures(ready.id, async () => {
-      const build = await this.readBuild(ready.id, deadline);
+      const build = await this.readBuild(ready.id, deadline).catch((error: unknown) =>
+        this.replaceRefusingRuntime(ready.id, error)
+      );
       const sessionId = await deadline.run(() => this.bindPrimarySession(ready, deadline), connectionBudgetExhausted);
       const latest = await deadline.run(() => readBinding(db, ready.id), connectionBudgetExhausted);
       assertCurrentBinding(latest);
@@ -170,15 +177,23 @@ export class AgentConnectionService {
 
   private async readBuild(environmentId: string, deadline: Deadline): Promise<string | null> {
     deadline.assertUnspent(connectionBudgetExhausted);
-    try {
-      const info = await this.pod.info(environmentId, { signal: deadline.signal() });
-      return info.version ?? null;
-    } catch (error) {
-      if (error instanceof PodResponded) {
-        throw new EnvironmentNotRunning(await this.projectService.replaceRefusingRuntime(environmentId));
+    const graceEndsAt = Date.now() + Math.min(this.refusalGraceMs, deadline.remainingMs / 2);
+    for (;;) {
+      try {
+        const info = await this.pod.info(environmentId, { signal: deadline.signal() });
+        return info.version ?? null;
+      } catch (error) {
+        if (!(error instanceof PodResponded) || Date.now() >= graceEndsAt) throw error;
       }
-      throw error;
+      const pause = Math.min(this.pollMs, Math.max(0, graceEndsAt - Date.now()));
+      await deadline.run(() => setTimeout(pause), environmentStarting);
+      deadline.assertUnspent(environmentStarting);
     }
+  }
+
+  private async replaceRefusingRuntime(environmentId: string, error: unknown): Promise<never> {
+    if (!(error instanceof PodResponded)) throw error;
+    throw new EnvironmentNotRunning(await this.projectService.replaceRefusingRuntime(environmentId));
   }
 
   private async reportingPodFailures<T>(environmentId: string, work: () => Promise<T>): Promise<T> {
@@ -228,6 +243,10 @@ function matchesBinding(observed: string | null): SQL | undefined {
 
 function connectionBudgetExhausted(): PodTimeout {
   return new PodTimeout('The connection budget ran out before the runtime answered');
+}
+
+function environmentStarting(): EnvironmentNotRunning {
+  return new EnvironmentNotRunning('starting');
 }
 
 function assertCurrentBinding(current: EnvironmentBinding | null): asserts current is EnvironmentBinding {

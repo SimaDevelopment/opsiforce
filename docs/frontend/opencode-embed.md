@@ -26,10 +26,7 @@ adrs: [0026, 0031, 0067]
 
 - `frontend/vite-plugins/` — the resolver that maps the OpenCode packages to the vendored source.
 - `frontend/opencode/` — vendored, never edited.
-- `frontend/src/components/project/project-chat-tab.tsx` — the render root, the overlay and the fetch adapter.
-- `frontend/src/components/project/project-states.tsx` — the chat area's state panels and their actions.
-- `frontend/src/components/project/use-opencode-connection.ts` — connect, its retry while starting, and the problems the panels show.
-- `frontend/src/components/project/opencode-overrides.css` — the `.oc-chat-only` rules that hide everything but the chat.
+- `frontend/src/components/project/` — the chat tab's render root, overlay and fetch adapter, connect and its state panels, and the `.oc-chat-only` overrides.
 - `frontend/src/pages/store/builder-page.tsx` — the Builder chat page that mounts the same component.
 - `proxy/cmd/agent-control/opencode_proxy.go` — Basic auth injection in front of OpenCode.
 
