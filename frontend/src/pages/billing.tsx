@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/solid-query';
 import { createAppQuery } from '~/lib/create-app-query';
 import { api, type Project } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { Wallet, Settings } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { SettingsSection } from '~/components/settings/settings-section';
@@ -29,9 +28,9 @@ interface TenantBudget {
 export function BillingPage() {
   const qc = useQueryClient();
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageTenantBudget);
+  const canManage = () => hasPermission('can_manage_tenant_budget');
   const canSeeSettings = () =>
-    hasPermission(Permission.manageProjectBudgetSettings) || hasPermission(Permission.manageProjectTimeoutSettings);
+    hasPermission('can_manage_project_budget_settings') || hasPermission('can_manage_project_timeout_settings');
 
   const [editing, setEditing] = createSignal(false);
   const [draftBudget, setDraftBudget] = createSignal('');

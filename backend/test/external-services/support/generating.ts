@@ -1,6 +1,5 @@
 import { resolve } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Perms } from '../../../src/permission/permission.constants';
 import { addMember, type MemberFixture } from '../../support/project-fixtures';
 import type { PersonFixture } from './fixtures';
 import { evolvedBuiltIn, type EvolvedBuiltIns } from './evolved-built-ins';
@@ -112,7 +111,7 @@ export interface ConfiguringProject extends GateCallerFixture {
 
 export async function configuringProject(app: NestFastifyApplication): Promise<ConfiguringProject> {
   const caller = await gateCaller(app);
-  return { ...caller, configurer: await addMember(app, caller.tenant, [Perms.configureProjectExternalServices]) };
+  return { ...caller, configurer: await addMember(app, caller.tenant, ['can_configure_project_external_services']) };
 }
 
 export function projectServiceUrl(project: GateCallerFixture, serviceId: string): string {

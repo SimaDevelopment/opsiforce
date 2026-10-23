@@ -9,7 +9,6 @@ import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { UserService } from '../user/user.service';
 import { RequirePermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 
 @Controller('projects/:projectId/export')
 export class ProjectExportController {
@@ -21,7 +20,7 @@ export class ProjectExportController {
   ) {}
 
   @Post()
-  @RequirePermission(Perms.exportProject)
+  @RequirePermission('can_export_project')
   async start(
     @Param('projectId') projectId: string,
     @CurrentTenant() tenant: TenantContext,
@@ -38,7 +37,7 @@ export class ProjectExportController {
   }
 
   @Get('job')
-  @RequirePermission(Perms.exportProject)
+  @RequirePermission('can_export_project')
   async latestJob(
     @Param('projectId') projectId: string,
     @CurrentTenant() tenant: TenantContext,
@@ -49,7 +48,7 @@ export class ProjectExportController {
   }
 
   @Get('job/stream')
-  @RequirePermission(Perms.exportProject)
+  @RequirePermission('can_export_project')
   async jobStream(
     @Param('projectId') projectId: string,
     @CurrentTenant() tenant: TenantContext,
@@ -98,7 +97,7 @@ export class ProjectExportController {
   }
 
   @Get('download')
-  @RequirePermission(Perms.exportProject)
+  @RequirePermission('can_export_project')
   async download(
     @Param('projectId') projectId: string,
     @Query('jobId') jobId: string | undefined,

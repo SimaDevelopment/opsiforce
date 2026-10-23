@@ -10,7 +10,6 @@ import {
   type PlatformStorageView,
 } from '~/api/platform-storage';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '~/components/ui/popover';
 import { formatBytes, formatShare } from '~/lib/format-bytes';
@@ -535,7 +534,7 @@ function PendingDeletionBadge(props: { tenant: PlatformStorageTenant }) {
 
   const pending = () => props.tenant.pendingDeletion;
   const visible = () => pending().error || pending().count > 0 || pending().bytes > 0;
-  const canCleanup = () => hasPermission(Permission.managePlatformStorage) && pending().count > 0;
+  const canCleanup = () => hasPermission('can_manage_platform_storage') && pending().count > 0;
 
   const badgeBody = () => (
     <>

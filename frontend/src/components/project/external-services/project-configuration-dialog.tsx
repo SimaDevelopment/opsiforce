@@ -34,7 +34,6 @@ import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import { Spinner } from '~/components/ui/spinner';
 import { ChevronRight, Lock, Unplug } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
 
 export function ProjectConfigurationDialog(props: {
@@ -173,8 +172,7 @@ function DisconnectSection(props: {
 }) {
   const { hasPermission } = usePermissions();
   const canDisconnect = () =>
-    hasPermission(Permission.configureProjectExternalServices) ||
-    hasPermission(Permission.manageTenantExternalServices);
+    hasPermission('can_configure_project_external_services') || hasPermission('can_manage_tenant_external_services');
   const disconnect = useDisconnectProjectService(
     () => props.environment,
     () => props.serviceId
@@ -272,7 +270,7 @@ function ProjectConfigurationEditor(props: {
     saveFailedMessage: 'The Project configuration could not be saved.',
   });
 
-  const canConfigure = () => hasPermission(Permission.configureProjectExternalServices);
+  const canConfigure = () => hasPermission('can_configure_project_external_services');
   const readOnly = () => !canConfigure() || editor.saving();
   const isDirty = () => editor.draft.isDirty();
 

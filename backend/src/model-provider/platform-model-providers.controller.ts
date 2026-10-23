@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
-import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { PlatformScope } from '../tenant/tenant.decorator';
 import { AgentCallerRefusalGuard } from './agent-caller-refusal.guard';
@@ -19,7 +18,7 @@ import type {
 
 @Controller('platform-model-providers')
 @PlatformScope()
-@RequirePermission(Perms.managePlatformModelProviders)
+@RequirePermission('can_manage_platform_model_providers')
 @UseGuards(AgentCallerRefusalGuard)
 export class PlatformModelProvidersController {
   constructor(private readonly platformService: PlatformModelProvidersService) {}

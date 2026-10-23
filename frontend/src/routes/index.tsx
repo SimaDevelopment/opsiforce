@@ -5,7 +5,6 @@ import { type Project } from '~/api/client';
 import { limitRefusalMessage } from '~/api/limits';
 import { useCreateDefaultProject } from '~/api/default-project-target';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { EXAMPLES, type Example } from '~/data/examples';
 import { ArrowUp, LoaderCircle, Upload } from '~/components/icons';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
@@ -43,7 +42,7 @@ function HomePage() {
   const navigate = useNavigate();
   const createDefaultProject = useCreateDefaultProject();
   const { hasPermission } = usePermissions();
-  const canImport = () => hasPermission(Permission.importProject);
+  const canImport = () => hasPermission('can_import_project');
   const [prompt, setPrompt] = createSignal('');
   const [focused, setFocused] = createSignal(false);
   const [importOpen, setImportOpen] = createSignal(false);

@@ -2,7 +2,6 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import {
   addMember,
@@ -70,7 +69,7 @@ describe('App routing of a Project’s backend key', () => {
 
   async function seededTenant(): Promise<SeededTenant> {
     const tenant = await createTenant(app);
-    const admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+    const admin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/projects',

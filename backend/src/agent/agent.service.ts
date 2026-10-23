@@ -8,7 +8,6 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
-import { Perms } from '../permission/permission.constants';
 import { and, asc, desc, eq, isNull, not, or } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentSettings, agents, environments, projectEnvironments } from '../../db/schema';
@@ -137,7 +136,7 @@ export class AgentService {
 
   async listStore(caller: AgentCaller, rawFilter?: string, query?: string): Promise<AgentSummary[]> {
     const filter = parseFilter(rawFilter);
-    if (filter === 'disabled' && !caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
+    if (filter === 'disabled' && !caller.canManageAgents) throw new MissingPermissionException('can_manage_agents');
 
     const rows = await this.repository.list(
       caller.tenantId,
@@ -557,7 +556,7 @@ export class AgentService {
     if (!canDisableAgent(agent, caller.userId)) {
       throw notDisableable('The Skill & Agent Builder is always available to whoever may author');
     }
-    if (!caller.canManageAgents) throw new MissingPermissionException(Perms.manageAgents);
+    if (!caller.canManageAgents) throw new MissingPermissionException('can_manage_agents');
     return agent;
   }
 

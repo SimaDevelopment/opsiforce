@@ -13,7 +13,7 @@ Every Custom Skill and Custom Agent belongs to exactly one Organization. Opsifor
 - **Visibility is coherent downward.** A public or Built-in Agent may carry only public Skills. The API refuses to add a private Skill to one, to make an Agent public while it carries one, and to publish an Agent that carries one.
 - **Disable and Delete.** Disable takes an artifact out of use and is reversible ([ADR-0070](0070-skills-and-agents-are-disabled-per-organization-like-projects.md)). Delete is permanent and refused while the artifact is in use: a Skill while any Agent carries it, naming the Agents; a Custom Agent while any ordinary Project runs on it. A Skill that has a Version, and a Custom Agent published beyond Development, are disabled before they are deleted.
 - **Nothing withdraws a published Version.** A Built-in Skill that leaves the image stops being offered, and its stored Versions stay so Agents that pinned it keep working.
-- **Standalone collapses to instance-admin.** Both strings are in the Helm static-auth list and map through `SSO_GROUP_MAP`; a single-operator install is the whole Organization.
+- **Standalone collapses to instance-admin.** The static identity holds both, and an identity provider grants them through `SSO_GROUP_MAP`; a single-operator install is the whole Organization.
 
 ## Considered options
 
@@ -30,5 +30,5 @@ Every Custom Skill and Custom Agent belongs to exactly one Organization. Opsifor
 - **A published Skill Version on an existing Custom Agent Project cannot be stopped.** The remedy is recreating the Project. On a Built-in Agent, removing the Skill reaches existing Projects through delivery. The publish-time gate is the only defence against bad content.
 - **A departed member's private artifacts are unreachable.** No one else can see them, and the platform has no departure hook: `users` has no active or deleted column and nothing deletes a user row. The `RESTRICT` foreign key forces any future user-deletion path to decide.
 - A holder of `can_manage_skills` or `can_manage_agents` holds it in every Organization they belong to.
-- Each permission string lives in five places: the Pulumi permission list, a Pulumi group, the backend `Perms`, the frontend constant and the Helm static-auth list.
+- Each permission string is written twice: in the backend's `PERMISSIONS`, which the frontend and the static identity derive from ([ADR-0096](0096-the-frontend-and-the-static-identity-derive-their-permissions-from-the-backends-list.md)), and in the Keycloak configurator's role list and bundle.
 - The Skill and Agent controllers take a class-level `@RequirePermission` and relax it per read route, never the reverse, because the global guard lets undecorated routes through.

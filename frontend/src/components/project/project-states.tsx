@@ -8,7 +8,6 @@ import { usePermissions } from '~/api/permissions';
 import { projectKeys } from '~/api/projects';
 import { AlertTriangle, Ban, MessageSquare, Unplug } from '~/components/icons';
 import { Button } from '~/components/ui/button';
-import { Permission } from '~/constants/permissions';
 import { ProjectStatePanel } from './project-state-panel';
 import type { ConnectionProblem } from './use-opencode-connection';
 
@@ -19,7 +18,7 @@ interface EnvironmentRef {
 
 function useCanRestart(): () => boolean {
   const { hasPermission } = usePermissions();
-  return () => hasPermission(Permission.restartProject);
+  return () => hasPermission('can_restart_project');
 }
 
 function RestartProjectButton(props: EnvironmentRef & { variant?: 'default' | 'outline' }) {
@@ -49,7 +48,7 @@ export function ProjectConnecting(props: { starting: boolean }) {
 export function ProjectDisabled(props: { projectId: string }) {
   const qc = useQueryClient();
   const { hasPermission } = usePermissions();
-  const canEnable = () => hasPermission(Permission.disableProject);
+  const canEnable = () => hasPermission('can_disable_project');
 
   const enableProject = createMutation(() => ({
     mutationFn: () => api.post<Project>(`/projects/${props.projectId}/enable`),

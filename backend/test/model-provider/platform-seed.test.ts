@@ -4,7 +4,6 @@ import { db } from '../../db';
 import { modelProviders } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { CUTOVER_PLATFORM_PROVIDER_ROWS } from '../support/cutover-platform-providers';
 import { startFakeBifrost, type FakeBifrost, type RecordedBifrostWrite } from '../support/fake-bifrost';
 import { startFakeVendorApi, type FakeVendorApi } from './support/fake-vendor-api';
@@ -67,7 +66,7 @@ describe('the fresh-install seed of the built-in model providers', () => {
 
   async function newTenantRows(booted: PublicApiTestApp): Promise<TenantRow[]> {
     const tenant = await createTenant(booted.app);
-    const admin = await addMember(booted.app, tenant, [Perms.manageTenantModelProviders]);
+    const admin = await addMember(booted.app, tenant, ['can_manage_tenant_model_providers']);
     const res = await booted.app.inject({ method: 'GET', url: '/api/model-providers', headers: admin.headers });
     expect(res.statusCode, res.body).toBe(200);
     return res

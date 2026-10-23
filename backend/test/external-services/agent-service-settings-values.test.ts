@@ -11,7 +11,6 @@ import { AgentImportService } from '../../src/agent/agent-import.service';
 import { AgentProfileService } from '../../src/agent/agent-profile.service';
 import { AgentService } from '../../src/agent/agent.service';
 import type { AgentCaller, AgentDetail, AgentRow } from '../../src/agent/agent.types';
-import { Perms } from '../../src/permission/permission.constants';
 import { ProjectService } from '../../src/project/project.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, type MemberFixture } from '../support/project-fixtures';
@@ -88,7 +87,7 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
     });
     const saved = await saveCustomServiceConfiguration(app, admin, service.id, { apiToken: 'repositories-token' });
     expect(saved.statusCode, saved.body).toBe(200);
-    manager = await addMember(app, admin.tenant, [Perms.manageAgents, Perms.configureProjectExternalServices]);
+    manager = await addMember(app, admin.tenant, ['can_manage_agents', 'can_configure_project_external_services']);
     const seeded = await seedLiveAgent(admin.tenant.tenantId, manager.userId);
     const [row] = await db.select().from(agents).where(eq(agents.id, seeded.id));
     agent = { ...row, disabled: false };
@@ -214,7 +213,7 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
         manifest: { ...REPOSITORIES_MANIFEST, projectForm },
       });
       await saveCustomServiceConfiguration(app, importingAdmin, here.id, { apiToken: 'here-token' });
-      const member = await addMember(app, importingAdmin.tenant, [Perms.manageAgents, Perms.manageSkills]);
+      const member = await addMember(app, importingAdmin.tenant, ['can_manage_agents', 'can_manage_skills']);
       const [skill] = await db.select({ id: skills.id }).from(skills).where(eq(skills.externalServiceId, here.id));
       return {
         caller: { tenantId: importingAdmin.tenant.tenantId, userId: member.userId, canManageAgents: true },
@@ -257,7 +256,7 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
     await expect(setSettings({ pullRequests: false }, false)).rejects.toMatchObject({
       response: {
         code: 'missing_permission',
-        message: expect.stringContaining(Perms.configureProjectExternalServices),
+        message: expect.stringContaining('can_configure_project_external_services'),
       },
     });
   });

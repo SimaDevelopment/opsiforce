@@ -1,6 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
 import { AgentCallerRefusalGuard } from '../model-provider/agent-caller-refusal.guard';
-import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { PlatformScope } from '../tenant/tenant.decorator';
 import type {
@@ -13,7 +12,7 @@ import { LinkedAccountsService } from './linked-accounts.service';
 
 @Controller('platform-model-providers')
 @PlatformScope()
-@RequirePermission(Perms.managePlatformModelProviders)
+@RequirePermission('can_manage_platform_model_providers')
 @UseGuards(AgentCallerRefusalGuard)
 export class PlatformLinkedAccountsController {
   constructor(private readonly linkedAccountsService: LinkedAccountsService) {}

@@ -1,5 +1,4 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, UseFilters } from '@nestjs/common';
-import { Perms } from '../../permission/permission.constants';
 import { RequirePermission } from '../../permission/permission.guard';
 import type { PublishJobResponse } from '../../publish/publish.types';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
@@ -16,7 +15,7 @@ import {
 } from './service-publishing';
 
 @Controller('external-services/services')
-@RequirePermission(Perms.manageTenantExternalServices)
+@RequirePermission('can_manage_tenant_external_services')
 @UseFilters(CustomServiceRefusalFilter, InvalidConfigurationFilter)
 export class ServicePublishingController {
   constructor(

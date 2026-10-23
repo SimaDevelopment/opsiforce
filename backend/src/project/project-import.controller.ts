@@ -10,7 +10,6 @@ import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { UserService } from '../user/user.service';
 import { RequirePermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 
 @Controller('projects')
@@ -24,7 +23,7 @@ export class ProjectImportController {
   ) {}
 
   @Post('import')
-  @RequirePermission(Perms.importProject)
+  @RequirePermission('can_import_project')
   async start(
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext,
@@ -39,7 +38,7 @@ export class ProjectImportController {
     try {
       return await this.uploadService.consumeUpload(session, filePath, async () => {
         const userId = await this.userService.resolveUserId(user, tenant.tenantId);
-        const canManageWorkspaces = hasPermission(getGroupsHeader(req), Perms.manageWorkspaces);
+        const canManageWorkspaces = hasPermission(getGroupsHeader(req), 'can_manage_workspaces');
         return this.importService.startImport({
           tenantId: tenant.tenantId,
           workspaceId: dto?.workspaceId?.trim() || null,
@@ -58,7 +57,7 @@ export class ProjectImportController {
   }
 
   @Get(':projectId/import/job')
-  @RequirePermission(Perms.importProject)
+  @RequirePermission('can_import_project')
   async latestJob(
     @Param('projectId') projectId: string,
     @CurrentTenant() tenant: TenantContext,
@@ -69,7 +68,7 @@ export class ProjectImportController {
   }
 
   @Get(':projectId/import/job/stream')
-  @RequirePermission(Perms.importProject)
+  @RequirePermission('can_import_project')
   async jobStream(
     @Param('projectId') projectId: string,
     @CurrentTenant() tenant: TenantContext,

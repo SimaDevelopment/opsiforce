@@ -11,7 +11,6 @@ import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Switch, SwitchControl, SwitchThumb } from '~/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
-import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
 
 const NOT_CARRIED_WARNING =
@@ -58,7 +57,7 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
     skill.kind === 'platform'
       ? false
       : hasPermission(
-          skill.kind === 'service' ? Permission.configureProjectExternalServices : Permission.manageProjectSkills
+          skill.kind === 'service' ? 'can_configure_project_external_services' : 'can_manage_project_skills'
         );
   const serviceOf = (slug: string | null) => services.data?.services.find((service) => service.slug === slug);
   const confirmationText = () => (confirming() ? NOT_CARRIED_WARNING : undefined);

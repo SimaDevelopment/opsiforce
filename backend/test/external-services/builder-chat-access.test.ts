@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BuilderModule } from '../../src/builder/builder.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { ProxyController } from '../../src/proxy/proxy.controller';
 import { addMember, addNamedEnvironment, type MemberFixture } from '../support/project-fixtures';
 import { proxyHeaders } from '../support/proxy-identity';
@@ -36,8 +35,8 @@ describe('who may open and chat in an External Service Builder chat', () => {
     await ensureExternalServiceBuilder();
     admin = await tenantAdmin(app);
     service = await createCustomService(app, admin, 'Trello', 'trello');
-    colleague = await addMember(app, admin.tenant, [Perms.manageTenantExternalServices]);
-    memberWithout = await addMember(app, admin.tenant, [Perms.manageSkills, Perms.manageAgents]);
+    colleague = await addMember(app, admin.tenant, ['can_manage_tenant_external_services']);
+    memberWithout = await addMember(app, admin.tenant, ['can_manage_skills', 'can_manage_agents']);
   });
 
   afterAll(async () => {
@@ -83,7 +82,7 @@ describe('who may open and chat in an External Service Builder chat', () => {
     const withoutPermission = proxyHeaders({
       userId: admin.keycloakId,
       tenants: [admin.tenant.name],
-      permissions: [Perms.usePublicApi],
+      permissions: ['can_use_public_api'],
     });
 
     expect((await openChat(withoutPermission)).statusCode).toBe(403);

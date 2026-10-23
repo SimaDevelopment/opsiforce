@@ -30,7 +30,6 @@ import {
   type Revealed,
 } from './support/generating';
 import type { EvolvedBuiltIns } from './support/evolved-built-ins';
-import { Perms } from '../../src/permission/permission.constants';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createProject, createTenant } from '../support/project-fixtures';
 
@@ -256,7 +255,7 @@ describe('a Project that enables a service that generates Project form values', 
     await forgetPlatformServiceConfiguration(KEYS_SERVICE);
     await saveServiceConfiguration(app, await platformOperator(app), serviceId, READY_KEYS);
     const tenant = await createTenant(app);
-    const editor = await addMember(app, tenant, [Perms.manageAgents, Perms.configureProjectExternalServices]);
+    const editor = await addMember(app, tenant, ['can_manage_agents', 'can_configure_project_external_services']);
     const agentId = (await seedLiveAgent(tenant.tenantId, editor.userId, { visibility: 'private' })).id;
     const projectId = await createProject(app, tenant, { agentId, createdBy: editor.userId });
 

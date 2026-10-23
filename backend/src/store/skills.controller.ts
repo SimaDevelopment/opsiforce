@@ -14,7 +14,6 @@ import {
 } from '@nestjs/common';
 import type { MultipartFile } from '@fastify/multipart';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { Perms } from '../permission/permission.constants';
 import { RelaxPermission, RequirePermission } from '../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
@@ -39,7 +38,7 @@ interface MultipartRequest extends FastifyRequest {
 }
 
 @Controller('skills')
-@RequirePermission(Perms.manageSkills)
+@RequirePermission('can_manage_skills')
 export class SkillsController {
   constructor(
     private readonly skillService: SkillService,
@@ -216,7 +215,7 @@ export class SkillsController {
     return {
       tenantId: tenant.tenantId,
       userId: await this.userService.resolveUserId(user, tenant.tenantId),
-      canManageSkills: hasPermission(getGroupsHeader(req), Perms.manageSkills),
+      canManageSkills: hasPermission(getGroupsHeader(req), 'can_manage_skills'),
     };
   }
 }

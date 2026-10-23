@@ -4,7 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { agentProfileSkills, agents, skills } from '../../db/schema';
 import { AgentProfileService } from '../../src/agent/agent-profile.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { ProjectService } from '../../src/project/project.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createTenant } from '../support/project-fixtures';
@@ -64,7 +63,7 @@ describe('service settings against a service whose targets are required', () => 
 
   it('creates the configuration "Needs attention" without running the save hook until someone picks the targets, whose save hook gets no previous configuration', async () => {
     const tenant = await createTenant(app);
-    const manager = await addMember(app, tenant, [Perms.manageAgents, Perms.configureProjectExternalServices]);
+    const manager = await addMember(app, tenant, ['can_manage_agents', 'can_configure_project_external_services']);
     const seeded = await seedLiveAgent(tenant.tenantId, manager.userId);
     const [agentRow] = await db.select().from(agents).where(eq(agents.id, seeded.id));
     const agent = { ...agentRow, disabled: false };

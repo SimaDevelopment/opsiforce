@@ -5,7 +5,6 @@ import { db } from '../../db';
 import { modelProviders } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { TenantService } from '../../src/tenant/tenant.service';
 import { startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { tenantName } from '../support/proxy-identity';
@@ -103,12 +102,12 @@ describe('adding, editing and deleting a Custom model provider', () => {
 
   async function seededTenant(): Promise<{ tenant: TenantFixture; admin: MemberFixture }> {
     const tenant = await createTenant(app);
-    return { tenant, admin: await addMember(app, tenant, [Perms.manageTenantModelProviders]) };
+    return { tenant, admin: await addMember(app, tenant, ['can_manage_tenant_model_providers']) };
   }
 
   async function seededTenantNamed(name: string): Promise<{ tenant: TenantFixture; admin: MemberFixture }> {
     const tenant = { name, tenantId: (await app.get(TenantService).getOrCreateTenant(name)).id };
-    return { tenant, admin: await addMember(app, tenant, [Perms.manageTenantModelProviders]) };
+    return { tenant, admin: await addMember(app, tenant, ['can_manage_tenant_model_providers']) };
   }
 
   async function projectOf(tenant: TenantFixture): Promise<string> {
@@ -571,7 +570,7 @@ describe('adding, editing and deleting a Custom model provider', () => {
     it('refuses a member without can_manage_tenant_model_providers on every route', async () => {
       const { tenant, admin } = await seededTenant();
       expect((await create(admin, officialKey())).statusCode).toBe(201);
-      const member = await addMember(app, tenant, [Perms.manageTenantBudget, Perms.manageTenantDefaults]);
+      const member = await addMember(app, tenant, ['can_manage_tenant_budget', 'can_manage_tenant_defaults']);
 
       const responses = await Promise.all([
         app.inject({ method: 'GET', url: '/api/model-providers/creation-rules', headers: member.headers }),

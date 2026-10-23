@@ -5,7 +5,6 @@ import { linkedAccounts, projectVirtualKeys } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { startFakeChatGptAuth, type FakeChatGptAuth, type RefreshReply } from './support/fake-chatgpt-auth';
 import {
@@ -99,7 +98,7 @@ describe('the lifecycle of a Linked account', () => {
 
   async function seededTenant(): Promise<SeededTenant> {
     const tenant = await createTenant(app);
-    return { tenant, admin: await addMember(app, tenant, [Perms.manageTenantModelProviders]) };
+    return { tenant, admin: await addMember(app, tenant, ['can_manage_tenant_model_providers']) };
   }
 
   async function projectOf(tenant: TenantFixture): Promise<string> {
@@ -349,7 +348,7 @@ describe('the lifecycle of a Linked account', () => {
     });
 
     it('disconnects custom-openai-1 for every Organization when a platform admin disconnects it', async () => {
-      const platformAdmin = await addMember(app, await createTenant(app), [Perms.managePlatformModelProviders]);
+      const platformAdmin = await addMember(app, await createTenant(app), ['can_manage_platform_model_providers']);
       const tenant = await createTenant(app);
       bifrost.setProviders(['openai', 'anthropic']);
       const projectId = await projectOf(tenant);
@@ -508,7 +507,7 @@ describe('the lifecycle of a Linked account', () => {
     });
 
     it('applies to platform Linked accounts: custom-openai-1 leaves every Organization’s chat keys', async () => {
-      const platformAdmin = await addMember(app, await createTenant(app), [Perms.managePlatformModelProviders]);
+      const platformAdmin = await addMember(app, await createTenant(app), ['can_manage_platform_model_providers']);
       const tenant = await createTenant(app);
       bifrost.setProviders(['openai', 'anthropic']);
       const projectId = await projectOf(tenant);

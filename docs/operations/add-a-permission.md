@@ -13,10 +13,10 @@ kind: operations
 
 ## Steps
 
-1. Pulumi. In `packages/infra/pulumi/keycloak-configurator/opsiforce/`, add the role to `OPSIFORCE_ALL_PERMISSIONS` and to one bundle: `OPSIFORCE_ADMIN_GROUP_PERMISSIONS` for an Organization permission, which gets no group of its own; `OPSIFORCE_PLATFORM_ADMIN_GROUP_PERMISSIONS` for a platform-scope one, which also gets its own group with `createGroupWithRoles()`. Never put one permission in both bundles.
-2. Frontend. Add the constant to `frontend/src/constants/permissions.ts` and gate the UI with `hasPermission()`.
-3. Backend. `GET /api/permissions` returns the new role automatically, so gating works with no backend change; to enforce it, add the string to `Perms` in `backend/src/permission/permission.constants.ts` and guard the routes with `@RequirePermission`. A route without the guard stays open to any authenticated member.
-4. Local. The static-mode identity mirrors the permission enum in the `opsiforce-proxy` chart's hardcoded list; add the role there so local development keeps full access ([Local orchestration](local-orchestration.md)).
+1. Backend. Add the name to `PERMISSIONS` in `backend/src/permission/permission.constants.ts`. This is Opsiforce's only copy: the frontend and the static identity read it from there ([ADR-0096](../adr/0096-the-frontend-and-the-static-identity-derive-their-permissions-from-the-backends-list.md)). To enforce it, guard the routes with `@RequirePermission('can_…')`; a route without the guard stays open to any authenticated member. `GET /api/permissions` returns the new name with no further change.
+2. Frontend. Gate the UI with `hasPermission('can_…')`. The compiler accepts only names in `PERMISSIONS`, on both sides.
+3. Keycloak. In `packages/infra/pulumi/keycloak-configurator/opsiforce/`, add the role to `OPSIFORCE_ALL_PERMISSIONS` and to one bundle: `OPSIFORCE_ADMIN_GROUP_PERMISSIONS` for an Organization permission, which gets no group of its own; `OPSIFORCE_PLATFORM_ADMIN_GROUP_PERMISSIONS` for a platform-scope one, which also gets its own group with `createGroupWithRoles()`. Never put one permission in both bundles. The Keycloak Configurator workflow previews the change on its pull request and applies it to the development realm on merge to `main`; production gets the role when `production-keycloak-configurator` is promoted, no later than the `production-opsiforce` release that gates on it.
+4. Local. Tilt reloads when `PERMISSIONS` changes and redeploys `opsiforce-proxy`, so the static identity holds the new permission without a restart ([Local orchestration](local-orchestration.md)).
 
 ## Verify
 

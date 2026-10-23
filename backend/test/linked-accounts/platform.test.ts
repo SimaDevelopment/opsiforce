@@ -10,7 +10,6 @@ import { LinkedAccountsService } from '../../src/linked-accounts/linked-accounts
 import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { DOCK_BASE_URL, startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { FAKE_USER_CODE, startFakeChatGptAuth, type FakeChatGptAuth } from './support/fake-chatgpt-auth';
 import {
@@ -104,7 +103,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   async function platformAdmin(): Promise<MemberFixture> {
     const tenant = await createTenant(app);
-    return addMember(app, tenant, [Perms.managePlatformModelProviders]);
+    return addMember(app, tenant, ['can_manage_platform_model_providers']);
   }
 
   function startSignIn(admin: MemberFixture) {
@@ -339,7 +338,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       try {
         const tenant = await createTenant(app);
         const projectId = await projectOf(tenant);
-        const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+        const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
         expect(chatProvidersOf(projectId)).not.toContain('custom-openai-1');
 
         await signIn(admin);
@@ -424,7 +423,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
     it('is refused without the platform permission', async () => {
       const tenant = await createTenant(app);
-      const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
 
       const responses = await Promise.all([
         startSignIn(orgAdmin),
@@ -458,7 +457,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       const admin = await platformAdmin();
       const tenant = await createTenant(app);
       const projectId = await projectOf(tenant);
-      const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
 
       await startSignIn(admin);
       await statusOf(admin);
@@ -497,7 +496,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       }
 
       await db.update(linkedAccounts).set({ credential: null });
-      const orgAdmin = await addMember(app, first, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, first, ['can_manage_tenant_model_providers']);
       const saved = await app.inject({
         method: 'PUT',
         url: '/api/model-providers/formats/openai',

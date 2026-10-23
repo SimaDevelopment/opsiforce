@@ -1,7 +1,6 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ProjectConfigurationCarry } from '../../src/external-services/configuration/project-configuration-carry';
-import { Perms } from '../../src/permission/permission.constants';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { addMember, type MemberFixture } from '../support/project-fixtures';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
@@ -55,7 +54,7 @@ describe('Publish (App) carrying Project configurations', () => {
     [, sales] = mailboxIds(await configurePlatformService(app, FIXTURE_SERVICE, READY_FIXTURE_CRM)) as [string, string];
     development = await gateCaller(app);
     production = await productionCaller(app, development);
-    member = await addMember(app, development.tenant, [Perms.usePublicApi]);
+    member = await addMember(app, development.tenant, ['can_use_public_api']);
     recordedHooks().length = 0;
   });
 

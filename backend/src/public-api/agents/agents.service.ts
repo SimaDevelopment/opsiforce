@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import type { AgentCaller } from '../../agent/agent.types';
-import { Perms } from '../../permission/permission.constants';
 import { assertPermission, callingProjectOf, chatProjectIdOf, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { AgentMapper } from './agents.mapper';
@@ -41,7 +40,7 @@ export class PublicAgentsService {
   }
 
   async create(caller: Caller, body: CreateAgent): Promise<AgentDetailDto> {
-    assertPermission(caller, Perms.manageAgents);
+    assertPermission(caller, 'can_manage_agents');
     return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.create(scopeOf(caller), body)));
   }
 
@@ -75,7 +74,7 @@ export class PublicAgentsService {
   private async scopeAfterVisibleRead(caller: Caller, agentId: string): Promise<AgentCaller> {
     const scope = scopeOf(caller);
     await mappingStoreErrors(() => this.agents.findOne(scope, agentId));
-    assertPermission(caller, Perms.manageAgents);
+    assertPermission(caller, 'can_manage_agents');
     return scope;
   }
 }
@@ -84,7 +83,7 @@ function scopeOf(caller: Caller): AgentCaller {
   return {
     tenantId: caller.tenant.id,
     userId: caller.user.platformId,
-    canManageAgents: caller.permissions.has(Perms.manageAgents),
+    canManageAgents: caller.permissions.has('can_manage_agents'),
     ...callingProjectOf(caller),
   };
 }

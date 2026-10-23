@@ -1,6 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Perms } from '../../src/permission/permission.constants';
 import { addMember, createTenant } from '../support/project-fixtures';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
 
@@ -38,9 +37,9 @@ describe('who may administer the platform External Services', () => {
 
   it('refuses the Organization-scope External Services permissions on the platform services', async () => {
     const res = await listServicesAs([
-      Perms.manageTenantExternalServices,
-      Perms.configureProjectExternalServices,
-      Perms.manageProjectSkills,
+      'can_manage_tenant_external_services',
+      'can_configure_project_external_services',
+      'can_manage_project_skills',
     ]);
 
     expect(res.statusCode).toBe(403);

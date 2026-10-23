@@ -4,7 +4,6 @@ import { createAppQuery } from '~/lib/create-app-query';
 import { toast } from 'solid-sonner';
 import { api, type TimeoutDefaults, type BudgetDefaults } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { Clock, CircleDollarSign, SlidersHorizontal } from '~/components/icons';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '~/components/ui/tabs';
 import { Button } from '~/components/ui/button';
@@ -17,8 +16,8 @@ type Scope = 'global' | 'tenant';
 
 export function DefaultsPage() {
   const { hasPermission } = usePermissions();
-  const canPlatform = () => hasPermission(Permission.managePlatformDefaults);
-  const canTenant = () => hasPermission(Permission.manageTenantDefaults);
+  const canPlatform = () => hasPermission('can_manage_platform_defaults');
+  const canTenant = () => hasPermission('can_manage_tenant_defaults');
   const defaultScope = createMemo<Scope>(() => (canPlatform() ? 'global' : 'tenant'));
   const [scope, setScope] = createSignal<Scope>(defaultScope());
 

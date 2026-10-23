@@ -2,7 +2,6 @@ import { For, Match, Show, Switch, createMemo, createSignal } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { useProjects } from '~/api/projects';
 import {
   useDeleteProjectEnvironment,
@@ -34,12 +33,12 @@ export interface EnvironmentsPopoverProps {
 
 export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const { hasPermission } = usePermissions();
-  const canManageAuth = () => hasPermission(Permission.manageProjectAuthSettings);
-  const canRestart = () => hasPermission(Permission.restartProject);
-  const canDelete = () => hasPermission(Permission.deleteEnvironment);
-  const canPublish = () => hasPermission(Permission.publishProject);
-  const canManageVariables = () => hasPermission(Permission.manageEnvironmentVariables);
-  const canSchedules = () => hasPermission(Permission.manageSchedules);
+  const canManageAuth = () => hasPermission('can_manage_project_auth_settings');
+  const canRestart = () => hasPermission('can_restart_project');
+  const canDelete = () => hasPermission('can_delete_environment');
+  const canPublish = () => hasPermission('can_publish_project');
+  const canManageVariables = () => hasPermission('can_manage_environment_variables');
+  const canSchedules = () => hasPermission('can_manage_schedules');
 
   const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);

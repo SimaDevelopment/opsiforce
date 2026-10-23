@@ -1,6 +1,5 @@
 import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
-import { Perms } from '../permission/permission.constants';
 import { RequireAnyPermission } from '../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
@@ -10,7 +9,7 @@ import { BuilderChatService } from './builder-chat.service';
 import type { BuilderChatCaller, BuilderChatSummary, BuilderSubjectRef } from './builder.types';
 
 @Controller('builder')
-@RequireAnyPermission([Perms.manageSkills, Perms.manageAgents, Perms.manageTenantExternalServices])
+@RequireAnyPermission(['can_manage_skills', 'can_manage_agents', 'can_manage_tenant_external_services'])
 export class BuilderController {
   constructor(
     private readonly chats: BuilderChatService,
@@ -33,9 +32,9 @@ export class BuilderController {
     return {
       tenantId: tenant.tenantId,
       userId: await this.userService.resolveUserId(user, tenant.tenantId),
-      canManageSkills: hasPermission(groups, Perms.manageSkills),
-      canManageAgents: hasPermission(groups, Perms.manageAgents),
-      canManageTenantExternalServices: hasPermission(groups, Perms.manageTenantExternalServices),
+      canManageSkills: hasPermission(groups, 'can_manage_skills'),
+      canManageAgents: hasPermission(groups, 'can_manage_agents'),
+      canManageTenantExternalServices: hasPermission(groups, 'can_manage_tenant_external_services'),
     };
   }
 }

@@ -23,13 +23,12 @@ import {
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { Bot, ChevronRight, Plus, Upload } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { SORT_OPTIONS, createSearchDraft, filterOptions, sortStoreRows, type StoreListProps } from './store-filters';
 
 export function AgentsListPage(props: StoreListProps) {
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageAgents);
-  const canImport = () => canManage() && hasPermission(Permission.manageSkills);
+  const canManage = () => hasPermission('can_manage_agents');
+  const canImport = () => canManage() && hasPermission('can_manage_skills');
   const search = createSearchDraft(
     () => props.query,
     (query) => props.onQuery(query)

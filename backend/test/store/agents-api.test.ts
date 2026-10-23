@@ -23,7 +23,6 @@ import {
 import { AgentController } from '../../src/agent/agent.controller';
 import { BUILDER_AGENT_SLUG, liveBuiltInSlugs, warmPooledCustomAgentsWhere } from '../../src/agent/agent-visibility';
 import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
-import { Perms } from '../../src/permission/permission.constants';
 import { RELAXED_PERMISSION_KEY } from '../../src/permission/permission.guard';
 import type { AgentCaller } from '../../src/agent/agent.types';
 import type { AgentService } from '../../src/agent/agent.service';
@@ -104,7 +103,7 @@ describe('the AgentController permission surface', () => {
   const readRoutes = ['findAll', 'listStore', 'models', 'findOne', 'delivery'];
 
   it('carries a class-level @RequirePermission for can_manage_agents', () => {
-    expect(Reflect.getMetadata('requiredPermission', AgentController)).toBe(Perms.manageAgents);
+    expect(Reflect.getMetadata('requiredPermission', AgentController)).toBe('can_manage_agents');
   });
 
   it('relaxes exactly the read routes', () => {
@@ -1078,7 +1077,7 @@ describe('disabling an agent for one Organization (ADR-0070)', () => {
     expect((await service.findOne(caller, makara)).disableable).toBe(true);
     expect(await code(service.setDisabled(caller, builder, true))).toBe('not_disableable');
     await expect(service.setDisabled({ ...caller, canManageAgents: false }, makara, true)).rejects.toThrow(
-      Perms.manageAgents
+      'can_manage_agents'
     );
   });
 

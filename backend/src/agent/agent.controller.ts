@@ -18,7 +18,6 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { contentDisposition } from '../files/file-content-types';
-import { Perms } from '../permission/permission.constants';
 import { RelaxPermission, RequirePermission } from '../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
@@ -58,7 +57,7 @@ import type {
 } from './agent.types';
 
 @Controller('agents')
-@RequirePermission(Perms.manageAgents)
+@RequirePermission('can_manage_agents')
 export class AgentController {
   constructor(
     private readonly agentService: AgentService,
@@ -166,8 +165,8 @@ export class AgentController {
   }
 
   private importUploadId(req: FastifyRequest, rawUploadId: string | undefined): string {
-    if (!hasPermission(getGroupsHeader(req), Perms.manageSkills)) {
-      throw new MissingPermissionException(Perms.manageSkills);
+    if (!hasPermission(getGroupsHeader(req), 'can_manage_skills')) {
+      throw new MissingPermissionException('can_manage_skills');
     }
     const uploadId = rawUploadId?.trim();
     if (!uploadId) throw new BadRequestException('An "uploadId" from a chunked upload session is required');
@@ -271,7 +270,7 @@ export class AgentController {
     @CurrentUser() user: UserContext
   ): Promise<AgentProfileSkillResponse[]> {
     return this.agentService.setServiceSettings(await this.caller(req, tenant, user), id, skillId, dto ?? {}, {
-      canConfigureProjects: hasPermission(getGroupsHeader(req), Perms.configureProjectExternalServices),
+      canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
     });
   }
 
@@ -372,7 +371,7 @@ export class AgentController {
 
   private copyGrants(req: FastifyRequest): AgentCopyGrants {
     return {
-      canConfigureProjects: hasPermission(getGroupsHeader(req), Perms.configureProjectExternalServices),
+      canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
     };
   }
 
@@ -380,7 +379,7 @@ export class AgentController {
     return {
       tenantId: tenant.tenantId,
       userId: await this.userService.resolveUserId(user, tenant.tenantId),
-      canManageAgents: hasPermission(getGroupsHeader(req), Perms.manageAgents),
+      canManageAgents: hasPermission(getGroupsHeader(req), 'can_manage_agents'),
     };
   }
 }

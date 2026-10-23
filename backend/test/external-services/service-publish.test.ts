@@ -13,7 +13,6 @@ import { ServiceConfigurationStore } from '../../src/external-services/configura
 import { PublishProbes } from '../../src/external-services/publishing/publish-probes';
 import { ServiceDefaultEnvironments } from '../../src/external-services/publishing/service-default-environments';
 import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
-import { Perms } from '../../src/permission/permission.constants';
 import { PublishController } from '../../src/publish/publish.controller';
 import { PublishModule } from '../../src/publish/publish.module';
 import { PROJECT_PUBLISH_QUEUE } from '../../src/publish/publish.types';
@@ -356,7 +355,10 @@ describe('publishing a Custom External Service through its Publish dialog', () =
   });
 
   it("sends a builder chat's Publish (App) to the service page, so Stop 2 cannot be skipped", async () => {
-    const publisher = await addMember(app, admin.tenant, [Perms.publishProject, Perms.manageTenantExternalServices]);
+    const publisher = await addMember(app, admin.tenant, [
+      'can_publish_project',
+      'can_manage_tenant_external_services',
+    ]);
 
     const res = await app.inject({
       method: 'POST',

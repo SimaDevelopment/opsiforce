@@ -11,7 +11,6 @@ import {
   workspaces,
 } from '../../db/schema';
 import { visibleAgentsWhere } from '../agent/agent-visibility';
-import { Perms } from '../permission/permission.constants';
 import { hasPermission } from '../permission/permission.utils';
 import { visibleSkillsWhere } from '../store/skill-visibility';
 import { TEST_PROJECT_KIND } from './project.types';
@@ -88,7 +87,7 @@ export interface HiddenProjectReach {
 
 export async function hiddenProjectReachOf(userId: string): Promise<HiddenProjectReach> {
   const [row] = await db.select({ groups: users.groups }).from(users).where(eq(users.id, userId)).limit(1);
-  return { managesTenantExternalServices: hasPermission(row?.groups ?? '', Perms.manageTenantExternalServices) };
+  return { managesTenantExternalServices: hasPermission(row?.groups ?? '', 'can_manage_tenant_external_services') };
 }
 
 export function reachableHiddenProjectsWhere(

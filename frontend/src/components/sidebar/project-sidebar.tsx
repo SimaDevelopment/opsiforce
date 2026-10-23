@@ -35,7 +35,6 @@ import {
   toFolderDragData,
   toProjectDragData,
 } from '~/lib/sidebar-dnd';
-import { Permission } from '~/constants/permissions';
 import { Boxes } from '~/components/icons';
 import { Spinner } from '~/components/ui/spinner';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
@@ -94,8 +93,8 @@ export function ProjectSidebar(props: { search: string }) {
 
   const privateWorkspacesDisabled = usePrivateWorkspacesDisabled();
 
-  const canManageWorkspaces = () => hasPermission(Permission.manageWorkspaces);
-  const canImport = () => hasPermission(Permission.importProject);
+  const canManageWorkspaces = () => hasPermission('can_manage_workspaces');
+  const canImport = () => hasPermission('can_import_project');
   const canCreateInPublic = () => canManageWorkspaces() || privateWorkspacesDisabled();
 
   const projectMatch = useMatch({ from: '/projects/$projectId', shouldThrow: false });

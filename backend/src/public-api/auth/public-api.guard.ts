@@ -1,7 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ForwardedIdentityService } from '../../identity/forwarded-identity.service';
-import { Perms } from '../../permission/permission.constants';
 import { parsePermissions } from '../../permission/permission.utils';
 import { IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from '../../tenant/tenant.decorator';
 import { TenantService } from '../../tenant/tenant.service';
@@ -54,7 +53,7 @@ export class PublicApiGuard implements CanActivate {
     if (!forwarded || !tenantContext) throw Errors.unauthenticated();
 
     const permissions = new Set(parsePermissions(forwarded.groups));
-    if (!permissions.has(Perms.usePublicApi)) throw Errors.permissionDenied(Perms.usePublicApi);
+    if (!permissions.has('can_use_public_api')) throw Errors.permissionDenied('can_use_public_api');
 
     const tenants = await this.resolveTenants(forwarded.groups, tenantContext);
     if (tenants.length > 1 && !request.headers[TENANT_NAME_HEADER]) {

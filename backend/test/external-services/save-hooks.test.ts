@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServiceUsage } from '../../db/schema';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { Perms } from '../../src/permission/permission.constants';
 import { addMember } from '../support/project-fixtures';
 import {
   builtInServiceId,
@@ -253,7 +252,7 @@ describe('after-save hooks, Rotate, Retry and Discard', () => {
     it('keeps Rotate, Retry and Discard of a Project configuration to its configurers', async () => {
       const project = await configuringProject(app);
       await saveProjectService(app, project, serviceId, {});
-      const member = { ...project, configurer: await addMember(app, project.tenant, [Perms.usePublicApi]) };
+      const member = { ...project, configurer: await addMember(app, project.tenant, ['can_use_public_api']) };
 
       expect((await rotateProjectService(app, member, serviceId, { field: 'localPart' })).statusCode).toBe(403);
       expect((await retryProjectServiceHook(app, member, serviceId)).statusCode).toBe(403);

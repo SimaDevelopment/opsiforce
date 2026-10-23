@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { BadRequestException, Body, Controller, Get, Param, Post, Res, UseFilters } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { contentDisposition } from '../../files/file-content-types';
-import { Perms } from '../../permission/permission.constants';
 import { RequirePermission } from '../../permission/permission.guard';
 import { ProjectImportUploadService } from '../../project/project-import-upload.service';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
@@ -16,7 +15,7 @@ import { ServiceCopies } from './service-copies';
 import type { ImportServiceRequest, ServiceCopy, ServiceCopyRequest, ServiceExportPreview } from './service-export';
 
 @Controller('external-services/services')
-@RequirePermission(Perms.manageTenantExternalServices)
+@RequirePermission('can_manage_tenant_external_services')
 @UseFilters(CustomServiceRefusalFilter)
 export class ServiceCopiesController {
   constructor(

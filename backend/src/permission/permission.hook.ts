@@ -1,6 +1,7 @@
+import type { Permission } from './permission.constants';
 import { getGroupsHeader, hasPermission } from './permission.utils';
 
-export function requirePermissionHook(routePrefix: string, permission: string) {
+export function requirePermissionHook(routePrefix: string, permission: Permission) {
   return async (
     request: { url: string; headers: Record<string, string | string[] | undefined> },
     reply: { code(statusCode: number): { send(payload: unknown): void } }

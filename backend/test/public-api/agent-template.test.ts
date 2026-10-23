@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Perms } from '../../src/permission/permission.constants';
 import { defaultEnvironmentId, seedBuilderChat, seedLiveAgent, seedWorkspaceProject } from '../support/agent-fixtures';
 import {
   addMember,
@@ -58,7 +57,7 @@ describe('PUT /agents/:id/template', () => {
     harness = await createPublicApiTestApp();
     app = harness.app;
     tenant = await createTenant(app);
-    creator = await addMember(app, tenant, [Perms.usePublicApi, Perms.manageAgents]);
+    creator = await addMember(app, tenant, ['can_use_public_api', 'can_manage_agents']);
 
     agentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
     const chat = await seedBuilderChat(tenant.tenantId, agentId, creator.userId);

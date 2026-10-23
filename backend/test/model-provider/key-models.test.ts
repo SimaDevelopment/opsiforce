@@ -7,7 +7,6 @@ import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { BASE_FORMATS } from '../../src/model-provider/base-formats';
 import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost, type FakeProviderKey } from '../support/fake-bifrost';
 import {
   addMember,
@@ -66,7 +65,7 @@ describe('a managed model provider serves the models the catalog lists', () => {
     app = harness.app;
     tenant = await createTenant(app);
     tenantName = tenant.name;
-    admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+    admin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
   });
 
   afterEach(() => {

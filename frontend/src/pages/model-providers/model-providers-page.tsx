@@ -10,7 +10,6 @@ import {
   type TenantModelProvider,
 } from '~/api/model-providers';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { AlertTriangle, RefreshCw, Waypoints } from '~/components/icons';
 import { SettingsSection } from '~/components/settings/settings-section';
 import { Button } from '~/components/ui/button';
@@ -50,7 +49,7 @@ export function ModelProvidersPage() {
     >
       <Show
         when={
-          hasPermission(Permission.manageTenantModelProviders) || hasPermission(Permission.managePlatformModelProviders)
+          hasPermission('can_manage_tenant_model_providers') || hasPermission('can_manage_platform_model_providers')
         }
         fallback={
           <p class="text-sm text-muted-foreground">
@@ -59,8 +58,8 @@ export function ModelProvidersPage() {
         }
       >
         <ModelProviderCards
-          canSwitch={hasPermission(Permission.manageTenantModelProviders)}
-          managesPlatform={hasPermission(Permission.managePlatformModelProviders)}
+          canSwitch={hasPermission('can_manage_tenant_model_providers')}
+          managesPlatform={hasPermission('can_manage_platform_model_providers')}
         />
       </Show>
     </SettingsSection>

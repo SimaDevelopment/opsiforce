@@ -15,7 +15,6 @@ import { SKILL_DELIVERY_QUEUE } from '../../src/delivery/delivery.types';
 import { EnvironmentSkillsService } from '../../src/delivery/environment-skills';
 import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { ProjectSkillsModule } from '../../src/project-skills/project-skills.module';
@@ -78,7 +77,7 @@ afterAll(async () => {
 beforeEach(async () => {
   tenant = await createTenant(app);
   await app.get(EnvironmentService).ensureDefaultForTenant(tenant.tenantId);
-  skillManager = await addMember(app, tenant, [Perms.manageProjectSkills]);
+  skillManager = await addMember(app, tenant, ['can_manage_project_skills']);
   editor = { tenantId: tenant.tenantId, userId: skillManager.userId, canManageAgents: true };
   skillAuthor = { tenantId: tenant.tenantId, userId: skillManager.userId, canManageSkills: true };
 });
@@ -309,7 +308,7 @@ describe('a Service skill', () => {
     await carryServiceSkill();
     const projectId = await runningProject();
     expect(await installedSkillNames(projectId)).toContain(SERVICE_SKILL);
-    const configurer = await addMember(app, tenant, [Perms.configureProjectExternalServices]);
+    const configurer = await addMember(app, tenant, ['can_configure_project_external_services']);
 
     const res = await switchSkill(configurer, projectId, SERVICE_SKILL, false);
 
@@ -327,7 +326,7 @@ describe('a Service skill', () => {
 
   it('stays off in a Project that configures the service while its Agent does not carry it', async () => {
     const projectId = await runningProject();
-    const configurer = await addMember(app, tenant, [Perms.configureProjectExternalServices]);
+    const configurer = await addMember(app, tenant, ['can_configure_project_external_services']);
     await storeProjectConfiguration(FIXTURE_SERVICE, projectId, { _labels: {} });
     await deliveries.deliver({ projectEnvironmentId: projectId, attempt: 0 });
     expect(await installedSkillNames(projectId)).toContain(SERVICE_SKILL);
@@ -354,7 +353,7 @@ describe('who may switch what', () => {
     const brand = await storeSkill('brand-hooli');
     await app.get(AgentService).setSkill(editor, agentId, brand.id, {});
     const projectId = await runningProject();
-    const member = await addMember(app, tenant, [Perms.configureProjectExternalServices]);
+    const member = await addMember(app, tenant, ['can_configure_project_external_services']);
 
     const res = await switchSkill(member, projectId, brand.name, false);
 

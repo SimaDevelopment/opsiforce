@@ -4,12 +4,11 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { users, workspaces } from '../../db/schema';
-import { Perms } from '../../src/permission/permission.constants';
 import type { ApiError } from '../../src/public-api/errors/error.schema';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import { tenantName, proxyHeaders, serviceAccountUsername } from '../support/proxy-identity';
 
-const SEVERAL_PERMISSIONS = [Perms.usePublicApi, Perms.deleteProject, Perms.manageWorkspaces];
+const SEVERAL_PERMISSIONS = ['can_use_public_api', 'can_delete_project', 'can_manage_workspaces'];
 
 function withoutInstance(apiError: ApiError): Omit<ApiError, 'instance'> {
   const { instance: _instance, ...rest } = apiError;
@@ -50,7 +49,7 @@ describe('public api caller and GET /me', () => {
         email: headers['x-forwarded-email'],
         tenant: { name: tenant },
         tenants: [{ name: tenant }],
-        permissions: [Perms.usePublicApi],
+        permissions: ['can_use_public_api'],
       });
       expect(body.tenant.id).toEqual(expect.any(String));
       expect(body.tenants).toHaveLength(1);
@@ -155,7 +154,7 @@ describe('public api caller and GET /me', () => {
     it('rejects a member without can_use_public_api and names the permission', async () => {
       const headers = proxyHeaders({
         tenants: [tenantName()],
-        permissions: [Perms.manageWorkspaces],
+        permissions: ['can_manage_workspaces'],
       });
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
@@ -164,7 +163,7 @@ describe('public api caller and GET /me', () => {
       expect(res.json()).toMatchObject({
         type: 'urn:opsiforce:error:permission-denied',
         status: 403,
-        permission: Perms.usePublicApi,
+        permission: 'can_use_public_api',
       });
     });
 
@@ -194,7 +193,7 @@ describe('public api caller and GET /me', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/me',
-        headers: { 'x-forwarded-groups': `role:opsiforce_${Perms.usePublicApi}` },
+        headers: { 'x-forwarded-groups': 'role:opsiforce_can_use_public_api' },
       });
 
       expect(res.statusCode).toBe(401);

@@ -24,12 +24,11 @@ import {
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ChevronRight, Files, Plus, Upload } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { SORT_OPTIONS, createSearchDraft, filterOptions, sortStoreRows, type StoreListProps } from './store-filters';
 
 export function SkillsListPage(props: StoreListProps) {
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageSkills);
+  const canManage = () => hasPermission('can_manage_skills');
   const search = createSearchDraft(
     () => props.query,
     (query) => props.onQuery(query)

@@ -1,5 +1,4 @@
 import { Body, Controller, Delete, Get, Param, Put } from '@nestjs/common';
-import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { CurrentTenant, PlatformScope, type TenantContext } from '../tenant/tenant.decorator';
 import { LimitService } from './limit.service';
@@ -16,21 +15,21 @@ export class LimitController {
 
   @Get('platform')
   @PlatformScope()
-  @RequirePermission(Perms.managePlatformLimits)
+  @RequirePermission('can_manage_platform_limits')
   platformView(): Promise<PlatformLimitsView> {
     return this.limitService.platformView();
   }
 
   @Put('platform/:key')
   @PlatformScope()
-  @RequirePermission(Perms.managePlatformLimits)
+  @RequirePermission('can_manage_platform_limits')
   setPlatformLimit(@Param('key') key: string, @Body() body: SetLimitDto | undefined): Promise<PlatformLimitsView> {
     return this.limitService.setPlatformLimit(key, body?.value);
   }
 
   @Put('tenants/:tenantId/:key')
   @PlatformScope()
-  @RequirePermission(Perms.managePlatformLimits)
+  @RequirePermission('can_manage_platform_limits')
   setTenantLimit(
     @Param('tenantId') tenantId: string,
     @Param('key') key: string,
@@ -41,7 +40,7 @@ export class LimitController {
 
   @Delete('tenants/:tenantId/:key')
   @PlatformScope()
-  @RequirePermission(Perms.managePlatformLimits)
+  @RequirePermission('can_manage_platform_limits')
   followPlatformLimit(@Param('tenantId') tenantId: string, @Param('key') key: string): Promise<PlatformLimitsView> {
     return this.limitService.followPlatformLimit(tenantId, key);
   }

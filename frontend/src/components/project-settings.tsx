@@ -5,7 +5,6 @@ import { createAppQuery } from '~/lib/create-app-query';
 import { api, podClassApi, type Project, type RequestLogMode } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import { useRestartProjectEnvironment } from '~/api/environments';
-import { Permission } from '~/constants/permissions';
 import { CircleDollarSign, Clock, Cpu, RotateCcw, ScrollText } from '~/components/icons';
 import { SettingsDialog, type SettingsDialogTab } from '~/components/ui/settings-dialog';
 import { Button } from '~/components/ui/button';
@@ -44,10 +43,10 @@ export function ProjectSettings(props: {
 }) {
   const qc = useQueryClient();
   const { hasPermission } = usePermissions();
-  const canBudgets = () => hasPermission(Permission.manageProjectBudgetSettings);
-  const canTimeouts = () => hasPermission(Permission.manageProjectTimeoutSettings);
-  const canPod = () => hasPermission(Permission.manageProjectPodSettings);
-  const canLogging = () => hasPermission(Permission.manageProjectLoggingSettings);
+  const canBudgets = () => hasPermission('can_manage_project_budget_settings');
+  const canTimeouts = () => hasPermission('can_manage_project_timeout_settings');
+  const canPod = () => hasPermission('can_manage_project_pod_settings');
+  const canLogging = () => hasPermission('can_manage_project_logging_settings');
   const defaultTab = createMemo(() =>
     canBudgets() ? 'budgets' : canTimeouts() ? 'timeouts' : canPod() ? 'resources' : 'logging'
   );

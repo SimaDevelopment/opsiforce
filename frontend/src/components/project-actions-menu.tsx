@@ -2,7 +2,6 @@ import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { toast } from 'solid-sonner';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { api, type Project } from '~/api/client';
 import { limitRefusalMessage } from '~/api/limits';
 import { startProjectExport, type ExportJob } from '~/api/export';
@@ -62,16 +61,16 @@ export function ProjectActionsMenu(props: {
   const jobDock = useJobDock();
 
   const canSeeSettings = () =>
-    hasPermission(Permission.manageProjectBudgetSettings) ||
-    hasPermission(Permission.manageProjectTimeoutSettings) ||
-    hasPermission(Permission.manageProjectLoggingSettings) ||
-    hasPermission(Permission.manageProjectPodSettings);
-  const canDisable = () => hasPermission(Permission.disableProject);
-  const canRestart = () => hasPermission(Permission.restartProject);
-  const canDuplicate = () => hasPermission(Permission.duplicateProject);
-  const canDelete = () => hasPermission(Permission.deleteProject);
-  const canExport = () => hasPermission(Permission.exportProject);
-  const canManageWorkspaces = () => hasPermission(Permission.manageWorkspaces);
+    hasPermission('can_manage_project_budget_settings') ||
+    hasPermission('can_manage_project_timeout_settings') ||
+    hasPermission('can_manage_project_logging_settings') ||
+    hasPermission('can_manage_project_pod_settings');
+  const canDisable = () => hasPermission('can_disable_project');
+  const canRestart = () => hasPermission('can_restart_project');
+  const canDuplicate = () => hasPermission('can_duplicate_project');
+  const canDelete = () => hasPermission('can_delete_project');
+  const canExport = () => hasPermission('can_export_project');
+  const canManageWorkspaces = () => hasPermission('can_manage_workspaces');
   const isDisabled = () => props.status === 'disabled';
 
   const [settingsOpen, setSettingsOpen] = createSignal(false);

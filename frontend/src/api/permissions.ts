@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { HasPermission } from '~/constants/permissions';
 import { createAppQuery } from '~/lib/create-app-query';
 
 export function usePermissions() {
@@ -7,7 +8,7 @@ export function usePermissions() {
     queryFn: () => api.get<string[]>('/permissions'),
   }));
 
-  const hasPermission = (permission: string) => query.data?.includes(permission) ?? false;
+  const hasPermission: HasPermission = (permission) => query.data?.includes(permission) ?? false;
 
   return { permissions: query, hasPermission };
 }

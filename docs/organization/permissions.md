@@ -1,7 +1,7 @@
 ---
 kind: explanation
 terms: [Platform-scope permission]
-adrs: [0027]
+adrs: [0027, 0096]
 ---
 
 # Permissions
@@ -14,9 +14,10 @@ adrs: [0027]
 
 - Opsiforce has no roles of its own, only flat permission strings (`can_*`) issued through Keycloak groups: a group bundles realm roles such as `role:opsiforce_can_publish_project`, oauth2-proxy forwards them in `x-forwarded-groups`, and the backend's permissions endpoint keeps the `role:opsiforce_*` entries, strips the prefix and returns the list the frontend gates on.
 - Permissions come in two bundles, one per scope: `opsiforce_admin` grants every Organization permission and `opsiforce_platform_admin` grants every Platform-scope one; neither includes the other, so an operator who needs both holds both. Only `can_manage_users`, `can_use_public_api` and the Platform-scope permissions also have Keycloak groups of their own, because User Management assigns groups, never single roles.
-- The canonical list of strings is the code: the backend's permission constants and the frontend's permissions constants.
-- A standalone install without Keycloak maps its identity provider's groups through `SSO_GROUP_MAP`, a JSON object from group name to `{permissions, tenants}`; a group granting Model providers lists `can_manage_tenant_model_providers` there like any other string.
-- In static auth mode nginx injects a fixed identity carrying every `can_*` role into the same header, and everything downstream is identical ([Local orchestration](../operations/local-orchestration.md)).
+- Opsiforce's list of strings is `PERMISSIONS` in the backend's `permission.constants.ts` ([ADR-0096](../adr/0096-the-frontend-and-the-static-identity-derive-their-permissions-from-the-backends-list.md)). Backend guards and frontend gates both name a permission by its `can_*` string, typed by the list's `Permission` type, and Tilt gives the static identity its permissions from it. The guards and `hasPermission` accept only names on the list, so an unknown or misspelled string fails to compile.
+- Keycloak's realm roles and bundles are written by hand in the configurator, from the same list.
+- A standalone install without Keycloak maps its identity provider's groups through `SSO_GROUP_MAP`, a JSON object from group name to `{permissions, tenants}`; a group granting Model providers lists `can_manage_tenant_model_providers` there like any other string. The Azure deployment's workflow builds its map from the backend's list: `opsiforce_admin` holds every permission in it, and `opsiforce_user` holds only the Organization.
+- In static auth mode nginx injects a fixed identity into the same header, and everything downstream is identical ([Local orchestration](../operations/local-orchestration.md)). The identity carries every permission except `can_manage_users`, because no identity provider or User Management runs in static mode.
 
 ```
 Keycloak realm roles
@@ -48,13 +49,13 @@ oauth2-proxy  ──  x-forwarded-groups  ──▶  Backend  ──▶  GET /ap
 - Almost every route is [Organization](../../GLOSSARY.md)-scoped: the tenant guard requires membership in the requested Organization and stamps a tenant context that services filter by.
 - A route marked `@PlatformScope()` still demands the groups header but resolves no Organization and stamps no context, so its `@RequirePermission` is the only gate; the permissions and Organization-list discovery endpoints are platform-scope for the same reason ([ADR-0027](../adr/0027-platform-scope-routes-opt-out-of-tenant-resolution.md)).
 - A [Platform-scope permission](../../GLOSSARY.md) carries `platform_` in its name, is in the `opsiforce_platform_admin` bundle, keeps its own Keycloak group and stays out of `opsiforce_admin`; it is granted alongside an ordinary Organization membership, since the app shell assumes every account belongs to one.
-- Two Organization-scoped routes still act platform-wide, so their permissions are treated as Platform-scope too: `can_manage_platform_defaults` edits the global defaults every new Organization copies and every Organization without its own row follows ([Defaults](defaults.md)), and `can_view_queue_dashboard` opens the BullMQ dashboard at `/api/admin/queues`, which lists, retries and removes every Organization's jobs.
+- Two Organization-scoped routes still act platform-wide, so their permissions are treated as Platform-scope too: `can_manage_platform_defaults` edits the global defaults every new Organization copies and every Organization without its own row follows ([Defaults](defaults.md)), and `can_view_queue_dashboard` opens the BullMQ dashboard at `/api/admin/queues`, which lists, retries and removes every Organization's jobs. A Fastify hook in `main.ts` guards that dashboard, because it is mounted outside Nest's controllers.
 
 ## Code
 
-- `backend/src/permission/` — the constants, the guard and the decorators.
+- `backend/src/permission/` — `PERMISSIONS`, the `Permission` type, the guard and the decorators.
 - `frontend/src/api/permissions.ts` — the permissions query and `hasPermission`.
-- `frontend/src/constants/permissions.ts` — the frontend's copy of the strings.
+- `frontend/src/constants/permissions.ts` — the `Permission` type from the backend's list and the `HasPermission` type the gates take.
 
 ## Related
 

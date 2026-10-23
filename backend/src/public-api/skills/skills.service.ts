@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Perms } from '../../permission/permission.constants';
 import { SkillService, type SkillCaller } from '../../store/skill.service';
 import { assertPermission, callingProjectOf, type Caller } from '../auth/caller';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
@@ -36,12 +35,12 @@ export class PublicSkillsService {
   }
 
   validate(caller: Caller, body: ValidateSkill): SkillValidationDto {
-    assertPermission(caller, Perms.manageSkills);
+    assertPermission(caller, 'can_manage_skills');
     return SkillMapper.toValidationDto(this.skills.validate({ name: body.name, files: body.files }));
   }
 
   async create(caller: Caller, body: CreateSkill): Promise<SkillDto> {
-    assertPermission(caller, Perms.manageSkills);
+    assertPermission(caller, 'can_manage_skills');
     return SkillMapper.toDto(await mappingStoreErrors(() => this.skills.create(scopeOf(caller), body)));
   }
 
@@ -63,7 +62,7 @@ export class PublicSkillsService {
   private async scopeAfterVisibleRead(caller: Caller, skillId: string): Promise<SkillCaller> {
     const scope = scopeOf(caller);
     await mappingStoreErrors(() => this.skills.findOne(scope, skillId));
-    assertPermission(caller, Perms.manageSkills);
+    assertPermission(caller, 'can_manage_skills');
     return scope;
   }
 }
@@ -72,7 +71,7 @@ function scopeOf(caller: Caller): SkillCaller {
   return {
     tenantId: caller.tenant.id,
     userId: caller.user.platformId,
-    canManageSkills: caller.permissions.has(Perms.manageSkills),
+    canManageSkills: caller.permissions.has('can_manage_skills'),
     ...callingProjectOf(caller),
   };
 }

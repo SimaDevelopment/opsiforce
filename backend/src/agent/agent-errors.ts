@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { Perms } from '../permission/permission.constants';
 
 export type ModelPart = 'provider' | 'model' | 'variant';
 
@@ -104,8 +103,8 @@ export function serviceSettingsInvalid(problems: string[]): BadRequestException 
 export function fieldSettingsNeedProjectPermission(skillName: string): ForbiddenException {
   return new ForbiddenException({
     code: 'missing_permission',
-    permission: Perms.configureProjectExternalServices,
-    message: `Setting the service settings of \`${skillName}\` needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+    permission: 'can_configure_project_external_services',
+    message: `Setting the service settings of \`${skillName}\` needs the Configure project External Services permission (can_configure_project_external_services)`,
   });
 }
 

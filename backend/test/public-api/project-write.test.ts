@@ -3,7 +3,6 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LimitService } from '../../src/limit/limit.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectStatus } from '../../src/project/project.types';
 import { PROJECT_FIELDS } from './support/dto-fields';
@@ -258,7 +257,7 @@ describe('projects write routes', () => {
 
     it('adds no workspace of its own to a creation it rejects', async () => {
       const tenant = await createTenant(app);
-      const member = await addMember(app, tenant, [Perms.usePublicApi, Perms.manageWorkspaces]);
+      const member = await addMember(app, tenant, ['can_use_public_api', 'can_manage_workspaces']);
       const before = await privateWorkspaceCountOf(member.keycloakId);
 
       const res = await post(member, { title: 'Rejected', agentId: randomUUID() });
@@ -394,7 +393,7 @@ describe('projects write routes', () => {
 
     beforeAll(async () => {
       tenant = await createTenant(app);
-      restarter = await addMember(app, tenant, [Perms.usePublicApi, Perms.restartProject]);
+      restarter = await addMember(app, tenant, ['can_use_public_api', 'can_restart_project']);
     });
 
     it('answers 204 and recreates the Development pod on the same workspace', async () => {
@@ -420,7 +419,7 @@ describe('projects write routes', () => {
       expect(res.statusCode).toBe(403);
       expect(res.json()).toMatchObject({
         type: 'urn:opsiforce:error:permission-denied',
-        permission: Perms.restartProject,
+        permission: 'can_restart_project',
       });
     });
 
@@ -453,7 +452,7 @@ describe('projects write routes', () => {
 
     beforeAll(async () => {
       tenant = await createTenant(app);
-      deleter = await addMember(app, tenant, [Perms.usePublicApi, Perms.deleteProject]);
+      deleter = await addMember(app, tenant, ['can_use_public_api', 'can_delete_project']);
     });
 
     it('answers 204 and then 404 on a repeat', async () => {
@@ -488,7 +487,7 @@ describe('projects write routes', () => {
       expect(res.statusCode).toBe(403);
       expect(res.json()).toMatchObject({
         type: 'urn:opsiforce:error:permission-denied',
-        permission: Perms.deleteProject,
+        permission: 'can_delete_project',
       });
       expect(await placementOf(projectId)).toMatchObject({ workspaceId: null });
     });

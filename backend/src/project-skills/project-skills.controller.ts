@@ -21,7 +21,6 @@ import {
   type EnvironmentSkill,
   type EnvironmentSkills,
 } from '../delivery/environment-skills';
-import { Perms } from '../permission/permission.constants';
 import { hasPermission } from '../permission/permission.utils';
 import { isProjectAccessible } from '../project/project-visibility';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
@@ -67,7 +66,7 @@ export class ProjectSkillsController {
 
 function assertMaySwitch(user: UserContext, skill: EnvironmentSkill): void {
   if (skill.kind === 'platform') throw new PlatformSkillAlwaysOn();
-  const needed = skill.kind === 'service' ? Perms.configureProjectExternalServices : Perms.manageProjectSkills;
+  const needed = skill.kind === 'service' ? 'can_configure_project_external_services' : 'can_manage_project_skills';
   if (!hasPermission(user.groups, needed)) {
     throw new ForbiddenException(`Switching ${skill.name} needs ${needed}`);
   }

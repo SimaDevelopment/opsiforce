@@ -3,7 +3,6 @@ import { AgentConnectionService } from '../../agent-session/agent-connection.ser
 import type { ChatRow } from '../../builder/builder-chat.repository';
 import { BuilderChatService } from '../../builder/builder-chat.service';
 import { MAX_CREATED_PROJECTS, PublicApiSettings } from '../../external-services/configuration/public-api-settings';
-import { Perms } from '../../permission/permission.constants';
 import { AgentStatusService } from '../../project/agent-status.service';
 import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
 import { CreatedProjectsCapReached, type CreatedProjectsCap } from '../../project/project-limit';
@@ -201,14 +200,14 @@ export class PublicProjectsService {
 
   async restart(caller: Caller, projectId: string): Promise<void> {
     const project = await this.requireVisible(caller, projectId);
-    if (!caller.permissions.has(Perms.restartProject)) throw Errors.permissionDenied(Perms.restartProject);
+    if (!caller.permissions.has('can_restart_project')) throw Errors.permissionDenied('can_restart_project');
     if (project.disabled) throw Errors.environmentDisabled();
     await this.projects.restart(projectId, caller.tenant.id);
   }
 
   async delete(caller: Caller, projectId: string): Promise<void> {
     await this.requireVisible(caller, projectId);
-    if (!caller.permissions.has(Perms.deleteProject)) throw Errors.permissionDenied(Perms.deleteProject);
+    if (!caller.permissions.has('can_delete_project')) throw Errors.permissionDenied('can_delete_project');
     await this.projects.remove(projectId, caller.tenant.id);
   }
 

@@ -7,7 +7,6 @@ import { scheduleApi, type Schedule, type ScheduleExecution, type UpdateSchedule
 import { useEnvironments, useProjectEnvironments } from '~/api/environments';
 import { useProjects } from '~/api/projects';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { Calendar, Trash2, Pencil, Play, Clock, EllipsisVertical, ChevronLeft } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '~/components/ui/tabs';
@@ -51,7 +50,7 @@ export function SchedulesPage() {
 
   createEffect(() => {
     if (permissions.isPending) return;
-    if (!hasPermission(Permission.manageSchedules)) {
+    if (!hasPermission('can_manage_schedules')) {
       navigate({ to: '/' });
     }
   });

@@ -13,7 +13,6 @@ import {
   UseFilters,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
-import { Perms } from '../../permission/permission.constants';
 import { RequireAnyPermission, RequirePermission } from '../../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../../user/user.decorator';
@@ -88,7 +87,7 @@ export class ProjectServicesController {
   }
 
   @Put(':serviceId/configuration')
-  @RequirePermission(Perms.configureProjectExternalServices)
+  @RequirePermission('can_configure_project_external_services')
   saveProjectConfiguration(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,
@@ -102,7 +101,7 @@ export class ProjectServicesController {
   }
 
   @Delete(':serviceId/configuration')
-  @RequireAnyPermission([Perms.configureProjectExternalServices, Perms.manageTenantExternalServices])
+  @RequireAnyPermission(['can_configure_project_external_services', 'can_manage_tenant_external_services'])
   disconnect(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,
@@ -115,7 +114,7 @@ export class ProjectServicesController {
 
   @Post(':serviceId/configuration/rotate')
   @HttpCode(200)
-  @RequirePermission(Perms.configureProjectExternalServices)
+  @RequirePermission('can_configure_project_external_services')
   rotateProjectConfiguration(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,
@@ -129,7 +128,7 @@ export class ProjectServicesController {
 
   @Post(':serviceId/configuration/hook/retry')
   @HttpCode(200)
-  @RequirePermission(Perms.configureProjectExternalServices)
+  @RequirePermission('can_configure_project_external_services')
   retryProjectConfigurationHook(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,
@@ -142,7 +141,7 @@ export class ProjectServicesController {
 
   @Post(':serviceId/configuration/hook/discard')
   @HttpCode(200)
-  @RequirePermission(Perms.configureProjectExternalServices)
+  @RequirePermission('can_configure_project_external_services')
   discardProjectConfigurationHook(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,
@@ -154,7 +153,7 @@ export class ProjectServicesController {
   }
 
   @Post(':serviceId/:route/:name')
-  @RequirePermission(Perms.configureProjectExternalServices)
+  @RequirePermission('can_configure_project_external_services')
   async callForm(
     @Param('projectId') projectId: string,
     @Param('projectEnvironmentId') projectEnvironmentId: string,

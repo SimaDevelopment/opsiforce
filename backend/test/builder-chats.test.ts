@@ -22,7 +22,6 @@ import { configuration } from '../src/config/configuration';
 import { ProjectExportController } from '../src/export/project-export.controller';
 import type { ProjectExportService } from '../src/export/project-export.service';
 import { MissingPermissionException } from '../src/permission/missing-permission.exception';
-import { Perms } from '../src/permission/permission.constants';
 import { PermissionGuard } from '../src/permission/permission.guard';
 import type { ProjectEventsService } from '../src/project/project-events.service';
 import { isProjectAccessible } from '../src/project/project-visibility';
@@ -390,8 +389,8 @@ describe('the Builder routes over HTTP', () => {
     await app.getHttpAdapter().getInstance().ready();
 
     tenant = await createTenant(app);
-    skillHolder = await addMember(app, tenant, [Perms.manageSkills]);
-    agentHolder = await addMember(app, tenant, [Perms.manageAgents]);
+    skillHolder = await addMember(app, tenant, ['can_manage_skills']);
+    agentHolder = await addMember(app, tenant, ['can_manage_agents']);
     plainMember = await addMember(app, tenant, []);
   });
 
@@ -418,7 +417,7 @@ describe('the Builder routes over HTTP', () => {
     const refused = await request('POST', '/api/builder/chats', plainMember, { skillId });
     expect(refused.statusCode).toBe(403);
     expect(refused.json()).toMatchObject({
-      message: `Missing permission: ${Perms.manageSkills} or ${Perms.manageAgents} or ${Perms.manageTenantExternalServices}`,
+      message: 'Missing permission: can_manage_skills or can_manage_agents or can_manage_tenant_external_services',
     });
   });
 });

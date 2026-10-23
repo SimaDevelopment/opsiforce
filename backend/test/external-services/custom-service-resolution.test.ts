@@ -7,7 +7,6 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServices } from '../../db/schema';
-import { Perms } from '../../src/permission/permission.constants';
 import { addMember } from '../support/project-fixtures';
 import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
 import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
@@ -192,7 +191,7 @@ describe("an Organization's Custom External Services next to the built-ins", () 
     }
 
     it('offers the service once it is Available, whether or not the Agent carries its Service skill', async () => {
-      const configurer = await addMember(app, admin.tenant, [Perms.configureProjectExternalServices]);
+      const configurer = await addMember(app, admin.tenant, ['can_configure_project_external_services']);
       const before = await app.inject({ method: 'GET', url: servicesUrl(), headers: configurer.headers });
       expect(before.statusCode, before.body).toBe(200);
       expect(before.json().services.map((entry: ListedService) => entry.slug)).not.toContain('boards');

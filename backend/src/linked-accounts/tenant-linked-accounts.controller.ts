@@ -1,6 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
 import { AgentCallerRefusalGuard } from '../model-provider/agent-caller-refusal.guard';
-import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import type {
@@ -12,7 +11,7 @@ import type {
 import { LinkedAccountsService } from './linked-accounts.service';
 
 @Controller('model-providers')
-@RequirePermission(Perms.manageTenantModelProviders)
+@RequirePermission('can_manage_tenant_model_providers')
 @UseGuards(AgentCallerRefusalGuard)
 export class TenantLinkedAccountsController {
   constructor(private readonly linkedAccountsService: LinkedAccountsService) {}

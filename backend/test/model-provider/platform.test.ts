@@ -8,7 +8,6 @@ import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { BASE_FORMATS } from '../../src/model-provider/base-formats';
 import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { TenantController } from '../../src/tenant/tenant.controller';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { DOCK_BASE_URL, startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
@@ -133,11 +132,11 @@ describe('Built-in model providers managed by a platform admin', () => {
   }
 
   async function platformAdmin(): Promise<MemberFixture> {
-    return (await member([Perms.managePlatformModelProviders])).member;
+    return (await member(['can_manage_platform_model_providers'])).member;
   }
 
   async function orgAdmin(): Promise<{ tenant: TenantFixture; member: MemberFixture }> {
-    return member([Perms.manageTenantModelProviders]);
+    return member(['can_manage_tenant_model_providers']);
   }
 
   function saveAnthropic(admin: MemberFixture, weight: number) {
@@ -216,7 +215,7 @@ describe('Built-in model providers managed by a platform admin', () => {
     });
 
     it('leaves a platform provider missing from Bifrost out of every chat key it syncs', async () => {
-      const { tenant, member: orgAdmin } = await member([Perms.manageTenantModelProviders]);
+      const { tenant, member: orgAdmin } = await member(['can_manage_tenant_model_providers']);
       const projectId = await projectOf(tenant);
       bifrost.setProviders(['openai', 'custom-openai-1']);
 
@@ -368,7 +367,7 @@ describe('Built-in model providers managed by a platform admin', () => {
     }
 
     async function tenantRowNames(tenant: TenantFixture): Promise<string[]> {
-      const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
       const res = await app.inject({ method: 'GET', url: '/api/model-providers', headers: orgAdmin.headers });
       expect(res.statusCode, res.body).toBe(200);
       return res.json<{ providers: Array<{ name: string }> }>().providers.map((row) => row.name);
@@ -531,7 +530,7 @@ describe('Built-in model providers managed by a platform admin', () => {
 
   describe('the opsiforce- prefix', () => {
     it.each(['opsiforce', 'opsiforce-foo'])('can’t be taken by an Organization named %s', async (name) => {
-      const headers = proxyHeaders({ tenants: [name], permissions: [Perms.manageTenantModelProviders] });
+      const headers = proxyHeaders({ tenants: [name], permissions: ['can_manage_tenant_model_providers'] });
 
       const res = await app.inject({ method: 'GET', url: '/api/model-providers', headers });
 
@@ -597,7 +596,7 @@ describe('Built-in model providers managed by a platform admin', () => {
 
   describe('who may use it', () => {
     it('refuses every route without the platform permission, including to an Organization model-provider admin', async () => {
-      const { member: orgAdmin } = await member([Perms.manageTenantModelProviders]);
+      const { member: orgAdmin } = await member(['can_manage_tenant_model_providers']);
       const { member: nobody } = await member([]);
       const provider = { baseFormat: 'openai', kind: 'official-api-key', name: 'sneaky', key: 'sk-x' };
 
@@ -634,7 +633,7 @@ describe('Built-in model providers managed by a platform admin', () => {
 
     it('never lists an Organization’s own model providers to a platform admin', async () => {
       const admin = await platformAdmin();
-      const { tenant, member: orgAdmin } = await member([Perms.manageTenantModelProviders]);
+      const { tenant, member: orgAdmin } = await member(['can_manage_tenant_model_providers']);
       const created = await app.inject({
         method: 'POST',
         url: '/api/model-providers',
@@ -662,7 +661,7 @@ describe('Built-in model providers managed by a platform admin', () => {
     });
 
     it('refuses an Agent Caller', async () => {
-      const { tenant, member: owner } = await member([Perms.managePlatformModelProviders]);
+      const { tenant, member: owner } = await member(['can_manage_platform_model_providers']);
       const agent = await seedLiveAgent(tenant.tenantId, owner.userId);
       const callerProjectId = await createProject(app, tenant, { agentId: agent.id, createdBy: owner.userId });
       const callerKey = await serviceKeyFor(app, tenant, callerProjectId);

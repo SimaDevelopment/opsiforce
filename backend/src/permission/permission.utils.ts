@@ -1,3 +1,4 @@
+import type { Permission } from './permission.constants';
 import { mapGroupsToPermissions } from './sso-group-map';
 
 const ROLE_PREFIX = 'role:opsiforce_';
@@ -13,7 +14,7 @@ export function parsePermissions(groupsHeader: string): string[] {
     .map((g) => g.replace(ROLE_PREFIX, ''));
 }
 
-export function hasPermission(groupsHeader: string, permission: string): boolean {
+export function hasPermission(groupsHeader: string, permission: Permission): boolean {
   return parsePermissions(groupsHeader).includes(permission);
 }
 

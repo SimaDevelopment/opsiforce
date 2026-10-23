@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { Perms } from '../../src/permission/permission.constants';
 import { OPSIFORCE_TENANT_GROUP_PREFIX } from '../../src/tenant/tenant.service';
 import { SERVICE_ACCOUNT_USERNAME_PREFIX } from '../../src/identity/forwarded-identity.service';
 import { TENANT_NAME_HEADER } from '../../src/tenant/tenant.decorator';
@@ -29,7 +28,7 @@ export function proxyHeaders(identity: ProxyIdentity = {}): Record<string, strin
     username = `user-${userId.slice(0, 8)}`,
     email = `${username}@example.test`,
     tenants = [],
-    permissions = [Perms.usePublicApi],
+    permissions = ['can_use_public_api'],
     tenant,
   } = identity;
 

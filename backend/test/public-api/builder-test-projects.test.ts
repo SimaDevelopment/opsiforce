@@ -11,7 +11,6 @@ import { db } from '../../db';
 import { agentSettings, agents, environments, projectEnvironments, projects, skills } from '../../db/schema';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectService } from '../../src/project/project.service';
 import type { FakeBifrostService, FakePodService } from '../support/infra-fakes';
@@ -124,8 +123,8 @@ describe('a Builder chat pod creating a test Project', () => {
     app = harness.app;
 
     tenant = await createTenant(app);
-    creator = await addMember(app, tenant, [Perms.usePublicApi, Perms.deleteProject, Perms.manageAgents]);
-    colleague = await addMember(app, tenant, [Perms.usePublicApi]);
+    creator = await addMember(app, tenant, ['can_use_public_api', 'can_delete_project', 'can_manage_agents']);
+    colleague = await addMember(app, tenant, ['can_use_public_api']);
 
     const chatAgent = await seedLiveAgent(tenant.tenantId, creator.userId);
     childAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId, { visibility: 'private' })).id;
