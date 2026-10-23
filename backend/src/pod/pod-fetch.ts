@@ -67,10 +67,15 @@ function send(url: URL, init: PodRequestInit): Promise<Response> {
       { method: init.method ?? 'GET', headers: { ...init.headers, host: `localhost:${url.port}` } },
       (response) => {
         incoming = response;
-        const status = response.statusCode ?? 502;
-        const body = NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(response) as ReadableStream<Uint8Array>);
-        if (body === null) response.resume();
-        resolve(new Response(body, { status, statusText: response.statusMessage, headers: headersOf(response) }));
+        try {
+          const status = response.statusCode ?? 502;
+          const body = NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(response) as ReadableStream<Uint8Array>);
+          if (body === null) response.resume();
+          resolve(new Response(body, { status, statusText: response.statusMessage, headers: headersOf(response) }));
+        } catch (error) {
+          response.destroy();
+          reject(error);
+        }
       }
     );
     const abort = () => (incoming ?? outgoing).destroy(signal?.reason);

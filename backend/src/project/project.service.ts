@@ -1341,7 +1341,12 @@ export class ProjectService implements OnApplicationBootstrap {
       await tx
         .update(projectEnvironments)
         .set({ status: ProjectStatus.Suspended, updatedAt: new Date() })
-        .where(eq(projectEnvironments.projectId, id));
+        .where(
+          and(
+            eq(projectEnvironments.projectId, id),
+            inArray(projectEnvironments.status, [ProjectStatus.Active, ProjectStatus.Starting])
+          )
+        );
     });
 
     await Promise.allSettled([

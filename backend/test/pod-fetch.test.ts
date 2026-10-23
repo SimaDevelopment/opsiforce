@@ -37,6 +37,11 @@ async function appThatRedirects(): Promise<{ url: (path: string) => URL; seen: S
       '/api/elsewhere': [302, 'http://example.org/'],
     };
     if (request.url === '/api/hang') return;
+    if (request.url === '/api/odd-status') {
+      response.writeHead(600);
+      response.end();
+      return;
+    }
     const redirect = redirects[request.url ?? ''];
     if (redirect) {
       response.writeHead(redirect[0], { location: redirect[1] });
@@ -107,6 +112,13 @@ describe('calling an App on its pod', () => {
     await expect(fetchAsLocalhost(url('/api/hang'), { signal: AbortSignal.timeout(50) })).rejects.toMatchObject({
       name: 'TimeoutError',
     });
+  });
+
+  it('rejects an answer with a status outside 200–599 instead of crashing the backend', async () => {
+    const { url } = await appThatRedirects();
+
+    await expect(fetchAsLocalhost(url('/api/odd-status'))).rejects.toBeInstanceOf(RangeError);
+    expect((await fetchAsLocalhost(url('/api/job/'))).status).toBe(200);
   });
 
   it('returns the redirect itself when asked not to follow', async () => {
