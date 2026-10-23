@@ -116,6 +116,7 @@ const CRASH_LOOP_RECREATE_AGE_MS = 60 * 1000;
 const UNSCHEDULABLE_STARTUP_GRACE_MS = 180 * 1000;
 const STARTUP_RETRY_BASE_MS = 5 * 1000;
 const STARTUP_RETRY_MAX_MS = 5 * 60 * 1000;
+const RUNTIME_REPLACEMENT_WINDOW_MS = 10 * 60 * 1000;
 const DUPLICATE_APP_READY_TIMEOUT_MS = 5 * 60 * 1000;
 const APP_SERVING_PROBE_TIMEOUT_MS = 3 * 1000;
 const TEMPLATE_UPDATE_COMMIT_MESSAGE = 'Template update';
@@ -252,6 +253,7 @@ export class ProjectService implements OnApplicationBootstrap {
   private readonly startupRetries = new Map<string, number>();
   private readonly recreateRequests = new Set<string>();
   private readonly recoveryStartups = new Set<string>();
+  private readonly runtimeReplacements = new Map<string, { podUid: string; at: number }>();
   constructor(
     private readonly podService: PodService,
     private readonly podCache: PodCacheService,
@@ -1671,6 +1673,45 @@ export class ProjectService implements OnApplicationBootstrap {
     const env = await this.projectEnvironmentService.findByIdOrNull(envId);
     if (!env) return false;
     return this.handleProxyFailureForEnvironment(env);
+  }
+
+  async replaceRefusingRuntime(envId: string): Promise<'starting' | 'failed'> {
+    const env = await this.projectEnvironmentService.findById(envId);
+    const podName = this.podService.assignedPodName(env.id);
+    const pod = await this.readPodOrNull(podName);
+    const podUid = pod?.metadata?.uid;
+    if (!pod || !podUid || !this.podService.isPodReady(pod)) {
+      await this.handleProxyFailureForEnvironment(env);
+      return 'starting';
+    }
+
+    const replaced = this.runtimeReplacements.get(env.id);
+    if (replaced?.podUid === podUid) return 'starting';
+    if (replaced && Date.now() - replaced.at < RUNTIME_REPLACEMENT_WINDOW_MS) {
+      this.runtimeReplacements.delete(env.id);
+      return (await this.failRefusingEnvironment(env, podName)) ? 'failed' : 'starting';
+    }
+
+    this.runtimeReplacements.set(env.id, { podUid, at: Date.now() });
+    this.logger.warn(`Pod ${podName} is ready but its runtime refused to identify itself; recreating it`);
+    await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
+    return 'starting';
+  }
+
+  private async failRefusingEnvironment(env: ProjectEnvironmentContext, podName: string): Promise<boolean> {
+    const failed = await this.projectEnvironmentService.patch(
+      env.id,
+      { status: ProjectStatus.Failed },
+      ProjectStatus.Active
+    );
+    if (!failed) return false;
+
+    this.logger.warn(`Pod ${podName} replaced a refusing runtime and refused too; environment ${env.id} failed`);
+    this.agentStatusService.clear(env.projectId, env.id);
+    this.appReadiness.markDown(env.id);
+    await this.safeDeletePod(podName, `refusing runtime for environment ${env.id}`);
+    await this.projectEventsService.publish(env.projectId).catch(() => {});
+    return true;
   }
 
   async stampLastPromptByEnvId(envId: string): Promise<void> {

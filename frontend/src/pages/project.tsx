@@ -1,4 +1,3 @@
-import { Button } from '~/components/ui/button';
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
@@ -8,7 +7,6 @@ import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
 import { useProjectEnvironments } from '~/api/environments';
 import { deletionCoversPath } from '~/api/files';
-import { Spinner } from '~/components/ui/spinner';
 import {
   PROJECT_TAB_LABELS,
   ProjectHeader,
@@ -20,8 +18,12 @@ import { ProjectCodeTab } from '~/components/project/project-code-tab';
 import { ProjectDbTab } from '~/components/project/project-db-tab';
 import { ProjectFilesTab } from '~/components/project/files';
 import { ProjectPreviewPanel, type FilePreviewRequest } from '~/components/project/preview';
-import { ProjectDisabled } from '~/components/project/project-disabled';
-import { ProjectFailed } from '~/components/project/project-failed';
+import {
+  ProjectConnecting,
+  ProjectConnectionProblem,
+  ProjectDisabled,
+  ProjectFailed,
+} from '~/components/project/project-states';
 import { EnvProdBanner } from '~/components/project/environments/env-prod-banner';
 import { useJobDock } from '~/components/project/jobs/job-dock-context';
 import { useOpenCodeConnection, type InitialPrompt } from '~/components/project/use-opencode-connection';
@@ -209,16 +211,28 @@ export function ProjectView(props: ProjectViewProps) {
             style={{ display: activeTab() === 'chat' ? 'flex' : 'none' }}
           >
             <Show when={connectionStatus() !== 'disabled'} fallback={<ProjectDisabled projectId={props.projectId} />}>
-              <Show when={connectionStatus() !== 'failed'} fallback={<ProjectFailed projectId={props.projectId} />}>
+              <Show
+                when={connectionStatus() !== 'failed'}
+                fallback={<ProjectFailed projectId={props.projectId} environmentId={activeEnvironmentId()} />}
+              >
                 <Show
                   when={connection.router()}
                   fallback={
-                    <Show when={connection.error()} fallback={<Spinner label="Connecting..." />}>
-                      {(message) => (
-                        <div class="flex flex-col items-center justify-center gap-3 p-6" role="alert">
-                          <p>{message()}</p>
-                          <Button onClick={connection.retry}>Retry</Button>
-                        </div>
+                    <Show
+                      when={connection.problem()}
+                      fallback={
+                        <ProjectConnecting
+                          starting={connectionStatus() === 'starting' || connectionStatus() === 'suspended'}
+                        />
+                      }
+                    >
+                      {(problem) => (
+                        <ProjectConnectionProblem
+                          projectId={props.projectId}
+                          environmentId={activeEnvironmentId()}
+                          problem={problem()}
+                          onRetry={connection.retry}
+                        />
                       )}
                     </Show>
                   }

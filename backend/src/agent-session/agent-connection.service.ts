@@ -174,7 +174,9 @@ export class AgentConnectionService {
       const info = await this.pod.info(environmentId, { signal: deadline.signal() });
       return info.version ?? null;
     } catch (error) {
-      if (error instanceof PodResponded && error.status === 503) throw new EnvironmentNotRunning('starting');
+      if (error instanceof PodResponded) {
+        throw new EnvironmentNotRunning(await this.projectService.replaceRefusingRuntime(environmentId));
+      }
       throw error;
     }
   }

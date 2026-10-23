@@ -1,10 +1,14 @@
 import { createEffect, createSignal, onCleanup, type Accessor, type Component } from 'solid-js';
 import type { BaseRouterProps } from '@solidjs/router';
-import { api, apiRelative, type ProjectStatus } from '~/api/client';
+import { api, apiRelative, ApiError, type ProjectStatus } from '~/api/client';
 import { useConnectEnvironment, type ProjectEnvironmentStatus } from '~/api/environments';
 import { createSessionRouter } from './platform';
 
 type ConnectionStatus = ProjectStatus | ProjectEnvironmentStatus;
+
+export type ConnectionProblem = 'unreachable' | 'unconfirmed-prompt';
+
+const STARTING_RETRY_MS = 2_000;
 
 export interface InitialPrompt {
   id: string;
@@ -23,7 +27,7 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
   const [router, setRouter] = createSignal<Component<BaseRouterProps> | null>(null);
   const connectEnvironment = useConnectEnvironment();
 
-  const [error, setError] = createSignal<string | null>(null);
+  const [problem, setProblem] = createSignal<ConnectionProblem | null>(null);
   let controller = new AbortController();
   let disposed = false;
   let connecting = false;
@@ -60,11 +64,16 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
     let connection;
     try {
       connection = await connectEnvironment(options.projectId, environmentId, controller.signal);
-    } catch {
-      if (isCurrent()) {
-        connecting = false;
-        setError('Could not connect to this project. Try again.');
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (error instanceof ApiError && error.code === 'environment_starting') {
+        window.setTimeout(() => {
+          if (isCurrent()) void connect(environmentId);
+        }, STARTING_RETRY_MS);
+        return;
       }
+      connecting = false;
+      setProblem('unreachable');
       return;
     }
     if (!isCurrent()) return;
@@ -77,7 +86,7 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
     } catch {
       if (isCurrent()) {
         connecting = false;
-        setError('Your message could not be confirmed. Retry to send the same message safely.');
+        setProblem('unconfirmed-prompt');
       }
       return;
     }
@@ -89,7 +98,7 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
   function reset() {
     controller.abort();
     controller = new AbortController();
-    setError(null);
+    setProblem(null);
     attempts += 1;
     setRouter(null);
     connecting = false;
@@ -132,10 +141,10 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
 
   function retry() {
     if (disposed || connecting) return;
-    setError(null);
+    setProblem(null);
     connecting = true;
     void connect(options.environmentId());
   }
 
-  return { router, reset, error, retry };
+  return { router, reset, problem, retry };
 }

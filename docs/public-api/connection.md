@@ -37,6 +37,8 @@ adrs: [0036, 0038]
 
 - When the environment is still starting as the budget runs out, the answer is a 503 `environment-starting` Error with `Retry-After: 5`.
 - When the environment is disabled, the answer is 423; when it has failed, 503 `environment-failed`; when the pod is ready but unreachable, 502 or 504.
+- When the pod is Ready but its runtime answers `GET /api/info` with anything but 200, the Connection recreates the pod and answers 503 `environment-starting`; when the pod that replaced it refuses too within ten minutes, the environment fails and the answer is 503 `environment-failed` ([Pod Lifecycle](../runtime/pod-lifecycle.md)).
+- The app's own connect route, `POST /api/projects/{id}/environments/{environmentId}/connect`, runs the same Connection and names the same outcomes as `{code, message}` refusals: 503 `environment_starting`, 409 `environment_disabled` or `environment_failed`, 404, 502 `agent_unreachable` and 504 `agent_timeout`.
 - When a bearer is missing or expired on the proxy path, oauth2-proxy answers 401; when the environment is starting or restarting there, the proxy answers 503 with `Retry-After: 5`.
 - When the agent image moves to a new opencode build, consumers see the new protocol directly ([Upgrade opencode](../operations/upgrade-opencode.md)).
 - When the root list does not end within a hundred pages, the Connection fails instead of binding from a partial scan.

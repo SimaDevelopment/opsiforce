@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { V1Pod } from '@kubernetes/client-node';
 import { fetchAsLocalhost, type PodRequestInit } from '../../src/pod/pod-fetch';
 import type { StartTimer } from '../../src/project/agent-status.service';
@@ -112,7 +113,7 @@ export class FakePodService extends RecordingFake {
 
   setPod(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
     this.pods.set(podName, {
-      metadata: { name: podName },
+      metadata: { name: podName, uid: randomUUID() },
       status: { podIP: podIp },
       ...(controlToken
         ? { spec: { containers: [{ name: 'agent', env: [{ name: 'OPSIFORCE_CONTROL_TOKEN', value: controlToken }] }] } }
