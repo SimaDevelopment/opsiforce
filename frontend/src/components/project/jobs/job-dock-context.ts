@@ -19,7 +19,6 @@ interface TrackedBase {
 export interface TrackedPublish extends TrackedBase {
   kind: 'publish';
   projectId: string;
-  environmentSlug: string;
   job: PublishJob | null;
 }
 
@@ -69,12 +68,7 @@ export interface StartImportUploadInput {
 }
 
 export interface JobDockApi {
-  trackPublish: (input: {
-    projectId: string;
-    environmentId: string;
-    environmentName: string;
-    environmentSlug: string;
-  }) => void;
+  trackPublish: (input: { projectId: string; environmentId: string; environmentName: string }) => void;
   trackDuplicate: (input: { projectId: string; title: string }) => void;
   trackExport: (input: { projectId: string; title: string; job: ExportJob }) => void;
   startImportUpload: (input: StartImportUploadInput) => void;

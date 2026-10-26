@@ -144,7 +144,7 @@ export function TenantEnvironmentsSection(props: { active: boolean }) {
                 <p class="break-all text-xs text-muted-foreground">
                   App URLs will look like{' '}
                   <span class="font-mono">
-                    {'<app-id>'}-{slug()}.{import.meta.env.VITE_WEBAPP_DOMAIN}
+                    {'<app-name>'}-{slug()}-{'<app-id>'}.{import.meta.env.VITE_WEBAPP_DOMAIN}
                   </span>
                 </p>
               </Show>

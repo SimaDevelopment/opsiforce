@@ -7,9 +7,13 @@ import {
   builtInCount,
   ExternalServiceUsageService,
 } from '../../src/external-services/usage/external-service-usage.service';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
 import { callIdsOf, stageCalls, usageRowsOf } from './support/call-log';
-import { forgetPlatformServiceConfiguration } from './support/fixtures';
+import { forgetPlatformServiceConfiguration } from '../support/external-service-fixtures';
 import {
   configurePlatformService,
   gateCaller,

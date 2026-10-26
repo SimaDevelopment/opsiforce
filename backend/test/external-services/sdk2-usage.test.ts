@@ -11,9 +11,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { db } from '../../db';
 import { externalServiceUsage } from '../../db/schema';
 import { addMember } from '../support/project-fixtures';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { builtInServiceId, tenantAdmin, type PersonFixture } from './support/fixtures';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
+import { ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { builtInServiceId, tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { callAsGate, gatewayUrlOf, resolved } from './support/gate-proxy';
 import type { GateCallerFixture } from './support/gate';
 import {

@@ -12,7 +12,7 @@ adrs: [0046, 0078, 0083]
 
 ### A caller's call
 
-- Every call a pod makes to an [External Service](../../GLOSSARY.md) goes to the service's [Service host](../../GLOSSARY.md), `<slug>.external-services.<base>`, with the pod's [Gateway Key](../../GLOSSARY.md) in any header, and passes the [Gate](../../GLOSSARY.md): the `external-service` runtime proxy (the Gate's proxy, [Request flows](../runtime/request-flows.md#service-hosts)) and the backend's resolve endpoint behind it.
+- Every call a pod makes to an [External Service](../../GLOSSARY.md) goes to the service's [Service host](../../GLOSSARY.md), `<slug>.external-services.<base>`, with the pod's [Gateway Key](../../GLOSSARY.md) in any header, and passes the [Gate](../../GLOSSARY.md): the `external-service` runtime proxy (the Gate's proxy, [Service host](../runtime/service-host.md)) and the backend's resolve endpoint behind it.
 - The backend answers `POST /api/internal/proxy/external-services/resolve` (`{credential, slug}` with the proxy control token, `credential` being the header value that carries the caller's Gateway Key, Basic credentials decoded). It resolves the calling ProjectEnvironment from the key and `<slug>` among the Built-in External Services and its Organization's published Custom External Services; the Organization's own service wins, and a built-in that later takes the same name stays hidden there.
 - Its answer is the pod's address and a freshly minted [Caller identity](../../GLOSSARY.md) (`kind: call`, the tenant, Project, ProjectEnvironment and environment slug, two minutes long) signed with the receiving copy's own Gateway Key ([ADR-0046](../adr/0046-an-external-service-owns-its-api-and-its-service-policy-the-gate-only-identifies-the-caller-finds-the-service-and-forwards-the-call-untouched.md)). For a built-in served in the backend (`incoming-email`, `whatsapp`, `public-api`) it is `servedBy: "built-in"` with a backend path, and the Caller identity is signed with the built-ins key.
 - A Test Project resolves to Development, and every other caller to the service's [Default environment (External Service)](../../GLOSSARY.md). A sleeping copy is woken and the answer held up to 60 s, until the pod reports it serves and has an address ([ADR-0083](../adr/0083-a-custom-external-services-default-environment-never-sleeps-its-state-lives-in-that-environments-workspace-and-is-copied-on-a-switch-and-its-webhook-url-belongs-to-the-service.md)).
@@ -52,7 +52,7 @@ adrs: [0046, 0078, 0083]
 
 ## Related
 
-- [Request flows](../runtime/request-flows.md) — the Gate's proxy and the Service hosts.
+- [Service host](../runtime/service-host.md) — the Gate's proxy and what it forwards.
 - [Service manifest](service-manifest.md) — what a service is made of and the SDK that enforces its Service policy.
 - [Configuration](configuration.md) — the two configurations a service fetches.
 - [Call log](call-log.md) — the records a service keeps of every call.

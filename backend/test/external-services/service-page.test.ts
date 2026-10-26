@@ -1,13 +1,17 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   tenantAdmin,
   platformOperator,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 
 const PLATFORM_SERVICES = '/api/external-services/platform/services';
 const TENANT_SERVICES = '/api/external-services/services';

@@ -1,13 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '../../../db';
+import { db } from '../../db';
 import {
   externalServiceConfigs,
   externalServiceProjectConfigs,
   externalServices,
   type JsonValue,
-} from '../../../db/schema';
-import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../../support/project-fixtures';
+} from '../../db/schema';
+import { addMember, createTenant, type MemberFixture, type TenantFixture } from './project-fixtures';
 
 export interface PersonFixture extends MemberFixture {
   tenant: TenantFixture;

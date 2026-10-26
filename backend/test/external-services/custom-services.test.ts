@@ -1,6 +1,10 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
 import {
   builderProjectRow,
   createCustomService,
@@ -11,8 +15,8 @@ import {
   TENANT_SERVICES,
   postCustomService,
   renameSlug,
-} from './support/custom-services';
-import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from './support/fixtures';
+} from '../support/custom-services';
+import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from '../support/external-service-fixtures';
 
 describe('creating a Custom External Service', () => {
   let harness: ExternalServicesTestApp;

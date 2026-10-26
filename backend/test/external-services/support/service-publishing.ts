@@ -3,8 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { TENANT_SERVICES } from './custom-services';
-import type { PersonFixture } from './fixtures';
+import { TENANT_SERVICES } from '../../support/custom-services';
+import type { PersonFixture } from '../../support/external-service-fixtures';
 
 export function publishReview(
   app: NestFastifyApplication,

@@ -12,7 +12,7 @@ import { ServiceRegistry, type RegisteredService } from '../../../src/external-s
 import { PRODUCTION_ENVIRONMENT_SLUG } from '../../../src/environment/environment.types';
 import { GatewayKeyService } from '../../../src/gateway/gateway-key.service';
 import { createProject, createTenant, serviceKeyFor, type TenantFixture } from '../../support/project-fixtures';
-import { builtInServiceId } from './fixtures';
+import { builtInServiceId } from '../../support/external-service-fixtures';
 
 export interface GateCallerFixture {
   tenant: TenantFixture;

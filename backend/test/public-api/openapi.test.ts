@@ -269,6 +269,16 @@ describe('public api openapi document', () => {
     expect(Object.keys(schemas?.Environment.properties ?? {})).toContain('opencode');
   });
 
+  it("documents each Environment's read-only Public URL with an example", () => {
+    const schemas = document.components?.schemas as Record<string, NamedSchema> | undefined;
+
+    expect(schemas?.Environment.properties?.publicUrl).toMatchObject({
+      description: expect.stringContaining('null before the App first goes live'),
+      readOnly: true,
+      example: expect.stringMatching(/^https:\/\//),
+    });
+  });
+
   it('documents the pagination and filter parameters of the list routes', () => {
     const paths = document.paths as Record<string, Record<string, DocumentOperation>>;
     const names = (path: string): string[] => (paths[path].get.parameters ?? []).map((parameter) => parameter.name);

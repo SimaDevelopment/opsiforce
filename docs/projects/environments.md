@@ -1,12 +1,12 @@
 ---
 kind: explanation
 terms: [Environment, Environment Slug, Environment Color, Badge Label, ProjectEnvironment, App Auth, Auth mode, Active environment, Development, Production]
-adrs: [0001, 0002, 0007, 0012, 0040]
+adrs: [0001, 0002, 0007, 0040]
 ---
 
 # Environments
 
-> How does a [Project](../../GLOSSARY.md) run in several Environments, how is each one addressed and protected, and how does the workspace switch between them?
+> How does a [Project](../../GLOSSARY.md) run in several Environments, how is each one named and protected, and how does the workspace switch between them?
 
 ## How it works
 
@@ -26,15 +26,18 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
  (shell)        = the working copy              = a published snapshot
 ```
 
-### Public URLs
+### Addressing
 
-- An App's public host is `{environmentId}-{slug}` under the apps domain, where the slug is the Environment's [Environment Slug](../../GLOSSARY.md) ([ADR-0012](../adr/0012-public-app-hostnames-carry-environment-slug.md)); the routing key is the environment id alone.
-- The bare `{environmentId}` host also answers, and a request carrying a wrong slug redirects to the canonical host.
+- Each Environment carries an [Environment Slug](../../GLOSSARY.md): `dev` and `prod` for the protected ones; for a custom one it is prefilled from the name and editable once before saving, unique within the tenant, then immutable, so renames never move an address. It names the environment in every App's [Public URL](../../GLOSSARY.md) ([Public URL](public-url.md)), where the [App Short ID](../../GLOSSARY.md), not the slug, picks the ProjectEnvironment ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
 
 ### App Auth
 
-- [App Auth](../../GLOSSARY.md) is enforced by an OIDC gate on the environment's own host, keyed by routing id ([ADR-0007](../adr/0007-per-environment-app-auth.md)).
-- A newly published environment is seeded once, fail-closed, from Development's setting at first publish, then changed independently.
+- [App Auth](../../GLOSSARY.md) is enforced by an OIDC gate keyed by routing id ([ADR-0007](../adr/0007-per-environment-app-auth.md)) on every address that reaches the App: any first label ending in `-{App Short ID}` under the apps domain, and the environment id alone or followed by a dash and any suffix, which covers both legacy hosts. The backend serves or redirects only hosts these patterns match, so a new or edited App Slug never opens an unprotected address, and the environment-id rule outranks the App Short ID pattern, so a legacy host whose Environment Slug equals another App's Short ID still reaches its own App ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
+- The catch-all apps route, which has no gate, marks every request it passes, and the app proxy answers a marked request for an environment whose Auth mode is not public with a 403, without contacting the pod or redirecting, and logs a warning naming the environment. A missing or stale gate route therefore makes a protected App unreachable on that host, never unprotected ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
+- At backend start, and once more five minutes later, every environment whose App Auth is not public has its gate route's rules rewritten when they are out of date; the OIDC Middleware, which holds the whole OIDC config including token forwarding, is never touched, and replicas running it at once converge on the same rules. An environment with no route gets none.
+- The App Auth dialog lists `/oidc/callback` on every host that serves the App: the Public URL's host when the App has an App Slug, and the two legacy hosts.
+- A newly published environment is seeded once, fail-closed, from Development's setting at first publish, and a [Duplicate](../../GLOSSARY.md)'s Development from its source's ([Duplication](duplication.md)); each is changed independently after that. Deleting an environment removes its gate, and deleting a Project removes the gate of every one of its environments, as does discarding a Project a failed create, Duplicate or Import left half-made.
+- App code receives App Auth's own `TraefikOidcAuth…` session cookies, scoped to the host the visitor signed in on, but never the platform's: the app proxy deletes every cookie named `_opsiforce_…`, a prefix reserved for the platform on App hosts ([Request Flows](../runtime/request-flows.md#per-surface)).
 
 ### In the workspace
 
@@ -46,19 +49,19 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
 ## Edge cases
 
 - When the Badge Label is empty, the badge shows the Environment Slug's first letters, uppercased.
-- When a custom Environment's slug is saved, it is immutable from then on; renames never change it, so published URLs outlive renames.
 
 ## Code
 
 - `backend/src/environment/` — the tenant-wide Environment registry: names, slugs, colours, Badge Labels.
 - `backend/src/project-environment/` — ProjectEnvironment rows, per-environment status, Auth mode and service-gateway key.
-- `proxy/internal/server/server.go` — parses `{environmentId}-{slug}` hosts and redirects a wrong slug to the canonical host.
 - `backend/src/project/project-auth.service.ts` — the App Auth gate configuration, keyed by routing id.
+- `backend/src/project/app-auth-route.ts` — the gate route's rules over every App address and their priorities.
 - `frontend/src/components/project/environments/` — the Environments switcher, row menus and the non-Development banner.
 - `frontend/src/components/tenant-environments/` — the registry editor for colour and Badge Label.
 
 ## Related
 
+- [Public URL](public-url.md) — the address each App answers on, the App Slug and Edit URL.
 - [Publish](publish.md) — moving the App from Development into an environment, and Environment Variables.
 - [App](app.md) — per-environment App Details.
 - [Duplication](duplication.md) — copies a whole Project through the same git path.

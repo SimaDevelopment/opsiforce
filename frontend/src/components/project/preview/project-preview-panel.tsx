@@ -18,7 +18,7 @@ export interface FilePreviewRequest {
 export interface ProjectPreviewPanelProps {
   projectId: string;
   environmentId: string;
-  environmentSlug: string | null;
+  publicUrl: string | null;
   hasApp: boolean;
   appName?: string;
   previewRequest: FilePreviewRequest | null;
@@ -159,7 +159,7 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
                 <AppPreviewPane
                   projectId={props.projectId}
                   environmentId={props.environmentId}
-                  environmentSlug={props.environmentSlug}
+                  publicUrl={props.publicUrl}
                   appName={props.appName}
                   switcher={switcher()}
                   onCollapse={fitsBesideContent() ? () => setDocked(false) : undefined}

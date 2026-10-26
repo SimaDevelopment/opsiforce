@@ -12,9 +12,9 @@ import { AppReadinessService } from '../../src/project/app-readiness.service';
 import type { FakePodService } from '../support/infra-fakes';
 import { disableProject } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { callAsGate, gatewayUrlOf, resolveCaller, resolved } from './support/gate-proxy';
 import { productionCaller, type GateCallerFixture } from './support/gate';
 import {

@@ -19,14 +19,18 @@ import { ProjectImportUploadController } from '../../src/project/project-import-
 import { ProjectImportUploadService } from '../../src/project/project-import-upload.service';
 import { ProjectService } from '../../src/project/project.service';
 import { packSkill, unpackSkill, type SkillTree } from '../../src/store/gate';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
 import {
   createCustomService,
   ensureExternalServiceBuilder,
   TENANT_SERVICES,
   type CreatedCustomService,
-} from './support/custom-services';
-import { builtInServiceId, memberWithout, tenantAdmin, type PersonFixture } from './support/fixtures';
+} from '../support/custom-services';
+import { builtInServiceId, memberWithout, tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { BOARDS_MANIFEST, productionEnvironmentOf } from './support/published-services';
 import { publishReview, publishService } from './support/service-publishing';
 import { storeServiceConfigurationRaw } from './support/test-lane';

@@ -4,15 +4,15 @@ import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { TENANT_SERVICES } from './support/custom-services';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { TENANT_SERVICES } from '../support/custom-services';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   forgetProjectConfiguration,
   tenantAdmin,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import { callThroughGate } from './support/gate-proxy';
 import type { GateCallerFixture } from './support/gate';
 import { environmentDatabase } from './support/inbound';

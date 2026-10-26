@@ -1,6 +1,6 @@
 # App Auth is enforced per `ProjectEnvironment`, seeded once from Development
 
-`auth_mode` (`public` | `manual` | `managed`) is a per-`ProjectEnvironment` column, and enforcement must match it: App Auth is a Traefik `Middleware` + `IngressRoute` built by `ProjectAuthService`, and a published environment's host with no middleware of its own falls through to the wildcard app route unprotected. **App Auth is keyed by the routing id (the environment id), seeded once from Development at first publish, and managed independently per environment after that.**
+`auth_mode` (`public` | `manual` | `managed`) is a per-`ProjectEnvironment` column, and enforcement must match it: App Auth is a Traefik `Middleware` + `IngressRoute` built by `ProjectAuthService`, and a published environment's host with no route of its own falls through to the wildcard app route, which signs no one in and where the app proxy refuses every environment whose `auth_mode` is not `public` ([ADR-0012](0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)). **App Auth is keyed by the routing id (the environment id), seeded once from Development at first publish, and managed independently per environment after that.**
 
 **Keyed by routing id.** Resources are named `opsiforce-project-{routingId}-*` and match that environment's own hosts at priority 100, above the wildcard route. Development's environment id equals its project id ([ADR-0002](0002-development-environment-reuses-project-id.md)), so Development needs no special case.
 
@@ -22,8 +22,8 @@
 ## Consequences
 
 - OIDC config stays in the middleware; there is no schema for it.
-- Deleting a non-Development environment removes its middleware and IngressRoute.
+- Deleting a non-Development environment removes its middleware and IngressRoute; deleting a Project, including one a failed create, Duplicate or Import discards, removes those of every one of its environments, so no `manual` client secret outlives its environment.
 - `managed-auth-sync` (run when a tenant's external tenant name changes) fans out to **every** `managed` environment by routing id.
 - The `*` redirect URI on `opsiforce-apps` is an open-redirect smell this relies on but does not fix.
 - The auth endpoints are `GET/PUT /projects/:id/environments/:environmentId/auth`; Development is addressed as `environmentId == id`.
-- Each environment answers on two hostnames and the middleware's callback is the relative `/oidc/callback`, so `manual` owners register one callback URL per hostname ([ADR-0012](0012-public-app-hostnames-carry-environment-slug.md)).
+- Each environment's App answers on several hosts and the middleware's callback is the relative `/oidc/callback`, so `manual` owners register one callback URL per host the Auth dialog lists ([ADR-0012](0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).

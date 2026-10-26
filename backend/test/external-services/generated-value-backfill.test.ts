@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createExternalServicesTestApp } from './support/app';
-import { builtInServiceId, forgetPlatformServiceConfiguration, platformOperator } from './support/fixtures';
+import { createExternalServicesTestApp } from '../support/external-services-app';
+import {
+  builtInServiceId,
+  forgetPlatformServiceConfiguration,
+  platformOperator,
+} from '../support/external-service-fixtures';
 import {
   channelsOf,
   configuringProject,

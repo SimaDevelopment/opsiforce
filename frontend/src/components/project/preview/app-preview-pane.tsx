@@ -1,15 +1,17 @@
 import { Show, createEffect, createSignal, on, onMount, type JSX } from 'solid-js';
 import { Check, Copy, ExternalLink, LoaderCircle, PanelRightClose, Pencil, RefreshCw } from '~/components/icons';
+import { Button } from '~/components/ui/button';
 import { ToolbarButton } from '~/components/ui/toolbar-button';
-import { appPublicUrl } from '~/lib/app-url';
 import { usePermissions } from '~/api/permissions';
 import { useProjectEnvironments } from '~/api/environments';
+import { readableAppUrl } from '~/lib/app-url';
 import { EditAppDialog } from '../edit-app-dialog';
+import { EditAppUrlDialog } from '../edit-app-url-dialog';
 
 export interface AppPreviewPaneProps {
   projectId: string;
   environmentId: string;
-  environmentSlug: string | null;
+  publicUrl: string | null;
   appName?: string;
   switcher?: JSX.Element;
   onCollapse?: () => void;
@@ -20,16 +22,22 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
   const [iframeLoading, setIframeLoading] = createSignal(true);
   const [copied, setCopied] = createSignal(false);
   const [editAppOpen, setEditAppOpen] = createSignal(false);
+  const [editUrlOpen, setEditUrlOpen] = createSignal(false);
 
   const { hasPermission } = usePermissions();
   const canEditAppDetails = () => hasPermission('can_edit_app_details');
   const environments = useProjectEnvironments(() => props.projectId, { enabled: canEditAppDetails });
   const activeEnv = () => environments.data?.find((e) => e.id === props.environmentId);
   const showEditAction = () => canEditAppDetails() && activeEnv()?.hasApp === true;
+  const readableAddressOnOffer = () => {
+    const env = activeEnv();
+    return showEditAction() && env && !env.appSlug && env.suggestedAppSlug
+      ? readableAppUrl(env.suggestedAppSlug, env)
+      : null;
+  };
 
   const previewDomain = import.meta.env.VITE_WEBAPP_PREVIEW_DOMAIN;
   const previewUrl = () => `https://${props.environmentId}.${previewDomain}/`;
-  const publicUrl = () => appPublicUrl(props.environmentId, props.environmentSlug);
 
   createEffect(
     on(
@@ -48,8 +56,8 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
     iframe.src = iframe.src;
   }
 
-  function copyUrl() {
-    navigator.clipboard.writeText(publicUrl());
+  function copyUrl(publicUrl: string) {
+    navigator.clipboard.writeText(publicUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -81,34 +89,67 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
         </div>
         {props.switcher}
         <div class="flex items-center gap-1 shrink-0">
-          <a
-            href={publicUrl()}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ExternalLink class="w-3.5 h-3.5" />
-            Open app
-          </a>
-          <ToolbarButton onClick={copyUrl} tooltip={copied() ? 'Copied!' : 'Copy URL'}>
-            {copied() ? <Check class="w-3.5 h-3.5 text-green-500" /> : <Copy class="w-3.5 h-3.5" />}
-          </ToolbarButton>
+          <Show when={props.publicUrl}>
+            {(publicUrl) => (
+              <>
+                <a
+                  href={publicUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ExternalLink class="w-3.5 h-3.5" />
+                  Open app
+                </a>
+                <ToolbarButton onClick={() => copyUrl(publicUrl())} tooltip={copied() ? 'Copied!' : 'Copy URL'}>
+                  {copied() ? <Check class="w-3.5 h-3.5 text-green-500" /> : <Copy class="w-3.5 h-3.5" />}
+                </ToolbarButton>
+              </>
+            )}
+          </Show>
           <ToolbarButton onClick={reload} tooltip="Reload app">
             <RefreshCw class="w-3.5 h-3.5" />
           </ToolbarButton>
         </div>
       </div>
-      <div class="flex items-center gap-2 px-2 py-1.5 bg-sidebar border-b border-border shrink-0">
-        <span class="shrink-0 text-xs text-muted-foreground">App URL</span>
-        <input
-          aria-label="App URL"
-          type="text"
-          readonly
-          value={publicUrl()}
-          onFocus={(event) => event.currentTarget.select()}
-          class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-      </div>
+      <Show when={props.publicUrl}>
+        {(publicUrl) => (
+          <div class="flex items-center gap-2 px-2 py-1.5 bg-sidebar border-b border-border shrink-0">
+            <span class="shrink-0 text-xs text-muted-foreground">App URL</span>
+            <input
+              aria-label="App URL"
+              type="text"
+              readonly
+              value={publicUrl()}
+              onFocus={(event) => event.currentTarget.select()}
+              class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <Show when={showEditAction() && !readableAddressOnOffer()}>
+              <Button
+                size="sm"
+                variant="ghost"
+                class="h-6 shrink-0 gap-1 px-2 text-xs"
+                onClick={() => setEditUrlOpen(true)}
+              >
+                <Pencil class="w-3 h-3" />
+                Edit
+              </Button>
+            </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={readableAddressOnOffer()}>
+        {(address) => (
+          <div class="flex items-center gap-2 px-2 py-1.5 bg-sidebar border-b border-border shrink-0 text-xs">
+            <span class="min-w-0 flex-1 truncate text-muted-foreground">
+              Readable address available: <span class="text-foreground">{address()}</span>
+            </span>
+            <Button size="sm" variant="outline" class="h-6 shrink-0 px-2 text-xs" onClick={() => setEditUrlOpen(true)}>
+              Switch
+            </Button>
+          </div>
+        )}
+      </Show>
       <div class="flex-1 min-h-0">
         <iframe
           ref={iframeRef}
@@ -127,6 +168,11 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
         onOpenChange={setEditAppOpen}
         initialName={activeEnv()?.appName ?? props.appName ?? null}
         initialDescription={activeEnv()?.appDescription ?? null}
+      />
+      <EditAppUrlDialog
+        projectId={props.projectId}
+        environment={editUrlOpen() ? (activeEnv() ?? null) : null}
+        onOpenChange={setEditUrlOpen}
       />
     </>
   );

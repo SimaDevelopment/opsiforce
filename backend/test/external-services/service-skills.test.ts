@@ -19,15 +19,19 @@ import { ProjectService } from '../../src/project/project.service';
 import { productionEnvironmentId } from '../../src/store/agent-profile.repository';
 import { SkillRepository } from '../../src/store/skill.repository';
 import { SkillService, type SkillCaller } from '../../src/store/skill.service';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
 import { fixtureCrmEvolved, type EvolvedBuiltIns } from './support/evolved-built-ins';
-import { ensureExternalServiceBuilder } from './support/custom-services';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   platformOperator,
   tenantAdmin,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import { configurePlatformService, READY_FIXTURE_CRM, storeProjectConfiguration } from './support/gate';
 import { publishCustomService } from './support/published-services';
 import { SDK2_BOARDS_MANIFEST } from './support/sdk2-service-pod';

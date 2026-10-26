@@ -29,7 +29,9 @@ Until `startup.sh` exists the pod idles quietly — there is no penalty for a wo
 
 If `app.meta.json` already exists, leave its `name` and `description` alone. Users edit them from the platform and their edits must survive your changes; rewrite them only when the user asks to rename the App.
 
-The App's public address is in `APP_PUBLIC_URL`. Share that link once, when you first create `app.meta.json` — never the `localhost` address, and never again on later edits.
+After creating `app.meta.json`, run `app-url` and share what it prints, once — never the `localhost` address, and never again on later edits. When the user asks for the App's link, run `app-url` again: the address can change after go-live.
+
+If `app-url` isn't available or can't reach the platform, share `APP_PUBLIC_URL` instead.
 
 **One Project is one App.** A project holds exactly one App and one conversation. If the user wants a different App, they start a new project.
 
@@ -107,7 +109,7 @@ The platform's own values below are real environment variables: read those from 
 | Variable | What it is |
 |---|---|
 | `APP_PORT` | The port your App must serve on, and the only port the platform routes to |
-| `APP_PUBLIC_URL` | The App's public address — the link you share with the user |
+| `APP_PUBLIC_URL` | An address that serves this App, possibly an older form; use `app-url` for the link you share |
 | `OPSIFORCE_ENV` | `production` in a published environment; unset or otherwise in development |
 | `APP_LLM_BASE_URL` | OpenAI-compatible base URL for the LLM gateway |
 | `APP_LLM_API_KEY` | Key for that gateway |

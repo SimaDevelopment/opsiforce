@@ -198,7 +198,7 @@ For the LLM, you drive a **ChatGPT/Codex subscription** you already pay for (a o
 | Service | URL |
 |---|---|
 | Opsiforce app | `https://opsiforce.localtest.me` |
-| Project app previews | `https://{project}.apps.opsiforce.localtest.me` |
+| Project apps | `https://{app slug}-dev-{short id}.apps.opsiforce.localtest.me` (also `https://{project}-dev.apps.opsiforce.localtest.me` and `https://{project}.apps.opsiforce.localtest.me`) |
 | Project preview snapshots | `https://{project}.preview.apps.opsiforce.localtest.me` |
 | VS Code | `https://{project}.code.opsiforce.localtest.me` |
 | DB viewer | `https://{project}.db.opsiforce.localtest.me` |

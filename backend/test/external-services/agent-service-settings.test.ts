@@ -16,8 +16,12 @@ import { TEST_PROJECT_KIND } from '../../src/project/project.types';
 import { productionEnvironmentId } from '../../src/store/agent-profile.repository';
 import { ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { builtInServiceId, forgetPlatformServiceConfiguration, platformOperator } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import {
+  builtInServiceId,
+  forgetPlatformServiceConfiguration,
+  platformOperator,
+} from '../support/external-service-fixtures';
 import {
   failHooks,
   forgetRecordedHooks,

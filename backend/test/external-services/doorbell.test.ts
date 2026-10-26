@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Doorbell } from '../../src/external-services/doorbell/doorbell';
-import { builtInServiceId, forgetPlatformServiceConfiguration } from './support/fixtures';
+import { builtInServiceId, forgetPlatformServiceConfiguration } from '../support/external-service-fixtures';
 import { startFakeApp, type FakeApp } from './support/fake-app';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { usageRowsOf } from './support/call-log';
 import {
   appActivity,

@@ -5,6 +5,7 @@ export type ProjectEnvironmentRow = typeof projectEnvironments.$inferSelect;
 
 export interface ProjectEnvironmentContext {
   id: string;
+  shortId: string;
   projectId: string;
   environmentId: string | null;
   isDefault: boolean;
@@ -33,6 +34,9 @@ export interface ProjectEnvironmentContext {
   environmentName: string | null;
   environmentSlug: string | null;
   environmentIsDefault: boolean;
+  hasApp: boolean;
+  appSlug: string | null;
+  servesAnExternalService: boolean;
 }
 
 export interface CreateProjectEnvironmentInput {

@@ -18,6 +18,7 @@ adrs: [0035]
 - Authoring gates on `can_manage_skills` and `can_manage_agents`, weighed after the visibility read, so a Skill or Agent the caller may not see is a plain not-found. Reading them needs neither permission.
 - Creation is asynchronous: a new Project answers immediately with its Development environment still starting; deleting needs `can_delete_project`; the Project and Agent lists paginate by cursor; anything the caller may not see is a plain not-found.
 - A Project carries its provenance: `createdBy` is the platform user that created it, `createdByProjectId` the Project whose Agent created it when a pod did, and `importedAgent` the Agent name it was imported under; each is null when it does not apply, and older Projects have no `createdBy`. `kind` marks a Project the platform keeps for itself: it is absent from `/projects`, and it answers not-found by id to everyone but its creator and those who can see the Skill or Agent its Builder chat authors ([ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)). An Agent Caller running a Builder chat is the one caller that may send `kind`, as `test`, when it creates one, and it gets one per chat: a second create answers 409 `test-project-exists` carrying the existing `testProjectId` and deletes nothing, and `GET /me` names the chat's Test Project as `builderTestProject: { id } | null`, non-null only for a Builder chat's gateway key whose chat has one.
+- Every environment of a Project carries a read-only `publicUrl`, the [Public URL](../../GLOSSARY.md) its App answers on, so a caller never builds one from ids and slugs: the readable address, or the legacy one for an App left on its legacy host, and `null` before the App first goes live and for a Project that serves an [External Service](../../GLOSSARY.md) ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)). The App Slug cannot be written through `/api/v1`.
 - `POST /projects/{id}/test/update` and `POST /projects/{id}/test/reset` refresh a Test Project in place and answer 204. They are open only to the gateway caller whose Project created the Test Project (`createdByProjectId`); a person, another chat and the Test Project's own key are refused (403 for a caller that can see it, 404 for one that cannot). Update overlays the Agent's Development Template onto the workspace, overwriting and adding without deleting, commits the files it wrote as "Template update", and leaves the pod, the session and the Bifrost spend alone. Reset stops the pod, wipes the workspace, lays the Template, prompt and Skills from Development as a create does, unpins the primary Session, resets the Project's Bifrost spend and starts the pod; the Project id stays the same, and a disabled Project answers 423 ([Test Project](../agent-system/test-project.md)).
 
 ### Errors
@@ -26,25 +27,23 @@ adrs: [0035]
 - Six extension members let a caller act on a failure: a rejected request and an unknown reference list their `errors` by pointer and location, a refused Skill tree adds the rule, file and line of each one and carries its non-blocking warnings as `lints`, an ambiguous Organization lists the `tenants` to choose from, a denial names the `permission` that was missing — except when a route is simply closed to the caller's kind of credential, which names none ([API Token](api-token.md)) — and `test-project-exists` names the chat's `testProjectId`.
 - The Skill and Agent refusals carry types of their own, so a program branches on `type` alone: `name-unavailable`, `validation-failed`, `visibility-incoherent`, `skill-in-use`, `duplicate-skill-name`, `model-unknown`, `not-publishable`, `template-refused` (one `errors` item per refused path, naming its `file` and `rule`), `template-changed` and `test-project-exists`; a Project create refused by an Organization's [Limit](../../GLOSSARY.md) is `limit-reached`, and one from a pod whose Project already sits two Projects deep in a chain is `chain-too-deep` ([API Token](api-token.md)).
 - Types are URNs, not URLs, so no self-hosted deployment has to serve a page per type; a 4xx raised inside a reused domain service keeps its message as `detail`, while anything 5xx gets a generic detail.
-- Failures on `/api/proxy/{environmentId}` are not platform Errors: they are opencode's own, or the edge's and the proxy's ([Connection](connection.md)).
 
 ### Evolution
 
-- The major version is in the path; within v1 changes are additive only (new routes, optional fields, query parameters, event kinds, enum values), a field is never removed or retyped, a deprecated field is marked and keeps working, and breaking changes ship as `/api/v2` alongside ([ADR-0035](../adr/0035-public-api-module-with-uri-versioning-and-additive-compat.md)).
-- The policy covers platform-owned resources only; the opencode surface behind `baseUrl` is the protocol of the deployed build and moves with the agent image.
+- The major version is in the path; within v1 changes are additive only (new routes, optional fields, query parameters, event kinds, enum values), a field is never removed or retyped, a deprecated field is marked and keeps working, and breaking changes ship as `/api/v2` alongside ([ADR-0035](../adr/0035-public-api-module-with-uri-versioning-and-additive-compat.md)). The policy covers platform-owned resources only; the opencode surface behind `baseUrl` is the protocol of the deployed build and moves with the agent image.
 
 ### Where it is built
 
 - The API is a separate `public-api` module tree with one sub-module per resource and shared auth, errors and validation, reusing the domain services underneath; one zod schema per DTO validates the request, serializes the response and produces the OpenAPI 3.1 document served at `/api/v1/openapi.json` and rendered by Scalar at `/api/v1/docs`, neither needing a token. Every route names a stable snake_case `operationId` (`list_projects`, `connect_project`, …) in its `@ApiOperation`, so generated clients keep their method names; an `operationId` is never renamed within v1.
-- The schemas plug into NestJS 12's native Standard Schema support and are strict on both sides.
+- The schemas plug into NestJS 12's native Standard Schema support and are strict on both sides, and there is no committed spec snapshot: the running server is the source of truth.
 - The API brings its own Fastify adapter, which keeps the original Fastify error as the `cause` so a malformed body reaches the filter as a validation failure, and replaces the JSON body parser with one that lets an empty body through on `/api/v1` paths so a bodiless `connect` works from any client.
-- There is no committed spec snapshot; the running server is the source of truth.
 
 ## Edge cases
 
 - When a request carries an unrecognised field, the answer is a validation Error.
 - When a response fails the server's own schema, the request fails with a 5xx Error.
 - When an empty JSON body arrives outside `/api/v1`, it is still the error it always was.
+- When a request on `/api/proxy/{environmentId}` fails, the failure is opencode's own, or the edge's or the proxy's, never a platform Error ([Connection](connection.md)).
 
 ## Code
 

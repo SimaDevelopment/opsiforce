@@ -150,6 +150,7 @@ export function useCreateUnassignedProject() {
 export interface UpdateAppPayload {
   name?: string;
   description?: string | null;
+  appSlug?: string;
 }
 
 export function useUpdateApp() {

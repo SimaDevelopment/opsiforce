@@ -19,9 +19,9 @@ import { PROJECT_PUBLISH_QUEUE } from '../../src/publish/publish.types';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
 import type { FakeQueue } from '../support/infra-fakes';
 import { addMember } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { callThroughGate, gatewayUrlOf } from './support/gate-proxy';
 import {
   consumerIn,
