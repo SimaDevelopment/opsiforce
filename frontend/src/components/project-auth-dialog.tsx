@@ -1,6 +1,5 @@
 import { Show } from 'solid-js';
 import { usePermissions } from '~/api/permissions';
-import { Permission } from '~/constants/permissions';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '~/components/ui/dialog';
 import { ProjectAuthTab } from '~/components/project-auth';
 
@@ -12,7 +11,7 @@ export function ProjectAuthDialog(props: {
   onOpenChange: (open: boolean) => void;
 }) {
   const { hasPermission } = usePermissions();
-  const canManageAuth = () => hasPermission(Permission.manageProjectAuthSettings);
+  const canManageAuth = () => hasPermission('can_manage_project_auth_settings');
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>

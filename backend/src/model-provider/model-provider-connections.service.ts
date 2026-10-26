@@ -241,6 +241,16 @@ export class ModelProviderConnectionsService {
     return keys.some((key) => key.name === bifrostProviderKeyName(bifrostName));
   }
 
+  async updateLinkedAccountRequestsIfOutdated(spec: BifrostProviderSpec): Promise<boolean> {
+    const current = await this.bifrostCall(() => this.bifrostService.providerConfig(spec.name));
+    const wanted = bifrostProviderUpdatePayload(spec).custom_provider_config?.allowed_requests ?? {};
+    const actual = current.custom_provider_config?.allowed_requests;
+    const requests = Object.keys(wanted) as (keyof typeof wanted)[];
+    if (requests.every((request) => actual?.[request] === wanted[request])) return false;
+    await this.updateInBifrost(spec);
+    return true;
+  }
+
   async pointAtLinkedAccountProxy(spec: BifrostProviderSpec, callerSecret: string): Promise<void> {
     const key = bifrostProviderKey(spec, callerSecret);
     const existing = await this.find(spec.name);

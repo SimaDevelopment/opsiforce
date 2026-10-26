@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 import { RequirePermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 import { getGroupsHeader } from '../permission/permission.utils';
 import { CurrentTenant, Public, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from './user.decorator';
@@ -17,7 +16,7 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   listUsers(@CurrentTenant() tenant: TenantContext): Promise<UserRecord[]> {
     return this.userService.listByTenant(tenant.tenantId);
   }
@@ -69,7 +68,7 @@ export class UserController {
   }
 
   @Get(':id')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   findOne(@Param('id') id: string): Promise<UserRecord> {
     return this.userService.findById(id);
   }

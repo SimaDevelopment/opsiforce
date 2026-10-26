@@ -1,8 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../../db';
-import { externalServiceConfigs, externalServices, type JsonValue } from '../../../db/schema';
-import { Perms } from '../../../src/permission/permission.constants';
+import {
+  externalServiceConfigs,
+  externalServiceProjectConfigs,
+  externalServices,
+  type JsonValue,
+} from '../../../db/schema';
 import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../../support/project-fixtures';
 
 export interface PersonFixture extends MemberFixture {
@@ -16,15 +20,15 @@ async function personWith(app: INestApplication, permissions: string[]): Promise
 }
 
 export function platformOperator(app: INestApplication): Promise<PersonFixture> {
-  return personWith(app, [Perms.managePlatformExternalServices]);
+  return personWith(app, ['can_manage_platform_external_services']);
 }
 
 export function tenantAdmin(app: INestApplication): Promise<PersonFixture> {
-  return personWith(app, [Perms.manageTenantExternalServices]);
+  return personWith(app, ['can_manage_tenant_external_services']);
 }
 
 export function memberWithout(app: INestApplication): Promise<PersonFixture> {
-  return personWith(app, [Perms.usePublicApi]);
+  return personWith(app, ['can_use_public_api']);
 }
 
 export async function builtInServiceId(slug: string): Promise<string> {
@@ -40,6 +44,17 @@ export async function forgetPlatformServiceConfiguration(slug: string): Promise<
   await db
     .delete(externalServiceConfigs)
     .where(eq(externalServiceConfigs.externalServiceId, await builtInServiceId(slug)));
+}
+
+export async function forgetProjectConfiguration(slug: string, projectEnvironmentId: string): Promise<void> {
+  await db
+    .delete(externalServiceProjectConfigs)
+    .where(
+      and(
+        eq(externalServiceProjectConfigs.externalServiceId, await builtInServiceId(slug)),
+        eq(externalServiceProjectConfigs.projectEnvironmentId, projectEnvironmentId)
+      )
+    );
 }
 
 export async function storedPlatformServiceConfiguration(slug: string): Promise<Record<string, JsonValue> | null> {

@@ -125,7 +125,9 @@ export function servingOf(
   }
   const provider = providers?.get(row.bifrostProvider);
   if (!format) return { models: null, keyIds: EVERY_KEY };
-  const wholeCatalog = readsKeyModels(provider) ? servedModelsOf(BASE_FORMATS[format]) : null;
+  const wholeCatalog = readsKeyModels(provider)
+    ? [...servedModelsOf(BASE_FORMATS[format]), ...(provider?.servesImages ? BASE_FORMATS[format].imageModels : [])]
+    : null;
   const providerKeys = keys.get(row.bifrostProvider);
   if (!providerKeys || provider?.keyLess) return { models: wholeCatalog, keyIds: EVERY_KEY };
   const keyModels = keyModelsOf(providerKeys);

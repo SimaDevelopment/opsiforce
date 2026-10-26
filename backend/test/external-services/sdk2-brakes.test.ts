@@ -9,7 +9,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { db } from '../../db';
 import { projectGatewayKeys } from '../../db/schema';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { PodService } from '../../src/pod/pod.service';
 import { ProjectController } from '../../src/project/project.controller';
 import type { FakePodService } from '../support/infra-fakes';
@@ -142,7 +141,10 @@ describe('the brakes on an SDK 2 service', () => {
 
     it("evicts the Gate's cache for the service when its builder Project is disabled from the Project routes", async () => {
       expect((await resolveCaller(app, { credential: `Bearer ${consumer.key}`, slug: 'boards' })).statusCode).toBe(200);
-      const operator = await addMember(app, admin.tenant, [Perms.disableProject, Perms.manageTenantExternalServices]);
+      const operator = await addMember(app, admin.tenant, [
+        'can_disable_project',
+        'can_manage_tenant_external_services',
+      ]);
 
       const disabled = await app.inject({
         method: 'POST',
@@ -177,7 +179,7 @@ describe('the brakes on an SDK 2 service', () => {
       await saveConsumerConfiguration(app, consumer, 'boards', { boardIds: ['b1'] });
       const pod = await startPod();
       expect((await callCards()).status).toBe(200);
-      const configurer = await addMember(app, admin.tenant, [Perms.configureProjectExternalServices]);
+      const configurer = await addMember(app, admin.tenant, ['can_configure_project_external_services']);
 
       const res = await app.inject({ method: 'DELETE', url: projectDialogUrl(consumer), headers: configurer.headers });
 
@@ -229,7 +231,7 @@ describe('the brakes on an SDK 2 service', () => {
 
     it('refuses someone who may neither configure the Project nor manage the service', async () => {
       await saveConsumerConfiguration(app, consumer, 'boards', { boardIds: ['b1'] });
-      const member = await addMember(app, admin.tenant, [Perms.usePublicApi]);
+      const member = await addMember(app, admin.tenant, ['can_use_public_api']);
 
       const fromDialog = await app.inject({
         method: 'DELETE',
@@ -252,7 +254,7 @@ describe('the brakes on an SDK 2 service', () => {
 
     it('revokes the old key at once, the new key resolves, the Gate forgets the old one and the pod restarts', async () => {
       await saveConsumerConfiguration(app, consumer, 'boards', { boardIds: ['b1'] });
-      const editor = await addMember(app, admin.tenant, [Perms.usePublicApi]);
+      const editor = await addMember(app, admin.tenant, ['can_use_public_api']);
       const deletedBefore = fakePods().callsTo('deletePod').length;
 
       const res = await app.inject({
@@ -329,7 +331,7 @@ describe('the brakes on an SDK 2 service', () => {
   describe("a disabled Project's key", () => {
     it('is refused with 401 and forgotten by the Gate', async () => {
       await saveConsumerConfiguration(app, consumer, 'boards', { boardIds: ['b1'] });
-      const operator = await addMember(app, admin.tenant, [Perms.disableProject]);
+      const operator = await addMember(app, admin.tenant, ['can_disable_project']);
 
       const res = await app.inject({
         method: 'POST',

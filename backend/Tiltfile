@@ -185,11 +185,26 @@ if proxy_auth_values:
         fail('PROXY_AUTH_VALUES points at a missing file: %s' % proxy_auth_values)
     proxy_values.append(proxy_auth_values)
 
+permission_list = 'src/permission/permission.constants.ts'
+watch_file(permission_list)
+static_identity_permissions = str(local(
+    [
+        'node',
+        '--no-warnings',
+        '--input-type=module',
+        '-e',
+        "const { PERMISSIONS } = await import('./%s'); console.log(PERMISSIONS.filter((name) => name !== 'can_manage_users').join(','))" % permission_list,
+    ],
+    quiet=True,
+    echo_off=True,
+)).strip()
+
 k8s_yaml(helm(
     '../helm/opsiforce-proxy',
     name='opsiforce-proxy',
     namespace='local',
     values=proxy_values,
+    set=['auth.static.permissions={%s}' % static_identity_permissions],
 ))
 
 k8s_resource(

@@ -35,6 +35,27 @@
   overflow: hidden !important;
   width: 100% !important;
   min-width: 0 !important;
+  --container-session: 800px;
+}
+
+@media (min-width: 96rem) {
+  .oc-chat-only {
+    --container-session: 1000px;
+  }
+}
+
+.oc-chat-only [data-component='session-composer-dock'] > div {
+  padding-inline: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .oc-chat-only [data-component='session-composer-dock'] > div {
+    padding-inline: 1.5rem;
+  }
+
+  .oc-chat-only .md\:max-w-session {
+    max-width: var(--container-session);
+  }
 }
 
 .oc-chat-only [data-component='composer'] div:has(> div > [data-action='composer-model']) {

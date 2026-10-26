@@ -9,7 +9,6 @@ import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { UserService } from '../user/user.service';
 import { RequirePermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 
 @Controller('projects/:projectId/publish')
 export class PublishController {
@@ -21,7 +20,7 @@ export class PublishController {
   ) {}
 
   @Get('targets')
-  @RequirePermission(Perms.publishProject)
+  @RequirePermission('can_publish_project')
   async targets(
     @Param('projectId') projectId: string,
     @CurrentTenant() tenant: TenantContext,
@@ -32,7 +31,7 @@ export class PublishController {
   }
 
   @Get('form')
-  @RequirePermission(Perms.publishProject)
+  @RequirePermission('can_publish_project')
   async form(
     @Param('projectId') projectId: string,
     @Query('environmentId') environmentId: string,
@@ -44,7 +43,7 @@ export class PublishController {
   }
 
   @Post()
-  @RequirePermission(Perms.publishProject)
+  @RequirePermission('can_publish_project')
   async publish(
     @Param('projectId') projectId: string,
     @Body() dto: PublishDto,
@@ -63,7 +62,7 @@ export class PublishController {
   }
 
   @Get('environments/:environmentId/job')
-  @RequirePermission(Perms.publishProject)
+  @RequirePermission('can_publish_project')
   async latestJob(
     @Param('projectId') projectId: string,
     @Param('environmentId') environmentId: string,
@@ -75,7 +74,7 @@ export class PublishController {
   }
 
   @Get('environments/:environmentId/job/stream')
-  @RequirePermission(Perms.publishProject)
+  @RequirePermission('can_publish_project')
   async jobStream(
     @Param('projectId') projectId: string,
     @Param('environmentId') environmentId: string,

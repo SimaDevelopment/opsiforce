@@ -8,7 +8,6 @@ import { db } from '../../db';
 import { agents, skills } from '../../db/schema';
 import { AgentController } from '../../src/agent/agent.controller';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { Perms } from '../../src/permission/permission.constants';
 import { SkillsController } from '../../src/store/skills.controller';
 import { ensureBuiltInAgent, ensureBuiltInSkill, seedLiveAgent } from '../support/agent-fixtures';
 import { createTenantRow } from '../support/org-fixtures';
@@ -28,7 +27,7 @@ import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 @Module({ controllers: [SkillsController, AgentController] })
 class InternalStoreModule {}
 
-const AUTHORING = [Perms.usePublicApi, Perms.manageSkills, Perms.manageAgents];
+const AUTHORING = ['can_use_public_api', 'can_manage_skills', 'can_manage_agents'];
 
 function asCaller(callerIdentity: string): Record<string, string> {
   return { [callerIdentityHeader]: callerIdentity };
@@ -62,7 +61,7 @@ describe('the Store routes of /api/v1', () => {
     await app.get(EnvironmentService).ensureDefaultForTenant(tenantId);
 
     author = proxyHeaders({ tenants: [tenant], permissions: AUTHORING });
-    bystander = proxyHeaders({ tenants: [tenant], permissions: [Perms.usePublicApi] });
+    bystander = proxyHeaders({ tenants: [tenant], permissions: ['can_use_public_api'] });
   });
 
   afterAll(async () => {
@@ -91,7 +90,7 @@ describe('the Store routes of /api/v1', () => {
       expect(res.statusCode).toBe(403);
       expect(res.json()).toMatchObject({
         type: 'urn:opsiforce:error:permission-denied',
-        permission: Perms.manageSkills,
+        permission: 'can_manage_skills',
       });
     });
 
@@ -209,7 +208,7 @@ describe('the Store routes of /api/v1', () => {
       expect(res.statusCode).toBe(403);
       expect(res.json()).toMatchObject({
         type: 'urn:opsiforce:error:permission-denied',
-        permission: Perms.manageSkills,
+        permission: 'can_manage_skills',
       });
     });
 
@@ -390,7 +389,7 @@ describe('the Store routes of /api/v1', () => {
       });
 
       expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({ permission: Perms.manageAgents });
+      expect(res.json()).toMatchObject({ permission: 'can_manage_agents' });
     });
   });
 });

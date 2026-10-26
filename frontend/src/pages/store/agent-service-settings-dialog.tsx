@@ -24,7 +24,6 @@ import {
 } from '~/components/ui/dialog';
 import { Spinner } from '~/components/ui/spinner';
 import { Lock } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 
 export function serviceSettingsSummary(settings: AgentServiceSettings | null): string {
   if (!settings) return 'No service settings: new Projects start unconfigured';
@@ -106,7 +105,7 @@ function FieldSettingsEditor(props: {
   const form = optionalFields(serviceSettingsFormOf(props.view.service.manifest.projectForm ?? []));
   const saved: AgentServiceSettings = props.view.settings ?? {};
   const save = useSetAgentServiceSettings(() => props.agentId);
-  const canSet = () => hasPermission(Permission.configureProjectExternalServices);
+  const canSet = () => hasPermission('can_configure_project_external_services');
   const editor = useConfigurationForm({
     form,
     initial: withDefaults(form, saved),

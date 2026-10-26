@@ -70,7 +70,6 @@ import {
   Settings,
   Trash2,
 } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { slugify } from '~/lib/app-url';
 import { cn } from '~/lib/cn';
 import { createDocumentTitle } from '~/lib/create-document-title';
@@ -95,7 +94,7 @@ export function AgentPage(props: AgentPageProps) {
   createDocumentTitle(() => agent.data && (agent.data.displayName ?? agent.data.name));
   const environments = useEnvironments();
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageAgents);
+  const canManage = () => hasPermission('can_manage_agents');
 
   const development = () => (environments.data ?? []).find((environment) => environment.isDefault);
   const loaded = createMemo(() =>
@@ -116,7 +115,7 @@ export function AgentPage(props: AgentPageProps) {
 
   return (
     <div class="h-full overflow-y-auto bg-background">
-      <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <Link
           to={back().to}
           class={cn(
@@ -240,7 +239,7 @@ function AgentHeader(props: {
   onPublish: () => void;
 }) {
   const { hasPermission } = usePermissions();
-  const users = useUsers(() => hasPermission(Permission.manageWorkspaces) && props.agent.createdBy !== null);
+  const users = useUsers(() => hasPermission('can_manage_workspaces') && props.agent.createdBy !== null);
   const update = useUpdateAgent(() => props.agent.id);
   const creator = () =>
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.displayName ??

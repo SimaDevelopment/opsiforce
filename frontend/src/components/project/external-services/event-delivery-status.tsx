@@ -3,8 +3,8 @@ import { useEventDeliveryStatus, type ProjectEnvironmentRef } from '~/api/projec
 import { AlertTriangle } from '~/components/icons';
 
 function eventsWaiting(count: number): string {
-  if (count === 0) return 'The App has taken every Event.';
-  return `${count} Event${count === 1 ? '' : 's'} not yet taken by the App`;
+  if (count === 0) return 'No Events waiting for the App.';
+  return `${count} Event${count === 1 ? '' : 's'} waiting for the App`;
 }
 
 export function EventDeliveryStatusLines(props: { environment: ProjectEnvironmentRef; serviceId: string }) {

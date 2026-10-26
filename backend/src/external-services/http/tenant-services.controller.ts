@@ -13,7 +13,6 @@ import {
   UseFilters,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { Perms } from '../../permission/permission.constants';
 import { RequireAnyPermission, RequirePermission } from '../../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../../permission/permission.utils';
 import { CurrentTenant, type TenantContext } from '../../tenant/tenant.decorator';
@@ -39,11 +38,11 @@ import { parseUsageMonth, ServiceUsage, type ServiceUsageView } from '../usage/s
 export type TenantServiceEntry = TenantServiceView | CustomServiceSummary;
 
 function managesCustomServices(req: FastifyRequest): boolean {
-  return hasPermission(getGroupsHeader(req), Perms.manageTenantExternalServices);
+  return hasPermission(getGroupsHeader(req), 'can_manage_tenant_external_services');
 }
 
 @Controller('external-services/services')
-@RequireAnyPermission([Perms.manageTenantExternalServices, Perms.managePlatformExternalServices])
+@RequireAnyPermission(['can_manage_tenant_external_services', 'can_manage_platform_external_services'])
 @UseFilters(InvalidConfigurationFilter)
 export class TenantServicesController {
   constructor(
@@ -63,12 +62,14 @@ export class TenantServicesController {
       this.customServices.listForTenant(tenant.tenantId),
       this.registry.listForTenant(tenant.tenantId),
     ]);
+    const publishedIn = await this.customServices.publishedEnvironmentIds(rows.map((row) => row.builderChatId));
     const builtInSlugs = new Set(this.registry.list().map((service) => service.slug));
     return [
       ...builtIns,
       ...rows.map((row) =>
         customServiceSummaryOf(row, {
           published: callable.find((service) => service.id === row.id),
+          publishedEnvironmentIds: publishedIn.get(row.builderChatId) ?? [],
           hidesBuiltIn: builtInSlugs.has(row.slug),
         })
       ),
@@ -85,7 +86,7 @@ export class TenantServicesController {
   }
 
   @Put(':id/configuration')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   saveServiceConfiguration(
     @Param('id') id: string,
     @Body() body: { values?: unknown } | undefined,
@@ -96,7 +97,7 @@ export class TenantServicesController {
 
   @Post(':id/configuration/rotate')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   rotateServiceConfiguration(
     @Param('id') id: string,
     @Body() body: unknown,
@@ -107,7 +108,7 @@ export class TenantServicesController {
 
   @Post(':id/configuration/hook/retry')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   retryServiceConfigurationHook(
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
@@ -117,7 +118,7 @@ export class TenantServicesController {
 
   @Post(':id/configuration/hook/discard')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   discardServiceConfigurationHook(
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
@@ -126,13 +127,13 @@ export class TenantServicesController {
   }
 
   @Get(':id/development')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   getDevelopment(@Param('id') id: string, @CurrentTenant() tenant: TenantContext): Promise<DevelopmentServiceView> {
     return this.views.developmentView(tenant.tenantId, id);
   }
 
   @Put(':id/development/configuration')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   saveDevelopmentConfiguration(
     @Param('id') id: string,
     @Body() body: { values?: unknown } | undefined,
@@ -143,7 +144,7 @@ export class TenantServicesController {
 
   @Post(':id/development/configuration/rotate')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   rotateDevelopmentConfiguration(
     @Param('id') id: string,
     @Body() body: unknown,
@@ -154,7 +155,7 @@ export class TenantServicesController {
 
   @Post(':id/development/configuration/hook/retry')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   retryDevelopmentConfigurationHook(
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
@@ -164,7 +165,7 @@ export class TenantServicesController {
 
   @Post(':id/development/configuration/hook/discard')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   discardDevelopmentConfigurationHook(
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
@@ -174,7 +175,7 @@ export class TenantServicesController {
 
   @Post(':id/development/configuration/copy-from-production')
   @HttpCode(200)
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   copyProductionToDevelopment(
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
@@ -183,7 +184,7 @@ export class TenantServicesController {
   }
 
   @Post(':id/development/:route/:name')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   async callDevelopmentServiceForm(
     @Param('id') id: string,
     @Param('route') route: string,
@@ -196,7 +197,7 @@ export class TenantServicesController {
   }
 
   @Post(':id/:route/:name')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   async callServiceForm(
     @Param('id') id: string,
     @Param('route') route: string,
@@ -235,7 +236,7 @@ export class TenantServicesController {
   }
 
   @Get(':id/call-log')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   readCallLog(
     @Param('id') id: string,
     @Query() query: Record<string, unknown>,
@@ -247,7 +248,7 @@ export class TenantServicesController {
   }
 
   @Get(':id/usage')
-  @RequirePermission(Perms.manageTenantExternalServices)
+  @RequirePermission('can_manage_tenant_external_services')
   readUsage(
     @Param('id') id: string,
     @Query() query: Record<string, unknown>,

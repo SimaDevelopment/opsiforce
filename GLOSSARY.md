@@ -392,7 +392,7 @@ The values filled into an External Service's Service form, one per service and o
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, and Publish carries Development's forward.
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
 _Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
 **Disconnect (External Service)**:
@@ -530,7 +530,7 @@ The third sibling beside Settings and Admin, reached from the avatar dropdown at
 _Avoid_: Marketplace, Catalog, Library (non-canonical — say Store); Skill Store (one tab within Store, not the whole); Settings, Admin (the sibling destinations)
 
 **Platform-scope permission**:
-A permission whose view spans **all Organizations** rather than the one chosen in the selector — the `platform_` segment in its name marks the scope (e.g. `can_view_platform_storage`). Granting one is granting cross-Organization visibility, so its Keycloak group is never part of the default admin bundle. There is no "super admin": cross-Organization capability is a property of individual permissions, not of a role.
+A permission whose view spans **all Organizations** rather than the one chosen in the selector — the `platform_` segment in its name marks the scope (e.g. `can_view_platform_storage`). Granting one is granting cross-Organization visibility, so it is never part of the default admin bundle; the `opsiforce_platform_admin` Keycloak group bundles all of them, and each also keeps its own group. There is no "super admin" in the code: every route checks individual permissions, and the platform bundle is only a way to grant them together.
 _Avoid_: Super admin, Global admin (role concepts — the system has only flat permissions); Cross-tenant permission (say Platform-scope)
 
 **Storage**:

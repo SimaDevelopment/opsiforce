@@ -56,14 +56,17 @@ export interface RunningProxy {
   upstream: FakeChatGptUpstream;
   backend: FakeBackend;
   sendLikeBifrost(body: unknown, authorization?: string): Promise<Response>;
+  postLikeBifrost(path: string, body: string | FormData): Promise<Response>;
   stop(): Promise<void>;
 }
+
+export const event = (data: { type: string } & Record<string, unknown>) => ({ event: data.type, data });
 
 export function respondWithEventStream(events: readonly { event: string; data: unknown }[]): UpstreamResponder {
   return (res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' });
-    for (const { event, data } of events) {
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    for (const { event: name, data } of events) {
+      res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
     }
     res.end();
   };
@@ -214,6 +217,15 @@ export async function startLinkedAccountProxy(options: { maxBodyBytes: number })
         method: 'POST',
         headers: { authorization, 'content-type': 'application/json' },
         body: typeof body === 'string' ? body : JSON.stringify(body),
+      }),
+    postLikeBifrost: (path, body) =>
+      fetch(`${baseUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          authorization: BIFROST_AUTHORIZATION,
+          ...(typeof body === 'string' ? { 'content-type': 'application/json' } : {}),
+        },
+        body,
       }),
     stop,
   };

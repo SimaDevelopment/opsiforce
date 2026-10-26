@@ -4,7 +4,6 @@ import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { BASE_FORMATS } from '../../src/model-provider/base-formats';
 import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { DOCK_BASE_URL, startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import {
@@ -62,7 +61,7 @@ describe('the Model providers page', () => {
 
   async function seededTenant(): Promise<{ tenant: TenantFixture; admin: MemberFixture }> {
     const tenant = await createTenant(app);
-    return { tenant, admin: await addMember(app, tenant, [Perms.manageTenantModelProviders]) };
+    return { tenant, admin: await addMember(app, tenant, ['can_manage_tenant_model_providers']) };
   }
 
   async function projectOf(tenant: TenantFixture): Promise<string> {
@@ -329,7 +328,7 @@ describe('the Model providers page', () => {
   describe('who may use it', () => {
     it('refuses a member without can_manage_tenant_model_providers on every route', async () => {
       const { tenant } = await seededTenant();
-      const member = await addMember(app, tenant, [Perms.manageTenantBudget, Perms.manageTenantDefaults]);
+      const member = await addMember(app, tenant, ['can_manage_tenant_budget', 'can_manage_tenant_defaults']);
 
       const listed = await list(member);
       const saved = await saveFormat(member, 'anthropic', [{ name: 'anthropic', chatEnabled: false, chatWeight: 1 }]);

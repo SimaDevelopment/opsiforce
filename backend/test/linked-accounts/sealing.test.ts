@@ -7,7 +7,6 @@ import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { encryptResourceValue, decryptResourceValue, asEncryptedResourceValue } from '../../src/common/secret-crypto';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { addMember, createTenant, type MemberFixture } from '../support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
@@ -67,7 +66,7 @@ describe('the sealed sign-in of a Linked account', () => {
 
   async function connected(account: { email: string; accountId: string }): Promise<ConnectedAccount> {
     const tenant = await createTenant(app);
-    const admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+    const admin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
     const added = await app.inject({
       method: 'POST',
       url: '/api/model-providers',

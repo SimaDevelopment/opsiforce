@@ -1,48 +1,54 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import { useStoreAgents, type StoreAgent } from '~/api/agents';
 import { useEnvironments, type Environment } from '~/api/environments';
 import { usePermissions } from '~/api/permissions';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
-import { EnvironmentBadge } from '~/components/environment-badge';
+import { Pager, createOffsetPages } from '~/components/pager';
 import { CreateEntryDialog } from '~/components/store/create-entry-dialog';
 import { ImportAgentDialog } from '~/components/store/import-agent-dialog';
 import { SettingsSection } from '~/components/settings/settings-section';
 import {
-  DefaultEnvironmentMark,
   DisabledBadge,
   EmptyState,
+  EnvironmentList,
   ErrorState,
   FilterChips,
+  ListToolbar,
   OriginBadge,
   RowLink,
   RowList,
   SearchInput,
+  SortSelect,
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { Bot, ChevronRight, Plus, Upload } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
-import { createSearchDraft, filterOptions, type StoreListProps } from './store-filters';
+import { SORT_OPTIONS, createSearchDraft, filterOptions, sortStoreRows, type StoreListProps } from './store-filters';
 
 export function AgentsListPage(props: StoreListProps) {
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageAgents);
-  const canImport = () => canManage() && hasPermission(Permission.manageSkills);
+  const canManage = () => hasPermission('can_manage_agents');
+  const canImport = () => canManage() && hasPermission('can_manage_skills');
   const search = createSearchDraft(
     () => props.query,
     (query) => props.onQuery(query)
   );
   const filter = () => (props.filter === 'disabled' && !canManage() ? 'all' : props.filter);
-  const agents = useStoreAgents(
-    filter,
-    () => props.query
-  );
+  const agents = useStoreAgents(filter, () => props.query);
   const environments = useEnvironments();
   const [createOpen, setCreateOpen] = createSignal(false);
   const [importOpen, setImportOpen] = createSignal(false);
   const narrowed = () => filter() !== 'all' || props.query.trim().length > 0;
 
   const byId = createMemo(() => new Map((environments.data ?? []).map((environment) => [environment.id, environment])));
+  const sorted = createMemo(() =>
+    sortStoreRows(agents.data ?? [], props.sort, {
+      label: (agent) => agent.displayName ?? agent.name,
+      createdAt: (agent) => (agent.origin === 'built_in' ? null : agent.createdAt),
+    })
+  );
+  const pages = createOffsetPages(() => sorted());
+  createEffect(on([filter, () => props.query, () => props.sort], () => pages.toFirst(), { defer: true }));
 
   return (
     <SettingsSection
@@ -67,15 +73,18 @@ export function AgentsListPage(props: StoreListProps) {
         </Show>
       }
     >
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchInput value={search.draft()} onInput={search.onInput} label="Search agents" />
-        <FilterChips
-          label="Filter agents"
-          options={filterOptions(canManage())}
-          value={filter()}
-          onChange={props.onFilter}
-        />
-      </div>
+      <ListToolbar
+        search={<SearchInput value={search.draft()} onInput={search.onInput} label="Search agents" />}
+        sort={<SortSelect options={SORT_OPTIONS} value={props.sort} onChange={props.onSort} />}
+        filters={
+          <FilterChips
+            label="Filter agents"
+            options={filterOptions(canManage())}
+            value={filter()}
+            onChange={props.onFilter}
+          />
+        }
+      />
 
       <Show when={!agents.isError} fallback={<ErrorState message="The agents could not be loaded." />}>
         <Show
@@ -86,13 +95,14 @@ export function AgentsListPage(props: StoreListProps) {
             </div>
           }
         >
-          {(rows) => (
-            <Show when={rows().length > 0} fallback={<AgentsEmptyState narrowed={narrowed()} />}>
-              <RowList>
-                <For each={rows()}>{(agent) => <AgentRow agent={agent} environmentById={byId()} />}</For>
-              </RowList>
-            </Show>
-          )}
+          <Show when={sorted().length > 0} fallback={<AgentsEmptyState narrowed={narrowed()} />}>
+            <RowList>
+              <For each={pages.page()}>{(agent) => <AgentRow agent={agent} environmentById={byId()} />}</For>
+              <Show when={pages.needsPager()}>
+                <Pager {...pages.pagerProps()} />
+              </Show>
+            </RowList>
+          </Show>
         </Show>
       </Show>
 
@@ -141,21 +151,13 @@ function AgentRow(props: { agent: StoreAgent; environmentById: Map<string, Envir
           <div class="mt-1.5 text-xs text-muted-foreground">Every environment</div>
         </Show>
         <Show when={props.agent.origin !== 'built_in' && published().length > 0}>
-          <ul class="mt-1.5 flex flex-wrap items-center gap-2" aria-label="Environments holding a definition">
-            <For each={published()}>
-              {(environment) => {
-                const isDefault = () => environment.id === props.agent.defaultEnvironmentId;
-                return (
-                  <li class="inline-flex items-center gap-1">
-                    <EnvironmentBadge environment={environment} />
-                    <Show when={isDefault()}>
-                      <DefaultEnvironmentMark environmentName={environment.name} plain />
-                    </Show>
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
+          <div class="mt-1.5">
+            <EnvironmentList
+              environments={published()}
+              defaultEnvironmentId={props.agent.defaultEnvironmentId}
+              label="Environments holding a definition"
+            />
+          </div>
         </Show>
       </div>
       <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden="true" />

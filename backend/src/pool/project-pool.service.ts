@@ -216,7 +216,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     }
 
     await this.lifecycle?.created(reserved.id).catch((err: Error) => {
-      this.logger.warn(`Claim ${reserved.id} could not configure the service it tests: ${err.message}`);
+      this.logger.warn(`Claim ${reserved.id} could not start its Project configurations: ${err.message}`);
     });
     const configured = await (claim.configureBeforeDelivery?.(reserved.id) ?? Promise.resolve()).then(
       () => true,

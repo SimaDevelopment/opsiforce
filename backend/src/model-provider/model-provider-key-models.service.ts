@@ -17,7 +17,12 @@ function coversCatalog(stored: string[] | undefined, served: string[]): boolean 
 }
 
 function servedModelsByFormat(catalog: ModelCatalog): Record<string, string[]> {
-  return Object.fromEntries(BASE_FORMAT_IDS.map((format) => [format, servedModelsOf(BASE_FORMATS[format], catalog)]));
+  return Object.fromEntries(
+    BASE_FORMAT_IDS.map((format) => [
+      format,
+      [...servedModelsOf(BASE_FORMATS[format], catalog), ...BASE_FORMATS[format].imageModels],
+    ])
+  );
 }
 
 @Injectable()
@@ -58,6 +63,10 @@ export class ModelProviderKeyModelsService {
     }
     await this.recordAppliedCatalog(servedModels);
     this.logger.log("Every organization's keys now follow the model catalog");
+  }
+
+  async rewriteEveryTenantsKeysAtNextCatalogCheck(): Promise<void> {
+    await db.update(appliedModelCatalog).set({ servedModels: {} });
   }
 
   private async recordAppliedCatalog(servedModels: Record<string, string[]>): Promise<void> {

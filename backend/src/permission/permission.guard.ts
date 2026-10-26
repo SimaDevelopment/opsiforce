@@ -1,5 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { Permission } from './permission.constants';
 import { getGroupsHeader, hasPermission } from './permission.utils';
 import { MissingPermissionException } from './missing-permission.exception';
 
@@ -7,10 +8,10 @@ const REQUIRED_PERMISSION_KEY = 'requiredPermission';
 const REQUIRED_ANY_PERMISSION_KEY = 'requiredAnyPermission';
 export const RELAXED_PERMISSION_KEY = 'relaxedPermission';
 
-export const RequirePermission = (permission: string) => SetMetadata(REQUIRED_PERMISSION_KEY, permission);
+export const RequirePermission = (permission: Permission) => SetMetadata(REQUIRED_PERMISSION_KEY, permission);
 
 /** Either permission opens the door, as the Builder's two authoring permissions do. */
-export const RequireAnyPermission = (permissions: readonly string[]) =>
+export const RequireAnyPermission = (permissions: readonly Permission[]) =>
   SetMetadata(REQUIRED_ANY_PERMISSION_KEY, permissions);
 
 export const RelaxPermission = () => SetMetadata(RELAXED_PERMISSION_KEY, true);
@@ -25,7 +26,7 @@ export class PermissionGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const groups = getGroupsHeader(request);
 
-    const permission = this.reflector.getAllAndOverride<string | undefined>(REQUIRED_PERMISSION_KEY, [
+    const permission = this.reflector.getAllAndOverride<Permission | undefined>(REQUIRED_PERMISSION_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -33,7 +34,7 @@ export class PermissionGuard implements CanActivate {
       throw new MissingPermissionException(permission);
     }
 
-    const anyOf = this.reflector.getAllAndOverride<readonly string[] | undefined>(REQUIRED_ANY_PERMISSION_KEY, [
+    const anyOf = this.reflector.getAllAndOverride<readonly Permission[] | undefined>(REQUIRED_ANY_PERMISSION_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);

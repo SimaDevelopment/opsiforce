@@ -2,7 +2,6 @@ import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, 
 import type { FastifyRequest } from 'fastify';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { RequirePermission } from '../permission/permission.guard';
-import { Perms } from '../permission/permission.constants';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { UserService, type UserRecord } from '../user/user.service';
@@ -24,8 +23,8 @@ import type {
 function readPerms(req: FastifyRequest) {
   const groups = getGroupsHeader(req);
   return {
-    canManageWorkspaces: hasPermission(groups, Perms.manageWorkspaces),
-    canMoveProjectsBetweenWorkspaces: hasPermission(groups, Perms.moveProjectsBetweenWorkspaces),
+    canManageWorkspaces: hasPermission(groups, 'can_manage_workspaces'),
+    canMoveProjectsBetweenWorkspaces: hasPermission(groups, 'can_move_projects_between_workspaces'),
   };
 }
 
@@ -46,7 +45,7 @@ export class WorkspaceController {
     const dbUser = await this.ensureDbUser(user, tenant.tenantId);
     if (scope === 'all') {
       if (!readPerms(req).canManageWorkspaces) {
-        throw new ForbiddenException(`Missing permission: ${Perms.manageWorkspaces}`);
+        throw new ForbiddenException('Missing permission: can_manage_workspaces');
       }
       return this.workspaceService.findAllForAdmin(tenant.tenantId, dbUser.id);
     }
@@ -57,7 +56,7 @@ export class WorkspaceController {
   }
 
   @Post()
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   async create(
     @Body() dto: CreateWorkspaceDto,
     @CurrentTenant() tenant: TenantContext,
@@ -84,7 +83,7 @@ export class WorkspaceController {
   }
 
   @Patch(':id')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   update(
     @Param('id') id: string,
     @Body() dto: UpdateWorkspaceDto,
@@ -94,7 +93,7 @@ export class WorkspaceController {
   }
 
   @Delete(':id')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   async remove(@Param('id') id: string, @CurrentTenant() tenant: TenantContext): Promise<void> {
     await this.workspaceService.remove(id, tenant.tenantId);
   }
@@ -116,7 +115,7 @@ export class WorkspaceController {
   }
 
   @Post(':id/members')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   async addMember(
     @Param('id') id: string,
     @Body() dto: AddWorkspaceMemberDto,
@@ -126,7 +125,7 @@ export class WorkspaceController {
   }
 
   @Delete(':id/members/:userId')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   async removeMember(
     @Param('id') id: string,
     @Param('userId') userId: string,
@@ -283,7 +282,7 @@ export class WorkspaceController {
   }
 
   @Delete(':id/projects/:projectId')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   async unassignProject(
     @Param('id') _id: string,
     @Param('projectId') projectId: string,

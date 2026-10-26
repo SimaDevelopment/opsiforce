@@ -19,6 +19,7 @@ export { default as MessageSquare } from 'lucide-solid/icons/message-square';
 export { default as Code } from 'lucide-solid/icons/code';
 export { default as Database } from 'lucide-solid/icons/database';
 export { default as ArrowUp } from 'lucide-solid/icons/arrow-up';
+export { default as ArrowUpDown } from 'lucide-solid/icons/arrow-up-down';
 export { default as LoaderCircle } from 'lucide-solid/icons/loader-circle';
 export { default as Wallet } from 'lucide-solid/icons/wallet';
 export { default as AlertTriangle } from 'lucide-solid/icons/triangle-alert';

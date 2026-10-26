@@ -13,6 +13,11 @@ export interface CallerCredentials {
   forceRefreshed(): Promise<LinkedAccountCredential>;
 }
 
+export interface CallerAccess {
+  credentials: CallerCredentials;
+  credential: LinkedAccountCredential;
+}
+
 export interface CredentialSource {
   forCaller(callerSecret: string): CallerCredentials;
 }

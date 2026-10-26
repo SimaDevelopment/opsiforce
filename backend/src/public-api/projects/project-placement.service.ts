@@ -1,5 +1,4 @@
 import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { Perms } from '../../permission/permission.constants';
 import { TenantService } from '../../tenant/tenant.service';
 import { WorkspaceService } from '../../workspace/workspace.service';
 import type { WorkspaceAccessParams } from '../../workspace/workspace.types';
@@ -38,7 +37,7 @@ export class ProjectPlacementService {
     const access: WorkspaceAccess = {
       tenantId: caller.tenant.id,
       userId: caller.user.platformId,
-      canManageWorkspaces: caller.permissions.has(Perms.manageWorkspaces),
+      canManageWorkspaces: caller.permissions.has('can_manage_workspaces'),
     };
     const privateWorkspacesEnabled = await this.tenants.isPrivateWorkspaceEnabled(access.tenantId);
     const personalIsDefault = caller.user.kind === 'user' && privateWorkspacesEnabled;

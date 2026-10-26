@@ -4,7 +4,7 @@ The SDK every External Service is written against, Built-in or Custom. A service
 
 | File | What it is |
 | --- | --- |
-| `service.json` | The Service manifest: `"sdk": 2`, display name, description, icon, `inbound`, the Service form, the Project form and the Event types (a title and a description each). There are no Operations, bounds or `$defs`. |
+| `service.json` | The Service manifest: `"sdk": 2`, display name, description, icon, `inbound`, `connectedByDefault`, the Service form, the Project form and the Event types (a title and a description each). There are no Operations, bounds or `$defs`. |
 | `service.types.ts` | Generated from `service.json` by `external-service-cli types`. Never edit it; commit it. |
 | `service.ts` | `export default defineService<Manifest>({ manifest, routes, counters, options, info, buttons, hooks, webhook, background, refusal })`. |
 | `icon.svg` | Optional, at most 32 KB, no scripts and no outside links. |

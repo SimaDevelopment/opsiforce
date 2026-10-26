@@ -18,7 +18,6 @@ import { BuilderModule } from '../../src/builder/builder.module';
 import { DeliveryService } from '../../src/delivery/delivery.service';
 import { ServiceSkillReach } from '../../src/external-services/knowledge/service-skill-reach';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
-import { Perms } from '../../src/permission/permission.constants';
 import { ensureBuiltInAgent, seedLiveAgent, seedWorkspaceProject } from '../support/agent-fixtures';
 import {
   addMember,
@@ -81,7 +80,7 @@ describe('Public API access of Skill & Agent Builder chats', () => {
       extraModules: [BuilderModule],
     });
     tenant = await createTenant(harness.app);
-    creator = await addMember(harness.app, tenant, [Perms.manageSkills, Perms.manageAgents]);
+    creator = await addMember(harness.app, tenant, ['can_manage_skills', 'can_manage_agents']);
     builderId = await ensureBuiltInAgent(BUILDER_AGENT_SLUG);
   });
 
@@ -245,7 +244,7 @@ describe("the one-time migration of an Agent's Operation switches", () => {
   beforeAll(async () => {
     harness = await createExternalServicesTestApp({ builtInsDir: shippedBuiltInServicesDir() });
     tenant = await createTenant(harness.app);
-    member = await addMember(harness.app, tenant, [Perms.manageAgents]);
+    member = await addMember(harness.app, tenant, ['can_manage_agents']);
   });
 
   afterAll(async () => {

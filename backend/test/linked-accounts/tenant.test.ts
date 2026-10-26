@@ -5,7 +5,6 @@ import { projectVirtualKeys } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { FAKE_USER_CODE, startFakeChatGptAuth, type FakeChatGptAuth } from './support/fake-chatgpt-auth';
 import {
@@ -23,7 +22,10 @@ const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'b'.repeat(64);
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
-const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
+const OPENAI_FAMILY = {
+  allowed_models: [...servedModelsOf(BASE_FORMATS.openai), ...BASE_FORMATS.openai.imageModels],
+  key_ids: ['*'],
+};
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 const TENANT_ACCOUNT = { email: 'team@acme.test', accountId: 'chatgpt-account-acme' };
@@ -101,7 +103,7 @@ describe('an Organization signs in its own Linked account', () => {
 
   async function seededTenant(): Promise<SeededTenant> {
     const tenant = await createTenant(app);
-    return { tenant, admin: await addMember(app, tenant, [Perms.manageTenantModelProviders]) };
+    return { tenant, admin: await addMember(app, tenant, ['can_manage_tenant_model_providers']) };
   }
 
   async function projectOf(tenant: TenantFixture): Promise<string> {
@@ -335,7 +337,7 @@ describe('an Organization signs in its own Linked account', () => {
 
     it('completes when the page comes back within 15 minutes, and a colleague can finish what another started', async () => {
       const seeded = await seededTenant();
-      const colleague = await addMember(app, seeded.tenant, [Perms.manageTenantModelProviders]);
+      const colleague = await addMember(app, seeded.tenant, ['can_manage_tenant_model_providers']);
       await added(seeded);
       await startSignIn(seeded.admin);
       chatgpt.replyToDevicePolls('approved');
@@ -370,7 +372,7 @@ describe('an Organization signs in its own Linked account', () => {
       const seeded = await seededTenant();
       await added(seeded);
       const member = await addMember(app, seeded.tenant);
-      const platformAdmin = await addMember(app, seeded.tenant, [Perms.managePlatformModelProviders]);
+      const platformAdmin = await addMember(app, seeded.tenant, ['can_manage_platform_model_providers']);
 
       const responses = await Promise.all(
         [member, platformAdmin].flatMap((caller) => [
@@ -582,7 +584,7 @@ describe('an Organization signs in its own Linked account', () => {
 
   describe('an opsiforce-* Linked account', () => {
     async function platformAdmin(): Promise<MemberFixture> {
-      return addMember(app, await createTenant(app), [Perms.managePlatformModelProviders]);
+      return addMember(app, await createTenant(app), ['can_manage_platform_model_providers']);
     }
 
     it('is owned by the platform row, signed in by a platform admin, and served to an Organization that switches it on', async () => {

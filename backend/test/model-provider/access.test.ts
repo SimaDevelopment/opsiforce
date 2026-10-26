@@ -5,7 +5,6 @@ import { db } from '../../db';
 import { agentProfiles, modelProviderAvailability, projectVirtualKeys } from '../../db/schema';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import {
@@ -52,7 +51,7 @@ describe('withholding a Built-in model provider from an Organization', () => {
     );
     app = harness.app;
     agentId = await createAgent();
-    platformAdmin = await addMember(app, await createTenant(app), [Perms.managePlatformModelProviders]);
+    platformAdmin = await addMember(app, await createTenant(app), ['can_manage_platform_model_providers']);
   });
 
   afterEach(async () => {
@@ -69,7 +68,7 @@ describe('withholding a Built-in model provider from an Organization', () => {
 
   async function seededTenant(): Promise<SeededTenant> {
     const tenant = await createTenant(app);
-    const admin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+    const admin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/projects',

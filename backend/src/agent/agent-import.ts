@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from '@nestjs/common';
-import { Perms } from '../permission/permission.constants';
 import type { AgentDetail } from './agent.types';
 import type { AgentProjectSettings, AgentProjectSettingsChoice } from './agent-copy-settings';
 
@@ -46,7 +45,7 @@ export function serviceSettingsLeftOut(skillName: string): AgentImportNote {
   return {
     kind: 'skill',
     name: skillName,
-    message: `Left out the service settings of \`${skillName}\`: setting them needs the Configure project External Services permission (${Perms.configureProjectExternalServices})`,
+    message: `Left out the service settings of \`${skillName}\`: setting them needs the Configure project External Services permission (can_configure_project_external_services)`,
   };
 }
 

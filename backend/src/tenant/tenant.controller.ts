@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
-import { Perms } from '../permission/permission.constants';
 import { RequirePermission } from '../permission/permission.guard';
 import { CurrentTenant, PlatformScope, type TenantContext } from './tenant.decorator';
 import { TenantService } from './tenant.service';
@@ -24,7 +23,7 @@ export class TenantController {
   }
 
   @Patch('config')
-  @RequirePermission(Perms.manageWorkspaces)
+  @RequirePermission('can_manage_workspaces')
   updateConfig(
     @CurrentTenant() tenant: TenantContext,
     @Body() body: UpdateTenantConfigDto | undefined

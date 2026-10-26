@@ -2,6 +2,7 @@ import { createParamDecorator, ExecutionContext, InternalServerErrorException } 
 import type { FastifyRequest } from 'fastify';
 import type { TenantContext } from '../../tenant/tenant.decorator';
 import type { IdentityKind } from '../../identity/forwarded-identity.service';
+import type { Permission } from '../../permission/permission.constants';
 import type { TenantRef } from '../errors/error.schema';
 import { Errors } from '../errors/public-api-error';
 
@@ -33,7 +34,7 @@ export const Caller = createParamDecorator((_data: unknown, ctx: ExecutionContex
   return caller;
 });
 
-export function assertPermission(caller: Caller, permission: string): void {
+export function assertPermission(caller: Caller, permission: Permission): void {
   if (!caller.permissions.has(permission)) throw Errors.permissionDenied(permission);
 }
 

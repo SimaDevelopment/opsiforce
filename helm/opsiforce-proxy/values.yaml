@@ -7,46 +7,7 @@ auth:
     preferredUsername: test
     email: test@opsiforce.local
     tenantName: local
-    permissions:
-      - can_manage_project_budget_settings
-      - can_manage_project_timeout_settings
-      - can_manage_project_logging_settings
-      - can_manage_project_auth_settings
-      - can_manage_project_pod_settings
-      - can_manage_tenant_budget
-      - can_view_code_tab
-      - can_view_db_tab
-      - can_disable_project
-      - can_restart_project
-      - can_duplicate_project
-      - can_delete_project
-      - can_export_project
-      - can_import_project
-      - can_view_queue_dashboard
-      - can_manage_workspaces
-      - can_move_projects_between_workspaces
-      - can_edit_app_details
-      - can_manage_environments
-      - can_manage_environment_variables
-      - can_publish_project
-      - can_delete_environment
-      - can_manage_schedules
-      - can_view_pods
-      - can_manage_platform_defaults
-      - can_manage_tenant_defaults
-      - can_manage_tenant_model_providers
-      - can_manage_platform_model_providers
-      - can_manage_external_integration
-      - can_manage_platform_external_services
-      - can_manage_tenant_external_services
-      - can_configure_project_external_services
-      - can_manage_project_skills
-      - can_view_platform_storage
-      - can_manage_platform_storage
-      - can_manage_platform_limits
-      - can_use_public_api
-      - can_manage_skills
-      - can_manage_agents
+    permissions: []
 
 keycloakMs:
   enabled: true

@@ -2,12 +2,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
+import { appliedModelCatalog, linkedAccounts, modelProviders, projectVirtualKeys } from '../../db/schema';
+import { readModelCatalog } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { LinkedAccountsModule } from '../../src/linked-accounts/linked-accounts.module';
 import { LinkedAccountsService } from '../../src/linked-accounts/linked-accounts.service';
+import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
-import { Perms } from '../../src/permission/permission.constants';
+import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { DOCK_BASE_URL, startFakeBifrost, type FakeBifrost } from '../support/fake-bifrost';
 import { FAKE_USER_CODE, startFakeChatGptAuth, type FakeChatGptAuth } from './support/fake-chatgpt-auth';
 import {
@@ -26,7 +28,10 @@ const PROXY_URL = 'http://opsiforce-linked-account-proxy:8455/v1';
 const SERVICE_TOKEN = 'linked-account-proxy-service-token';
 const ENCRYPTION_KEY = 'a'.repeat(64);
 const CATALOG_WIDE = { allowed_models: ['*'], key_ids: ['*'] };
-const OPENAI_FAMILY = { allowed_models: servedModelsOf(BASE_FORMATS.openai), key_ids: ['*'] };
+const OPENAI_FAMILY = {
+  allowed_models: [...servedModelsOf(BASE_FORMATS.openai), ...BASE_FORMATS.openai.imageModels],
+  key_ids: ['*'],
+};
 const POLL_GAP_MS = 5_000;
 const SIGN_IN_LIFETIME_MS = 15 * 60 * 1000;
 
@@ -98,7 +103,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   async function platformAdmin(): Promise<MemberFixture> {
     const tenant = await createTenant(app);
-    return addMember(app, tenant, [Perms.managePlatformModelProviders]);
+    return addMember(app, tenant, ['can_manage_platform_model_providers']);
   }
 
   function startSignIn(admin: MemberFixture) {
@@ -333,7 +338,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       try {
         const tenant = await createTenant(app);
         const projectId = await projectOf(tenant);
-        const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+        const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
         expect(chatProvidersOf(projectId)).not.toContain('custom-openai-1');
 
         await signIn(admin);
@@ -418,7 +423,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
     it('is refused without the platform permission', async () => {
       const tenant = await createTenant(app);
-      const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
 
       const responses = await Promise.all([
         startSignIn(orgAdmin),
@@ -452,7 +457,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       const admin = await platformAdmin();
       const tenant = await createTenant(app);
       const projectId = await projectOf(tenant);
-      const orgAdmin = await addMember(app, tenant, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, tenant, ['can_manage_tenant_model_providers']);
 
       await startSignIn(admin);
       await statusOf(admin);
@@ -491,7 +496,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       }
 
       await db.update(linkedAccounts).set({ credential: null });
-      const orgAdmin = await addMember(app, first, [Perms.manageTenantModelProviders]);
+      const orgAdmin = await addMember(app, first, ['can_manage_tenant_model_providers']);
       const saved = await app.inject({
         method: 'PUT',
         url: '/api/model-providers/formats/openai',
@@ -591,7 +596,7 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
 
   describe('at boot, after Bifrost lost the sign-in', () => {
     function repointAtBoot(): Promise<void> {
-      return app.get(LinkedAccountsService).repointConnectedAccounts();
+      return app.get(LinkedAccountsService).reconcileConnectedAccounts();
     }
 
     it('points a Connected custom-openai-1 reset to its Helm entry back at the proxy with a new lap_ key', async () => {
@@ -656,6 +661,68 @@ describe('the platform ChatGPT sign-in on custom-openai-1', () => {
       expect(bifrost.writes.slice(writesBefore)).toEqual([]);
       expect(callerSecret()).toBe(secret);
       expect(await storedHash()).toBe(hash);
+    });
+
+    it('brings a Connected account created before image calls up to date and gives its keys the image models', async () => {
+      const admin = await platformAdmin();
+      const tenant = await createTenant(app);
+      const projectId = await projectOf(tenant);
+      await signIn(admin);
+      const provider = bifrost.providerNamed('custom-openai-1');
+      const written = (provider?.updated ?? provider?.created)?.custom_provider_config as Record<string, unknown>;
+      written.allowed_requests = { ...(written.allowed_requests as Record<string, unknown>), image_generation: false };
+      const secret = callerSecret();
+
+      await repointAtBoot();
+
+      const updated = bifrost.providerNamed('custom-openai-1')?.updated?.custom_provider_config as Record<
+        string,
+        unknown
+      >;
+      expect(updated.allowed_requests).toMatchObject({ image_generation: true, image_edit: true });
+      expect(bifrost.providerNamed('custom-openai-1')?.baseUrl).toBe(PROXY_URL);
+      expect(callerSecret()).toBe(secret);
+      expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
+        provider: 'custom-openai-1',
+        weight: 1,
+        ...OPENAI_FAMILY,
+      });
+    });
+
+    it('leaves a key rewrite that fails at boot to the catalog check, which then gives the keys the image models', async () => {
+      const admin = await platformAdmin();
+      const projectId = await projectOf(await createTenant(app));
+      await signIn(admin);
+      const keyModels = app.get(ModelProviderKeyModelsService);
+      await db.delete(appliedModelCatalog);
+      await keyModels.rewriteKeysForChangedCatalog(readModelCatalog());
+      const provider = bifrost.providerNamed('custom-openai-1');
+      const written = (provider?.updated ?? provider?.created)?.custom_provider_config as Record<string, unknown>;
+      written.allowed_requests = { ...(written.allowed_requests as Record<string, unknown>), image_generation: false };
+      await app.get(ModelProvidersService).lockAndRewriteKeysOfTenantsUsing('custom-openai-1');
+      const chatKeyHasImageModels = () =>
+        bifrost
+          .chatKeyOf(projectId)
+          .provider_configs.some(
+            (config) => config.provider === 'custom-openai-1' && config.allowed_models?.includes('gpt-image-2')
+          );
+      expect(chatKeyHasImageModels()).toBe(false);
+
+      bifrost.refuseProviderConfigWrites();
+      try {
+        await repointAtBoot();
+      } finally {
+        bifrost.acceptProviderConfigWrites();
+      }
+      const afterFailedBoot = chatKeyHasImageModels();
+      await keyModels.rewriteKeysForChangedCatalog(readModelCatalog());
+
+      expect(afterFailedBoot).toBe(false);
+      expect(bifrost.chatKeyOf(projectId).provider_configs).toContainEqual({
+        provider: 'custom-openai-1',
+        weight: 1,
+        ...OPENAI_FAMILY,
+      });
     });
 
     it('leaves an account that is not signed in alone', async () => {

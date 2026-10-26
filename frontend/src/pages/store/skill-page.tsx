@@ -59,7 +59,6 @@ import {
   Terminal,
   Trash2,
 } from '~/components/icons';
-import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
 import { createDocumentTitle } from '~/lib/create-document-title';
 import { formatDate } from '~/lib/format-date';
@@ -86,7 +85,7 @@ const CREATED_VIA_LABELS: Record<string, string> = {
 
 export function SkillPage(props: SkillPageProps) {
   const { hasPermission } = usePermissions();
-  const canManage = () => hasPermission(Permission.manageSkills);
+  const canManage = () => hasPermission('can_manage_skills');
   const skillId = () => props.skillId;
 
   const skill = useSkill(skillId);
@@ -120,7 +119,7 @@ export function SkillPage(props: SkillPageProps) {
 
   return (
     <div class="h-full overflow-y-auto bg-background">
-      <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+      <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <Show when={!skill.isError} fallback={<NotVisible />}>
           <Show
             when={skill.data}

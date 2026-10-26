@@ -3,6 +3,7 @@
   "displayName": "Incoming email",
   "description": "Receive email, with attachments, at a Project's own address.",
   "inbound": true,
+  "connectedByDefault": true,
   "serviceForm": [
     {
       "key": "receivingDomain",

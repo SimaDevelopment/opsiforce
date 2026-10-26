@@ -4,14 +4,13 @@ import { Pager, createOffsetPages } from '~/components/pager';
 import { usePermissions } from '~/api/permissions';
 import { useProjectExternalServices, type ProjectEnvironmentRef } from '~/api/project-external-services';
 import { isOn, useProjectSkills, useSwitchSkill, type EnvironmentSkill } from '~/api/project-skills';
-import { STRIP_BUTTON_CLASS } from '~/components/composer-strip';
+import { STRIP_BUTTON_CLASS, STRIP_COUNT_CLASS } from '~/components/composer-strip';
 import { ServiceIcon } from '~/components/external-service/service-marks';
 import { AlertTriangle, ChevronDown, Files, LoaderCircle, Lock, Package } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Switch, SwitchControl, SwitchThumb } from '~/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
-import { Permission } from '~/constants/permissions';
 import { cn } from '~/lib/cn';
 
 const NOT_CARRIED_WARNING =
@@ -58,7 +57,7 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
     skill.kind === 'platform'
       ? false
       : hasPermission(
-          skill.kind === 'service' ? Permission.configureProjectExternalServices : Permission.manageProjectSkills
+          skill.kind === 'service' ? 'can_configure_project_external_services' : 'can_manage_project_skills'
         );
   const serviceOf = (slug: string | null) => services.data?.services.find((service) => service.slug === slug);
   const confirmationText = () => (confirming() ? NOT_CARRIED_WARNING : undefined);
@@ -87,10 +86,15 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
   return (
     <Show when={skills().length > 0}>
       <Popover placement="top-start" open={popoverOpen()} onOpenChange={setPopoverOpen}>
-        <PopoverTrigger class={STRIP_BUTTON_CLASS}>
+        <PopoverTrigger
+          class={STRIP_BUTTON_CLASS}
+          aria-label={`Skills, ${onCount()} of ${skills().length} on`}
+          title={`${onCount()} of ${skills().length} Skills on`}
+        >
           <Files class="h-3.5 w-3.5" aria-hidden="true" />
-          <span>
-            Skills · {onCount()} of {skills().length} on
+          <span>Skills</span>
+          <span class={STRIP_COUNT_CLASS}>
+            {onCount()}/{skills().length}
           </span>
           <ChevronDown class="h-3 w-3 opacity-60" aria-hidden="true" />
         </PopoverTrigger>
