@@ -192,12 +192,13 @@ describe('projects write routes', () => {
       expect(pointers(res)).toEqual(['#/workspaceId']);
     });
 
-    it('places a Project in a workspace the caller is not a member of, as a holder of every permission', async () => {
+    it('answers 422 for a workspace the caller is not a member of, though it holds every permission', async () => {
       const outsider = await addMember(app, tenant);
 
       const res = await post(outsider, { title: 'Not mine', agentId, workspaceId });
 
-      expect(res.statusCode, res.body).toBe(201);
+      expect(res.statusCode).toBe(422);
+      expect(pointers(res)).toEqual(['#/workspaceId']);
     });
 
     it('answers 422 for a folder that lives in another workspace', async () => {
@@ -295,7 +296,7 @@ describe('projects write routes', () => {
       expect(await placementOf(projectId)).toMatchObject({ workspaceId: null });
     });
 
-    it('honours an explicit workspace the caller belongs to, without any workspace permission', async () => {
+    it('honours an explicit workspace the caller belongs to, and shows it the Project there', async () => {
       const tenant = await createTenant(app);
       const member = await addMember(app, tenant);
       const workspaceId = await createSharedWorkspace(app, tenant, member);
@@ -303,6 +304,8 @@ describe('projects write routes', () => {
       const projectId = await createdProjectId(member, { workspaceId });
 
       expect(await placementOf(projectId)).toMatchObject({ workspaceId, workspaceType: 'shared' });
+      const read = await app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}`, headers: member.headers });
+      expect(read.statusCode, read.body).toBe(200);
     });
 
     it('honours an explicit folder inside that workspace', async () => {

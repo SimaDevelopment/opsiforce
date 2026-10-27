@@ -37,7 +37,7 @@ export class ProjectPlacementService {
     const access: WorkspaceAccess = {
       tenantId: caller.tenant.id,
       userId: caller.user.platformId,
-      canManageWorkspaces: caller.permissions.has('can_manage_workspaces'),
+      canManageWorkspaces: false,
     };
     const privateWorkspacesEnabled = await this.tenants.isPrivateWorkspaceEnabled(access.tenantId);
     const personalIsDefault = caller.user.kind === 'user' && privateWorkspacesEnabled;

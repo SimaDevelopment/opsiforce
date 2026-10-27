@@ -23,7 +23,7 @@ adrs: [0034, 0062]
 - A call resolves to nothing when its Project has no recorded creator; that answers 401. The chain of Projects a pod may start is capped at depth 2: Create a Project from a Project at the cap answers `409 chain-too-deep`.
 - The guard resolves the platform user once per request, so every route sees one caller carrying both the identity provider subject and the platform user id.
 - The Organization a call acts in is chosen with the `x-tenant-name` header the UI also sends, and the contract calls it a tenant throughout ([ADR-0034](../adr/0034-public-api-callers-are-idp-bearer-tokens-behind-a-caller.md)): a caller in exactly one Organization sends nothing; one in several names one or receives an [Error](contract.md) listing the choices.
-- A service account is an ordinary user with two differences: it gets no [Personal Workspace](../../GLOSSARY.md), and its new Projects land in the [Public Workspace](../../GLOSSARY.md) unless a Workspace is named ([Workspaces](../organization/workspaces.md)).
+- A service account is an ordinary user with two differences: it gets no [Personal Workspace](../../GLOSSARY.md), and its new Projects land in the [Public Workspace](../../GLOSSARY.md) unless a Workspace is named ([Workspaces](../organization/workspaces.md)). A named Workspace must be one the caller is a member of, whatever its permissions, because `/api/v1` shows a Project only through membership.
 - There is no discovery route: a client learns how a deployment authenticates from the deployment, not from the API.
 
 ## Edge cases
