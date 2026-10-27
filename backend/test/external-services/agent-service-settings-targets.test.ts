@@ -7,8 +7,12 @@ import { AgentProfileService } from '../../src/agent/agent-profile.service';
 import { ProjectService } from '../../src/project/project.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createTenant } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { builtInServiceId, forgetPlatformServiceConfiguration, platformOperator } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import {
+  builtInServiceId,
+  forgetPlatformServiceConfiguration,
+  platformOperator,
+} from '../support/external-service-fixtures';
 import { evolvedBuiltIn, type EvolvedBuiltIns } from './support/evolved-built-ins';
 import {
   channelsOf,

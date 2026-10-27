@@ -1,5 +1,7 @@
 import type { V1Pod } from '@kubernetes/client-node';
 import type { StartTimer } from '../../src/project/agent-status.service';
+import type { AppAuthRouteTarget } from '../../src/project/app-auth-route';
+import type { ProjectAuthOidcConfig } from '../../src/project/project.types';
 import type { JsonObject } from './json';
 
 export interface RecordedCall {
@@ -31,7 +33,7 @@ export class FakePodService extends RecordingFake {
     environmentId: string,
     directory: string,
     projectId: string,
-    options: { serviceWebhookUrl?: string; runtimeProxyUrl?: string } = {}
+    options: { serviceWebhookUrl?: string; runtimeProxyUrl?: string; appPublicUrl?: string } = {}
   ): Promise<{ podName: string; created: boolean }> {
     this.record('createAssignedPod', {
       environmentId,
@@ -39,6 +41,7 @@ export class FakePodService extends RecordingFake {
       projectId,
       ...(options.serviceWebhookUrl === undefined ? {} : { serviceWebhookUrl: options.serviceWebhookUrl }),
       ...(options.runtimeProxyUrl === undefined ? {} : { runtimeProxyUrl: options.runtimeProxyUrl }),
+      ...(options.appPublicUrl === undefined ? {} : { appPublicUrl: options.appPublicUrl }),
     });
     return { podName: this.assignedPodName(environmentId), created: true };
   }
@@ -225,26 +228,70 @@ export function fakeTimer(): FakeTimer {
   });
 }
 
+export type FakeAppAuthGate =
+  | { mode: 'manual'; config: ProjectAuthOidcConfig; bypassAuthPaths: string[] }
+  | { mode: 'managed'; tenantName: string; bypassAuthPaths: string[] };
+
 export class FakeProjectAuthService extends RecordingFake {
-  async apply(environmentId: string): Promise<void> {
-    this.record('apply', { environmentId });
+  private readonly gates = new Map<string, FakeAppAuthGate>();
+  private readonly unreconcilable = new Set<string>();
+
+  async apply(env: AppAuthRouteTarget, config: ProjectAuthOidcConfig, bypassAuthPaths: string[] = []): Promise<void> {
+    this.record('apply', addressesOf(env));
+    this.gates.set(env.id, { mode: 'manual', config, bypassAuthPaths });
   }
 
-  async applyManaged(environmentId: string): Promise<void> {
-    this.record('applyManaged', { environmentId });
+  async applyManaged(env: AppAuthRouteTarget, tenantName: string, bypassAuthPaths: string[] = []): Promise<void> {
+    this.record('applyManaged', addressesOf(env));
+    this.gates.set(env.id, { mode: 'managed', tenantName, bypassAuthPaths });
+  }
+
+  async inheritAuth(
+    fromEnvironmentId: string,
+    to: AppAuthRouteTarget,
+    managedFallbackTenantName?: string
+  ): Promise<void> {
+    this.record('inheritAuth', { fromEnvironmentId, ...addressesOf(to) });
+    const source = this.gates.get(fromEnvironmentId);
+    if (source) {
+      this.gates.set(to.id, source);
+    } else if (managedFallbackTenantName) {
+      await this.applyManaged(to, managedFallbackTenantName);
+    } else {
+      throw new Error(`Cannot inherit app auth: source middleware for ${fromEnvironmentId} not found`);
+    }
+  }
+
+  failReconcileFor(environmentId: string): void {
+    this.unreconcilable.add(environmentId);
+  }
+
+  async reconcileRoute(env: AppAuthRouteTarget): Promise<void> {
+    this.record('reconcileRoute', addressesOf(env));
+    if (this.unreconcilable.has(env.id)) throw new Error(`route of ${env.id} cannot be read`);
   }
 
   async remove(environmentId: string): Promise<void> {
     this.record('remove', { environmentId });
+    this.gates.delete(environmentId);
   }
 
-  callbackUrls(): string[] {
-    return [];
+  async getConfig(environmentId: string): Promise<{ config?: ProjectAuthOidcConfig; bypassAuthPaths: string[] }> {
+    const gate = this.gates.get(environmentId);
+    return { config: gate?.mode === 'manual' ? gate.config : undefined, bypassAuthPaths: gate?.bypassAuthPaths ?? [] };
   }
 
-  getConfig(): null {
-    return null;
+  gateOf(environmentId: string): FakeAppAuthGate | undefined {
+    return this.gates.get(environmentId);
   }
+
+  loseGate(environmentId: string): void {
+    this.gates.delete(environmentId);
+  }
+}
+
+function addressesOf(env: AppAuthRouteTarget): JsonObject {
+  return { environmentId: env.id, shortId: env.shortId };
 }
 
 type ProjectListener = () => void;

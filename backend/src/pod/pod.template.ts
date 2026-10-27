@@ -1,7 +1,6 @@
 import * as k8s from '@kubernetes/client-node';
 import { agentSecurityContext } from './agent-security-context';
 import { agentAppPort } from '../agent/agent-config';
-import { appPublicUrl } from '../common/app-host';
 import type { K8sResourceRequirements } from './pod-classes';
 
 export interface PodTemplateOptions {
@@ -15,9 +14,8 @@ export interface PodTemplateOptions {
   subPath?: string;
   projectId?: string;
   environmentId?: string;
-  environmentSlug?: string | null;
   opsiforceEnv?: string;
-  appsHostname?: string;
+  appPublicUrl?: string;
   imagePullPolicy: string;
   resources: K8sResourceRequirements;
   runtimeClassName?: string;
@@ -56,7 +54,6 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
   const securityContext = agentSecurityContext(options.runtimeClassName, options.privileged);
   const resolvedAgentName = options.agentName || 'app-builder';
   const appPort = agentAppPort(resolvedAgentName);
-  const routingId = options.environmentId ?? options.projectId;
 
   const volumeMounts: k8s.V1VolumeMount[] = [
     {
@@ -131,14 +128,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                 ]
               : []),
             ...(options.opsiforceEnv ? [{ name: 'OPSIFORCE_ENV', value: options.opsiforceEnv }] : []),
-            ...(routingId && options.appsHostname
-              ? [
-                  {
-                    name: 'APP_PUBLIC_URL',
-                    value: appPublicUrl(routingId, options.environmentSlug, options.appsHostname),
-                  },
-                ]
-              : []),
+            ...(options.appPublicUrl ? [{ name: 'APP_PUBLIC_URL', value: options.appPublicUrl }] : []),
             ...(options.bifrostApiKey && options.bifrostProxyUrl
               ? [
                   { name: 'OPENAI_API_KEY', value: options.bifrostApiKey },

@@ -11,13 +11,13 @@ adrs: [0010, 0016]
 ## How it works
 
 - Every [ProjectEnvironment](../../GLOSSARY.md) runs its own [App](../../GLOSSARY.md) with its own [App Details](../../GLOSSARY.md), so one [Project](../../GLOSSARY.md) groups several Apps ([ADR-0016](../adr/0016-app-details-are-per-environment.md)); the `project_app` row is keyed by environment and each environment writes only its own row.
-- Nothing designates one App to stand for the Project: each App is reached directly at its environment's URL ([Environments](environments.md)).
+- Nothing designates one App to stand for the Project: each App is reached directly at its own [Public URL](../../GLOSSARY.md) ([Public URL](public-url.md)).
 - The App's source of identity is `app.meta.json` at the project root, holding name and description only; the platform reads that file directly ([App Readiness](app-readiness.md)), and the agent template additionally serves it at `/api/app-meta` for its own tab title.
-- At [Go-live](../../GLOSSARY.md) the pod pushes the App's state to the backend, which upserts that environment's row and notifies the open workspace over SSE so the app pane appears ([App Readiness](app-readiness.md)).
+- At [Go-live](../../GLOSSARY.md) the pod pushes the App's state to the backend, which upserts that environment's row and notifies the open workspace over SSE so the app pane appears ([App Readiness](app-readiness.md)). The report that creates the row also sets the App's [App Slug](../../GLOSSARY.md), the readable start of its Public URL; later reports and name edits leave it alone, and only [Edit URL](../../GLOSSARY.md) changes it.
 - Humans re-curate name and description against the [Active environment](../../GLOSSARY.md): the backend rewrites that environment's `app/app.meta.json` atomically, then mirrors the values into its row and publishes an SSE event; an environment with no detected App is refused.
 - The rule is latest writer wins: the agent may rewrite the file later, and is instructed to carry an existing name forward verbatim unless asked to rename.
 - The App reads its own identity at runtime: the template frontend queries `/api/app-meta` at startup and sets the tab title, and the favicon is a neutral placeholder the agent overwrites at Go-live ([ADR-0010](../adr/0010-app-identity-read-at-runtime.md)).
-- Gated by `can_edit_app_details` ([Permissions](../organization/permissions.md)).
+- Gated by `can_edit_app_details`, which also gates Edit URL ([Permissions](../organization/permissions.md)).
 
 ## Edge cases
 
@@ -26,13 +26,13 @@ adrs: [0010, 0016]
 
 ## Code
 
-- `backend/src/project/app.service.ts` — the per-environment App row upsert.
-- `backend/src/project/project.service.ts` — the human edit path that rewrites the metadata file and mirrors it into the row.
+- `backend/src/project/app.service.ts` — the per-environment App row upsert, which sets the App Slug when it creates the row.
+- `backend/src/project/project.service.ts` — the human edit path that rewrites the metadata file and mirrors it into the row, and the Edit URL path that sets the App Slug.
 - `project_app` in `backend/db/schema.ts` — App Details per ProjectEnvironment.
-- `frontend/src/components/project/` — the app pane and the edit-details UI.
+- `frontend/src/components/project/` — the app pane, the edit-details UI and the Edit URL dialog.
 
 ## Related
 
 - [App Readiness](app-readiness.md) — the push that drives Go-live detection.
-- [Environments](environments.md) — the App's public URL and App Auth.
+- [Public URL](public-url.md) — the App Slug, Edit URL and the addresses an App answers on.
 - [File preview](file-preview.md) — the panel the App preview shares with files.

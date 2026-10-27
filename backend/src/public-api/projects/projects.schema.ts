@@ -43,6 +43,15 @@ export const EnvironmentSchema = z
     status: z.enum(ProjectStatus),
     hasApp: z.boolean(),
     appName: z.string().nullable(),
+    publicUrl: z
+      .string()
+      .nullable()
+      .meta({
+        description:
+          "Where this environment's App answers on the web; null before the App first goes live and for a Project that serves an External Service",
+        readOnly: true,
+        examples: ['https://equipment-monitor-dev-aa5d8f0e1c2b.apps.opsiforce.example/'],
+      }),
     lastActiveAt: z.iso.datetime().nullable(),
     opencode: OpencodeDescriptorSchema,
   })

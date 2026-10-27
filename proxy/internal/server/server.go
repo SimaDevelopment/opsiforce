@@ -28,8 +28,6 @@ import (
 
 var projectIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-const environmentIDLength = 36
-
 const (
 	retryAfterHeader         = "Retry-After"
 	restartRetryAfterSeconds = "5"
@@ -41,6 +39,8 @@ var (
 	notFoundBody   = []byte(`{"error":"Project not found"}`)
 	disabledBody   = []byte(`{"error":"Project is disabled"}`)
 )
+
+var unprotectedRouteBody = []byte(`{"error":"App sign-in is not configured for this host"}`)
 
 const (
 	logModeOff      = "off"
@@ -222,32 +222,38 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
+	stripPlatformCookies(r.Header)
 	setCORSHeaders(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	projectID, hostLabel := extractAppHostLabel(r.Host)
-	if projectID == "" {
-		writeJSONStatus(w, http.StatusBadRequest, []byte(`{"error":"Invalid subdomain"}`))
-		return
-	}
-
-	forwarded := acceptForwarding(r.Header, projectID, s.cfg.AppAuthForwardingSigningKey)
-	if forwarded && !sameOriginForwarding(r) {
-		w.Header().Del("Access-Control-Allow-Origin")
-		w.Header().Del("Access-Control-Allow-Credentials")
-		writeJSONStatus(w, http.StatusForbidden, []byte(`{"error":"Forwarded-token requests must be same-origin"}`))
-		return
-	}
-	ensured, err := s.resolveLabeled(r.Context(), projectID, hostLabel, backend.SurfaceApp, r.Header, "")
+	ensured, err := s.resolveApp(r.Context(), r.Host, r.Header)
 	if err != nil {
 		s.writeEnsureError(w, err)
 		return
 	}
 
-	if redirected := redirectToCanonicalHost(w, r, projectID, ensured); redirected {
+	if ensured.Protected && r.Header.Get(unprotectedRouteHeader) != "" {
+		slog.Warn("protected App reached through the unprotected apps route", "environmentId", ensured.EnvironmentID, "host", r.Host)
+		writeJSONStatus(w, http.StatusForbidden, unprotectedRouteBody)
+		return
+	}
+
+	if ensured.Action == backend.ActionRedirect {
+		w.Header().Set("Location", "https://"+ensured.CanonicalHost+r.URL.RequestURI())
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusPermanentRedirect)
+		return
+	}
+
+	environmentID := ensured.EnvironmentID
+	forwarded := acceptForwarding(r.Header, environmentID, s.cfg.AppAuthForwardingSigningKey)
+	if forwarded && !sameOriginForwarding(r) {
+		w.Header().Del("Access-Control-Allow-Origin")
+		w.Header().Del("Access-Control-Allow-Credentials")
+		writeJSONStatus(w, http.StatusForbidden, []byte(`{"error":"Forwarded-token requests must be same-origin"}`))
 		return
 	}
 
@@ -258,14 +264,14 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 
 	targetURL, err := buildTargetURL(ensured.Upstream, pathOrSlash(r.URL.Path), r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r.Context(), environmentID)
 		return
 	}
 
 	if isUpgradeRequest(r) {
-		release := s.wsKeepAlive.acquire(projectID, backend.SurfaceApp)
+		release := s.wsKeepAlive.acquire(environmentID, backend.SurfaceApp)
 		defer release()
-		s.serveReverseProxy(w, r, projectID, targetURL, reverseProxyOptions{})
+		s.serveReverseProxy(w, r, environmentID, targetURL, reverseProxyOptions{})
 		return
 	}
 
@@ -284,12 +290,12 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 
 	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r.Context(), environmentID)
 		return
 	}
 
 	if responseResult.restart {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r.Context(), environmentID)
 		return
 	}
 
@@ -313,13 +319,13 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 			responseResult.responseSize = size
 			responseBodyText = capturer.captured()
 			if copyErr != nil {
-				slog.Debug("app response stream interrupted", "projectId", projectID, "error", copyErr.Error())
+				slog.Debug("app response stream interrupted", "environmentId", environmentID, "error", copyErr.Error())
 			}
 		} else {
 			size, copyErr := copyBuffer(w, responseResult.stream, s.bufferPool)
 			responseResult.responseSize = size
 			if copyErr != nil {
-				slog.Debug("app response stream interrupted", "projectId", projectID, "error", copyErr.Error())
+				slog.Debug("app response stream interrupted", "environmentId", environmentID, "error", copyErr.Error())
 			}
 		}
 	}
@@ -393,25 +399,26 @@ func (s *Server) resolve(
 	headers http.Header,
 	authKey string,
 ) (backend.EnsureResponse, error) {
-	return s.resolveLabeled(ctx, projectID, projectID, surface, headers, authKey)
-}
-
-func (s *Server) resolveLabeled(
-	ctx context.Context,
-	projectID string,
-	hostLabel string,
-	surface backend.Surface,
-	headers http.Header,
-	authKey string,
-) (backend.EnsureResponse, error) {
 	if backend.GatewayBearer(headers) != "" {
 		return s.backend.Ensure(ctx, projectID, surface, headers)
 	}
 
-	cacheKey := fmt.Sprintf("%s|%s|%s", hostLabel, surface, authKey)
+	cacheKey := fmt.Sprintf("%s|%s|%s", projectID, surface, authKey)
 
-	return s.cache.GetOrLoad(ctx, cacheKey, projectID, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {
+	return s.cache.GetOrLoad(ctx, cacheKey, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {
 		return s.backend.Ensure(ctx, projectID, surface, headers)
+	})
+}
+
+func (s *Server) resolveApp(ctx context.Context, host string, headers http.Header) (backend.EnsureResponse, error) {
+	if backend.GatewayBearer(headers) != "" {
+		return s.backend.EnsureApp(ctx, host, headers)
+	}
+
+	cacheKey := fmt.Sprintf("%s|%s", host, backend.SurfaceApp)
+
+	return s.cache.GetOrLoad(ctx, cacheKey, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {
+		return s.backend.EnsureApp(ctx, host, headers)
 	})
 }
 
@@ -456,7 +463,7 @@ func (s *Server) sendFailureResponse(w http.ResponseWriter, ctx context.Context,
 }
 
 func (s *Server) reportFailure(ctx context.Context, projectID string) (bool, error) {
-	s.cache.InvalidateProject(projectID)
+	s.cache.InvalidateEnvironment(projectID)
 	return s.backend.ReportFailure(ctx, projectID)
 }
 
@@ -691,51 +698,12 @@ func extractProjectIDFromHost(host string) string {
 	return subdomain
 }
 
-// extractAppHostLabel parses the public app host label, which is either a bare
-// 36-char environment uuid or "{envId}-{slug}". The uuid's fixed length is the
-// parsing rule (ADR 0012); anything that doesn't fit it is treated as a whole
-// label and fails resolution downstream.
-func extractAppHostLabel(host string) (string, string) {
-	label := firstHostLabel(host)
-	if !projectIDPattern.MatchString(label) {
-		return "", ""
-	}
-
-	if len(label) > environmentIDLength && label[environmentIDLength] == '-' {
-		return label[:environmentIDLength], label
-	}
-
-	return label, label
-}
-
 func firstHostLabel(host string) string {
 	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
 		host = parsedHost
 	}
 
 	return strings.Split(host, ".")[0]
-}
-
-// redirectToCanonicalHost issues a permanent redirect when the request arrived
-// on a host that may not serve this environment. The canonical slugged host
-// and the legacy bare env-id host both serve — the per-environment auth
-// IngressRoute matches both, so neither bypasses the auth gate. Anything else
-// (a wrong slug) redirects to canonical.
-func redirectToCanonicalHost(w http.ResponseWriter, r *http.Request, envID string, ensured backend.EnsureResponse) bool {
-	if ensured.CanonicalHost == "" {
-		return false
-	}
-
-	requestLabel := firstHostLabel(r.Host)
-	canonicalLabel := strings.Split(ensured.CanonicalHost, ".")[0]
-
-	if strings.EqualFold(requestLabel, canonicalLabel) || strings.EqualFold(requestLabel, envID) {
-		return false
-	}
-
-	w.Header().Set("Location", "https://"+ensured.CanonicalHost+r.URL.RequestURI())
-	w.WriteHeader(http.StatusPermanentRedirect)
-	return true
 }
 
 func buildTargetURL(upstream string, requestPath string, rawQuery string) (*url.URL, error) {

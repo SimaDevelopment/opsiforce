@@ -8,14 +8,14 @@ import { GeneratedValueSource, type GenerateSpec } from '../../src/external-serv
 import { ServiceConfigurationStore } from '../../src/external-services/configuration/service-configuration.store';
 import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
 import { ProjectConfigurationCarry } from '../../src/external-services/configuration/project-configuration-carry';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { productionCaller, storeProjectConfiguration } from './support/gate';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   platformOperator,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import {
   channelsOf,
   generatingBuiltInsDir,

@@ -26,6 +26,7 @@ export const ENVIRONMENT_FIELDS = [
   'status',
   'hasApp',
   'appName',
+  'publicUrl',
   'lastActiveAt',
   'opencode',
 ];

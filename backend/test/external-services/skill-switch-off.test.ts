@@ -21,13 +21,18 @@ import { ProjectSkillsModule } from '../../src/project-skills/project-skills.mod
 import { ProjectStatus } from '../../src/project/project.types';
 import { builtInProfileFor } from '../../src/store/agent-profile.repository';
 import { SkillService, type SkillCaller } from '../../src/store/skill.service';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { builtInServiceId, forgetPlatformServiceConfiguration } from './support/fixtures';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
+import { builtInServiceId, forgetPlatformServiceConfiguration } from '../support/external-service-fixtures';
 import { configurePlatformService, READY_FIXTURE_CRM, storeProjectConfiguration } from './support/gate';
 import { manifest, validDescription } from '../store/support/skill-fixtures';
 import { ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
 import { startFakePod, type FakePod } from '../support/fake-pod';
 import type { FakePodService, FakeQueue } from '../support/infra-fakes';
+import { waitFor } from '../support/wait-for';
 import {
   addMember,
   createProject,
@@ -102,8 +107,12 @@ async function republish(skill: { id: string; name: string }, body: string): Pro
 async function runningProject(ofAgentId = agentId): Promise<string> {
   const projectId = await createProject(app, tenant, { agentId: ofAgentId });
   const pods = app.get<FakePodService>(PodService);
-  await app.get(ProjectEnvironmentService).patch(projectId, { status: ProjectStatus.Active, podIp: '127.0.0.1' });
-  pods.setPod(pods.assignedPodName(projectId), '127.0.0.1', CONTROL_TOKEN);
+  const podName = pods.assignedPodName(projectId);
+  await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
+  pods.markPodReady(podName, '127.0.0.1', CONTROL_TOKEN);
+  await waitFor(
+    async () => (await app.get(ProjectEnvironmentService).findByIdOrNull(projectId))?.status === ProjectStatus.Active
+  );
   pod.serveSkills(() => installedSkillNames(projectId));
   return projectId;
 }

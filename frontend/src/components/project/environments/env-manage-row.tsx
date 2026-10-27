@@ -11,7 +11,6 @@ import {
   Trash2,
 } from '~/components/icons';
 import { cn } from '~/lib/cn';
-import { appPublicUrl } from '~/lib/app-url';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +34,7 @@ export interface EnvManageRowProps {
   canPublish: boolean;
   canManageVariables: boolean;
   canSchedules: boolean;
+  canEditAppDetails: boolean;
   restarting: boolean;
   onAuth: () => void;
   onSchedules: () => void;
@@ -43,6 +43,7 @@ export interface EnvManageRowProps {
   onDelete: () => void;
   onPublish: () => void;
   onVariables: () => void;
+  onEditUrl: () => void;
 }
 
 export function EnvManageRow(props: EnvManageRowProps) {
@@ -51,9 +52,9 @@ export function EnvManageRow(props: EnvManageRowProps) {
   const canDeleteEnv = () => props.canDelete && !isDevelopment();
   const canRestartEnv = () => props.canRestart && env().status !== 'disabled';
   const showPublish = () => props.canPublish && !isDevelopment() && props.hasApp;
+  const canEditUrl = () => props.canEditAppDetails && env().hasApp;
 
   const appRunning = () => (isDevelopment() ? props.hasApp : env().deployedCommitSha !== null);
-  const appUrl = () => appPublicUrl(env().id, env().slug);
 
   return (
     <div
@@ -76,11 +77,18 @@ export function EnvManageRow(props: EnvManageRowProps) {
         </span>
       </span>
       <span class="contents" onClick={(e) => e.stopPropagation()}>
-        <EnvAppLinkButtons
-          appUrl={appUrl()}
-          enabled={appRunning()}
-          disabledReason={isDevelopment() ? 'No app is running here yet' : 'Publish first — no app is running here yet'}
-        />
+        <Show when={env().publicUrl} fallback={<span />}>
+          {(publicUrl) => (
+            <EnvAppLinkButtons
+              appUrl={publicUrl()}
+              enabled={appRunning()}
+              disabledReason={
+                isDevelopment() ? 'No app is running here yet' : 'Publish first — no app is running here yet'
+              }
+              onEditUrl={canEditUrl() ? () => props.onEditUrl() : undefined}
+            />
+          )}
+        </Show>
       </span>
       <div class="flex min-w-0 items-center gap-2">
         <EnvStatusDot status={env().status} withLabel />

@@ -127,7 +127,6 @@ export function JobDockHost(props: ParentProps) {
         id: input.environmentId,
         projectId: input.projectId,
         title: input.environmentName,
-        environmentSlug: input.environmentSlug,
         job: null,
         lastStep: 'queued',
       });

@@ -1,12 +1,19 @@
 export const ENVIRONMENT_SLUG_MAX_LENGTH = 26;
 export const ENVIRONMENT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+const ENDS_LIKE_AN_APP_SHORT_ID = /(?:^|-)[0-9a-f]{12,}$/;
 
-export function appHostLabel(environmentId: string, slug: string | null | undefined): string {
-  return slug ? `${environmentId}-${slug}` : environmentId;
+type AddressedEnvironment = { slug: string | null; shortId: string };
+
+export function readableAppUrl(appSlug: string, environment: AddressedEnvironment): string {
+  return `https://${appSlug}${appHostSuffix(environment)}/`;
 }
 
-export function appPublicUrl(environmentId: string, slug: string | null | undefined): string {
-  return `https://${appHostLabel(environmentId, slug)}.${import.meta.env.VITE_WEBAPP_DOMAIN}/`;
+export function appHostSuffix(environment: AddressedEnvironment): string {
+  return `-${environment.slug}-${environment.shortId}.${import.meta.env.VITE_WEBAPP_DOMAIN}`;
+}
+
+export function endsLikeAnAppShortId(environmentSlug: string): boolean {
+  return ENDS_LIKE_AN_APP_SHORT_ID.test(environmentSlug);
 }
 
 export function slugifyEnvironmentName(name: string): string {

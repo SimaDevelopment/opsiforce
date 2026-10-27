@@ -10,6 +10,7 @@ import { MAX_PROJECT_CHAIN_DEPTH } from '../../project/project.constants';
 import { ProjectService } from '../../project/project.service';
 import { isChatKind, TEST_PROJECT_KIND } from '../../project/project.types';
 import { ProjectEnvironmentService } from '../../project-environment/project-environment.service';
+import { PublicUrlService } from '../../project-environment/public-url.service';
 import { chatProjectIdOf, type Caller } from '../auth/caller';
 import { mappingAgentErrors } from '../errors/agent-error.mapper';
 import { Errors } from '../errors/public-api-error';
@@ -37,7 +38,8 @@ export class PublicProjectsService {
     private readonly connections: AgentConnectionService,
     private readonly builderChats: BuilderChatService,
     private readonly provenance: ProjectProvenanceRepository,
-    private readonly publicApiSettings: PublicApiSettings
+    private readonly publicApiSettings: PublicApiSettings,
+    private readonly publicUrls: PublicUrlService
   ) {}
 
   async list(caller: Caller, query: ProjectListQuery): Promise<ProjectPageDto> {
@@ -214,7 +216,7 @@ export class PublicProjectsService {
   private async toDtos(rows: ProjectRow[]): Promise<ProjectDto[]> {
     const environments = await this.repository.environmentsOf(rows.map((row) => row.id));
     return rows.map((row) =>
-      ProjectMapper.toDto(row, environments.get(row.id) ?? [], this.agentStatus.statusOf(row.id))
+      ProjectMapper.toDto(row, environments.get(row.id) ?? [], this.agentStatus.statusOf(row.id), this.publicUrls)
     );
   }
 }

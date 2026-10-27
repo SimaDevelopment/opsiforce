@@ -8,7 +8,7 @@ import { chmod, copyFile, lstat, mkdir, readdir, readlink, rm, stat, symlink, wr
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
-import { projectTransferJobs } from '../../db/schema';
+import { projectApps, projectTransferJobs } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
 import { runtimeAgentSlug } from '../delivery/runtime-agent-slug';
 import { GitService } from '../git/git.service';
@@ -98,6 +98,10 @@ export class ProjectExportProcessor extends WorkerHost {
       }
 
       const schedules = await this.projectService.getSchedulesForExport(projectId);
+      const [developmentApp] = await db
+        .select({ appSlug: projectApps.slug })
+        .from(projectApps)
+        .where(eq(projectApps.projectEnvironmentId, projectId));
       const manifest: ExportManifest = {
         kind: PROJECT_EXPORT_KIND,
         title: project.title,
@@ -116,7 +120,9 @@ export class ProjectExportProcessor extends WorkerHost {
           memoryRequestMib: project.memoryRequestMib,
           memoryLimitMib: project.memoryLimitMib,
         },
-        appDetails: project.hasApp ? { name: project.appName, description: project.appDescription } : null,
+        appDetails: project.hasApp
+          ? { name: project.appName, description: project.appDescription, appSlug: developmentApp?.appSlug ?? null }
+          : null,
         schedules,
         stamp: exportStampOf(this.configService, EXPORT_FORMAT_VERSION),
       };

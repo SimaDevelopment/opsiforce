@@ -10,6 +10,8 @@ import { AgentObservationsService } from './agent-observations.service';
 import { AgentStatusStreamController } from './agent-status-stream.controller';
 import { PodClassController } from './pod-class.controller';
 import { ProjectService } from './project.service';
+import { AppAuthRouteReconciler } from './app-auth-route.reconciler';
+import { AppSlugBackfill } from './app-slug-backfill';
 import { ProjectAuthService } from './project-auth.service';
 import { ProjectFilesService } from './project-files.service';
 import { ProjectDuplicateProcessor } from './project-duplicate.processor';
@@ -85,6 +87,9 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
   providers: [
     ProjectService,
     ProjectAuthService,
+    AppAuthRouteReconciler,
+    // TODO: remove in the release after readable Public URLs ship: AppSlugBackfill, with its describe block in test/public-url/existing-app-slugs.test.ts and its bullets in docs/projects/public-url.md and ADR-0012; the Switch prompt and suggestedAppSlug stay
+    AppSlugBackfill,
     ProjectFilesService,
     ProjectDuplicateProcessor,
     ProjectImportService,

@@ -4,6 +4,7 @@
 
 **Runtime** (`runtime/`)
 - [Request Flows](runtime/request-flows.md) — how a request reaches the right pod through the edge, the runtime proxies and the ensure gate
+- [Service host](runtime/service-host.md) — how a call to an External Service's host passes the Gate's proxy to its pod
 - [Pod Lifecycle](runtime/pod-lifecycle.md) — how a pod comes to exist, recovers and suspends, with Kubernetes as the source of truth
 - [Pods](runtime/pods.md) — the Admin view of an Organization's running pods and their keep-alive
 - [Pending Project Pools](runtime/pending-project-pools.md) — how "New Project" claims an already-running environment
@@ -14,7 +15,8 @@
 - [Process Log](runtime/process-log.md) — where each pod process's output and lifecycle events go, their rotation and how an Agent reads them
 
 **Projects** (`projects/`)
-- [Environments](projects/environments.md) — the two-entity model, public URLs, App Auth and the Environments switcher
+- [Environments](projects/environments.md) — the two-entity model, Environment Slugs, App Auth and the Environments switcher
+- [Public URL](projects/public-url.md) — the address each App answers on, its App Slug, Edit URL and the older addresses that keep serving
 - [Publish](projects/publish.md) — moving an App from Development into an environment, Environment Variables and the publish stages
 - [Duplication](projects/duplication.md) — copying a whole Project with its working state
 - [Export and Import](projects/export-import.md) — carrying a Project to another deployment as a file

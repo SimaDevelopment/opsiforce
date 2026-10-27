@@ -20,7 +20,7 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { saveProjectConfiguration } from './support/gate';
 
 const CONTROL_TOKEN = 'proxy-control-token-for-runtime-proxy-tests';

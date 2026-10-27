@@ -22,6 +22,7 @@ import { EnvTargetRow } from './env-target-row';
 import { EnvStatusDot } from './env-status-dot';
 import { PublishDialog } from './publish-dialog';
 import { EnvironmentVariablesDialog } from './environment-variables-dialog';
+import { EditAppUrlDialog } from '../edit-app-url-dialog';
 
 export interface EnvironmentsPopoverProps {
   projectId: string;
@@ -39,6 +40,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const canPublish = () => hasPermission('can_publish_project');
   const canManageVariables = () => hasPermission('can_manage_environment_variables');
   const canSchedules = () => hasPermission('can_manage_schedules');
+  const canEditAppDetails = () => hasPermission('can_edit_app_details');
 
   const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);
@@ -68,6 +70,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
 
   const [authEnv, setAuthEnv] = createSignal<ProjectEnvironment | null>(null);
   const [variablesEnv, setVariablesEnv] = createSignal<ProjectEnvironment | null>(null);
+  const [editUrlEnv, setEditUrlEnv] = createSignal<ProjectEnvironment | null>(null);
   const [publishTarget, setPublishTarget] = createSignal<PublishTarget | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<ProjectEnvironment | null>(null);
   const [pendingRestart, setPendingRestart] = createSignal<ProjectEnvironment | null>(null);
@@ -159,9 +162,11 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     canPublish: canPublish() && target !== null,
     canManageVariables: canManageVariables(),
     canSchedules: canSchedules(),
+    canEditAppDetails: canEditAppDetails(),
     restarting: restartingId() === env.id,
     onAuth: () => setAuthEnv(env),
     onVariables: () => setVariablesEnv(env),
+    onEditUrl: () => setEditUrlEnv(env),
     onPublish: () => setPublishTarget(target),
     onSchedules: () => openSchedules(env),
     onRestart: () => setPendingRestart(env),
@@ -258,6 +263,14 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         environment={variablesEnv()}
         onOpenChange={(value) => {
           if (!value) setVariablesEnv(null);
+        }}
+      />
+
+      <EditAppUrlDialog
+        projectId={props.projectId}
+        environment={editUrlEnv()}
+        onOpenChange={(value) => {
+          if (!value) setEditUrlEnv(null);
         }}
       />
 

@@ -85,6 +85,9 @@ data:
   {{- if .Values.config.appsHostname }}
   APPS_HOSTNAME: {{ .Values.config.appsHostname | quote }}
   {{- end }}
+  {{- if .Values.config.previewAppsHostname }}
+  PREVIEW_APPS_HOSTNAME: {{ .Values.config.previewAppsHostname | quote }}
+  {{- end }}
   {{- if .Values.config.webappServiceName }}
   WEBAPP_SERVICE_NAME: {{ .Values.config.webappServiceName | quote }}
   {{- end }}

@@ -26,9 +26,9 @@ import {
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin } from '../support/external-service-fixtures';
 import { readProjectConfiguration, storedProjectConfiguration, storeProjectConfiguration } from './support/gate';
 
 const PUBLIC_API = 'public-api';

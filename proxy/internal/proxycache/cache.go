@@ -8,14 +8,16 @@ import (
 	"opsiforce/proxy/internal/backend"
 )
 
+const defaultCapacity = 10000
+
 type Cache struct {
 	mu       sync.Mutex
+	capacity int
 	entries  map[string]entry
 	inflight map[string]*call
 }
 
 type entry struct {
-	projectID string
 	value     backend.EnsureResponse
 	expiresAt time.Time
 }
@@ -27,7 +29,12 @@ type call struct {
 }
 
 func New() *Cache {
+	return newWithCapacity(defaultCapacity)
+}
+
+func newWithCapacity(capacity int) *Cache {
 	return &Cache{
+		capacity: capacity,
 		entries:  make(map[string]entry),
 		inflight: make(map[string]*call),
 	}
@@ -36,14 +43,16 @@ func New() *Cache {
 func (c *Cache) GetOrLoad(
 	ctx context.Context,
 	key string,
-	projectID string,
 	ttl func(backend.EnsureResponse) time.Duration,
 	load func(context.Context) (backend.EnsureResponse, error),
 ) (backend.EnsureResponse, error) {
 	c.mu.Lock()
-	if cached, ok := c.entries[key]; ok && time.Now().Before(cached.expiresAt) {
-		c.mu.Unlock()
-		return cached.value, nil
+	if cached, ok := c.entries[key]; ok {
+		if time.Now().Before(cached.expiresAt) {
+			c.mu.Unlock()
+			return cached.value, nil
+		}
+		delete(c.entries, key)
 	}
 
 	if pending, ok := c.inflight[key]; ok {
@@ -64,11 +73,10 @@ func (c *Cache) GetOrLoad(
 
 	c.mu.Lock()
 	if err == nil {
-		c.entries[key] = entry{
-			projectID: projectID,
+		c.store(key, entry{
 			value:     value,
 			expiresAt: time.Now().Add(ttl(value)),
-		}
+		})
 	}
 	delete(c.inflight, key)
 	pending.value = value
@@ -79,12 +87,33 @@ func (c *Cache) GetOrLoad(
 	return value, err
 }
 
-func (c *Cache) InvalidateProject(projectID string) {
+func (c *Cache) store(key string, value entry) {
+	if _, replacing := c.entries[key]; !replacing && len(c.entries) >= c.capacity {
+		c.makeRoom(time.Now())
+	}
+	c.entries[key] = value
+}
+
+func (c *Cache) makeRoom(now time.Time) {
+	for key, cached := range c.entries {
+		if !now.Before(cached.expiresAt) {
+			delete(c.entries, key)
+		}
+	}
+	for key := range c.entries {
+		if len(c.entries) < c.capacity {
+			return
+		}
+		delete(c.entries, key)
+	}
+}
+
+func (c *Cache) InvalidateEnvironment(environmentID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for key, cached := range c.entries {
-		if cached.projectID == projectID {
+		if cached.value.EnvironmentID == environmentID {
 			delete(c.entries, key)
 		}
 	}

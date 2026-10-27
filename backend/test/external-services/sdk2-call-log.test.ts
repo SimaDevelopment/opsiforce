@@ -11,9 +11,9 @@ import {
 } from '@opsiforce/external-service-sdk/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { callAsGate, gatewayUrlOf, resolved } from './support/gate-proxy';
 import type { GateCallerFixture } from './support/gate';
 import {

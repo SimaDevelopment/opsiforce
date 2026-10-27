@@ -84,7 +84,7 @@ A tenant-scoped, named target a Project can run in and a Custom Agent can publis
 _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
-The short, immutable, URL-safe identifier an Environment carries alongside its name, shown as the environment suffix in an App's public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
+The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
 _Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:
@@ -108,12 +108,28 @@ The second protected Environment present in every tenant — the conventional ta
 _Avoid_: Prod (non-canonical in user-facing copy); Live
 
 **App**:
-The application the agent builds inside a ProjectEnvironment, served at that environment's public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).
+The application the agent builds inside a ProjectEnvironment, served at that environment's Public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).
 _Avoid_: Project (when you mean the built application); "one App per Project" (retired — each ProjectEnvironment is its own App)
 
 **App Details**:
 An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at publish and evolve independently afterwards.
 _Avoid_: App metadata (vague); Project title (the Project shell's label — a different thing); project-level identity (retired — App Details belong to each App/environment, not the Project)
+
+**Public URL**:
+The internet address at which an App is served, the one the platform hands out and people share. It reads as the App Slug, the Environment Slug, then the App Short ID — e.g. `equipment-monitor-dev-6713b7a51450` — or, for an App with no App Slug, as the older address built from its environment's id. A Project that serves an External Service has no public App, so no Public URL.
+_Avoid_: App URL, Built-in URL, Link, Domain
+
+**App Slug**:
+The readable part of an App's Public URL, in front of the Environment Slug — `equipment-monitor` in `equipment-monitor-dev-6713b7a51450`. It comes from the App's name, or from the App Slug of the App it was copied from, and afterwards changes only through Edit URL, never with a rename. It need not be unique: the App Short ID already is.
+_Avoid_: Subdomain, Vanity URL, Name (the App Details field it derives from)
+
+**App Short ID**:
+The code at the end of an App's Public URL that identifies the App: the first twelve hex characters of its ProjectEnvironment's id with the dashes dropped, two more at a time when another App already holds that prefix. Every App has its own, unique across all Apps of every tenant, and it never changes for the App's lifetime — renames and URL edits leave it alone, which is what keeps old links working.
+_Avoid_: Hash (it is not one); Short UUID; Code
+
+**Edit URL**:
+Choosing an App's App Slug by hand, which moves the App's Public URL to the new address while every address it answered on before keeps reaching it. The only way an App Slug changes once it is set.
+_Avoid_: Rename (renaming the App leaves its address alone); Custom domain (an address outside the apps domain)
 
 **Go-live**:
 The moment an App first exists and is running in a ProjectEnvironment — for Development, when the agent finishes the first feature, it builds and boots, and the agent publishes App Details; for a published environment, when its freshly-deployed pod first serves. Go-live is decoupled from "done": it happens before the agent's feature testing, which follows with the App already live. Each environment goes live independently. Before its App goes live an environment has a pod but no App; that environment's app pane appears only once it happens.

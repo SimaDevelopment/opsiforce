@@ -1,8 +1,12 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { InvalidConfigurationError } from '../../src/external-services/configuration/invalid-configuration.error';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { forgetPlatformServiceConfiguration } from './support/fixtures';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
+import { forgetPlatformServiceConfiguration } from '../support/external-service-fixtures';
 import {
   configurePlatformService,
   gateCaller,

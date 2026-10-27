@@ -13,9 +13,9 @@ import { PodService } from '../../src/pod/pod.service';
 import { ProjectController } from '../../src/project/project.controller';
 import type { FakePodService } from '../support/infra-fakes';
 import { addMember } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import {
   callAsGate,
   gatewayUrlOf,

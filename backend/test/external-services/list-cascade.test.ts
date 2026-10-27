@@ -1,12 +1,12 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   platformOperator,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import {
   channelsOf,
   configuringProject,

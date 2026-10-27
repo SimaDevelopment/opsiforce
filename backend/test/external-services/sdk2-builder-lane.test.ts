@@ -15,9 +15,9 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ensureBuiltInAgent } from '../support/agent-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { gatewayUrlOf } from './support/gate-proxy';
 import { consumerIn, freePort, publishCustomService, type PublishedService } from './support/published-services';
 import { revealed, startSdk2ServicePod, type Sdk2ServicePod } from './support/sdk2-service-pod';

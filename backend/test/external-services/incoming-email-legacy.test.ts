@@ -5,9 +5,9 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
 import { startFakeApp, type FakeApp } from './support/fake-app';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { podComesUp, ringDoorbells } from './support/doorbell';
-import { builtInServiceId, forgetPlatformServiceConfiguration } from './support/fixtures';
+import { builtInServiceId, forgetPlatformServiceConfiguration } from '../support/external-service-fixtures';
 import { configuringProject, saveProjectService, type ConfiguringProject } from './support/generating';
 import { environmentDatabase } from './support/inbound';
 import {

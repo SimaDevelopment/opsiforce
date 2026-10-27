@@ -123,7 +123,6 @@ export function PublishDialog(props: PublishDialogProps) {
         projectId: projectId(),
         environmentId: id,
         environmentName: target.name,
-        environmentSlug: target.slug,
       });
       close();
     } catch (err) {

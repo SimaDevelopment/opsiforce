@@ -5,14 +5,14 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   platformOperator,
   storedPlatformServiceConfiguration,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import { gateCaller, storedProjectConfiguration } from './support/gate';
 import {
   channelsOf,

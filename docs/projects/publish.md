@@ -69,7 +69,7 @@ Publish job stages in order, during which the target ProjectEnvironment holds st
 
 ## Related
 
-- [Environments](environments.md) — the two-entity model, public URLs, App Auth, the switcher.
+- [Environments](environments.md) — the two-entity model, Environment Slugs, App Auth, the switcher.
 - [App Readiness](app-readiness.md) — how Go-live of a freshly published environment is detected.
 - [Job Dock](../frontend/job-dock.md) — the progress card and dialog every long job shares.
 - [Duplication](duplication.md) — copies a whole Project through the same git path.

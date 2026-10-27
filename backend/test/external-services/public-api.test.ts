@@ -29,9 +29,9 @@ import {
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { TENANT_SERVICES } from './support/custom-services';
-import { builtInServiceId } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { TENANT_SERVICES } from '../support/custom-services';
+import { builtInServiceId } from '../support/external-service-fixtures';
 import { callThroughGate } from './support/gate-proxy';
 import { saveProjectConfiguration } from './support/gate';
 
