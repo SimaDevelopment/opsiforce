@@ -199,6 +199,23 @@ describe('reachability of Base formats', () => {
       expect(res.json()).toMatchObject({ code: 'model_unreachable', part: 'model' });
     });
 
+    it('names the same refusal model-unreachable on /api/v1', async () => {
+      const { tenant, admin } = await seededTenant();
+      const author = await addMember(app, tenant, ['can_use_public_api']);
+      const agent = await seedLiveAgent(tenant.tenantId, author.userId);
+      await switchOff(admin, 'anthropic');
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/agents/${agent.id}/profile`,
+        headers: author.headers,
+        payload: { promptBody: 'Be brief.', model: 'anthropic/claude-sonnet-5', variant: null },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:model-unreachable' });
+    });
+
     it('saves an unchanged unreachable model, and Publish copies it as is', async () => {
       const { tenant, admin, author, agentId } = await authoredAgent();
       await switchOff(admin, 'openai');

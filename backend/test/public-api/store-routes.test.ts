@@ -5,8 +5,9 @@ import { eq } from 'drizzle-orm';
 import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
-import { agents, skills } from '../../db/schema';
+import { agents, skills, tenantDisabledSkills } from '../../db/schema';
 import { AgentController } from '../../src/agent/agent.controller';
+import { PLATFORM_SKILL_NAME } from '../../src/agent/agent.types';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { SkillsController } from '../../src/store/skills.controller';
 import { ensureBuiltInAgent, ensureBuiltInSkill, seedLiveAgent } from '../support/agent-fixtures';
@@ -84,14 +85,10 @@ describe('the Store routes of /api/v1', () => {
   }
 
   describe('authoring a Skill', () => {
-    it('refuses a caller without can_manage_skills, naming the permission', async () => {
+    it('lets a caller holding only the public API permission author a Skill', async () => {
       const res = await createSkill(bystander);
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({
-        type: 'urn:opsiforce:error:permission-denied',
-        permission: 'can_manage_skills',
-      });
+      expect(res.statusCode, res.body).toBe(201);
     });
 
     it('creates it private at Version 1 for a holder', async () => {
@@ -202,14 +199,10 @@ describe('the Store routes of /api/v1', () => {
       expect(custom.json().items.map((item: { name: string }) => item.name)).not.toContain(name);
     });
 
-    it('keeps the disabled filter behind can_manage_skills', async () => {
+    it('opens the disabled filter to a caller holding only the public API permission', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/v1/skills?filter=disabled', headers: bystander });
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({
-        type: 'urn:opsiforce:error:permission-denied',
-        permission: 'can_manage_skills',
-      });
+      expect(res.statusCode, res.body).toBe(200);
     });
 
     it('answers 404 for a Skill the caller cannot see, before weighing the permission', async () => {
@@ -224,6 +217,36 @@ describe('the Store routes of /api/v1', () => {
       });
 
       expect(res.statusCode).toBe(404);
+    });
+
+    it('refuses renaming a Skill the agent image owns as not-editable', async () => {
+      const { skillId } = await ensureBuiltInSkill(skillName());
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/skills/${skillId}`,
+        headers: author,
+        payload: { displayName: 'Mine now' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:not-editable' });
+    });
+
+    it('refuses a new Version of a Skill the Organization disabled as skill-disabled', async () => {
+      const name = skillName();
+      const skillId = (await createSkill(author, name)).json().id;
+      await db.insert(tenantDisabledSkills).values({ tenantId, skillId });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/skills/${skillId}/versions`,
+        headers: author,
+        payload: { files: tree(name, '# Fixed\n') },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:skill-disabled' });
     });
   });
 
@@ -380,16 +403,45 @@ describe('the Store routes of /api/v1', () => {
       expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:duplicate-skill-name' });
     });
 
-    it('refuses an Agent write to a caller without can_manage_agents', async () => {
+    it('refuses putting a Skill the Organization disabled on an Agent as skill-disabled', async () => {
+      const agentId = await createAgent('Disabled Skill');
+      const skillId = (await createSkill(author)).json().id;
+      await db.insert(tenantDisabledSkills).values({ tenantId, skillId });
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/agents/${agentId}/skills/${skillId}`,
+        headers: author,
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:skill-disabled' });
+    });
+
+    it('keeps the platform Skill on an Agent, answering not-editable', async () => {
+      const agentId = await createAgent('Keeps Platform');
+      const { skillId } = await ensureBuiltInSkill(PLATFORM_SKILL_NAME);
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/agents/${agentId}/skills/${skillId}`,
+        headers: author,
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ type: 'urn:opsiforce:error:not-editable' });
+    });
+
+    it('lets a caller holding only the public API permission create an Agent', async () => {
       const res = await app.inject({
         method: 'POST',
         url: '/api/v1/agents',
         headers: bystander,
-        payload: { displayName: 'Refused' },
+        payload: { displayName: `By a program ${randomUUID().slice(0, 6)}` },
       });
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({ permission: 'can_manage_agents' });
+      expect(res.statusCode, res.body).toBe(201);
     });
   });
 });

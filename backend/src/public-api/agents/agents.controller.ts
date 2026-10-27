@@ -60,7 +60,14 @@ export class AgentsController {
       "Creates an Agent private to you, with a kebab-case slug derived from `displayName` and a Development profile carrying an empty prompt, the given or default model pair, and the built-in `platform` Skill. The slug cannot change afterwards; a slug the deployment already uses is refused with 409.\n\nThe model must exist in the running distribution's catalog, and `variant` must be one of that model's reasoning efforts, or the call is refused naming the part that failed.\n\n**Use it for** standing an Agent up before writing it: create, then `PUT /agents/{id}/profile` with the prompt, then add Skills. A Project can be created from it as soon as its Development profile exists.",
   })
   @PublicResponse(201, AgentDetailSchema)
-  @PublicApiErrors('validation-error', 'permission-denied', 'name-unavailable', 'model-unknown', 'bad-request')
+  @PublicApiErrors(
+    'validation-error',
+    'permission-denied',
+    'name-unavailable',
+    'model-unknown',
+    'model-unreachable',
+    'bad-request'
+  )
   create(@Caller() caller: Caller, @Body({ schema: CreateAgentSchema }) body: CreateAgent): Promise<AgentDetailDto> {
     return this.agents.create(caller, body);
   }
@@ -88,7 +95,7 @@ export class AgentsController {
       "Sets a Custom Agent's display name, or the one line the Store and the Project picker show under it. The slug stays what it was at creation, so Projects and links keep working.\n\n**Use it for** settling the description once the brief is clear, and renaming when the author asks for another name.",
   })
   @PublicResponse(200, AgentDetailSchema)
-  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'not-publishable', 'forbidden')
+  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'not-publishable', 'not-editable')
   update(
     @Caller() caller: Caller,
     @Param({ schema: AgentPathSchema }) path: AgentPath,
@@ -111,8 +118,9 @@ export class AgentsController {
     'permission-denied',
     'not-found',
     'model-unknown',
+    'model-unreachable',
     'not-publishable',
-    'forbidden'
+    'not-editable'
   )
   updateProfile(
     @Caller() caller: Caller,
@@ -175,7 +183,8 @@ export class AgentsController {
     'not-found',
     'visibility-incoherent',
     'duplicate-skill-name',
-    'forbidden'
+    'skill-disabled',
+    'not-editable'
   )
   setSkill(
     @Caller() caller: Caller,
@@ -194,7 +203,7 @@ export class AgentsController {
       "Takes the Skill off the Development profile. The Skill itself is untouched, and Projects already created keep their copy. The built-in `platform` Skill cannot be removed — every Agent inherits the platform's own harness through it.\n\n**Use it for** trimming an Agent you are authoring. The answer is the remaining Skill set.",
   })
   @PublicResponse(200, AgentSkillListSchema)
-  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'forbidden')
+  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'not-editable')
   removeSkill(
     @Caller() caller: Caller,
     @Param({ schema: AgentSkillPathSchema }) path: AgentSkillPath
