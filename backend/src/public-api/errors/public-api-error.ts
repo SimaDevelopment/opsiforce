@@ -71,9 +71,12 @@ export const Errors = {
   validationFailed: (detail: string, errors: ValidationErrorItem[], lints: ValidationErrorItem[]) =>
     new PublicApiError('validation-failed', { detail, errors, lints }),
   visibilityIncoherent: (detail: string) => new PublicApiError('visibility-incoherent', { detail }),
+  notEditable: (detail: string) => new PublicApiError('not-editable', { detail }),
   skillInUse: (detail: string) => new PublicApiError('skill-in-use', { detail }),
+  skillDisabled: (detail: string) => new PublicApiError('skill-disabled', { detail }),
   duplicateSkillName: (detail: string) => new PublicApiError('duplicate-skill-name', { detail }),
   modelUnknown: (detail: string) => new PublicApiError('model-unknown', { detail }),
+  modelUnreachable: (detail: string) => new PublicApiError('model-unreachable', { detail }),
   notPublishable: (detail: string) => new PublicApiError('not-publishable', { detail }),
   templateRefused: (detail: string, errors: ValidationErrorItem[]) =>
     new PublicApiError('template-refused', { detail, errors }),

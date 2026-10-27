@@ -476,7 +476,7 @@ _Avoid_: Cron job (the mechanism, not the domain concept); Job (collides with Bu
 ### Public API
 
 **API Token**:
-The credential a program — the CLI, an integration, another Agent — presents to call the public API on a user's behalf. Today it is the bearer token the deployment's identity provider issues when that user signs in, so it carries exactly the Organization memberships and permissions they hold in the UI; a token issued by Opsiforce itself is a possible later form of the same concept. The public API selects the Organization it acts in with the same organization header the UI already sends (implicit when the caller belongs to exactly one), and its documentation speaks of Organizations, never of the internal tenant vocabulary.
+The credential a program — the CLI, an integration, another Agent — presents to call the public API on a user's behalf. Today it is the bearer token the deployment's identity provider issues when that user signs in, so it carries exactly the Organization memberships they hold in the UI, and holding `can_use_public_api` gives it every permission on the public API; a token issued by Opsiforce itself is a possible later form of the same concept. The public API selects the Organization it acts in with the same organization header the UI already sends (implicit when the caller belongs to exactly one), and its documentation speaks of Organizations, never of the internal tenant vocabulary.
 _Avoid_: Client key; API key (non-canonical); Personal access token (canonical only in other products); Tenant header (internal name — never user-facing)
 
 **Gateway Key**:

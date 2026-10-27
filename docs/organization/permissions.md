@@ -62,5 +62,5 @@ oauth2-proxy  ──  x-forwarded-groups  ──▶  Backend  ──▶  GET /ap
 - [Settings](settings.md) — how section visibility is centralised.
 - [Admin](admin.md) — the operational surface and its platform-scope pages.
 - [Workspaces](workspaces.md) — the two workspace permissions and their carry rules.
-- [API Token](../public-api/api-token.md) — the same permissions on the public API.
+- [API Token](../public-api/api-token.md) — `can_use_public_api` grants every permission on the public API.
 - [Add a permission](../operations/add-a-permission.md) — the steps.
