@@ -65,6 +65,7 @@ function resolveAgentContainerImage(): string {
 }
 
 export const configuration = () => {
+  const appsHostname = process.env.APPS_HOSTNAME || 'apps.opsiforce.localtest.me';
   return {
     databaseUrl: process.env.DATABASE_URL || 'postgresql://localhost:5432/opsiforce',
     redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
@@ -134,7 +135,8 @@ export const configuration = () => {
     whapiApiUrl: process.env.WHAPI_API_URL || 'https://gate.whapi.cloud',
     opsiforcePublicUrl: process.env.OPSIFORCE_PUBLIC_URL || '',
     externalServicesEncryptionKey: process.env.EXTERNAL_SERVICES_ENCRYPTION_KEY || '',
-    appsHostname: process.env.APPS_HOSTNAME || 'apps.opsiforce.localtest.me',
+    appsHostname,
+    previewAppsHostname: process.env.PREVIEW_APPS_HOSTNAME || `preview.${appsHostname}`,
     webappServiceName: process.env.WEBAPP_SERVICE_NAME || 'proxy-app',
     webappServicePort: parseInt(process.env.WEBAPP_SERVICE_PORT || '3002', 10),
     oidcPluginSecret: process.env.OIDC_PLUGIN_SECRET || '',

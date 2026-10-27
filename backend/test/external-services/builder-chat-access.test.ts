@@ -5,13 +5,13 @@ import { BuilderModule } from '../../src/builder/builder.module';
 import { ProxyController } from '../../src/proxy/proxy.controller';
 import { addMember, addNamedEnvironment, type MemberFixture } from '../support/project-fixtures';
 import { proxyHeaders } from '../support/proxy-identity';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import {
   createCustomService,
   ensureExternalServiceBuilder,
   type CreatedCustomService,
-} from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+} from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 
 const CONTROL_TOKEN = 'proxy-control-token-for-builder-chat-access';
 

@@ -6,8 +6,8 @@ import { db } from '../../../db';
 import { externalServiceConfigs, projectEnvironments } from '../../../db/schema';
 import { GatewayKeyService } from '../../../src/gateway/gateway-key.service';
 import { ensureBuiltInAgent } from '../../support/agent-fixtures';
-import { TENANT_SERVICES } from './custom-services';
-import type { PersonFixture } from './fixtures';
+import { TENANT_SERVICES } from '../../support/custom-services';
+import type { PersonFixture } from '../../support/external-service-fixtures';
 import { BOARDS_MANIFEST, writeServiceFiles } from './published-services';
 
 export const BUILDER_LANE = '/api/gateway/_builder';

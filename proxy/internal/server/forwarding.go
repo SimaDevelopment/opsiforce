@@ -14,6 +14,7 @@ const forwardedTokenHeader = "X-Opsiforce-Access-Token"
 const forwardedUserIDHeader = "X-Opsiforce-User-Id"
 const objectIDHeader = "X-Opsiforce-Object-Id"
 const directoryIDHeader = "X-Opsiforce-Directory-Id"
+const unprotectedRouteHeader = "X-Opsiforce-Unprotected-Route"
 
 // The OIDC plugin renders a missing claim as "<no value>".
 func hasClaimValue(value string) bool {

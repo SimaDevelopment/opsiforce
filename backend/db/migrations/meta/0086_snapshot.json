@@ -1,5 +1,5 @@
 {
-  "id": "b5b02f88-84d1-46f9-ac38-aeac7ff9ed81",
+  "id": "a92d8704-b36f-4e8f-9750-48e223f0141a",
   "prevId": "5baf0db9-ff54-45c1-ac8d-634bdad55c3b",
   "version": "7",
   "dialect": "postgresql",
@@ -2961,6 +2961,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "short_id": {
+          "name": "short_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "project_id": {
           "name": "project_id",
           "type": "text",
@@ -2993,6 +2999,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'starting'"
+        },
+        "pod_ip": {
+          "name": "pod_ip",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "session_id": {
           "name": "session_id",
@@ -3124,6 +3136,13 @@
           "columns": [
             "project_id",
             "environment_id"
+          ]
+        },
+        "project_environments_short_id_unique": {
+          "name": "project_environments_short_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "short_id"
           ]
         }
       },

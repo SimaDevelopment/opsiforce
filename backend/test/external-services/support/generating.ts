@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { addMember, type MemberFixture } from '../../support/project-fixtures';
-import type { PersonFixture } from './fixtures';
+import type { PersonFixture } from '../../support/external-service-fixtures';
 import { evolvedBuiltIn, type EvolvedBuiltIns } from './evolved-built-ins';
 import { gateCaller, type GateCallerFixture } from './gate';
 

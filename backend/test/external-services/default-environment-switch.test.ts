@@ -10,9 +10,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { db } from '../../db';
 import { externalServices } from '../../db/schema';
 import { EnvironmentService } from '../../src/environment/environment.service';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { callThroughGate, gatewayUrlOf } from './support/gate-proxy';
 import type { GateCallerFixture } from './support/gate';
 import {

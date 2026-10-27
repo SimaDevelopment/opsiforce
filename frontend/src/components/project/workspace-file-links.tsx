@@ -4,6 +4,8 @@ import { fileExtensionOf } from '~/lib/file-extension';
 import { fileNameOf, isPreviewableFile } from './preview/file-preview-format';
 
 const WORKSPACE_PREFIX = '/workspace/';
+const LOCAL_LINK_ATTRIBUTE = 'data-local-link';
+const LINE_RANGE_SUFFIX = /#L\d+(?:-L\d+)?$/;
 const CARD_ATTRIBUTE = 'data-workspace-file-card';
 const DOWNLOAD_ATTRIBUTE = 'data-workspace-file-download';
 const DOWNLOAD_ICON_PATHS = ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm7 10 5 5 5-5', 'M12 15V3'];
@@ -38,12 +40,7 @@ export function WorkspaceFileLinks(props: WorkspaceFileLinksProps) {
 
     event.preventDefault();
     event.stopPropagation();
-
-    if (target.closest(`[${DOWNLOAD_ATTRIBUTE}]`) || !isPreviewableFile(fileNameOf(relativePath))) {
-      download(relativePath);
-      return;
-    }
-    props.onPreviewFile(relativePath);
+    open(relativePath, !!target.closest(`[${DOWNLOAD_ATTRIBUTE}]`));
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -51,15 +48,24 @@ export function WorkspaceFileLinks(props: WorkspaceFileLinksProps) {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const action = target.closest(`[${DOWNLOAD_ATTRIBUTE}]`);
-    if (!action) return;
+    const anchor = target.closest('a');
+    const activatesLocalLink = event.key === 'Enter' && !!anchor?.hasAttribute(LOCAL_LINK_ATTRIBUTE);
+    if (!action && !activatesLocalLink) return;
 
-    const anchor = action.closest('a');
     const relativePath = anchor ? workspacePathOf(anchor) : null;
     if (!relativePath) return;
 
     event.preventDefault();
     event.stopPropagation();
-    download(relativePath);
+    open(relativePath, !!action);
+  };
+
+  const open = (relativePath: string, asDownload: boolean) => {
+    if (asDownload || !isPreviewableFile(fileNameOf(relativePath))) {
+      download(relativePath);
+      return;
+    }
+    props.onPreviewFile(relativePath);
   };
 
   const observer = new MutationObserver(() => {
@@ -89,28 +95,28 @@ export function WorkspaceFileLinks(props: WorkspaceFileLinksProps) {
 }
 
 function workspacePathOf(anchor: Element): string | null {
+  const localLink = anchor.getAttribute(LOCAL_LINK_ATTRIBUTE);
+  const path = localLink === null ? sameOriginPathOf(anchor) : localLink.replace(LINE_RANGE_SUFFIX, '');
+  if (!path?.startsWith(WORKSPACE_PREFIX)) return null;
+  return path.slice(WORKSPACE_PREFIX.length) || null;
+}
+
+function sameOriginPathOf(anchor: Element): string | null {
   const href = anchor.getAttribute('href');
   if (!href) return null;
 
-  let pathname: string;
   try {
     const url = new URL(href, window.location.origin);
     if (url.origin !== window.location.origin) return null;
-    pathname = url.pathname;
-  } catch {
-    return null;
-  }
-
-  if (!pathname.startsWith(WORKSPACE_PREFIX)) return null;
-  try {
-    return decodeURIComponent(pathname.slice(WORKSPACE_PREFIX.length)) || null;
+    return decodeURIComponent(url.pathname);
   } catch {
     return null;
   }
 }
 
 function decorateGeneratedFileLinks(host: HTMLElement): void {
-  for (const anchor of host.querySelectorAll(`a[href*="${WORKSPACE_PREFIX}"]`)) {
+  const selector = `a[href*="${WORKSPACE_PREFIX}"], a[${LOCAL_LINK_ATTRIBUTE}^="${WORKSPACE_PREFIX}"]`;
+  for (const anchor of host.querySelectorAll(selector)) {
     const relativePath = workspacePathOf(anchor);
     if (!relativePath || !relativePath.startsWith(`${GENERATED_FILES_DIRECTORY}/`)) continue;
     decorateFileCard(anchor, relativePath);

@@ -82,6 +82,7 @@ export interface PublishJobResponse {
   commitSha: string | null;
   error: string | null;
   report: PublishReportLine[];
+  publicUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

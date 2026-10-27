@@ -17,6 +17,7 @@ import { readEnvJson } from '../common/env-file';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { EnvironmentService } from '../environment/environment.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
+import { PublicUrlService } from '../project-environment/public-url.service';
 import { ProjectStatus } from '../project/project.types';
 import { ACTIVE_DUPLICATE_STATUSES } from '../project/project-duplicate.types';
 import {
@@ -41,6 +42,7 @@ export class PublishService implements OnApplicationBootstrap {
     private readonly configService: ConfigService,
     private readonly environmentService: EnvironmentService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
+    private readonly publicUrls: PublicUrlService,
     @InjectQueue(PROJECT_PUBLISH_QUEUE)
     private readonly queue: Queue<PublishJobData>
   ) {
@@ -294,7 +296,7 @@ export class PublishService implements OnApplicationBootstrap {
       .where(and(eq(projectPublishJobs.projectId, projectId), eq(projectPublishJobs.environmentId, environmentId)))
       .orderBy(desc(projectPublishJobs.createdAt))
       .limit(1);
-    return row ? toResponse(row) : null;
+    return row ? this.toResponse(row) : null;
   }
 
   async getJob(jobId: string): Promise<PublishJobResponse> {
@@ -304,7 +306,23 @@ export class PublishService implements OnApplicationBootstrap {
   private async toJobResponse(jobId: string): Promise<PublishJobResponse> {
     const [row] = await db.select().from(projectPublishJobs).where(eq(projectPublishJobs.id, jobId));
     if (!row) throw new NotFoundException(`Publish job ${jobId} not found`);
-    return toResponse(row);
+    return this.toResponse(row);
+  }
+
+  private async toResponse(row: typeof projectPublishJobs.$inferSelect): Promise<PublishJobResponse> {
+    const env = await this.projectEnvironmentService.findByIdOrNull(row.projectEnvironmentId);
+    return {
+      id: row.id,
+      projectEnvironmentId: row.projectEnvironmentId,
+      environmentId: row.environmentId,
+      status: row.status as PublishStatus,
+      commitSha: row.commitSha,
+      error: row.error,
+      report: row.report as PublishReportLine[],
+      publicUrl: env && this.publicUrls.publicUrlOnceLive(env),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   }
 
   async readEnvFile(directory: string): Promise<Record<string, string>> {
@@ -334,18 +352,4 @@ function isActivePublishConflict(err: unknown): boolean {
 
 function isProjectEnvironmentConflict(err: unknown): boolean {
   return isUniqueViolation(err, 'project_environments_project_id_environment_id_unique');
-}
-
-function toResponse(row: typeof projectPublishJobs.$inferSelect): PublishJobResponse {
-  return {
-    id: row.id,
-    projectEnvironmentId: row.projectEnvironmentId,
-    environmentId: row.environmentId,
-    status: row.status as PublishStatus,
-    commitSha: row.commitSha,
-    error: row.error,
-    report: row.report as PublishReportLine[],
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
 }

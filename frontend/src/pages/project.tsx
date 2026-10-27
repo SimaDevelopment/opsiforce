@@ -294,7 +294,7 @@ export function ProjectView(props: ProjectViewProps) {
           <ProjectPreviewPanel
             projectId={props.projectId}
             environmentId={activeEnvironmentId()}
-            environmentSlug={activeEnvironment()?.slug ?? null}
+            publicUrl={activeEnvironment()?.publicUrl ?? null}
             hasApp={app()?.exists === true}
             appName={app()?.name ?? undefined}
             previewRequest={previewRequest()}

@@ -1,0 +1,12 @@
+{{- if .Values.ingressRoute.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "opsiforce-proxy.fullname" . }}-unprotected-route
+  labels:
+    {{- include "opsiforce-proxy.labels" . | nindent 4 }}
+spec:
+  headers:
+    customRequestHeaders:
+      X-Opsiforce-Unprotected-Route: "1"
+{{- end }}

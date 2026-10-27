@@ -208,7 +208,7 @@ export function ChoiceField(props: {
         <Show when={canChoose()}>
           <Popover open={open()} onOpenChange={openPicker} placement="bottom-start">
             <PopoverTrigger class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
-              <Show when={multiple()} fallback={selected().length > 0 ? 'Change' : 'Choose…'}>
+              <Show when={multiple()} fallback={selected().length > 0 ? 'Change' : 'Choose'}>
                 <Plus class="h-3 w-3" aria-hidden="true" /> Add
               </Show>
             </PopoverTrigger>

@@ -16,7 +16,7 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { proxyHeaders } from '../support/proxy-identity';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { callThroughGate } from './support/gate-proxy';
 import { saveProjectConfiguration } from './support/gate';
 

@@ -68,6 +68,7 @@ export interface ExportManifestResources {
 export interface ExportManifestAppDetails {
   name: string | null;
   description: string | null;
+  appSlug?: string | null;
 }
 
 export interface ExportManifestSchedule {

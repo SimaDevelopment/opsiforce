@@ -162,6 +162,10 @@ export interface ProjectEnvironmentSummary {
   hasApp: boolean;
   appName: string | null;
   appDescription: string | null;
+  publicUrl: string | null;
+  appSlug: string | null;
+  suggestedAppSlug: string | null;
+  shortId: string;
   sessionId: string | null;
 }
 
@@ -210,5 +214,6 @@ export interface UpdateProjectAuthDto {
 export interface UpdateAppDto {
   name?: string;
   description?: string | null;
+  appSlug?: string;
   environmentId?: string;
 }

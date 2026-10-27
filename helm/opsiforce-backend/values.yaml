@@ -60,6 +60,7 @@ config:
   opsiforcePublicUrl: ""
   externalServicesEncryptionKey: ""
   appsHostname: ""
+  previewAppsHostname: ""
   webappServiceName: ""
   webappServicePort: "3002"
   oidcPluginSecret: ""

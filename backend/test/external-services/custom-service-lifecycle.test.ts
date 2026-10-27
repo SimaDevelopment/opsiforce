@@ -23,7 +23,7 @@ import { seedLiveAgent } from '../support/agent-fixtures';
 import type { FakePodService, FakeQueue } from '../support/infra-fakes';
 import { addMember } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import {
   builderProjectRow,
   createCustomService,
@@ -31,8 +31,8 @@ import {
   ensureExternalServiceBuilder,
   TENANT_SERVICES,
   postCustomService,
-} from './support/custom-services';
-import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from './support/fixtures';
+} from '../support/custom-services';
+import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from '../support/external-service-fixtures';
 import { callThroughGate, gatewayUrlOf, resolveCaller, resolveWebhook } from './support/gate-proxy';
 import { productionCaller, type GateCallerFixture } from './support/gate';
 import { startSdk2ServicePod, type Sdk2PodHandlers, type Sdk2ServicePod } from './support/sdk2-service-pod';

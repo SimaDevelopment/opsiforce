@@ -18,6 +18,7 @@ adrs: [0015]
 - Delivery is at least once: agent-control retries until acknowledged and resyncs at startup; identity persists in the App row, so a backend restart loses no detection.
 - Pushes happen only on edges (Go-live, serving up, serving down), never on a timer; every `awaitReady` consumer recreates or wakes the pod and marks `serving` down first, so it always waits for the next edge on a fresh pod ([ADR-0015](../adr/0015-app-liveness-pushed-not-polled.md)).
 - Identity is durable in the App row while `serving` is an in-memory edge the backend marks down at every pod boundary it controls (pod create, idle suspend, project disable) and clears on delete.
+- The link the agent shares at Go-live is asked for, not pushed: `app-url` (`agent-control app-url`) calls `GET /api/gateway/app/public-url` with the pod's gateway token every second for up to 30 seconds, and when no call is answered it says it couldn't reach the platform rather than that the App isn't live. The answer is `{publicUrl, servesAnExternalService}`: `publicUrl` is `null` until the App row exists and then the environment's current Public URL, so it is right after an [Edit URL](../../GLOSSARY.md) too, and `servesAnExternalService: true` makes the command refuse, since such a Project has no public App ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
 - The runtime proxy's failure report is a separate path: it inspects pod state and recovers the pod from real traffic and never writes `serving` ([Request Flows](../runtime/request-flows.md)).
 
 ```
@@ -43,8 +44,9 @@ consumers of awaitReady: publish · duplicate · schedule
 ## Code
 
 - `proxy/cmd/agent-control/reporter.go` — the in-pod watch, probe and push.
+- `proxy/cmd/agent-control/app_url.go` — the `app-url` command.
 - `backend/src/project/app-readiness.service.ts` — per-environment state, `awaitReady`, mark-down at pod boundaries.
-- `backend/src/project/app.controller.agent.ts` — the gateway-guarded push endpoint.
+- `backend/src/project/app.controller.agent.ts` — the gateway-guarded push endpoint and the Public URL answer.
 
 ## Related
 

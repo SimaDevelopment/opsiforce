@@ -1,6 +1,11 @@
 import { For, Show, createSignal } from 'solid-js';
 import { toast } from 'solid-sonner';
-import { ENVIRONMENT_SLUG_MAX_LENGTH, ENVIRONMENT_SLUG_PATTERN, slugifyEnvironmentName } from '~/lib/app-url';
+import {
+  ENVIRONMENT_SLUG_MAX_LENGTH,
+  ENVIRONMENT_SLUG_PATTERN,
+  endsLikeAnAppShortId,
+  slugifyEnvironmentName,
+} from '~/lib/app-url';
 import { deriveEnvironmentShortName, isEnvironmentShortNameValid } from '~/lib/environment-label';
 import { BadgeLabelInput } from './badge-label-input';
 import { useCreateEnvironment, useDeleteEnvironment, useEnvironments, type Environment } from '~/api/environments';
@@ -49,6 +54,8 @@ export function TenantEnvironmentsSection(props: { active: boolean }) {
   const slugError = () => {
     if (!slug()) return 'A URL slug is required';
     if (!slugValid()) return 'Lowercase letters, digits, and dashes only; no leading or trailing dash';
+    if (endsLikeAnAppShortId(slug()))
+      return "Can't end with 12 or more characters from 0-9 and a-f, which reads as an App ID";
     if (slugTaken()) return `'${slug()}' is already used by another environment`;
     return null;
   };
@@ -142,14 +149,14 @@ export function TenantEnvironmentsSection(props: { active: boolean }) {
                 }
               >
                 <p class="break-all text-xs text-muted-foreground">
-                  App URLs will look like{' '}
+                  Public URLs will look like{' '}
                   <span class="font-mono">
-                    {'<app-id>'}-{slug()}.{import.meta.env.VITE_WEBAPP_DOMAIN}
+                    {'<app-name>'}-{slug()}-{'<app-id>'}.{import.meta.env.VITE_WEBAPP_DOMAIN}
                   </span>
                 </p>
               </Show>
               <p class="text-xs text-muted-foreground">
-                The slug becomes part of every app URL in this environment and cannot be changed later.
+                The slug becomes part of every Public URL in this environment and cannot be changed later.
               </p>
             </div>
             <BadgeLabelInput

@@ -26,6 +26,7 @@ import {
   projects,
   tenants,
 } from '../../db/schema';
+import { legacyAppHost } from '../common/app-host';
 import { resolvePodSettings, sameResources, toK8sResources, type PodSettings } from '../pod/pod-classes';
 import { hasResources, podSettingsColumns } from '../pod/pod-settings-columns';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
@@ -100,6 +101,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   private readonly gatewayUrl: string;
   private readonly runtimeProxyUrl: string;
   private readonly agentImageVersion: string;
+  private readonly appsHostname: string;
   private readonly storageMountPath: string;
   private readonly poolSizeOverride: number | null;
   private pooledAgents = new Map<string, PooledAgent>();
@@ -128,6 +130,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     this.gatewayUrl = this.configService.get<string>('gatewayUrl', '');
     this.runtimeProxyUrl = this.configService.get<string>('runtimeProxyUrl', '');
     this.agentImageVersion = this.configService.getOrThrow<string>('agentImageVersion');
+    this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     this.poolSizeOverride = this.configService.get<number | null>('poolSizeOverride', null);
   }
@@ -649,6 +652,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         gatewayApiKey: gatewayApiKey ?? undefined,
         gatewayUrl: this.gatewayUrl,
         runtimeProxyUrl: this.runtimeProxyUrl,
+        appPublicUrl: `https://${legacyAppHost(id, null, this.appsHostname)}/`,
         controlToken: crypto.randomBytes(32).toString('hex'),
       });
 

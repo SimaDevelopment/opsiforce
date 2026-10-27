@@ -22,6 +22,10 @@ const (
 const appRootGuard = "webapp"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == appURLCommand {
+		os.Exit(runAppURL(os.Getenv("SERVICE_GATEWAY_URL"), os.Getenv("SERVICE_GATEWAY_API_KEY"), os.Stdout, os.Stderr))
+	}
+
 	go runOpencodeAuthProxy()
 	go runReporter()
 

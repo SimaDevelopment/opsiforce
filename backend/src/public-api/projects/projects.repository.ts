@@ -13,6 +13,7 @@ import {
   workspaceMembers,
   workspaces,
 } from '../../../db/schema';
+import { servesAnExternalService } from '../../external-services/gate/service-projects';
 import {
   hiddenProjectReachOf,
   reachableHiddenProjectsWhere,
@@ -79,8 +80,11 @@ export interface EnvironmentRow {
   sessionId: string | null;
   environmentName: string | null;
   environmentSlug: string | null;
+  shortId: string;
   hasApp: boolean;
   appName: string | null;
+  appSlug: string | null;
+  servesAnExternalService: boolean;
 }
 
 export interface ProjectScope {
@@ -157,8 +161,11 @@ export class PublicProjectsRepository {
         sessionId: projectEnvironments.sessionId,
         environmentName: environments.name,
         environmentSlug: environments.slug,
+        shortId: projectEnvironments.shortId,
         hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`.as('has_app'),
         appName: projectApps.name,
+        appSlug: projectApps.slug,
+        servesAnExternalService,
       })
       .from(projectEnvironments)
       .leftJoin(environments, eq(environments.id, projectEnvironments.environmentId))

@@ -2,7 +2,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BUILT_INS_ADAPTER_PATH } from '../../src/external-services/built-ins/built-ins-adapter';
 import { shippedBuiltInServicesDir } from '../../src/external-services/registry/built-in-services';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 
 describe("the built-ins adapter's routes", () => {
   let harness: ExternalServicesTestApp;

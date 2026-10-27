@@ -286,10 +286,13 @@ export const environments = pgTable(
   ],
 )
 
+const assignedByInsertTrigger = () => sql`default`
+
 export const projectEnvironments = pgTable(
   "project_environments",
   {
     id: text("id").primaryKey(),
+    shortId: text("short_id").notNull().unique().$defaultFn(assignedByInsertTrigger),
     projectId: text("project_id")
       .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
@@ -348,6 +351,7 @@ export const projectApps = pgTable(
       .notNull(),
     name: text("name"),
     description: text("description"),
+    slug: text("slug"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

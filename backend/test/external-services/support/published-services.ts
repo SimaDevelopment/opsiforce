@@ -16,8 +16,8 @@ import { ServiceDefaultEnvironments } from '../../../src/external-services/publi
 import { ServiceRegistry, type RegisteredService } from '../../../src/external-services/registry/service-registry';
 import { GatewayKeyService } from '../../../src/gateway/gateway-key.service';
 import { createProject, serviceKeyFor, type TenantFixture } from '../../support/project-fixtures';
-import { createCustomService, TENANT_SERVICES } from './custom-services';
-import type { PersonFixture } from './fixtures';
+import { createCustomService, TENANT_SERVICES } from '../../support/custom-services';
+import type { PersonFixture } from '../../support/external-service-fixtures';
 import type { GateCallerFixture } from './gate';
 
 export const BOARDS_MANIFEST = {

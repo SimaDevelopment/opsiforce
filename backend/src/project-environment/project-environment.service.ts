@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
 import {
   deletedProjectEnvironments,
   environments,
+  projectApps,
   projectEnvironments,
   projectSettings,
   projects,
 } from '../../db/schema';
+import { servesAnExternalService } from '../external-services/gate/service-projects';
 import type { ProjectStatus } from '../project/project.types';
 import {
   CreateProjectEnvironmentInput,
@@ -18,6 +20,7 @@ import {
 
 const contextFields = {
   id: projectEnvironments.id,
+  shortId: projectEnvironments.shortId,
   projectId: projectEnvironments.projectId,
   environmentId: projectEnvironments.environmentId,
   isDefault: projectEnvironments.isDefault,
@@ -45,6 +48,9 @@ const contextFields = {
   environmentName: environments.name,
   environmentSlug: environments.slug,
   environmentIsDefault: environments.isDefault,
+  hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`,
+  appSlug: projectApps.slug,
+  servesAnExternalService,
 };
 
 @Injectable()
@@ -55,7 +61,8 @@ export class ProjectEnvironmentService {
       .from(projectEnvironments)
       .innerJoin(projects, eq(projects.id, projectEnvironments.projectId))
       .innerJoin(projectSettings, eq(projectSettings.projectId, projectEnvironments.projectId))
-      .leftJoin(environments, eq(environments.id, projectEnvironments.environmentId));
+      .leftJoin(environments, eq(environments.id, projectEnvironments.environmentId))
+      .leftJoin(projectApps, eq(projectApps.projectEnvironmentId, projectEnvironments.id));
   }
 
   private select(where: SQL): Promise<ProjectEnvironmentContext[]> {
@@ -64,6 +71,11 @@ export class ProjectEnvironmentService {
 
   async findByIdOrNull(envId: string): Promise<ProjectEnvironmentContext | null> {
     const [row] = await this.select(eq(projectEnvironments.id, envId));
+    return row ?? null;
+  }
+
+  async findByShortIdOrNull(shortId: string): Promise<ProjectEnvironmentContext | null> {
+    const [row] = await this.select(eq(projectEnvironments.shortId, shortId));
     return row ?? null;
   }
 
@@ -114,6 +126,12 @@ export class ProjectEnvironmentService {
       ? inArray(projectEnvironments.status, status)
       : eq(projectEnvironments.status, status);
     return this.select(where);
+  }
+
+  listProtected(): Promise<ProjectEnvironmentContext[]> {
+    return this.baseQuery()
+      .where(ne(projectEnvironments.authMode, 'public'))
+      .orderBy(asc(projectEnvironments.createdAt), asc(projectEnvironments.id)) as Promise<ProjectEnvironmentContext[]>;
   }
 
   async listAllDirectories(): Promise<{ id: string; projectId: string; directory: string }[]> {

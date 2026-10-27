@@ -14,9 +14,9 @@ import type { AgentCaller, AgentDetail, AgentRow } from '../../src/agent/agent.t
 import { ProjectService } from '../../src/project/project.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, type MemberFixture } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import {
   freePort,
   publishCustomService,

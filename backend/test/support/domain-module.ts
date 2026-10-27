@@ -51,6 +51,7 @@ import { ProjectImportUploadService } from '../../src/project/project-import-upl
 import { PROJECT_IMPORT_QUEUE } from '../../src/project/project-import.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../../src/project-environment/environment-variables.service';
+import { PublicUrlService } from '../../src/project-environment/public-url.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
 import { PROJECT_POOL_QUEUE, PROJECT_POOL_TEARDOWN_QUEUE } from '../../src/pool/project-pool.types';
 import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
@@ -118,6 +119,7 @@ const REAL_SERVICES = [
   ProjectProvenanceRepository,
   ProjectService,
   ProxyService,
+  PublicUrlService,
   SkillDeliveryRepository,
   SkillDeliveryService,
   SkillSwitchRepository,

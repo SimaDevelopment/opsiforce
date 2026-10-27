@@ -8,4 +8,4 @@ This is deliberate: reusing the projectId keeps every existing URL, pod name, on
 
 - A future reader will notice that Development env ids look like project ids while other env ids are random uuids. **This asymmetry is intentional — do not "normalize" it.** Giving Development a fresh uuid would require a coordinated URL/pod/directory migration plus a redirect map for live links.
 - The routing key is uniformly "the env id"; Development's simply equals its project's id.
-- The public app hostname appends an environment slug to the env id, which stays the routing key ([ADR-0012](0012-public-app-hostnames-carry-environment-slug.md)).
+- An App's Public URL ends in its App Short ID, a prefix of the env id, and its legacy hosts carry the env id itself, which stays the routing key of every other surface ([ADR-0012](0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).

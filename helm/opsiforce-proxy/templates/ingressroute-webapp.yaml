@@ -12,13 +12,16 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: HostRegexp(`[a-z0-9-]+\.{{ .Values.appProxy.appsHostname | replace "." "\\." }}`)
+    - match: HostRegexp(`^[a-z0-9-]+\.{{ .Values.appProxy.appsHostname | replace "." "\\." }}$`)
       kind: Rule
+      priority: 1
+      middlewares:
+        - name: {{ include "opsiforce-proxy.fullname" . }}-unprotected-route
       services:
         - name: {{ .Values.appProxy.backendService }}
           port: {{ .Values.appProxy.backendPort }}
     {{- if .Values.appProxy.previewAppsHostname }}
-    - match: HostRegexp(`[a-f0-9-]+\.{{ .Values.appProxy.previewAppsHostname | replace "." "\\." }}`)
+    - match: HostRegexp(`^[a-f0-9-]+\.{{ .Values.appProxy.previewAppsHostname | replace "." "\\." }}$`)
       kind: Rule
       services:
         - name: {{ include "opsiforce-proxy.fullname" . }}

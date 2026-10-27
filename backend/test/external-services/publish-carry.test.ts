@@ -3,8 +3,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ProjectConfigurationCarry } from '../../src/external-services/configuration/project-configuration-carry';
 import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { addMember, type MemberFixture } from '../support/project-fixtures';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { builtInServiceId, forgetPlatformServiceConfiguration } from './support/fixtures';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
+import { builtInServiceId, forgetPlatformServiceConfiguration } from '../support/external-service-fixtures';
 import {
   configurePlatformService,
   gateCaller,

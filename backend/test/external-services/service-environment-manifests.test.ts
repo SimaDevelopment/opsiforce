@@ -9,9 +9,9 @@ import { db } from '../../db';
 import { projectEnvironments } from '../../db/schema';
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { manifestDiff } from '../../src/external-services/publishing/manifest-diff';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { memberWithout, tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { memberWithout, tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import {
   addServiceEnvironment,
   freePort,

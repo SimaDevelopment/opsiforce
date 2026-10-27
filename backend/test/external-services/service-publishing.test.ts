@@ -9,14 +9,14 @@ import {
   recordsFileInWorkspace,
 } from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import {
   createCustomService,
   ensureExternalServiceBuilder,
   TENANT_SERVICES,
   type CreatedCustomService,
-} from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+} from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { BOARDS_MANIFEST, productionEnvironmentOf } from './support/published-services';
 import { runningDevelopment, type BuilderDevelopment } from './support/test-lane';
 import { committedWorkspace, publishReview, writeTestReport } from './support/service-publishing';

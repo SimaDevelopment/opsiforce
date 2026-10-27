@@ -1,9 +1,9 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { eq } from 'drizzle-orm';
-import { db } from '../../../db';
-import { environments, externalServices, projects } from '../../../db/schema';
-import { ensureBuiltInAgent } from '../../support/agent-fixtures';
-import type { PersonFixture } from './fixtures';
+import { db } from '../../db';
+import { environments, externalServices, projects } from '../../db/schema';
+import { ensureBuiltInAgent } from './agent-fixtures';
+import type { PersonFixture } from './external-service-fixtures';
 
 export const EXTERNAL_SERVICE_BUILDER = 'external-service-builder';
 export const TENANT_SERVICES = '/api/external-services/services';
