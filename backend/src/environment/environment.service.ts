@@ -25,6 +25,7 @@ const NAME_MAX_LENGTH = 60;
 const DESCRIPTION_MAX_LENGTH = 500;
 const SLUG_MAX_LENGTH = 26;
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+const ENDS_LIKE_AN_APP_SHORT_ID = /(?:^|-)[0-9a-f]{12,}$/;
 const SHORT_NAME_PATTERN = /^[A-Za-z0-9]{2,5}$/;
 const COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 
@@ -143,6 +144,11 @@ export class EnvironmentService {
 
     if (!slug) {
       throw new BadRequestException("'slug' is required when the name has no latin letters or digits");
+    }
+    if (ENDS_LIKE_AN_APP_SHORT_ID.test(slug)) {
+      throw new BadRequestException(
+        "'slug' cannot end with 12 or more characters from 0-9 and a-f, which is how a Public URL ends its App Short ID"
+      );
     }
 
     await this.assertNameAvailable(tenantId, name, null);

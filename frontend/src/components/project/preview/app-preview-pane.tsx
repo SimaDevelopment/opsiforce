@@ -115,9 +115,9 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
       <Show when={props.publicUrl}>
         {(publicUrl) => (
           <div class="flex items-center gap-2 px-2 py-1.5 bg-sidebar border-b border-border shrink-0">
-            <span class="shrink-0 text-xs text-muted-foreground">App URL</span>
+            <span class="shrink-0 text-xs text-muted-foreground">Public URL</span>
             <input
-              aria-label="App URL"
+              aria-label="Public URL"
               type="text"
               readonly
               value={publicUrl()}

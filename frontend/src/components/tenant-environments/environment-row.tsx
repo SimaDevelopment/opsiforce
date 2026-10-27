@@ -67,7 +67,7 @@ export function EnvironmentRow(props: EnvironmentRowProps) {
                 <span class="text-xs font-medium text-foreground">{props.environment.name}</span>
                 <span
                   class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                  title="URL slug — appears in every app URL of this environment"
+                  title="URL slug — appears in every Public URL of this environment"
                 >
                   {props.environment.slug}
                 </span>

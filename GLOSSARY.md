@@ -84,7 +84,7 @@ A tenant-scoped, named target a Project can run in and a Custom Agent can publis
 _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
-The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
+The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
 _Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:

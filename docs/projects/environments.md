@@ -28,7 +28,7 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
 
 ### Addressing
 
-- Each Environment carries an [Environment Slug](../../GLOSSARY.md): `dev` and `prod` for the protected ones; for a custom one it is prefilled from the name and editable once before saving, unique within the tenant, then immutable, so renames never move an address. It names the environment in every App's [Public URL](../../GLOSSARY.md) ([Public URL](public-url.md)), where the [App Short ID](../../GLOSSARY.md), not the slug, picks the ProjectEnvironment ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
+- Each Environment carries an [Environment Slug](../../GLOSSARY.md): `dev` and `prod` for the protected ones; for a custom one it is prefilled from the name and editable once before saving, unique within the tenant, never ending with 12 or more characters from 0-9 and a-f (how a Public URL ends its App Short ID), then immutable, so renames never move an address. It names the environment in every App's [Public URL](../../GLOSSARY.md) ([Public URL](public-url.md)), where the [App Short ID](../../GLOSSARY.md), not the slug, picks the ProjectEnvironment ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
 
 ### App Auth
 
