@@ -56,6 +56,9 @@ export function useWorkspaceFolders(workspaceId: () => string) {
   return createAppQuery(() => ({
     queryKey: workspaceKeys.folders(workspaceId()),
     queryFn: () => api.get<Folder[]>(`/workspaces/${workspaceId()}/folders`),
+    // a Public project or a Builder chat has no workspace, and a project that
+    // is still loading has none yet; neither should ask for /workspaces//folders
+    enabled: workspaceId() !== '',
   }));
 }
 
