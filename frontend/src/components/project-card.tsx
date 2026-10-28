@@ -50,7 +50,7 @@ export function ProjectCard(props: {
     <div
       onClick={handleCardClick}
       class={cn(
-        'w-full text-left rounded-lg px-2.5 py-2 transition-all duration-150 group relative cursor-pointer',
+        'of-sb-card w-full text-left rounded-lg transition-all duration-150 group relative cursor-pointer',
         props.isActive ? 'of-sb-open-card' : 'hover:bg-sidebar-accent/60'
       )}
     >

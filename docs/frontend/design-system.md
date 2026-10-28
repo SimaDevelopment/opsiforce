@@ -34,14 +34,14 @@ kind: explanation
 
 ### Metrics and motion
 
-- There are exactly three control heights — `--h-compact` 24px, `--h-default` 32px, `--h-primary` 36px — and one row geometry, `.of-row`, shared by the sidebar, popover items, tables and the runs dock.
+- There are exactly three control heights — `--h-compact` 24px, `--h-default` 32px, `--h-primary` 36px — and one row geometry, `.of-row`, shared by the sidebar lists and the command palette; the project cards and the runs dock cards take their padding from the same density tokens (`--card-pad`, `--row-pad`).
 - Durations and easings are tokens (`--dur-fast`, `--dur`, `--dur-slow`, `--ease-standard`, `--ease-spring`); `prefers-reduced-motion` and `[data-motion="reduced"]` flatten them in one place.
 
 ### Appearance
 
 - The user's choices ride on `<html>`: `data-scheme`, `data-contrast`, `data-density`, the `--font-scale` custom property, and — when a non-default seed is picked — the semantic tokens themselves as inline custom properties; the stylesheet is the only subscriber.
 - `frontend/src/lib/appearance.ts` owns the signals and writes them; an inline script in `index.html` applies the stored values before first paint so a dark-mode user never sees a white flash.
-- Base and Accent are seeds, not tokens: `frontend/src/lib/theme-seeds.ts` feeds them to the OKLCH generator vendored at `opencode/packages/ui/src/theme/color.ts` and maps its scales onto the semantic layer, checking accent text against a 4.5:1 floor and choosing the ink on a solid fill by ratio.
+- Base and Accent are seeds, not tokens: `frontend/src/lib/theme-seeds.ts` feeds them to the OKLCH generator vendored at `opencode/packages/ui/src/theme/color.ts` and maps its scales onto the semantic layer and onto the legacy bridge, checking accent text against a 4.5:1 floor and choosing the ink on a solid fill by ratio.
 - The default seeds write nothing at all — they mean "use the authored stylesheet", whose values were tuned against the APCA floors by hand and which the generator would only approximate.
 - Dark is authored rather than inverted: the surface ladder carries about four times the separation of light, and `--fill-solid` brightens to the brand tint and takes dark ink.
 

@@ -92,6 +92,7 @@
   --row-pad: 10px;
   --row-gap: 10px;
   --indent: 12px;
+  --card-pad: 8px;
 
   --radius-sm-of: 6px;
   --radius-md-of: 8px;
@@ -359,15 +360,16 @@
   --border-default-mix: 34%;
 }
 
-/* Density is wired to an audited list only — sidebar rows, popover items,
-   tables, publish steps, schedules and the runs dock. All three steps are
-   authored, and each one moves --row-h, so the choice is visible rather than
-   decorative. Comfortable is the default. */
+/* Density is wired to an audited list only: the sidebar lists (.of-row), the
+   command palette rows, the project cards and the runs dock cards, which take
+   --card-pad. All three steps are authored, and each one moves --row-h, so the
+   choice is visible rather than decorative. Comfortable is the default. */
 [data-density='comfortable'] {
   --row-h: 36px;
   --row-pad: 10px;
   --row-gap: 10px;
   --indent: 12px;
+  --card-pad: 8px;
 }
 
 [data-density='default'] {
@@ -375,6 +377,7 @@
   --row-pad: 8px;
   --row-gap: 8px;
   --indent: 12px;
+  --card-pad: 6px;
 }
 
 [data-density='compact'] {
@@ -382,6 +385,7 @@
   --row-pad: 6px;
   --row-gap: 6px;
   --indent: 10px;
+  --card-pad: 4px;
 }
 
 /* motion policy lives in ONE place */
@@ -1247,6 +1251,11 @@
 
   /* the open project: a card on the content surface, inside the panel-toned
      sidebar, so the list and the thing you are working in are one surface */
+  /* a project card: Density sets its padding, as it does the rows around it */
+  .of-sb-card {
+    padding: var(--card-pad) var(--row-pad);
+  }
+
   .of-sb-open-card {
     background: var(--bg-content);
     box-shadow: var(--shadow-1);
@@ -1750,7 +1759,7 @@
     background: var(--bg-elevated);
     box-shadow: var(--shadow-2);
     overflow: hidden;
-    padding: 9px 10px 8px;
+    padding: var(--card-pad) var(--row-pad);
     transition: box-shadow var(--dur) var(--ease-standard);
   }
 

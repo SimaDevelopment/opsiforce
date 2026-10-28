@@ -259,7 +259,7 @@ function AppearancePage() {
             <Field
               icon={Rows3}
               title="Density"
-              description="Row height for the project list, popover menus, tables, schedules and the runs dock."
+              description="Row height for the sidebar lists, the project list, the command palette and the runs dock."
               value={DENSITY_ROWS[appearance.density()]}
             >
               <Segmented

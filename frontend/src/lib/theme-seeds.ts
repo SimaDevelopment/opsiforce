@@ -1,7 +1,9 @@
 import {
+  blend,
   contrastRatio,
   generateNeutralScale,
   generateScale,
+  hexToRgb,
   mixColors,
   withAlpha,
   type HexColor,
@@ -66,9 +68,33 @@ function readableStep(scale: HexColor[], surface: HexColor, floor: number, from:
 }
 
 /**
+ * The legacy shadcn bridge is consumed as `hsl(var(--primary) / a)`, so it
+ * needs bare `H S% L%` triplets rather than a colour.
+ */
+function hslTriplet(hex: HexColor): string {
+  const { r, g, b } = hexToRgb(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  let s = 0;
+  if (d > 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return `${h.toFixed(1)} ${(s * 100).toFixed(1)}% ${(l * 100).toFixed(1)}%`;
+}
+
+/**
  * The semantic layer, regenerated from two seeds. Keys are the custom property
  * names the stylesheet already reads, so applying this is a style write and
- * nothing else re-renders.
+ * nothing else re-renders. The legacy bridge is regenerated alongside, or the
+ * controls still written against `bg-primary` and `ring-ring` would keep the
+ * authored accent while everything around them changed.
  */
 export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: boolean): Record<string, string> {
   const ink: HexColor = isDark ? '#f3f2fb' : '#1d1b32';
@@ -85,13 +111,31 @@ export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: bool
   // 4.5:1 is the floor for the 13px labels this accent carries as text
   const accentText = readableStep(brand, content, 4.5, 9);
 
+  const app = isDark ? neutral[0] : neutral[1];
+  const panel = isDark ? neutral[1] : neutral[0];
+  const elevated: HexColor = isDark ? neutral[3] : '#ffffff';
+  const elementAlpha = isDark ? 0.055 : 0.045;
+  const elementHoverAlpha = isDark ? 0.095 : 0.075;
+  // the same strengths the stylesheet uses at normal contrast; the bridge has
+  // no contrast steps of its own, as it never had
+  const borderSubtleAlpha = isDark ? 0.095 : 0.1;
+  const borderDefaultAlpha = isDark ? 0.18 : 0.17;
+  const textDefault = mixColors(neutral[9], ink, 0.62);
+  const onSolid = inkOn(fill);
+
+  // legacy values are flattened onto the surface they sit on, as the authored
+  // bridge is, because a triplet cannot carry alpha
+  const element = hslTriplet(blend(neutral[11], content, elementAlpha));
+  const elementHover = hslTriplet(blend(neutral[11], content, elementHoverAlpha));
+  const borderSubtle = hslTriplet(blend(neutral[11], content, borderSubtleAlpha));
+
   return {
-    '--bg-app': isDark ? neutral[0] : neutral[1],
-    '--bg-panel': isDark ? neutral[1] : neutral[0],
+    '--bg-app': app,
+    '--bg-panel': panel,
     '--bg-content': content,
-    '--bg-elevated': isDark ? neutral[3] : '#ffffff',
-    '--bg-element': withAlpha(neutral[11], isDark ? 0.055 : 0.045),
-    '--bg-element-hover': withAlpha(neutral[11], isDark ? 0.095 : 0.075),
+    '--bg-elevated': elevated,
+    '--bg-element': withAlpha(neutral[11], elementAlpha),
+    '--bg-element-hover': withAlpha(neutral[11], elementHoverAlpha),
     '--bg-element-selected': withAlpha(fill, isDark ? 0.17 : 0.1),
     // the strengths stay with the stylesheet, where Contrast sets them
     '--border-ink': neutral[11],
@@ -99,13 +143,38 @@ export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: bool
     '--fill-solid': fill,
     '--fill-solid-hover': fillHover,
     '--ink-subtle-base': neutral[9],
-    '--ink-default-base': mixColors(neutral[9], ink, 0.62),
+    '--ink-default-base': textDefault,
     '--ink-strong': ink,
-    '--ink-on-solid': inkOn(fill),
+    '--ink-on-solid': onSolid,
     '--ink-accent': accentText,
     '--fill-tint': withAlpha(fill, isDark ? 0.14 : 0.11),
     '--fill-tint-strong': withAlpha(fill, isDark ? 0.24 : 0.18),
     '--ring-accent': withAlpha(fill, isDark ? 0.46 : 0.38),
+
+    // legacy bridge, same mapping as the authored block in shell.css
+    '--background': hslTriplet(app),
+    '--foreground': hslTriplet(textDefault),
+    '--card': hslTriplet(content),
+    '--card-foreground': hslTriplet(textDefault),
+    '--popover': hslTriplet(elevated),
+    '--popover-foreground': hslTriplet(textDefault),
+    '--primary': hslTriplet(fill),
+    '--primary-foreground': hslTriplet(onSolid),
+    '--secondary': element,
+    '--secondary-foreground': hslTriplet(ink),
+    '--muted': element,
+    '--muted-foreground': hslTriplet(neutral[9]),
+    '--accent': elementHover,
+    '--accent-foreground': hslTriplet(ink),
+    '--border': borderSubtle,
+    '--input': hslTriplet(blend(neutral[11], content, borderDefaultAlpha)),
+    '--ring': hslTriplet(fill),
+    '--sidebar': hslTriplet(panel),
+    '--sidebar-foreground': hslTriplet(textDefault),
+    '--sidebar-border': borderSubtle,
+    '--sidebar-accent': elementHover,
+    '--sidebar-accent-foreground': hslTriplet(ink),
+    '--sidebar-muted-foreground': hslTriplet(neutral[9]),
   };
 }
 
