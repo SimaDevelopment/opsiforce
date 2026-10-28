@@ -14,7 +14,7 @@ import { Menu } from '~/components/icons';
 import { PRIVATE_ROOT_COMPONENTS } from '~/private-loader';
 import { createTenantChangeHandler } from '~/lib/tenant-state';
 import { createAppearance } from '~/lib/appearance';
-import { CommandPalette } from '~/components/command-palette';
+import { CommandPalette, commandPaletteOpen } from '~/components/command-palette';
 import { Toaster } from 'solid-sonner';
 
 const queryClient = new QueryClient({
@@ -62,6 +62,8 @@ function SidebarLayout() {
       <CommandPalette />
       <div
         class="group/sidebar-wrapper flex h-full w-full"
+        // the open palette is the only thing a keyboard can reach
+        inert={commandPaletteOpen()}
         style={{
           '--sidebar-width': `${sidebarResize.width()}px`,
           '--sidebar-width-icon': '3rem',

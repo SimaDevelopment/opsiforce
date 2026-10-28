@@ -204,10 +204,26 @@ export function CommandPalette() {
     }
   };
 
+  // aria-modal does not contain focus by itself. Tab and Shift+Tab stay on the
+  // input, the rows are reached with the arrow keys as in any combobox, and the
+  // page behind is inert while the palette is open (see routes/__root.tsx).
+  const onDialogKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    inputRef?.focus();
+  };
+
   return (
     <>
       <div class="of-scrim" data-open={open()} aria-hidden="true" onClick={() => setOpen(false)} />
-      <div class="of-cmdk" data-open={open()} role="dialog" aria-modal="true" aria-label="Search everything">
+      <div
+        class="of-cmdk"
+        data-open={open()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search everything"
+        onKeyDown={onDialogKeyDown}
+      >
         <div class="of-cmdk-top">
           <Search class="w-4 h-4 shrink-0" style={{ color: 'var(--text-subtle)' }} />
           <input
@@ -251,6 +267,7 @@ export function CommandPalette() {
                           data-index={index()}
                           data-cursor={index() === cursor()}
                           role="option"
+                          tabindex={-1}
                           aria-selected={index() === cursor()}
                           onMouseEnter={() => setCursor(index())}
                           onClick={() => go(item.run)}

@@ -63,7 +63,7 @@ export function ProjectHeader(props: ProjectHeaderProps) {
 
   return (
     <div class="of-band justify-between sm:pr-4">
-      <div class="flex items-center gap-2 min-w-0">
+      <div class="of-band-lead">
         {props.headerLabel}
         <Tabs
           value={props.activeTab}
@@ -105,10 +105,12 @@ export function ProjectHeader(props: ProjectHeaderProps) {
           />
         </Show>
         {/* The two controls the band keeps in every screen of the design: one
-            way into everything, and the light/dark switch. */}
+            way into everything, and the light/dark switch. On a phone they
+            give way to the tabs and Publish; both remain reachable through the
+            shortcut and Settings > Appearance. */}
         <button
           type="button"
-          class="of-btn of-btn-icon of-btn-ghost fr"
+          class="of-btn of-btn-icon of-btn-ghost fr hidden sm:inline-flex"
           onClick={openCommandPalette}
           aria-label="Search everything"
           title="Search everything (⌘K)"
@@ -117,7 +119,7 @@ export function ProjectHeader(props: ProjectHeaderProps) {
         </button>
         <button
           type="button"
-          class="of-btn of-btn-icon of-btn-ghost fr"
+          class="of-btn of-btn-icon of-btn-ghost fr hidden sm:inline-flex"
           onClick={() => appearance.setMode(appearance.scheme() === 'dark' ? 'light' : 'dark')}
           aria-label={appearance.scheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           title={appearance.scheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -200,7 +202,12 @@ export function ProjectTitleLabel(props: { projectId: string; editing?: boolean;
           <Show when={workspaceName()}>
             {(name) => (
               <>
-                <button type="button" class="fr truncate" title={`Go to ${name()}`} onClick={() => goUp({ workspace: workspaceId() })}>
+                <button
+                  type="button"
+                  class="fr truncate"
+                  title={`Go to ${name()}`}
+                  onClick={() => goUp({ workspace: workspaceId() })}
+                >
                   {name()}
                 </button>
                 <span class="sep" aria-hidden="true">

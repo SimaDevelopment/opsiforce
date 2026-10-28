@@ -248,49 +248,48 @@ export function AppSidebar() {
       {/* Destinations sit above the tree, so the sidebar reads as one list of
           places rather than a project tree with a hidden menu under the avatar. */}
       <Show when={!inSection()}>
-      <nav class="group-data-[collapsible=icon]/sidebar:hidden px-2 pb-1" aria-label="Main">
-        <NavRow icon={House} label="Home" to="/" active={path() === '/'} onNavigate={navigate} />
-        <Show when={hasPermission('can_manage_schedules')}>
-          <NavRow
-            icon={Calendar}
-            label="Schedules"
-            to="/schedules"
-            active={path().startsWith('/schedules')}
-            onNavigate={navigate}
-          />
-        </Show>
-        <Show when={canOpenSettings()}>
-          <NavRow
-            icon={Settings}
-            label="Settings"
-            to="/settings"
-            active={path().startsWith('/settings')}
-            onNavigate={navigate}
-          />
-        </Show>
-      </nav>
-      </Show>
-
-      {/* On /settings and /admin the sidebar becomes that section's navigation
-          rather than letting a second rail open beside it. */}
-      <Show when={inSettings()}>
-        <SidebarSectionNav
-          title="Settings"
-          tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
-          groupOrder={SETTINGS_GROUP_ORDER}
-        />
-      </Show>
-      <Show when={inAdmin()}>
-        <SidebarSectionNav
-          title="Admin"
-          tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
-          groupOrder={ADMIN_GROUP_ORDER}
-        />
+        <nav class="group-data-[collapsible=icon]/sidebar:hidden px-2 pb-1" aria-label="Main">
+          <NavRow icon={House} label="Home" to="/" active={path() === '/'} onNavigate={navigate} />
+          <Show when={hasPermission('can_manage_schedules')}>
+            <NavRow
+              icon={Calendar}
+              label="Schedules"
+              to="/schedules"
+              active={path().startsWith('/schedules')}
+              onNavigate={navigate}
+            />
+          </Show>
+          <Show when={canOpenSettings()}>
+            <NavRow
+              icon={Settings}
+              label="Settings"
+              to="/settings"
+              active={path().startsWith('/settings')}
+              onNavigate={navigate}
+            />
+          </Show>
+        </nav>
       </Show>
 
       <SidebarSeparator />
 
       <SidebarContent>
+        {/* On /settings and /admin the sidebar becomes that section's navigation
+          rather than letting a second rail open beside it. */}
+        <Show when={inSettings()}>
+          <SidebarSectionNav
+            title="Settings"
+            tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+            groupOrder={SETTINGS_GROUP_ORDER}
+          />
+        </Show>
+        <Show when={inAdmin()}>
+          <SidebarSectionNav
+            title="Admin"
+            tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+            groupOrder={ADMIN_GROUP_ORDER}
+          />
+        </Show>
         <Show when={!inSection()}>
           <div class="group-data-[collapsible=icon]/sidebar:hidden">
             <SidebarAttention />
@@ -320,7 +319,10 @@ export function AppSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger
                 as={(triggerProps: Record<string, unknown>) => (
-                  <button {...triggerProps} class="of-sb-user fr-panel group-data-[collapsible=icon]/sidebar:justify-center">
+                  <button
+                    {...triggerProps}
+                    class="of-sb-user fr-panel group-data-[collapsible=icon]/sidebar:justify-center"
+                  >
                     <span class="av">{userInitial()}</span>
                     <span class="two group-data-[collapsible=icon]/sidebar:hidden">
                       <b>{userName()}</b>

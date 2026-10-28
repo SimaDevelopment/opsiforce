@@ -83,7 +83,7 @@ export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: bool
   const fill = brand[8];
   const fillHover = brand[9];
   // 4.5:1 is the floor for the 13px labels this accent carries as text
-  const accentText = readableStep(brand, content, 4.5, isDark ? 9 : 9);
+  const accentText = readableStep(brand, content, 4.5, 9);
 
   return {
     '--bg-app': isDark ? neutral[0] : neutral[1],
@@ -93,8 +93,8 @@ export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: bool
     '--bg-element': withAlpha(neutral[11], isDark ? 0.055 : 0.045),
     '--bg-element-hover': withAlpha(neutral[11], isDark ? 0.095 : 0.075),
     '--bg-element-selected': withAlpha(fill, isDark ? 0.17 : 0.1),
-    '--border-subtle': withAlpha(neutral[11], isDark ? 0.095 : 0.1),
-    '--border-default': withAlpha(neutral[11], isDark ? 0.18 : 0.17),
+    // the strengths stay with the stylesheet, where Contrast sets them
+    '--border-base': neutral[11],
     '--border-focus': fill,
     '--fill-solid': fill,
     '--fill-solid-hover': fillHover,

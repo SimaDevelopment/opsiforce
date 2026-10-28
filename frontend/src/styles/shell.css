@@ -115,8 +115,13 @@
   --bg-element: rgb(63 61 111 / 0.045);
   --bg-element-hover: rgb(63 61 111 / 0.075);
   --bg-element-selected: rgb(96 94 246 / 0.1);
-  --border-subtle: rgb(63 61 111 / 0.1);
-  --border-default: rgb(63 61 111 / 0.17);
+  /* a border is one ink at two strengths. Contrast moves the strengths and a
+     seed moves the ink, so the two can never overwrite each other's choice. */
+  --border-base: #3f3d6f;
+  --border-subtle-mix: 10%;
+  --border-default-mix: 17%;
+  --border-subtle: color-mix(in srgb, var(--border-base) var(--border-subtle-mix), transparent);
+  --border-default: color-mix(in srgb, var(--border-base) var(--border-default-mix), transparent);
   --border-focus: #605ef6;
   --fill-solid: #605ef6; /* white reaches APCA Lc 75.1 here */
   --fill-solid-hover: #5049e6;
@@ -252,8 +257,9 @@
   --bg-element: rgb(203 203 255 / 0.055);
   --bg-element-hover: rgb(203 203 255 / 0.095);
   --bg-element-selected: rgb(140 137 255 / 0.17);
-  --border-subtle: rgb(203 203 255 / 0.095);
-  --border-default: rgb(203 203 255 / 0.18);
+  --border-base: #cbcbff;
+  --border-subtle-mix: 9.5%;
+  --border-default-mix: 18%;
   --border-focus: #8e8aff;
 
   /* the solid fill BRIGHTENS all the way to the brand tint. A mid-tone like
@@ -332,25 +338,25 @@
 [data-contrast='softer'] {
   --text-subtle: color-mix(in oklch, var(--text-subtle-base) 82%, var(--bg-content));
   --text-default: color-mix(in oklch, var(--text-default-base) 86%, var(--bg-content));
-  --border-subtle: rgb(63 61 111 / 0.07);
-  --border-default: rgb(63 61 111 / 0.12);
+  --border-subtle-mix: 7%;
+  --border-default-mix: 12%;
 }
 
 [data-scheme='dark'][data-contrast='softer'] {
-  --border-subtle: rgb(203 203 255 / 0.07);
-  --border-default: rgb(203 203 255 / 0.13);
+  --border-subtle-mix: 7%;
+  --border-default-mix: 13%;
 }
 
 [data-contrast='high'] {
   --text-subtle: color-mix(in oklch, var(--text-subtle-base) 55%, var(--text-strong));
   --text-default: color-mix(in oklch, var(--text-default-base) 45%, var(--text-strong));
-  --border-subtle: rgb(63 61 111 / 0.2);
-  --border-default: rgb(63 61 111 / 0.34);
+  --border-subtle-mix: 20%;
+  --border-default-mix: 34%;
 }
 
 [data-scheme='dark'][data-contrast='high'] {
-  --border-subtle: rgb(203 203 255 / 0.2);
-  --border-default: rgb(203 203 255 / 0.34);
+  --border-subtle-mix: 20%;
+  --border-default-mix: 34%;
 }
 
 /* Density is wired to an audited list only — sidebar rows, popover items,
@@ -1378,6 +1384,26 @@
     padding: 0 10px 0 8px;
     background: var(--bg-app);
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* The left of the band scrolls sideways on a narrow screen instead of
+     pushing the controls on the right out of reach. The 1px of bottom padding
+     keeps the selected folder tab's cover strip inside the clip. */
+  .of-band-lead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    align-self: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 1px;
+    margin-bottom: -1px;
+    scrollbar-width: none;
+  }
+
+  .of-band-lead::-webkit-scrollbar {
+    display: none;
   }
 
   .of-crumbs {
