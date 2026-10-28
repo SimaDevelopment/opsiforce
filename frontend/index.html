@@ -9,6 +9,35 @@
     <link rel="apple-touch-icon" sizes="180x180" href="__BRAND_APPLE_TOUCH_ICON__" />
     <link rel="manifest" href="__BRAND_MANIFEST__" />
     <title>__BRAND_NAME__</title>
+    <script>
+      /* Appearance, applied before first paint so a dark-mode user never sees a
+         white flash. Mirrors src/lib/appearance.ts — keep the keys in sync. */
+      (function () {
+        try {
+          var root = document.documentElement;
+          var ls = window.localStorage;
+          var get = function (key, allowed, fallback) {
+            var v = ls.getItem(key);
+            return allowed.indexOf(v) === -1 ? fallback : v;
+          };
+          var mode = get('opsiforce:appearance:mode', ['light', 'dark', 'system'], 'system');
+          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          root.setAttribute('data-scheme', dark ? 'dark' : 'light');
+          root.setAttribute('data-contrast', get('opsiforce:appearance:contrast', ['normal', 'high'], 'normal'));
+          root.setAttribute(
+            'data-density',
+            get('opsiforce:appearance:density', ['comfortable', 'default', 'compact'], 'comfortable')
+          );
+          var scale = { small: '0.92', default: '1', large: '1.08' };
+          root.style.setProperty(
+            '--font-scale',
+            scale[get('opsiforce:appearance:font-size', ['small', 'default', 'large'], 'default')]
+          );
+        } catch (e) {
+          /* private mode / blocked storage — the stylesheet defaults still apply */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

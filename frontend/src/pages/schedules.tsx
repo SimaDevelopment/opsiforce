@@ -8,6 +8,7 @@ import { useEnvironments, useProjectEnvironments } from '~/api/environments';
 import { useProjects } from '~/api/projects';
 import { usePermissions } from '~/api/permissions';
 import { Calendar, Trash2, Pencil, Play, Clock, EllipsisVertical, ChevronLeft } from '~/components/icons';
+import { EmptyState } from '~/components/ui/empty-state';
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '~/components/ui/tabs';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter } from '~/components/ui/dialog';
@@ -330,10 +331,11 @@ function ScheduleTableSection(props: {
       </Show>
 
       <Show when={!props.pending && count() === 0}>
-        <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-          <Calendar class="w-10 h-10 mx-auto mb-3 opacity-40" />
-          <p class="text-sm font-medium">No schedules in this environment</p>
-        </div>
+        <EmptyState
+          icon={Calendar}
+          title="No schedules in this environment"
+          description="A schedule runs a project on its own, on a repeating time. Add one to see it here."
+        />
       </Show>
 
       <Show when={count() > 0}>
@@ -421,7 +423,7 @@ function RowActions(props: {
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuItem onSelect={() => props.onRun()}>
-          <Play class="w-3.5 h-3.5 text-emerald-600" />
+          <Play class="of-ink of-tone-done w-3.5 h-3.5" />
           Run now
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => props.onViewExecutions()}>
@@ -429,7 +431,7 @@ function RowActions(props: {
           View executions
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => props.onEdit()}>
-          <Pencil class="w-3.5 h-3.5 text-blue-600" />
+          <Pencil class="of-ink of-tone-running w-3.5 h-3.5" />
           Edit
         </DropdownMenuItem>
         <DropdownMenuSeparator />

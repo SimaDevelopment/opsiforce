@@ -87,7 +87,7 @@ function FieldList(props: LevelProps) {
                   class={cn(
                     props.path.length === 0 &&
                       props.ctx.focusedField === (field as KeyedField).key &&
-                      'rounded-md bg-amber-50 ring-2 ring-amber-400 ring-offset-4 ring-offset-amber-50'
+                      'of-spot of-tone-needs-you'
                   )}
                 >
                   <FieldView

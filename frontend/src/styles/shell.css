@@ -1,0 +1,1933 @@
+/* ==========================================================================
+   OPSIFORCE — THE SHELL DESIGN LAYER
+   Light-first · comfortable density · brand-forward · Preview privileged.
+
+   This is the single place colour, type, metrics and motion are authored.
+   Everything below L2 is semantic: components reference the semantic names,
+   never a literal. The legacy shadcn token names (--background, --primary,
+   …) are kept and re-pointed at this palette so the ~200 components
+   that already consume them through Tailwind utilities inherit the new look
+   without being touched.
+
+   Layer order
+     L2 semantic   — the tokens authored here, light and dark
+     legacy bridge — the shadcn HSL triplets, derived from the same palette
+     primitives    — .btn .chip .badge .env … the shapes the artifact defines
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   FONTS — bundled, never a CDN. Inter ships with the vendored opencode UI and
+   IBM Plex Mono with the @ibm/plex dependency, so the shell finally renders in
+   the same two faces as the embedded chat.
+   -------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Inter';
+  src: url('../../opencode/packages/ui/src/assets/fonts/Inter.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ==========================================================================
+   L2 SEMANTIC — LIGHT (the authored primary mode)
+   Neutrals are tinted toward #3F3D6F so the chrome reads periwinkle, never
+   zinc. Surface ladder app -> panel -> content with ~7/255 steps.
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  /* ---- fonts ---------------------------------------------------------- */
+  --font-sans-stack: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono-stack: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+
+  /* ---- TYPE: composite tokens. Size, line-height and weight travel
+         together; tracking rides alongside as --ls-*. --font-scale is driven
+         by Settings -> Appearance and is the only multiplier in the system. */
+  --font-scale: 1;
+  --text-label: 600 calc(11px * var(--font-scale)) / calc(14px * var(--font-scale)) var(--font-sans);
+  --ls-label: 0.05em;
+  --text-meta: 500 calc(12px * var(--font-scale)) / calc(16px * var(--font-scale)) var(--font-sans);
+  --ls-meta: 0;
+  --text-ui: 400 calc(13px * var(--font-scale)) / calc(18px * var(--font-scale)) var(--font-sans);
+  --ls-ui: 0;
+  --text-ui-med: 510 calc(13px * var(--font-scale)) / calc(18px * var(--font-scale)) var(--font-sans);
+  --text-body: 400 calc(14px * var(--font-scale)) / calc(20px * var(--font-scale)) var(--font-sans);
+  --ls-body: -0.005em;
+  --text-input: 400 calc(16px * var(--font-scale)) / calc(24px * var(--font-scale)) var(--font-sans);
+  --ls-input: -0.01em;
+  --text-title: 590 calc(20px * var(--font-scale)) / calc(26px * var(--font-scale)) var(--font-sans);
+  --ls-title: -0.015em;
+  --text-display: 590 calc(32px * var(--font-scale)) / calc(36px * var(--font-scale)) var(--font-sans);
+  --ls-display: -0.02em;
+  --mono-ui: 400 calc(12px * var(--font-scale)) / calc(20px * var(--font-scale)) var(--font-mono);
+  --mono-code: 400 calc(12.5px * var(--font-scale)) / calc(20px * var(--font-scale)) var(--font-mono);
+  --weight-emphasis: 510;
+  --weight-strong: 590;
+
+  /* ---- METRICS: exactly three control heights -------------------------- */
+  --h-compact: 24px;
+  --h-default: 32px;
+  --h-primary: 36px;
+  --row-h: var(--h-default);
+  --band-h: 44px;
+  --row-pad: 10px;
+  --row-gap: 10px;
+  --indent: 12px;
+
+  --radius-sm-of: 6px;
+  --radius-md-of: 8px;
+  --control-radius: 8px;
+  --radius-lg-of: 10px;
+  --radius-xl-of: 14px;
+  --radius-full: 999px;
+
+  /* ---- MOTION ---------------------------------------------------------- */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 240ms;
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---- SURFACES + INK --------------------------------------------------- */
+  --bg-app: #ececf3;
+  --bg-panel: #f5f5fa;
+  --bg-content: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-element: rgb(63 61 111 / 0.045);
+  --bg-element-hover: rgb(63 61 111 / 0.075);
+  --bg-element-selected: rgb(96 94 246 / 0.1);
+  --border-subtle: rgb(63 61 111 / 0.1);
+  --border-default: rgb(63 61 111 / 0.17);
+  --border-focus: #605ef6;
+  --fill-solid: #605ef6; /* white reaches APCA Lc 75.1 here */
+  --fill-solid-hover: #5049e6;
+
+  /* the two text ramps are declared as -base and re-exposed, so the Contrast
+     control can mix against the canvas without anyone typing a resolved value */
+  --text-subtle-base: #6b6990;
+  --text-default-base: #3c3a5e;
+  --text-subtle: var(--text-subtle-base);
+  --text-default: var(--text-default-base);
+  --text-strong: #1d1b32;
+  --text-on-solid: #ffffff;
+
+  /* accent used as TEXT (links, inline accent) — #6666FF fails on white */
+  --text-accent: #544fe6;
+  --fill-tint: rgb(96 94 246 / 0.11);
+  --fill-tint-strong: rgb(96 94 246 / 0.18);
+  --ring-accent: rgb(96 94 246 / 0.38);
+  --scrim: rgb(29 27 50 / 0.34);
+
+  --shadow-1: inset 0 0 0 1px var(--border-subtle);
+  --shadow-2: 0 1px 2px rgb(29 27 50 / 0.07), 0 0 0 1px var(--border-subtle);
+  --shadow-floating: 0 10px 24px rgb(29 27 50 / 0.16), 0 1px 3px rgb(29 27 50 / 0.08);
+  --glow-composer: 0 26px 72px -22px rgb(96 94 246 / 0.26);
+
+  /* ---- DOMAIN TOKENS — identical in light and dark, so an environment, a
+         job phase or a diff side keeps its identity across a mode flip. ---- */
+  --env-development: #4f86e8;
+  --env-staging: #c2871b;
+  --env-production: #1c9a6b;
+  --job-running: #4f86e8;
+  --job-needs-you: #c2871b;
+  --job-failed: #d9484c;
+  --job-done: #1c9a6b;
+  --job-stopping: #c7671f; /* going away, not warming up — amber is taken */
+  --published: #7a5af0;
+  --diff-added: #1c9a6b;
+  --diff-deleted: #d9484c;
+  --ai-generated: #6666ff;
+
+  /* File kinds are identity, not status: a spreadsheet is green because it is a
+     spreadsheet, not because something succeeded. Same hue family as the job
+     tones so the two never look like different design systems. */
+  --kind-doc: #4f86e8;
+  --kind-sheet: #1c9a6b;
+  --kind-slide: #c7671f;
+  --kind-image: #1194ac;
+  --kind-text: #7a5af0;
+  --kind-pdf: #d9484c;
+
+  /* A chart series is a third kind of colour: not a status and not an identity,
+     just six things that must stay apart. Evenly spread at one lightness so no
+     slice reads as more important, and sat at L .585 because that is where all
+     six clear 3:1 on BOTH schemes' surfaces (3.64–4.15 light, 3.98–4.54 dark). */
+  --series-1: #6871cd;
+  --series-2: #209166;
+  --series-3: #0487b6;
+  --series-4: #8f63be;
+  --series-5: #c05362;
+  --series-6: #018e8b;
+
+  /* ---- TONE MACHINERY ---------------------------------------------------
+     Every coloured surface in the product is the same four things: a tint, an
+     ink that stays readable on it, a hairline, and sometimes a solid dot. They
+     are derived from one hue with `oklch(from …)` rather than hand-picked per
+     colour, which is why the hue is written once and a new tone costs a line.
+
+     The derivation moves LIGHTNESS and never hue — `color-mix` toward white or
+     black would rotate it (white has no hue, so it reads as 0 and drags blue
+     to teal and violet to pink).
+
+     Measured, not guessed. Light ink L .46 sits at APCA Lc 65.5–69.2 on its own
+     tint over the panel, WCAG 5.6–6.5 on content. Dark ink L .82 at c×.7 (bright
+     chroma clips) reaches |Lc| 64.4–68.4, WCAG 7.1–7.8. The dot drops .06 in
+     light because mid-tones sit too close to bright surfaces — raw amber is
+     2.85:1 on the panel, under the 3:1 floor for a meaningful graphic — and
+     holds still in dark, where near-black separates them for free (3.57 worst). */
+  --tone-tint: 16%;
+  --tone-wash: 7%;
+  --tone-hair: 32%;
+  --tone-ink-l: 0.46;
+  --tone-ink-c: 1;
+  --tone-dot-dl: -0.06;
+
+  /* ======================================================================
+     LEGACY BRIDGE — the shadcn triplets every existing component already
+     consumes through Tailwind (bg-background, text-muted-foreground, …).
+     Same palette, expressed as "H S% L%" so the `/ <alpha>` syntax keeps
+     working. Alpha-based shell tokens are flattened on their own surface.
+     ====================================================================== */
+  --background: 240 22.6% 93.9%; /* --bg-app */
+  --foreground: 243.3 23.7% 29.8%; /* --text-default */
+  --card: 0 0% 100%;
+  --card-foreground: 243.3 23.7% 29.8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 243.3 23.7% 29.8%;
+  --primary: 240.8 89.4% 66.7%; /* --fill-solid */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 20% 97.1%; /* --bg-element on content */
+  --secondary-foreground: 245.2 29.9% 15.1%;
+  --muted: 240 20% 97.1%;
+  --muted-foreground: 243.1 15.7% 48.8%; /* --text-subtle */
+  --accent: 255 15.4% 94.9%; /* --bg-element-hover on content */
+  --accent-foreground: 245.2 29.9% 15.1%;
+  --destructive: 358.3 65.6% 56.7%; /* --job-failed */
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 15.2% 93.5%; /* --border-subtle on content */
+  --input: 240 15.8% 88.8%; /* --border-default on content */
+  --ring: 240.8 89.4% 66.7%;
+  --radius: 0.625rem;
+  --sidebar: 240 33.3% 97.1%; /* --bg-panel */
+  --sidebar-foreground: 243.3 23.7% 29.8%;
+  --sidebar-border: 240 15.2% 93.5%;
+  --sidebar-accent: 255 15.4% 94.9%;
+  --sidebar-accent-foreground: 245.2 29.9% 15.1%;
+  --sidebar-muted-foreground: 243.1 15.7% 48.8%;
+  --main-left: 0px !important;
+}
+
+/* ==========================================================================
+   L2 SEMANTIC — DARK. Authored, not inverted. Near-black compresses
+   perceptually, so the surface ladder carries ~4x the separation of light,
+   the solid fill BRIGHTENS and takes dark ink, and accent TEXT becomes
+   #CBCBFF because #6666FF on a dark panel measures APCA Lc 32.6.
+   ========================================================================== */
+[data-scheme='dark'] {
+  color-scheme: dark;
+
+  --bg-app: #0a0a12;
+  --bg-panel: #101019;
+  --bg-content: #16161f;
+  --bg-elevated: #1e1e2b;
+  --bg-element: rgb(203 203 255 / 0.055);
+  --bg-element-hover: rgb(203 203 255 / 0.095);
+  --bg-element-selected: rgb(140 137 255 / 0.17);
+  --border-subtle: rgb(203 203 255 / 0.095);
+  --border-default: rgb(203 203 255 / 0.18);
+  --border-focus: #8e8aff;
+
+  /* the solid fill BRIGHTENS all the way to the brand tint. A mid-tone like
+     #8C89FF tops out at APCA Lc 48.3 against ANY ink, pure black included, so
+     no choice of ink rescues it; #CBCBFF carries #15122E at Lc 77.1 and clears
+     the Lc 75 floor for a 13px/510 Publish label. */
+  --fill-solid: #cbcbff;
+  --fill-solid-hover: #d6d5ff;
+
+  /* the dark text ramp is tuned to the same APCA floors as the light one,
+     measured against the resolved surfaces rather than eyeballed:
+       subtle  = Lc 64.2 / 63.7 / 62.6 on panel / content / elevated (floor 60)
+       default = Lc 80.1 / 79.6 on panel / content                   (floor 75) */
+  --text-subtle-base: #b7b5e1;
+  --text-default-base: #d3d2eb;
+  --text-subtle: var(--text-subtle-base);
+  --text-default: var(--text-default-base);
+  --text-strong: #f3f2fb;
+  --text-on-solid: #15122e;
+
+  --text-accent: #cbcbff;
+  --fill-tint: rgb(140 137 255 / 0.14);
+  --fill-tint-strong: rgb(140 137 255 / 0.24);
+  --ring-accent: rgb(142 138 255 / 0.46);
+  --scrim: rgb(4 4 9 / 0.64);
+
+  /* dark lifts the tint (a 16% wash disappears on near-black), lifts the ink
+     and trims its chroma, and leaves the dot at the raw hue */
+  --tone-tint: 24%;
+  --tone-wash: 10%;
+  --tone-hair: 34%;
+  --tone-ink-l: 0.82;
+  --tone-ink-c: 0.7;
+  --tone-dot-dl: 0;
+
+  --shadow-1: inset 0 0 0 1px var(--border-subtle);
+  --shadow-2: 0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px var(--border-subtle);
+  --shadow-floating: 0 14px 34px rgb(0 0 0 / 0.62), 0 1px 3px rgb(0 0 0 / 0.5);
+  --glow-composer: 0 30px 86px -26px rgb(140 137 255 / 0.22);
+
+  /* legacy bridge, dark */
+  --background: 240 28.6% 5.5%;
+  --foreground: 242.4 38.5% 87.3%;
+  --card: 240 17% 10.4%;
+  --card-foreground: 242.4 38.5% 87.3%;
+  --popover: 240 17.8% 14.3%;
+  --popover-foreground: 242.4 38.5% 87.3%;
+  --primary: 240 100% 89.8%;
+  --primary-foreground: 246.4 43.8% 12.5%;
+  --secondary: 240 14.7% 14.7%;
+  --secondary-foreground: 246.7 52.9% 96.7%;
+  --muted: 240 14.7% 14.7%;
+  --muted-foreground: 242.7 42.3% 79.6%;
+  --accent: 240 14.3% 17.8%;
+  --accent-foreground: 246.7 52.9% 96.7%;
+  --destructive: 358.3 65.6% 56.7%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 14.3% 17.8%;
+  --input: 240 12.7% 24.7%;
+  --ring: 240 100% 89.8%;
+  --sidebar: 240 22% 8%;
+  --sidebar-foreground: 242.4 38.5% 87.3%;
+  --sidebar-border: 240 14.3% 17.8%;
+  --sidebar-accent: 240 14.3% 17.8%;
+  --sidebar-accent-foreground: 246.7 52.9% 96.7%;
+  --sidebar-muted-foreground: 242.7 42.3% 79.6%;
+}
+
+/* ==========================================================================
+   APPEARANCE CONTROLS — Contrast, Density and Font are the only three knobs,
+   and each one moves tokens the rest of the sheet already reads.
+   ========================================================================== */
+
+/* Contrast raises the two text ramps toward --text-strong rather than
+   inventing a third ramp, so nothing can drift out of the system. */
+[data-contrast='softer'] {
+  --text-subtle: color-mix(in oklch, var(--text-subtle-base) 82%, var(--bg-content));
+  --text-default: color-mix(in oklch, var(--text-default-base) 86%, var(--bg-content));
+  --border-subtle: rgb(63 61 111 / 0.07);
+  --border-default: rgb(63 61 111 / 0.12);
+}
+
+[data-scheme='dark'][data-contrast='softer'] {
+  --border-subtle: rgb(203 203 255 / 0.07);
+  --border-default: rgb(203 203 255 / 0.13);
+}
+
+[data-contrast='high'] {
+  --text-subtle: color-mix(in oklch, var(--text-subtle-base) 55%, var(--text-strong));
+  --text-default: color-mix(in oklch, var(--text-default-base) 45%, var(--text-strong));
+  --border-subtle: rgb(63 61 111 / 0.2);
+  --border-default: rgb(63 61 111 / 0.34);
+}
+
+[data-scheme='dark'][data-contrast='high'] {
+  --border-subtle: rgb(203 203 255 / 0.2);
+  --border-default: rgb(203 203 255 / 0.34);
+}
+
+/* Density is wired to an audited list only — sidebar rows, popover items,
+   tables, publish steps, schedules and the runs dock. All three steps are
+   authored, and each one moves --row-h, so the choice is visible rather than
+   decorative. Comfortable is the default. */
+[data-density='comfortable'] {
+  --row-h: 36px;
+  --row-pad: 10px;
+  --row-gap: 10px;
+  --indent: 12px;
+}
+
+[data-density='default'] {
+  --row-h: var(--h-default);
+  --row-pad: 8px;
+  --row-gap: 8px;
+  --indent: 12px;
+}
+
+[data-density='compact'] {
+  --row-h: var(--h-compact);
+  --row-pad: 6px;
+  --row-gap: 6px;
+  --indent: 10px;
+}
+
+/* motion policy lives in ONE place */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+    --ease-standard: linear;
+    --ease-spring: linear;
+  }
+}
+
+[data-motion='reduced'] {
+  --dur-fast: 0ms;
+  --dur: 0ms;
+  --dur-slow: 0ms;
+  --ease-standard: linear;
+  --ease-spring: linear;
+}
+
+/* theme swaps kill transitions but KEEP animations, or running indicators
+   freeze mid-flip */
+.no-transitions * {
+  transition: none !important;
+}
+
+/* ==========================================================================
+   BASE — in Tailwind's base layer, so a utility still wins over it.
+   ========================================================================== */
+@layer base {
+  body {
+    background: var(--bg-app);
+    color: var(--text-default);
+    font: var(--text-ui);
+    letter-spacing: var(--ls-ui);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--fill-tint-strong);
+    color: var(--text-strong);
+  }
+}
+
+/* ==========================================================================
+   COMPONENTS — the primitives and shell classes. Layered on purpose: a
+   component may still be adjusted with a Tailwind utility at the call site.
+   ========================================================================== */
+@layer components {
+
+  /* scrollbars follow the scheme */
+  .of-scroll,
+  .sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) transparent;
+  }
+
+  /* ---- type utilities ---------------------------------------------------- */
+  .t-label {
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+  }
+
+  .t-meta {
+    font: var(--text-meta);
+    letter-spacing: var(--ls-meta);
+  }
+
+  .t-ui {
+    font: var(--text-ui);
+    letter-spacing: var(--ls-ui);
+  }
+
+  .t-ui-med {
+    font: var(--text-ui-med);
+    letter-spacing: var(--ls-ui);
+  }
+
+  .t-body {
+    font: var(--text-body);
+    letter-spacing: var(--ls-body);
+  }
+
+  .t-input {
+    font: var(--text-input);
+    letter-spacing: var(--ls-input);
+  }
+
+  .t-title {
+    font: var(--text-title);
+    letter-spacing: var(--ls-title);
+  }
+
+  .t-display {
+    font: var(--text-display);
+    letter-spacing: var(--ls-display);
+  }
+
+  .t-mono {
+    font: var(--mono-ui);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-sub {
+    color: var(--text-subtle);
+  }
+
+  .t-strong {
+    color: var(--text-strong);
+  }
+
+  .t-num {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+
+  /* ---- focus: two layers, always. Inner ring in the host surface colour,
+         outer ring in the accent. Dense rows use the inset variant. --------- */
+  .fr:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .fr-panel:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .fr-inset:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--bg-panel), inset 0 0 0 3px var(--border-focus);
+    position: relative;
+    z-index: 2;
+  }
+
+  .fr-inset-content:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--bg-content), inset 0 0 0 3px var(--border-focus);
+    position: relative;
+    z-index: 2;
+  }
+
+  /* ==========================================================================
+     PRIMITIVES
+     ========================================================================== */
+  .of-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+    height: var(--h-default);
+    padding: 0 11px;
+    border-radius: var(--control-radius);
+    font: var(--text-ui-med);
+    letter-spacing: var(--ls-ui);
+    color: var(--text-default);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard),
+      transform var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-btn:hover {
+    background: var(--bg-element-hover);
+    color: var(--text-strong);
+  }
+
+  .of-btn:active {
+    transform: scale(0.975);
+  }
+
+  .of-btn-ghost {
+    background: transparent;
+  }
+
+  .of-btn-outline {
+    background: var(--bg-content);
+    box-shadow: var(--shadow-2);
+  }
+
+  .of-btn-outline:hover {
+    background: var(--bg-element);
+  }
+
+  .of-btn-primary {
+    background: var(--fill-solid);
+    color: var(--text-on-solid);
+    height: var(--h-primary);
+    padding: 0 14px;
+  }
+
+  .of-btn-primary:hover {
+    background: var(--fill-solid-hover);
+    color: var(--text-on-solid);
+  }
+
+  .of-btn-compact {
+    height: var(--h-compact);
+    padding: 0 8px;
+    font: var(--text-meta);
+    border-radius: var(--radius-md-of);
+    position: relative;
+  }
+
+  /* 2.5.8 Target Size, the 32px rung: an icon button must not be shrunk by a
+     crowded flex row, so the main size is pinned on all axes. */
+  .of-btn-icon {
+    flex: 0 0 var(--h-default);
+    width: var(--h-default);
+    min-width: var(--h-default);
+    min-height: var(--h-default);
+    padding: 0;
+  }
+
+  .of-btn-icon.of-btn-compact {
+    flex: 0 0 var(--h-compact);
+    width: var(--h-compact);
+    min-width: var(--h-compact);
+    min-height: var(--h-compact);
+  }
+
+  /* every compact control gets a transparent >=24x24 hit area */
+  .of-btn-compact::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+  }
+
+  .of-btn[disabled],
+  .of-btn[aria-disabled='true'] {
+    cursor: not-allowed;
+    color: var(--text-subtle);
+  }
+
+  .of-btn[disabled]:hover,
+  .of-btn[aria-disabled='true']:hover {
+    background: transparent;
+  }
+
+  /* A drag handle is a control: it gets the 24px rung even when the icon
+     inside it is 14px. */
+  .of-grip {
+    position: relative;
+  }
+
+  .of-grip::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+  }
+
+  .of-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--radius-md-of);
+    background: var(--bg-element);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    color: var(--text-subtle);
+    font: 500 10px / 1 var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+
+  .of-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: var(--h-compact);
+    padding: 0 8px;
+    border-radius: var(--radius-md-of);
+    background: var(--bg-element);
+    color: var(--text-default);
+    font: var(--text-meta);
+    letter-spacing: var(--ls-meta);
+    white-space: nowrap;
+  }
+
+  .of-chip-btn {
+    transition: background-color var(--dur-fast) var(--ease-standard);
+    position: relative;
+  }
+
+  .of-chip-btn::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 24px;
+    transform: translateY(-50%);
+  }
+
+  .of-chip-btn:hover {
+    background: var(--bg-element-hover);
+    color: var(--text-strong);
+  }
+
+  /* a chip that is also a toggle says so by filling, not by a tick */
+  .of-chip-btn[data-on='true'] {
+    background: var(--bg-element-selected);
+    color: var(--text-strong);
+    box-shadow: inset 0 0 0 1px var(--ring-accent);
+  }
+
+  /* an active filter is visible from outside the popover */
+  .of-filter-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--fill-solid);
+    box-shadow: 0 0 0 2px var(--bg-panel);
+  }
+
+  .of-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    flex: none;
+    background: oklch(from var(--tone, var(--text-subtle)) calc(l + var(--tone-dot-dl)) c h);
+  }
+
+  .of-dot-pulse {
+    animation: of-status-pulse 2s steps(6, end) infinite;
+  }
+
+  @keyframes of-status-pulse {
+    0%,
+    60% {
+      opacity: 1;
+    }
+    75% {
+      opacity: 0.38;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* environment badge: 20px, 11px label, fully rounded, fill at ~20%, text from
+     the theme token, always paired with the dot. Production also carries an
+     outline so it is not colour-only. */
+  .of-env {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    padding: 0 7px 0 6px;
+    border-radius: var(--radius-full);
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+    color: var(--text-default);
+    background: color-mix(in oklch, var(--env-color, var(--text-subtle)) 20%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--env-color, var(--text-subtle)) 38%, transparent);
+  }
+
+  .of-env-sm {
+    height: 16px;
+    padding: 0 6px 0 5px;
+    gap: 4px;
+    font-size: calc(10px * var(--font-scale));
+  }
+
+  .of-env-sm .of-dot {
+    width: 4px;
+    height: 4px;
+  }
+
+  .of-env .of-dot {
+    background: var(--env-color, var(--text-subtle));
+    width: 5px;
+    height: 5px;
+  }
+
+  .of-env-dev {
+    --env-color: var(--env-development);
+  }
+
+  .of-env-staging {
+    --env-color: var(--env-staging);
+  }
+
+  .of-env-prod {
+    --env-color: var(--env-production);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--env-production) 55%, transparent);
+  }
+  /* ── TONE: a setter says which hue, a role says what the hue is doing ──
+     Two classes per element — `of-note of-tone-needs-you` — so a warning box
+     and a status dot stay the same colour without either one naming amber. */
+
+  .of-tone,
+  .of-ink,
+  .of-note,
+  .of-banner {
+    color: oklch(from var(--tone, var(--text-subtle)) var(--tone-ink-l) calc(c * var(--tone-ink-c)) h);
+  }
+
+  .of-tone,
+  .of-note,
+  .of-banner {
+    background: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-tint), transparent);
+  }
+
+  /* a tinted block that has to read as its own object: hairline, not a border,
+     so it never adds a pixel to the layout it sits in */
+  .of-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 11px;
+    border-radius: var(--radius-md-of);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-hair), transparent);
+  }
+
+  /* a strip across the top of a region rather than a card inside it: it keeps
+     its own tint but closes with a hairline instead of a rounded edge */
+  .of-banner {
+    border-bottom: 1px solid color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-hair), transparent);
+  }
+
+  /* a momentary highlight — "this is the field you were sent to". The first ring
+     is the surface, so the second reads as a halo rather than a border. */
+  .of-spot {
+    border-radius: var(--radius-md-of);
+    background: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-wash), transparent);
+    box-shadow:
+      0 0 0 4px var(--bg-content),
+      0 0 0 6px color-mix(in oklch, var(--tone, var(--text-subtle)) 55%, transparent);
+  }
+
+  /* the hue at full strength — a chart segment, a progress bar, a swatch */
+  .of-fill {
+    background: var(--tone, var(--text-subtle));
+  }
+
+  /* a wash is a tint too faint to read as an object — it marks a row as needing
+     attention without turning it into a card */
+  .of-wash {
+    background: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-wash), transparent);
+  }
+
+  /* for a container that carries its tone only at the edge. It expects a tone
+     setter; `of-tone-neutral` is the plain-border case. */
+  .of-hair {
+    border-color: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-hair), transparent);
+  }
+
+  /* the same block shrunk to sit inside a table cell or beside a label */
+  .of-note-sm {
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm-of);
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    display: inline-flex;
+  }
+
+  /* ---- tone setters ---------------------------------------------------- */
+  .of-tone-done {
+    --tone: var(--job-done);
+  }
+
+  .of-tone-needs-you {
+    --tone: var(--job-needs-you);
+  }
+
+  .of-tone-running {
+    --tone: var(--job-running);
+  }
+
+  .of-tone-failed {
+    --tone: var(--job-failed);
+  }
+
+  .of-tone-stopping {
+    --tone: var(--job-stopping);
+  }
+
+  .of-tone-accent {
+    --tone: var(--published);
+  }
+
+  .of-tone-neutral {
+    --tone: var(--text-subtle);
+  }
+
+  .of-tone-development {
+    --tone: var(--env-development);
+  }
+
+  .of-tone-staging {
+    --tone: var(--env-staging);
+  }
+
+  .of-tone-production {
+    --tone: var(--env-production);
+  }
+
+  .of-tone-doc {
+    --tone: var(--kind-doc);
+  }
+
+  .of-tone-sheet {
+    --tone: var(--kind-sheet);
+  }
+
+  .of-tone-slide {
+    --tone: var(--kind-slide);
+  }
+
+  .of-tone-image {
+    --tone: var(--kind-image);
+  }
+
+  .of-tone-text {
+    --tone: var(--kind-text);
+  }
+
+  .of-tone-pdf {
+    --tone: var(--kind-pdf);
+  }
+
+  .of-series-1 {
+    --tone: var(--series-1);
+  }
+
+  .of-series-2 {
+    --tone: var(--series-2);
+  }
+
+  .of-series-3 {
+    --tone: var(--series-3);
+  }
+
+  .of-series-4 {
+    --tone: var(--series-4);
+  }
+
+  .of-series-5 {
+    --tone: var(--series-5);
+  }
+
+  .of-series-6 {
+    --tone: var(--series-6);
+  }
+
+  .of-tone-added {
+    --tone: var(--diff-added);
+  }
+
+  .of-tone-deleted {
+    --tone: var(--diff-deleted);
+  }
+  .of-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--bg-element);
+    color: var(--text-subtle);
+    font: var(--text-label);
+    letter-spacing: 0;
+  }
+
+  /* three staggered brand dots — NEVER a spinner for a working agent */
+  .of-working {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+  }
+
+  .of-working i {
+    width: 4.8px;
+    height: 4.8px;
+    border-radius: var(--radius-full);
+    background: var(--fill-solid);
+    animation: of-working-dots 1.4s var(--ease-standard) infinite;
+  }
+
+  .of-working i:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .of-working i:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes of-working-dots {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  /* segmented control */
+  .of-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg-element);
+    border-radius: var(--radius-md-of);
+  }
+
+  .of-seg button {
+    height: var(--h-compact);
+    padding: 0 9px;
+    border-radius: var(--radius-sm-of);
+    white-space: nowrap;
+    font: var(--text-meta);
+    letter-spacing: var(--ls-meta);
+    color: var(--text-subtle);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    position: relative;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-seg button::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 24px;
+    transform: translateY(-50%);
+  }
+
+  .of-seg button:hover {
+    color: var(--text-default);
+  }
+
+  .of-seg button[aria-selected='true'],
+  .of-seg button[aria-pressed='true'],
+  .of-seg button[aria-checked='true'] {
+    background: var(--bg-content);
+    color: var(--text-strong);
+    box-shadow: var(--shadow-2);
+  }
+
+  [data-scheme='dark'] .of-seg button[aria-selected='true'],
+  [data-scheme='dark'] .of-seg button[aria-pressed='true'],
+  [data-scheme='dark'] .of-seg button[aria-checked='true'] {
+    background: var(--bg-elevated);
+  }
+
+  /* The selected state sets its own box-shadow at a higher specificity than
+     `.fr:focus-visible`, which would silently swallow the focus ring on the
+     one item most likely to be focused. Both states are spelled out here so
+     the ring always wins (WCAG 2.4.7). */
+  .of-seg button:focus-visible,
+  .of-seg button[aria-selected='true']:focus-visible,
+  .of-seg button[aria-pressed='true']:focus-visible,
+  .of-seg button[aria-checked='true']:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .of-sec-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-subtle);
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+  }
+
+  .of-sec-label .line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+  }
+
+  /* the "queued / accepted but not started" shimmer — reused by chat, publish
+     and runs, so the three never diverge */
+
+  @media (prefers-reduced-motion: reduce) {
+  }
+  /* ONE row geometry, reused by the sidebar, popover items, the runs dock,
+     schedules and settings lists. */
+  .of-row {
+    display: flex;
+    align-items: center;
+    gap: var(--row-gap);
+    width: 100%;
+    height: var(--row-h);
+    padding: 0 var(--row-pad);
+    border-radius: var(--control-radius);
+    color: var(--text-default);
+    text-align: left;
+    position: relative;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-row:hover {
+    background: var(--bg-element-hover);
+    color: var(--text-strong);
+  }
+
+  .of-row[aria-current='page'],
+  .of-row[data-active='true'] {
+    background: var(--bg-element-selected);
+    color: var(--text-strong);
+  }
+
+  .of-row .lbl {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* empty state — the lattice is the ONE absence texture in the product */
+  .of-empty {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-lg-of);
+    background: var(--bg-content);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 24px;
+    text-align: center;
+  }
+
+  .of-lattice {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    color: var(--fill-solid);
+    opacity: 0.045;
+  }
+
+  [data-scheme='dark'] .of-lattice {
+    opacity: 0.055;
+  }
+
+  .of-lattice-empty {
+    color: var(--text-subtle);
+    opacity: 0.34;
+  }
+
+  [data-scheme='dark'] .of-lattice-empty {
+    opacity: 0.38;
+  }
+
+  /* ==========================================================================
+     SIDEBAR — one row geometry, uppercase section heads, the open project
+     expanding in place. The rail is a tone step, never a floating card.
+     ========================================================================== */
+  /* The sidebar runs one vertical spine for glyphs: the tenant avatar, the
+     search icon and every nav icon all centre on it. The brand mark is the one
+     oversized glyph (26px against their 14–20px), so the head adds 5px to the
+     header's own 8px padding — 13 + 13 lands the mark's centre on that spine,
+     and the wordmark on the same label column as the rows beneath it. */
+  .of-sb-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--band-h);
+    padding: 0 0 0 5px;
+    flex: none;
+  }
+
+  .of-sb-word {
+    font: var(--text-ui-med);
+    letter-spacing: 0.005em;
+    color: var(--text-strong);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .of-sb-tenant {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: var(--h-default);
+    padding: 0 8px;
+    /* a control, not a chip: it opens a menu, so it takes the control radius
+       the search field and the two buttons under it already use. The pill is
+       kept for the avatar inside, which IS a chip. */
+    border-radius: var(--control-radius);
+    background: var(--bg-element);
+    color: var(--text-strong);
+    transition: background-color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-sb-tenant:hover {
+    background: var(--bg-element-hover);
+  }
+
+  .of-sb-tenant .av {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-full);
+    background: var(--fill-solid);
+    color: var(--text-on-solid);
+    display: grid;
+    place-items: center;
+    font: var(--text-label);
+    letter-spacing: 0;
+    flex: none;
+  }
+
+  .of-sb-tenant .nm {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: left;
+    font: var(--text-ui-med);
+  }
+
+  /* the open project: a card on the content surface, inside the panel-toned
+     sidebar, so the list and the thing you are working in are one surface */
+  .of-sb-open-card {
+    background: var(--bg-content);
+    box-shadow: var(--shadow-1);
+  }
+
+  /* the same mark the sidebar pill uses, for the rows of the switcher */
+  .of-tenant-avatar {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    border-radius: var(--radius-full);
+    background: var(--fill-tint-strong);
+    color: var(--text-accent);
+    display: grid;
+    place-items: center;
+    font: var(--text-label);
+    letter-spacing: 0;
+  }
+
+  .of-sb-filter {
+    position: relative;
+  }
+
+  .of-sb-filter input {
+    width: 100%;
+    height: var(--h-default);
+    padding: 0 28px 0 32px;
+    border-radius: var(--control-radius);
+    background: var(--bg-content);
+    color: var(--text-default);
+    border: 1px solid var(--border-default);
+    font: var(--text-ui);
+    letter-spacing: var(--ls-ui);
+  }
+
+  .of-sb-filter input::placeholder {
+    color: var(--text-subtle);
+  }
+
+  .of-sb-filter input:focus-visible {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px var(--ring-accent);
+  }
+
+  .of-sb-sec-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 24px;
+    padding: 0 var(--row-pad);
+    color: var(--text-subtle);
+    border-radius: var(--radius-md-of);
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-sb-sec-head:hover {
+    color: var(--text-default);
+  }
+
+  .of-sb-sec-head .ttl {
+    flex: 1;
+    text-align: left;
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+  }
+
+  .of-sb-foot {
+    flex: none;
+    border-top: 1px solid var(--border-subtle);
+    padding: 8px;
+  }
+
+  .of-sb-user {
+    display: flex;
+    align-items: center;
+    gap: var(--row-gap);
+    width: 100%;
+    height: var(--h-primary);
+    padding: 0 8px;
+    border-radius: var(--control-radius);
+    transition: background-color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-sb-user:hover {
+    background: var(--bg-element-hover);
+  }
+
+  .of-sb-user .av {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    flex: none;
+    background: var(--fill-tint-strong);
+    color: var(--text-accent);
+    display: grid;
+    place-items: center;
+    font: var(--text-ui-med);
+  }
+
+  .of-sb-user .two {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+    gap: 2px;
+  }
+
+  .of-sb-user .two b {
+    font: var(--text-ui-med);
+    color: var(--text-strong);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .of-sb-user .two span {
+    font: var(--text-meta);
+    color: var(--text-subtle);
+  }
+
+  /* ==========================================================================
+     BAND — the single 44px chrome strip. No separate project-title row.
+     ========================================================================== */
+  .of-band {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--band-h);
+    flex: none;
+    padding: 0 10px 0 8px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .of-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .of-crumbs a,
+  .of-crumbs button {
+    color: var(--text-subtle);
+    padding: 3px 6px;
+    border-radius: var(--radius-md-of);
+    font: var(--text-ui);
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-crumbs a:hover,
+  .of-crumbs button:hover {
+    background: var(--bg-element-hover);
+    color: var(--text-strong);
+    text-decoration: none;
+  }
+
+  .of-crumbs .sep {
+    color: var(--text-subtle);
+    opacity: 0.5;
+  }
+
+  .of-crumbs .last {
+    color: var(--text-strong);
+    font: var(--text-ui-med);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Folder tabs: the active tab's background EQUALS the content tone and its
+     ::after covers the band's bottom hairline, so the tab and the panel below
+     are one surface. Inactive tabs stay on the band. No shadow trick, no
+     floating pills. */
+  .of-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    align-self: stretch;
+    margin-bottom: -1px;
+  }
+
+  .of-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: var(--control-radius) var(--control-radius) 0 0;
+    color: var(--text-subtle);
+    font: var(--text-ui-med);
+    position: relative;
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-tab:hover {
+    color: var(--text-strong);
+    background: var(--bg-element);
+  }
+
+  .of-tab[data-selected] {
+    background: var(--bg-content);
+    color: var(--text-strong);
+    box-shadow:
+      inset 1px 0 0 var(--border-subtle),
+      inset -1px 0 0 var(--border-subtle),
+      inset 0 1px 0 var(--border-subtle);
+  }
+
+  .of-tab[data-selected]::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: var(--bg-content);
+  }
+
+  .of-tab:focus-visible,
+  .of-tab[data-selected]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  /* ==========================================================================
+     HOME — the composer is the hero
+     ========================================================================== */
+  .of-home-field {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 560px;
+    overflow: hidden;
+    pointer-events: none;
+    mask-image: radial-gradient(120% 78% at 50% 26%, currentColor 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(120% 78% at 50% 26%, currentColor 0%, transparent 72%);
+  }
+
+  .of-composer {
+    position: relative;
+    background: var(--bg-content);
+    border-radius: var(--radius-xl-of);
+    box-shadow: var(--glow-composer), inset 0 0 0 1px var(--border-default);
+    padding: 4px 4px 0;
+    transition: box-shadow var(--dur) var(--ease-standard);
+  }
+
+  [data-scheme='dark'] .of-composer {
+    background: var(--bg-elevated);
+  }
+
+  .of-composer:focus-within {
+    box-shadow: var(--glow-composer), inset 0 0 0 1px var(--border-focus), 0 0 0 3px var(--ring-accent);
+  }
+
+  .of-composer textarea {
+    display: block;
+    width: 100%;
+    resize: none;
+    border: 0;
+    background: transparent;
+    padding: 16px 14px 8px;
+    min-height: 92px;
+    font: var(--text-input);
+    letter-spacing: var(--ls-input);
+    color: var(--text-strong);
+  }
+
+  .of-composer textarea::placeholder {
+    color: var(--text-subtle);
+  }
+
+  .of-composer textarea:focus {
+    outline: none;
+  }
+
+  .of-composer-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px 8px 10px;
+  }
+
+  .of-ex {
+    display: flex;
+    gap: 11px;
+    padding: 13px;
+    text-align: left;
+    align-items: flex-start;
+    background: var(--bg-content);
+    border-radius: var(--radius-lg-of);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    transition:
+      box-shadow var(--dur) var(--ease-standard),
+      background-color var(--dur-fast) var(--ease-standard),
+      transform var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-ex:hover {
+    background: var(--bg-element);
+    box-shadow: inset 0 0 0 1px var(--border-default);
+  }
+
+  .of-ex:active {
+    transform: scale(0.993);
+  }
+
+  /* identity comes from type and surface, never a per-item colour tile */
+  .of-ex .tile {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: var(--radius-md-of);
+    display: grid;
+    place-items: center;
+    background: var(--fill-tint);
+    color: var(--text-accent);
+  }
+
+  /* ==========================================================================
+     COMMAND PALETTE
+     ========================================================================== */
+  .of-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 180;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur) var(--ease-standard);
+  }
+
+  .of-scrim[data-open='true'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .of-cmdk {
+    position: fixed;
+    z-index: 190;
+    left: 50%;
+    top: 14vh;
+    transform: translate(-50%, -8px) scale(0.98);
+    width: min(620px, calc(100vw - 32px));
+    max-height: 66vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-xl-of);
+    box-shadow: var(--shadow-floating), inset 0 0 0 1px var(--border-subtle);
+    opacity: 0;
+    pointer-events: none;
+    /* a closed aria-modal dialog must not expose its search field and its option
+       rows to the tab order, so visibility rides along with the fade */
+    visibility: hidden;
+    transition:
+      opacity var(--dur-slow) var(--ease-standard),
+      transform var(--dur-slow) var(--ease-spring),
+      visibility var(--dur-slow) var(--ease-standard);
+  }
+
+  .of-cmdk[data-open='true'] {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .of-cmdk-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .of-cmdk-top input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    font: var(--text-input);
+    letter-spacing: var(--ls-input);
+    color: var(--text-strong);
+  }
+
+  .of-cmdk-top input:focus {
+    outline: none;
+  }
+
+  .of-cmdk-top input::placeholder {
+    color: var(--text-subtle);
+  }
+
+  .of-cmdk-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  .of-cmdk-grp {
+    padding: 8px 8px 3px;
+    color: var(--text-subtle);
+  }
+
+  .of-cmdk-row {
+    display: flex;
+    align-items: center;
+    gap: var(--row-gap);
+    width: 100%;
+    height: var(--row-h);
+    padding: 0 var(--row-pad);
+    border-radius: var(--control-radius);
+    color: var(--text-default);
+    text-align: left;
+  }
+
+  .of-cmdk-row .lbl {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .of-cmdk-row[data-cursor='true'] {
+    background: var(--bg-element-selected);
+    color: var(--text-strong);
+  }
+
+  /* ==========================================================================
+     RUNS DOCK — one stack, bottom right, each run carrying its phase as a rail
+     ========================================================================== */
+  .of-dock {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: 300px;
+    z-index: 110;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+
+  @media (max-width: 768px) {
+    .of-dock {
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      width: auto;
+    }
+  }
+
+  .of-job {
+    border-radius: var(--radius-lg-of);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-2);
+    overflow: hidden;
+    padding: 9px 10px 8px;
+    transition: box-shadow var(--dur) var(--ease-standard);
+  }
+
+  .of-job:hover {
+    box-shadow: var(--shadow-floating);
+  }
+
+  .of-job-rail {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--job-color, var(--text-subtle));
+  }
+
+  .of-cmdk-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-subtle);
+    font: var(--text-meta);
+  }
+
+  /* ==========================================================================
+     SETTINGS — fields separated by hairlines, never by cards
+     ========================================================================== */
+  .of-field {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .of-field:last-child {
+    border-bottom: 0;
+  }
+
+  .of-field-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 9px;
+  }
+
+  .of-field-icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-subtle);
+  }
+
+  .of-field-head .tx {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .of-field-head .tx b {
+    display: block;
+    font: var(--text-ui-med);
+    color: var(--text-strong);
+  }
+
+  .of-field-head .tx span {
+    color: var(--text-subtle);
+    font: var(--text-meta);
+  }
+
+  .of-seg-wide button {
+    min-width: 92px;
+    justify-content: center;
+  }
+
+  .of-swatch-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .of-swatches {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+
+  .of-swatch {
+    position: relative;
+    width: var(--h-default);
+    height: var(--h-default);
+    border-radius: var(--radius-md-of);
+    background: var(--sw-color);
+    box-shadow: inset 0 0 0 1px var(--border-default);
+    transition: transform var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-swatch:hover {
+    transform: scale(1.06);
+  }
+
+  .of-swatch[aria-checked='true'] {
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--border-focus);
+  }
+
+  .of-swatch-name {
+    color: var(--text-subtle);
+    font: var(--text-meta);
+  }
+
+  .of-swatch-name b {
+    color: var(--text-default);
+    font-weight: var(--weight-emphasis);
+  }
+
+  .of-specimen {
+    margin-top: 9px;
+    padding: 9px 11px;
+    border-radius: var(--radius-md-of);
+    background: var(--bg-app);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .of-specimen .sans {
+    font: var(--text-body);
+    letter-spacing: var(--ls-body);
+    color: var(--text-strong);
+  }
+
+  /* the settings column and the preview that judges it */
+  .of-set-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 26px;
+    align-items: start;
+  }
+
+  @media (max-width: 1040px) {
+    .of-set-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .of-tprev {
+      position: static;
+    }
+  }
+
+  .of-tprev {
+    border-radius: var(--radius-lg-of);
+    background: var(--bg-app);
+    padding: 12px;
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .of-tprev-card {
+    border-radius: var(--radius-md-of);
+    background: var(--bg-panel);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    padding: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .of-tprev-diff {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 5px 7px;
+    border-radius: var(--radius-sm-of);
+    background: var(--bg-content);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+  }
+
+  .of-tprev-add {
+    color: var(--diff-added);
+    font: var(--mono-ui);
+  }
+
+  .of-tprev-del {
+    color: var(--diff-deleted);
+    font: var(--mono-ui);
+  }
+
+  .of-tprev-foot {
+    margin: 0;
+    color: var(--text-subtle);
+    font: var(--text-meta);
+  }
+
+  .of-chip-mono {
+    font: var(--mono-ui);
+  }
+
+  .of-specimen .mono-s {
+    font: var(--mono-code);
+    color: var(--text-default);
+  }
+
+}

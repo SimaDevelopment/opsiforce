@@ -19,9 +19,9 @@ function readyCount(agent: WarmPoolAgent): number {
   return agent.slots.filter((slot) => !slot.claiming && slot.status?.ready).length;
 }
 
-function slotVisual(slot: WarmPoolSlot) {
-  if (slot.claiming) return { dot: 'bg-indigo-500', label: 'Being claimed' };
-  if (!slot.status) return { dot: 'bg-muted-foreground/40', label: 'No pod' };
+function slotVisual(slot: WarmPoolSlot): { tone: string; label: string } {
+  if (slot.claiming) return { tone: 'of-tone-accent', label: 'Being claimed' };
+  if (!slot.status) return { tone: 'of-tone-neutral', label: 'No pod' };
   return statusVisual(slot.status);
 }
 
@@ -65,7 +65,7 @@ export function WarmPoolTable(props: { agents: WarmPoolAgent[] }) {
                           {describePodSettings(agent.resources)}
                         </Badge>
                         <Show when={agent.paused}>
-                          {(paused) => <span class="text-[11px] text-amber-600">{PAUSE_LABELS[paused()]}</span>}
+                          {(paused) => <span class="of-ink of-tone-needs-you t-meta">{PAUSE_LABELS[paused()]}</span>}
                         </Show>
                         <Show when={!agent.paused && agent.effectiveSize < agent.warmPoolSize}>
                           <span class="text-[11px] text-muted-foreground">
@@ -105,8 +105,8 @@ export function WarmPoolTable(props: { agents: WarmPoolAgent[] }) {
                           <TableRow>
                             <TableCell class="font-mono text-[11px] text-muted-foreground">{slot.podName}</TableCell>
                             <TableCell>
-                              <span class="inline-flex items-center gap-1.5 text-xs">
-                                <span class={cn('size-1.5 rounded-full', visual().dot)} />
+                              <span class={cn('inline-flex items-center gap-1.5 t-meta', visual().tone)}>
+                                <span class="of-dot size-1.5" />
                                 {visual().label}
                               </span>
                             </TableCell>

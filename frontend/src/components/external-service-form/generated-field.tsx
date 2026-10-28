@@ -75,11 +75,11 @@ function RotateButton(props: { field: GeneratedFieldDefinition; itemId?: string;
 function RevealedSecret(props: { value: string; label: string }) {
   return (
     <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5">
+      <div class="of-note of-tone-needs-you items-center gap-1.5 px-2.5 py-1.5">
         <span class="min-w-0 flex-1 break-all font-mono text-[11px]">{props.value}</span>
         <CopyButton text={props.value} label={`Copy ${props.label}`} />
       </div>
-      <span class="text-[11px] text-amber-700" role="status">
+      <span class="text-[11px]" role="status">
         Shown once. Copy it now: afterwards it stays encrypted, and a lost value means Rotate.
       </span>
     </div>

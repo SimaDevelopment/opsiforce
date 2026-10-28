@@ -440,7 +440,7 @@ function AgentActionsMenu(props: {
         confirmLabel="Make public"
         onConfirm={() => void makePublic()}
       >
-        <div class="mt-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <div class="of-note of-tone-needs-you mt-4 text-xs">
           <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
             This can't be undone. Public never goes back to private — the way back is a private copy via Duplicate.
@@ -681,7 +681,7 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
                 <Show
                   when={refused()}
                   fallback={
-                    <p class="text-xs text-amber-900" role="alert">
+                    <p class="of-ink of-tone-needs-you text-xs" role="alert">
                       The file couldn't be checked for keys or secrets. You can still download it; check it before you
                       share it.
                     </p>
@@ -694,7 +694,7 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
               }
             >
               <Show when={hits().length > 0}>
-                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <div class="of-note of-tone-needs-you flex-col text-xs">
                   <div class="flex gap-2 font-medium">
                     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>These look like keys or secrets. Check them before you share the file.</span>
@@ -744,9 +744,9 @@ function BuiltInBody(props: {
 
   return (
     <div class="space-y-6">
-      <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <div class="of-note of-tone-running flex-col p-4 text-sm">
         <div class="font-medium">Ships with the platform</div>
-        <div class="mt-0.5 text-xs text-blue-900/80">
+        <div class="mt-0.5 text-xs opacity-80">
           Its prompt, template and the skills it ships come from the agent image and update with releases. Skills your
           organization adds reach <strong>every existing project</strong> on this agent, in every environment, as soon
           as you change them.
@@ -835,12 +835,12 @@ function ShippedSkillList(props: { agentId: string; skills: ShippedSkill[] }) {
 function OmittedSkills(props: { omitted: AgentDeliverySummary['omitted'] }) {
   return (
     <Show when={props.omitted.length > 0}>
-      <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <div class="of-note of-tone-needs-you mt-2 flex-col text-xs">
         <div class="flex items-center gap-1.5 font-medium">
           <AlertTriangle class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           Dropped for a name the agent image owns
         </div>
-        <ul class="mt-1 space-y-0.5 text-amber-900/80">
+        <ul class="mt-1 space-y-0.5 opacity-80">
           <For each={props.omitted}>
             {(skill) => (
               <li>

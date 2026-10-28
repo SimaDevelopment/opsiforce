@@ -73,11 +73,11 @@ export function PodsPage() {
 
       <div class="sm:ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
         <span class="inline-flex items-center gap-1.5">
-          <span class="size-1.5 rounded-full bg-indigo-500" />
+          <span class="of-dot of-series-1 size-1.5" />
           Agent activity
         </span>
         <span class="inline-flex items-center gap-1.5">
-          <span class="size-1.5 rounded-full bg-emerald-500" />
+          <span class="of-dot of-series-2 size-1.5" />
           App activity
         </span>
         <span class="text-muted-foreground/70">A pod stays alive until both have been idle past their timeout.</span>
@@ -151,7 +151,7 @@ export function PodsPage() {
                             <TooltipContent>Open project</TooltipContent>
                           </Tooltip>
                           <Show when={group.ghostCount > 0}>
-                            <span class="inline-flex items-center gap-1 text-[11px] text-amber-600 shrink-0">
+                            <span class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[11px] shrink-0">
                               <AlertTriangle class="w-3 h-3" />
                               {group.ghostCount} active{' '}
                               {group.ghostCount === 1 ? 'environment has' : 'environments have'} no pod
@@ -318,8 +318,8 @@ function LiveIndicator(props: {
   return (
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
       <span class="relative flex size-2">
-        <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping motion-reduce:hidden" />
-        <span class="relative inline-flex size-2 rounded-full bg-emerald-500" />
+        <span class="of-dot of-tone-done absolute inline-flex h-full w-full opacity-60 animate-ping motion-reduce:hidden" />
+        <span class="of-dot of-tone-done relative inline-flex size-2" />
       </span>
       <Show when={ago()}>{(text) => <span class="tabular-nums">Updated {text()}</span>}</Show>
       <button
@@ -354,7 +354,7 @@ function LoadingState() {
 function ErrorState(props: { onRetry: () => void }): JSX.Element {
   return (
     <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <AlertTriangle class="w-10 h-10 mx-auto mb-3 text-amber-500 opacity-70" />
+      <AlertTriangle class="of-ink of-tone-needs-you w-10 h-10 mx-auto mb-3 opacity-70" />
       <p class="text-sm font-medium text-foreground">Couldn't load pods</p>
       <p class="text-xs mt-1">The pod list is temporarily unavailable.</p>
       <button

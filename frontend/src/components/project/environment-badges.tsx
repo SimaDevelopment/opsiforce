@@ -6,7 +6,7 @@ import { cn } from '~/lib/cn';
 
 const MAX_VISIBLE_BADGES = 3;
 
-export function EnvironmentBadges(props: { environmentIds: string[]; dimmed?: boolean }) {
+export function EnvironmentBadges(props: { environmentIds: string[]; dimmed?: boolean; size?: 'default' | 'sm' }) {
   const environments = useEnvironments();
 
   const resolved = createMemo(() => {
@@ -33,12 +33,12 @@ export function EnvironmentBadges(props: { environmentIds: string[]; dimmed?: bo
 
   return (
     <Show when={resolved().length > 0}>
-      <div class={cn('flex items-center gap-0.5 min-w-0', props.dimmed && 'opacity-50')}>
+      <div class={cn('flex items-center gap-1 min-w-0', props.dimmed && 'opacity-50')}>
         <For each={visible()}>
           {(env) => (
             <Tooltip>
               <TooltipTrigger as="span" class="inline-flex shrink-0" aria-label={env.name}>
-                <EnvironmentBadge environment={env} />
+                <EnvironmentBadge environment={env} size={props.size} />
               </TooltipTrigger>
               <TooltipContent>{env.name}</TooltipContent>
             </Tooltip>

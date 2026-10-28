@@ -25,6 +25,7 @@ import { Route as SettingsIntegrationsRouteImport } from './routes/settings/inte
 import { Route as SettingsEnvironmentsRouteImport } from './routes/settings/environments'
 import { Route as SettingsDefaultsRouteImport } from './routes/settings/defaults'
 import { Route as SettingsBillingRouteImport } from './routes/settings/billing'
+import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as AdminStorageRouteImport } from './routes/admin/storage'
 import { Route as AdminPodsRouteImport } from './routes/admin/pods'
@@ -118,6 +119,11 @@ const SettingsBillingRoute = SettingsBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: '/appearance',
+  path: '/appearance',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   id: '/projects/$projectId',
   path: '/projects/$projectId',
@@ -192,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/admin/pods': typeof AdminPodsRoute
   '/admin/storage': typeof AdminStorageRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/billing': typeof SettingsBillingRoute
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
@@ -220,6 +227,7 @@ export interface FileRoutesByTo {
   '/admin/pods': typeof AdminPodsRoute
   '/admin/storage': typeof AdminStorageRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/billing': typeof SettingsBillingRoute
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
@@ -251,6 +259,7 @@ export interface FileRoutesById {
   '/admin/pods': typeof AdminPodsRoute
   '/admin/storage': typeof AdminStorageRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/billing': typeof SettingsBillingRoute
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
@@ -283,6 +292,7 @@ export interface FileRouteTypes {
     | '/admin/pods'
     | '/admin/storage'
     | '/projects/$projectId'
+    | '/settings/appearance'
     | '/settings/billing'
     | '/settings/defaults'
     | '/settings/environments'
@@ -311,6 +321,7 @@ export interface FileRouteTypes {
     | '/admin/pods'
     | '/admin/storage'
     | '/projects/$projectId'
+    | '/settings/appearance'
     | '/settings/billing'
     | '/settings/defaults'
     | '/settings/environments'
@@ -341,6 +352,7 @@ export interface FileRouteTypes {
     | '/admin/pods'
     | '/admin/storage'
     | '/projects/$projectId'
+    | '/settings/appearance'
     | '/settings/billing'
     | '/settings/defaults'
     | '/settings/environments'
@@ -486,6 +498,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof SettingsBillingRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
+    '/settings/appearance': {
+      id: '/settings/appearance'
+      path: '/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof SettingsAppearanceRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
     '/projects/$projectId': {
       id: '/projects/$projectId'
       path: '/projects/$projectId'
@@ -588,6 +607,7 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
 )
 
 interface SettingsRouteRouteChildren {
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsBillingRoute: typeof SettingsBillingRoute
   SettingsDefaultsRoute: typeof SettingsDefaultsRoute
   SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
@@ -600,6 +620,7 @@ interface SettingsRouteRouteChildren {
 }
 
 const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsBillingRoute: SettingsBillingRoute,
   SettingsDefaultsRoute: SettingsDefaultsRoute,
   SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,

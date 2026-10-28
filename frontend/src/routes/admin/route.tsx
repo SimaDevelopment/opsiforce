@@ -2,8 +2,7 @@ import { Show, createEffect } from 'solid-js';
 import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
 import { Spinner } from '~/components/ui/spinner';
-import { SectionRail } from '~/components/section-rail';
-import { ADMIN_TABS, ADMIN_GROUP_ORDER, firstPermittedAdminTab, adminTabForPath } from '~/constants/admin-tabs';
+import { firstPermittedAdminTab, adminTabForPath } from '~/constants/admin-tabs';
 import { createDocumentTitle } from '~/lib/create-document-title';
 
 export const Route = createFileRoute('/admin')({
@@ -15,7 +14,6 @@ function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const permittedTabs = () => ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission));
   const isIndex = () => location().pathname === '/admin' || location().pathname === '/admin/';
   createDocumentTitle(() => adminTabForPath(location().pathname)?.label ?? 'Admin');
   const currentAllowed = () => {
@@ -37,9 +35,6 @@ function AdminLayout() {
 
   return (
     <div class="flex h-full w-full flex-col overflow-hidden lg:flex-row">
-      <Show when={!permissions.isPending && permittedTabs().length > 0}>
-        <SectionRail tabs={permittedTabs()} groupOrder={ADMIN_GROUP_ORDER} />
-      </Show>
       <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <Show
           when={!permissions.isPending && !isIndex() && currentAllowed()}

@@ -22,7 +22,7 @@ function StateLine(props: { skill: EnvironmentSkill }) {
       <span
         class={cn(
           'inline-flex items-center gap-1 text-[10px]',
-          props.skill.state === 'retrying' ? 'text-amber-700' : 'text-muted-foreground'
+          props.skill.state === 'retrying' ? 'of-ink of-tone-needs-you' : 'text-muted-foreground'
         )}
       >
         <Show when={props.skill.state === 'switching-on'}>

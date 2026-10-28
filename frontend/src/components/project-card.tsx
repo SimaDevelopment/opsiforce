@@ -4,6 +4,7 @@ import type { Project } from '~/api/client';
 import { cn } from '~/lib/cn';
 import { projectDisplayTitle } from '~/lib/project-display';
 import { EnvironmentBadges } from './project/environment-badges';
+import { OpenProjectFacts } from './sidebar/open-project-facts';
 import { ProjectActionsMenu } from './project-actions-menu';
 import { Spinner } from '~/components/ui/spinner';
 
@@ -50,7 +51,7 @@ export function ProjectCard(props: {
       onClick={handleCardClick}
       class={cn(
         'w-full text-left rounded-lg px-2.5 py-2 transition-all duration-150 group relative cursor-pointer',
-        props.isActive ? 'bg-background shadow-sm ring-1 ring-black/[0.04]' : 'hover:bg-sidebar-accent/60'
+        props.isActive ? 'of-sb-open-card' : 'hover:bg-sidebar-accent/60'
       )}
     >
       <div class="flex items-center gap-2 min-w-0">
@@ -80,7 +81,7 @@ export function ProjectCard(props: {
               </Show>
               <span
                 class={cn(
-                  'block text-xs font-medium truncate leading-tight flex-1 min-w-0',
+                  'block t-ui-med truncate flex-1 min-w-0',
                   isDisabled() ? 'text-sidebar-muted-foreground' : 'text-sidebar-foreground'
                 )}
               >
@@ -93,8 +94,12 @@ export function ProjectCard(props: {
               <Show when={isDisabled()}>
                 <span class="text-xs text-sidebar-muted-foreground">Disabled</span>
               </Show>
-              <EnvironmentBadges environmentIds={props.project.environmentIds} dimmed={isDisabled()} />
+              <EnvironmentBadges environmentIds={props.project.environmentIds} dimmed={isDisabled()} size="sm" />
             </div>
+            {/* the open project expands in place rather than opening a panel */}
+            <Show when={props.isActive}>
+              <OpenProjectFacts projectId={props.project.id} />
+            </Show>
           </Show>
         </div>
 

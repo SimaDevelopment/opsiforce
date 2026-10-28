@@ -9,18 +9,19 @@ export interface EnvStatusDotProps {
   class?: string;
 }
 
+/** The tone sits on the wrapper, so the dot, its ping and the label all inherit it. */
 export function EnvStatusDot(props: EnvStatusDotProps) {
   const meta = () => envStatusMeta(props.status);
   return (
-    <span class={cn('inline-flex items-center gap-1.5 shrink-0', props.class)}>
+    <span class={cn('inline-flex items-center gap-1.5 shrink-0', meta().tone, props.class)}>
       <span class="relative inline-flex h-2 w-2 shrink-0">
         <Show when={meta().pulse}>
-          <span class={cn('absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping', meta().dot)} />
+          <span class="of-dot absolute inline-flex h-full w-full opacity-60 animate-ping" />
         </Show>
-        <span class={cn('relative inline-flex h-2 w-2 rounded-full', meta().dot)} />
+        <span class="of-dot relative inline-flex h-2 w-2" />
       </span>
       <Show when={props.withLabel}>
-        <span class={cn('text-xs font-medium', meta().text)}>{meta().label}</span>
+        <span class="of-ink t-meta">{meta().label}</span>
       </Show>
     </span>
   );

@@ -1,9 +1,9 @@
 import { createEffect, onMount, untrack } from 'solid-js';
+import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
 import { useTheme } from '@opencode/ui/theme/context';
 import { useSettings } from '@opencode/app/settings/model';
 import { useGlobal } from '@opencode/app/runtime/server/runtime';
 import type { ServerConnection } from '@opencode/app';
-import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
 import { BASE_FORMAT_IDS } from '~/api/model-providers';
 
 const detailedPreset = timelinePresets.find((preset) => preset.id === 'detailed');
@@ -14,6 +14,8 @@ const activityTimeline: TimelineDetail = {
   edit: { placement: 'separate', details: 'collapsed' },
   thinking: { placement: 'separate', details: 'expanded' },
 };
+import { createAppearance } from '~/lib/appearance';
+import { SHELL_CHAT_THEME, SHELL_CHAT_THEME_ID } from './opencode-shell-theme';
 
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
@@ -58,13 +60,25 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
   const theme = useTheme();
   const settings = useSettings();
 
+  const appearance = createAppearance();
+
   onMount(() => {
-    theme.setColorScheme('light');
+    // The chat renders from opencode's own theme system; registering the
+    // shell's palette here is what keeps the two surfaces one product, and it
+    // keeps the palette on the consuming side instead of in the vendored tree.
+    theme.registerTheme(SHELL_CHAT_THEME);
+    theme.setTheme(SHELL_CHAT_THEME_ID);
     settings.appearance.setTabLayout('horizontal');
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
     settings.general.setTimelineDetail(activityTimeline);
   });
+
+
+  // The scheme was pinned to 'light'. It follows the shell now, or a dark shell
+  // would frame a white chat. The shell's own `system` is already resolved by
+  // `appearance.scheme()`, so the two can never disagree.
+  createEffect(() => theme.setColorScheme(appearance.scheme()));
 
   pinModelVisibilityToCatalog(
     untrack(() => props.server),

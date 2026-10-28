@@ -22,6 +22,9 @@ import {
 } from '~/api/workspaces';
 import { useUpdateWorkspacePreferences } from '~/api/users';
 import { createPersistedSignal } from '~/lib/persisted-signal';
+import { createProjectFilters, matchesRecency, matchesScope } from '~/lib/project-filters';
+import { ProjectFilterChips } from './project-filters';
+import { useCurrentUser } from '~/api/user';
 import { projectMoveBlockReason } from '~/lib/project-move';
 import {
   DndType,
@@ -139,10 +142,24 @@ export function ProjectSidebar(props: { search: string }) {
 
   const isFolded = (id: string) => (id === PUBLIC_ID ? publicFolded() : !!folded()[id]);
 
+  const filters = createProjectFilters();
+  const currentUser = useCurrentUser();
+
+  // Scope and activity narrow the list the tree is built from, so a workspace
+  // with nothing left in it simply does not render — the tree keeps its shape
+  // and its ordering, it just gets shorter.
+  const visibleProjects = createMemo(() =>
+    (projects.data ?? []).filter(
+      (p) =>
+        matchesScope(p, filters.scope(), workspaces.data, currentUser.data?.id) &&
+        matchesRecency(p, filters.recency())
+    )
+  );
+
   const groupedProjects = createMemo(() => {
     const byWs = new Map<string, Project[]>();
     const publicProjects: Project[] = [];
-    for (const p of projects.data ?? []) {
+    for (const p of visibleProjects()) {
       if (p.workspaceId) {
         const arr = byWs.get(p.workspaceId) ?? [];
         arr.push(p);
@@ -317,6 +334,12 @@ export function ProjectSidebar(props: { search: string }) {
           </div>
         }
       >
+        <ProjectFilterChips
+          scope={filters.scope()}
+          recency={filters.recency()}
+          active={filters.active()}
+          onReset={filters.reset}
+        />
         <DragDropProvider onDragStart={onDragStart} onDragEnd={onDragEnd}>
           <div class="flex flex-col gap-1">
             <For each={workspaces.data}>

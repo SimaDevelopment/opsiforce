@@ -22,11 +22,17 @@ export function JobCard(props: JobCardProps) {
   return (
     <div
       class={cn(
-        'pointer-events-auto relative w-72 cursor-pointer rounded-lg border bg-popover p-3 shadow-lg transition-shadow hover:shadow-xl animate-in fade-in-0 slide-in-from-bottom-2',
-        isFailed() && 'border-destructive/50',
-        isDone() && 'border-emerald-500/50',
-        !isTerminal() && 'border-primary/40'
+        'of-job pointer-events-auto relative w-72 cursor-pointer animate-in fade-in-0 slide-in-from-bottom-2'
       )}
+      style={{
+        // the phase is carried by a rail at the top edge, so a glance down the
+        // dock reads as a list of states rather than a list of cards
+        '--job-color': isFailed()
+          ? 'var(--job-failed)'
+          : isDone()
+            ? 'var(--job-done)'
+            : 'var(--job-running)',
+      }}
       role="button"
       tabIndex={0}
       onClick={() => props.onExpand()}
@@ -34,6 +40,8 @@ export function JobCard(props: JobCardProps) {
         if (e.key === 'Enter' || e.key === ' ') props.onExpand();
       }}
     >
+      <span class="of-job-rail" aria-hidden="true" />
+
       <Show when={display().accentPulse}>
         <span class="pointer-events-none absolute inset-0 rounded-lg animate-publish-arrive" />
       </Show>
@@ -50,7 +58,7 @@ export function JobCard(props: JobCardProps) {
                 </span>
               }
             >
-              <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+              <span class="of-fill of-tone-done mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white">
                 <Check class="h-3 w-3" />
               </span>
             </Show>

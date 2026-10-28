@@ -45,7 +45,7 @@ function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void 
         <span
           class={cn(
             'flex flex-wrap items-center gap-x-1 text-[11px]',
-            needsAttention(props.service.configuration) ? 'text-amber-700' : 'text-muted-foreground'
+            needsAttention(props.service.configuration) ? 'of-ink of-tone-needs-you' : 'text-muted-foreground'
           )}
         >
           <Show when={needsAttention(props.service.configuration)}>
@@ -101,7 +101,7 @@ export function ExternalServicesButton(props: {
         >
           <Cable class="h-3.5 w-3.5" aria-hidden="true" />
           <span>External services</span>
-          <span class={cn(STRIP_COUNT_CLASS, attentionCount() > 0 && 'bg-amber-100 text-amber-800')}>
+          <span class={cn(STRIP_COUNT_CLASS, attentionCount() > 0 && 'of-tone of-tone-needs-you')}>
             <Show when={attentionCount() > 0}>
               <AlertTriangle class="h-3 w-3" aria-label="A configuration needs attention" />
             </Show>

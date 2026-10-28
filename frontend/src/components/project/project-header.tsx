@@ -1,9 +1,14 @@
 import { Show, createSignal, untrack, type Component, type JSX } from 'solid-js';
+import { useNavigate } from '@tanstack/solid-router';
+import { revealInSidebar } from '~/lib/sidebar-reveal';
 import { useQueryClient } from '@tanstack/solid-query';
 import { usePermissions } from '~/api/permissions';
 import { projectKeys, useProject, useRenameProject } from '~/api/projects';
 import { projectTitleOf } from '~/lib/project-title';
-import { Code as CodeIcon, Database, Files, MessageSquare } from '~/components/icons';
+import { useWorkspaces, useWorkspaceFolders } from '~/api/workspaces';
+import { Code as CodeIcon, Command, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
+import { openCommandPalette } from '~/components/command-palette';
+import { createAppearance } from '~/lib/appearance';
 import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { ProjectActionsMenu } from '~/components/project-actions-menu';
@@ -48,6 +53,7 @@ export function ProjectHeader(props: ProjectHeaderProps) {
   const canViewDb = () => hasPermission('can_view_db_tab');
   const projectQuery = useProject(() => props.projectId);
   const project = () => projectQuery.data;
+  const appearance = createAppearance();
 
   const handleEnvironmentDeleted = (environmentId: string) => {
     if (props.activeEnvironmentId === environmentId) {
@@ -56,15 +62,15 @@ export function ProjectHeader(props: ProjectHeaderProps) {
   };
 
   return (
-    <div class="flex items-center justify-between gap-2 px-3 sm:pr-5 py-2 bg-background border-b border-border shrink-0">
+    <div class="of-band justify-between sm:pr-4">
       <div class="flex items-center gap-2 min-w-0">
         {props.headerLabel}
         <Tabs
           value={props.activeTab}
           onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
-          class="w-auto shrink-0"
+          class="w-auto shrink-0 self-stretch"
         >
-          <TabsList class="w-auto">
+          <TabsList variant="folder" class="w-auto">
             <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
             <ProjectTabTrigger value="files" icon={Files} onPress={props.onActiveTabChange} />
             <Show when={props.showAgentTabs && canViewCode()}>
@@ -75,15 +81,6 @@ export function ProjectHeader(props: ProjectHeaderProps) {
             </Show>
           </TabsList>
         </Tabs>
-        <Show when={project()?.kind === null}>
-          <EnvironmentsPopover
-            projectId={props.projectId}
-            environments={props.environments}
-            activeEnvironmentId={props.activeEnvironmentId}
-            onActiveEnvironmentChange={props.onActiveEnvironmentChange}
-            onEnvironmentDeleted={handleEnvironmentDeleted}
-          />
-        </Show>
         <Show when={project()?.importedAgent}>
           {(slug) => (
             <Badge variant="info" class="shrink-0 font-normal">
@@ -93,7 +90,42 @@ export function ProjectHeader(props: ProjectHeaderProps) {
         </Show>
       </div>
 
+      {/* The environment and Publish belong on the right, with the chrome:
+          the left of the band says where you are, the right says what you can
+          do with it. */}
       <div class="flex items-center gap-1.5 shrink-0">
+        <Show when={project()?.kind === null}>
+          <EnvironmentsPopover
+            projectId={props.projectId}
+            showPublishButton
+            environments={props.environments}
+            activeEnvironmentId={props.activeEnvironmentId}
+            onActiveEnvironmentChange={props.onActiveEnvironmentChange}
+            onEnvironmentDeleted={handleEnvironmentDeleted}
+          />
+        </Show>
+        {/* The two controls the band keeps in every screen of the design: one
+            way into everything, and the light/dark switch. */}
+        <button
+          type="button"
+          class="of-btn of-btn-icon of-btn-ghost fr"
+          onClick={openCommandPalette}
+          aria-label="Search everything"
+          title="Search everything (⌘K)"
+        >
+          <Command class="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          class="of-btn of-btn-icon of-btn-ghost fr"
+          onClick={() => appearance.setMode(appearance.scheme() === 'dark' ? 'light' : 'dark')}
+          aria-label={appearance.scheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={appearance.scheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <Show when={appearance.scheme() === 'dark'} fallback={<Moon class="w-4 h-4" />}>
+            <Sun class="w-4 h-4" />
+          </Show>
+        </button>
         <ProjectActionsMenu
           projectId={props.projectId}
           status={props.status}
@@ -121,7 +153,7 @@ function ProjectTabTrigger(props: {
   return (
     <TabsTrigger
       value={props.value}
-      class="flex-none gap-1.5"
+      class="of-tab flex-none"
       aria-label={label()}
       title={label()}
       onClick={() => props.onPress(props.value)}
@@ -132,16 +164,72 @@ function ProjectTabTrigger(props: {
   );
 }
 
+/**
+ * The band's one piece of orientation: which workspace this project sits in,
+ * then the project. The trail replaces a bare title because a project name on
+ * its own does not say where you are.
+ */
 export function ProjectTitleLabel(props: { projectId: string; editing?: boolean; onEditDone?: () => void }) {
   const project = useProject(() => props.projectId);
+  const workspaces = useWorkspaces();
+  const navigate = useNavigate();
+  const workspaceId = () => project.data?.workspaceId ?? '';
+  const folders = useWorkspaceFolders(workspaceId);
   const title = () => projectTitleOf(project.data);
+  const workspaceName = () => {
+    const id = project.data?.workspaceId;
+    if (!id) return undefined;
+    return workspaces.data?.find((w) => w.id === id)?.name;
+  };
+  const folderName = () => {
+    const id = project.data?.folderId;
+    if (!id) return undefined;
+    return folders.data?.find((f) => f.id === id)?.name;
+  };
+  // Every crumb above the last one goes home with the sidebar revealing that
+  // group, which is where this product keeps its workspaces and folders.
+  const goUp = (reveal: { workspace?: string; folder?: string }) => {
+    revealInSidebar(reveal);
+    navigate({ to: '/' });
+  };
   return (
     <Show
       when={props.editing}
       fallback={
-        <span class="max-w-48 shrink-0 truncate text-sm font-medium" title={title()}>
-          {title()}
-        </span>
+        <nav class="of-crumbs" aria-label="Breadcrumb">
+          <Show when={workspaceName()}>
+            {(name) => (
+              <>
+                <button type="button" class="fr truncate" title={`Go to ${name()}`} onClick={() => goUp({ workspace: workspaceId() })}>
+                  {name()}
+                </button>
+                <span class="sep" aria-hidden="true">
+                  /
+                </span>
+              </>
+            )}
+          </Show>
+          <Show when={folderName()}>
+            {(name) => (
+              <>
+                <button
+                  type="button"
+                  class="fr truncate"
+                  title={`Go to ${name()}`}
+                  onClick={() => goUp({ workspace: workspaceId(), folder: project.data?.folderId ?? undefined })}
+                >
+                  {name()}
+                </button>
+                <span class="sep" aria-hidden="true">
+                  /
+                </span>
+              </>
+            )}
+          </Show>
+          <span class="last truncate" aria-current="page" title={title()}>
+            {title()}
+          </span>
+        </nav>
       }
     >
       <ProjectTitleInput projectId={props.projectId} title={title()} onDone={() => props.onEditDone?.()} />

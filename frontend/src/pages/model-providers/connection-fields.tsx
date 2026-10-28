@@ -314,7 +314,7 @@ export function TestOutcome(props: { result: TestResult | null; idle: string; pa
         {(outcome) => {
           const current = outcome();
           return current.passed ? (
-            <span class="inline-flex items-center gap-1 text-xs text-emerald-700">
+            <span class="of-ink of-tone-done inline-flex items-center gap-1 text-xs">
               <Check class="h-3 w-3" /> {props.passed}
             </span>
           ) : (

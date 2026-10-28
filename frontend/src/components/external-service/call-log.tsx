@@ -46,11 +46,11 @@ const OUTCOME_LABELS: Record<CallLogOutcome, string> = {
 };
 
 const OUTCOME_CHIP: Record<CallLogOutcome, string> = {
-  proxied: 'bg-emerald-50 text-emerald-700',
-  handled: 'bg-emerald-50 text-emerald-700',
+  proxied: 'of-tone of-tone-done',
+  handled: 'of-tone of-tone-done',
   'not supported': 'bg-muted text-muted-foreground',
-  'not allowed': 'bg-red-50 text-red-700',
-  failed: 'bg-amber-50 text-amber-700',
+  'not allowed': 'of-tone of-tone-failed',
+  failed: 'of-tone of-tone-needs-you',
 };
 
 const REQUEST_LENGTH = 40;
@@ -265,7 +265,7 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                             label="Status"
                             class={cn(
                               'text-right font-mono text-[11px] tabular-nums',
-                              call.status >= 400 && 'text-red-700'
+                              call.status >= 400 && 'of-ink of-tone-failed'
                             )}
                           >
                             {call.status}

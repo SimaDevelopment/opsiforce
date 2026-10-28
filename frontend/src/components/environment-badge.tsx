@@ -2,30 +2,25 @@ import type { Environment } from '~/api/environments';
 import { cn } from '~/lib/cn';
 import { environmentBadgeLabel } from '~/lib/environment-label';
 
-function badgeTint(color: string, percent: number) {
-  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
-}
-
-function badgeText(color: string) {
-  return `color-mix(in srgb, ${color} 62%, #1f2937)`;
-}
-
+/**
+ * An environment's identity is its colour, but the colour is never the only
+ * signal: the badge always carries its short label and a dot, and the text is
+ * theme ink rather than a tint of the environment colour, so it keeps its
+ * contrast in both light and dark. The colour is configured per environment,
+ * so it arrives as a value rather than a token.
+ */
 export function EnvironmentBadge(props: {
   environment: Pick<Environment, 'name' | 'slug' | 'shortName' | 'color'>;
+  /** `sm` is for dense lists (sidebar rows), where the full pill would own the row. */
+  size?: 'default' | 'sm';
   class?: string;
 }) {
   return (
     <span
-      class={cn(
-        'inline-flex h-3.5 shrink-0 items-center rounded px-1 text-[9px] font-semibold leading-none tracking-wide ring-1 ring-inset',
-        props.class
-      )}
-      style={{
-        'background-color': badgeTint(props.environment.color, 14),
-        color: badgeText(props.environment.color),
-        '--tw-ring-color': badgeTint(props.environment.color, 32),
-      }}
+      class={cn('of-env', props.size === 'sm' && 'of-env-sm', props.class)}
+      style={{ '--env-color': props.environment.color }}
     >
+      <span class="of-dot" />
       {environmentBadgeLabel(props.environment)}
     </span>
   );

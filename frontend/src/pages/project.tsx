@@ -198,7 +198,9 @@ export function ProjectView(props: ProjectViewProps) {
         </Show>
       </div>
 
-      <div class="relative flex-1 min-h-0 flex">
+      {/* The content surface starts right under the band so the selected tab
+          merges into it rather than floating on the canvas. */}
+      <div class="relative flex-1 min-h-0 flex" style={{ background: 'var(--bg-content)' }}>
         <div
           class={cn('relative flex min-h-0', contentFills() ? 'flex-1 min-w-0' : 'shrink-0', strip && 'snap-start')}
           style={contentFills() || !chatColumn ? undefined : { width: `${chatColumn.width()}px` }}

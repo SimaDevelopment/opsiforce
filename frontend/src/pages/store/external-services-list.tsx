@@ -319,7 +319,7 @@ function ServiceListRow(props: { row: ServiceRow; environments: Environment[] })
         </Show>
         <ServiceEnvironments row={props.row} environments={props.environments} />
         <Show when={props.row.hidesBuiltIn}>
-          <div class="mt-1.5 text-xs text-amber-800">
+          <div class="of-ink of-tone-needs-you mt-1.5 text-xs">
             A built-in service now has this name too. It stays hidden in your Organization, so your agents keep reaching
             this one.
           </div>

@@ -12,7 +12,7 @@ export function SwitchControl(props: ParentProps<ComponentProps<typeof Kobalte.C
           'inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
-          'data-[checked]:bg-emerald-500 bg-muted-foreground/30',
+          'data-[checked]:bg-[var(--job-done)] bg-muted-foreground/30',
           local.class
         )}
         {...rest}

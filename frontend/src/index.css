@@ -7,8 +7,15 @@
 @source '../opencode/packages/ui/src';
 @source '../opencode/packages/session-ui/src';
 @import 'tw-animate-css';
+/* The shell design layer: tokens, type, metrics, motion and primitives.
+   It also re-points the legacy shadcn token names below at the same palette. */
+@import './styles/shell.css';
 @import './components/project/opencode-overrides.css';
 @import './components/ui/table/table.css';
+
+/* Dark is a deliberate choice stored on <html>, never a bare media query, so
+   Settings -> Appearance can offer Light / Dark / System as one control. */
+@custom-variant dark (&:where([data-scheme='dark'], [data-scheme='dark'] *));
 
 @theme {
   --animate-publish-arrive: publish-arrive 0.9s ease-out 2;
@@ -49,40 +56,47 @@
   --color-sidebar-accent: hsl(var(--sidebar-accent));
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
   --color-sidebar-muted-foreground: hsl(var(--sidebar-muted-foreground));
+
+  /* The shell's semantic surfaces and ink, as utilities. These carry their own
+     alpha, so they are NOT available to the `/ <alpha>` modifier — that is on
+     purpose: a surface in this system is one authored value, not a slider. */
+  --color-app: var(--bg-app);
+  --color-panel: var(--bg-panel);
+  --color-content: var(--bg-content);
+  --color-elevated: var(--bg-elevated);
+  --color-element: var(--bg-element);
+  --color-element-hover: var(--bg-element-hover);
+  --color-element-selected: var(--bg-element-selected);
+  --color-line: var(--border-subtle);
+  --color-line-strong: var(--border-default);
+  --color-ink: var(--text-default);
+  --color-ink-subtle: var(--text-subtle);
+  --color-ink-strong: var(--text-strong);
+  --color-on-solid: var(--text-on-solid);
+  --color-brand: var(--fill-solid);
+  --color-brand-hover: var(--fill-solid-hover);
+  --color-brand-ink: var(--text-accent);
+  --color-tint: var(--fill-tint);
+  --color-tint-strong: var(--fill-tint-strong);
+
+  /* domain colours keep their identity across a mode flip */
+  --color-env-development: var(--env-development);
+  --color-env-staging: var(--env-staging);
+  --color-env-production: var(--env-production);
+  --color-job-running: var(--job-running);
+  --color-job-needs-you: var(--job-needs-you);
+  --color-job-failed: var(--job-failed);
+  --color-job-done: var(--job-done);
+  --color-published: var(--published);
+  --color-ai-generated: var(--ai-generated);
+
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-}
-
-:root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 240 5.9% 10%;
-  --radius: 0.625rem;
-  --sidebar: 240 5% 96.5%;
-  --sidebar-foreground: 240 6% 16%;
-  --sidebar-border: 240 6% 88%;
-  --sidebar-accent: 240 5% 92%;
-  --sidebar-accent-foreground: 240 5.9% 10%;
-  --sidebar-muted-foreground: 240 4% 44%;
-  --main-left: 0px !important;
 }
 
 html,
@@ -101,17 +115,6 @@ body,
   [contenteditable='true'] {
     font-size: max(16px, 1em);
   }
-}
-
-body {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji',
-    'Segoe UI Emoji';
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 @layer base {

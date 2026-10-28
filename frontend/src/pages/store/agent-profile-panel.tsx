@@ -166,7 +166,7 @@ export function DevelopmentPanel(props: {
               <SelectContent />
             </Select>
             <Show when={unavailableModel() && !modelError()}>
-              <p class="mt-1 text-xs text-amber-700">
+              <p class="of-ink of-tone-needs-you mt-1 text-xs">
                 <span class="font-mono">{model()}</span> is unavailable in your organization
               </p>
             </Show>

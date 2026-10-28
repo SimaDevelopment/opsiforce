@@ -207,7 +207,7 @@ export function JobDockHost(props: ParentProps) {
       {props.children}
 
       <Show when={entries().length > 0}>
-        <div class="pointer-events-none fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
+        <div class="of-dock pointer-events-none">
           <For each={entries()}>
             {(entry) => (
               <Show when={expandedKey() !== entry.key}>

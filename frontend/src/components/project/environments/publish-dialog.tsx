@@ -72,7 +72,7 @@ export function PublishDialog(props: PublishDialogProps) {
       {
         id: 'fresh' as VariableGroupId,
         name: `New in ${targetName()}`,
-        dot: 'bg-amber-500',
+        tone: 'of-tone-needs-you',
         note: 'prefilled from Development',
         hint: `Set real ${targetName()} values before publishing.`,
         attention: true,
@@ -81,7 +81,7 @@ export function PublishDialog(props: PublishDialogProps) {
       {
         id: 'custom' as VariableGroupId,
         name: 'Different from Development',
-        dot: 'bg-emerald-500',
+        tone: 'of-tone-done',
         note: 'kept as-is on publish',
         attention: false,
         variables: formVariables().filter((v) => !v.isNew && v.value !== v.devValue),
@@ -89,7 +89,7 @@ export function PublishDialog(props: PublishDialogProps) {
       {
         id: 'same' as VariableGroupId,
         name: 'Same as Development',
-        dot: 'bg-blue-500',
+        tone: 'of-tone-running',
         note: 'identical in both environments',
         attention: false,
         variables: formVariables().filter((v) => !v.isNew && v.value === v.devValue),
@@ -133,7 +133,7 @@ export function PublishDialog(props: PublishDialogProps) {
   const variableRow = (variable: PublishFormVariable, attention: boolean) => (
     <div
       class="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-2 sm:flex-nowrap"
-      classList={{ 'bg-amber-50/40': attention }}
+      classList={{ 'of-wash of-tone-needs-you': attention }}
     >
       <code
         class="min-w-0 flex-1 truncate font-mono text-xs text-foreground sm:w-[38%] sm:flex-none"
@@ -149,7 +149,7 @@ export function PublishDialog(props: PublishDialogProps) {
         placeholder="value"
         aria-label={`${variable.key} value in ${targetName()}`}
       />
-      <span class="w-11 shrink-0 text-right text-[10px] text-emerald-600">
+      <span class="of-ink of-tone-done w-11 shrink-0 text-right text-[10px]">
         <Show when={(variables()[variable.key] ?? '') !== variable.value}>edited</Show>
       </span>
     </div>
@@ -161,7 +161,7 @@ export function PublishDialog(props: PublishDialogProps) {
         {(group) => (
           <div>
             <div class="flex min-w-0 items-center gap-2 pb-1.5">
-              <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${group.dot}`} />
+              <span class={`of-dot h-1.5 w-1.5 ${group.tone}`} />
               <span class="whitespace-nowrap text-xs font-medium text-foreground">{group.name}</span>
               <span class="text-[11px] text-muted-foreground">{group.variables.length}</span>
               <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">— {group.note}</span>
@@ -175,8 +175,8 @@ export function PublishDialog(props: PublishDialogProps) {
             </div>
             <Show when={openGroups()[group.id]}>
               <div
-                class="divide-y divide-border overflow-hidden rounded-md border border-border"
-                classList={{ 'border-amber-200': group.attention }}
+                class="of-hair divide-y divide-border overflow-hidden rounded-md border"
+                classList={{ 'of-tone-needs-you': group.attention, 'of-tone-neutral': !group.attention }}
               >
                 <For each={group.variables}>{(variable) => variableRow(variable, group.attention)}</For>
               </div>
@@ -231,7 +231,7 @@ export function PublishDialog(props: PublishDialogProps) {
 
         <div class="-ml-1 -mr-2 mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden py-1 pl-1 pr-2">
           <Show when={devAuthIsManual()}>
-            <p class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <p class="of-note of-tone-needs-you text-xs">
               Development uses manual OIDC auth, which the new environment inherits. After publishing, register the new
               environment's callback URL (shown in its Auth dialog) with your identity provider, or sign-in there will
               fail.
@@ -300,7 +300,7 @@ export function PublishDialog(props: PublishDialogProps) {
         <div class="mt-5 flex shrink-0 flex-wrap items-center justify-end gap-2">
           <Show when={unreviewedKeys().length > 0}>
             <span class="mr-auto flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+              <span class="of-dot of-tone-needs-you h-1.5 w-1.5" />
               <span class="truncate">
                 {unreviewedKeys().length} new{' '}
                 {unreviewedKeys().length === 1 ? 'variable still carries its' : 'variables still carry their'}{' '}
@@ -335,7 +335,7 @@ export function PublishDialog(props: PublishDialogProps) {
         onConfirm={runPublish}
       >
         <Show when={unreviewedKeys().length > 0}>
-          <div class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+          <div class="of-note of-tone-needs-you mt-3 flex-col text-xs">
             <p class="font-medium">
               {unreviewedKeys().length} new {unreviewedKeys().length === 1 ? 'variable' : 'variables'} will go live with
               Development values:

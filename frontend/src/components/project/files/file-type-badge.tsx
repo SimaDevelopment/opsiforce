@@ -4,23 +4,29 @@ import { cn } from '~/lib/cn';
 import { fileExtensionOf } from '~/lib/file-extension';
 import type { FileEntryType } from '~/api/files';
 
-const EXTENSION_COLORS: Record<string, string> = {
-  pdf: 'bg-red-500/15 text-red-600 dark:text-red-400',
-  doc: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
-  docx: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
-  ppt: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
-  pptx: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
-  xls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  xlsx: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  csv: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  md: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
-  txt: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
-  png: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
-  jpg: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
-  jpeg: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
-  gif: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
-  svg: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400',
-  zip: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400',
+/**
+ * The hue here is identity, not status: a spreadsheet is green because it is a
+ * spreadsheet. So the map names a file KIND and the tone tokens decide what
+ * that kind looks like — which is why a mode flip or a contrast change needs
+ * nothing from this file.
+ */
+const EXTENSION_TONE: Record<string, string> = {
+  pdf: 'of-tone-pdf',
+  doc: 'of-tone-doc',
+  docx: 'of-tone-doc',
+  ppt: 'of-tone-slide',
+  pptx: 'of-tone-slide',
+  xls: 'of-tone-sheet',
+  xlsx: 'of-tone-sheet',
+  csv: 'of-tone-sheet',
+  md: 'of-tone-text',
+  txt: 'of-tone-text',
+  png: 'of-tone-image',
+  jpg: 'of-tone-image',
+  jpeg: 'of-tone-image',
+  gif: 'of-tone-image',
+  svg: 'of-tone-image',
+  zip: 'of-tone-neutral',
 };
 
 export function FileTypeBadge(props: { name: string; type: FileEntryType; class?: string }) {
@@ -32,7 +38,7 @@ export function FileTypeBadge(props: { name: string; type: FileEntryType; class?
       fallback={
         <span
           class={cn(
-            'shrink-0 flex items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400',
+            'shrink-0 flex items-center justify-center rounded-md of-tone of-tone-needs-you',
             props.class ?? 'w-8 h-8'
           )}
         >
@@ -42,8 +48,8 @@ export function FileTypeBadge(props: { name: string; type: FileEntryType; class?
     >
       <span
         class={cn(
-          'shrink-0 flex items-center justify-center rounded-md font-bold uppercase overflow-hidden',
-          EXTENSION_COLORS[extension()] ?? 'bg-muted text-muted-foreground',
+          'shrink-0 flex items-center justify-center rounded-md font-bold uppercase overflow-hidden of-tone',
+          EXTENSION_TONE[extension()] ?? 'of-tone-neutral',
           props.class ?? 'w-8 h-8'
         )}
       >

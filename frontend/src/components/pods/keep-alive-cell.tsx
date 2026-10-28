@@ -13,9 +13,9 @@ interface KeepAliveCellProps {
 
 const KINDS: readonly KeepAliveSource[] = ['agent', 'app'];
 
-const KIND_STYLES: Record<KeepAliveSource, { label: string; dot: string; bar: string; text: string }> = {
-  agent: { label: 'Agent', dot: 'bg-indigo-500', bar: 'bg-indigo-500', text: 'text-indigo-600' },
-  app: { label: 'App', dot: 'bg-emerald-500', bar: 'bg-emerald-500', text: 'text-emerald-600' },
+const KIND_STYLES: Record<KeepAliveSource, { label: string; tone: string }> = {
+  agent: { label: 'Agent', tone: 'of-series-1' },
+  app: { label: 'App', tone: 'of-series-2' },
 };
 
 export function KeepAliveCell(props: KeepAliveCellProps) {
@@ -33,7 +33,7 @@ export function KeepAliveCell(props: KeepAliveCellProps) {
   return (
     <div class="w-full min-w-56 space-y-1.5">
       <div class="text-xs">
-        <Show when={suspendsIn()} fallback={<span class="font-medium text-amber-600">Idle — suspending</span>}>
+        <Show when={suspendsIn()} fallback={<span class="of-ink of-tone-needs-you font-medium">Idle — suspending</span>}>
           {(value) => (
             <span class="text-muted-foreground">
               Suspends in <span class="font-semibold tabular-nums text-foreground">{formatDuration(value())}</span>
@@ -59,8 +59,8 @@ export function KeepAliveCell(props: KeepAliveCellProps) {
           const lastTouchMs = () => activity().lastTouchMs;
 
           return (
-            <div class="flex items-center gap-2">
-              <span class={cn('size-1.5 shrink-0 rounded-full', alive() ? style.dot : 'bg-muted-foreground/30')} />
+            <div class={cn('flex items-center gap-2', style.tone)}>
+              <span class={cn('size-1.5 shrink-0 rounded-full', alive() ? 'of-dot' : 'bg-muted-foreground/30')} />
               <span class="w-9 shrink-0 text-[11px] text-muted-foreground">{style.label}</span>
               <span class="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/80">
                 <Show when={lastTouchMs() !== null} fallback="—">
@@ -69,13 +69,13 @@ export function KeepAliveCell(props: KeepAliveCellProps) {
               </span>
               <div class="h-1 flex-1 overflow-hidden rounded-full bg-muted">
                 <Show when={alive()}>
-                  <div class={cn('h-full rounded-full', style.bar)} style={{ width: `${fraction() * 100}%` }} />
+                  <div class="of-fill h-full rounded-full" style={{ width: `${fraction() * 100}%` }} />
                 </Show>
               </div>
               <span
                 class={cn(
                   'w-12 shrink-0 text-right text-[11px] tabular-nums',
-                  alive() ? style.text : 'text-muted-foreground/50'
+                  alive() ? 'of-ink' : 'text-muted-foreground/50'
                 )}
               >
                 {alive() ? formatDuration(remaining() ?? 0) : 'idle'}

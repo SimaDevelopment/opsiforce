@@ -13,6 +13,8 @@ import { Button } from '~/components/ui/button';
 import { Menu } from '~/components/icons';
 import { PRIVATE_ROOT_COMPONENTS } from '~/private-loader';
 import { createTenantChangeHandler } from '~/lib/tenant-state';
+import { createAppearance } from '~/lib/appearance';
+import { CommandPalette } from '~/components/command-palette';
 import { Toaster } from 'solid-sonner';
 
 const queryClient = new QueryClient({
@@ -57,6 +59,7 @@ function SidebarLayout() {
 
   return (
     <JobDockHost>
+      <CommandPalette />
       <div
         class="group/sidebar-wrapper flex h-full w-full"
         style={{
@@ -94,6 +97,9 @@ function AppContent() {
   const isPermissionDenied = () => location().pathname === '/permission-denied';
 
   createTenantChangeHandler();
+  // Keeps `system` mode tracking the OS after boot; the inline script in
+  // index.html has already painted the first frame with the stored choice.
+  createAppearance();
 
   return (
     <>

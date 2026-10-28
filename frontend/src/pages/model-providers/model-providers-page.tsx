@@ -181,11 +181,11 @@ function AudienceSwitch(props: {
             >
               {AUDIENCE_LABEL[audience]}
               <Show when={audience === 'apps' && props.appsMissing.length > 0}>
-                <AlertTriangle class="h-3 w-3 text-amber-600" aria-hidden="true" />
+                <AlertTriangle class="of-ink of-tone-needs-you h-3 w-3" aria-hidden="true" />
                 <span class="sr-only">(no provider for some formats)</span>
               </Show>
               <Show when={props.dirty(audience)}>
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                <span class="of-dot of-tone-needs-you h-1.5 w-1.5" aria-hidden="true" />
                 <span class="sr-only">(unsaved changes)</span>
               </Show>
             </button>
@@ -197,7 +197,7 @@ function AudienceSwitch(props: {
         {AUDIENCE_DESCRIPTION[props.value]} Saving a card saves its Agent and App routing together.
       </p>
       <Show when={props.appsMissing.length > 0}>
-        <p class="basis-full text-xs text-amber-700 dark:text-amber-500">
+        <p class="of-ink of-tone-needs-you basis-full text-xs">
           Apps can’t use {props.appsMissing.map((format) => BASE_FORMAT_LABEL[format]).join(' or ')} models: no model
           provider of that format is on for Apps.
           <Show when={props.value !== 'apps'}>

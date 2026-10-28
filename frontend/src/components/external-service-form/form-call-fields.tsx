@@ -23,8 +23,8 @@ function badgeVariant(level: MessageLevel | undefined) {
 
 function messageClass(level: MessageLevel | undefined): string {
   if (level === 'error') return 'text-destructive';
-  if (level === 'warning') return 'text-amber-700';
-  if (level === 'success') return 'text-emerald-700';
+  if (level === 'warning') return 'of-ink of-tone-needs-you';
+  if (level === 'success') return 'of-ink of-tone-done';
   return 'text-muted-foreground';
 }
 

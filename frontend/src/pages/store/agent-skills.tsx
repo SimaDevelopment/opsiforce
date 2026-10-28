@@ -133,7 +133,7 @@ export function AgentSkillList(props: {
                       <RetiredBadge />
                     </Show>
                     <Show when={skill.visibility === 'private'}>
-                      <Lock class="h-3 w-3 shrink-0 text-amber-600" role="img" aria-label="Private" />
+                      <Lock class="of-ink of-tone-needs-you h-3 w-3 shrink-0" role="img" aria-label="Private" />
                     </Show>
                   </span>
                   <Show when={carriesServiceSettings(skill)}>

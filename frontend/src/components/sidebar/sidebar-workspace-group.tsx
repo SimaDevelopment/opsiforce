@@ -115,13 +115,18 @@ export function SidebarWorkspaceGroup(props: {
         classList={{ 'bg-sidebar-accent/60 ring-1 ring-sidebar-accent': folderDrop.isDropTarget() }}
         onClick={props.onToggleFold}
       >
+        {/* The grip was a 12px target at the sidebar's edge, fully transparent
+            until the row was hovered — reordering worked but nobody could find
+            it. It now keeps a resting opacity, carries a >=24px hit area
+            (WCAG 2.5.8) and stays visible on touch. */}
         <button
           ref={sortable.handleRef}
-          class="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover/wsrow:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+          class="of-grip absolute left-0.5 top-1/2 -translate-y-1/2 opacity-40 group-hover/wsrow:opacity-100 pointer-coarse:opacity-100 focus-visible:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
+          aria-label={`Reorder ${props.workspace.name}`}
           title="Drag to reorder"
         >
-          <GripVertical class="w-3 h-3" />
+          <GripVertical class="w-3.5 h-3.5" />
         </button>
         <span class="text-muted-foreground shrink-0">
           {view().expanded ? <ChevronDown class="w-3 h-3" /> : <ChevronRight class="w-3 h-3" />}
