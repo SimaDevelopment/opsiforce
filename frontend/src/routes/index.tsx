@@ -89,7 +89,7 @@ function HomePage() {
                 of this screen, so the heading leads into it instead of a
                 centred logo lockup competing with it. */}
             <div class="flex flex-col gap-2">
-              <h1 class="t-display" style={{ color: 'var(--text-strong)' }}>
+              <h1 class="t-display" style={{ color: 'var(--ink-strong)' }}>
                 What do you want to automate?
               </h1>
               <p class="t-body t-sub max-w-xl">Describe what you need and an AI agent will build it for you.</p>

@@ -46,7 +46,7 @@ export function OpenProjectFacts(props: { projectId: string }) {
           </span>
         </Show>
         <Show when={working()}>
-          <span class="flex items-center gap-1.5 t-meta min-w-0" style={{ color: 'var(--text-accent)' }}>
+          <span class="flex items-center gap-1.5 t-meta min-w-0" style={{ color: 'var(--ink-accent)' }}>
             <span class="of-working">
               <i />
               <i />

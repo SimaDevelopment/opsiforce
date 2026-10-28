@@ -58,7 +58,7 @@ function Section(props: { title: string; rows: AttentionRow[]; pulse?: boolean }
                 style={{ background: row.tone }}
               />
               <span class="flex flex-col gap-px min-w-0 flex-1 text-left">
-                <span class="t-ui-med truncate" style={{ color: 'var(--text-strong)' }}>
+                <span class="t-ui-med truncate" style={{ color: 'var(--ink-strong)' }}>
                   {row.title}
                 </span>
                 <span class="t-meta t-sub truncate">{row.detail}</span>
@@ -102,7 +102,7 @@ export function SidebarAttention() {
         id: `disabled:${project.id}`,
         title: projectDisplayTitle(project),
         detail: `${workspaceName(project.workspaceId)} · disabled`,
-        tone: 'var(--text-subtle)',
+        tone: 'var(--ink-subtle)',
         projectId: project.id,
       });
     }

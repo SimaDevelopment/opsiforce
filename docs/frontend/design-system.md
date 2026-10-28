@@ -11,11 +11,12 @@ kind: explanation
 ### Layers
 
 - `frontend/src/styles/shell.css` is the only place a colour, a font size, a control height or an easing curve is written down; every other stylesheet and component reads a token from it.
-- The semantic layer names surfaces (`--bg-app`, `--bg-panel`, `--bg-content`, `--bg-elevated`), ink (`--text-subtle`, `--text-default`, `--text-strong`, `--text-on-solid`), the brand fill (`--fill-solid`, `--text-accent`) and the hairlines (`--border-subtle`, `--border-default`).
+- The semantic layer names surfaces (`--bg-app`, `--bg-panel`, `--bg-content`, `--bg-elevated`), ink (`--ink-subtle`, `--ink-default`, `--ink-strong`, `--ink-on-solid`), the brand fill (`--fill-solid`, `--ink-accent`) and the hairlines (`--border-subtle`, `--border-default`).
 - Domain tokens (`--env-production`, `--job-failed`, `--diff-added`, `--published`) hold the same value in light and dark, so an environment or a job phase keeps its identity across a mode flip.
 - Those domain tokens come in three kinds, kept apart because they answer different questions: **status** (`--job-*`, `--env-*`, `--diff-*`), **identity** (`--kind-doc`, `--kind-sheet`, … — a spreadsheet is green because it is a spreadsheet, not because anything succeeded) and **series** (`--series-1` … `--series-6`, six chart hues whose only job is to stay apart).
 - The legacy shadcn names (`--background`, `--primary`, `--muted-foreground`, …) survive as `H S% L%` triplets pointing at the same palette, so every component already written against `bg-background` or `text-muted-foreground` renders in the new look untouched, and the `/ <alpha>` modifier keeps working.
 - `frontend/src/index.css` exposes both sets to Tailwind through `@theme inline`; the shell names arrive as utilities (`bg-panel`, `text-ink-subtle`, `border-line`).
+- Shell token names stay out of the namespace the embedded chat writes on `:root` (`--text-*`, `--border-base`, `--border-focus`, `--surface-*`, `--icon-*`, …): the ink ramp is `--ink-*` and the border ink and accent are `--border-ink` and `--border-accent`, so a chat palette can never shadow a shell value at equal specificity. The stylesheet opencode appends is removed when the chat unmounts.
 
 ### Tones
 
@@ -49,7 +50,7 @@ kind: explanation
 - When `localStorage` is unavailable the boot script does nothing and the stylesheet defaults apply — light, normal contrast, comfortable density.
 - When the mode is `system`, the scheme keeps following the OS after boot through a `matchMedia` listener, not only at load.
 - When a seed is chosen and then set back to the default, the inline custom properties are removed rather than recomputed, so the authored values return exactly.
-- When a role class is used with no setter anywhere above it, `--tone` falls back to `--text-subtle`, so the element renders neutral rather than transparent.
+- When a role class is used with no setter anywhere above it, `--tone` falls back to `--ink-subtle`, so the element renders neutral rather than transparent.
 - A theme swap suppresses transitions for one frame but keeps CSS animations running, so a working indicator does not freeze mid-flip.
 
 ## Code

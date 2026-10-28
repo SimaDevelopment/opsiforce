@@ -22,9 +22,9 @@ export const SHELL_CHAT_THEME: DesktopTheme = {
       // the chat IS the content surface, not the canvas around it: the band's
       // selected tab has to merge into it
       neutral: '#ffffff', // --bg-content
-      ink: '#1d1b32', // --text-strong
+      ink: '#1d1b32', // --ink-strong
       primary: '#605ef6', // --fill-solid
-      accent: '#544fe6', // --text-accent
+      accent: '#544fe6', // --ink-accent
       interactive: '#605ef6',
       success: '#1c9a6b', // --job-done
       warning: '#c2871b', // --job-needs-you

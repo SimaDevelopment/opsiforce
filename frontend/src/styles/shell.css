@@ -117,26 +117,26 @@
   --bg-element-selected: rgb(96 94 246 / 0.1);
   /* a border is one ink at two strengths. Contrast moves the strengths and a
      seed moves the ink, so the two can never overwrite each other's choice. */
-  --border-base: #3f3d6f;
+  --border-ink: #3f3d6f;
   --border-subtle-mix: 10%;
   --border-default-mix: 17%;
-  --border-subtle: color-mix(in srgb, var(--border-base) var(--border-subtle-mix), transparent);
-  --border-default: color-mix(in srgb, var(--border-base) var(--border-default-mix), transparent);
-  --border-focus: #605ef6;
+  --border-subtle: color-mix(in srgb, var(--border-ink) var(--border-subtle-mix), transparent);
+  --border-default: color-mix(in srgb, var(--border-ink) var(--border-default-mix), transparent);
+  --border-accent: #605ef6;
   --fill-solid: #605ef6; /* white reaches APCA Lc 75.1 here */
   --fill-solid-hover: #5049e6;
 
   /* the two text ramps are declared as -base and re-exposed, so the Contrast
      control can mix against the canvas without anyone typing a resolved value */
-  --text-subtle-base: #6b6990;
-  --text-default-base: #3c3a5e;
-  --text-subtle: var(--text-subtle-base);
-  --text-default: var(--text-default-base);
-  --text-strong: #1d1b32;
-  --text-on-solid: #ffffff;
+  --ink-subtle-base: #6b6990;
+  --ink-default-base: #3c3a5e;
+  --ink-subtle: var(--ink-subtle-base);
+  --ink-default: var(--ink-default-base);
+  --ink-strong: #1d1b32;
+  --ink-on-solid: #ffffff;
 
   /* accent used as TEXT (links, inline accent) — #6666FF fails on white */
-  --text-accent: #544fe6;
+  --ink-accent: #544fe6;
   --fill-tint: rgb(96 94 246 / 0.11);
   --fill-tint-strong: rgb(96 94 246 / 0.18);
   --ring-accent: rgb(96 94 246 / 0.38);
@@ -213,7 +213,7 @@
      working. Alpha-based shell tokens are flattened on their own surface.
      ====================================================================== */
   --background: 240 22.6% 93.9%; /* --bg-app */
-  --foreground: 243.3 23.7% 29.8%; /* --text-default */
+  --foreground: 243.3 23.7% 29.8%; /* --ink-default */
   --card: 0 0% 100%;
   --card-foreground: 243.3 23.7% 29.8%;
   --popover: 0 0% 100%;
@@ -223,7 +223,7 @@
   --secondary: 240 20% 97.1%; /* --bg-element on content */
   --secondary-foreground: 245.2 29.9% 15.1%;
   --muted: 240 20% 97.1%;
-  --muted-foreground: 243.1 15.7% 48.8%; /* --text-subtle */
+  --muted-foreground: 243.1 15.7% 48.8%; /* --ink-subtle */
   --accent: 255 15.4% 94.9%; /* --bg-element-hover on content */
   --accent-foreground: 245.2 29.9% 15.1%;
   --destructive: 358.3 65.6% 56.7%; /* --job-failed */
@@ -257,10 +257,10 @@
   --bg-element: rgb(203 203 255 / 0.055);
   --bg-element-hover: rgb(203 203 255 / 0.095);
   --bg-element-selected: rgb(140 137 255 / 0.17);
-  --border-base: #cbcbff;
+  --border-ink: #cbcbff;
   --border-subtle-mix: 9.5%;
   --border-default-mix: 18%;
-  --border-focus: #8e8aff;
+  --border-accent: #8e8aff;
 
   /* the solid fill BRIGHTENS all the way to the brand tint. A mid-tone like
      #8C89FF tops out at APCA Lc 48.3 against ANY ink, pure black included, so
@@ -273,14 +273,14 @@
      measured against the resolved surfaces rather than eyeballed:
        subtle  = Lc 64.2 / 63.7 / 62.6 on panel / content / elevated (floor 60)
        default = Lc 80.1 / 79.6 on panel / content                   (floor 75) */
-  --text-subtle-base: #b7b5e1;
-  --text-default-base: #d3d2eb;
-  --text-subtle: var(--text-subtle-base);
-  --text-default: var(--text-default-base);
-  --text-strong: #f3f2fb;
-  --text-on-solid: #15122e;
+  --ink-subtle-base: #b7b5e1;
+  --ink-default-base: #d3d2eb;
+  --ink-subtle: var(--ink-subtle-base);
+  --ink-default: var(--ink-default-base);
+  --ink-strong: #f3f2fb;
+  --ink-on-solid: #15122e;
 
-  --text-accent: #cbcbff;
+  --ink-accent: #cbcbff;
   --fill-tint: rgb(140 137 255 / 0.14);
   --fill-tint-strong: rgb(140 137 255 / 0.24);
   --ring-accent: rgb(142 138 255 / 0.46);
@@ -333,11 +333,11 @@
    and each one moves tokens the rest of the sheet already reads.
    ========================================================================== */
 
-/* Contrast raises the two text ramps toward --text-strong rather than
+/* Contrast raises the two text ramps toward --ink-strong rather than
    inventing a third ramp, so nothing can drift out of the system. */
 [data-contrast='softer'] {
-  --text-subtle: color-mix(in oklch, var(--text-subtle-base) 82%, var(--bg-content));
-  --text-default: color-mix(in oklch, var(--text-default-base) 86%, var(--bg-content));
+  --ink-subtle: color-mix(in oklch, var(--ink-subtle-base) 82%, var(--bg-content));
+  --ink-default: color-mix(in oklch, var(--ink-default-base) 86%, var(--bg-content));
   --border-subtle-mix: 7%;
   --border-default-mix: 12%;
 }
@@ -348,8 +348,8 @@
 }
 
 [data-contrast='high'] {
-  --text-subtle: color-mix(in oklch, var(--text-subtle-base) 55%, var(--text-strong));
-  --text-default: color-mix(in oklch, var(--text-default-base) 45%, var(--text-strong));
+  --ink-subtle: color-mix(in oklch, var(--ink-subtle-base) 55%, var(--ink-strong));
+  --ink-default: color-mix(in oklch, var(--ink-default-base) 45%, var(--ink-strong));
   --border-subtle-mix: 20%;
   --border-default-mix: 34%;
 }
@@ -415,7 +415,7 @@
 @layer base {
   body {
     background: var(--bg-app);
-    color: var(--text-default);
+    color: var(--ink-default);
     font: var(--text-ui);
     letter-spacing: var(--ls-ui);
     font-family: var(--font-sans);
@@ -425,7 +425,7 @@
 
   ::selection {
     background: var(--fill-tint-strong);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 }
 
@@ -490,11 +490,11 @@
   }
 
   .t-sub {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .t-strong {
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .t-num {
@@ -520,14 +520,14 @@
 
   .fr-inset:focus-visible {
     outline: none;
-    box-shadow: inset 0 0 0 2px var(--bg-panel), inset 0 0 0 3px var(--border-focus);
+    box-shadow: inset 0 0 0 2px var(--bg-panel), inset 0 0 0 3px var(--border-accent);
     position: relative;
     z-index: 2;
   }
 
   .fr-inset-content:focus-visible {
     outline: none;
-    box-shadow: inset 0 0 0 2px var(--bg-content), inset 0 0 0 3px var(--border-focus);
+    box-shadow: inset 0 0 0 2px var(--bg-content), inset 0 0 0 3px var(--border-accent);
     position: relative;
     z-index: 2;
   }
@@ -545,7 +545,7 @@
     border-radius: var(--control-radius);
     font: var(--text-ui-med);
     letter-spacing: var(--ls-ui);
-    color: var(--text-default);
+    color: var(--ink-default);
     white-space: nowrap;
     transition:
       background-color var(--dur-fast) var(--ease-standard),
@@ -555,7 +555,7 @@
 
   .of-btn:hover {
     background: var(--bg-element-hover);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .of-btn:active {
@@ -577,14 +577,14 @@
 
   .of-btn-primary {
     background: var(--fill-solid);
-    color: var(--text-on-solid);
+    color: var(--ink-on-solid);
     height: var(--h-primary);
     padding: 0 14px;
   }
 
   .of-btn-primary:hover {
     background: var(--fill-solid-hover);
-    color: var(--text-on-solid);
+    color: var(--ink-on-solid);
   }
 
   .of-btn-compact {
@@ -626,7 +626,7 @@
   .of-btn[disabled],
   .of-btn[aria-disabled='true'] {
     cursor: not-allowed;
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .of-btn[disabled]:hover,
@@ -661,7 +661,7 @@
     border-radius: var(--radius-md-of);
     background: var(--bg-element);
     box-shadow: inset 0 0 0 1px var(--border-subtle);
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: 500 10px / 1 var(--font-mono);
     letter-spacing: 0.02em;
   }
@@ -674,7 +674,7 @@
     padding: 0 8px;
     border-radius: var(--radius-md-of);
     background: var(--bg-element);
-    color: var(--text-default);
+    color: var(--ink-default);
     font: var(--text-meta);
     letter-spacing: var(--ls-meta);
     white-space: nowrap;
@@ -697,13 +697,13 @@
 
   .of-chip-btn:hover {
     background: var(--bg-element-hover);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   /* a chip that is also a toggle says so by filling, not by a tick */
   .of-chip-btn[data-on='true'] {
     background: var(--bg-element-selected);
-    color: var(--text-strong);
+    color: var(--ink-strong);
     box-shadow: inset 0 0 0 1px var(--ring-accent);
   }
 
@@ -724,7 +724,7 @@
     height: 6px;
     border-radius: var(--radius-full);
     flex: none;
-    background: oklch(from var(--tone, var(--text-subtle)) calc(l + var(--tone-dot-dl)) c h);
+    background: oklch(from var(--tone, var(--ink-subtle)) calc(l + var(--tone-dot-dl)) c h);
   }
 
   .of-dot-pulse {
@@ -757,9 +757,9 @@
     font: var(--text-label);
     letter-spacing: var(--ls-label);
     text-transform: uppercase;
-    color: var(--text-default);
-    background: color-mix(in oklch, var(--env-color, var(--text-subtle)) 20%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--env-color, var(--text-subtle)) 38%, transparent);
+    color: var(--ink-default);
+    background: color-mix(in oklch, var(--env-color, var(--ink-subtle)) 20%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--env-color, var(--ink-subtle)) 38%, transparent);
   }
 
   .of-env-sm {
@@ -775,7 +775,7 @@
   }
 
   .of-env .of-dot {
-    background: var(--env-color, var(--text-subtle));
+    background: var(--env-color, var(--ink-subtle));
     width: 5px;
     height: 5px;
   }
@@ -800,13 +800,13 @@
   .of-ink,
   .of-note,
   .of-banner {
-    color: oklch(from var(--tone, var(--text-subtle)) var(--tone-ink-l) calc(c * var(--tone-ink-c)) h);
+    color: oklch(from var(--tone, var(--ink-subtle)) var(--tone-ink-l) calc(c * var(--tone-ink-c)) h);
   }
 
   .of-tone,
   .of-note,
   .of-banner {
-    background: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-tint), transparent);
+    background: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-tint), transparent);
   }
 
   /* a tinted block that has to read as its own object: hairline, not a border,
@@ -817,40 +817,40 @@
     gap: 8px;
     padding: 9px 11px;
     border-radius: var(--radius-md-of);
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-hair), transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-hair), transparent);
   }
 
   /* a strip across the top of a region rather than a card inside it: it keeps
      its own tint but closes with a hairline instead of a rounded edge */
   .of-banner {
-    border-bottom: 1px solid color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-hair), transparent);
+    border-bottom: 1px solid color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-hair), transparent);
   }
 
   /* a momentary highlight — "this is the field you were sent to". The first ring
      is the surface, so the second reads as a halo rather than a border. */
   .of-spot {
     border-radius: var(--radius-md-of);
-    background: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-wash), transparent);
+    background: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-wash), transparent);
     box-shadow:
       0 0 0 4px var(--bg-content),
-      0 0 0 6px color-mix(in oklch, var(--tone, var(--text-subtle)) 55%, transparent);
+      0 0 0 6px color-mix(in oklch, var(--tone, var(--ink-subtle)) 55%, transparent);
   }
 
   /* the hue at full strength — a chart segment, a progress bar, a swatch */
   .of-fill {
-    background: var(--tone, var(--text-subtle));
+    background: var(--tone, var(--ink-subtle));
   }
 
   /* a wash is a tint too faint to read as an object — it marks a row as needing
      attention without turning it into a card */
   .of-wash {
-    background: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-wash), transparent);
+    background: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-wash), transparent);
   }
 
   /* for a container that carries its tone only at the edge. It expects a tone
      setter; `of-tone-neutral` is the plain-border case. */
   .of-hair {
-    border-color: color-mix(in oklch, var(--tone, var(--text-subtle)) var(--tone-hair), transparent);
+    border-color: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-hair), transparent);
   }
 
   /* the same block shrunk to sit inside a table cell or beside a label */
@@ -890,7 +890,7 @@
   }
 
   .of-tone-neutral {
-    --tone: var(--text-subtle);
+    --tone: var(--ink-subtle);
   }
 
   .of-tone-development {
@@ -969,7 +969,7 @@
     padding: 0 6px;
     border-radius: var(--radius-full);
     background: var(--bg-element);
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-label);
     letter-spacing: 0;
   }
@@ -1025,7 +1025,7 @@
     white-space: nowrap;
     font: var(--text-meta);
     letter-spacing: var(--ls-meta);
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -1046,14 +1046,14 @@
   }
 
   .of-seg button:hover {
-    color: var(--text-default);
+    color: var(--ink-default);
   }
 
   .of-seg button[aria-selected='true'],
   .of-seg button[aria-pressed='true'],
   .of-seg button[aria-checked='true'] {
     background: var(--bg-content);
-    color: var(--text-strong);
+    color: var(--ink-strong);
     box-shadow: var(--shadow-2);
   }
 
@@ -1081,7 +1081,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-label);
     letter-spacing: var(--ls-label);
     text-transform: uppercase;
@@ -1108,7 +1108,7 @@
     height: var(--row-h);
     padding: 0 var(--row-pad);
     border-radius: var(--control-radius);
-    color: var(--text-default);
+    color: var(--ink-default);
     text-align: left;
     position: relative;
     transition:
@@ -1118,13 +1118,13 @@
 
   .of-row:hover {
     background: var(--bg-element-hover);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .of-row[aria-current='page'],
   .of-row[data-active='true'] {
     background: var(--bg-element-selected);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .of-row .lbl {
@@ -1166,7 +1166,7 @@
   }
 
   .of-lattice-empty {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     opacity: 0.34;
   }
 
@@ -1195,7 +1195,7 @@
   .of-sb-word {
     font: var(--text-ui-med);
     letter-spacing: 0.005em;
-    color: var(--text-strong);
+    color: var(--ink-strong);
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -1214,7 +1214,7 @@
        kept for the avatar inside, which IS a chip. */
     border-radius: var(--control-radius);
     background: var(--bg-element);
-    color: var(--text-strong);
+    color: var(--ink-strong);
     transition: background-color var(--dur-fast) var(--ease-standard);
   }
 
@@ -1227,7 +1227,7 @@
     height: 20px;
     border-radius: var(--radius-full);
     background: var(--fill-solid);
-    color: var(--text-on-solid);
+    color: var(--ink-on-solid);
     display: grid;
     place-items: center;
     font: var(--text-label);
@@ -1259,7 +1259,7 @@
     flex: none;
     border-radius: var(--radius-full);
     background: var(--fill-tint-strong);
-    color: var(--text-accent);
+    color: var(--ink-accent);
     display: grid;
     place-items: center;
     font: var(--text-label);
@@ -1276,19 +1276,19 @@
     padding: 0 28px 0 32px;
     border-radius: var(--control-radius);
     background: var(--bg-content);
-    color: var(--text-default);
+    color: var(--ink-default);
     border: 1px solid var(--border-default);
     font: var(--text-ui);
     letter-spacing: var(--ls-ui);
   }
 
   .of-sb-filter input::placeholder {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .of-sb-filter input:focus-visible {
     outline: none;
-    border-color: var(--border-focus);
+    border-color: var(--border-accent);
     box-shadow: 0 0 0 3px var(--ring-accent);
   }
 
@@ -1299,13 +1299,13 @@
     width: 100%;
     height: 24px;
     padding: 0 var(--row-pad);
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     border-radius: var(--radius-md-of);
     transition: color var(--dur-fast) var(--ease-standard);
   }
 
   .of-sb-sec-head:hover {
-    color: var(--text-default);
+    color: var(--ink-default);
   }
 
   .of-sb-sec-head .ttl {
@@ -1343,7 +1343,7 @@
     border-radius: var(--radius-full);
     flex: none;
     background: var(--fill-tint-strong);
-    color: var(--text-accent);
+    color: var(--ink-accent);
     display: grid;
     place-items: center;
     font: var(--text-ui-med);
@@ -1361,7 +1361,7 @@
 
   .of-sb-user .two b {
     font: var(--text-ui-med);
-    color: var(--text-strong);
+    color: var(--ink-strong);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -1369,7 +1369,7 @@
 
   .of-sb-user .two span {
     font: var(--text-meta);
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   /* ==========================================================================
@@ -1415,7 +1415,7 @@
 
   .of-crumbs a,
   .of-crumbs button {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     padding: 3px 6px;
     border-radius: var(--radius-md-of);
     font: var(--text-ui);
@@ -1431,17 +1431,17 @@
   .of-crumbs a:hover,
   .of-crumbs button:hover {
     background: var(--bg-element-hover);
-    color: var(--text-strong);
+    color: var(--ink-strong);
     text-decoration: none;
   }
 
   .of-crumbs .sep {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     opacity: 0.5;
   }
 
   .of-crumbs .last {
-    color: var(--text-strong);
+    color: var(--ink-strong);
     font: var(--text-ui-med);
     display: inline-flex;
     align-items: center;
@@ -1467,7 +1467,7 @@
     height: 34px;
     padding: 0 12px;
     border-radius: var(--control-radius) var(--control-radius) 0 0;
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-ui-med);
     position: relative;
     white-space: nowrap;
@@ -1477,13 +1477,13 @@
   }
 
   .of-tab:hover {
-    color: var(--text-strong);
+    color: var(--ink-strong);
     background: var(--bg-element);
   }
 
   .of-tab[data-selected] {
     background: var(--bg-content);
-    color: var(--text-strong);
+    color: var(--ink-strong);
     box-shadow:
       inset 1px 0 0 var(--border-subtle),
       inset -1px 0 0 var(--border-subtle),
@@ -1537,7 +1537,7 @@
   }
 
   .of-composer:focus-within {
-    box-shadow: var(--glow-composer), inset 0 0 0 1px var(--border-focus), 0 0 0 3px var(--ring-accent);
+    box-shadow: var(--glow-composer), inset 0 0 0 1px var(--border-accent), 0 0 0 3px var(--ring-accent);
   }
 
   .of-composer textarea {
@@ -1550,11 +1550,11 @@
     min-height: 92px;
     font: var(--text-input);
     letter-spacing: var(--ls-input);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .of-composer textarea::placeholder {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .of-composer textarea:focus {
@@ -1601,7 +1601,7 @@
     display: grid;
     place-items: center;
     background: var(--fill-tint);
-    color: var(--text-accent);
+    color: var(--ink-accent);
   }
 
   /* ==========================================================================
@@ -1669,7 +1669,7 @@
     background: transparent;
     font: var(--text-input);
     letter-spacing: var(--ls-input);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .of-cmdk-top input:focus {
@@ -1677,7 +1677,7 @@
   }
 
   .of-cmdk-top input::placeholder {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .of-cmdk-list {
@@ -1689,7 +1689,7 @@
 
   .of-cmdk-grp {
     padding: 8px 8px 3px;
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .of-cmdk-row {
@@ -1700,7 +1700,7 @@
     height: var(--row-h);
     padding: 0 var(--row-pad);
     border-radius: var(--control-radius);
-    color: var(--text-default);
+    color: var(--ink-default);
     text-align: left;
   }
 
@@ -1714,7 +1714,7 @@
 
   .of-cmdk-row[data-cursor='true'] {
     background: var(--bg-element-selected);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   /* ==========================================================================
@@ -1764,7 +1764,7 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: var(--job-color, var(--text-subtle));
+    background: var(--job-color, var(--ink-subtle));
   }
 
   .of-cmdk-foot {
@@ -1773,7 +1773,7 @@
     gap: 12px;
     padding: 8px 12px;
     border-top: 1px solid var(--border-subtle);
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-meta);
   }
 
@@ -1799,7 +1799,7 @@
   .of-field-icon {
     display: inline-flex;
     flex: none;
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
   }
 
   .of-field-head .tx {
@@ -1810,11 +1810,11 @@
   .of-field-head .tx b {
     display: block;
     font: var(--text-ui-med);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   .of-field-head .tx span {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-meta);
   }
 
@@ -1852,16 +1852,16 @@
   }
 
   .of-swatch[aria-checked='true'] {
-    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--border-focus);
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--border-accent);
   }
 
   .of-swatch-name {
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-meta);
   }
 
   .of-swatch-name b {
-    color: var(--text-default);
+    color: var(--ink-default);
     font-weight: var(--weight-emphasis);
   }
 
@@ -1879,7 +1879,7 @@
   .of-specimen .sans {
     font: var(--text-body);
     letter-spacing: var(--ls-body);
-    color: var(--text-strong);
+    color: var(--ink-strong);
   }
 
   /* the settings column and the preview that judges it */
@@ -1945,7 +1945,7 @@
 
   .of-tprev-foot {
     margin: 0;
-    color: var(--text-subtle);
+    color: var(--ink-subtle);
     font: var(--text-meta);
   }
 
@@ -1955,7 +1955,7 @@
 
   .of-specimen .mono-s {
     font: var(--mono-code);
-    color: var(--text-default);
+    color: var(--ink-default);
   }
 
 }

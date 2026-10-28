@@ -68,7 +68,7 @@ export function TenantSelector() {
                         <span class="nm group-data-[collapsible=icon]/sidebar:hidden">{currentDisplayName()}</span>
                         <ChevronsUpDown
                           class="w-3.5 h-3.5 shrink-0 group-data-[collapsible=icon]/sidebar:hidden"
-                          style={{ color: 'var(--text-subtle)' }}
+                          style={{ color: 'var(--ink-subtle)' }}
                         />
                       </button>
                     )}
@@ -85,7 +85,7 @@ export function TenantSelector() {
                           </span>
                           <span class="flex-1 truncate">{tenant.displayName}</span>
                           <Show when={tenant.name === currentTenant()}>
-                            <Check class="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-accent)' }} />
+                            <Check class="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--ink-accent)' }} />
                           </Show>
                         </DropdownMenuItem>
                       )}

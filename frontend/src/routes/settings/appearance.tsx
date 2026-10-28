@@ -184,7 +184,7 @@ function AppearancePage() {
     <div class="h-full overflow-y-auto">
       <div class="px-6 py-6 max-w-5xl">
         <header class="mb-2">
-          <h2 class="t-title" style={{ color: 'var(--text-strong)' }}>
+          <h2 class="t-title" style={{ color: 'var(--ink-strong)' }}>
             Appearance
           </h2>
           <p class="t-body t-sub mt-1 max-w-prose">

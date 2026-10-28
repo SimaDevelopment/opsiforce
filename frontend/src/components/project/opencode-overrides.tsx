@@ -1,4 +1,4 @@
-import { createEffect, onMount, untrack } from 'solid-js';
+import { createEffect, onCleanup, onMount, untrack } from 'solid-js';
 import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
 import { useTheme } from '@opencode/ui/theme/context';
 import { useSettings } from '@opencode/app/settings/model';
@@ -79,6 +79,18 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
   // would frame a white chat. The shell's own `system` is already resolved by
   // `appearance.scheme()`, so the two can never disagree.
   createEffect(() => theme.setColorScheme(appearance.scheme()));
+
+  // opencode writes its palette to a <style id="oc-theme"> on :root and the
+  // html element, and leaves both behind when the chat unmounts. Its provider
+  // rewrites them on the next mount, so dropping them here costs nothing and
+  // keeps a disposed chat's color-scheme and background off the shell.
+  onCleanup(() => {
+    document.getElementById('oc-theme')?.remove();
+    const html = document.documentElement;
+    html.style.removeProperty('background-color');
+    delete html.dataset.theme;
+    delete html.dataset.colorScheme;
+  });
 
   pinModelVisibilityToCatalog(
     untrack(() => props.server),

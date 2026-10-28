@@ -152,7 +152,7 @@ export function AppSidebar() {
           <div class="of-sb-filter flex-1 min-w-0">
             <Search
               class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
-              style={{ color: 'var(--text-subtle)' }}
+              style={{ color: 'var(--ink-subtle)' }}
             />
             <input
               ref={(el) => (searchRef = el)}
@@ -332,7 +332,7 @@ export function AppSidebar() {
                     </span>
                     <ChevronsUpDown
                       class="w-3.5 h-3.5 shrink-0 group-data-[collapsible=icon]/sidebar:hidden"
-                      style={{ color: 'var(--text-subtle)' }}
+                      style={{ color: 'var(--ink-subtle)' }}
                     />
                   </button>
                 )}

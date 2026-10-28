@@ -69,13 +69,13 @@
   --color-element-selected: var(--bg-element-selected);
   --color-line: var(--border-subtle);
   --color-line-strong: var(--border-default);
-  --color-ink: var(--text-default);
-  --color-ink-subtle: var(--text-subtle);
-  --color-ink-strong: var(--text-strong);
-  --color-on-solid: var(--text-on-solid);
+  --color-ink: var(--ink-default);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-ink-strong: var(--ink-strong);
+  --color-on-solid: var(--ink-on-solid);
   --color-brand: var(--fill-solid);
   --color-brand-hover: var(--fill-solid-hover);
-  --color-brand-ink: var(--text-accent);
+  --color-brand-ink: var(--ink-accent);
   --color-tint: var(--fill-tint);
   --color-tint-strong: var(--fill-tint-strong);
 

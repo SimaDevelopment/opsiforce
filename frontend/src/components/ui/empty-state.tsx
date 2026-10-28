@@ -20,7 +20,7 @@ export function EmptyState(props: {
       <Lattice variant="empty" />
       <Show when={props.icon}>
         {(Icon) => (
-          <span class="relative" style={{ color: 'var(--text-subtle)' }}>
+          <span class="relative" style={{ color: 'var(--ink-subtle)' }}>
             <Dynamic component={Icon()} class="w-5 h-5" />
           </span>
         )}

@@ -225,7 +225,7 @@ export function CommandPalette() {
         onKeyDown={onDialogKeyDown}
       >
         <div class="of-cmdk-top">
-          <Search class="w-4 h-4 shrink-0" style={{ color: 'var(--text-subtle)' }} />
+          <Search class="w-4 h-4 shrink-0" style={{ color: 'var(--ink-subtle)' }} />
           <input
             ref={(el) => (inputRef = el)}
             type="text"
@@ -247,7 +247,7 @@ export function CommandPalette() {
           <Show
             when={filtered().length > 0}
             fallback={
-              <p class="t-meta" style={{ padding: '18px 10px', color: 'var(--text-subtle)' }}>
+              <p class="t-meta" style={{ padding: '18px 10px', color: 'var(--ink-subtle)' }}>
                 Nothing matches “{query()}”.
               </p>
             }
