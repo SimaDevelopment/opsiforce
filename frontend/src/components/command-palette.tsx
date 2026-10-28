@@ -137,9 +137,17 @@ export function CommandPalette() {
 
   const flatIndex = (item: Item) => ordered().indexOf(item);
 
+  // The palette is hidden rather than unmounted, so the list keeps its scroll
+  // position between openings; the cursor and the scroll reset together, or
+  // the selected row would sit above the fold.
+  const resetCursor = () => {
+    setCursor(0);
+    if (listRef) listRef.scrollTop = 0;
+  };
+
   createEffect(() => {
     query();
-    setCursor(0);
+    resetCursor();
   });
 
   // A hidden element cannot take focus, and the dialog is `visibility: hidden`
@@ -165,7 +173,7 @@ export function CommandPalette() {
     }
     lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setQuery('');
-    setCursor(0);
+    resetCursor();
     requestAnimationFrame(() => focusInput());
   });
 
