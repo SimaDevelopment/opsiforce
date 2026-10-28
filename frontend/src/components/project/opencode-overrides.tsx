@@ -17,6 +17,10 @@ const activityTimeline: TimelineDetail = {
 import { createAppearance } from '~/lib/appearance';
 import { SHELL_CHAT_THEME, SHELL_CHAT_THEME_ID } from './opencode-shell-theme';
 
+// The Builder page mounts two chats at once (its own and the Test Project's),
+// and opencode's theme stylesheet is one document-wide element shared by both.
+let mountedChats = 0;
+
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
 
@@ -83,8 +87,13 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
   // opencode writes its palette to a <style id="oc-theme"> on :root and the
   // html element, and leaves both behind when the chat unmounts. Its provider
   // rewrites them on the next mount, so dropping them here costs nothing and
-  // keeps a disposed chat's color-scheme and background off the shell.
+  // keeps a disposed chat's color-scheme and background off the shell. Only
+  // the last chat standing may drop them: a sibling still mounted would lose
+  // its palette until its next theme change.
+  mountedChats += 1;
   onCleanup(() => {
+    mountedChats -= 1;
+    if (mountedChats > 0) return;
     document.getElementById('oc-theme')?.remove();
     const html = document.documentElement;
     html.style.removeProperty('background-color');
