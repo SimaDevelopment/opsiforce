@@ -1725,7 +1725,9 @@
     right: 16px;
     bottom: 16px;
     width: 300px;
-    z-index: 110;
+    /* below dialogs, sheets and menus (z-50): a background job must never
+       cover the fields or footer of something the user is working in */
+    z-index: 40;
     display: flex;
     flex-direction: column;
     gap: 8px;

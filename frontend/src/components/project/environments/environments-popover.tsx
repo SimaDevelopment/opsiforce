@@ -70,7 +70,8 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const targets = usePublishTargets(() => props.projectId, {
     enabled: () => (open() || props.showPublishButton === true) && canPublish(),
   });
-  const projects = useProjects({ enabled: open });
+  // hasApp gates every Publish action, so the band button needs it too
+  const projects = useProjects({ enabled: () => open() || props.showPublishButton === true });
   const hasApp = () => projects.data?.find((p) => p.id === props.projectId)?.hasApp === true;
 
   const restart = useRestartProjectEnvironment();
@@ -187,6 +188,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   // is the user's, so the switcher opens instead of guessing.
   const publishable = () => (targets.data ?? []).filter((t) => t !== null);
   const startPublish = () => {
+    if (!hasApp()) return;
     const list = publishable();
     if (canPublish() && list.length === 1) setPublishTarget(list[0]);
     else setOpen(true);
@@ -263,7 +265,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
           </div>
         </PopoverContent>
       </Popover>
-      <Show when={props.showPublishButton && canPublish() && publishable().length > 0}>
+      <Show when={props.showPublishButton && canPublish() && hasApp() && publishable().length > 0}>
         <button type="button" class="of-btn of-btn-primary of-btn-compact fr" onClick={startPublish}>
           <Upload class="h-3.5 w-3.5" />
           Publish
