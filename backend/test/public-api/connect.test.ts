@@ -180,7 +180,7 @@ describe('connecting to an environment', () => {
       const projectId = await runningProject();
       await db
         .update(projectEnvironments)
-        .set({ status: ProjectStatus.Failed, podIp: null })
+        .set({ status: ProjectStatus.Failed })
         .where(eq(projectEnvironments.id, projectId));
 
       const res = await connect(projectId, projectId);
@@ -194,7 +194,7 @@ describe('connecting to an environment', () => {
       await pods.deletePod(pods.assignedPodName(projectId));
       await db
         .update(projectEnvironments)
-        .set({ status: ProjectStatus.Starting, podIp: null })
+        .set({ status: ProjectStatus.Starting })
         .where(eq(projectEnvironments.id, projectId));
 
       const res = await connect(projectId, projectId);

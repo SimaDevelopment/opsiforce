@@ -26,7 +26,6 @@ const contextFields = {
   isDefault: projectEnvironments.isDefault,
   directory: projectEnvironments.directory,
   status: projectEnvironments.status,
-  podIp: projectEnvironments.podIp,
   sessionId: projectEnvironments.sessionId,
   platformVersion: projectEnvironments.platformVersion,
   authMode: projectEnvironments.authMode,

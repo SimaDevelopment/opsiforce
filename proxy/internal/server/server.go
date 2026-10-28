@@ -487,7 +487,7 @@ func (s *Server) roundTripAppRequest(
 ) (appProxyResult, error) {
 	outgoing := r.Clone(r.Context())
 	outgoing.URL = targetURL
-	outgoing.Host = targetURL.Host
+	outgoing.Host = localHostOf(targetURL)
 	outgoing.RequestURI = ""
 	outgoing.Header = copyRequestHeaders(r.Header, true)
 	stripAuthProxyHeaders(outgoing.Header)
@@ -584,7 +584,7 @@ func (s *Server) serveReverseProxy(
 			proxyRequest.Out.URL.Path = targetURL.Path
 			proxyRequest.Out.URL.RawPath = targetURL.RawPath
 			proxyRequest.Out.URL.RawQuery = targetURL.RawQuery
-			proxyRequest.Out.Host = targetURL.Host
+			proxyRequest.Out.Host = localHostOf(targetURL)
 			passThroughForwardedHeaders(proxyRequest.Out.Header, proxyRequest.In.Header)
 			stripAuthProxyHeaders(proxyRequest.Out.Header)
 			if options.stripUserIdentity {
@@ -732,6 +732,10 @@ func joinURLPath(basePath string, requestPath string) string {
 	default:
 		return basePath + requestPath
 	}
+}
+
+func localHostOf(target *url.URL) string {
+	return "localhost:" + target.Port()
 }
 
 func pathOrSlash(path string) string {

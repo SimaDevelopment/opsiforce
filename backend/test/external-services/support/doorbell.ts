@@ -60,7 +60,7 @@ export async function suspend(app: INestApplication, projectEnvironmentId: strin
   await pods.deletePod(pods.assignedPodName(projectEnvironmentId));
   await db
     .update(projectEnvironments)
-    .set({ status: ProjectStatus.Suspended, podIp: null })
+    .set({ status: ProjectStatus.Suspended })
     .where(eq(projectEnvironments.id, projectEnvironmentId));
 }
 

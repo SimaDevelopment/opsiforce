@@ -392,7 +392,7 @@ function wakesOf(environmentId: string) {
 async function suspendedProjectIn(tenant: TenantFixture): Promise<string> {
   const projectId = await runningProjectIn(tenant);
   await pods.deletePod(pods.assignedPodName(projectId));
-  await environments.patch(projectId, { status: ProjectStatus.Suspended, podIp: null });
+  await environments.patch(projectId, { status: ProjectStatus.Suspended });
   return projectId;
 }
 

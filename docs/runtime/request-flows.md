@@ -12,9 +12,10 @@ adrs: [0050]
 ### Topology
 
 - The edge routes `/api/**` to the NestJS backend and every project surface to one of four stateless Go runtime proxies; the backend is a control plane that never streams project traffic.
-- A fifth mode of the same binary, the `external-service` proxy (the Gate's proxy), serves every [Service host](../../GLOSSARY.md) `<slug>.external-services.<base>` with no identity proxy in front, plus the webhook lane, and reaches the service's pod by IP ([Service host](service-host.md)).
+- A fifth mode of the same binary, the `external-service` proxy (the Gate's proxy), serves every [Service host](../../GLOSSARY.md) `<slug>.external-services.<base>` with no identity proxy in front, plus the webhook lane, and reaches the service's pod by its DNS name ([Service host](service-host.md)).
 - The agent surface is path-routed under `/api/proxy/:id/*`; the App, VS Code and DB surfaces are subdomain-routed because their servers emit absolute asset paths ([Pod Tools](pod-tools.md)). `:id` is always the [ProjectEnvironment](../../GLOSSARY.md) id, which for [Development](../../GLOSSARY.md) equals the [Project](../../GLOSSARY.md) id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
 - Inside the pod, agent-control listens on the control port (4910) for App restarts and config-change markers and fronts OpenCode on 4096 ([OpenCode Embed](../frontend/opencode-embed.md)); the App serves on 3000, code-server on 8080 and Datasette on 8081.
+- The four runtime proxies and the backend connect to a pod by its DNS name and ask for `Host: localhost:<port>`, so a stack's default host check accepts them; the runtime proxies pass the public address on in `X-Forwarded-Host` and `X-Forwarded-Proto`, and the Gate keeps the caller's `Host` ([ADR-0094](../adr/0094-agent-pods-are-reached-by-dns-name-and-the-database-stores-no-address.md)).
 - Hosted deployments put oauth2-proxy at the edge, waiting up to 2 minutes for the backend's first byte so a request the backend holds on purpose (an External Service's Default switch drains for up to 30 s) is not cut into a `502`; local development runs the edge in static auth mode with no identity provider and a fixed identity carrying every permission ([ADR-0050](../adr/0050-local-development-runs-on-tilt-with-a-static-identity-and-no-identity-provider.md), [Local orchestration](../operations/local-orchestration.md)).
 
 ```mermaid
@@ -27,7 +28,7 @@ flowchart LR
   Edge -->|"{envId}.db…"| DB["db proxy"]
   Traefik["Traefik"] -->|"{slug}.external-services…"| GateProxy["external-service proxy (Gate)"]
   GateProxy -. "resolve" .-> Backend
-  GateProxy -->|"pod IP : APP_PORT"| Service["External Service pod"]
+  GateProxy -->|"pod name : APP_PORT"| Service["External Service pod"]
 
   Agent & App & VSCode & DB -. "ensure / activity / failure" .-> Backend
   Backend --> State["Kubernetes API · PostgreSQL · Redis · Bifrost"]

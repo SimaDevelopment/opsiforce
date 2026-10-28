@@ -166,8 +166,7 @@ export class DoorbellProcessor extends WorkerHost {
 
     let response: Response;
     try {
-      const upstream = await this.proxy.resolveAppUpstreamByEnvironmentId(projectEnvironmentId);
-      response = await fetch(`${upstream}/api/external-services/${service.slug}`, {
+      response = await this.proxy.fetchApp(projectEnvironmentId, `/api/external-services/${service.slug}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,

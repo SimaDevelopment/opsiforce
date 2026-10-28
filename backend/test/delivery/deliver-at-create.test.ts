@@ -319,7 +319,7 @@ describe('a Built-in Skill a Custom Agent pins, once the image stops shipping it
     expect(await harness.skillDeliveries.enqueueEnvironmentsHoldingRetiredSkills()).toContain(earlierProjectId);
     await db
       .update(projectEnvironments)
-      .set({ status: ProjectStatus.Active })
+      .set({ status: ProjectStatus.Suspended })
       .where(eq(projectEnvironments.id, earlierProjectId));
 
     await harness.skillDeliveries.deliver({ projectEnvironmentId: earlierProjectId, attempt: 0 });

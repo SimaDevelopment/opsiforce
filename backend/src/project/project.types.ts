@@ -121,7 +121,6 @@ export interface ProjectResponse {
   importedAgent: string | null;
   directory: string;
   status: ProjectStatus;
-  podIp: string | null;
   authMode: ProjectAuthMode;
   timeoutIdle: number;
   appTimeoutIdle: number;

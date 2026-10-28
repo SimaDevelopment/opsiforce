@@ -10,7 +10,7 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
-import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -61,6 +61,7 @@ const STALE_CLAIMING_MS = 30 * 1000;
 const RECOVERY_INTERVAL_MS = 60 * 1000;
 const STALE_PENDING_POD_MS = 90 * 1000;
 const POOL_PROVISION_READY_TIMEOUT_MS = 90 * 1000;
+const CLAIM_CANDIDATES = 3;
 
 export interface PoolClaim {
   tenantId: string;
@@ -164,18 +165,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     const reserved = await this.reservePending(agentId, claim);
     if (!reserved) return null;
 
-    const livePodIp = await this.readReadyPodIp(reserved.id);
-    if (!livePodIp) {
-      this.logger.warn(
-        `Pool slot ${reserved.id} has no ready pod at claim time; tearing it down and falling back to slow path`
-      );
-      await this.destroyPoolSlot(reserved.id, [ProjectStatus.Claiming], 'unhealthy pod at claim').catch((err) => {
-        this.logger.warn(`Inline teardown of ${reserved.id} failed: ${(err as Error).message}`);
-      });
-      await this.requestReplenish(reserved.agentId);
-      return null;
-    }
-
     let customerId: string;
     try {
       customerId = await this.ensureTenantCustomer(claim.tenantId);
@@ -234,7 +223,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       return null;
     }
     const delivered = await this.deliveryService.deliverAtCreate(reserved.id).then(
-      (plan) => this.announceToLivePod(plan, livePodIp),
+      (plan) => this.announceToLivePod(plan),
       (err: Error) => {
         this.logger.warn(`Claim ${reserved.id} could not receive its agent files: ${err.message}`);
         return false;
@@ -247,7 +236,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     }
     await this.announceDelivered(reserved.id);
 
-    const finalized = await this.finalizeClaim(reserved.id, claim, livePodIp).catch(() => false);
+    const finalized = await this.finalizeClaim(reserved.id, claim).catch(() => false);
     if (!finalized) {
       const [check] = await db
         .select({ status: projectEnvironments.status, tenantId: projects.tenantId })
@@ -391,18 +380,18 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   /** The slot's opencode is already running, and a write from another node raises no file event in its pod. */
-  private async announceToLivePod(plan: DeliveryPlan, podIp: string): Promise<boolean> {
+  private async announceToLivePod(plan: DeliveryPlan): Promise<boolean> {
     const targets: NotifyTarget[] = [
       ...(plan.agentFile ? (['config', 'agents'] as const) : []),
       ...(plan.skills.length > 0 ? (['skills'] as const) : []),
     ];
     if (targets.length === 0) return true;
-    await this.podReload.notify(plan.projectEnvironmentId, podIp, targets);
+    await this.podReload.notify(plan.projectEnvironmentId, targets);
     try {
-      if (plan.agentFile) await this.podReload.confirmAgent(podIp, plan.agentFile.slug);
+      if (plan.agentFile) await this.podReload.confirmAgent(plan.projectEnvironmentId, plan.agentFile.slug);
       if (plan.skills.length > 0) {
         await this.podReload.confirmSkills(
-          podIp,
+          plan.projectEnvironmentId,
           plan.skills.map((skill) => skill.name),
           []
         );
@@ -421,6 +410,23 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     return db.transaction(async (tx) => {
       await assertRoomForProject(tx, claim.tenantId, claim.kind);
       await assertRoomForCreatedProject(tx, claim.createdProjectsCap);
+      const candidates = await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
+        .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
+        .where(
+          and(
+            eq(projectEnvironments.status, ProjectStatus.Pending),
+            eq(projects.agentId, agentId),
+            hasResources(projectPodSettings, resources)
+          )
+        )
+        .orderBy(asc(projects.createdAt))
+        .limit(CLAIM_CANDIDATES);
+      const ready = candidates.map((row) => row.id).filter((id) => this.podService.isAssignedPodReady(id));
+      if (ready.length === 0) return null;
+
       const reserved = await tx
         .select({
           id: projects.id,
@@ -430,15 +436,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         })
         .from(projects)
         .innerJoin(projectEnvironments, eq(projectEnvironments.id, projects.id))
-        .innerJoin(projectPodSettings, eq(projectPodSettings.projectId, projects.id))
-        .where(
-          and(
-            eq(projectEnvironments.status, ProjectStatus.Pending),
-            eq(projects.agentId, agentId),
-            isNotNull(projectEnvironments.podIp),
-            hasResources(projectPodSettings, resources)
-          )
-        )
+        .where(and(inArray(projects.id, ready), eq(projectEnvironments.status, ProjectStatus.Pending)))
         .orderBy(asc(projects.createdAt))
         .limit(1)
         .for('update', { skipLocked: true });
@@ -482,7 +480,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     });
   }
 
-  private async finalizeClaim(projectId: string, claim: PoolClaim, podIp: string): Promise<boolean> {
+  private async finalizeClaim(projectId: string, claim: PoolClaim): Promise<boolean> {
     return db.transaction(async (tx) => {
       const [row] = await tx
         .select({ status: projectEnvironments.status })
@@ -514,7 +512,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .update(projectEnvironments)
         .set({
           status: ProjectStatus.Active,
-          podIp,
           lastActiveAt: new Date(),
           updatedAt: new Date(),
         })
@@ -659,12 +656,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         controlToken: crypto.randomBytes(32).toString('hex'),
       });
 
-      const podName = this.podService.assignedPodName(id);
-      const podIp = await this.podService.waitForReady(podName, POOL_PROVISION_READY_TIMEOUT_MS);
-      await db
-        .update(projectEnvironments)
-        .set({ podIp, updatedAt: new Date() })
-        .where(and(eq(projectEnvironments.id, id), eq(projectEnvironments.status, ProjectStatus.Pending)));
+      await this.podService.waitForReady(this.podService.assignedPodName(id), POOL_PROVISION_READY_TIMEOUT_MS);
       this.logger.log(`Pool project ${id} ready (agent=${agent.name})`);
     } catch (err) {
       this.logger.warn(`Failed to provision pool project ${id}: ${(err as Error).message}`);
@@ -768,8 +760,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
           continue;
         }
         const plan = await this.deliveryService.deliverAtCreate(row.id);
-        const podIp = await this.readReadyPodIp(row.id);
-        if (!podIp || !(await this.announceToLivePod(plan, podIp))) {
+        if (!this.podService.isAssignedPodReady(row.id) || !(await this.announceToLivePod(plan))) {
           await this.destroyAndReplenish(row.id, 'recovery: the pod did not serve what was delivered');
           continue;
         }
@@ -795,7 +786,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
 
   private async finalizeRecoveredClaim(projectId: string, tenantId: string): Promise<boolean> {
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
-    const podIp = await this.readReadyPodIp(projectId);
 
     return db.transaction(async (tx) => {
       const [row] = await tx
@@ -827,7 +817,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .update(projectEnvironments)
         .set({
           status: ProjectStatus.Active,
-          podIp,
           lastActiveAt: new Date(),
           updatedAt: new Date(),
         })
@@ -843,7 +832,6 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         id: projects.id,
         directory: projectEnvironments.directory,
         agentId: projects.agentId,
-        podIp: projectEnvironments.podIp,
         resources: podSettingsColumns(projectPodSettings),
       })
       .from(projects)
@@ -893,21 +881,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         continue;
       }
       keptByAgent.set(row.agentId, kept + 1);
-      const podIp = pod.status?.podIP ?? null;
-      if (podIp && podIp !== row.podIp) {
-        await db
-          .update(projectEnvironments)
-          .set({ podIp, updatedAt: new Date() })
-          .where(and(eq(projectEnvironments.id, row.id), eq(projectEnvironments.status, ProjectStatus.Pending)));
-      }
     }
-  }
-
-  private async readReadyPodIp(projectId: string): Promise<string | null> {
-    const podName = this.podService.assignedPodName(projectId);
-    const pod = await this.podService.getPod(podName).catch(() => null);
-    if (!pod || pod.metadata?.deletionTimestamp || !this.podService.isPodReady(pod)) return null;
-    return pod.status?.podIP ?? null;
   }
 
   private async countPoolSlots(agentId: string): Promise<number> {

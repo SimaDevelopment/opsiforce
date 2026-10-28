@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import type { V1Pod } from '@kubernetes/client-node';
+import { fetchAsLocalhost, type PodRequestInit } from '../../src/pod/pod-fetch';
 import type { StartTimer } from '../../src/project/agent-status.service';
 import type { AppAuthRouteTarget } from '../../src/project/app-auth-route';
 import type { ProjectAuthOidcConfig } from '../../src/project/project.types';
@@ -22,11 +24,24 @@ class RecordingFake {
 }
 
 export class FakePodService extends RecordingFake {
-  private readonly readiness = new Map<string, { resolve: (ip: string) => void; reject: (err: Error) => void }>();
+  private readonly readiness = new Map<string, { resolve: () => void; reject: (err: Error) => void }>();
   private readonly pods = new Map<string, V1Pod>();
 
   assignedPodName(environmentId: string): string {
     return `opsiforce-agent-${environmentId}`;
+  }
+
+  podAddress(_environmentId: string, port: number): string {
+    return `http://127.0.0.1:${port}`;
+  }
+
+  podFetch(environmentId: string, port: number, path: string, init?: PodRequestInit): Promise<Response> {
+    return fetchAsLocalhost(new URL(`${this.podAddress(environmentId, port)}${path}`), init);
+  }
+
+  isAssignedPodReady(environmentId: string): boolean {
+    const pod = this.pods.get(this.assignedPodName(environmentId));
+    return !!pod && !pod.metadata?.deletionTimestamp;
   }
 
   async createAssignedPod(
@@ -92,16 +107,16 @@ export class FakePodService extends RecordingFake {
     return null;
   }
 
-  waitForReady(podName: string): Promise<string> {
+  waitForReady(podName: string): Promise<void> {
     this.record('waitForReady', { podName });
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       this.readiness.set(podName, { resolve, reject });
     });
   }
 
   setPod(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
     this.pods.set(podName, {
-      metadata: { name: podName },
+      metadata: { name: podName, uid: randomUUID() },
       status: { podIP: podIp },
       ...(controlToken
         ? { spec: { containers: [{ name: 'agent', env: [{ name: 'OPSIFORCE_CONTROL_TOKEN', value: controlToken }] }] } }
@@ -111,7 +126,7 @@ export class FakePodService extends RecordingFake {
 
   markPodReady(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
     this.setPod(podName, podIp, controlToken);
-    this.readiness.get(podName)?.resolve(podIp);
+    this.readiness.get(podName)?.resolve();
     this.readiness.delete(podName);
   }
 

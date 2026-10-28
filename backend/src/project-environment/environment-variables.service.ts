@@ -4,6 +4,7 @@ import { readEnvJson, writeEnvJson } from '../common/env-file';
 import { PodService } from '../pod/pod.service';
 import { ProjectEnvironmentService } from './project-environment.service';
 import type { ProjectEnvironmentContext } from './project-environment.types';
+import { hasRunningPod } from './running-pod';
 import {
   EnvironmentVariablesResponse,
   UpdateEnvironmentVariablesDto,
@@ -47,9 +48,9 @@ export class EnvironmentVariablesService {
 
     await writeEnvJson(this.storageMountPath, env.directory, variables);
 
-    if (!dto?.restartApp || !env.podIp) return { ok: true, restart: 'none' };
+    if (!dto?.restartApp || !hasRunningPod(env)) return { ok: true, restart: 'none' };
 
-    const restarted = await this.tryControlRestart(env.id, env.podIp);
+    const restarted = await this.tryControlRestart(env.id);
     return { ok: true, restart: restarted ? 'app' : 'pod' };
   }
 
@@ -61,12 +62,12 @@ export class EnvironmentVariablesService {
     return env;
   }
 
-  private async tryControlRestart(environmentId: string, podIp: string): Promise<boolean> {
+  private async tryControlRestart(environmentId: string): Promise<boolean> {
     const token = await this.readControlToken(environmentId);
     if (!token) return false;
 
     try {
-      const response = await fetch(`http://${podIp}:${this.controlPort}/restart-app`, {
+      const response = await this.podService.podFetch(environmentId, this.controlPort, '/restart-app', {
         method: 'POST',
         headers: { 'x-control-token': token },
         signal: AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS),

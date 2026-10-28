@@ -11,7 +11,6 @@ export interface ProjectEnvironmentContext {
   isDefault: boolean;
   directory: string;
   status: ProjectStatus;
-  podIp: string | null;
   sessionId: string | null;
   platformVersion: string;
   authMode: ProjectAuthMode;
@@ -53,7 +52,6 @@ export interface CreateProjectEnvironmentInput {
 
 export interface ProjectEnvironmentPatch {
   status?: ProjectStatus;
-  podIp?: string | null;
   sessionId?: string | null;
   platformVersion?: string;
   authMode?: ProjectAuthMode;

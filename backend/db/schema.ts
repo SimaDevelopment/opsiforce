@@ -300,7 +300,6 @@ export const projectEnvironments = pgTable(
     isDefault: boolean("is_default").notNull().default(false),
     directory: text("directory").notNull(),
     status: projectStatusEnum("status").notNull().default("starting"),
-    podIp: text("pod_ip"),
     sessionId: text("session_id"),
     platformVersion: text("platform_version").notNull(),
     authMode: projectAuthModeEnum("auth_mode").notNull().default("public"),

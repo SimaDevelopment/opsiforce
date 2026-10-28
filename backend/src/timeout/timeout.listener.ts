@@ -66,7 +66,6 @@ export class TimeoutListener implements OnModuleInit, OnModuleDestroy {
       .update(projectEnvironments)
       .set({
         status: ProjectStatus.Suspended,
-        podIp: null,
         updatedAt: new Date(),
       })
       .where(

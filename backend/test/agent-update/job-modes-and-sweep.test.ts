@@ -75,7 +75,7 @@ let processor: AgentUpdateProcessor;
 const podReload = {
   reachable: true,
   notified: [] as Array<{ projectEnvironmentId: string; targets: NotifyTarget[] }>,
-  async notify(projectEnvironmentId: string, _podIp: string, targets: NotifyTarget[]): Promise<boolean> {
+  async notify(projectEnvironmentId: string, targets: NotifyTarget[]): Promise<boolean> {
     this.notified.push({ projectEnvironmentId, targets });
     return this.reachable;
   },
@@ -572,11 +572,17 @@ describe('a Job on an environment whose pod is running', () => {
   beforeAll(async () => {
     project = await harness.projects.create({ agentId: builtInAgentId }, tenantId, { createdBy: userId });
     await sweep();
-    await db.update(projectEnvironments).set({ podIp: '127.0.0.1' }).where(eq(projectEnvironments.id, project.id));
+    await db
+      .update(projectEnvironments)
+      .set({ status: ProjectStatus.Active })
+      .where(eq(projectEnvironments.id, project.id));
   });
 
   afterAll(async () => {
-    await db.update(projectEnvironments).set({ podIp: null }).where(eq(projectEnvironments.id, project.id));
+    await db
+      .update(projectEnvironments)
+      .set({ status: ProjectStatus.Starting })
+      .where(eq(projectEnvironments.id, project.id));
     podReload.reachable = true;
   });
 

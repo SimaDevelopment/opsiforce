@@ -23,7 +23,6 @@ const EXCLUDED_PROJECT_FIELDS = [
   'tenantId',
   'bifrostProjectId',
   'directory',
-  'podIp',
   'timeoutIdle',
   'appTimeoutIdle',
   'podClass',
@@ -39,7 +38,7 @@ const EXCLUDED_PROJECT_FIELDS = [
   'appUrl',
 ];
 
-const EXCLUDED_ENVIRONMENT_FIELDS = ['authMode', 'deployedCommitSha', 'directory', 'podIp', 'appUrl'];
+const EXCLUDED_ENVIRONMENT_FIELDS = ['authMode', 'deployedCommitSha', 'directory', 'appUrl'];
 
 interface ProjectBody {
   id: string;
