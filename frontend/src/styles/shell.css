@@ -1620,6 +1620,8 @@
     position: fixed;
     inset: 0;
     z-index: 180;
+    border: 0;
+    padding: 0;
     background: var(--scrim);
     opacity: 0;
     pointer-events: none;

@@ -131,7 +131,11 @@ export function CommandPalette() {
     return order;
   });
 
-  const flatIndex = (item: Item) => filtered().indexOf(item);
+  // the rows are rendered by group, so the cursor walks the grouped order,
+  // not the ranked one
+  const ordered = createMemo<Item[]>(() => groups().flatMap((group) => group.items));
+
+  const flatIndex = (item: Item) => ordered().indexOf(item);
 
   createEffect(() => {
     query();
@@ -166,7 +170,7 @@ export function CommandPalette() {
   });
 
   const move = (delta: number) => {
-    const total = filtered().length;
+    const total = ordered().length;
     if (total === 0) return;
     const next = (cursor() + delta + total) % total;
     setCursor(next);
@@ -191,7 +195,13 @@ export function CommandPalette() {
   });
 
   const onInputKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
+    // aria-modal does not contain focus by itself. The input is the only
+    // tab stop in the palette (the rows are reached with the arrow keys, as in
+    // any combobox) and the page behind is inert while it is open, so Tab in
+    // either direction simply stays put.
+    if (e.key === 'Tab') {
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       move(1);
     } else if (e.key === 'ArrowUp') {
@@ -199,31 +209,24 @@ export function CommandPalette() {
       move(-1);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const item = filtered()[cursor()];
+      const item = ordered()[cursor()];
       if (item) go(item.run);
     }
   };
 
-  // aria-modal does not contain focus by itself. Tab and Shift+Tab stay on the
-  // input, the rows are reached with the arrow keys as in any combobox, and the
-  // page behind is inert while the palette is open (see routes/__root.tsx).
-  const onDialogKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-    e.preventDefault();
-    inputRef?.focus();
-  };
-
   return (
     <>
-      <div class="of-scrim" data-open={open()} aria-hidden="true" onClick={() => setOpen(false)} />
-      <div
-        class="of-cmdk"
+      {/* a control, not a decorated div: clicking it closes, and it stays out
+          of the Tab order so the input keeps focus */}
+      <button
+        type="button"
+        class="of-scrim"
         data-open={open()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search everything"
-        onKeyDown={onDialogKeyDown}
-      >
+        tabindex={-1}
+        aria-label="Close search"
+        onClick={() => setOpen(false)}
+      />
+      <div class="of-cmdk" data-open={open()} role="dialog" aria-modal="true" aria-label="Search everything">
         <div class="of-cmdk-top">
           <Search class="w-4 h-4 shrink-0" style={{ color: 'var(--ink-subtle)' }} />
           <input
@@ -236,7 +239,7 @@ export function CommandPalette() {
             aria-label="Search projects, pages and actions"
             aria-autocomplete="list"
             aria-controls="of-cmdk-list"
-            aria-activedescendant={filtered()[cursor()] ? `of-cmdk-opt-${cursor()}` : undefined}
+            aria-activedescendant={ordered()[cursor()] ? `of-cmdk-opt-${cursor()}` : undefined}
             autocomplete="off"
             spellcheck={false}
           />

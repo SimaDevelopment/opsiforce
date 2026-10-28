@@ -276,20 +276,22 @@ export function AppSidebar() {
       <SidebarContent>
         {/* On /settings and /admin the sidebar becomes that section's navigation
           rather than letting a second rail open beside it. */}
-        <Show when={inSettings()}>
-          <SidebarSectionNav
-            title="Settings"
-            tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
-            groupOrder={SETTINGS_GROUP_ORDER}
-          />
-        </Show>
-        <Show when={inAdmin()}>
-          <SidebarSectionNav
-            title="Admin"
-            tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
-            groupOrder={ADMIN_GROUP_ORDER}
-          />
-        </Show>
+        <div class="group-data-[collapsible=icon]/sidebar:hidden">
+          <Show when={inSettings()}>
+            <SidebarSectionNav
+              title="Settings"
+              tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+              groupOrder={SETTINGS_GROUP_ORDER}
+            />
+          </Show>
+          <Show when={inAdmin()}>
+            <SidebarSectionNav
+              title="Admin"
+              tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+              groupOrder={ADMIN_GROUP_ORDER}
+            />
+          </Show>
+        </div>
         <Show when={!inSection()}>
           <div class="group-data-[collapsible=icon]/sidebar:hidden">
             <SidebarAttention />

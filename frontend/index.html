@@ -23,7 +23,7 @@
           var mode = get('opsiforce:appearance:mode', ['light', 'dark', 'system'], 'system');
           var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           root.setAttribute('data-scheme', dark ? 'dark' : 'light');
-          root.setAttribute('data-contrast', get('opsiforce:appearance:contrast', ['normal', 'high'], 'normal'));
+          root.setAttribute('data-contrast', get('opsiforce:appearance:contrast', ['softer', 'normal', 'high'], 'normal'));
           root.setAttribute(
             'data-density',
             get('opsiforce:appearance:density', ['comfortable', 'default', 'compact'], 'comfortable')

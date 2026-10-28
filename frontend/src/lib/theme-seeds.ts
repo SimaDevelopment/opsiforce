@@ -6,8 +6,8 @@ import {
   hexToRgb,
   mixColors,
   withAlpha,
-  type HexColor,
 } from '@opencode/ui/theme/color';
+import type { HexColor } from '@opencode/ui/theme/types';
 
 /**
  * Theme seeds — the two colours the whole interface is mixed from.
