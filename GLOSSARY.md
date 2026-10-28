@@ -7,7 +7,7 @@ AI coding-assistant platform: users converse with an agent inside a Kubernetes p
 ### Organization
 
 **Organization**:
-The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the code and the public API contract — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
+The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Sign-in providers, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the code and the public API contract — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
 _Avoid_: Tenant (internal name only — never user-facing); Account (collides with the user's login); Workspace (a grouping *within* an Organization, not the Organization itself)
 
 **Workspace**:
@@ -172,15 +172,19 @@ Stopping a Project without losing it: every ProjectEnvironment's pod is deleted 
 _Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
 
 **App Auth**:
-Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **managed** (a shared identity provider configured by the platform operator, scoped to the tenant). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
+Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **provider** (one of the Organization's Sign-in providers). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
 _Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)
 
 **Auth mode**:
-The chosen App Auth setting for one ProjectEnvironment — `public`, `manual`, or `managed` (the stored identifier is `auth_mode`).
+The chosen App Auth setting for one ProjectEnvironment — `public`, `manual` or `provider` (the stored identifier is `auth_mode`).
 _Avoid_: Auth type, Auth provider
 
+**Sign-in provider**:
+An OIDC app an Organization admin registers once — issuer, client ID, client secret, scopes and an optional required claim — so that the Organization's members sign in to its Apps with it. It is shared by every App whose Auth mode is `provider` and names it.
+_Avoid_: Organization provider, Identity provider (the vendor product, not this record), Custom auth, SSO app
+
 **Token forwarding**:
-An opt-in App Auth setting, available only in manual mode, that passes the signed-in visitor's access token from the owner's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
+An opt-in App Auth setting, available in manual and provider modes, that passes the signed-in visitor's access token from the App's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
 _Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
 
 **Resources**:
@@ -534,7 +538,7 @@ _Avoid_: Chat (one input to Agent activity, not a category of its own); Heartbea
 ### Administration
 
 **Settings**:
-The permission-gated surface where a member **configures** the Organization currently chosen in the selector — its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. One destination with one section per area; each section is independently gated, so a member sees only the areas they may manage. It changes stored configuration; the running-state counterpart is Admin.
+The permission-gated surface where a member **configures** the Organization currently chosen in the selector — its Workspaces, Users, Billing, Defaults, Sign-in providers, and Environment registry. One destination with one section per area; each section is independently gated, so a member sees only the areas they may manage. It changes stored configuration; the running-state counterpart is Admin.
 _Avoid_: Tenant Settings (retired user-facing label — the old modal that held only Integrations + Environments); Config (non-canonical); Admin (the operational sibling — a separate destination, not a synonym for Settings); conflating with Defaults (one section within Settings, not the whole)
 
 **Admin**:

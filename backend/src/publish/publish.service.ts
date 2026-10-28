@@ -185,6 +185,7 @@ export class PublishService implements OnApplicationBootstrap {
           platformVersion: this.platformVersion,
           status: ProjectStatus.Publishing,
           authMode: devEnv.authMode,
+          signInProviderId: devEnv.signInProviderId,
         });
       } catch (err) {
         if (isProjectEnvironmentConflict(err)) {

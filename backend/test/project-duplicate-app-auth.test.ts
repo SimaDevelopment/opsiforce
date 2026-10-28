@@ -1,18 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDomainTestingModule, type DomainTestHarness } from './support/domain';
 
 let harness: DomainTestHarness;
 
 beforeAll(async () => {
-  vi.stubEnv('MANAGED_OIDC_CLIENT_SECRET', 'managed-secret');
-  vi.stubEnv('MANAGED_OIDC_ISSUER_URL', 'https://sso.example-org.test/realms/apps');
   harness = await createDomainTestingModule();
 });
 
 afterAll(async () => {
   await harness.close();
-  vi.unstubAllEnvs();
 });
 
 const customerIdp = {
@@ -21,9 +18,9 @@ const customerIdp = {
   discoveryUrl: 'https://idp.example-org.test/.well-known/openid-configuration',
 };
 
-async function newTenant(): Promise<{ tenantId: string; tenantName: string }> {
+async function newTenant(): Promise<{ tenantId: string }> {
   const tenant = await harness.tenants.getOrCreateTenant(`duplicate-auth-${randomUUID()}`);
-  return { tenantId: tenant.id, tenantName: tenant.name };
+  return { tenantId: tenant.id };
 }
 
 describe('Duplicate keeps App Auth on the copy', () => {
@@ -45,23 +42,6 @@ describe('Duplicate keeps App Auth on the copy', () => {
       config: customerIdp,
       bypassAuthPaths: ['/health'],
     });
-  });
-
-  it("gates a copy of a managed App whose gate is gone with the Organization's managed sign-in", async () => {
-    const { tenantId, tenantName } = await newTenant();
-    const source = await harness.projects.create({ title: 'Managed' }, tenantId);
-    await harness.projects.updateAuth(
-      source.id,
-      source.id,
-      { mode: 'managed', bypassAuthPaths: ['/webhooks'] },
-      tenantId
-    );
-    harness.fakes.projectAuth.loseGate(source.id);
-
-    const copy = await harness.projects.duplicate(source.id, tenantId, undefined, null);
-
-    expect(copy.authMode).toBe('managed');
-    expect(harness.fakes.projectAuth.gateOf(copy.id)).toEqual({ mode: 'managed', tenantName, bypassAuthPaths: [] });
   });
 
   it('refuses to make a copy of a manual App whose sign-in settings cannot be read', async () => {

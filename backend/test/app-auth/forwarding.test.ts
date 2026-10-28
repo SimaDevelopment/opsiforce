@@ -2,10 +2,10 @@ import 'reflect-metadata';
 import { createHmac } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProjectAuthService } from '../src/project/project-auth.service';
+import { ProjectAuthService } from '../../src/project/project-auth.service';
 
 const kube = vi.hoisted(() => ({ createNamespacedCustomObject: vi.fn(), getNamespacedCustomObject: vi.fn() }));
-vi.mock('../src/common/k8s-client', () => ({ loadKubeConfig: () => ({ makeApiClient: () => kube }) }));
+vi.mock('../../src/common/k8s-client', () => ({ loadKubeConfig: () => ({ makeApiClient: () => kube }) }));
 const key = 'k'.repeat(32);
 const ENV_A = { id: 'env-a', environmentSlug: null, shortId: 'enva00000000' };
 const ENV_B = { id: 'env-b', environmentSlug: null, shortId: 'envb00000000' };
@@ -22,7 +22,6 @@ function service(secret = key) {
       webappServiceName: 'proxy',
       webappServicePort: 3002,
       oidcPluginSecret: 'cookie-encryption-secret-for-test',
-      managedOidcClientId: 'managed',
       appAuthForwardingSigningKey: secret,
     })
   );
@@ -83,5 +82,25 @@ describe('per-environment forwarded token forwarding', () => {
   it('disabling removes token and proof headers', async () => {
     await service().apply(ENV_A, { ...config, forwardAccessToken: false });
     expect(spec().Headers).toHaveLength(2);
+  });
+});
+describe('values the OIDC plugin would expand', () => {
+  it.each([
+    { clientId: '${file:/var/run/secrets/kubernetes.io/serviceaccount/token}' },
+    { clientSecret: '${KUBERNETES_SERVICE_HOST}' },
+    { discoveryUrl: '${file:/etc/hostname}/.well-known/openid-configuration' },
+  ])('refuses %o before writing', async (reference) => {
+    await expect(service().apply(ENV_A, { ...config, ...reference })).rejects.toThrow('${file:/path}');
+    expect(kube.createNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+  it('refuses a preserved client secret that would expand', async () => {
+    kube.getNamespacedCustomObject.mockResolvedValue({
+      spec: { plugin: { 'traefik-oidc-auth': { Provider: { ClientSecret: '${file:/etc/hostname}' } } } },
+    });
+    await expect(service().apply(ENV_A, { ...config, clientSecret: '' })).rejects.toThrow('${file:/path}');
+  });
+  it('accepts values that only contain ${', async () => {
+    await service().apply(ENV_A, { ...config, clientSecret: 'a${b}' });
+    expect(spec().Provider.ClientSecret).toBe('a${b}');
   });
 });

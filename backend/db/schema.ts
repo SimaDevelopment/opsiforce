@@ -48,7 +48,7 @@ export const projectStatusEnum = pgEnum("project_status", [
 
 export const keyTypeEnum = pgEnum("key_type", ["chat", "backend"])
 
-export const projectAuthModeEnum = pgEnum("project_auth_mode", ["public", "manual", "managed"])
+export const projectAuthModeEnum = pgEnum("project_auth_mode", ["public", "manual", "provider"])
 
 export const requestLogModeEnum = pgEnum("request_log_mode", ["off", "metadata", "full"])
 
@@ -110,7 +110,6 @@ export const tenantSettings = pgTable("tenant_settings", {
   tenantId: text("tenant_id")
     .primaryKey()
     .references(() => tenants.id, { onDelete: "cascade" }),
-  externalTenantName: text("external_tenant_name").notNull().unique(),
   privateWorkspaceEnabled: boolean("private_workspace_enabled").notNull().default(true),
 })
 
@@ -286,6 +285,27 @@ export const environments = pgTable(
   ],
 )
 
+export const signInProviders = pgTable(
+  "sign_in_providers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    discoveryUrl: text("discovery_url").notNull(),
+    clientId: text("client_id").notNull(),
+    clientSecret: text("client_secret").notNull(),
+    scope: text("scope").notNull().default("openid profile email"),
+    requiredClaimName: text("required_claim_name"),
+    requiredClaimValues: jsonb("required_claim_values").$type<string[]>().notNull().default([]),
+    groupsClaim: text("groups_claim"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("sign_in_providers_tenant_id_name_unique").on(table.tenantId, table.name)],
+)
+
 const assignedByInsertTrigger = () => sql`default`
 
 export const projectEnvironments = pgTable(
@@ -303,6 +323,7 @@ export const projectEnvironments = pgTable(
     sessionId: text("session_id"),
     platformVersion: text("platform_version").notNull(),
     authMode: projectAuthModeEnum("auth_mode").notNull().default("public"),
+    signInProviderId: uuid("sign_in_provider_id").references(() => signInProviders.id),
     deployedCommitSha: text("deployed_commit_sha"),
     lastActiveAt: timestamp("last_active_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -316,6 +337,11 @@ export const projectEnvironments = pgTable(
     index("idx_project_environments_project").on(table.projectId),
     index("idx_project_environments_status").on(table.status),
     index("idx_project_environments_environment").on(table.environmentId),
+    index("idx_project_environments_sign_in_provider").on(table.signInProviderId),
+    check(
+      "project_environments_sign_in_provider_check",
+      sql`(${table.authMode}::text = 'provider') = (${table.signInProviderId} is not null)`,
+    ),
   ],
 )
 

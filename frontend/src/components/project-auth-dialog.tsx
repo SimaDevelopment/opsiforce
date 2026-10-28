@@ -28,7 +28,11 @@ export function ProjectAuthDialog(props: {
                 </div>
               }
             >
-              <ProjectAuthTab projectId={props.projectId} environmentId={props.environmentId} />
+              <ProjectAuthTab
+                projectId={props.projectId}
+                environmentId={props.environmentId}
+                onSaved={() => props.onOpenChange(false)}
+              />
             </Show>
           </Show>
         </div>

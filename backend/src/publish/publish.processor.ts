@@ -105,7 +105,7 @@ export class PublishProcessor extends WorkerHost {
       await this.writeEnvFile(prodEnv.directory, data.variables, data.isFirstPublish);
 
       if (data.isFirstPublish) {
-        await this.projectService.inheritAuth(devEnv, prodEnv, data.tenantId);
+        await this.projectService.inheritAuth(devEnv, prodEnv);
       }
 
       phase = PublishStatus.Building;

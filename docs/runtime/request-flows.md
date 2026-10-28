@@ -66,7 +66,8 @@ flowchart LR
 - When the Kubernetes API is unavailable, ensure answers 5xx and nothing else compensates; the frontend retries.
 - When a client vanishes without closing (sleep, network loss), TCP keepalive detects it within a few minutes and the surface falls back to its idle timeout.
 - When a Project is deleted, every environment's pod is deleted, its keep-alive keys are cleared, the Bifrost team is revoked and each environment is tombstoned before its row goes ([Persistence](persistence.md)).
-- When an App sets a cookie of its own named `_opsiforce_…`, the app proxy deletes it from every request to that App.
+- When an App sets a cookie of its own named `_opsiforce_…`, the app proxy drops that `Set-Cookie` and deletes any such cookie from every request to that App.
+- When a request signed in by App Auth comes from another origin, such as another App, the app proxy sends no CORS headers and removes the App's own, so a script there cannot read the answer.
 
 ## Code
 

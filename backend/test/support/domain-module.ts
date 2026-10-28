@@ -59,6 +59,7 @@ import { PodCacheService } from '../../src/pod/pod.cache.service';
 import { PodService } from '../../src/pod/pod.service';
 import { ProxyService } from '../../src/proxy/proxy.service';
 import { ScheduleService } from '../../src/schedule/schedule.service';
+import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { TenantService } from '../../src/tenant/tenant.service';
 import { TimeoutService } from '../../src/timeout/timeout.service';
 import { UserService } from '../../src/user/user.service';
@@ -120,6 +121,7 @@ const REAL_SERVICES = [
   ProjectService,
   ProxyService,
   PublicUrlService,
+  SecretSealer,
   SkillDeliveryRepository,
   SkillDeliveryService,
   SkillSwitchRepository,
