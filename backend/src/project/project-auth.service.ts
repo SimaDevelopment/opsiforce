@@ -419,6 +419,7 @@ export class ProjectAuthService {
   private async preserveClientSecret(routingId: string, config: ProjectAuthOidcConfig): Promise<ProjectAuthOidcConfig> {
     if (config.clientSecret?.trim()) return config;
     const existing = await this.readPluginSpec(routingId);
+    if (existing?.CookieNamePrefix?.startsWith(SIGN_IN_COOKIE_PREFIX)) return config;
     const preserved = existing?.Provider?.ClientSecret;
     if (!preserved) return config;
     return { ...config, clientSecret: preserved };

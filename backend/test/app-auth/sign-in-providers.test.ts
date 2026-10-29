@@ -241,6 +241,47 @@ describe('Organization sign-in providers', () => {
     expect(auth.callsTo('apply').filter((c) => c.args.environmentId === envId)).toEqual([]);
   });
 
+  it('refuses a manual save without a secret that waited behind a switch to a provider', async () => {
+    const tenant = await createTenant(app);
+    const provider = await createProvider(await adminOf(tenant));
+    const projectId = await createProject(app, tenant);
+    const envId = await defaultEnvironmentOf(projectId);
+    const projects = app.get(ProjectService);
+    await projects.updateAuth(
+      projectId,
+      envId,
+      {
+        mode: 'manual',
+        config: { clientId: 'mine', clientSecret: 'mine', discoveryUrl: 'https://id.example-org.com' },
+      },
+      tenant.tenantId
+    );
+    const manualWrites = () => auth.callsTo('apply').filter((c) => c.args.environmentId === envId).length;
+    const before = manualWrites();
+
+    const hold = auth.holdNextApplyFor(envId);
+    const toProvider = projects.updateAuth(
+      projectId,
+      envId,
+      { mode: 'provider', signInProviderId: provider.id },
+      tenant.tenantId
+    );
+    await hold.reached;
+    const keepSecret = projects.updateAuth(
+      projectId,
+      envId,
+      { mode: 'manual', config: { clientId: 'mine', discoveryUrl: 'https://attacker.example' } },
+      tenant.tenantId
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    hold.release();
+
+    await expect(keepSecret).rejects.toThrow('clientSecret is required');
+    await toProvider;
+    expect(manualWrites()).toBe(before);
+    expect(auth.gateOf(envId)).toMatchObject({ mode: 'provider', providerId: provider.id });
+  });
+
   it('gives a duplicate the same provider and a copy of its gate', async () => {
     const tenant = await createTenant(app);
     const provider = await createProvider(await adminOf(tenant));

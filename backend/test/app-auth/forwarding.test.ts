@@ -99,6 +99,20 @@ describe('values the OIDC plugin would expand', () => {
     });
     await expect(service().apply(ENV_A, { ...config, clientSecret: '' })).rejects.toThrow('${file:/path}');
   });
+  it("never keeps a Sign-in provider's secret for a manual configuration", async () => {
+    kube.getNamespacedCustomObject.mockResolvedValue({
+      spec: {
+        plugin: {
+          'traefik-oidc-auth': {
+            CookieNamePrefix: '_opsiforce_sp_provider-1',
+            Provider: { ClientSecret: 'org-secret' },
+          },
+        },
+      },
+    });
+    await expect(service().apply(ENV_A, { ...config, clientSecret: '' })).rejects.toThrow('clientSecret');
+    expect(kube.createNamespacedCustomObject).not.toHaveBeenCalled();
+  });
   it('accepts values that only contain ${', async () => {
     await service().apply(ENV_A, { ...config, clientSecret: 'a${b}' });
     expect(spec().Provider.ClientSecret).toBe('a${b}');

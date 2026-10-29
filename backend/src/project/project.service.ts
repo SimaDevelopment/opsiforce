@@ -1309,10 +1309,6 @@ export class ProjectService implements OnApplicationBootstrap {
     if (!SELECTABLE_AUTH_MODES.includes(dto.mode)) {
       throw new BadRequestException(`Unknown or unavailable auth mode: ${String(dto.mode)}`);
     }
-    if (dto.mode === 'manual' && env.authMode !== 'manual' && !dto.config?.clientSecret?.trim()) {
-      throw new BadRequestException('clientSecret is required when switching to manual auth');
-    }
-
     if (dto.mode === 'provider' && !dto.signInProviderId) {
       throw new BadRequestException('signInProviderId is required for the provider mode');
     }
@@ -1321,7 +1317,10 @@ export class ProjectService implements OnApplicationBootstrap {
         ? await findTenantSignInProvider(tenantId, dto.signInProviderId)
         : null;
 
-    await withEnvironmentAuthLock(env.id, async (tx) => {
+    await withEnvironmentAuthLock(env.id, async (tx, current) => {
+      if (dto.mode === 'manual' && current?.authMode !== 'manual' && !dto.config?.clientSecret?.trim()) {
+        throw new BadRequestException('clientSecret is required when switching to manual auth');
+      }
       if (dto.mode === 'manual') {
         await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
       } else if (provider) {
