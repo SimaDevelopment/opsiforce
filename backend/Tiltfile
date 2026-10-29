@@ -1,6 +1,6 @@
 # -*- mode: Python -*-
 
-load('ext://restart_process', 'docker_build_with_restart')
+load('./minikube-images.tilt', 'minikube_build')
 
 # Layout-aware build contexts. The same sources build in two layouts:
 #   monorepo  build context = monorepo root, sources under `packages/opsiforce/`
@@ -26,7 +26,7 @@ backend_only = [
     pkg_prefix + 'agent-config',
 ]
 
-docker_build(
+minikube_build(
     'opsiforce-backend',
     context=build_context,
     dockerfile='../docker/Dockerfile.backend.dev',
@@ -111,7 +111,7 @@ k8s_resource(
 # Go binaries (mode={agent,app,vscode,db,external-service}). Deployed in the same namespace
 # as backend + agents so RBAC stays namespaced and service references
 # resolve via short name.
-docker_build_with_restart(
+minikube_build(
     'opsiforce-runtime-proxy',
     context=build_context,
     dockerfile='../docker/Dockerfile.runtime-proxy.dev',
@@ -150,7 +150,7 @@ k8s_resource(workload='proxy-external-service', new_name='runtime-proxies-extern
 # ───────────────────────── Linked-account proxy ─────────────────────────
 # Stateless Node server Bifrost reaches at http://opsiforce-linked-account-proxy:8455/v1 for
 # signed-in ChatGPT accounts; it fetches each account's token from the backend.
-docker_build_with_restart(
+minikube_build(
     'opsiforce-linked-account-proxy',
     context=build_context,
     dockerfile='../docker/Dockerfile.linked-account-proxy',
