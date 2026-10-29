@@ -1,0 +1,4 @@
+[Default Applications]
+text/html=opsiforce-browser.desktop
+x-scheme-handler/http=opsiforce-browser.desktop
+x-scheme-handler/https=opsiforce-browser.desktop

@@ -55,6 +55,7 @@ export function ProjectView(props: ProjectViewProps) {
   const [visitedTabs, setVisitedTabs] = createSignal<Set<ProjectTab>>(new Set<ProjectTab>(['chat']));
   const [activeEnvironmentId, setActiveEnvironmentId] = createSignal(props.projectId);
   const [previewRequest, setPreviewRequest] = createSignal<FilePreviewRequest | null>(null);
+  const [previewHasContents, setPreviewHasContents] = createSignal(false);
 
   const previewFile = (path: string) => setPreviewRequest({ path });
   const closePreview = () => setPreviewRequest(null);
@@ -123,7 +124,7 @@ export function ProjectView(props: ProjectViewProps) {
     onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
   const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
-  const previewVisible = () => app()?.exists === true || previewRequest() !== null;
+  const previewVisible = () => app()?.exists === true || previewRequest() !== null || previewHasContents();
 
   createEffect(
     on([() => statusQuery.data !== undefined, previewVisible], ([loaded, visible], previous) => {
@@ -142,7 +143,7 @@ export function ProjectView(props: ProjectViewProps) {
         direction: 'right',
       })
     : undefined;
-  const contentFills = () => !strip || (strip.alone() && !previewVisible());
+  const contentFills = () => !previewVisible() && (!strip || strip.alone());
 
   const [agentIdleToken, setAgentIdleToken] = createSignal(0);
 
@@ -200,10 +201,10 @@ export function ProjectView(props: ProjectViewProps) {
         </Show>
       </div>
 
-      <div class="relative flex-1 min-h-0 flex">
+      <div class={cn('relative flex-1 min-h-0 flex', !strip && 'overflow-x-auto')}>
         <div
           class={cn('relative flex min-h-0', contentFills() ? 'flex-1 min-w-0' : 'shrink-0', strip && 'snap-start')}
-          style={contentFills() || !chatColumn ? undefined : { width: `${chatColumn.width()}px` }}
+          style={contentFills() ? undefined : { width: chatColumn ? `${chatColumn.width()}px` : 'min(480px, 85vw)' }}
         >
           <div
             class="flex-1 min-w-0 flex flex-col oc-chat-only"
@@ -290,26 +291,26 @@ export function ProjectView(props: ProjectViewProps) {
           </Show>
         </div>
 
-        <Show when={previewVisible()}>
-          <ProjectPreviewPanel
-            projectId={props.projectId}
-            environmentId={activeEnvironmentId()}
-            publicUrl={activeEnvironment()?.publicUrl ?? null}
-            hasApp={app()?.exists === true}
-            appName={app()?.name ?? undefined}
-            previewRequest={previewRequest()}
-            onClosePreview={closePreview}
-            onReloadRef={onReloadRef}
-            onCloseOverlayRef={onCloseOverlayRef}
-            overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
-            column={
-              strip && {
-                storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,
-                stripWidth: strip.width,
-              }
+        <ProjectPreviewPanel
+          desktopEnabled={connectionStatus() === 'active'}
+          onContentsChange={setPreviewHasContents}
+          projectId={props.projectId}
+          environmentId={activeEnvironmentId()}
+          publicUrl={activeEnvironment()?.publicUrl ?? null}
+          hasApp={app()?.exists === true}
+          appName={app()?.name ?? undefined}
+          previewRequest={previewRequest()}
+          onClosePreview={closePreview}
+          onReloadRef={onReloadRef}
+          onCloseOverlayRef={onCloseOverlayRef}
+          overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
+          column={
+            strip && {
+              storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,
+              stripWidth: strip.width,
             }
-          />
-        </Show>
+          }
+        />
       </div>
     </div>
   );

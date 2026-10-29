@@ -196,6 +196,11 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(upstreamPath, "/_desktop/") && !desktopOriginAllowed(r) {
+		writeJSONStatus(w, http.StatusForbidden, []byte(`{"error":"Desktop requests must be same-origin"}`))
+		return
+	}
+
 	ensured, err := s.resolve(r.Context(), projectID, backend.SurfaceAgent, r.Header, authSignature(r.Header))
 	if err != nil {
 		s.writeEnsureError(w, err)
@@ -219,6 +224,21 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.serveReverseProxy(w, r, projectID, targetURL, reverseProxyOptions{stripUserIdentity: true})
+}
+
+// Desktop input and lifecycle changes use the existing project authorization.
+// Also reject cross-site WebSocket handshakes and browser mutations (CSRF).
+func desktopOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return !isUpgradeRequest(r)
+	} // CLI calls still require project authorization.
+	parsed, err := url.Parse(origin)
+	// Opsiforce's browser origin is HTTPS. The internal oauth2/nginx hops
+	// are HTTP and may replace X-Forwarded-Proto, so do not infer the
+	// browser's scheme from the last hop.
+	return err == nil && parsed.Scheme == "https" &&
+		strings.EqualFold(parsed.Host, r.Host) && parsed.User == nil && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {

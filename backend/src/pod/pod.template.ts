@@ -41,6 +41,7 @@ export interface PodTemplateOptions {
 
 export const AGENT_PODS_SERVICE = 'opsiforce-agents';
 
+const SHARED_MEMORY_VOLUME = 'shared-memory';
 const CA_BUNDLE_VOLUME = 'ca-bundle';
 const CA_BUNDLE_DIRECTORY = '/etc/opsiforce/ca';
 const CA_BUNDLE_FILE = `${CA_BUNDLE_DIRECTORY}/ca-certificates.crt`;
@@ -178,9 +179,13 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
               ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),
           ],
-          volumeMounts: options.caBundleConfigMap
-            ? [...volumeMounts, { name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
-            : volumeMounts,
+          volumeMounts: [
+            ...volumeMounts,
+            { name: SHARED_MEMORY_VOLUME, mountPath: '/dev/shm' },
+            ...(options.caBundleConfigMap
+              ? [{ name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
+              : []),
+          ],
           readinessProbe: {
             httpGet: {
               path: '/api/info',
@@ -198,6 +203,9 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       ],
       volumes: [
         buildStorageVolume(options),
+        // Chromium/Electron need more than the runtime's default 64 MiB.
+        // This is a ceiling, not a reservation; usage counts toward agent memory.
+        { name: SHARED_MEMORY_VOLUME, emptyDir: { medium: 'Memory', sizeLimit: '512Mi' } },
         ...(options.caBundleConfigMap
           ? [{ name: CA_BUNDLE_VOLUME, configMap: { name: options.caBundleConfigMap } }]
           : []),

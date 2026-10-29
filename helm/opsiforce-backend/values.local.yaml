@@ -1,4 +1,7 @@
 replicaCount: 1
+# Avoid two memory-heavy TypeScript watch processes during local rollouts.
+deploymentStrategy:
+  type: Recreate
 terminationGracePeriodSeconds: 45
 
 fullnameOverride: opsiforce-backend

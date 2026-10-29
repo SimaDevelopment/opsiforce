@@ -6,6 +6,10 @@ metadata:
     app: {{ include "opsiforce-backend.fullname" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- with .Values.deploymentStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       app: {{ include "opsiforce-backend.fullname" . }}
