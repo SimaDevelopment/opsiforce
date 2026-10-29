@@ -64,10 +64,6 @@ config:
   webappServiceName: ""
   webappServicePort: "3002"
   oidcPluginSecret: ""
-  managedOidcClientId: ""
-  managedOidcClientSecret: ""
-  managedOidcIssuerUrl: ""
-  managedTenantRolePrefix: ""
   ssoGroupMap: ""
   defaultTenantName: ""
   # Empty uses the cluster default runtime (Azure and local development).

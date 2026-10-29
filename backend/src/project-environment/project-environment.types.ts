@@ -14,6 +14,7 @@ export interface ProjectEnvironmentContext {
   sessionId: string | null;
   platformVersion: string;
   authMode: ProjectAuthMode;
+  signInProviderId: string | null;
   deployedCommitSha: string | null;
   lastActiveAt: Date | null;
   createdAt: Date;
@@ -47,6 +48,7 @@ export interface CreateProjectEnvironmentInput {
   platformVersion: string;
   status?: ProjectStatus;
   authMode?: ProjectAuthMode;
+  signInProviderId?: string | null;
   deployedCommitSha?: string | null;
 }
 

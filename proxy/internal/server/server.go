@@ -41,6 +41,7 @@ var (
 )
 
 var unprotectedRouteBody = []byte(`{"error":"App sign-in is not configured for this host"}`)
+var crossOriginUpgradeBody = []byte(`{"error":"A signed-in connection upgrade must come from the App's own origin"}`)
 
 const (
 	logModeOff      = "off"
@@ -223,9 +224,16 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	stripPlatformCookies(r.Header)
-	setCORSHeaders(w, r)
+	crossOriginSignIn := signedInFromAnotherOrigin(r)
+	if !crossOriginSignIn {
+		setCORSHeaders(w, r)
+	}
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if crossOriginSignIn && isUpgradeRequest(r) {
+		writeJSONStatus(w, http.StatusForbidden, crossOriginUpgradeBody)
 		return
 	}
 
@@ -299,6 +307,9 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if crossOriginSignIn {
+		dropCORSHeaders(responseResult.headers)
+	}
 	writeHeaderMap(w.Header(), responseResult.headers)
 	if forwarded {
 		w.Header().Set("Cache-Control", "no-store")
@@ -830,6 +841,7 @@ func stripUserIdentityHeaders(headers http.Header) {
 
 func sanitizeReverseProxyHeaders(headers http.Header, stripFrameHeaders bool) {
 	stripReservedHeaders(headers)
+	dropPlatformSetCookies(headers)
 	headers.Del("Transfer-Encoding")
 	if stripFrameHeaders {
 		headers.Del("Content-Length")
@@ -856,6 +868,7 @@ func filterResponseHeaders(source http.Header, stripFrameHeaders bool) http.Head
 		}
 	}
 
+	dropPlatformSetCookies(target)
 	return target
 }
 

@@ -30,7 +30,6 @@ import {
   projectSchedules,
   workspaceMembers,
   workspaces,
-  tenants,
   tenantSettings,
   projectDuplicateJobs,
   projectTransferJobs,
@@ -75,6 +74,7 @@ import type {
   ExportManifestSettings,
   JsonValue,
 } from '../export/project-export.types';
+import { withEnvironmentAuthLock } from './environment-auth-lock';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -85,7 +85,6 @@ import {
   ProjectKind,
   ProjectStatus,
   ProjectState,
-  ProjectAuthMode,
   ProjectAuthResponse,
   UpdateProjectAuthDto,
   UpdateAppDto,
@@ -96,7 +95,7 @@ import {
   REQUEST_LOG_BODY_LIMIT_MAX,
   TEST_PROJECT_KIND,
   isChatKind,
-  availableAuthModes,
+  SELECTABLE_AUTH_MODES,
 } from './project.types';
 import {
   buildPodClassCatalog,
@@ -202,6 +201,8 @@ function validateAppDescription(value: unknown): string | null {
 }
 import { appSignInCallbackUrls, type AppAuthRouteTarget } from './app-auth-route';
 import { ProjectAuthService } from './project-auth.service';
+import { connectionOf, findTenantSignInProvider } from '../sign-in-provider/sign-in-provider-rows';
+import { SecretSealer } from '../sealing/secret-sealer';
 import { ProjectEventsService } from './project-events.service';
 import { AppService, appSlugOfNewApp } from './app.service';
 import { AppReadinessService } from './app-readiness.service';
@@ -298,6 +299,7 @@ export class ProjectService implements OnApplicationBootstrap {
     @Inject(forwardRef(() => ScheduleService))
     private readonly scheduleService: ScheduleService,
     private readonly projectAuthService: ProjectAuthService,
+    private readonly sealer: SecretSealer,
     private readonly projectEventsService: ProjectEventsService,
     private readonly appService: AppService,
     private readonly appReadiness: AppReadinessService,
@@ -658,6 +660,7 @@ export class ProjectService implements OnApplicationBootstrap {
     createdBy: string | null
   ): Promise<ProjectResponse> {
     const source = await this.findOne(sourceId, tenantId);
+    const sourceAuth = await this.projectEnvironmentService.findById(source.id);
     const parentProjectId = source.createdByProjectId;
     await this.assertNoActiveGitOperation(source.id);
 
@@ -717,7 +720,8 @@ export class ProjectService implements OnApplicationBootstrap {
           directory,
           platformVersion,
           status: ProjectStatus.Starting,
-          authMode: source.authMode,
+          authMode: sourceAuth.authMode,
+          signInProviderId: sourceAuth.signInProviderId,
         })
         .returning({ shortId: projectEnvironments.shortId, authMode: projectEnvironments.authMode });
 
@@ -762,7 +766,7 @@ export class ProjectService implements OnApplicationBootstrap {
     await this.discardOnFailure(id, async () => {
       await this.createBifrostResources(id, tenantId);
       await this.createGatewayKey(id, id, tenantId);
-      await this.inheritAuth(source, await this.projectEnvironmentService.findById(id), tenantId);
+      await this.inheritAuth(source, await this.projectEnvironmentService.findById(id));
       await this.enqueueDuplicateJob({
         duplicateJobId,
         sourceProjectId: source.id,
@@ -1283,7 +1287,15 @@ export class ProjectService implements OnApplicationBootstrap {
     const callbackUrls = appSignInCallbackUrls(env, this.configService.getOrThrow<string>('appsHostname'));
     if (env.authMode === 'public') return { mode: 'public', callbackUrls };
     const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
-    if (env.authMode === 'managed') return { mode: 'managed', bypassAuthPaths, callbackUrls };
+    if (env.authMode === 'provider') {
+      return {
+        mode: 'provider',
+        signInProviderId: env.signInProviderId ?? undefined,
+        config: { forwardAccessToken: config?.forwardAccessToken },
+        bypassAuthPaths,
+        callbackUrls: [],
+      };
+    }
     return { mode: 'manual', config, bypassAuthPaths, callbackUrls };
   }
 
@@ -1294,40 +1306,52 @@ export class ProjectService implements OnApplicationBootstrap {
     tenantId: string
   ): Promise<ProjectAuthResponse> {
     const env = await this.resolveProjectEnvironment(projectId, environmentId, tenantId);
-    const allowedModes = availableAuthModes({
-      managedOidcClientSecret: this.configService.get<string>('managedOidcClientSecret'),
-      managedOidcIssuerUrl: this.configService.get<string>('managedOidcIssuerUrl'),
-    });
-    if (!allowedModes.includes(dto.mode)) {
+    if (!SELECTABLE_AUTH_MODES.includes(dto.mode)) {
       throw new BadRequestException(`Unknown or unavailable auth mode: ${String(dto.mode)}`);
     }
-
-    if (dto.mode === 'manual') {
-      await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
-    } else if (dto.mode === 'managed') {
-      const externalTenantName = await this.findExternalTenantName(tenantId);
-      await this.projectAuthService.applyManaged(env, externalTenantName, dto.bypassAuthPaths);
-    } else {
-      await this.projectAuthService.remove(env.id);
+    if (dto.mode === 'provider' && !dto.signInProviderId) {
+      throw new BadRequestException('signInProviderId is required for the provider mode');
     }
+    const provider =
+      dto.mode === 'provider' && dto.signInProviderId
+        ? await findTenantSignInProvider(tenantId, dto.signInProviderId)
+        : null;
 
-    await db
-      .update(projectEnvironments)
-      .set({ authMode: dto.mode, updatedAt: new Date() })
-      .where(eq(projectEnvironments.id, env.id));
+    await withEnvironmentAuthLock(env.id, async (tx, current) => {
+      if (dto.mode === 'manual' && current?.authMode !== 'manual' && !dto.config?.clientSecret?.trim()) {
+        throw new BadRequestException('clientSecret is required when switching to manual auth');
+      }
+      if (dto.mode === 'manual') {
+        await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
+      } else if (provider) {
+        await this.projectAuthService.applyProvider(
+          env,
+          connectionOf(this.sealer, provider),
+          dto.config?.forwardAccessToken,
+          dto.bypassAuthPaths
+        );
+      } else {
+        await this.projectAuthService.remove(env.id);
+      }
+      await tx
+        .update(projectEnvironments)
+        .set({ authMode: dto.mode, signInProviderId: provider?.id ?? null, updatedAt: new Date() })
+        .where(eq(projectEnvironments.id, env.id));
+    });
 
     return this.getAuth(projectId, env.id, tenantId);
   }
 
-  async inheritAuth(
-    from: { id: string; authMode: ProjectAuthMode },
-    to: AppAuthRouteTarget,
-    tenantId: string
-  ): Promise<void> {
-    if (from.authMode === 'public') return;
-    const managedFallbackTenantName =
-      from.authMode === 'managed' ? await this.findExternalTenantName(tenantId) : undefined;
-    await this.projectAuthService.inheritAuth(from.id, to, managedFallbackTenantName);
+  async inheritAuth(from: { id: string }, to: AppAuthRouteTarget): Promise<void> {
+    const source = await this.projectEnvironmentService.findById(from.id);
+    let signInProviderId: string | null = null;
+    if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
+    else signInProviderId = await this.projectAuthService.inheritAuth(source.id, to);
+    const authMode = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
+    await db
+      .update(projectEnvironments)
+      .set({ authMode, signInProviderId, updatedAt: new Date() })
+      .where(eq(projectEnvironments.id, to.id));
   }
 
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
@@ -1615,19 +1639,6 @@ export class ProjectService implements OnApplicationBootstrap {
     const content: Record<string, JsonValue> = { name: meta.name };
     if (meta.description !== null) content.description = meta.description;
     await writeJsonAtomic(target, content);
-  }
-
-  async findExternalTenantName(tenantId: string): Promise<string> {
-    const [row] = await db
-      .select({
-        externalTenantName: tenantSettings.externalTenantName,
-        tenantName: tenants.name,
-      })
-      .from(tenants)
-      .leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id))
-      .where(eq(tenants.id, tenantId));
-    if (!row) throw new BadRequestException(`Tenant ${tenantId} not found`);
-    return row.externalTenantName ?? row.tenantName;
   }
 
   async reassignPodById(id: string): Promise<void> {

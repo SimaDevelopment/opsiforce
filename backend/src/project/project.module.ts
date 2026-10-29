@@ -42,6 +42,7 @@ import { ProjectEnvironmentModule } from '../project-environment/project-environ
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
 import { ModelProvidersModule } from '../model-provider/model-provider.module';
+import { SealingModule } from '../sealing/sealing.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     ExternalServicesModule,
     forwardRef(() => ModelProvidersModule),
     GitModule,
+    SealingModule,
     AppReadinessModule,
   ],
   controllers: [

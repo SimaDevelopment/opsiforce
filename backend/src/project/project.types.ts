@@ -183,23 +183,13 @@ export interface ProjectAuthOidcConfig {
   scope?: string;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'managed';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider';
 
-export interface ManagedAuthConfig {
-  managedOidcClientSecret?: string;
-  managedOidcIssuerUrl?: string;
-}
-
-export function availableAuthModes(config: ManagedAuthConfig): ProjectAuthMode[] {
-  const modes: ProjectAuthMode[] = ['public', 'manual'];
-  if (config.managedOidcClientSecret?.trim() && config.managedOidcIssuerUrl?.trim()) {
-    modes.push('managed');
-  }
-  return modes;
-}
+export const SELECTABLE_AUTH_MODES: ProjectAuthMode[] = ['public', 'manual', 'provider'];
 
 export interface ProjectAuthResponse {
   mode: ProjectAuthMode;
+  signInProviderId?: string;
   config?: ProjectAuthOidcConfig;
   bypassAuthPaths?: string[];
   callbackUrls: string[];
@@ -207,6 +197,7 @@ export interface ProjectAuthResponse {
 
 export interface UpdateProjectAuthDto {
   mode: ProjectAuthMode;
+  signInProviderId?: string;
   config?: ProjectAuthOidcConfig;
   bypassAuthPaths?: string[];
 }

@@ -23,8 +23,7 @@ adrs: [0011]
 
 ## Edge cases
 
-- When the source is `managed` and its gate is missing, the copy gets the Organization's `managed` sign-in fresh, with no bypass paths.
-- When the copy's App Auth cannot be written, such as for a `manual` source whose gate cannot be read, the Duplicate is refused and no copy is left behind.
+- When the copy's App Auth cannot be written, such as for a protected source whose gate cannot be read, the Duplicate is refused and no copy is left behind.
 - When the source is `manual`, sign-in on the copy fails until the callback URLs its App Auth dialog lists are registered with the customer's identity provider.
 
 ## Code

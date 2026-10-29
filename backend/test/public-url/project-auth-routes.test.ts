@@ -40,9 +40,6 @@ function service() {
       webappServiceName: 'proxy',
       webappServicePort: 3002,
       oidcPluginSecret: 'cookie-encryption-secret-for-test',
-      managedOidcClientId: 'managed',
-      managedOidcClientSecret: 'managed-secret',
-      managedOidcIssuerUrl: 'https://keycloak.example/realms/opsiforce',
       appAuthForwardingSigningKey: 'k'.repeat(32),
     })
   );
@@ -92,8 +89,8 @@ describe('every App Auth route write matches the App by pattern', () => {
     expect(writtenRouteRules()).toEqual([CURRENT_RULES]);
   });
 
-  it('saving managed App Auth', async () => {
-    await service().applyManaged(ENV, 'example-org');
+  it('saving Sign-in provider App Auth', async () => {
+    await service().applyProvider(ENV, { id: '7d1c2c4e-1b8e-4d0a-9a51-2f6a2c0f9d11', scope: 'openid', ...oidc }, false);
     expect(writtenRouteRules()).toEqual([CURRENT_RULES]);
   });
 
@@ -109,10 +106,10 @@ describe('every App Auth route write matches the App by pattern', () => {
     expect(writtenRouteRules()).toEqual([CURRENT_RULES]);
   });
 
-  it('inheriting managed App Auth whose source middleware is gone', async () => {
+  it('refusing to inherit App Auth whose source middleware is gone', async () => {
     kube.getNamespacedCustomObject.mockRejectedValue({ code: 404 });
-    await service().inheritAuth('source-env', ENV, 'example-org');
-    expect(writtenRouteRules()).toEqual([CURRENT_RULES]);
+    await expect(service().inheritAuth('source-env', ENV)).rejects.toThrow('source middleware');
+    expect(writtenRouteRules()).toEqual([]);
   });
 });
 

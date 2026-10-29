@@ -140,9 +140,5 @@ export const configuration = () => {
     webappServiceName: process.env.WEBAPP_SERVICE_NAME || 'proxy-app',
     webappServicePort: parseInt(process.env.WEBAPP_SERVICE_PORT || '3002', 10),
     oidcPluginSecret: process.env.OIDC_PLUGIN_SECRET || '',
-    managedOidcClientId: process.env.MANAGED_OIDC_CLIENT_ID || 'opsiforce-apps',
-    managedOidcClientSecret: process.env.MANAGED_OIDC_CLIENT_SECRET || '',
-    managedOidcIssuerUrl: process.env.MANAGED_OIDC_ISSUER_URL || '',
-    managedTenantRolePrefix: process.env.MANAGED_TENANT_ROLE_PREFIX || '',
   };
 };
