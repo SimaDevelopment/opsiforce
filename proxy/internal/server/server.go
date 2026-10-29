@@ -816,16 +816,19 @@ var authProxyHeaders = []string{
 	"X-Forwarded-Access-Token",
 	"X-Forwarded-Id-Token",
 	"X-Forwarded-Refresh-Token",
+	"X-Auth-Request-Access-Token",
+	"X-Auth-Request-Redirect",
+}
+
+var forwardedIdentityHeaders = []string{
 	"X-Forwarded-User",
 	"X-Forwarded-Email",
 	"X-Forwarded-Preferred-Username",
 	"X-Forwarded-Groups",
-	"X-Auth-Request-Access-Token",
 	"X-Auth-Request-User",
 	"X-Auth-Request-Email",
 	"X-Auth-Request-Preferred-Username",
 	"X-Auth-Request-Groups",
-	"X-Auth-Request-Redirect",
 }
 
 func stripAuthProxyHeaders(headers http.Header) {
@@ -837,6 +840,9 @@ func stripAuthProxyHeaders(headers http.Header) {
 func stripUserIdentityHeaders(headers http.Header) {
 	headers.Del("Cookie")
 	headers.Del("Authorization")
+	for _, name := range forwardedIdentityHeaders {
+		headers.Del(name)
+	}
 }
 
 func sanitizeReverseProxyHeaders(headers http.Header, stripFrameHeaders bool) {
