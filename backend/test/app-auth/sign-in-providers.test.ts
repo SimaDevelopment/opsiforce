@@ -311,6 +311,32 @@ describe('Organization sign-in providers', () => {
     expect(published).toMatchObject({ authMode: 'provider', signInProviderId: provider.id });
   });
 
+  it('keeps an App on the provider its owner switched to while the old provider was being saved', async () => {
+    const tenant = await createTenant(app);
+    const admin = await adminOf(tenant);
+    const oldProvider = await createProvider(admin);
+    const newProvider = await createProvider(admin, { ...ENTRA, name: 'Example contractors' });
+    const { projectId, envId } = await protectedApp(tenant, oldProvider);
+
+    const hold = auth.holdNextApplyFor(envId);
+    const save = patchProvider(admin, oldProvider.id, { clientSecret: 'example-secret-2' });
+    await hold.reached;
+    const switched = app
+      .get(ProjectService)
+      .updateAuth(projectId, envId, { mode: 'provider', signInProviderId: newProvider.id }, tenant.tenantId);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    hold.release();
+    expect((await save).statusCode).toBe(200);
+    await switched;
+
+    expect(auth.gateOf(envId)).toMatchObject({ mode: 'provider', providerId: newProvider.id });
+    const [row] = await db
+      .select({ signInProviderId: projectEnvironments.signInProviderId })
+      .from(projectEnvironments)
+      .where(eq(projectEnvironments.id, envId));
+    expect(row.signInProviderId).toBe(newProvider.id);
+  });
+
   it('rewrites every App that uses a provider when it changes, and blocks deleting a provider in use', async () => {
     const tenant = await createTenant(app);
     const admin = await adminOf(tenant);

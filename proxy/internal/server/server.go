@@ -41,6 +41,7 @@ var (
 )
 
 var unprotectedRouteBody = []byte(`{"error":"App sign-in is not configured for this host"}`)
+var crossOriginUpgradeBody = []byte(`{"error":"A signed-in connection upgrade must come from the App's own origin"}`)
 
 const (
 	logModeOff      = "off"
@@ -229,6 +230,10 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if crossOriginSignIn && isUpgradeRequest(r) {
+		writeJSONStatus(w, http.StatusForbidden, crossOriginUpgradeBody)
 		return
 	}
 

@@ -484,6 +484,46 @@ func TestAProtectedAppReachedThroughTheUnprotectedRouteIsRefusedWithoutContactin
 	}
 }
 
+func TestASignedInUpgradeFromAnotherOriginIsRefusedWithoutContactingThePod(t *testing.T) {
+	upstream, upstreamURL := startUpstream(t)
+	plane := &appControlPlane{answer: protectedServeAnswer(upstreamURL)}
+	server := newAppServer(t, plane)
+
+	headers := http.Header{}
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	headers.Set("Origin", "https://sibling-dev-0123456789ab.apps.test")
+	headers.Set(signedInSubjectHeader, "visitor-1")
+	rec := visit(server, "https://"+readableAppHost+"/socket", headers)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d want 403", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("a refused cross-origin upgrade carries CORS permission")
+	}
+	if len(upstream.received()) != 0 || len(plane.ensureCalls()) != 0 {
+		t.Error("a signed-in upgrade from another origin reached the control plane or the pod")
+	}
+}
+
+func TestASignedInUpgradeFromTheAppsOwnOriginReachesThePod(t *testing.T) {
+	upstream, upstreamURL := startUpstream(t)
+	plane := &appControlPlane{answer: protectedServeAnswer(upstreamURL)}
+	server := newAppServer(t, plane)
+
+	headers := http.Header{}
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	headers.Set("Origin", "https://"+readableAppHost)
+	headers.Set(signedInSubjectHeader, "visitor-1")
+	visit(server, "https://"+readableAppHost+"/socket", headers)
+
+	if len(upstream.received()) != 1 {
+		t.Fatalf("upstream requests: got %d want 1", len(upstream.received()))
+	}
+}
+
 func TestAProtectedAppReachedThroughItsOwnRouteIsServed(t *testing.T) {
 	upstream, upstreamURL := startUpstream(t)
 	plane := &appControlPlane{answer: protectedServeAnswer(upstreamURL)}

@@ -20,6 +20,7 @@ import {
   type SignInProviderRow,
 } from './sign-in-provider-rows';
 import type { SaveSignInProviderDto, SignInProviderOption, SignInProviderView } from './sign-in-provider.types';
+import { withEnvironmentAuthLock } from '../project/environment-auth-lock';
 
 const usingProviders = (providerIds: string[]) =>
   and(inArray(projectEnvironments.signInProviderId, providerIds), eq(projectEnvironments.authMode, 'provider'));
@@ -90,8 +91,11 @@ export class SignInProvidersService {
     let stale = 0;
     for (const env of usedBy) {
       try {
-        const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
-        await this.projectAuthService.applyProvider(env, provider, config?.forwardAccessToken, bypassAuthPaths);
+        await withEnvironmentAuthLock(env.id, async (_tx, current) => {
+          if (current?.authMode !== 'provider' || current.signInProviderId !== providerId) return;
+          const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
+          await this.projectAuthService.applyProvider(env, provider, config?.forwardAccessToken, bypassAuthPaths);
+        });
       } catch (err) {
         stale += 1;
         this.logger.error(

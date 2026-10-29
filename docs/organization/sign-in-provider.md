@@ -42,7 +42,7 @@ adrs: [0097]
 - When a visitor signs out of one App, they are signed out of every App that uses the same provider.
 - When the identity provider doesn't allow the redirect URI as a post-logout redirect URI, signing out stops at the identity provider's redirect URI error.
 - When the identity provider publishes no end-session endpoint, as Google does, the App's `/logout` does not sign the visitor out.
-- When a script on another origin, such as another App, sends a credentialed request to a signed-in App, the answer carries no CORS permission, so the script cannot read it.
+- When a script on another origin, such as another App, sends a credentialed request to a signed-in App, the answer carries no CORS permission, so the script cannot read it. A WebSocket it opens to a signed-in App is refused before reaching the App, since browsers apply no CORS to an upgrade.
 - When an [Agent Caller](../../GLOSSARY.md) calls a Sign-in provider route, it is refused.
 - When a client ID or client secret is written whole as `${NAME}` or `${file:/path}`, saving is refused ([Environments](../projects/environments.md)).
 - When a group or role carries an apostrophe, `X-Oidc-Groups` writes it as `\'`, which a strict JSON parser rejects; the plugin's escaping does this.

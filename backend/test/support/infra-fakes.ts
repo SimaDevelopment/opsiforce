@@ -252,6 +252,7 @@ export class FakeProjectAuthService extends RecordingFake {
   private readonly unreachable = new Set<string>();
   private readonly gates = new Map<string, FakeAppAuthGate>();
   private readonly unreconcilable = new Set<string>();
+  private readonly held = new Map<string, { reached: () => void; released: Promise<void> }>();
 
   async apply(env: AppAuthRouteTarget, config: ProjectAuthOidcConfig, bypassAuthPaths: string[] = []): Promise<void> {
     this.record('apply', addressesOf(env));
@@ -265,6 +266,12 @@ export class FakeProjectAuthService extends RecordingFake {
     bypassAuthPaths: string[] = []
   ): Promise<void> {
     if (this.unreachable.has(env.id)) throw new Error(`Kubernetes refused ${env.id}`);
+    const hold = this.held.get(env.id);
+    if (hold) {
+      this.held.delete(env.id);
+      hold.reached();
+      await hold.released;
+    }
     this.record('applyProvider', {
       ...addressesOf(env),
       providerId: provider.id,
@@ -303,6 +310,15 @@ export class FakeProjectAuthService extends RecordingFake {
     if (!source) throw new Error(`Cannot inherit app auth: source middleware for ${fromEnvironmentId} not found`);
     this.gates.set(to.id, source);
     return source.mode === 'provider' ? source.providerId : null;
+  }
+
+  holdNextApplyFor(environmentId: string): { reached: Promise<void>; release: () => void } {
+    let reached!: () => void;
+    let release!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => (reached = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+    this.held.set(environmentId, { reached, released });
+    return { reached: reachedPromise, release };
   }
 
   refuseApplyFor(environmentId: string): void {

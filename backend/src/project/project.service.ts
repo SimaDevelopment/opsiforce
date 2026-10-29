@@ -74,6 +74,7 @@ import type {
   ExportManifestSettings,
   JsonValue,
 } from '../export/project-export.types';
+import { withEnvironmentAuthLock } from './environment-auth-lock';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -1312,27 +1313,32 @@ export class ProjectService implements OnApplicationBootstrap {
       throw new BadRequestException('clientSecret is required when switching to manual auth');
     }
 
-    let signInProviderId: string | null = null;
-    if (dto.mode === 'manual') {
-      await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
-    } else if (dto.mode === 'provider') {
-      if (!dto.signInProviderId) throw new BadRequestException('signInProviderId is required for the provider mode');
-      const provider = await findTenantSignInProvider(tenantId, dto.signInProviderId);
-      await this.projectAuthService.applyProvider(
-        env,
-        connectionOf(this.sealer, provider),
-        dto.config?.forwardAccessToken,
-        dto.bypassAuthPaths
-      );
-      signInProviderId = provider.id;
-    } else {
-      await this.projectAuthService.remove(env.id);
+    if (dto.mode === 'provider' && !dto.signInProviderId) {
+      throw new BadRequestException('signInProviderId is required for the provider mode');
     }
+    const provider =
+      dto.mode === 'provider' && dto.signInProviderId
+        ? await findTenantSignInProvider(tenantId, dto.signInProviderId)
+        : null;
 
-    await db
-      .update(projectEnvironments)
-      .set({ authMode: dto.mode, signInProviderId, updatedAt: new Date() })
-      .where(eq(projectEnvironments.id, env.id));
+    await withEnvironmentAuthLock(env.id, async (tx) => {
+      if (dto.mode === 'manual') {
+        await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
+      } else if (provider) {
+        await this.projectAuthService.applyProvider(
+          env,
+          connectionOf(this.sealer, provider),
+          dto.config?.forwardAccessToken,
+          dto.bypassAuthPaths
+        );
+      } else {
+        await this.projectAuthService.remove(env.id);
+      }
+      await tx
+        .update(projectEnvironments)
+        .set({ authMode: dto.mode, signInProviderId: provider?.id ?? null, updatedAt: new Date() })
+        .where(eq(projectEnvironments.id, env.id));
+    });
 
     return this.getAuth(projectId, env.id, tenantId);
   }
