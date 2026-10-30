@@ -72,6 +72,8 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
   const fitsBesideContent = () => column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH;
   const open = () => (fitsBesideContent() ? docked() : overlaid());
   const setOpen = (next: boolean) => (fitsBesideContent() ? setDocked(next) : setOverlaid(next));
+  const [opened, setOpened] = createSignal(false);
+  createEffect(() => open() && setOpened(true));
 
   createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
   onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
@@ -104,25 +106,23 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     <DialogProvider>
       <MarkedProvider>
         <span ref={anchor} hidden />
-        <Show
-          when={open()}
-          fallback={
-            <button
-              onClick={() => setOpen(true)}
-              class={cn(
-                'shrink-0 w-9 bg-sidebar border-l border-border flex flex-col items-center justify-center gap-2 hover:bg-accent transition-colors',
-                column && 'snap-start'
-              )}
-              title={collapsedLabel()}
-              aria-label={collapsedLabel()}
-            >
-              <PanelRightOpen class="w-4 h-4 text-muted-foreground" />
-              <span class="text-xs text-muted-foreground [writing-mode:vertical-rl]">
-                {props.hasApp ? 'App preview' : 'Open panel'}
-              </span>
-            </button>
-          }
-        >
+        <Show when={!open()}>
+          <button
+            onClick={() => setOpen(true)}
+            class={cn(
+              'shrink-0 w-9 bg-sidebar border-l border-border flex flex-col items-center justify-center gap-2 hover:bg-accent transition-colors',
+              column && 'snap-start'
+            )}
+            title={collapsedLabel()}
+            aria-label={collapsedLabel()}
+          >
+            <PanelRightOpen class="w-4 h-4 text-muted-foreground" />
+            <span class="text-xs text-muted-foreground [writing-mode:vertical-rl]">
+              {props.hasApp ? 'App preview' : 'Open panel'}
+            </span>
+          </button>
+        </Show>
+        <Show when={opened()}>
           <div
             class={cn(
               'flex flex-col bg-background',
@@ -130,7 +130,10 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
                 ? 'absolute inset-0 z-20'
                 : cn('relative shrink-0 border-l border-border', column ? 'snap-start pr-2' : 'pl-2')
             )}
-            style={fitsBesideContent() ? { width: `${panel.width()}px` } : undefined}
+            style={{
+              display: open() ? undefined : 'none',
+              width: fitsBesideContent() ? `${panel.width()}px` : undefined,
+            }}
           >
             <Show
               when={fitsBesideContent()}
