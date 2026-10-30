@@ -148,7 +148,12 @@ export function ProjectSidebar(props: { search: string }) {
   // with nothing left in it simply does not render — the tree keeps its shape
   // and its ordering, it just gets shorter.
   const visibleProjects = createMemo(() =>
-    filterProjects(projects.data, filters.scope(), filters.recency(), workspaces.data, currentUser.data?.id)
+    filterProjects(
+      projects.data,
+      { scope: filters.scope(), recency: filters.recency(), status: filters.status() },
+      workspaces.data,
+      currentUser.data?.id
+    )
   );
 
   const groupedProjects = createMemo(() => {
@@ -341,6 +346,7 @@ export function ProjectSidebar(props: { search: string }) {
         <ProjectFilterChips
           scope={filters.scope()}
           recency={filters.recency()}
+          status={filters.status()}
           active={filters.active()}
           onReset={filters.reset}
         />

@@ -94,6 +94,57 @@ for (const type of ['synthetic', 'compaction', 'move']) {
   });
 }
 
+const permissionRequest = { sessionID: 'ses_child', action: 'bash', resources: ['rm -rf dist'] };
+const form = { sessionID: 'ses_root', title: 'Pick a stack', fields: [{ key: 'stack', type: 'string' }] };
+
+test('a permission asked and a form created are posted as input.requested with their request id', async () => {
+  const host = fakeHost();
+  const stop = startObserver(host);
+
+  host.emit({ type: 'permission.asked', data: { id: 'per_1', ...permissionRequest } });
+  await settle();
+  host.emit({ type: 'form.created', data: { form: { id: 'frm_1', ...form } } });
+  await settle();
+  stop();
+
+  assert.deepEqual(bodies(host), [
+    { kind: 'input.requested', sessionId: 'ses_child', requestId: 'per_1', input: 'permission' },
+    { kind: 'input.requested', sessionId: 'ses_root', requestId: 'frm_1', input: 'question' },
+  ]);
+});
+
+test('a permission replied and a form replied or cancelled are posted as input.resolved for that request', async () => {
+  const host = fakeHost();
+  const stop = startObserver(host);
+
+  host.emit({ type: 'permission.replied', data: { sessionID: 'ses_child', requestID: 'per_1', reply: 'once' } });
+  await settle();
+  host.emit({ type: 'form.replied', data: { id: 'frm_1', sessionID: 'ses_root', answer: { stack: 'bun' } } });
+  await settle();
+  host.emit({ type: 'form.cancelled', data: { id: 'frm_2', sessionID: 'ses_root' } });
+  await settle();
+  stop();
+
+  assert.deepEqual(bodies(host), [
+    { kind: 'input.resolved', sessionId: 'ses_child', requestId: 'per_1' },
+    { kind: 'input.resolved', sessionId: 'ses_root', requestId: 'frm_1' },
+    { kind: 'input.resolved', sessionId: 'ses_root', requestId: 'frm_2' },
+  ]);
+});
+
+test('an input event without its request id is not posted', async () => {
+  const host = fakeHost();
+  const stop = startObserver(host);
+
+  host.emit({ type: 'permission.asked', data: permissionRequest });
+  host.emit({ type: 'permission.replied', data: { sessionID: 'ses_child', reply: 'once' } });
+  host.emit({ type: 'form.created', data: { form } });
+  await settle();
+  stop();
+
+  assert.deepEqual(host.posts, []);
+});
+
 test('events the observer does not map are not posted', async () => {
   const host = fakeHost({ sessions });
   const stop = startObserver(host);

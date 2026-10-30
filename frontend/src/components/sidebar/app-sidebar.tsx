@@ -99,8 +99,12 @@ export function AppSidebar() {
   const allProjects = useProjects();
   const allWorkspaces = useWorkspaces();
   const matchCount = () =>
-    filterProjects(allProjects.data, filters.scope(), filters.recency(), allWorkspaces.data, currentUser.data?.id)
-      .length;
+    filterProjects(
+      allProjects.data,
+      { scope: filters.scope(), recency: filters.recency(), status: filters.status() },
+      allWorkspaces.data,
+      currentUser.data?.id
+    ).length;
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = createSignal(false);
   const [importOpen, setImportOpen] = createSignal(false);
   let searchRef: HTMLInputElement | undefined;
@@ -193,6 +197,8 @@ export function AppSidebar() {
             onScopeChange={filters.setScope}
             recency={filters.recency()}
             onRecencyChange={filters.setRecency}
+            status={filters.status()}
+            onStatusChange={filters.setStatus}
             active={filters.active()}
             onReset={filters.reset}
             matchCount={matchCount()}

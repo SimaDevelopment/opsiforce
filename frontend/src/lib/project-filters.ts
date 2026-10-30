@@ -17,9 +17,11 @@ import { createPersistedStringSignal } from './persisted-signal';
 
 export const SCOPES = ['all', 'mine'] as const;
 export const RECENCIES = ['any', '7d', '30d', 'older'] as const;
+export const STATUS_FILTERS = ['all', 'enabled', 'disabled'] as const;
 
 export type Scope = (typeof SCOPES)[number];
 export type Recency = (typeof RECENCIES)[number];
+export type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 export const SCOPE_LABEL: Record<Scope, string> = {
   all: 'All',
@@ -33,8 +35,15 @@ export const RECENCY_LABEL: Record<Recency, string> = {
   older: 'Older',
 };
 
+export const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
+  all: 'All',
+  enabled: 'Enabled',
+  disabled: 'Disabled',
+};
+
 export const SCOPE_KEY = 'opsiforce:projects:scope';
 export const RECENCY_KEY = 'opsiforce:projects:recency';
+export const STATUS_FILTER_KEY = 'opsiforce:projects:status';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -73,39 +82,54 @@ export function matchesScope(
   return workspace.type === 'private' && !!currentUserId && workspace.ownerId === currentUserId;
 }
 
+/** Disabled is a deliberate state, not a problem: it is found here rather than listed as needing anyone. */
+export function matchesStatus(project: Project, status: StatusFilter): boolean {
+  if (status === 'all') return true;
+  return (project.status === 'disabled') === (status === 'disabled');
+}
+
 export function filterProjects(
   projects: Project[] | undefined,
-  scope: Scope,
-  recency: Recency,
+  filters: { scope: Scope; recency: Recency; status: StatusFilter },
   workspaces: Workspace[] | undefined,
   currentUserId: string | undefined
 ): Project[] {
   return (projects ?? []).filter(
-    (p) => matchesScope(p, scope, workspaces, currentUserId) && matchesRecency(p, recency)
+    (p) =>
+      matchesScope(p, filters.scope, workspaces, currentUserId) &&
+      matchesRecency(p, filters.recency) &&
+      matchesStatus(p, filters.status)
   );
 }
 
 export const isScope = (v: string | null | undefined): v is Scope => !!v && (SCOPES as readonly string[]).includes(v);
 export const isRecency = (v: string | null | undefined): v is Recency =>
   !!v && (RECENCIES as readonly string[]).includes(v);
+export const isStatusFilter = (v: string | null | undefined): v is StatusFilter =>
+  !!v && (STATUS_FILTERS as readonly string[]).includes(v);
 
 export function createProjectFilters() {
   const [rawScope, setRawScope] = createPersistedStringSignal(SCOPE_KEY, 'all');
   const [rawRecency, setRawRecency] = createPersistedStringSignal(RECENCY_KEY, 'any');
+  const [rawStatus, setRawStatus] = createPersistedStringSignal(STATUS_FILTER_KEY, 'all');
 
   const scope = (): Scope => (isScope(rawScope()) ? (rawScope() as Scope) : 'all');
   const recency = (): Recency => (isRecency(rawRecency()) ? (rawRecency() as Recency) : 'any');
-  const active = () => scope() !== 'all' || recency() !== 'any';
+  const status = (): StatusFilter => (isStatusFilter(rawStatus()) ? (rawStatus() as StatusFilter) : 'all');
+  const active = () => scope() !== 'all' || recency() !== 'any' || status() !== 'all';
 
   return {
     scope,
     setScope: (v: Scope) => setRawScope(v),
     recency,
     setRecency: (v: Recency) => setRawRecency(v),
+    status,
+    setStatus: (v: StatusFilter) => setRawStatus(v),
     active,
     reset: () => {
       setRawScope('all');
       setRawRecency('any');
+      setRawStatus('all');
     },
   };
 }

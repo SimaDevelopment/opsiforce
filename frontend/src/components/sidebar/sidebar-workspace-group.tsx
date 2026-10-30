@@ -9,6 +9,7 @@ import { Boxes, ChevronDown, ChevronRight, GripVertical, Lock, Settings } from '
 import { SidebarDraggableProjectRow } from './sidebar-draggable-project-row';
 import { SidebarFolderGroup } from './sidebar-folder-group';
 import { SidebarCreateButton } from './sidebar-create-button';
+import { FoldedGroupStatus } from './folded-group-status';
 
 export function SidebarWorkspaceGroup(props: {
   workspace: Workspace;
@@ -143,6 +144,7 @@ export function SidebarWorkspaceGroup(props: {
           <Lock class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         </Show>
         <span class="flex-1 min-w-0 text-sm font-medium truncate text-foreground">{props.workspace.name}</span>
+        <FoldedGroupStatus projects={props.projects} folded={!view().expanded} />
         <Show when={props.onOpenSettings}>
           <button
             class="opacity-0 group-hover/wsrow:opacity-100 pointer-coarse:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"

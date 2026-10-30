@@ -975,6 +975,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     for (const row of rows) {
       row.agentStatus = this.agentStatusService.statusOf(row.id);
+      row.waitingForInput = this.agentStatusService.waitingForInput(row.id);
     }
     return rows;
   }

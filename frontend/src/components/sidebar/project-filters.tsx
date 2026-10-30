@@ -6,13 +6,16 @@ import {
   RECENCY_LABEL,
   SCOPES,
   SCOPE_LABEL,
+  STATUS_FILTERS,
+  STATUS_FILTER_LABEL,
   type Recency,
   type Scope,
+  type StatusFilter,
 } from '~/lib/project-filters';
 
 /**
  * Narrowing lives beside the text search, because they are the same act: the
- * field narrows by name, this narrows by scope and recency. Keeping it in a
+ * field narrows by name, this narrows by scope, status and recency. Keeping it in a
  * popover costs the tree no height — the sidebar's vertical space belongs to
  * the projects, not to the controls that hide them.
  *
@@ -27,6 +30,8 @@ export function ProjectFilters(props: {
   onScopeChange: (scope: Scope) => void;
   recency: Recency;
   onRecencyChange: (recency: Recency) => void;
+  status: StatusFilter;
+  onStatusChange: (status: StatusFilter) => void;
   active: boolean;
   onReset: () => void;
   matchCount: number;
@@ -70,6 +75,23 @@ export function ProjectFilters(props: {
             </For>
           </div>
 
+          <span class="t-label t-sub">Status</span>
+          <div class="flex flex-wrap gap-1">
+            <For each={STATUS_FILTERS}>
+              {(value) => (
+                <button
+                  type="button"
+                  class="of-chip of-chip-btn fr"
+                  aria-pressed={props.status === value}
+                  data-on={props.status === value}
+                  onClick={() => props.onStatusChange(value)}
+                >
+                  {STATUS_FILTER_LABEL[value]}
+                </button>
+              )}
+            </For>
+          </div>
+
           <span class="t-label t-sub">Activity</span>
           <div class="flex flex-col gap-1">
             <For each={RECENCIES}>
@@ -103,6 +125,7 @@ export function ProjectFilters(props: {
 export function ProjectFilterChips(props: {
   scope: Scope;
   recency: Recency;
+  status: StatusFilter;
   active: boolean;
   onReset: () => void;
 }) {
@@ -114,6 +137,9 @@ export function ProjectFilterChips(props: {
         </Show>
         <Show when={props.recency !== 'any'}>
           <span class="of-chip">{RECENCY_LABEL[props.recency]}</span>
+        </Show>
+        <Show when={props.status !== 'all'}>
+          <span class="of-chip">{STATUS_FILTER_LABEL[props.status]}</span>
         </Show>
         <button type="button" class="of-btn of-btn-compact of-btn-ghost fr-panel" onClick={props.onReset}>
           <X class="w-3 h-3" />

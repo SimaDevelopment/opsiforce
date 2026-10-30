@@ -6,6 +6,7 @@ import type { AgentStatus, Project } from './client';
 interface AgentStatusEvent {
   projectId: string;
   agentStatus: AgentStatus;
+  waitingForInput?: boolean;
 }
 
 interface EnvironmentStatusEvent extends AgentStatusEvent {
@@ -15,10 +16,17 @@ interface EnvironmentStatusEvent extends AgentStatusEvent {
 type EnvironmentIdleListener = (environmentId: string) => void;
 
 const [agentStatuses, setAgentStatuses] = createStore<Record<string, AgentStatus>>({});
+// Only a backend that reports it sends the field; without it nothing is waiting.
+const [waitingForInput, setWaitingForInput] = createStore<Record<string, boolean>>({});
 const environmentIdleListeners = new Set<EnvironmentIdleListener>();
 
 export function isAgentWorking(projectId: string): boolean {
   return agentStatuses[projectId] === 'working';
+}
+
+/** A chat in this Project is waiting for its user's answer or permission. */
+export function isAgentWaiting(projectId: string): boolean {
+  return waitingForInput[projectId] === true;
 }
 
 export function onEnvironmentIdle(environmentId: () => string, callback: () => void): void {
@@ -43,13 +51,15 @@ export function useAgentStatusStream(projects: () => Project[] | undefined): voi
     setAgentStatuses({});
     for (const project of currentProjects) {
       setAgentStatuses(project.id, project.agentStatus ?? 'idle');
+      setWaitingForInput(project.id, project.waitingForInput === true);
     }
 
     const events = new EventSource(agentStatusEventsUrl(tenantName));
     events.addEventListener('message', (event) => {
       try {
-        const { projectId, agentStatus } = JSON.parse(event.data) as AgentStatusEvent;
+        const { projectId, agentStatus, waitingForInput: waiting } = JSON.parse(event.data) as AgentStatusEvent;
         setAgentStatuses(projectId, agentStatus);
+        if (waiting !== undefined) setWaitingForInput(projectId, waiting);
       } catch {}
     });
     events.addEventListener('environment', (event) => {

@@ -1,10 +1,9 @@
 import { Show, createSignal } from 'solid-js';
-import { isAgentWorking } from '~/api/agent-status';
+import { isAgentWaiting, isAgentWorking } from '~/api/agent-status';
 import type { Project } from '~/api/client';
 import { cn } from '~/lib/cn';
 import { projectDisplayTitle } from '~/lib/project-display';
 import { EnvironmentBadges } from './project/environment-badges';
-import { OpenProjectFacts } from './sidebar/open-project-facts';
 import { ProjectActionsMenu } from './project-actions-menu';
 import { Spinner } from '~/components/ui/spinner';
 
@@ -17,6 +16,8 @@ export function ProjectCard(props: {
   onDeleted?: () => void;
 }) {
   const isDisabled = () => props.project.status === 'disabled';
+  const isFailed = () => props.project.status === 'failed';
+  const isWaiting = () => isAgentWaiting(props.project.id);
 
   const [editing, setEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal('');
@@ -74,10 +75,22 @@ export function ProjectCard(props: {
             }
           >
             <div class="flex items-center gap-1 min-w-0">
-              <Show when={isAgentWorking(props.project.id)}>
-                <span role="status" aria-label="Agent working" class="flex items-center shrink-0">
-                  <Spinner size="xs" />
-                </span>
+              <Show
+                when={isWaiting()}
+                fallback={
+                  <Show when={isAgentWorking(props.project.id)}>
+                    <span role="status" aria-label="Agent working" class="flex items-center shrink-0">
+                      <Spinner size="xs" />
+                    </span>
+                  </Show>
+                }
+              >
+                <span
+                  role="status"
+                  aria-label="Waiting for an answer"
+                  title="Waiting for an answer"
+                  class="of-dot of-tone-needs-you shrink-0"
+                />
               </Show>
               <span
                 class={cn(
@@ -94,12 +107,11 @@ export function ProjectCard(props: {
               <Show when={isDisabled()}>
                 <span class="text-xs text-sidebar-muted-foreground">Disabled</span>
               </Show>
+              <Show when={isFailed()}>
+                <span class="text-xs of-ink of-tone-failed">Failed</span>
+              </Show>
               <EnvironmentBadges environmentIds={props.project.environmentIds} dimmed={isDisabled()} size="sm" />
             </div>
-            {/* the open project expands in place rather than opening a panel */}
-            <Show when={props.isActive}>
-              <OpenProjectFacts projectId={props.project.id} />
-            </Show>
           </Show>
         </div>
 

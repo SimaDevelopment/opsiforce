@@ -144,6 +144,18 @@ export class PodOpencodeClient {
     return Object.keys(snapshot.data ?? {});
   }
 
+  /** `GET /api/permission/request` and `GET /api/form` — the ids of every permission and form waiting for a reply. */
+  async pendingInputRequests(environmentId: string, timeoutMs: number): Promise<string[]> {
+    const lists = await Promise.all(
+      ['/api/permission/request', '/api/form'].map((path) =>
+        this.call<{ data?: Array<{ id?: string }> }>(environmentId, path, { timeoutMs })
+      )
+    );
+    return lists.flatMap((listed) =>
+      (listed.data ?? []).flatMap((request) => (request.id === undefined ? [] : [request.id]))
+    );
+  }
+
   private async callForData<T>(environmentId: string, path: string, options: CallOptions = {}): Promise<T> {
     return unwrap(await this.call<T | Envelope<T>>(environmentId, path, options));
   }

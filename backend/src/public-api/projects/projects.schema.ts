@@ -110,6 +110,11 @@ export const ProjectSchema = z
     importedAgent: z.string().nullable().describe('Agent name this Project was imported under, when it was imported'),
     timezone: z.string(),
     agentStatus: z.enum(AgentStatus),
+    waitingForInput: z
+      .boolean()
+      .describe(
+        'True while a chat in this Project waits for its user to answer a question or grant a permission; agentStatus stays working meanwhile'
+      ),
     lastPromptAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

@@ -6,6 +6,7 @@ import { PodService } from '../../src/pod/pod.service';
 import { AgentObservationsController } from '../../src/project/agent-observations.controller';
 import { AGENT_STATUS_TIMER } from '../../src/project/agent-status.service';
 import { AgentStatusStreamController } from '../../src/project/agent-status-stream.controller';
+import { ProjectService } from '../../src/project/project.service';
 import { ProjectStatus } from '../../src/project/project.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { TimeoutService } from '../../src/timeout/timeout.service';
@@ -32,16 +33,20 @@ export interface ObservedProject {
 export interface AgentStatusEvent {
   projectId: string;
   agentStatus: string;
+  waitingForInput?: boolean;
 }
 
-export interface EnvironmentStatusEvent extends AgentStatusEvent {
+export interface EnvironmentStatusEvent {
+  projectId: string;
   environmentId: string;
+  agentStatus: string;
 }
 
 export interface AgentStatusStream {
   events: AgentStatusEvent[];
   environmentEvents: EnvironmentStatusEvent[];
   statusesOf: (projectId: string) => string[];
+  waitingOf: (projectId: string) => boolean[];
   environmentStatusesOf: (environmentId: string) => string[];
   close: () => void;
 }
@@ -56,7 +61,10 @@ export interface ObservationSeam {
   observe: (gatewayKey: string | null, body: unknown) => ReturnType<NestFastifyApplication['inject']>;
   runStarted: (project: ObservedProject, sessionId: string) => ReturnType<NestFastifyApplication['inject']>;
   runEnded: (project: ObservedProject, sessionId: string) => ReturnType<NestFastifyApplication['inject']>;
+  inputRequested: (project: ObservedProject, requestId: string) => ReturnType<NestFastifyApplication['inject']>;
+  inputResolved: (project: ObservedProject, requestId: string) => ReturnType<NestFastifyApplication['inject']>;
   agentStatusOf: (project: ObservedProject) => Promise<string>;
+  waitingForInputOf: (project: ObservedProject) => Promise<boolean>;
   openAgentStatusStream: (member: MemberFixture) => Promise<AgentStatusStream>;
   close: () => Promise<void>;
 }
@@ -79,6 +87,7 @@ export async function createObservationSeam(): Promise<ObservationSeam> {
   async function reset(): Promise<void> {
     pod.clearScripts();
     pod.setActive([]);
+    pod.setPendingInput({});
     await rereadClock.elapse();
   }
 
@@ -117,6 +126,23 @@ export async function createObservationSeam(): Promise<ObservationSeam> {
 
   function runEnded(project: ObservedProject, sessionId: string) {
     return observe(project.gatewayKey, { kind: 'run.ended', sessionId });
+  }
+
+  function inputRequested(project: ObservedProject, requestId: string) {
+    return observe(project.gatewayKey, { kind: 'input.requested', sessionId: 'ses_a', requestId, input: 'permission' });
+  }
+
+  function inputResolved(project: ObservedProject, requestId: string) {
+    return observe(project.gatewayKey, { kind: 'input.resolved', sessionId: 'ses_a', requestId });
+  }
+
+  async function waitingForInputOf(project: ObservedProject): Promise<boolean> {
+    const rows = await app
+      .get(ProjectService)
+      .findAllForUser({ tenantId: project.tenant.tenantId, userId: project.member.userId });
+    const listed = rows.find((row) => row.id === project.projectId);
+    if (!listed) throw new Error(`Project ${project.projectId} is not in the list`);
+    return listed.waitingForInput === true;
   }
 
   async function agentStatusOf(project: ObservedProject): Promise<string> {
@@ -165,6 +191,8 @@ export async function createObservationSeam(): Promise<ObservationSeam> {
       events,
       environmentEvents,
       statusesOf: (projectId) => events.filter((event) => event.projectId === projectId).map((e) => e.agentStatus),
+      waitingOf: (projectId) =>
+        events.filter((event) => event.projectId === projectId).map((e) => e.waitingForInput === true),
       environmentStatusesOf: (environmentId) =>
         environmentEvents.filter((event) => event.environmentId === environmentId).map((e) => e.agentStatus),
       close: () => {
@@ -186,7 +214,10 @@ export async function createObservationSeam(): Promise<ObservationSeam> {
     observe,
     runStarted,
     runEnded,
+    inputRequested,
+    inputResolved,
     agentStatusOf,
+    waitingForInputOf,
     openAgentStatusStream,
     close: async () => {
       for (const stream of streams) stream.close();

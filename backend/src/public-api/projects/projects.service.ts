@@ -216,7 +216,12 @@ export class PublicProjectsService {
   private async toDtos(rows: ProjectRow[]): Promise<ProjectDto[]> {
     const environments = await this.repository.environmentsOf(rows.map((row) => row.id));
     return rows.map((row) =>
-      ProjectMapper.toDto(row, environments.get(row.id) ?? [], this.agentStatus.statusOf(row.id), this.publicUrls)
+      ProjectMapper.toDto(
+        row,
+        environments.get(row.id) ?? [],
+        { agentStatus: this.agentStatus.statusOf(row.id), waitingForInput: this.agentStatus.waitingForInput(row.id) },
+        this.publicUrls
+      )
     );
   }
 }
