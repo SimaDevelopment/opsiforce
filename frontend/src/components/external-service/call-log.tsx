@@ -92,7 +92,7 @@ function durationText(durationMs: number): string {
 
 function OutcomeChip(props: { outcome: CallLogOutcome }) {
   return (
-    <span class={cn('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-medium', OUTCOME_CHIP[props.outcome])}>
+    <span class={cn('whitespace-nowrap rounded px-1.5 py-px text-[0.625rem] font-medium', OUTCOME_CHIP[props.outcome])}>
       {OUTCOME_LABELS[props.outcome]}
     </span>
   );
@@ -227,7 +227,7 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                             }
                           }}
                         >
-                          <TableCell class="whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
+                          <TableCell class="whitespace-nowrap font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
                             {formatDateTime(call.time)}
                           </TableCell>
                           <Show when={props.showProject}>
@@ -241,7 +241,7 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                           </Show>
                           <TableCell
                             label="Request"
-                            class="whitespace-nowrap font-mono text-[11px]"
+                            class="whitespace-nowrap font-mono text-[0.6875rem]"
                             title={`${call.method} ${call.path}`}
                           >
                             <span>
@@ -254,7 +254,7 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                               <OutcomeChip outcome={call.outcome} />
                               <Show when={call.reason}>
                                 {(reason) => (
-                                  <div class="mt-0.5 truncate text-[11px] text-muted-foreground" title={reason()}>
+                                  <div class="mt-0.5 truncate text-[0.6875rem] text-muted-foreground" title={reason()}>
                                     {reason()}
                                   </div>
                                 )}
@@ -264,19 +264,19 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
                           <TableCell
                             label="Status"
                             class={cn(
-                              'text-right font-mono text-[11px] tabular-nums',
+                              'text-right font-mono text-[0.6875rem] tabular-nums',
                               call.status >= 400 && 'of-ink of-tone-failed'
                             )}
                           >
                             {call.status}
                           </TableCell>
                           <Show when={!props.compact}>
-                            <TableCell label="Duration" class="text-right font-mono text-[11px] tabular-nums">
+                            <TableCell label="Duration" class="text-right font-mono text-[0.6875rem] tabular-nums">
                               {durationText(call.durationMs)}
                             </TableCell>
                             <TableCell
                               label="Size in → out"
-                              class="whitespace-nowrap text-right font-mono text-[11px] tabular-nums"
+                              class="whitespace-nowrap text-right font-mono text-[0.6875rem] tabular-nums"
                             >
                               {formatBytes(call.bytesIn)} → {formatBytes(call.bytesOut)}
                             </TableCell>
@@ -303,7 +303,7 @@ export function CallLog(props: { source: string; showProject?: boolean; compact?
 function Detail(props: { label: string; children: JSX.Element }) {
   return (
     <div class="flex flex-col gap-1">
-      <dt class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{props.label}</dt>
+      <dt class="text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">{props.label}</dt>
       <dd class="text-sm text-foreground">{props.children}</dd>
     </div>
   );
@@ -368,7 +368,7 @@ function CallSidePanel(props: { call: CallLogEntry | null; onClose: () => void }
                 </Detail>
                 <Show when={Object.keys(call().notes).length > 0}>
                   <Detail label="Service's fields">
-                    <pre class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-[11px]">
+                    <pre class="overflow-x-auto rounded-md bg-muted p-2 font-mono text-[0.6875rem]">
                       {JSON.stringify(call().notes, null, 2)}
                     </pre>
                   </Detail>

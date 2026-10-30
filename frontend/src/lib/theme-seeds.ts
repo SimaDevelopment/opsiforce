@@ -92,9 +92,9 @@ function hslTriplet(hex: HexColor): string {
 /**
  * The semantic layer, regenerated from two seeds. Keys are the custom property
  * names the stylesheet already reads, so applying this is a style write and
- * nothing else re-renders. The legacy bridge is regenerated alongside, or the
- * controls still written against `bg-primary` and `ring-ring` would keep the
- * authored accent while everything around them changed.
+ * nothing else re-renders. The shadcn triplets are regenerated alongside for
+ * the federated Users page, whose own CSS reads `hsl(var(--primary))`; this
+ * app's `bg-primary` and `ring-ring` already follow the live tokens.
  */
 export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: boolean): Record<string, string> {
   const ink: HexColor = isDark ? '#f3f2fb' : '#1d1b32';

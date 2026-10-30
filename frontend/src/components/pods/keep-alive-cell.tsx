@@ -61,8 +61,8 @@ export function KeepAliveCell(props: KeepAliveCellProps) {
           return (
             <div class={cn('flex items-center gap-2', style.tone)}>
               <span class={cn('size-1.5 shrink-0 rounded-full', alive() ? 'of-dot' : 'bg-muted-foreground/30')} />
-              <span class="w-9 shrink-0 text-[11px] text-muted-foreground">{style.label}</span>
-              <span class="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/80">
+              <span class="w-9 shrink-0 text-[0.6875rem] text-muted-foreground">{style.label}</span>
+              <span class="w-16 shrink-0 text-right text-[0.6875rem] tabular-nums text-muted-foreground/80">
                 <Show when={lastTouchMs() !== null} fallback="—">
                   {formatAgo(elapsedSince(props.now(), lastTouchMs() ?? 0))}
                 </Show>
@@ -74,7 +74,7 @@ export function KeepAliveCell(props: KeepAliveCellProps) {
               </div>
               <span
                 class={cn(
-                  'w-12 shrink-0 text-right text-[11px] tabular-nums',
+                  'w-12 shrink-0 text-right text-[0.6875rem] tabular-nums',
                   alive() ? 'of-ink' : 'text-muted-foreground/50'
                 )}
               >

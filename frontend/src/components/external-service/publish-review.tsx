@@ -60,7 +60,7 @@ function CheckChange(props: {
       {(change) => (
         <Show
           when={change() !== 'unchanged'}
-          fallback={<span class="text-[11px] text-muted-foreground">Unchanged</span>}
+          fallback={<span class="text-[0.6875rem] text-muted-foreground">Unchanged</span>}
         >
           <ChangeMark change={change()} aspects={props.aspects} />
         </Show>
@@ -254,7 +254,7 @@ export function TestReportSection(props: { report: TestReport }) {
         {(report) => (
           <Note tone="warning">
             <p class="mb-1">The test report cannot be trusted as written:</p>
-            <ul class="list-disc pl-4 font-mono text-[11px]">
+            <ul class="list-disc pl-4 font-mono text-[0.6875rem]">
               <For each={report().problems}>{(problem) => <li>{problem}</li>}</For>
             </ul>
           </Note>
@@ -299,7 +299,7 @@ export function TestReportSection(props: { report: TestReport }) {
                     <ResultMark result={line.result} />
                     <div class="min-w-0 flex-1">
                       <p>{line.expectation}</p>
-                      <p class="text-[11px] text-muted-foreground">
+                      <p class="text-[0.6875rem] text-muted-foreground">
                         {line.source}
                         <Show when={line.reason}>{(reason) => <> · {reason()}</>}</Show>
                       </p>
@@ -499,10 +499,10 @@ function FieldChangeLine(props: { change: FieldChange }) {
         <span class={props.change.change === 'removed' ? 'text-muted-foreground line-through' : ''}>
           {props.change.label}
         </span>
-        <span class="font-mono text-[11px] text-muted-foreground">{props.change.key}</span>
+        <span class="font-mono text-[0.6875rem] text-muted-foreground">{props.change.key}</span>
         <span class="flex-1" />
-        <span class="text-[11px] text-muted-foreground">{details().join(' · ')}</span>
-        <span class="text-[11px] font-medium">{FIELD_CHANGE_LABEL[props.change.change]}</span>
+        <span class="text-[0.6875rem] text-muted-foreground">{details().join(' · ')}</span>
+        <span class="text-[0.6875rem] font-medium">{FIELD_CHANGE_LABEL[props.change.change]}</span>
       </div>
       <Show when={props.change.itemChanges}>
         {(itemChanges) => (
@@ -576,7 +576,7 @@ export function DiffSection(props: { title: string; diff: FolderDiff; open?: boo
                   ? `Since the Default environment's commit ${present().base?.slice(0, SHORT_COMMIT)}`
                   : 'Everything, as nothing is published yet'}
               </summary>
-              <pre class="mt-2 max-h-96 overflow-auto rounded-md border border-border bg-muted/30 py-2 font-mono text-[11px] leading-4">
+              <pre class="mt-2 max-h-96 overflow-auto rounded-md border border-border bg-muted/30 py-2 font-mono text-[0.6875rem] leading-4">
                 <For each={present().diff.split('\n')}>
                   {(line) => <div class={`whitespace-pre px-3 ${diffLineClass(line)}`}>{line || ' '}</div>}
                 </For>

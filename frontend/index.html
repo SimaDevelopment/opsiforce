@@ -33,6 +33,19 @@
             '--font-scale',
             scale[get('opsiforce:appearance:font-size', ['small', 'default', 'large'], 'default')]
           );
+          var motion = get('opsiforce:appearance:motion', ['system', 'reduced', 'full'], 'system');
+          if (motion !== 'system') root.setAttribute('data-motion', motion);
+          /* Seeds need the OKLCH generator, which only the app has; paint with
+             the last tokens it made for these seeds and this scheme. */
+          var cache = JSON.parse(ls.getItem('opsiforce:appearance:seed-cache') || 'null');
+          var tokens = cache && cache[dark ? 'dark' : 'light'];
+          if (
+            tokens &&
+            cache.base === (ls.getItem('opsiforce:appearance:base-seed') || 'ink') &&
+            cache.accent === (ls.getItem('opsiforce:appearance:accent-seed') || 'brand')
+          ) {
+            for (var name in tokens) root.style.setProperty(name, tokens[name]);
+          }
         } catch (e) {
           /* private mode / blocked storage — the stylesheet defaults still apply */
         }

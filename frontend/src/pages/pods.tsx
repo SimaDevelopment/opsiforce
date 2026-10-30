@@ -53,7 +53,7 @@ export function PodsPage() {
         <Boxes class="w-5 h-5 text-muted-foreground" />
         <h1 class="text-xl font-semibold">Pods</h1>
         <Show when={!pods.isPending}>
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0">
             {totalRunning()}
           </Badge>
         </Show>
@@ -71,7 +71,7 @@ export function PodsPage() {
         Running environment pods across this organization, grouped by project. Refreshes automatically.
       </p>
 
-      <div class="sm:ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+      <div class="sm:ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.6875rem] text-muted-foreground">
         <span class="inline-flex items-center gap-1.5">
           <span class="of-dot of-series-1 size-1.5" />
           Agent activity
@@ -132,7 +132,7 @@ export function PodsPage() {
                             <span class="font-medium text-sm truncate">
                               {group.projectTitle?.trim() || 'Untitled project'}
                             </span>
-                            <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+                            <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0 shrink-0">
                               {group.environments.length}
                             </Badge>
                           </button>
@@ -151,7 +151,7 @@ export function PodsPage() {
                             <TooltipContent>Open project</TooltipContent>
                           </Tooltip>
                           <Show when={group.ghostCount > 0}>
-                            <span class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[11px] shrink-0">
+                            <span class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[0.6875rem] shrink-0">
                               <AlertTriangle class="w-3 h-3" />
                               {group.ghostCount} active{' '}
                               {group.ghostCount === 1 ? 'environment has' : 'environments have'} no pod
@@ -204,7 +204,7 @@ function PodEnvRow(props: {
         <TableCell>
           <div class="font-medium text-sm">{props.row.environmentName}</div>
           <Show when={props.row.environmentSlug}>
-            {(slug) => <span class="font-mono text-[11px] text-muted-foreground">{slug()}</span>}
+            {(slug) => <span class="font-mono text-[0.6875rem] text-muted-foreground">{slug()}</span>}
           </Show>
         </TableCell>
 
@@ -234,7 +234,7 @@ function PodEnvRow(props: {
         <TableCell label="Resources">
           <Tooltip>
             <TooltipTrigger as="span">
-              <Badge variant="outline" class="text-[11px] font-normal">
+              <Badge variant="outline" class="text-[0.6875rem] font-normal">
                 {titleCase(props.row.resources.podClass)}
               </Badge>
             </TooltipTrigger>
@@ -297,7 +297,7 @@ function PodEnvRow(props: {
 function DetailField(props: { label: string; value: string; mono?: boolean }) {
   return (
     <div class="min-w-0">
-      <div class="text-[10px] uppercase tracking-wide text-muted-foreground/70">{props.label}</div>
+      <div class="text-[0.625rem] uppercase tracking-wide text-muted-foreground/70">{props.label}</div>
       <div class={cn('text-xs truncate', props.mono ? 'font-mono' : '')}>{props.value}</div>
     </div>
   );

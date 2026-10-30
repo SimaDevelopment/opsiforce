@@ -123,7 +123,7 @@ export function AgentSkillList(props: {
                       {(displayName) => (
                         <>
                           <span class="truncate text-sm text-foreground">{displayName()}</span>
-                          <span class="shrink-0 font-mono text-[11px] text-muted-foreground">{skill.name}</span>
+                          <span class="shrink-0 font-mono text-[0.6875rem] text-muted-foreground">{skill.name}</span>
                         </>
                       )}
                     </Show>
@@ -314,7 +314,7 @@ export function AddSkillsDialog(props: {
                             {(displayName) => (
                               <>
                                 <span class="text-sm">{displayName()}</span>
-                                <span class="font-mono text-[11px] text-muted-foreground">{skill.name}</span>
+                                <span class="font-mono text-[0.6875rem] text-muted-foreground">{skill.name}</span>
                               </>
                             )}
                           </Show>

@@ -57,7 +57,7 @@ export function PodStatusCell(props: PodStatusCellProps) {
         <Tooltip>
           <TooltipTrigger
             as="span"
-            class="inline-flex items-center gap-0.5 text-[11px] tabular-nums text-muted-foreground"
+            class="inline-flex items-center gap-0.5 text-[0.6875rem] tabular-nums text-muted-foreground"
           >
             <RefreshCw class="size-3" />
             {props.status.restartCount}

@@ -107,7 +107,7 @@ export function VisibilityBadge(props: { visibility: string }) {
 }
 
 const DEFAULT_MARK_CLASS =
-  'inline-flex cursor-default items-center rounded px-1 text-[10px] font-semibold uppercase tracking-wide text-primary';
+  'inline-flex cursor-default items-center rounded px-1 text-[0.625rem] font-semibold uppercase tracking-wide text-primary';
 
 export function DefaultEnvironmentMark(props: { environmentName: string; plain?: boolean; explanation?: string }) {
   const explanation = () => props.explanation ?? `New projects start from ${props.environmentName}.`;

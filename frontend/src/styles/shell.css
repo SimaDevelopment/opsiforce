@@ -87,7 +87,9 @@
   --h-compact: 24px;
   --h-default: 32px;
   --h-primary: 36px;
-  --row-h: var(--h-default);
+  /* Comfortable is the default density, so the bare stylesheet matches it
+     when storage is blocked and the boot script sets no data-density */
+  --row-h: var(--h-primary);
   /* the project tabs are rows on their side: Density moves them, and the band
      is the tab plus the air above it */
   --tab-h: var(--row-h);
@@ -118,6 +120,10 @@
   --bg-elevated: #ffffff;
   --bg-element: rgb(63 61 111 / 0.045);
   --bg-element-hover: rgb(63 61 111 / 0.075);
+  /* the same element tones flattened onto the content surface, for the legacy
+     fills (bg-muted, bg-accent) that sit under sticky and overlaid content */
+  --bg-element-solid: color-mix(in srgb, var(--border-ink) 4.5%, var(--bg-content));
+  --bg-element-hover-solid: color-mix(in srgb, var(--border-ink) 7.5%, var(--bg-content));
   --bg-element-selected: rgb(96 94 246 / 0.1);
   /* a border is one ink at two strengths. Contrast moves the strengths and a
      seed moves the ink, so the two can never overwrite each other's choice. */
@@ -211,10 +217,12 @@
   --tone-dot-dl: -0.06;
 
   /* ======================================================================
-     LEGACY BRIDGE — the shadcn triplets every existing component already
-     consumes through Tailwind (bg-background, text-muted-foreground, …).
-     Same palette, expressed as "H S% L%" so the `/ <alpha>` syntax keeps
-     working. Alpha-based shell tokens are flattened on their own surface.
+     FEDERATED BRIDGE — the shadcn triplets for the Users page, which the
+     keycloak-ms remote renders with its own `hsl(var(--primary))` CSS. This
+     app's own components read the live tokens instead (index.css @theme), so
+     these exist only for the remote: keep them, and keep them in step with the
+     palette. Same palette, expressed as "H S% L%"; alpha-based tokens are
+     flattened on their own surface.
      ====================================================================== */
   --background: 240 22.6% 93.9%; /* --bg-app */
   --foreground: 243.3 23.7% 29.8%; /* --ink-default */
@@ -260,6 +268,8 @@
   --bg-elevated: #1e1e2b;
   --bg-element: rgb(203 203 255 / 0.055);
   --bg-element-hover: rgb(203 203 255 / 0.095);
+  --bg-element-solid: color-mix(in srgb, var(--border-ink) 5.5%, var(--bg-content));
+  --bg-element-hover-solid: color-mix(in srgb, var(--border-ink) 9.5%, var(--bg-content));
   --bg-element-selected: rgb(140 137 255 / 0.17);
   --border-ink: #cbcbff;
   --border-subtle-mix: 9.5%;
@@ -406,11 +416,16 @@
 
 html {
   background-color: var(--bg-app) !important;
+  /* Font size scales the root, so every rem (Tailwind's text sizes and its
+     spacing alike) grows with it, as zooming does. The shell's own type
+     tokens are in px and multiply --font-scale themselves. */
+  font-size: calc(100% * var(--font-scale));
 }
 
-/* motion policy lives in ONE place */
+/* motion policy lives in ONE place: the OS setting applies unless the user
+   chose Full in Appearance, and Reduced applies whatever the OS says */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  :root:not([data-motion='full']) {
     --dur-fast: 0ms;
     --dur: 0ms;
     --dur-slow: 0ms;
@@ -1035,8 +1050,8 @@ html {
   /* zeroing --dur-* cannot reach these loops, so reduced motion stops them
      outright and leaves the indicator visible and still */
   @media (prefers-reduced-motion: reduce) {
-    .of-dot-pulse,
-    .of-working i {
+    :root:not([data-motion='full']) .of-dot-pulse,
+    :root:not([data-motion='full']) .of-working i {
       animation: none;
       opacity: 1;
     }

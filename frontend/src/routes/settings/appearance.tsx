@@ -6,13 +6,15 @@ import {
   DENSITIES,
   FONT_SIZES,
   MODES,
+  MOTIONS,
   useAppearance,
   type Contrast,
   type Density,
   type FontSize,
   type Mode,
+  type Motion,
 } from '~/lib/appearance';
-import { Contrast as ContrastIcon, Droplet, Monitor, Moon, Palette, Rows3, Sun, Type } from '~/components/icons';
+import { Activity, Contrast as ContrastIcon, Droplet, Monitor, Moon, Palette, Rows3, Sun, Type } from '~/components/icons';
 import { ACCENT_SEEDS, BASE_SEEDS, type Seed } from '~/lib/theme-seeds';
 
 export const Route = createFileRoute('/settings/appearance')({
@@ -31,6 +33,7 @@ const DENSITY_LABEL: Record<Density, string> = {
 };
 const DENSITY_ROWS: Record<Density, string> = { comfortable: '36px rows', default: '32px rows', compact: '24px rows' };
 const FONT_SIZE_LABEL: Record<FontSize, string> = { small: 'Small', default: 'Default', large: 'Large' };
+const MOTION_LABEL: Record<Motion, string> = { system: 'System', reduced: 'Reduced', full: 'Full' };
 const FONT_SIZE_VALUE: Record<FontSize, string> = { small: '12px base', default: '13px base', large: '14px base' };
 
 /**
@@ -274,7 +277,7 @@ function AppearancePage() {
             <Field
               icon={Type}
               title="Font size"
-              description="Scales the whole type ramp, not one size in isolation. Both families ship in the repo as web fonts — there is no font CDN, which is what an air-gapped install needs."
+              description="Scales text and spacing together, the way zooming does; the embedded chat keeps its own sizes. Both families ship in the repo as web fonts — there is no font CDN, which is what an air-gapped install needs."
               value={FONT_SIZE_VALUE[appearance.fontSize()]}
             >
               <Segmented
@@ -288,6 +291,26 @@ function AppearancePage() {
                 <span class="sans">Publish Meter Reading Digest to Production</span>
                 <span class="mono-s">src/jobs/weekly-digest.ts · 2 changed files</span>
               </div>
+            </Field>
+
+            <Field
+              icon={Activity}
+              title="Motion"
+              description={
+                appearance.motion() === 'system'
+                  ? "Follows the operating system's Reduce motion setting."
+                  : appearance.motion() === 'reduced'
+                    ? 'Transitions are instant and the working indicators hold still.'
+                    : 'Transitions and indicators run even when the operating system asks to reduce motion.'
+              }
+            >
+              <Segmented
+                label="Motion"
+                values={MOTIONS}
+                labels={MOTION_LABEL}
+                value={appearance.motion()}
+                onChange={appearance.setMotion}
+              />
             </Field>
           </div>
 

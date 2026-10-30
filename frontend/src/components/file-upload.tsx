@@ -57,7 +57,7 @@ export const FileUpload: Component<{
                     Cancel
                   </button>
                 </div>
-                <div class="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                <div class="flex items-center justify-between gap-3 text-[0.6875rem] text-muted-foreground">
                   <span class="truncate" title={upload.statusLabel()}>
                     {upload.statusLabel() || 'Uploading…'}
                   </span>

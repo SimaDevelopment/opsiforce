@@ -206,7 +206,7 @@ export function TenantAccessDialog(props: { name: string; open: boolean; onOpenC
                     </span>
                     <span
                       class={cn(
-                        'inline-flex items-center gap-1 text-[11px]',
+                        'inline-flex items-center gap-1 text-[0.6875rem]',
                         changed() ? 'of-ink of-tone-needs-you font-medium' : 'text-muted-foreground'
                       )}
                     >

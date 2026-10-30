@@ -34,7 +34,7 @@ function HelpPieceView(props: { piece: HelpPiece }): JSX.Element {
         <strong class="font-medium text-foreground">{props.piece.text}</strong>
       </Match>
       <Match when={props.piece.kind === 'code'}>
-        <code class="rounded bg-muted px-1 font-mono text-[10px]">{props.piece.text}</code>
+        <code class="rounded bg-muted px-1 font-mono text-[0.625rem]">{props.piece.text}</code>
       </Match>
       <Match when={link()}>
         {(anchor) => (
@@ -55,7 +55,7 @@ function HelpPieceView(props: { piece: HelpPiece }): JSX.Element {
 export function HelpText(props: { text: string; class?: string }) {
   const lines = () => props.text.split('\n');
   return (
-    <span class={cn('text-[11px] leading-relaxed text-muted-foreground', props.class)}>
+    <span class={cn('text-[0.6875rem] leading-relaxed text-muted-foreground', props.class)}>
       <Index each={lines()}>
         {(line, index) => (
           <>

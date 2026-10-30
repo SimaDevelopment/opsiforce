@@ -21,7 +21,7 @@ function StateLine(props: { skill: EnvironmentSkill }) {
     <Show when={props.skill.state !== 'on'}>
       <span
         class={cn(
-          'inline-flex items-center gap-1 text-[10px]',
+          'inline-flex items-center gap-1 text-[0.625rem]',
           props.skill.state === 'retrying' ? 'of-ink of-tone-needs-you' : 'text-muted-foreground'
         )}
       >
@@ -99,7 +99,7 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
           <ChevronDown class="h-3 w-3 opacity-60" aria-hidden="true" />
         </PopoverTrigger>
         <PopoverContent class="w-96">
-          <div class="border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">
+          <div class="border-b border-border px-3 py-2 text-[0.6875rem] font-medium text-muted-foreground">
             Skills for {props.environmentName}
           </div>
           <div class="max-h-[50vh] overflow-y-auto">
@@ -132,13 +132,13 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
                       </span>
                       <Show when={skill.kind === 'service' && serviceOf(skill.service)}>
                         {(service) => (
-                          <span class="inline-flex shrink-0 items-center rounded border border-border px-1 py-px text-[10px] text-muted-foreground">
+                          <span class="inline-flex shrink-0 items-center rounded border border-border px-1 py-px text-[0.625rem] text-muted-foreground">
                             {service().origin === 'built_in' ? 'Built-in' : 'Custom'}
                           </span>
                         )}
                       </Show>
                       <Show when={skill.kind === 'package'}>
-                        <span class="shrink-0 text-[10px] text-muted-foreground">{packageLabel()}</span>
+                        <span class="shrink-0 text-[0.625rem] text-muted-foreground">{packageLabel()}</span>
                       </Show>
                     </div>
                     <StateLine skill={skill} />
@@ -177,9 +177,11 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
             <Pager {...skillPages.pagerProps()} />
           </Show>
           <Show when={switchSkill.error}>
-            {(error) => <p class="border-t border-border px-3 py-2 text-[11px] text-destructive">{error().message}</p>}
+            {(error) => (
+              <p class="border-t border-border px-3 py-2 text-[0.6875rem] text-destructive">{error().message}</p>
+            )}
           </Show>
-          <p class="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+          <p class="border-t border-border px-3 py-2 text-[0.625rem] leading-relaxed text-muted-foreground">
             Applies from the next message; instructions already read stay in this conversation.
           </p>
         </PopoverContent>

@@ -149,7 +149,7 @@ export function PublishDialog(props: PublishDialogProps) {
         placeholder="value"
         aria-label={`${variable.key} value in ${targetName()}`}
       />
-      <span class="of-ink of-tone-done w-11 shrink-0 text-right text-[10px]">
+      <span class="of-ink of-tone-done w-11 shrink-0 text-right text-[0.625rem]">
         <Show when={(variables()[variable.key] ?? '') !== variable.value}>edited</Show>
       </span>
     </div>
@@ -163,10 +163,10 @@ export function PublishDialog(props: PublishDialogProps) {
             <div class="flex min-w-0 items-center gap-2 pb-1.5">
               <span class={`of-dot h-1.5 w-1.5 ${group.tone}`} />
               <span class="whitespace-nowrap text-xs font-medium text-foreground">{group.name}</span>
-              <span class="text-[11px] text-muted-foreground">{group.variables.length}</span>
-              <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">— {group.note}</span>
+              <span class="text-[0.6875rem] text-muted-foreground">{group.variables.length}</span>
+              <span class="min-w-0 flex-1 truncate text-[0.6875rem] text-muted-foreground">— {group.note}</span>
               <button
-                class="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground"
+                class="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground"
                 aria-expanded={openGroups()[group.id]}
                 onClick={() => toggleGroup(group.id)}
               >
@@ -181,7 +181,7 @@ export function PublishDialog(props: PublishDialogProps) {
                 <For each={group.variables}>{(variable) => variableRow(variable, group.attention)}</For>
               </div>
               <Show when={group.hint}>
-                <p class="mt-1.5 text-[11px] text-muted-foreground">{group.hint}</p>
+                <p class="mt-1.5 text-[0.6875rem] text-muted-foreground">{group.hint}</p>
               </Show>
             </Show>
           </div>
@@ -251,19 +251,19 @@ export function PublishDialog(props: PublishDialogProps) {
                             <Show
                               when={unreviewedKeys().length > 0}
                               fallback={
-                                <Badge variant="secondary" class="ml-1.5 rounded-full px-1.5 py-0 text-[10px]">
+                                <Badge variant="secondary" class="ml-1.5 rounded-full px-1.5 py-0 text-[0.625rem]">
                                   {formVariables().length}
                                 </Badge>
                               }
                             >
-                              <Badge variant="warning" class="ml-1.5 rounded-full px-1.5 py-0 text-[10px]">
+                              <Badge variant="warning" class="ml-1.5 rounded-full px-1.5 py-0 text-[0.625rem]">
                                 {unreviewedKeys().length} to review
                               </Badge>
                             </Show>
                           </TabsTrigger>
                           <TabsTrigger value="schedules">
                             Schedules
-                            <Badge variant="secondary" class="ml-1.5 rounded-full px-1.5 py-0 text-[10px]">
+                            <Badge variant="secondary" class="ml-1.5 rounded-full px-1.5 py-0 text-[0.625rem]">
                               {selectedScheduleCount()} of {formSchedules().length}
                             </Badge>
                           </TabsTrigger>
@@ -299,7 +299,7 @@ export function PublishDialog(props: PublishDialogProps) {
 
         <div class="mt-5 flex shrink-0 flex-wrap items-center justify-end gap-2">
           <Show when={unreviewedKeys().length > 0}>
-            <span class="mr-auto flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span class="mr-auto flex min-w-0 items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
               <span class="of-dot of-tone-needs-you h-1.5 w-1.5" />
               <span class="truncate">
                 {unreviewedKeys().length} new{' '}
@@ -340,7 +340,7 @@ export function PublishDialog(props: PublishDialogProps) {
               {unreviewedKeys().length} new {unreviewedKeys().length === 1 ? 'variable' : 'variables'} will go live with
               Development values:
             </p>
-            <ul class="mt-1.5 space-y-0.5 font-mono text-[11px]">
+            <ul class="mt-1.5 space-y-0.5 font-mono text-[0.6875rem]">
               <For each={unreviewedKeys()}>{(key) => <li class="truncate">{key}</li>}</For>
             </ul>
           </div>

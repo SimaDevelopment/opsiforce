@@ -48,7 +48,7 @@ export function PublishTargetList<T extends EnvironmentChoice>(props: {
 export function PublishPreviewCard(props: { title: string; children: JSX.Element }) {
   return (
     <div class="overflow-hidden rounded-lg border border-border">
-      <div class="border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+      <div class="border-b border-border bg-muted/40 px-3 py-1.5 text-[0.6875rem] font-medium text-muted-foreground">
         {props.title}
       </div>
       <div class="divide-y divide-border">{props.children}</div>

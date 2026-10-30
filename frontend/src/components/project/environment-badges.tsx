@@ -46,7 +46,7 @@ export function EnvironmentBadges(props: { environmentIds: string[]; dimmed?: bo
         </For>
         <Show when={overflow() > 0}>
           <Tooltip>
-            <TooltipTrigger as="span" class="text-[9px] leading-none text-sidebar-muted-foreground">
+            <TooltipTrigger as="span" class="text-[0.5625rem] leading-none text-sidebar-muted-foreground">
               +{overflow()}
             </TooltipTrigger>
             <TooltipContent>{overflowNames()}</TooltipContent>

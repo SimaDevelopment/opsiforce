@@ -14,7 +14,8 @@ kind: explanation
 - The semantic layer names surfaces (`--bg-app`, `--bg-panel`, `--bg-content`, `--bg-elevated`), ink (`--ink-subtle`, `--ink-default`, `--ink-strong`, `--ink-on-solid`), the brand fill (`--fill-solid`, `--ink-accent`) and the hairlines (`--border-subtle`, `--border-default`).
 - Domain tokens (`--env-production`, `--job-failed`, `--diff-added`, `--published`) hold the same value in light and dark, so an environment or a job phase keeps its identity across a mode flip.
 - Those domain tokens come in three kinds, kept apart because they answer different questions: **status** (`--job-*`, `--env-*`, `--diff-*`), **identity** (`--kind-doc`, `--kind-sheet`, … — a spreadsheet is green because it is a spreadsheet, not because anything succeeded) and **series** (`--series-1` … `--series-6`, six chart hues whose only job is to stay apart).
-- The legacy shadcn names (`--background`, `--primary`, `--muted-foreground`, …) survive as `H S% L%` triplets pointing at the same palette, so every component already written against `bg-background` or `text-muted-foreground` renders in the new look untouched, and the `/ <alpha>` modifier keeps working.
+- The shadcn colour utilities (`bg-background`, `text-muted-foreground`, `border`, `bg-primary`, …) point straight at the live semantic tokens in `index.css` `@theme`, so Contrast and the Appearance seeds reach every component written against them, and the `/ <alpha>` modifier keeps working through `color-mix`. The muted and accent fills use the opaque `--bg-element-solid` / `--bg-element-hover-solid`, the element tones flattened onto the content surface, so sticky and overlaid content stays covered.
+- The `H S% L%` triplets (`--background`, `--primary`, …) remain only for the federated Users page, whose keycloak-ms CSS reads `hsl(var(--primary))`; the seeds regenerate them, Contrast does not reach them.
 - `frontend/src/index.css` exposes both sets to Tailwind through `@theme inline`; the shell names arrive as utilities (`bg-panel`, `text-ink-subtle`, `border-line`).
 - Shell token names stay out of the namespace the embedded chat writes on `:root` (`--text-*`, `--border-base`, `--border-focus`, `--surface-*`, `--icon-*`, …): the ink ramp is `--ink-*` and the border ink and accent are `--border-ink` and `--border-accent`, so a chat palette can never shadow a shell value at equal specificity. What opencode leaves on the page after a chat unmounts — its `:root` stylesheet, a background and a `theme-color` — never wins: `:root[data-scheme]` out-specifies its `color-scheme`, the shell's `html` background is `!important`, and the shell restores the brand `theme-color`.
 
@@ -35,19 +36,20 @@ kind: explanation
 ### Metrics and motion
 
 - There are exactly three control heights — `--h-compact` 24px, `--h-default` 32px, `--h-primary` 36px — and one row geometry, `.of-row`, shared by the sidebar lists and the command palette; the project tabs take `--row-h` as their height and the project band is that plus 8px, so Density moves the band too; the project cards and the runs dock cards take their padding from the same density tokens (`--card-pad`, `--row-pad`).
-- Durations and easings are tokens (`--dur-fast`, `--dur`, `--dur-slow`, `--ease-standard`, `--ease-spring`); `prefers-reduced-motion` and `[data-motion="reduced"]` flatten them in one place, and stop the two looping indicators (`.of-dot-pulse`, `.of-working`), which keep their literal durations, leaving them visible and still.
+- Durations and easings are tokens (`--dur-fast`, `--dur`, `--dur-slow`, `--ease-standard`, `--ease-spring`); `prefers-reduced-motion` (unless Appearance → Motion is Full) and `[data-motion="reduced"]` (Motion → Reduced) flatten them in one place, and stop the two looping indicators (`.of-dot-pulse`, `.of-working`), which keep their literal durations, leaving them visible and still.
 
 ### Appearance
 
-- The user's choices ride on `<html>`: `data-scheme`, `data-contrast`, `data-density`, the `--font-scale` custom property, and — when a non-default seed is picked — the semantic tokens themselves as inline custom properties; the stylesheet is the only subscriber.
+- The user's choices ride on `<html>`: `data-scheme`, `data-contrast`, `data-density`, `data-motion` (absent for System), the `--font-scale` custom property — which also sets the root font size, so every rem of text and spacing scales like a zoom while the shell's px type tokens multiply it themselves — and — when a non-default seed is picked — the semantic tokens themselves as inline custom properties; the stylesheet is the only subscriber.
 - `frontend/src/lib/appearance.ts` owns the signals and writes them; an inline script in `index.html` applies the stored values before first paint so a dark-mode user never sees a white flash.
-- Base and Accent are seeds, not tokens: `frontend/src/lib/theme-seeds.ts` feeds them to the OKLCH generator vendored at `opencode/packages/ui/src/theme/color.ts` and maps its scales onto the semantic layer and onto the legacy bridge, checking accent text against a 4.5:1 floor and choosing the ink on a solid fill by ratio.
+- Base and Accent are seeds, not tokens: `frontend/src/lib/theme-seeds.ts` feeds them to the OKLCH generator vendored at `opencode/packages/ui/src/theme/color.ts` and maps its scales onto the semantic layer and onto the federated triplets, checking accent text against a 4.5:1 floor and choosing the ink on a solid fill by ratio.
 - The default seeds write nothing at all — they mean "use the authored stylesheet", whose values were tuned against the APCA floors by hand and which the generator would only approximate.
 - Dark is authored rather than inverted: the surface ladder carries about four times the separation of light, and `--fill-solid` brightens to the brand tint and takes dark ink.
 
 ## Edge cases
 
-- When `localStorage` is unavailable the boot script does nothing and the stylesheet defaults apply — light, normal contrast, comfortable density.
+- When `localStorage` is unavailable the boot script does nothing and the stylesheet defaults apply — light, normal contrast, comfortable density (36px rows), motion following the OS.
+- The boot script also paints the seed tokens before first paint from `opsiforce:appearance:seed-cache`, the last tokens the app generated, keyed by the two seeds and the scheme; a seed choice it has no tokens for yet paints the authored palette for one frame.
 - When the mode is `system`, the scheme keeps following the OS after boot through a `matchMedia` listener, not only at load.
 - When a seed is chosen and then set back to the default, the inline custom properties are removed rather than recomputed, so the authored values return exactly.
 - When a role class is used with no setter anywhere above it, `--tone` falls back to `--ink-subtle`, so the element renders neutral rather than transparent.
@@ -57,7 +59,7 @@ kind: explanation
 
 - `frontend/src/styles/shell.css` — the tokens, the tone recipe, the primitives and the shell classes.
 - `frontend/src/index.css` — Tailwind entry; maps both token sets into `@theme inline`.
-- `frontend/src/lib/appearance.ts` — the mode, contrast, density, font-size and seed signals.
+- `frontend/src/lib/appearance.ts` — the one appearance store (mode, contrast, density, font size, motion, seeds) and its single writer onto `<html>`.
 - `frontend/src/lib/theme-seeds.ts` — the seed lists and the mapping from the generator's scales onto the semantic layer.
 - `frontend/src/components/project/opencode-shell-theme.ts` — the same palette, handed to the embedded chat: resolved seeds plus live `var(...)` overrides.
 - `frontend/src/routes/settings/appearance.tsx` and `frontend/index.html` — the page that drives the choices, and the script that applies them before first paint.

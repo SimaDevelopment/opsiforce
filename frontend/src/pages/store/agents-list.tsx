@@ -135,7 +135,7 @@ function AgentRow(props: { agent: StoreAgent; environmentById: Map<string, Envir
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span class="text-sm font-medium">{props.agent.displayName ?? props.agent.name}</span>
-          <span class="font-mono text-[11px] text-muted-foreground">{props.agent.name}</span>
+          <span class="font-mono text-[0.6875rem] text-muted-foreground">{props.agent.name}</span>
           <OriginBadge origin={props.agent.origin} />
           <Show when={props.agent.visibility === 'private'}>
             <VisibilityBadge visibility="private" />

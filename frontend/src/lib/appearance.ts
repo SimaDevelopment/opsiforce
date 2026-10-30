@@ -26,11 +26,13 @@ export const MODES = ['light', 'dark', 'system'] as const;
 export const CONTRASTS = ['softer', 'normal', 'high'] as const;
 export const DENSITIES = ['comfortable', 'default', 'compact'] as const;
 export const FONT_SIZES = ['small', 'default', 'large'] as const;
+export const MOTIONS = ['system', 'reduced', 'full'] as const;
 
 export type Mode = (typeof MODES)[number];
 export type Contrast = (typeof CONTRASTS)[number];
 export type Density = (typeof DENSITIES)[number];
 export type FontSize = (typeof FONT_SIZES)[number];
+export type Motion = (typeof MOTIONS)[number];
 
 export const MODE_KEY = 'opsiforce:appearance:mode';
 export const CONTRAST_KEY = 'opsiforce:appearance:contrast';
@@ -38,6 +40,8 @@ export const DENSITY_KEY = 'opsiforce:appearance:density';
 export const FONT_SIZE_KEY = 'opsiforce:appearance:font-size';
 export const BASE_SEED_KEY = 'opsiforce:appearance:base-seed';
 export const ACCENT_SEED_KEY = 'opsiforce:appearance:accent-seed';
+export const MOTION_KEY = 'opsiforce:appearance:motion';
+export const SEED_CACHE_KEY = 'opsiforce:appearance:seed-cache';
 
 const FONT_SCALE: Record<FontSize, string> = {
   small: '0.92',
@@ -52,6 +56,7 @@ export const isMode = (v: string | null | undefined): v is Mode => isOneOf(MODES
 export const isContrast = (v: string | null | undefined): v is Contrast => isOneOf(CONTRASTS, v);
 export const isDensity = (v: string | null | undefined): v is Density => isOneOf(DENSITIES, v);
 export const isFontSize = (v: string | null | undefined): v is FontSize => isOneOf(FONT_SIZES, v);
+export const isMotion = (v: string | null | undefined): v is Motion => isOneOf(MOTIONS, v);
 
 const prefersDark = (): boolean =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -100,11 +105,13 @@ function createAppearanceStore() {
   const [rawFontSize, setRawFontSize] = createPersistedStringSignal(FONT_SIZE_KEY, 'default');
   const [rawBase, setRawBase] = createPersistedStringSignal(BASE_SEED_KEY, DEFAULT_BASE_SEED);
   const [rawAccent, setRawAccent] = createPersistedStringSignal(ACCENT_SEED_KEY, DEFAULT_ACCENT_SEED);
+  const [rawMotion, setRawMotion] = createPersistedStringSignal(MOTION_KEY, 'system');
 
   const mode = (): Mode => (isMode(rawMode()) ? (rawMode() as Mode) : 'system');
   const contrast = (): Contrast => (isContrast(rawContrast()) ? (rawContrast() as Contrast) : 'normal');
   const density = (): Density => (isDensity(rawDensity()) ? (rawDensity() as Density) : 'comfortable');
   const fontSize = (): FontSize => (isFontSize(rawFontSize()) ? (rawFontSize() as FontSize) : 'default');
+  const motion = (): Motion => (isMotion(rawMotion()) ? (rawMotion() as Motion) : 'system');
 
   // `system` has to keep tracking the OS after the first paint, so the media
   // query is a signal of its own rather than a one-off read.
@@ -135,6 +142,8 @@ function createAppearanceStore() {
     setDensity: (v: Density) => setRawDensity(v),
     fontSize,
     setFontSize: (v: FontSize) => setRawFontSize(v),
+    motion,
+    setMotion: (v: Motion) => setRawMotion(v),
     base: () => baseSeed(rawBase()),
     setBase: (id: string) => setRawBase(id),
     accent: () => accentSeed(rawAccent()),
@@ -176,13 +185,46 @@ export function mountAppearance() {
       }
       for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
     });
+    cacheSeedTokens(store.base().id, store.accent().id, store.scheme(), tokens);
   });
 
   createEffect(() => applyAppearance({ contrast: store.contrast() }));
   createEffect(() => applyAppearance({ density: store.density() }));
   createEffect(() => applyAppearance({ fontSize: store.fontSize() }));
+  createEffect(() => {
+    const motion = store.motion();
+    if (motion === 'system') root.removeAttribute('data-motion');
+    else root.setAttribute('data-motion', motion);
+  });
 
   keepBrandThemeColor();
+}
+
+/**
+ * The seed tokens come out of the OKLCH generator, which the inline boot
+ * script in index.html cannot run, so the last result is kept for it to paint
+ * the first frame with. It is keyed by the seeds and the scheme it was made
+ * for, and cleared when the seeds return to the authored defaults.
+ */
+function cacheSeedTokens(
+  base: string,
+  accent: string,
+  scheme: 'light' | 'dark',
+  tokens: Record<string, string> | undefined
+) {
+  try {
+    if (!tokens) {
+      window.localStorage.removeItem(SEED_CACHE_KEY);
+      return;
+    }
+    const raw = window.localStorage.getItem(SEED_CACHE_KEY);
+    const previous = raw ? (JSON.parse(raw) as { base?: string; accent?: string }) : undefined;
+    const sameSeeds = previous?.base === base && previous?.accent === accent;
+    const next = { ...(sameSeeds ? previous : {}), base, accent, [scheme]: tokens };
+    window.localStorage.setItem(SEED_CACHE_KEY, JSON.stringify(next));
+  } catch {
+    // best-effort: without it the first frame simply uses the authored palette
+  }
 }
 
 /**

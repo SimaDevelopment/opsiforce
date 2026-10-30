@@ -151,7 +151,7 @@ function FieldSettingsEditor(props: {
         }}
       >
         <Show when={!canSet()}>
-          <div class="flex items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
+          <div class="flex items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-2 text-[0.6875rem] text-muted-foreground">
             <Lock class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             Setting these needs the "Configure project External Services" permission.
           </div>

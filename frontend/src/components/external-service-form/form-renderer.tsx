@@ -141,7 +141,7 @@ function FieldShell(props: {
       </Show>
       {props.children}
       <Show when={props.error}>
-        <span id={`${props.id}-error`} class="text-[11px] text-destructive">
+        <span id={`${props.id}-error`} class="text-[0.6875rem] text-destructive">
           {props.error}
         </span>
       </Show>
@@ -423,11 +423,11 @@ function RadioGroup(props: {
         }}
       </For>
       <Show when={callSource() && waitingFor().length > 0 && !props.ctx.readOnly()}>
-        <span class="text-[11px] text-muted-foreground">Choose {waitingFor().join(', ')} first</span>
+        <span class="text-[0.6875rem] text-muted-foreground">Choose {waitingFor().join(', ')} first</span>
       </Show>
       <Show when={failure()}>
         {(message) => (
-          <span class="inline-flex items-center gap-1.5 text-[11px] text-destructive" role="alert">
+          <span class="inline-flex items-center gap-1.5 text-[0.6875rem] text-destructive" role="alert">
             {message()}
             <button type="button" class="text-foreground underline underline-offset-2" onClick={() => void load()}>
               Try again
@@ -467,7 +467,7 @@ function SectionField(props: {
         </Show>
         <span class="text-xs font-medium">{props.section.title}</span>
         <Show when={props.section.description}>
-          <span class="min-w-0 truncate text-[11px] text-muted-foreground">{props.section.description}</span>
+          <span class="min-w-0 truncate text-[0.6875rem] text-muted-foreground">{props.section.description}</span>
         </Show>
       </button>
       <Show when={open()}>
@@ -558,7 +558,7 @@ function ListField(props: { list: ListFieldDefinition; scope: FormValues; path: 
           )}
         </For>
         <Show when={props.ctx.readOnly() && items().length === 0}>
-          <span class="text-[11px] text-muted-foreground">None</span>
+          <span class="text-[0.6875rem] text-muted-foreground">None</span>
         </Show>
         <Show when={!props.ctx.readOnly()}>
           <Button
@@ -616,7 +616,7 @@ function InfoField(props: {
           fallback={<HelpText text={text()} class="text-xs text-foreground" />}
         >
           <div id={props.id} class="flex items-center gap-1.5 rounded-md bg-muted/60 px-2.5 py-1.5">
-            <span class="min-w-0 flex-1 truncate font-mono text-[11px]">
+            <span class="min-w-0 flex-1 truncate font-mono text-[0.6875rem]">
               {text() || <span class="text-muted-foreground">Not set yet</span>}
             </span>
             <CopyButton text={text()} label={`Copy ${props.field.label ?? 'value'}`} />

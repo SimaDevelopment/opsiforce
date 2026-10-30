@@ -76,7 +76,7 @@ export function BuiltInPlatformDetails(props: { row: PlatformModelProvider; edit
     <>
       <Show when={props.row.url}>
         {(url) => (
-          <p class="mt-0.5 break-all font-mono text-[11px] text-muted-foreground" translate="no">
+          <p class="mt-0.5 break-all font-mono text-[0.6875rem] text-muted-foreground" translate="no">
             {url()}
           </p>
         )}

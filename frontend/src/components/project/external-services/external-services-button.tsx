@@ -16,7 +16,7 @@ import { STRIP_BUTTON_CLASS, STRIP_COUNT_CLASS } from '~/components/composer-str
 
 function OriginMark(props: { origin: string }) {
   return (
-    <span class="inline-flex shrink-0 items-center rounded border border-border px-1 py-px text-[10px] text-muted-foreground">
+    <span class="inline-flex shrink-0 items-center rounded border border-border px-1 py-px text-[0.625rem] text-muted-foreground">
       {props.origin === 'built_in' ? 'Built-in' : 'Custom'}
     </span>
   );
@@ -44,7 +44,7 @@ function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void 
         </div>
         <span
           class={cn(
-            'flex flex-wrap items-center gap-x-1 text-[11px]',
+            'flex flex-wrap items-center gap-x-1 text-[0.6875rem]',
             needsAttention(props.service.configuration) ? 'of-ink of-tone-needs-you' : 'text-muted-foreground'
           )}
         >
@@ -110,7 +110,7 @@ export function ExternalServicesButton(props: {
           <ChevronDown class="h-3 w-3 opacity-60" aria-hidden="true" />
         </PopoverTrigger>
         <PopoverContent class="w-96">
-          <div class="border-b border-border px-3 py-2 text-[11px] font-medium text-muted-foreground">
+          <div class="border-b border-border px-3 py-2 text-[0.6875rem] font-medium text-muted-foreground">
             External services for {props.environmentName}
           </div>
           <div class="max-h-[50vh] divide-y divide-border overflow-y-auto">
@@ -138,7 +138,7 @@ export function ExternalServicesButton(props: {
               <Link
                 to="/store/agents/$id"
                 params={{ id: agentId() }}
-                class="block border-t border-border px-3 py-2 text-[11px] text-muted-foreground hover:text-foreground"
+                class="block border-t border-border px-3 py-2 text-[0.6875rem] text-muted-foreground hover:text-foreground"
               >
                 Give this agent a service's skill for every Project: on the Agent →
               </Link>

@@ -133,7 +133,7 @@ function SkillRow(props: { skill: Skill }) {
             {(displayName) => (
               <>
                 <span class="text-sm font-medium">{displayName()}</span>
-                <span class="font-mono text-[11px] text-muted-foreground">{props.skill.name}</span>
+                <span class="font-mono text-[0.6875rem] text-muted-foreground">{props.skill.name}</span>
               </>
             )}
           </Show>

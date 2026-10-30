@@ -192,7 +192,7 @@ function CapacityBadge(props: { snapshot: PlatformStorageView }) {
         <Tooltip>
           <TooltipTrigger
             as="span"
-            class={cn(badgeVariants({ variant: 'warning' }), 'text-[10px] px-2 py-0 gap-1 cursor-default')}
+            class={cn(badgeVariants({ variant: 'warning' }), 'text-[0.625rem] px-2 py-0 gap-1 cursor-default')}
           >
             <AlertTriangle class="w-3 h-3" />
             Capacity unverified
@@ -201,7 +201,7 @@ function CapacityBadge(props: { snapshot: PlatformStorageView }) {
         </Tooltip>
       }
     >
-      <Badge variant="secondary" class="text-[10px] px-2 py-0 font-medium tabular-nums">
+      <Badge variant="secondary" class="text-[0.625rem] px-2 py-0 font-medium tabular-nums">
         {formatBytes(props.snapshot.usedBytes)} / {formatBytes(props.snapshot.capacityBytes)}
       </Badge>
     </Show>
@@ -253,7 +253,7 @@ function CapacityBar(props: { snapshot: PlatformStorageView }) {
         </Show>
       </div>
 
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px] text-muted-foreground">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[0.6875rem] text-muted-foreground">
         <LegendItem color={TENANT_SEGMENT_TONES[0]} label="Organizations" />
         <LegendItem color={UNATTRIBUTED_TONE} label="Unattributed" />
         <Show when={!props.snapshot.capacitySuspect}>
@@ -459,7 +459,7 @@ function UnaccountedRow(props: { snapshot: PlatformStorageView }) {
             <Tooltip>
               <TooltipTrigger
                 as="span"
-                class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[11px] cursor-default"
+                class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[0.6875rem] cursor-default"
               >
                 <AlertTriangle class="w-3 h-3" />
                 Unverified
@@ -503,7 +503,7 @@ function TenantRow(props: {
           <Building2 class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
           <span class="font-medium text-sm truncate">{props.tenant.name}</span>
           <span class={cn('of-dot w-1.5 h-1.5', props.color)} />
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0 shrink-0">
             {props.tenant.projects.length}
           </Badge>
           <PendingDeletionBadge tenant={props.tenant} />
@@ -524,7 +524,7 @@ function TenantRow(props: {
 function pendingDeletionBadgeClass(interactive: boolean): string {
   return cn(
     badgeVariants({ variant: 'outline' }),
-    'text-[10px] px-1.5 py-0 gap-1 font-normal text-muted-foreground shrink-0',
+    'text-[0.625rem] px-1.5 py-0 gap-1 font-normal text-muted-foreground shrink-0',
     interactive ? 'cursor-pointer hover:bg-muted' : 'cursor-default'
   );
 }
@@ -626,7 +626,7 @@ function ProjectRow(props: {
           />
           <FolderKanban class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
           <span class="text-sm truncate">{props.project.title?.trim() || 'Untitled project'}</span>
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0 shrink-0">
             {props.project.environments.length}
           </Badge>
           <Show when={props.project.error}>
@@ -692,7 +692,7 @@ function MeasurementError(props: { label: string }) {
     <Tooltip>
       <TooltipTrigger
         as="span"
-        class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[11px] shrink-0 cursor-default"
+        class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[0.6875rem] shrink-0 cursor-default"
       >
         <AlertTriangle class="w-3 h-3" />
         Unmeasured

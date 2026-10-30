@@ -167,7 +167,7 @@ export function SchedulesPage() {
         <Calendar class="w-5 h-5 text-muted-foreground" />
         <h1 class="text-xl font-semibold">Schedules</h1>
         <Show when={!schedules.isPending && (isScoped() || !!activeEnvId())}>
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0">
             {count()}
           </Badge>
         </Show>
@@ -525,7 +525,7 @@ function ExecutionsDialog(props: {
                 <div class="flex items-center gap-3 text-xs border rounded px-3 py-2">
                   <Badge
                     variant={exec.statusCode && exec.statusCode < 400 ? 'success' : 'destructive'}
-                    class="text-[10px] px-1.5"
+                    class="text-[0.625rem] px-1.5"
                   >
                     {exec.statusCode ?? 'ERR'}
                   </Badge>

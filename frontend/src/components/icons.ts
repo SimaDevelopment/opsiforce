@@ -1,3 +1,4 @@
+export { default as Activity } from 'lucide-solid/icons/activity';
 export { default as Lock } from 'lucide-solid/icons/lock';
 export { default as LogOut } from 'lucide-solid/icons/log-out';
 export { default as Plus } from 'lucide-solid/icons/plus';

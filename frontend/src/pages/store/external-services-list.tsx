@@ -303,7 +303,7 @@ function ServiceListRow(props: { row: ServiceRow; environments: Environment[] })
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span class="text-sm font-medium">{props.row.displayName}</span>
-          <span class="font-mono text-[11px] text-muted-foreground" translate="no">
+          <span class="font-mono text-[0.6875rem] text-muted-foreground" translate="no">
             {props.row.slug}
           </span>
           <OriginBadge origin={props.row.origin} />

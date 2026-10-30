@@ -36,7 +36,7 @@ export function FilesTable(props: FilesTableProps) {
                   aria-label={entry.type === 'directory' ? `Open folder ${entry.name}` : `Open ${entry.name}`}
                   onClick={() => props.onOpen(entry)}
                 >
-                  <FileTypeBadge name={entry.name} type={entry.type} class="w-6 h-6 text-[8px]" />
+                  <FileTypeBadge name={entry.name} type={entry.type} class="w-6 h-6 text-[0.5rem]" />
                   <span class="truncate">{entry.name}</span>
                 </button>
               </TableCell>

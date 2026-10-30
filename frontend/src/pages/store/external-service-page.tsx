@@ -623,7 +623,7 @@ function OverviewTab(props: {
                   connected to this service read it until the builder replaces it.
                 </p>
               </Show>
-              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[11px] leading-relaxed">
+              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[0.6875rem] leading-relaxed">
                 {skill()}
               </pre>
             </>
@@ -689,7 +689,7 @@ function ManifestLists(props: { manifest: ShownManifest; shown: ManifestShown })
                 <ManifestRow
                   listed={listed}
                   kind={
-                    <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Event</span>
+                    <span class="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">Event</span>
                   }
                   title={listed.item.title}
                   description={listed.item.description}
