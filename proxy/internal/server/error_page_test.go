@@ -63,6 +63,14 @@ func TestABrowserOpeningAnAppThatCannotAnswerSeesAPageInsteadOfJSON(t *testing.T
 	}
 }
 
+func TestAPageGivesUpOnACheckThatNeverAnswers(t *testing.T) {
+	rec := visit(newAppServer(t, &appControlPlane{answer: serveAnswer("http://127.0.0.1:1")}), "https://"+readableAppHost+"/", browserNavigation())
+
+	if !strings.Contains(rec.Body.String(), "signal: AbortSignal.timeout(") {
+		t.Errorf("the page's check has no deadline, so an App that never answers stalls it: %s", rec.Body.String())
+	}
+}
+
 func TestAStartingPageKeepsTheRetryAfterHeader(t *testing.T) {
 	rec := visit(newAppServer(t, &appControlPlane{answer: stateAnswer("starting")}), "https://"+readableAppHost+"/", browserNavigation())
 

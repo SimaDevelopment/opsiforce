@@ -158,7 +158,11 @@
           const check = async () => {
             status.textContent = "Checking…";
             try {
-              const response = await fetch(location.href, { cache: "no-store", redirect: "manual" });
+              const response = await fetch(location.href, {
+                cache: "no-store",
+                redirect: "manual",
+                signal: AbortSignal.timeout(10000),
+              });
               if (!stillRefused(response)) {
                 location.reload();
                 return;
