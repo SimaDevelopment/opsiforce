@@ -6,8 +6,8 @@ import { usePermissions } from '~/api/permissions';
 import { projectKeys, useProject, useRenameProject } from '~/api/projects';
 import { projectTitleOf } from '~/lib/project-title';
 import { useWorkspaces, useWorkspaceFolders } from '~/api/workspaces';
-import { Code as CodeIcon, Command, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
-import { openCommandPalette } from '~/components/command-palette';
+import { ChevronRight, Code as CodeIcon, Command, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
+import { PALETTE_SHORTCUT, openCommandPalette } from '~/components/command-palette';
 import { createAppearance } from '~/lib/appearance';
 import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
@@ -68,7 +68,7 @@ export function ProjectHeader(props: ProjectHeaderProps) {
         <Tabs
           value={props.activeTab}
           onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
-          class="w-auto shrink-0 self-stretch"
+          class="w-auto shrink-0 self-stretch flex"
         >
           <TabsList variant="folder" class="w-auto">
             <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
@@ -112,8 +112,9 @@ export function ProjectHeader(props: ProjectHeaderProps) {
           type="button"
           class="of-btn of-btn-icon of-btn-ghost fr hidden sm:inline-flex"
           onClick={openCommandPalette}
-          aria-label="Search everything"
-          title="Search everything (⌘K)"
+          aria-label="Go to"
+          aria-keyshortcuts="Meta+K Control+K"
+          title={`Go to (${PALETTE_SHORTCUT})`}
         >
           <Command class="w-4 h-4" />
         </button>
@@ -210,9 +211,7 @@ export function ProjectTitleLabel(props: { projectId: string; editing?: boolean;
                 >
                   {name()}
                 </button>
-                <span class="sep" aria-hidden="true">
-                  /
-                </span>
+                <ChevronRight class="sep" aria-hidden="true" />
               </>
             )}
           </Show>
@@ -227,9 +226,7 @@ export function ProjectTitleLabel(props: { projectId: string; editing?: boolean;
                 >
                   {name()}
                 </button>
-                <span class="sep" aria-hidden="true">
-                  /
-                </span>
+                <ChevronRight class="sep" aria-hidden="true" />
               </>
             )}
           </Show>

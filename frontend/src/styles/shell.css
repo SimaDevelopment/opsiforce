@@ -88,7 +88,10 @@
   --h-default: 32px;
   --h-primary: 36px;
   --row-h: var(--h-default);
-  --band-h: 44px;
+  /* the project tabs are rows on their side: Density moves them, and the band
+     is the tab plus the air above it */
+  --tab-h: var(--row-h);
+  --band-h: calc(var(--tab-h) + 8px);
   --row-pad: 10px;
   --row-gap: 10px;
   --indent: 12px;
@@ -361,8 +364,8 @@
 }
 
 /* Density is wired to an audited list only: the sidebar lists (.of-row), the
-   command palette rows, the project cards and the runs dock cards, which take
-   --card-pad. All three steps are authored, and each one moves --row-h, so the
+   command palette rows, the project tabs and their band, the project cards and
+   the runs dock cards, which take --card-pad. All three steps are authored, and each one moves --row-h, so the
    choice is visible rather than decorative. Comfortable is the default. */
 [data-density='comfortable'] {
   --row-h: 36px;
@@ -1012,6 +1015,22 @@
     }
   }
 
+  /* zeroing --dur-* cannot reach these loops, so reduced motion stops them
+     outright and leaves the indicator visible and still */
+  @media (prefers-reduced-motion: reduce) {
+    .of-dot-pulse,
+    .of-working i {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  [data-motion='reduced'] .of-dot-pulse,
+  [data-motion='reduced'] .of-working i {
+    animation: none;
+    opacity: 1;
+  }
+
   /* segmented control */
   .of-seg {
     display: inline-flex;
@@ -1097,11 +1116,6 @@
     background: var(--border-subtle);
   }
 
-  /* the "queued / accepted but not started" shimmer — reused by chat, publish
-     and runs, so the three never diverge */
-
-  @media (prefers-reduced-motion: reduce) {
-  }
   /* ONE row geometry, reused by the sidebar, popover items, the runs dock,
      schedules and settings lists. */
   .of-row {
@@ -1384,13 +1398,16 @@
   /* ==========================================================================
      BAND — the single 44px chrome strip. No separate project-title row.
      ========================================================================== */
+  /* The folder tabs sit on the band's floor, so the band's top padding is the
+     space above them, and everything else centres in the same strip: one
+     line for the trail, the tabs and the controls. */
   .of-band {
     display: flex;
     align-items: center;
     gap: 10px;
     height: var(--band-h);
     flex: none;
-    padding: 0 10px 0 8px;
+    padding: calc(var(--band-h) - var(--tab-h)) 10px 0 8px;
     background: var(--bg-app);
     border-bottom: 1px solid var(--border-subtle);
   }
@@ -1444,17 +1461,34 @@
     text-decoration: none;
   }
 
+  /* a chevron, never "/": project titles are full of paths */
   .of-crumbs .sep {
+    width: 12px;
+    height: 12px;
+    flex: none;
     color: var(--ink-subtle);
-    opacity: 0.5;
+    opacity: 0.6;
   }
 
+  /* padded like the crumbs so the chevron sits evenly between them, and
+     capped so the tabs after it stay put from project to project */
   .of-crumbs .last {
     color: var(--ink-strong);
     font: var(--text-ui-med);
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    padding: 3px 6px;
+    max-width: 36ch;
+    min-width: 0;
+  }
+
+  /* where you are, then where you can go: a hairline between the trail and
+     the tabs */
+  .of-crumbs::after {
+    content: '';
+    flex: none;
+    width: 1px;
+    height: 16px;
+    margin-left: 6px;
+    background: var(--border-default);
   }
 
   /* Folder tabs: the active tab's background EQUALS the content tone and its
@@ -1473,8 +1507,10 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 34px;
-    padding: 0 12px;
+    height: var(--tab-h);
+    /* the bottom pixel overlaps the band's hairline, so the label centres on
+       the visible part, level with everything else on the band */
+    padding: 0 calc(var(--row-pad) + 2px) 1px;
     border-radius: var(--control-radius) var(--control-radius) 0 0;
     color: var(--ink-subtle);
     font: var(--text-ui-med);
@@ -1757,6 +1793,7 @@
   }
 
   .of-job {
+    flex: none;
     border-radius: var(--radius-lg-of);
     background: var(--bg-elevated);
     box-shadow: var(--shadow-2);

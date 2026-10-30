@@ -10,11 +10,23 @@ import { projectDisplayTitle } from '~/lib/project-display';
 import { Calendar, FolderKanban, House, Moon, Search, Server, Settings, Store, Sun } from '~/components/icons';
 
 /**
- * Search everything — one list of projects, destinations and actions behind
- * Cmd/Ctrl K. Module-level state so the sidebar row, the band button and the
- * shortcut all drive the same dialog without a provider.
+ * Go to — one list of projects, destinations and actions behind
+ * Cmd/Ctrl K. Module-level state so the band button and the shortcut drive
+ * the same dialog without a provider.
  */
 const [open, setOpen] = createSignal(false);
+
+const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+const SHORTCUT_KEYS = isApple ? ['⌘', 'K'] : ['Ctrl', 'K'];
+export const PALETTE_SHORTCUT = isApple ? '⌘K' : 'Ctrl+K';
+
+function PaletteShortcut(props: { class?: string }) {
+  return (
+    <span class={`inline-flex items-center gap-0.5 ${props.class ?? ''}`}>
+      <For each={SHORTCUT_KEYS}>{(key) => <kbd class="of-kbd">{key}</kbd>}</For>
+    </span>
+  );
+}
 
 export const commandPaletteOpen = open;
 export const openCommandPalette = () => setOpen(true);
@@ -234,17 +246,17 @@ export function CommandPalette() {
         aria-label="Close search"
         onClick={() => setOpen(false)}
       />
-      <div class="of-cmdk" data-open={open()} role="dialog" aria-modal="true" aria-label="Search everything">
+      <div class="of-cmdk" data-open={open()} role="dialog" aria-modal="true" aria-label="Go to">
         <div class="of-cmdk-top">
           <Search class="w-4 h-4 shrink-0" style={{ color: 'var(--ink-subtle)' }} />
           <input
             ref={(el) => (inputRef = el)}
             type="text"
-            placeholder="Search projects, pages and actions…"
+            placeholder="Go to a project, page or action…"
             value={query()}
             onInput={(e) => setQuery(e.currentTarget.value)}
             onKeyDown={onInputKeyDown}
-            aria-label="Search projects, pages and actions"
+            aria-label="Go to a project, page or action"
             aria-autocomplete="list"
             aria-controls="of-cmdk-list"
             aria-activedescendant={ordered()[cursor()] ? `of-cmdk-opt-${cursor()}` : undefined}
@@ -308,10 +320,7 @@ export function CommandPalette() {
             <kbd class="of-kbd">↵</kbd>
             to open
           </span>
-          <span class="ml-auto inline-flex items-center gap-1.5">
-            <kbd class="of-kbd">⌘</kbd>
-            <kbd class="of-kbd">K</kbd>
-          </span>
+          <PaletteShortcut class="ml-auto" />
         </div>
       </div>
     </>

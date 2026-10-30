@@ -76,8 +76,10 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
     settings.general.setTimelineDetail(activityTimeline);
+    // The embed never registers opencode's palette, yet its capture-phase
+    // listener would still swallow Cmd/Ctrl K before the shell palette sees it.
+    settings.keybinds.set('command.palette', 'none');
   });
-
 
   // The scheme was pinned to 'light'. It follows the shell now, or a dark shell
   // would frame a white chat. The shell's own `system` is already resolved by

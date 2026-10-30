@@ -1,5 +1,5 @@
 import type { Project, Workspace } from '~/api/client';
-import { createPersistedSignal, createPersistedStringSignal } from './persisted-signal';
+import { createPersistedStringSignal } from './persisted-signal';
 
 /**
  * Narrowing the project list.
@@ -35,7 +35,6 @@ export const RECENCY_LABEL: Record<Recency, string> = {
 
 export const SCOPE_KEY = 'opsiforce:projects:scope';
 export const RECENCY_KEY = 'opsiforce:projects:recency';
-export const FILTERS_OPEN_KEY = 'opsiforce:projects:filters-open';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -74,15 +73,25 @@ export function matchesScope(
   return workspace.type === 'private' && !!currentUserId && workspace.ownerId === currentUserId;
 }
 
-export const isScope = (v: string | null | undefined): v is Scope =>
-  !!v && (SCOPES as readonly string[]).includes(v);
+export function filterProjects(
+  projects: Project[] | undefined,
+  scope: Scope,
+  recency: Recency,
+  workspaces: Workspace[] | undefined,
+  currentUserId: string | undefined
+): Project[] {
+  return (projects ?? []).filter(
+    (p) => matchesScope(p, scope, workspaces, currentUserId) && matchesRecency(p, recency)
+  );
+}
+
+export const isScope = (v: string | null | undefined): v is Scope => !!v && (SCOPES as readonly string[]).includes(v);
 export const isRecency = (v: string | null | undefined): v is Recency =>
   !!v && (RECENCIES as readonly string[]).includes(v);
 
 export function createProjectFilters() {
   const [rawScope, setRawScope] = createPersistedStringSignal(SCOPE_KEY, 'all');
   const [rawRecency, setRawRecency] = createPersistedStringSignal(RECENCY_KEY, 'any');
-  const [open, setOpen] = createPersistedSignal<boolean>(FILTERS_OPEN_KEY, false);
 
   const scope = (): Scope => (isScope(rawScope()) ? (rawScope() as Scope) : 'all');
   const recency = (): Recency => (isRecency(rawRecency()) ? (rawRecency() as Recency) : 'any');
@@ -94,8 +103,6 @@ export function createProjectFilters() {
     recency,
     setRecency: (v: Recency) => setRawRecency(v),
     active,
-    open,
-    setOpen,
     reset: () => {
       setRawScope('all');
       setRawRecency('any');

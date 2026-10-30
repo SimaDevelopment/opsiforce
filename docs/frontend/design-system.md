@@ -34,8 +34,8 @@ kind: explanation
 
 ### Metrics and motion
 
-- There are exactly three control heights — `--h-compact` 24px, `--h-default` 32px, `--h-primary` 36px — and one row geometry, `.of-row`, shared by the sidebar lists and the command palette; the project cards and the runs dock cards take their padding from the same density tokens (`--card-pad`, `--row-pad`).
-- Durations and easings are tokens (`--dur-fast`, `--dur`, `--dur-slow`, `--ease-standard`, `--ease-spring`); `prefers-reduced-motion` and `[data-motion="reduced"]` flatten them in one place.
+- There are exactly three control heights — `--h-compact` 24px, `--h-default` 32px, `--h-primary` 36px — and one row geometry, `.of-row`, shared by the sidebar lists and the command palette; the project tabs take `--row-h` as their height and the project band is that plus 8px, so Density moves the band too; the project cards and the runs dock cards take their padding from the same density tokens (`--card-pad`, `--row-pad`).
+- Durations and easings are tokens (`--dur-fast`, `--dur`, `--dur-slow`, `--ease-standard`, `--ease-spring`); `prefers-reduced-motion` and `[data-motion="reduced"]` flatten them in one place, and stop the two looping indicators (`.of-dot-pulse`, `.of-working`), which keep their literal durations, leaving them visible and still.
 
 ### Appearance
 

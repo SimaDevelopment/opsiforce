@@ -22,7 +22,7 @@ import {
 } from '~/api/workspaces';
 import { useUpdateWorkspacePreferences } from '~/api/users';
 import { createPersistedSignal } from '~/lib/persisted-signal';
-import { createProjectFilters, matchesRecency, matchesScope } from '~/lib/project-filters';
+import { createProjectFilters, filterProjects } from '~/lib/project-filters';
 import { ProjectFilterChips } from './project-filters';
 import { useCurrentUser } from '~/api/user';
 import { projectMoveBlockReason } from '~/lib/project-move';
@@ -149,11 +149,7 @@ export function ProjectSidebar(props: { search: string }) {
   // with nothing left in it simply does not render — the tree keeps its shape
   // and its ordering, it just gets shorter.
   const visibleProjects = createMemo(() =>
-    (projects.data ?? []).filter(
-      (p) =>
-        matchesScope(p, filters.scope(), workspaces.data, currentUser.data?.id) &&
-        matchesRecency(p, filters.recency())
-    )
+    filterProjects(projects.data, filters.scope(), filters.recency(), workspaces.data, currentUser.data?.id)
   );
 
   const groupedProjects = createMemo(() => {
@@ -170,6 +166,12 @@ export function ProjectSidebar(props: { search: string }) {
     }
     return { byWs, publicProjects };
   });
+
+  const visibleWorkspaces = createMemo(() =>
+    filters.active() ? (workspaces.data ?? []).filter((w) => groupedProjects().byWs.has(w.id)) : (workspaces.data ?? [])
+  );
+  const showPublicGroup = () => !filters.active() || groupedProjects().publicProjects.length > 0;
+  const nothingMatches = () => filters.active() && visibleProjects().length === 0;
 
   const searchQuery = () => props.search.toLowerCase().trim();
 
@@ -189,9 +191,12 @@ export function ProjectSidebar(props: { search: string }) {
     return folders?.find((f) => f.id === folderId)?.name ?? null;
   };
 
-  const reorderWorkspacesByIndex = (fromIdx: number, toIdx: number) => {
+  const reorderWorkspacesByIndex = (visibleFromIdx: number, visibleToIdx: number) => {
     const current = (workspaces.data ?? []).map((w) => w.id);
-    if (fromIdx < 0 || toIdx < 0 || fromIdx >= current.length || fromIdx === toIdx) return;
+    const visible = visibleWorkspaces();
+    const fromIdx = current.indexOf(visible[visibleFromIdx]?.id);
+    const toIdx = current.indexOf(visible[visibleToIdx]?.id);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
     const next = [...current];
     const [moved] = next.splice(fromIdx, 1);
     next.splice(toIdx, 0, moved);
@@ -340,9 +345,12 @@ export function ProjectSidebar(props: { search: string }) {
           active={filters.active()}
           onReset={filters.reset}
         />
+        <Show when={nothingMatches()}>
+          <p class="text-xs text-muted-foreground/60 px-2 py-1 italic">No projects match these filters.</p>
+        </Show>
         <DragDropProvider onDragStart={onDragStart} onDragEnd={onDragEnd}>
           <div class="flex flex-col gap-1">
-            <For each={workspaces.data}>
+            <For each={visibleWorkspaces()}>
               {(ws, idx) => (
                 <SidebarWorkspaceGroup
                   workspace={ws}
@@ -390,33 +398,35 @@ export function ProjectSidebar(props: { search: string }) {
               )}
             </For>
 
-            <SidebarPublicGroup
-              expanded={!isFolded(PUBLIC_ID)}
-              projects={filterByQuery(groupedProjects().publicProjects)}
-              activeProjectId={activeProjectId()}
-              onToggleFold={() => toggleFold(PUBLIC_ID)}
-              renderCreate={
-                canCreateInPublic() || canImport()
-                  ? (renderTrigger) => (
-                      <CreateMenu
-                        trigger={renderTrigger}
-                        agents={agents.data}
-                        disabled={createUnassigned.isPending}
-                        canCreateProject={canCreateInPublic()}
-                        canImport={canImport()}
-                        onCreateProject={(agentId) => handleCreateUnassigned(agentId)}
-                        onOpenImport={() => setImportTarget({ workspaceId: null })}
-                      />
-                    )
-                  : undefined
-              }
-              onSelectProject={navigateToProject}
-              onRenameProject={(id, title) => renameProject.mutate({ id, title })}
-              onProjectSettings={(id) => setSettingsProjectId(id)}
-              onProjectDeleted={(id) => {
-                if (id === activeProjectId()) navigate({ to: '/' });
-              }}
-            />
+            <Show when={showPublicGroup()}>
+              <SidebarPublicGroup
+                expanded={!isFolded(PUBLIC_ID)}
+                projects={filterByQuery(groupedProjects().publicProjects)}
+                activeProjectId={activeProjectId()}
+                onToggleFold={() => toggleFold(PUBLIC_ID)}
+                renderCreate={
+                  canCreateInPublic() || canImport()
+                    ? (renderTrigger) => (
+                        <CreateMenu
+                          trigger={renderTrigger}
+                          agents={agents.data}
+                          disabled={createUnassigned.isPending}
+                          canCreateProject={canCreateInPublic()}
+                          canImport={canImport()}
+                          onCreateProject={(agentId) => handleCreateUnassigned(agentId)}
+                          onOpenImport={() => setImportTarget({ workspaceId: null })}
+                        />
+                      )
+                    : undefined
+                }
+                onSelectProject={navigateToProject}
+                onRenameProject={(id, title) => renameProject.mutate({ id, title })}
+                onProjectSettings={(id) => setSettingsProjectId(id)}
+                onProjectDeleted={(id) => {
+                  if (id === activeProjectId()) navigate({ to: '/' });
+                }}
+              />
+            </Show>
 
             <Show when={(workspaces.data?.length ?? 0) === 0 && (projects.data?.length ?? 0) === 0}>
               <div class="flex flex-col items-center justify-center py-8 px-4 text-center">

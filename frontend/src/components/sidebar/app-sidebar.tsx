@@ -34,11 +34,11 @@ import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
 import { SidebarAttention } from './sidebar-attention';
-import { SidebarSectionNav } from './sidebar-section-nav';
+import { COLLAPSED_HIDDEN, COLLAPSED_ROW, SidebarSectionNav } from './sidebar-section-nav';
 import { ProjectFilters } from './project-filters';
 import { useProjects } from '~/api/projects';
 import { useWorkspaces } from '~/api/workspaces';
-import { createProjectFilters, matchesRecency, matchesScope } from '~/lib/project-filters';
+import { createProjectFilters, filterProjects } from '~/lib/project-filters';
 import { SETTINGS_TABS, SETTINGS_GROUP_ORDER } from '~/constants/settings-tabs';
 import { ADMIN_TABS, ADMIN_GROUP_ORDER } from '~/constants/admin-tabs';
 import {
@@ -66,12 +66,14 @@ function NavRow(props: {
   return (
     <button
       type="button"
-      class="of-row fr-panel"
+      class={`of-row fr-panel ${COLLAPSED_ROW}`}
+      title={props.label}
+      aria-label={props.label}
       aria-current={props.active ? 'page' : undefined}
       onClick={() => props.onNavigate({ to: props.to })}
     >
       <props.icon class="w-4 h-4 shrink-0" />
-      <span class="lbl">{props.label}</span>
+      <span class={`lbl ${COLLAPSED_HIDDEN}`}>{props.label}</span>
     </button>
   );
 }
@@ -93,14 +95,12 @@ export function AppSidebar() {
   // the same persisted signals ProjectSidebar reads, kept in step by the
   // storage event rather than by a shared provider
   const filters = createProjectFilters();
+  const [filtersOpen, setFiltersOpen] = createSignal(false);
   const allProjects = useProjects();
   const allWorkspaces = useWorkspaces();
   const matchCount = () =>
-    (allProjects.data ?? []).filter(
-      (p) =>
-        matchesScope(p, filters.scope(), allWorkspaces.data, currentUser.data?.id) &&
-        matchesRecency(p, filters.recency())
-    ).length;
+    filterProjects(allProjects.data, filters.scope(), filters.recency(), allWorkspaces.data, currentUser.data?.id)
+      .length;
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = createSignal(false);
   const [importOpen, setImportOpen] = createSignal(false);
   let searchRef: HTMLInputElement | undefined;
@@ -187,8 +187,8 @@ export function AppSidebar() {
             </Show>
           </div>
           <ProjectFilters
-            open={filters.open()}
-            onOpenChange={filters.setOpen}
+            open={filtersOpen()}
+            onOpenChange={setFiltersOpen}
             scope={filters.scope()}
             onScopeChange={filters.setScope}
             recency={filters.recency()}
@@ -248,7 +248,7 @@ export function AppSidebar() {
       {/* Destinations sit above the tree, so the sidebar reads as one list of
           places rather than a project tree with a hidden menu under the avatar. */}
       <Show when={!inSection()}>
-        <nav class="group-data-[collapsible=icon]/sidebar:hidden px-2 pb-1" aria-label="Main">
+        <nav class="px-2 pb-1" aria-label="Main">
           <NavRow icon={House} label="Home" to="/" active={path() === '/'} onNavigate={navigate} />
           <Show when={hasPermission('can_manage_schedules')}>
             <NavRow
@@ -276,36 +276,36 @@ export function AppSidebar() {
       <SidebarContent>
         {/* On /settings and /admin the sidebar becomes that section's navigation
           rather than letting a second rail open beside it. */}
-        <div class="group-data-[collapsible=icon]/sidebar:hidden">
-          <Show when={inSettings()}>
-            <SidebarSectionNav
-              title="Settings"
-              tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
-              groupOrder={SETTINGS_GROUP_ORDER}
-            />
-          </Show>
-          <Show when={inAdmin()}>
-            <SidebarSectionNav
-              title="Admin"
-              tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
-              groupOrder={ADMIN_GROUP_ORDER}
-            />
-          </Show>
-        </div>
+        <Show when={inSettings()}>
+          <SidebarSectionNav
+            title="Settings"
+            tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+            groupOrder={SETTINGS_GROUP_ORDER}
+          />
+        </Show>
+        <Show when={inAdmin()}>
+          <SidebarSectionNav
+            title="Admin"
+            tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+            groupOrder={ADMIN_GROUP_ORDER}
+          />
+        </Show>
         <Show when={!inSection()}>
           <div class="group-data-[collapsible=icon]/sidebar:hidden">
             <SidebarAttention />
           </div>
         </Show>
-        <div class="hidden group-data-[collapsible=icon]/sidebar:block px-2 py-2">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => toggleSidebar()}>
-                <FolderKanban class="w-4 h-4 shrink-0" />
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </div>
+        <Show when={!inSection()}>
+          <div class="hidden group-data-[collapsible=icon]/sidebar:block px-2 py-2">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => toggleSidebar()} title="Show projects">
+                  <FolderKanban class="w-4 h-4 shrink-0" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </div>
+        </Show>
         <Show when={!inSection()}>
           <div class="group-data-[collapsible=icon]/sidebar:hidden px-2 py-1">
             <ProjectSidebar search={search()} />
