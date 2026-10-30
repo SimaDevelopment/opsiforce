@@ -46,11 +46,10 @@ export function useSignInProviders() {
   }));
 }
 
-export function useSignInProviderOptions(options?: { enabled?: () => boolean }) {
+export function useSignInProviderOptions() {
   return createAppQuery(() => ({
     queryKey: signInProviderKeys.options(),
     queryFn: () => api.get<SignInProviderOption[]>('/sign-in-providers/options'),
-    enabled: options?.enabled ? options.enabled() : true,
   }));
 }
 
