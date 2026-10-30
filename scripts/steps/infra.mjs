@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { verifyTunnelBound } from './tunnel.mjs';
 
@@ -16,7 +16,6 @@ const COREDNS_REWRITES = [
   `rewrite name exact ${ROOT_HOSTNAME} ${TRAEFIK_SERVICE_NAME} answer auto`,
 ];
 const POD_CA_CONFIGMAP = 'opsiforce-local-ca';
-const PUBLIC_ROOTS = ['/etc/ssl/cert.pem', '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
 
 const CERT_DOMAINS = [
   ROOT_HOSTNAME,
@@ -197,27 +196,7 @@ function routeServiceHostsToTraefik(ctx) {
 }
 
 function trustLocalCaInPods(ctx) {
-  const caRoot = ctx.capture('mkcert', ['-CAROOT']);
-  const publicRoots = PUBLIC_ROOTS.find((file) => existsSync(file));
-  if (!publicRoots) throw new Error(`No system CA bundle found (looked in ${PUBLIC_ROOTS.join(', ')}).`);
-  const bundle = `${readFileSync(publicRoots, 'utf8').trimEnd()}\n${readFileSync(join(caRoot, 'rootCA.pem'), 'utf8')}`;
-  const bundleFile = join(ctx.paths.home, 'pod-ca-certificates.crt');
-  writeFileSync(bundleFile, bundle);
-  const configMapYaml = ctx.capture('kubectl', [
-    'create',
-    'configmap',
-    POD_CA_CONFIGMAP,
-    '--namespace',
-    DATA_NAMESPACE,
-    `--from-file=ca-certificates.crt=${bundleFile}`,
-    '--dry-run=client',
-    '-o',
-    'yaml',
-  ]);
-  ctx.run('kubectl', ['apply', '--server-side', '--force-conflicts', '-f', '-'], {
-    input: configMapYaml,
-    stdio: ['pipe', 'inherit', 'inherit'],
-  });
+  ctx.run('sh', [join(ctx.paths.packageRoot, 'scripts', 'apply-pod-ca.sh'), DATA_NAMESPACE]);
   ctx.note(`applied ${POD_CA_CONFIGMAP}: the system roots plus the mkcert CA, mounted into Project pods.`);
 }
 
