@@ -8,7 +8,7 @@ import { projectTitleOf } from '~/lib/project-title';
 import { useWorkspaces, useWorkspaceFolders } from '~/api/workspaces';
 import { ChevronRight, Code as CodeIcon, Command, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
 import { PALETTE_SHORTCUT, openCommandPalette } from '~/components/command-palette';
-import { createAppearance } from '~/lib/appearance';
+import { useAppearance } from '~/lib/appearance';
 import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { ProjectActionsMenu } from '~/components/project-actions-menu';
@@ -53,7 +53,7 @@ export function ProjectHeader(props: ProjectHeaderProps) {
   const canViewDb = () => hasPermission('can_view_db_tab');
   const projectQuery = useProject(() => props.projectId);
   const project = () => projectQuery.data;
-  const appearance = createAppearance();
+  const appearance = useAppearance();
 
   const handleEnvironmentDeleted = (environmentId: string) => {
     if (props.activeEnvironmentId === environmentId) {

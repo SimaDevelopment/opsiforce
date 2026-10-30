@@ -13,7 +13,7 @@ import { Button } from '~/components/ui/button';
 import { Menu } from '~/components/icons';
 import { PRIVATE_ROOT_COMPONENTS } from '~/private-loader';
 import { createTenantChangeHandler } from '~/lib/tenant-state';
-import { createAppearance } from '~/lib/appearance';
+import { mountAppearance } from '~/lib/appearance';
 import { CommandPalette, commandPaletteOpen } from '~/components/command-palette';
 import { Toaster } from 'solid-sonner';
 
@@ -99,9 +99,10 @@ function AppContent() {
   const isPermissionDenied = () => location().pathname === '/permission-denied';
 
   createTenantChangeHandler();
-  // Keeps `system` mode tracking the OS after boot; the inline script in
-  // index.html has already painted the first frame with the stored choice.
-  createAppearance();
+  // The one writer of the appearance onto <html>, which keeps `system` mode
+  // tracking the OS after boot; the inline script in index.html has already
+  // painted the first frame with the stored choice.
+  mountAppearance();
 
   return (
     <>

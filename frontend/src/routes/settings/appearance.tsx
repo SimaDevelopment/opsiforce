@@ -6,7 +6,7 @@ import {
   DENSITIES,
   FONT_SIZES,
   MODES,
-  createAppearance,
+  useAppearance,
   type Contrast,
   type Density,
   type FontSize,
@@ -178,7 +178,7 @@ function ThemePreview() {
 }
 
 function AppearancePage() {
-  const appearance = createAppearance();
+  const appearance = useAppearance();
 
   return (
     <div class="h-full overflow-y-auto">

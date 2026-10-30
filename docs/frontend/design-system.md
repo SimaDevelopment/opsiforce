@@ -16,7 +16,7 @@ kind: explanation
 - Those domain tokens come in three kinds, kept apart because they answer different questions: **status** (`--job-*`, `--env-*`, `--diff-*`), **identity** (`--kind-doc`, `--kind-sheet`, … — a spreadsheet is green because it is a spreadsheet, not because anything succeeded) and **series** (`--series-1` … `--series-6`, six chart hues whose only job is to stay apart).
 - The legacy shadcn names (`--background`, `--primary`, `--muted-foreground`, …) survive as `H S% L%` triplets pointing at the same palette, so every component already written against `bg-background` or `text-muted-foreground` renders in the new look untouched, and the `/ <alpha>` modifier keeps working.
 - `frontend/src/index.css` exposes both sets to Tailwind through `@theme inline`; the shell names arrive as utilities (`bg-panel`, `text-ink-subtle`, `border-line`).
-- Shell token names stay out of the namespace the embedded chat writes on `:root` (`--text-*`, `--border-base`, `--border-focus`, `--surface-*`, `--icon-*`, …): the ink ramp is `--ink-*` and the border ink and accent are `--border-ink` and `--border-accent`, so a chat palette can never shadow a shell value at equal specificity. The stylesheet opencode appends is removed when the chat unmounts.
+- Shell token names stay out of the namespace the embedded chat writes on `:root` (`--text-*`, `--border-base`, `--border-focus`, `--surface-*`, `--icon-*`, …): the ink ramp is `--ink-*` and the border ink and accent are `--border-ink` and `--border-accent`, so a chat palette can never shadow a shell value at equal specificity. What opencode leaves on the page after a chat unmounts — its `:root` stylesheet, a background and a `theme-color` — never wins: `:root[data-scheme]` out-specifies its `color-scheme`, the shell's `html` background is `!important`, and the shell restores the brand `theme-color`.
 
 ### Tones
 
@@ -59,7 +59,7 @@ kind: explanation
 - `frontend/src/index.css` — Tailwind entry; maps both token sets into `@theme inline`.
 - `frontend/src/lib/appearance.ts` — the mode, contrast, density, font-size and seed signals.
 - `frontend/src/lib/theme-seeds.ts` — the seed lists and the mapping from the generator's scales onto the semantic layer.
-- `frontend/src/components/project/opencode-shell-theme.ts` — the same palette, handed to the embedded chat.
+- `frontend/src/components/project/opencode-shell-theme.ts` — the same palette, handed to the embedded chat: resolved seeds plus live `var(...)` overrides.
 - `frontend/src/routes/settings/appearance.tsx` and `frontend/index.html` — the page that drives the choices, and the script that applies them before first paint.
 
 ## Related

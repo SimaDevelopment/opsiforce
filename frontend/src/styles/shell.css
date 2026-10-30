@@ -391,6 +391,23 @@
   --card-pad: 4px;
 }
 
+/* The shell owns the page's colour scheme and canvas. The embedded chat
+   appends `:root { color-scheme }` after this stylesheet and writes a
+   background straight onto <html>, and both outlive it when it unmounts. A
+   more specific selector and !important win over them, so nothing has to
+   remove what the chat wrote. */
+:root[data-scheme='light'] {
+  color-scheme: light;
+}
+
+:root[data-scheme='dark'] {
+  color-scheme: dark;
+}
+
+html {
+  background-color: var(--bg-app) !important;
+}
+
 /* motion policy lives in ONE place */
 @media (prefers-reduced-motion: reduce) {
   :root {

@@ -5,7 +5,7 @@ import { useProjects } from '~/api/projects';
 import { usePermissions } from '~/api/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
-import { createAppearance } from '~/lib/appearance';
+import { useAppearance } from '~/lib/appearance';
 import { projectDisplayTitle } from '~/lib/project-display';
 import { Calendar, FolderKanban, House, Moon, Search, Server, Settings, Store, Sun } from '~/components/icons';
 
@@ -46,7 +46,7 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const projects = useProjects();
   const { hasPermission } = usePermissions();
-  const appearance = createAppearance();
+  const appearance = useAppearance();
 
   const [query, setQuery] = createSignal('');
   const [cursor, setCursor] = createSignal(0);

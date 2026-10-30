@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup } from 'solid-js';
+import { createEffect, createMemo, createRoot, createSignal, onCleanup } from 'solid-js';
 import { createPersistedStringSignal } from './persisted-signal';
 import {
   DEFAULT_ACCENT_SEED,
@@ -93,12 +93,7 @@ export function applyAppearance(opts: {
   });
 }
 
-/**
- * Reactive appearance state. Safe to call from more than one component — each
- * call returns its own signals, but they stay in step because
- * `createPersistedStringSignal` syncs through the `storage` event.
- */
-export function createAppearance() {
+function createAppearanceStore() {
   const [rawMode, setRawMode] = createPersistedStringSignal(MODE_KEY, 'system');
   const [rawContrast, setRawContrast] = createPersistedStringSignal(CONTRAST_KEY, 'normal');
   const [rawDensity, setRawDensity] = createPersistedStringSignal(DENSITY_KEY, 'comfortable');
@@ -121,34 +116,15 @@ export function createAppearance() {
     onCleanup(() => mq.removeEventListener('change', onChange));
   }
 
-  const scheme = (): 'light' | 'dark' => (mode() === 'system' ? (systemDark() ? 'dark' : 'light') : (mode() as 'light' | 'dark'));
+  const scheme = (): 'light' | 'dark' =>
+    mode() === 'system' ? (systemDark() ? 'dark' : 'light') : (mode() as 'light' | 'dark');
 
-  createEffect(() => {
-    if (typeof document === 'undefined') return;
-    const next = scheme();
-    withoutTransitions(() => document.documentElement.setAttribute('data-scheme', next));
-  });
-
-  // Seeds regenerate the semantic layer through opencode's OKLCH generator.
-  // The defaults are the authored stylesheet, so choosing them clears the
-  // overrides rather than approximating the hand-tuned values.
-  createEffect(() => {
-    if (typeof document === 'undefined') return;
-    const style = document.documentElement.style;
-    const isDefault = rawBase() === DEFAULT_BASE_SEED && rawAccent() === DEFAULT_ACCENT_SEED;
-    withoutTransitions(() => {
-      if (isDefault) {
-        for (const name of SEED_TOKEN_NAMES) style.removeProperty(name);
-        return;
-      }
-      const tokens = resolveSeedTokens(baseSeed(rawBase()).color, accentSeed(rawAccent()).color, scheme() === 'dark');
-      for (const [name, value] of Object.entries(tokens)) style.setProperty(name, value);
-    });
-  });
-
-  createEffect(() => applyAppearance({ contrast: contrast() }));
-  createEffect(() => applyAppearance({ density: density() }));
-  createEffect(() => applyAppearance({ fontSize: fontSize() }));
+  const seedsAreDefault = () => rawBase() === DEFAULT_BASE_SEED && rawAccent() === DEFAULT_ACCENT_SEED;
+  const seedTokens = createMemo(() =>
+    seedsAreDefault()
+      ? undefined
+      : resolveSeedTokens(baseSeed(rawBase()).color, accentSeed(rawAccent()).color, scheme() === 'dark')
+  );
 
   return {
     mode,
@@ -164,5 +140,64 @@ export function createAppearance() {
     accent: () => accentSeed(rawAccent()),
     setAccent: (id: string) => setRawAccent(id),
     scheme,
+    /** The semantic tokens the seeds regenerate, or undefined for the authored defaults. */
+    seedTokens,
   };
+}
+
+// One store for the page, created once: every reader shares its signals and
+// listeners instead of building its own copy.
+const store = createRoot(createAppearanceStore);
+
+export const useAppearance = () => store;
+
+/**
+ * The one writer of the appearance onto <html>, mounted once by the root
+ * layout. Readers never write: the CSS is the subscriber.
+ */
+export function mountAppearance() {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+
+  createEffect(() => {
+    const next = store.scheme();
+    withoutTransitions(() => root.setAttribute('data-scheme', next));
+  });
+
+  // Seeds regenerate the semantic layer through opencode's OKLCH generator.
+  // The defaults are the authored stylesheet, so choosing them clears the
+  // overrides rather than approximating the hand-tuned values.
+  createEffect(() => {
+    const tokens = store.seedTokens();
+    withoutTransitions(() => {
+      if (!tokens) {
+        for (const name of SEED_TOKEN_NAMES) root.style.removeProperty(name);
+        return;
+      }
+      for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
+    });
+  });
+
+  createEffect(() => applyAppearance({ contrast: store.contrast() }));
+  createEffect(() => applyAppearance({ density: store.density() }));
+  createEffect(() => applyAppearance({ fontSize: store.fontSize() }));
+
+  keepBrandThemeColor();
+}
+
+/**
+ * The embedded chat writes its own grey into <meta name="theme-color"> each
+ * time it applies a theme, and never puts the brand colour back. The browser
+ * bar and an installed app's title bar belong to the shell, so the shell
+ * restores it.
+ */
+function keepBrandThemeColor() {
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!meta) return;
+  const brand = meta.content;
+  const observer = new MutationObserver(() => {
+    if (meta.content !== brand) meta.content = brand;
+  });
+  observer.observe(meta, { attributes: true, attributeFilter: ['content'] });
+  onCleanup(() => observer.disconnect());
 }
