@@ -56,6 +56,19 @@ function startCluster(ctx, chosen, previous) {
   const k8sVersion = ctx.versions.exact.kubernetes;
   const host = ctx.tryCapture('minikube', ['status', '-f', '{{.Host}}']);
   if (host === 'Running') {
+    const runtime = ctx.tryCapture('kubectl', [
+      '--context',
+      'minikube',
+      'get',
+      'nodes',
+      '-o',
+      'jsonpath={.items[0].status.nodeInfo.containerRuntimeVersion}',
+    ]);
+    if (runtime && !runtime.startsWith('containerd://')) {
+      ctx.warn(
+        `minikube runs the ${runtime.split('://')[0]} runtime; production runs containerd. It still works. To match production, run \`yarn dev --reset\` then \`yarn dev\` to recreate the cluster.`
+      );
+    }
     ctx.note(`minikube already running — reusing it (kubernetes ${k8sVersion} pinned).`);
     if (previous && (previous.cpus !== chosen.cpus || previous.memoryGb !== chosen.memoryGb)) {
       ctx.warn(
@@ -64,10 +77,13 @@ function startCluster(ctx, chosen, previous) {
     }
     return;
   }
-  ctx.note(`starting minikube — kubernetes ${k8sVersion}, ${chosen.cpus} CPU / ${chosen.memoryGb} GB (docker driver)…`);
+  ctx.note(
+    `starting minikube — kubernetes ${k8sVersion}, ${chosen.cpus} CPU / ${chosen.memoryGb} GB (docker driver, containerd runtime)…`
+  );
   ctx.run('minikube', [
     'start',
     '--driver=docker',
+    '--container-runtime=containerd',
     `--kubernetes-version=${k8sVersion}`,
     `--cpus=${chosen.cpus}`,
     `--memory=${chosen.memoryGb}g`,

@@ -24,7 +24,7 @@
     "mailgun:mock": "docker run --rm -t -p 8089:80 -e MAILGUN_API_KEY=key-example asedov/mailgun-mock",
     "tilt:up": "tilt up --stream=false --log-source=build --host=0.0.0.0",
     "tilt:down": "tilt down",
-    "minikube-dev": "env-cmd -f ./local-envs.sh --use-shell 'yarn run setup-minikube-storage && yarn run build-agent-image && yarn run opsiforce-install-infra && yarn run create-opsiforce-db && yarn run create-bifrost-db && yarn run db:migrate && yarn run install-bifrost && concurrently -k -n db,mailgun,tilt \"yarn run db:studio\" \"yarn run mailgun:mock\" \"yarn run tilt:up\"'"
+    "minikube-dev": "env-cmd -f ./local-envs.sh --use-shell 'sh ../scripts/check-containerd.sh && yarn run setup-minikube-storage && yarn run build-agent-image && yarn run opsiforce-install-infra && yarn run create-opsiforce-db && yarn run create-bifrost-db && yarn run db:migrate && yarn run install-bifrost && concurrently -k -n db,mailgun,tilt \"yarn run db:studio\" \"yarn run mailgun:mock\" \"yarn run tilt:up\"'"
   },
   "dependencies": {
     "@bull-board/api": "^9.9.0",

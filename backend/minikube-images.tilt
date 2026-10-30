@@ -1,9 +1,12 @@
-# Build with Docker, then copy the resulting image into minikube's runtime.
-# Works with both Docker and containerd without an image registry.
+# Build with the host's Docker, then load the image into minikube's containerd.
+# No image registry is involved, so no Docker login is needed.
 def minikube_build(ref, context, dockerfile, build_args, only, live_update, entrypoint=None):
     profile = os.getenv('MINIKUBE_PROFILE', 'minikube')
     if k8s_context() != profile:
         fail('Local image loading requires Kubernetes context %s (current: %s)' % (profile, k8s_context()))
+    runtime_warning = str(local('sh ../scripts/check-containerd.sh 2>&1', quiet=True)).strip()
+    if runtime_warning:
+        warn(runtime_warning)
 
     build_ref = ref + '-local-build'
     docker_build(build_ref, context=context, dockerfile=dockerfile, build_args=build_args, only=only)
