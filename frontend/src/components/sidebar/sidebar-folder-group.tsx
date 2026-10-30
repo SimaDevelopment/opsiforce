@@ -88,6 +88,7 @@ export function SidebarFolderGroup(props: {
   return (
     <div
       ref={droppable.ref}
+      data-sidebar-group={props.folder.id}
       class="flex flex-col ml-2 rounded-md transition-colors"
       classList={{ 'bg-sidebar-accent/40': droppable.isDropTarget() }}
       style={{ opacity: draggable.isDragging() ? 0.5 : 1 }}

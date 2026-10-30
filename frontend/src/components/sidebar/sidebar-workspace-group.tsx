@@ -108,7 +108,12 @@ export function SidebarWorkspaceGroup(props: {
   });
 
   return (
-    <div ref={sortable.ref} class="flex flex-col" style={{ opacity: sortable.isDragging() ? 0.5 : 1 }}>
+    <div
+      ref={sortable.ref}
+      data-sidebar-group={props.workspace.id}
+      class="flex flex-col"
+      style={{ opacity: sortable.isDragging() ? 0.5 : 1 }}
+    >
       <div
         ref={folderDrop.ref}
         class="group/wsrow relative flex items-center gap-1.5 pl-4 pr-1 py-1 rounded-md hover:bg-sidebar-accent/50 cursor-pointer"

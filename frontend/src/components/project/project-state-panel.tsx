@@ -7,7 +7,7 @@ export type ProjectStateTone = 'neutral' | 'warning' | 'danger';
 
 const BADGE_BY_TONE: Record<ProjectStateTone, string> = {
   neutral: 'bg-muted text-muted-foreground',
-  warning: 'bg-amber-500/10 text-amber-600',
+  warning: 'of-tone of-tone-needs-you',
   danger: 'bg-destructive/10 text-destructive',
 };
 

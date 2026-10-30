@@ -51,7 +51,7 @@ export function PodStatusCell(props: PodStatusCellProps) {
   return (
     <div class={cn('flex items-center gap-2', visual().tone)}>
       <span class="of-dot size-2" />
-      <span class={cn('t-meta', visual().bad ? 'of-ink t-ui-med' : 'text-foreground')}>{visual().label}</span>
+      <span class={cn('t-meta', visual().bad ? 'of-ink' : 'text-foreground')}>{visual().label}</span>
 
       <Show when={props.status.restartCount > 0}>
         <Tooltip>

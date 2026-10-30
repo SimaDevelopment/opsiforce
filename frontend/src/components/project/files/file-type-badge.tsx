@@ -38,7 +38,7 @@ export function FileTypeBadge(props: { name: string; type: FileEntryType; class?
       fallback={
         <span
           class={cn(
-            'shrink-0 flex items-center justify-center rounded-md of-tone of-tone-needs-you',
+            'shrink-0 flex items-center justify-center rounded-md of-tone of-tone-accent',
             props.class ?? 'w-8 h-8'
           )}
         >

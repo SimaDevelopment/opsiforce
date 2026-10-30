@@ -10,6 +10,7 @@ import {
   dropUnloadedOfficeFiles,
   OC_PACKAGES_ROOT,
   opencodeMessageStamp,
+  opencodePublicAssets,
   opencodeResolver,
 } from "./vite-plugins/index.ts";
 
@@ -26,6 +27,7 @@ export default defineConfig(({ mode }) => ({
     deploymentBranding(),
     opencodeResolver(),
     opencodeMessageStamp(),
+    opencodePublicAssets(),
     tanstackRouter({
       target: "solid",
       autoCodeSplitting: mode !== "production",

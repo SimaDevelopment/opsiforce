@@ -239,7 +239,7 @@ function NotVisible() {
     <EmptyState
       icon={Files}
       title="This skill isn't visible to you."
-      hint="It may be private to its creator, or it was deleted."
+      description="It may be private to its creator, or it was deleted."
     />
   );
 }
@@ -765,7 +765,7 @@ function NoVersionYet(props: { canBuild: boolean }) {
       <EmptyState
         icon={Files}
         title="No version yet."
-        hint={
+        description={
           props.canBuild
             ? 'Open the Builder to write it — its first save becomes version 1.'
             : 'Nothing has been published under this name yet.'

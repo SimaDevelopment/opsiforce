@@ -1,0 +1,728 @@
+/* ==========================================================================
+   COMPONENTS — the primitives and shell classes. Layered on purpose: a
+   component may still be adjusted with a Tailwind utility at the call site.
+   ========================================================================== */
+@layer components {
+
+  /* scrollbars follow the scheme */
+  .sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) transparent;
+  }
+
+  /* ---- type utilities ---------------------------------------------------- */
+  .t-label {
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+  }
+
+  .t-meta {
+    font: var(--text-meta);
+    letter-spacing: var(--ls-meta);
+  }
+
+  .t-ui {
+    font: var(--text-ui);
+    letter-spacing: var(--ls-ui);
+  }
+
+  .t-ui-med {
+    font: var(--text-ui-med);
+    letter-spacing: var(--ls-ui);
+  }
+
+  .t-body {
+    font: var(--text-body);
+    letter-spacing: var(--ls-body);
+  }
+
+  .t-input {
+    font: var(--text-input);
+    letter-spacing: var(--ls-input);
+  }
+
+  .t-title {
+    font: var(--text-title);
+    letter-spacing: var(--ls-title);
+  }
+
+  .t-display {
+    font: var(--text-display);
+    letter-spacing: var(--ls-display);
+  }
+
+  .t-mono {
+    font: var(--mono-ui);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-sub {
+    color: var(--ink-subtle);
+  }
+
+  .t-strong {
+    color: var(--ink-strong);
+  }
+
+  .t-num {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+
+  /* ---- focus: two layers, always. Inner ring in the host surface colour,
+         outer ring in the accent. Dense rows use the inset variant. --------- */
+  .fr:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .fr-panel:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .fr-inset:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--bg-panel), inset 0 0 0 3px var(--border-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .fr-inset-content:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--bg-content), inset 0 0 0 3px var(--border-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  /* ==========================================================================
+     PRIMITIVES
+     ========================================================================== */
+  .of-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+    height: var(--h-default);
+    padding: 0 11px;
+    border-radius: var(--control-radius);
+    font: var(--text-ui-med);
+    letter-spacing: var(--ls-ui);
+    color: var(--ink-default);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard),
+      transform var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-btn:hover {
+    background: var(--bg-element-hover);
+    color: var(--ink-strong);
+  }
+
+  .of-btn:active {
+    transform: scale(0.975);
+  }
+
+  .of-btn-ghost {
+    background: transparent;
+  }
+
+  .of-btn-outline {
+    background: var(--bg-content);
+    box-shadow: var(--shadow-2);
+  }
+
+  .of-btn-outline:hover {
+    background: var(--bg-element);
+  }
+
+  .of-btn-primary {
+    background: var(--fill-solid);
+    color: var(--ink-on-solid);
+    height: var(--h-primary);
+    padding: 0 14px;
+  }
+
+  .of-btn-primary:hover {
+    background: var(--fill-solid-hover);
+    color: var(--ink-on-solid);
+  }
+
+  .of-btn-compact {
+    height: var(--h-compact);
+    padding: 0 8px;
+    font: var(--text-meta);
+    border-radius: var(--radius-md-of);
+    position: relative;
+  }
+
+  /* 2.5.8 Target Size, the 32px rung: an icon button must not be shrunk by a
+     crowded flex row, so the main size is pinned on all axes. */
+  .of-btn-icon {
+    flex: 0 0 var(--h-default);
+    width: var(--h-default);
+    min-width: var(--h-default);
+    min-height: var(--h-default);
+    padding: 0;
+  }
+
+  .of-btn-icon.of-btn-compact {
+    flex: 0 0 var(--h-compact);
+    width: var(--h-compact);
+    min-width: var(--h-compact);
+    min-height: var(--h-compact);
+  }
+
+  /* every compact control gets a transparent >=24x24 hit area */
+  .of-btn-compact::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+  }
+
+  .of-btn[disabled],
+  .of-btn[aria-disabled='true'] {
+    cursor: not-allowed;
+    color: var(--ink-subtle);
+  }
+
+  .of-btn[disabled]:hover,
+  .of-btn[aria-disabled='true']:hover {
+    background: transparent;
+  }
+
+  /* A drag handle is a control: it gets the 24px rung even when the icon
+     inside it is 14px. */
+  .of-grip {
+    position: relative;
+  }
+
+  .of-grip::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+  }
+
+  .of-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--radius-md-of);
+    background: var(--bg-element);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    color: var(--ink-subtle);
+    font: 500 10px / 1 var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+
+  .of-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: var(--h-compact);
+    padding: 0 8px;
+    border-radius: var(--radius-md-of);
+    background: var(--bg-element);
+    color: var(--ink-default);
+    font: var(--text-meta);
+    letter-spacing: var(--ls-meta);
+    white-space: nowrap;
+  }
+
+  .of-chip-btn {
+    transition: background-color var(--dur-fast) var(--ease-standard);
+    position: relative;
+  }
+
+  .of-chip-btn::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 24px;
+    transform: translateY(-50%);
+  }
+
+  .of-chip-btn:hover {
+    background: var(--bg-element-hover);
+    color: var(--ink-strong);
+  }
+
+  /* a chip that is also a toggle says so by filling, not by a tick */
+  .of-chip-btn[data-on='true'] {
+    background: var(--bg-element-selected);
+    color: var(--ink-strong);
+    box-shadow: inset 0 0 0 1px var(--ring-accent);
+  }
+
+  /* an active filter is visible from outside the popover */
+  .of-filter-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--fill-solid);
+    box-shadow: 0 0 0 2px var(--bg-panel);
+  }
+
+  .of-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    flex: none;
+    background: oklch(from var(--tone, var(--ink-subtle)) calc(l + var(--tone-dot-dl)) c h);
+  }
+
+  .of-dot-pulse {
+    animation: of-status-pulse 2s steps(6, end) infinite;
+  }
+
+  @keyframes of-status-pulse {
+    0%,
+    60% {
+      opacity: 1;
+    }
+    75% {
+      opacity: 0.38;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* environment badge: 20px, 11px label, fully rounded, fill at ~20%, text from
+     the theme token, always paired with the dot. Production also carries an
+     outline so it is not colour-only. */
+  .of-env {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 20px;
+    padding: 0 7px 0 6px;
+    border-radius: var(--radius-full);
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+    color: var(--ink-default);
+    background: color-mix(in oklch, var(--env-color, var(--ink-subtle)) 20%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--env-color, var(--ink-subtle)) 38%, transparent);
+  }
+
+  .of-env-sm {
+    height: 16px;
+    padding: 0 6px 0 5px;
+    gap: 4px;
+    font-size: calc(10px * var(--font-scale));
+  }
+
+  .of-env-sm .of-dot {
+    width: 4px;
+    height: 4px;
+  }
+
+  .of-env .of-dot {
+    background: var(--env-color, var(--ink-subtle));
+    width: 5px;
+    height: 5px;
+  }
+
+  /* ── TONE: a setter says which hue, a role says what the hue is doing ──
+     Two classes per element — `of-note of-tone-needs-you` — so a warning box
+     and a status dot stay the same colour without either one naming amber. */
+
+  .of-tone,
+  .of-ink,
+  .of-note,
+  .of-banner {
+    color: oklch(from var(--tone, var(--ink-subtle)) var(--tone-ink-l) calc(c * var(--tone-ink-c)) h);
+  }
+
+  .of-tone,
+  .of-note,
+  .of-banner {
+    background: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-tint), transparent);
+  }
+
+  /* a tinted block that has to read as its own object: hairline, not a border,
+     so it never adds a pixel to the layout it sits in */
+  .of-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 11px;
+    border-radius: var(--radius-md-of);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-hair), transparent);
+  }
+
+  /* a strip across the top of a region rather than a card inside it: it keeps
+     its own tint but closes with a hairline instead of a rounded edge */
+  .of-banner {
+    border-bottom: 1px solid color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-hair), transparent);
+  }
+
+  /* a momentary highlight — "this is the field you were sent to". The first ring
+     is the surface, so the second reads as a halo rather than a border. */
+  .of-spot {
+    border-radius: var(--radius-md-of);
+    background: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-wash), transparent);
+    box-shadow:
+      0 0 0 4px var(--bg-content),
+      0 0 0 6px color-mix(in oklch, var(--tone, var(--ink-subtle)) 55%, transparent);
+  }
+
+  /* the hue at full strength — a chart segment, a progress bar, a swatch */
+  .of-fill {
+    background: var(--tone, var(--ink-subtle));
+  }
+
+  /* a wash is a tint too faint to read as an object — it marks a row as needing
+     attention without turning it into a card */
+  .of-wash {
+    background: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-wash), transparent);
+  }
+
+  /* for a container that carries its tone only at the edge. It expects a tone
+     setter; `of-tone-neutral` is the plain-border case. */
+  .of-hair {
+    border-color: color-mix(in oklch, var(--tone, var(--ink-subtle)) var(--tone-hair), transparent);
+  }
+
+  /* the same block shrunk to sit inside a table cell or beside a label */
+  .of-note-sm {
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm-of);
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    display: inline-flex;
+  }
+
+  /* ---- tone setters ---------------------------------------------------- */
+  .of-tone-done {
+    --tone: var(--job-done);
+  }
+
+  .of-tone-needs-you {
+    --tone: var(--job-needs-you);
+  }
+
+  .of-tone-running {
+    --tone: var(--job-running);
+  }
+
+  .of-tone-failed {
+    --tone: var(--job-failed);
+  }
+
+  .of-tone-stopping {
+    --tone: var(--job-stopping);
+  }
+
+  .of-tone-accent {
+    --tone: var(--published);
+  }
+
+  .of-tone-neutral {
+    --tone: var(--ink-subtle);
+  }
+
+  .of-tone-doc {
+    --tone: var(--kind-doc);
+  }
+
+  .of-tone-sheet {
+    --tone: var(--kind-sheet);
+  }
+
+  .of-tone-slide {
+    --tone: var(--kind-slide);
+  }
+
+  .of-tone-image {
+    --tone: var(--kind-image);
+  }
+
+  .of-tone-text {
+    --tone: var(--kind-text);
+  }
+
+  .of-tone-pdf {
+    --tone: var(--kind-pdf);
+  }
+
+  .of-series-1 {
+    --tone: var(--series-1);
+  }
+
+  .of-series-2 {
+    --tone: var(--series-2);
+  }
+
+  .of-series-3 {
+    --tone: var(--series-3);
+  }
+
+  .of-series-4 {
+    --tone: var(--series-4);
+  }
+
+  .of-series-5 {
+    --tone: var(--series-5);
+  }
+
+  .of-series-6 {
+    --tone: var(--series-6);
+  }
+
+  .of-tone-added {
+    --tone: var(--diff-added);
+  }
+
+  .of-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--bg-element);
+    color: var(--ink-subtle);
+    font: var(--text-label);
+    letter-spacing: 0;
+  }
+
+  /* three staggered brand dots — NEVER a spinner for a working agent */
+  .of-working {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: none;
+  }
+
+  .of-working i {
+    width: 4.8px;
+    height: 4.8px;
+    border-radius: var(--radius-full);
+    background: var(--fill-solid);
+    animation: of-working-dots 1.4s var(--ease-standard) infinite;
+  }
+
+  .of-working i:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .of-working i:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes of-working-dots {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  /* zeroing --dur-* cannot reach these loops, so reduced motion stops them
+     outright and leaves the indicator visible and still */
+  @media (prefers-reduced-motion: reduce) {
+    :root:not([data-motion='full']) .of-dot-pulse,
+    :root:not([data-motion='full']) .of-working i {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  [data-motion='reduced'] .of-dot-pulse,
+  [data-motion='reduced'] .of-working i {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* segmented control */
+  .of-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg-element);
+    border-radius: var(--radius-md-of);
+  }
+
+  .of-seg button {
+    height: var(--h-compact);
+    padding: 0 9px;
+    border-radius: var(--radius-sm-of);
+    white-space: nowrap;
+    font: var(--text-meta);
+    letter-spacing: var(--ls-meta);
+    color: var(--ink-subtle);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    position: relative;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-seg button::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 24px;
+    transform: translateY(-50%);
+  }
+
+  .of-seg button:hover {
+    color: var(--ink-default);
+  }
+
+  .of-seg button[aria-selected='true'],
+  .of-seg button[aria-pressed='true'],
+  .of-seg button[aria-checked='true'] {
+    background: var(--bg-content);
+    color: var(--ink-strong);
+    box-shadow: var(--shadow-2);
+  }
+
+  [data-scheme='dark'] .of-seg button[aria-selected='true'],
+  [data-scheme='dark'] .of-seg button[aria-pressed='true'],
+  [data-scheme='dark'] .of-seg button[aria-checked='true'] {
+    background: var(--bg-elevated);
+  }
+
+  /* The selected state sets its own box-shadow at a higher specificity than
+     `.fr:focus-visible`, which would silently swallow the focus ring on the
+     one item most likely to be focused. Both states are spelled out here so
+     the ring always wins (WCAG 2.4.7). */
+  .of-seg button:focus-visible,
+  .of-seg button[aria-selected='true']:focus-visible,
+  .of-seg button[aria-pressed='true']:focus-visible,
+  .of-seg button[aria-checked='true']:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+
+  .of-sec-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink-subtle);
+    font: var(--text-label);
+    letter-spacing: var(--ls-label);
+    text-transform: uppercase;
+  }
+
+  .of-sec-label .line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-subtle);
+  }
+
+  /* ONE row geometry, reused by the sidebar, popover items, the runs dock,
+     schedules and settings lists. */
+  .of-row {
+    display: flex;
+    align-items: center;
+    gap: var(--row-gap);
+    width: 100%;
+    height: var(--row-h);
+    padding: 0 var(--row-pad);
+    border-radius: var(--control-radius);
+    color: var(--ink-default);
+    text-align: left;
+    position: relative;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-row:hover {
+    background: var(--bg-element-hover);
+    color: var(--ink-strong);
+  }
+
+  .of-row[aria-current='page'],
+  .of-row[data-active='true'] {
+    background: var(--bg-element-selected);
+    color: var(--ink-strong);
+  }
+
+  .of-row .lbl {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* empty state — the lattice is the ONE absence texture in the product */
+  .of-empty {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-lg-of);
+    background: var(--bg-content);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 24px;
+    text-align: center;
+  }
+
+  .of-lattice {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    color: var(--fill-solid);
+    opacity: 0.045;
+  }
+
+  [data-scheme='dark'] .of-lattice {
+    opacity: 0.055;
+  }
+
+  .of-lattice-empty {
+    color: var(--ink-subtle);
+    opacity: 0.34;
+  }
+
+  [data-scheme='dark'] .of-lattice-empty {
+    opacity: 0.38;
+  }
+}

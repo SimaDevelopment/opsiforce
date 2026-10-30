@@ -48,10 +48,9 @@ import { SidebarWorkspaceGroup } from './sidebar-workspace-group';
 import { SidebarPublicGroup } from './sidebar-public-group';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
+import { FOLDER_EXPANDED_KEY, WORKSPACE_FOLDED_KEY } from '~/lib/sidebar-reveal';
 
-const FOLDED_KEY = 'opsiforce:workspace:folded';
 const PUBLIC_FOLDED_KEY = 'opsiforce:workspace:public-folded';
-const FOLDER_EXPANDED_KEY = 'opsiforce:folder:expanded';
 
 type DragStartEvent = Parameters<NonNullable<DragDropProviderProps['onDragStart']>>[0];
 type DragEndEvent = Parameters<NonNullable<DragDropProviderProps['onDragEnd']>>[0];
@@ -124,7 +123,7 @@ export function ProjectSidebar(props: { search: string }) {
   const moveFolder = useMoveFolder();
   const renameProject = useRenameProject();
 
-  const [folded, setFolded] = createPersistedSignal<Record<string, boolean>>(FOLDED_KEY, {});
+  const [folded, setFolded] = createPersistedSignal<Record<string, boolean>>(WORKSPACE_FOLDED_KEY, {});
   const [publicFolded, setPublicFolded] = createPersistedSignal<boolean>(PUBLIC_FOLDED_KEY, false);
   const [folderExpanded, setFolderExpanded] = createPersistedSignal<Record<string, boolean>>(FOLDER_EXPANDED_KEY, {});
   const [createFolderWorkspaceId, setCreateFolderWorkspaceId] = createSignal<string | null>(null);

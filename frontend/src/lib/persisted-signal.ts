@@ -101,6 +101,24 @@ export function createPersistedSignal<T>(
 }
 
 /**
+ * Update a JSON value persisted under `key` from outside a component. Every
+ * `createPersistedSignal` on that key follows, in this tab through the same
+ * synthetic `storage` event and in other tabs through the real one.
+ */
+export function updatePersisted<T>(key: string, defaultValue: T, update: (prev: T) => T): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(key);
+    const prev = raw === null ? defaultValue : (JSON.parse(raw) as T);
+    const serialized = JSON.stringify(update(prev));
+    window.localStorage.setItem(key, serialized);
+    window.dispatchEvent(new StorageEvent('storage', { key, newValue: serialized }));
+  } catch {
+    // persistence is best-effort, as in createPersistedSignal
+  }
+}
+
+/**
  * Raw string variant — skips JSON. Useful for existing unprefixed keys that
  * store plain strings (`sidebar:state` = `"true"`).
  */

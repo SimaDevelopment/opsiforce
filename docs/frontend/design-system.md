@@ -10,13 +10,13 @@ kind: explanation
 
 ### Layers
 
-- `frontend/src/styles/shell.css` is the only place a colour, a font size, a control height or an easing curve is written down; every other stylesheet and component reads a token from it.
+- `frontend/src/styles/shell/` is the only place a colour, a font size, a control height or an easing curve is written down — `tokens.css` holds them, and every other stylesheet and component reads a token from it. `styles/shell.css` imports the folder in cascade order: tokens, base, primitives, then one file per surface (sidebar, band, home, command palette, runs dock, settings).
 - The semantic layer names surfaces (`--bg-app`, `--bg-panel`, `--bg-content`, `--bg-elevated`), ink (`--ink-subtle`, `--ink-default`, `--ink-strong`, `--ink-on-solid`), the brand fill (`--fill-solid`, `--ink-accent`) and the hairlines (`--border-subtle`, `--border-default`).
 - Domain tokens (`--env-production`, `--job-failed`, `--diff-added`, `--published`) hold the same value in light and dark, so an environment or a job phase keeps its identity across a mode flip.
 - Those domain tokens come in three kinds, kept apart because they answer different questions: **status** (`--job-*`, `--env-*`, `--diff-*`), **identity** (`--kind-doc`, `--kind-sheet`, … — a spreadsheet is green because it is a spreadsheet, not because anything succeeded) and **series** (`--series-1` … `--series-6`, six chart hues whose only job is to stay apart).
 - The shadcn colour utilities (`bg-background`, `text-muted-foreground`, `border`, `bg-primary`, …) point straight at the live semantic tokens in `index.css` `@theme`, so Contrast and the Appearance seeds reach every component written against them, and the `/ <alpha>` modifier keeps working through `color-mix`. The muted and accent fills use the opaque `--bg-element-solid` / `--bg-element-hover-solid`, the element tones flattened onto the content surface, so sticky and overlaid content stays covered.
 - The `H S% L%` triplets (`--background`, `--primary`, …) remain only for the federated Users page, whose keycloak-ms CSS reads `hsl(var(--primary))`; the seeds regenerate them, Contrast does not reach them.
-- `frontend/src/index.css` exposes both sets to Tailwind through `@theme inline`; the shell names arrive as utilities (`bg-panel`, `text-ink-subtle`, `border-line`).
+- New components read the shell tokens directly — through the `.of-*` primitives and tone classes, or `var(--…)` — rather than through Tailwind colour utilities; only the shadcn names above are mapped in `index.css` `@theme inline`.
 - Shell token names stay out of the namespace the embedded chat writes on `:root` (`--text-*`, `--border-base`, `--border-focus`, `--surface-*`, `--icon-*`, …): the ink ramp is `--ink-*` and the border ink and accent are `--border-ink` and `--border-accent`, so a chat palette can never shadow a shell value at equal specificity. What opencode leaves on the page after a chat unmounts — its `:root` stylesheet, a background and a `theme-color` — never wins: `:root[data-scheme]` out-specifies its `color-scheme`, the shell's `html` background is `!important`, and the shell restores the brand `theme-color`.
 
 ### Tones
@@ -30,7 +30,7 @@ kind: explanation
 ### Type and fonts
 
 - Size, line height and weight travel together as one composite token (`--text-ui`, `--text-body`, `--text-title`, `--text-display`, `--mono-code`), applied through the `.t-*` utility classes; tracking rides alongside as `--ls-*`.
-- Inter and IBM Plex Mono are loaded from the repository — Inter from the vendored opencode UI assets, IBM Plex Mono from the `@ibm/plex` dependency — never from a CDN, so the shell renders in the same two faces as the embedded chat.
+- Inter and IBM Plex Mono are loaded from the repository, never from a CDN, so the shell renders in the same two faces as the embedded chat. Inter is opencode's own file at `/assets/Inter.ttf`, which the `opencodePublicAssets` Vite plugin serves from the vendored `app/public/assets` in dev and emits into the build — the chat's `@font-face` asks for that URL too, so the two share one download; IBM Plex Mono comes from the `@ibm/plex` dependency.
 - The dev server's `fs.allow` list carries the resolved `@ibm/plex` directory, because Yarn unplugs that package above the package root.
 
 ### Metrics and motion
@@ -57,7 +57,8 @@ kind: explanation
 
 ## Code
 
-- `frontend/src/styles/shell.css` — the tokens, the tone recipe, the primitives and the shell classes.
+- `frontend/src/styles/shell/` — the tokens, the tone recipe, the primitives and one stylesheet per shell surface, imported by `styles/shell.css`.
+- `frontend/vite-plugins/opencode-public-assets.ts` — serves opencode's `public/assets` fonts at `/assets/`.
 - `frontend/src/index.css` — Tailwind entry; maps both token sets into `@theme inline`.
 - `frontend/src/lib/appearance.ts` — the one appearance store (mode, contrast, density, font size, motion, seeds) and its single writer onto `<html>`.
 - `frontend/src/lib/theme-seeds.ts` — the seed lists and the mapping from the generator's scales onto the semantic layer.

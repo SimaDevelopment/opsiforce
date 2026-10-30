@@ -43,14 +43,13 @@ const FONT_SIZE_VALUE: Record<FontSize, string> = { small: '12px base', default:
 function Swatches(props: { label: string; seeds: Seed[]; value: Seed; onChange: (id: string) => void }) {
   return (
     <div class="of-swatch-row">
-      <div class="of-swatches" role="radiogroup" aria-label={props.label}>
+      <div class="of-swatches" role="group" aria-label={props.label}>
         <For each={props.seeds}>
           {(seed) => (
             <button
               type="button"
-              role="radio"
               class="of-swatch fr"
-              aria-checked={props.value.id === seed.id}
+              aria-pressed={props.value.id === seed.id}
               aria-label={seed.name}
               title={seed.name}
               style={{ '--sw-color': seed.color }}
@@ -77,14 +76,13 @@ function Segmented<T extends string>(props: {
   onChange: (value: T) => void;
 }) {
   return (
-    <div class="of-seg of-seg-wide" role="radiogroup" aria-label={props.label}>
+    <div class="of-seg of-seg-wide" role="group" aria-label={props.label}>
       <For each={props.values}>
         {(value) => (
           <button
             type="button"
-            role="radio"
             class="fr"
-            aria-checked={props.value === value}
+            aria-pressed={props.value === value}
             onClick={() => props.onChange(value)}
           >
             <Show when={props.icons?.[value]}>{(Icon) => <Dynamic component={Icon()} class="w-3.5 h-3.5" />}</Show>
@@ -221,7 +219,7 @@ function AppearancePage() {
             <Field
               icon={Palette}
               title="Base"
-              description="The neutral the whole interface is mixed from. Opsiforce tints its greys toward the deep brand indigo rather than sitting on zinc."
+              description="The neutral the whole interface is mixed from. The default tints its greys toward a deep indigo rather than sitting on zinc."
             >
               <Swatches
                 label="Base"

@@ -211,7 +211,7 @@ export function ExternalServicesListPage(props: {
           <EmptyState
             icon={Cable}
             title="External Services are managed by platform operators and Organization admins."
-            hint="Ask an admin if you need a service set up."
+            description="Ask an admin if you need a service set up."
           />
         }
       >
@@ -244,7 +244,7 @@ export function ExternalServicesListPage(props: {
                   <EmptyState
                     icon={Cable}
                     title="No External Services match."
-                    hint="Try another filter, or clear the search."
+                    description="Try another filter, or clear the search."
                   />
                 </Show>
               }

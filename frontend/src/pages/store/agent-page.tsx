@@ -889,7 +889,7 @@ function EnvironmentPanel(props: {
           <EmptyState
             icon={Rocket}
             title={`Nothing published to ${selected()?.name ?? 'this environment'} yet.`}
-            hint={
+            description={
               props.canManage
                 ? 'Publish, at the top of the page, copies Development here and offers it to new projects.'
                 : 'Until Development is published here, new projects cannot start from it.'

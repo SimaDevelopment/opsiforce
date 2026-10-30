@@ -28,14 +28,14 @@ export interface Seed {
 }
 
 export const BASE_SEEDS: Seed[] = [
-  { id: 'ink', name: 'Periwinkle ink', note: 'the Opsiforce default', color: '#3f3d6f' },
+  { id: 'ink', name: 'Periwinkle ink', note: 'the default', color: '#3f3d6f' },
   { id: 'slate', name: 'Slate', color: '#46505e' },
   { id: 'graphite', name: 'Graphite', color: '#3b3b3f' },
   { id: 'warm', name: 'Warm', color: '#4a443c' },
 ];
 
 export const ACCENT_SEEDS: Seed[] = [
-  { id: 'brand', name: 'Opsiforce', note: 'brand periwinkle', color: '#6666ff' },
+  { id: 'brand', name: 'Periwinkle', note: 'the default', color: '#6666ff' },
   { id: 'indigo', name: 'Indigo', color: '#4f5bd5' },
   { id: 'teal', name: 'Teal', color: '#0e8f86' },
   { id: 'amber', name: 'Amber', color: '#b8761a' },
@@ -151,7 +151,7 @@ export function resolveSeedTokens(base: HexColor, accent: HexColor, isDark: bool
     '--fill-tint-strong': withAlpha(fill, isDark ? 0.24 : 0.18),
     '--ring-accent': withAlpha(fill, isDark ? 0.46 : 0.38),
 
-    // legacy bridge, same mapping as the authored block in shell.css
+    // federated triplets, same mapping as the authored block in shell/tokens.css
     '--background': hslTriplet(app),
     '--foreground': hslTriplet(textDefault),
     '--card': hslTriplet(content),

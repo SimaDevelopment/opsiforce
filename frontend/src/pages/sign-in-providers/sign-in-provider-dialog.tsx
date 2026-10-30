@@ -247,7 +247,7 @@ export function SignInProviderDialog(props: {
               </Hint>
             </FieldWithTooltip>
             <Show when={!draft.requiredClaimName.trim()}>
-              <p class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <p class="of-note of-tone-needs-you text-xs">
                 Without a required claim, anyone who can sign in to this identity provider can open the apps that use
                 it. Set one if the provider also signs in accounts from outside your organization.
               </p>

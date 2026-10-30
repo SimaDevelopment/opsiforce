@@ -217,7 +217,7 @@ export function ExternalServicePage(props: {
               <EmptyState
                 icon={Cable}
                 title="This External Service isn't available."
-                hint="It may need setup by a platform operator, or it no longer exists."
+                description="It may need setup by a platform operator, or it no longer exists."
               />
             }
           >
@@ -593,7 +593,7 @@ function OverviewTab(props: {
           <EmptyState
             icon={Rocket}
             title={`Nothing published to ${shown().environmentName ?? 'this environment'} yet.`}
-            hint="Publish, at the top of the page, copies Development here."
+            description="Publish, at the top of the page, copies Development here."
           />
         }
       >

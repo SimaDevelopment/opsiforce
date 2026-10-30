@@ -1,5 +1,5 @@
 import { Show, createSignal, untrack, type Component, type JSX } from 'solid-js';
-import { useNavigate } from '@tanstack/solid-router';
+import { useSidebar } from '~/components/ui/sidebar';
 import { revealInSidebar } from '~/lib/sidebar-reveal';
 import { useQueryClient } from '@tanstack/solid-query';
 import { usePermissions } from '~/api/permissions';
@@ -175,7 +175,6 @@ function ProjectTabTrigger(props: {
 export function ProjectTitleLabel(props: { projectId: string; editing?: boolean; onEditDone?: () => void }) {
   const project = useProject(() => props.projectId);
   const workspaces = useWorkspaces();
-  const navigate = useNavigate();
   const workspaceId = () => project.data?.workspaceId ?? '';
   const folders = useWorkspaceFolders(workspaceId);
   const title = () => projectTitleOf(project.data);
@@ -189,11 +188,14 @@ export function ProjectTitleLabel(props: { projectId: string; editing?: boolean;
     if (!id) return undefined;
     return folders.data?.find((f) => f.id === id)?.name;
   };
-  // Every crumb above the last one goes home with the sidebar revealing that
-  // group, which is where this product keeps its workspaces and folders.
+  // Every crumb above the last one unfolds that group in the sidebar, which
+  // is where this product keeps its workspaces and folders; the project stays
+  // open. A folded-away sidebar opens so the reveal is visible.
+  const sidebar = useSidebar();
   const goUp = (reveal: { workspace?: string; folder?: string }) => {
+    if (sidebar.isMobile()) sidebar.setOpenMobile(true);
+    else sidebar.setOpen(true);
     revealInSidebar(reveal);
-    navigate({ to: '/' });
   };
   return (
     <Show

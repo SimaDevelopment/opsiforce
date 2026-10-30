@@ -122,7 +122,7 @@ export function CommandPalette() {
   const filtered = createMemo<Item[]>(() => {
     const q = query().trim();
     if (!q) return items();
-    const results = fuzzysort.go(q, items(), { key: 'label', threshold: -10_000, limit: 40 });
+    const results = fuzzysort.go(q, items(), { key: 'label', limit: 40 });
     return results.map((r) => r.obj);
   });
 
@@ -243,7 +243,8 @@ export function CommandPalette() {
         class="of-scrim"
         data-open={open()}
         tabindex={-1}
-        aria-label="Close search"
+        aria-hidden={open() ? undefined : true}
+        aria-label="Close"
         onClick={() => setOpen(false)}
       />
       <div class="of-cmdk" data-open={open()} role="dialog" aria-modal="true" aria-label="Go to">

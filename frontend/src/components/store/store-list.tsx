@@ -1,5 +1,4 @@
-import { For, Show, createUniqueId, type Component, type JSX } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
+import { For, Show, createUniqueId, type JSX } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { Badge } from '~/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
@@ -171,17 +170,7 @@ export function VersionUpdateBadge(props: { from: number; to: number }) {
   );
 }
 
-export function EmptyState(props: { icon: Component<{ class?: string }>; title: string; hint?: string }) {
-  return (
-    <div class="rounded-xl border border-border bg-card p-10 text-center">
-      <Dynamic component={props.icon} class="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
-      <p class="text-sm text-muted-foreground">{props.title}</p>
-      <Show when={props.hint}>
-        <p class="mt-1 text-xs text-muted-foreground">{props.hint}</p>
-      </Show>
-    </div>
-  );
-}
+export { EmptyState } from '~/components/ui/empty-state';
 
 /** Native radios so one tab stop and arrow-key roving come for free. */
 export function FilterChips<T extends string>(props: {

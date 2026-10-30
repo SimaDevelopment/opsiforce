@@ -48,7 +48,7 @@ const STATUS = {
   diffDelete: '#d9484c', // --diff-deleted
 } as const;
 
-// The authored values from styles/shell.css, used while the seeds are the
+// The authored values from styles/shell/tokens.css, used while the seeds are the
 // defaults. Dark is authored, not inverted: #8C89FF tops out at APCA Lc 48.3
 // against any ink, so the dark fill goes to the brand tint and takes dark ink.
 const AUTHORED = {

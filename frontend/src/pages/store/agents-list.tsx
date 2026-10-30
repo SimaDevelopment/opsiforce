@@ -116,9 +116,9 @@ function AgentsEmptyState(props: { narrowed: boolean }) {
   return (
     <Show
       when={props.narrowed}
-      fallback={<EmptyState icon={Bot} title="No agents yet." hint="New agent creates the first one." />}
+      fallback={<EmptyState icon={Bot} title="No agents yet." description="New agent creates the first one." />}
     >
-      <EmptyState icon={Bot} title="No agents match." hint="Try another filter, or clear the search." />
+      <EmptyState icon={Bot} title="No agents match." description="Try another filter, or clear the search." />
     </Show>
   );
 }

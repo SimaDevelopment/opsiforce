@@ -1,0 +1,97 @@
+@layer components {
+  /* ==========================================================================
+     HOME — the composer is the hero
+     ========================================================================== */
+  .of-home-field {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 560px;
+    overflow: hidden;
+    pointer-events: none;
+    mask-image: radial-gradient(120% 78% at 50% 26%, currentColor 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(120% 78% at 50% 26%, currentColor 0%, transparent 72%);
+  }
+
+  .of-composer {
+    position: relative;
+    background: var(--bg-content);
+    border-radius: var(--radius-xl-of);
+    box-shadow: var(--glow-composer), inset 0 0 0 1px var(--border-default);
+    padding: 4px 4px 0;
+    transition: box-shadow var(--dur) var(--ease-standard);
+  }
+
+  [data-scheme='dark'] .of-composer {
+    background: var(--bg-elevated);
+  }
+
+  .of-composer:focus-within {
+    box-shadow: var(--glow-composer), inset 0 0 0 1px var(--border-accent), 0 0 0 3px var(--ring-accent);
+  }
+
+  .of-composer textarea {
+    display: block;
+    width: 100%;
+    resize: none;
+    border: 0;
+    background: transparent;
+    padding: 16px 14px 8px;
+    min-height: 92px;
+    font: var(--text-input);
+    letter-spacing: var(--ls-input);
+    color: var(--ink-strong);
+  }
+
+  .of-composer textarea::placeholder {
+    color: var(--ink-subtle);
+  }
+
+  .of-composer textarea:focus {
+    outline: none;
+  }
+
+  .of-composer-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px 8px 10px;
+  }
+
+  .of-ex {
+    display: flex;
+    gap: 11px;
+    padding: 13px;
+    text-align: left;
+    align-items: flex-start;
+    background: var(--bg-content);
+    border-radius: var(--radius-lg-of);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    transition:
+      box-shadow var(--dur) var(--ease-standard),
+      background-color var(--dur-fast) var(--ease-standard),
+      transform var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-ex:hover {
+    background: var(--bg-element);
+    box-shadow: inset 0 0 0 1px var(--border-default);
+  }
+
+  .of-ex:active {
+    transform: scale(0.993);
+  }
+
+  /* identity comes from type and surface, never a per-item colour tile */
+  .of-ex .tile {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: var(--radius-md-of);
+    display: grid;
+    place-items: center;
+    background: var(--fill-tint);
+    color: var(--ink-accent);
+  }
+}

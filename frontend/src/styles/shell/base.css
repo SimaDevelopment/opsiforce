@@ -1,0 +1,19 @@
+/* ==========================================================================
+   BASE — in Tailwind's base layer, so a utility still wins over it.
+   ========================================================================== */
+@layer base {
+  body {
+    background: var(--bg-app);
+    color: var(--ink-default);
+    font: var(--text-ui);
+    letter-spacing: var(--ls-ui);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--fill-tint-strong);
+    color: var(--ink-strong);
+  }
+}

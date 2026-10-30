@@ -20,7 +20,7 @@ function ExampleCard(props: { example: Example; onClick: () => void }) {
   return (
     <button onClick={props.onClick} class="of-ex fr">
       {/* the tile carries the brand tint, never a per-item colour: identity
-          here comes from type and surface (see the redesign brief) */}
+          here comes from type and surface */}
       <span class="tile">
         <props.example.icon class="w-4 h-4" />
       </span>

@@ -1,43 +1,31 @@
+import { updatePersisted } from './persisted-signal';
+
 /**
  * "Go up" from a project.
  *
  * A breadcrumb promises that the step above it is somewhere you can get to,
  * but workspaces and folders are not pages in this product — they are groups
- * in the sidebar. Clicking a crumb therefore unfolds that group and goes
- * home, which is the honest equivalent of navigating up: you end on the list
- * with the thing you clicked open.
+ * in the sidebar. Clicking a crumb therefore unfolds that group where the
+ * sidebar shows it, and leaves the user on the project they were working in.
  *
- * The fold state is the same persisted record the sidebar reads, so this is a
- * write to shared state rather than a second source of truth.
+ * These keys are the sidebar's own fold state, owned here so the sidebar and
+ * the breadcrumb write one record rather than two copies of its name.
  */
 
-const FOLDED_KEY = 'opsiforce:workspace:folded';
-const FOLDER_EXPANDED_KEY = 'opsiforce:folder:expanded';
-
-function patch(key: string, apply: (value: Record<string, boolean>) => void): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const raw = window.localStorage.getItem(key);
-    const value: Record<string, boolean> = raw ? JSON.parse(raw) : {};
-    apply(value);
-    const next = JSON.stringify(value);
-    window.localStorage.setItem(key, next);
-    // the sidebar's persisted signals listen for this in the same tab
-    window.dispatchEvent(new StorageEvent('storage', { key, newValue: next }));
-  } catch {
-    // a blocked or unparsable store just means the group keeps its fold state
-  }
-}
+export const WORKSPACE_FOLDED_KEY = 'opsiforce:workspace:folded';
+export const FOLDER_EXPANDED_KEY = 'opsiforce:folder:expanded';
 
 export function revealInSidebar(target: { workspace?: string; folder?: string }): void {
-  if (target.workspace) {
-    patch(FOLDED_KEY, (folded) => {
-      folded[target.workspace as string] = false;
-    });
-  }
-  if (target.folder) {
-    patch(FOLDER_EXPANDED_KEY, (expanded) => {
-      expanded[target.folder as string] = true;
-    });
-  }
+  const { workspace, folder } = target;
+  if (workspace)
+    updatePersisted<Record<string, boolean>>(WORKSPACE_FOLDED_KEY, {}, (prev) => ({ ...prev, [workspace]: false }));
+  if (folder)
+    updatePersisted<Record<string, boolean>>(FOLDER_EXPANDED_KEY, {}, (prev) => ({ ...prev, [folder]: true }));
+
+  const group = folder ?? workspace;
+  if (!group || typeof document === 'undefined') return;
+  // after the unfold has rendered, bring the group into view in the sidebar
+  requestAnimationFrame(() =>
+    document.querySelector(`[data-sidebar-group="${CSS.escape(group)}"]`)?.scrollIntoView({ block: 'nearest' })
+  );
 }

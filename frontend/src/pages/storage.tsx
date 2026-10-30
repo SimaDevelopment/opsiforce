@@ -19,6 +19,7 @@ import { Button } from '~/components/ui/button';
 import { Skeleton } from '~/components/ui/skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
+import { EmptyState } from '~/components/ui/empty-state';
 import {
   AlertTriangle,
   Building2,
@@ -40,7 +41,7 @@ const COLUMN_COUNT = 4;
 const STALENESS_NOTE = 'sizes may lag recent writes by ~30 s';
 
 /* tone setters, not colours: a segment, its legend swatch and its row all take
-   the same one, and the scale itself is authored in shell.css */
+   the same one, and the scale itself is authored in styles/shell/tokens.css */
 const TENANT_SEGMENT_TONES = [
   'of-series-1',
   'of-series-2',
@@ -174,7 +175,7 @@ export function StoragePage() {
         {(view) => (
           <>
             <CapacityBar snapshot={view()} />
-            <Show when={hasLedgerRows(view())} fallback={<EmptyState />}>
+            <Show when={hasLedgerRows(view())} fallback={<EmptyState icon={Database} title="No organization storage yet" description="Environment directories appear here once projects have been opened." />}>
               <RollupTable snapshot={view()} />
             </Show>
           </>
@@ -742,12 +743,3 @@ function ErrorState(props: { onRetry: () => void }): JSX.Element {
   );
 }
 
-function EmptyState(): JSX.Element {
-  return (
-    <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <Database class="w-10 h-10 mx-auto mb-3 opacity-40" />
-      <p class="text-sm font-medium">No organization storage yet</p>
-      <p class="text-xs mt-1">Environment directories appear here once projects have been opened.</p>
-    </div>
-  );
-}

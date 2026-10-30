@@ -13,6 +13,7 @@ import { KeepAliveCell } from '~/components/pods/keep-alive-cell';
 import { PodStatusCell } from '~/components/pods/pod-status-cell';
 import { WarmPoolTable } from '~/components/pods/warm-pool-table';
 import { AlertTriangle, Boxes, ChevronRight, ExternalLink, FolderKanban, RefreshCw } from '~/components/icons';
+import { EmptyState } from '~/components/ui/empty-state';
 
 const COLUMN_COUNT = 7;
 
@@ -92,7 +93,11 @@ export function PodsPage() {
       </Show>
 
       <Show when={!pods.isPending && !pods.isError && groups().length === 0 && warmPool().length === 0}>
-        <EmptyState />
+        <EmptyState
+          icon={Boxes}
+          title="No running pods"
+          description="Environments spin up when someone opens a project or its app receives traffic."
+        />
       </Show>
 
       <Show when={!pods.isPending && !pods.isError && groups().length > 0}>
@@ -365,16 +370,6 @@ function ErrorState(props: { onRetry: () => void }): JSX.Element {
         <RefreshCw class="w-3.5 h-3.5" />
         Try again
       </button>
-    </div>
-  );
-}
-
-function EmptyState(): JSX.Element {
-  return (
-    <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <Boxes class="w-10 h-10 mx-auto mb-3 opacity-40" />
-      <p class="text-sm font-medium">No running pods</p>
-      <p class="text-xs mt-1">Environments spin up when someone opens a project or its app receives traffic.</p>
     </div>
   );
 }
