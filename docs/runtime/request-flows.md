@@ -12,9 +12,10 @@ adrs: [0050]
 ### Topology
 
 - The edge routes `/api/**` to the NestJS backend and every project surface to one of four stateless Go runtime proxies; the backend is a control plane that never streams project traffic.
-- A fifth mode of the same binary, the `external-service` proxy (the Gate's proxy), serves every [Service host](../../GLOSSARY.md) `<slug>.external-services.<base>` with no identity proxy in front, plus the webhook lane, and reaches the service's pod by IP ([Service host](service-host.md)).
+- A fifth mode of the same binary, the `external-service` proxy (the Gate's proxy), serves every [Service host](../../GLOSSARY.md) `<slug>.external-services.<base>` with no identity proxy in front, plus the webhook lane, and reaches the service's pod by its DNS name ([Service host](service-host.md)).
 - The agent surface is path-routed under `/api/proxy/:id/*`; the App, VS Code and DB surfaces are subdomain-routed because their servers emit absolute asset paths ([Pod Tools](pod-tools.md)). `:id` is always the [ProjectEnvironment](../../GLOSSARY.md) id, which for [Development](../../GLOSSARY.md) equals the [Project](../../GLOSSARY.md) id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
 - Inside the pod, agent-control listens on the control port (4910) for App restarts and config-change markers and fronts OpenCode on 4096 ([OpenCode Embed](../frontend/opencode-embed.md)); the App serves on 3000, code-server on 8080 and Datasette on 8081.
+- The four runtime proxies and the backend connect to a pod by its DNS name and ask for `Host: localhost:<port>`, so a stack's default host check accepts them; the runtime proxies pass the public address on in `X-Forwarded-Host` and `X-Forwarded-Proto`, and the Gate keeps the caller's `Host` ([ADR-0094](../adr/0094-agent-pods-are-reached-by-dns-name-and-the-database-stores-no-address.md)).
 - Hosted deployments put oauth2-proxy at the edge, waiting up to 2 minutes for the backend's first byte so a request the backend holds on purpose (an External Service's Default switch drains for up to 30 s) is not cut into a `502`; local development runs the edge in static auth mode with no identity provider and a fixed identity carrying every permission ([ADR-0050](../adr/0050-local-development-runs-on-tilt-with-a-static-identity-and-no-identity-provider.md), [Local orchestration](../operations/local-orchestration.md)).
 
 ```mermaid
@@ -27,7 +28,7 @@ flowchart LR
   Edge -->|"{envId}.db…"| DB["db proxy"]
   Traefik["Traefik"] -->|"{slug}.external-services…"| GateProxy["external-service proxy (Gate)"]
   GateProxy -. "resolve" .-> Backend
-  GateProxy -->|"pod IP : APP_PORT"| Service["External Service pod"]
+  GateProxy -->|"pod name : APP_PORT"| Service["External Service pod"]
 
   Agent & App & VSCode & DB -. "ensure / activity / failure" .-> Backend
   Backend --> State["Kubernetes API · PostgreSQL · Redis · Bifrost"]
@@ -48,7 +49,7 @@ flowchart LR
 - Idle timeouts are validated against a five-minute floor wherever they are written, so several keep-alive touches fit inside the shortest timeout anyone can configure.
 - Each proxy caches a ready decision for about five seconds and a starting decision or an App redirect for about one second, in at most 10,000 entries with expired ones dropped first, collapses concurrent ensures for the same environment, surface and auth signature (on the App surface, the same host) into one backend call, and drops every cached decision for an environment on its failure report. A request carrying a pod's `gw-` key is never cached, because the backend checks its *Manage created Projects* setting on every request ([API Token](../public-api/api-token.md)).
 - The proxy forwards the edge's identity headers, and the backend gates the Agent surface only, not Code or DB, by [Organization](../../GLOSSARY.md) membership, the same Project visibility predicate the Project list uses, and — for a [Builder chat](../../GLOSSARY.md) or the Test Project under it — whether its Skill or Agent is visible to the caller: a failed membership or visibility check answers 404, a hidden Builder chat or Test Project 403 ([Connection](../public-api/connection.md), [ADR-0064](../adr/0064-a-builder-chat-is-a-kind-stamped-project-that-belongs-to-one-skill-or-agent-and-who-opens-it-follows-that-subject.md)).
-- The App surface is not gated there at all: its hostname reaches the app proxy without passing the identity proxy, so the headers arriving on it are caller-supplied. It is guarded per environment by [App Auth](../../GLOSSARY.md) instead, and the catch-all apps route, which has no App Auth, sets `X-Opsiforce-Unprotected-Route` on every request it passes, so the app proxy answers 403 for an App whose App Auth is not public and strips the header with every reserved `X-Opsiforce-*` one ([Environments](../projects/environments.md)).
+- The App surface is not gated there at all: its hostname reaches the app proxy without passing the identity proxy, so the headers arriving on it are caller-supplied. The App receives the caller's `X-Forwarded-User`, `X-Forwarded-Email`, `X-Forwarded-Preferred-Username` and `X-Forwarded-Groups` as sent, for an App that sits behind a gateway of its own, and never as proof of who the visitor is; the identity proxy's `X-Forwarded-*-Token` headers never reach it, and the Agent, Code and DB surfaces drop the identity headers as well. It is guarded per environment by [App Auth](../../GLOSSARY.md) instead, and the catch-all apps route, which has no App Auth, sets `X-Opsiforce-Unprotected-Route` on every request it passes, so the app proxy answers 403 for an App whose App Auth is not public and strips the header with every reserved `X-Opsiforce-*` one ([Environments](../projects/environments.md)).
 - The app proxy sends the full host a visitor opened to `POST /internal/proxy/apps/ensure`, with the same identity headers and `gw-` bearer, and serves, redirects with a 308 marked `no-store` or passes the 404 on as the backend answers ([Public URL](../projects/public-url.md)); an External Service's Projects get that 404 on every host and on either ensure route. It checks the forwarded-token proof against the answered `environmentId`, which also names the environment in its failure and activity calls, while the per-environment route keeps answering an App's legacy host as `canonicalHost`.
 
 ### Per surface
@@ -65,7 +66,8 @@ flowchart LR
 - When the Kubernetes API is unavailable, ensure answers 5xx and nothing else compensates; the frontend retries.
 - When a client vanishes without closing (sleep, network loss), TCP keepalive detects it within a few minutes and the surface falls back to its idle timeout.
 - When a Project is deleted, every environment's pod is deleted, its keep-alive keys are cleared, the Bifrost team is revoked and each environment is tombstoned before its row goes ([Persistence](persistence.md)).
-- When an App sets a cookie of its own named `_opsiforce_…`, the app proxy deletes it from every request to that App.
+- When an App sets a cookie of its own named `_opsiforce_…`, the app proxy drops that `Set-Cookie` and deletes any such cookie from every request to that App.
+- When a request signed in by App Auth comes from another origin, such as another App, the app proxy sends no CORS headers and removes the App's own, so a script there cannot read the answer.
 
 ## Code
 

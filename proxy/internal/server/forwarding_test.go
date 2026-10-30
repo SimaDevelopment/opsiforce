@@ -104,3 +104,42 @@ func TestForwardingOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestSignedInRequestsFromAnotherOriginGetNoCredentialedCORS(t *testing.T) {
+	cases := []struct {
+		origin, subject string
+		want            bool
+	}{
+		{"https://evil.apps.example", "user-1", true},
+		{"https://app.apps.example", "user-1", false},
+		{"", "user-1", false},
+		{"https://evil.apps.example", "", false},
+	}
+	for _, c := range cases {
+		r, _ := http.NewRequest("GET", "https://app.apps.example/api/orders", nil)
+		r.Host = "app.apps.example"
+		if c.origin != "" {
+			r.Header.Set("Origin", c.origin)
+		}
+		if c.subject != "" {
+			r.Header.Set(signedInSubjectHeader, c.subject)
+		}
+		if got := signedInFromAnotherOrigin(r); got != c.want {
+			t.Fatalf("origin %q subject %q: got %v", c.origin, c.subject, got)
+		}
+	}
+}
+
+func TestSignedInCrossOriginResponsesLoseTheAppsOwnCORS(t *testing.T) {
+	h := http.Header{}
+	h.Set("Access-Control-Allow-Origin", "https://evil.apps.example")
+	h.Set("Access-Control-Allow-Credentials", "true")
+	h.Set("Content-Type", "application/json")
+	dropCORSHeaders(h)
+	if h.Get("Access-Control-Allow-Origin") != "" || h.Get("Access-Control-Allow-Credentials") != "" {
+		t.Fatalf("CORS headers kept: %v", h)
+	}
+	if h.Get("Content-Type") != "application/json" {
+		t.Fatal("unrelated header dropped")
+	}
+}

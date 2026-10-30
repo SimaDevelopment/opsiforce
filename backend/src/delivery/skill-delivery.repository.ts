@@ -23,7 +23,7 @@ export interface FanOutTarget {
   environmentId: string | null;
   directory: string;
   status: string;
-  podIp: string | null;
+  disabled: boolean;
 }
 
 export interface DeliveryStateRow {
@@ -62,7 +62,7 @@ export class SkillDeliveryRepository {
         environmentId: projectEnvironments.environmentId,
         directory: projectEnvironments.directory,
         status: projectEnvironments.status,
-        podIp: projectEnvironments.podIp,
+        disabled: projects.disabled,
       })
       .from(projectEnvironments)
       .innerJoin(projects, eq(projects.id, projectEnvironments.projectId))
@@ -81,7 +81,7 @@ export class SkillDeliveryRepository {
         environmentId: projectEnvironments.environmentId,
         directory: projectEnvironments.directory,
         status: projectEnvironments.status,
-        podIp: projectEnvironments.podIp,
+        disabled: projects.disabled,
       })
       .from(projectEnvironments)
       .innerJoin(projects, eq(projects.id, projectEnvironments.projectId))

@@ -1,5 +1,5 @@
 import type { Component } from 'solid-js';
-import { FolderKanban, Gauge, Layers, Palette, SlidersHorizontal, Wallet, Waypoints } from '~/components/icons';
+import { FolderKanban, Gauge, KeyRound, Layers, Palette, SlidersHorizontal, Wallet, Waypoints } from '~/components/icons';
 import type { HasPermission } from '~/constants/permissions';
 import { PRIVATE_TABS } from '~/private-loader';
 
@@ -34,6 +34,14 @@ export const SETTINGS_TABS: SettingsTab[] = [
     group: 'Access',
     icon: FolderKanban,
     isPermitted: (has) => has('can_manage_workspaces'),
+  },
+  {
+    to: '/settings/sign-in-providers',
+    label: 'Sign-in providers',
+    description: "The sign-in providers this organization's apps let members sign in with.",
+    group: 'Access',
+    icon: KeyRound,
+    isPermitted: (has) => has('can_manage_tenant_sign_in_providers'),
   },
   {
     to: '/settings/environments',

@@ -7,9 +7,9 @@ import { FileUpload } from '~/components/file-upload';
 import { ExternalServicesButton } from './external-services/external-services-button';
 import { SkillsButton } from './skills/skills-button';
 import { DictationButton } from '~/components/dictation-button';
-import { Spinner } from '~/components/ui/spinner';
 import { WorkspaceFileLinks } from './workspace-file-links';
 import { OpencodeOverrides } from './opencode-overrides';
+import { ProjectConnecting } from './project-states';
 import { createProxyPlatform } from './platform';
 
 export interface ProjectChatTabProps {
@@ -118,7 +118,9 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         onPreviewFile={props.onPreviewFile}
       />
       <Show when={booting()}>
-        <Spinner label="Connecting..." overlay />
+        <div class="absolute inset-0 z-10 bg-background">
+          <ProjectConnecting starting={false} />
+        </div>
       </Show>
     </div>
   );

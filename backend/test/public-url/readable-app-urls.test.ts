@@ -106,7 +106,7 @@ async function runningDevelopmentOfNewProject(): Promise<ProjectEnvironmentFixtu
 
 async function suspend(environmentId: string): Promise<void> {
   await pods.deletePod(pods.assignedPodName(environmentId));
-  await app.get(ProjectEnvironmentService).patch(environmentId, { status: ProjectStatus.Suspended, podIp: null });
+  await app.get(ProjectEnvironmentService).patch(environmentId, { status: ProjectStatus.Suspended });
 }
 
 function podStartsOf(environmentId: string) {

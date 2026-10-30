@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import { agentUpdateStaleAfterMs, reapStaleRunningAgentUpdates } from '../agent-update/agent-update.reaper';
 import { PLATFORM_SKILL_NAME } from '../agent/agent.types';
+import { hasRunningPod } from '../project-environment/running-pod';
 import { ProjectStatus } from '../project/project.types';
 import { SkillRepository } from '../store/skill.repository';
 import type { SkillTree } from '../store/gate';
@@ -24,7 +25,6 @@ import { SkillSwitchRepository } from './skill-switch.repository';
 import { WorkspaceWriter } from './workspace-writer';
 
 /** A suspended or disabled environment has a workspace but no pod to confirm against. */
-const CONFIRMABLE_STATUSES = new Set<string>([ProjectStatus.Active, ProjectStatus.Starting]);
 
 interface PlannedSkill {
   name: string;
@@ -303,8 +303,8 @@ export class SkillDeliveryService {
   }
 
   private async confirm(target: FanOutTarget, desired: Set<string>, removed: string[]): Promise<void> {
-    if (!target.podIp || !CONFIRMABLE_STATUSES.has(target.status)) return;
-    await this.reload.notify(target.projectEnvironmentId, target.podIp, ['skills']);
-    await this.reload.confirmSkills(target.podIp, [...desired], removed);
+    if (!hasRunningPod(target)) return;
+    await this.reload.notify(target.projectEnvironmentId, ['skills']);
+    await this.reload.confirmSkills(target.projectEnvironmentId, [...desired], removed);
   }
 }

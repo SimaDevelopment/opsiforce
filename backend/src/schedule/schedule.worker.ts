@@ -8,7 +8,10 @@ import { ScheduleService } from './schedule.service';
 import { ProjectService } from '../project/project.service';
 import { AppReadinessService } from '../project/app-readiness.service';
 import { ProxyService } from '../proxy/proxy.service';
+import type { PodRequestInit } from '../pod/pod-fetch';
 import { SCHEDULE_QUEUE_NAME, type ScheduleJobData, type ScheduleTrigger } from './schedule.types';
+
+const APP_ANSWER_TIMEOUT_MS = 5 * 60 * 1000;
 
 @Processor(SCHEDULE_QUEUE_NAME)
 export class ScheduleWorker extends WorkerHost {
@@ -71,24 +74,22 @@ export class ScheduleWorker extends WorkerHost {
     const start = Date.now();
 
     try {
-      const upstream = await this.proxyService.resolveAppUpstreamByEnvironmentId(routingId);
-      const url = `${upstream}${schedule.targetPath}`;
-
       const extraHeaders =
         schedule.headers && typeof schedule.headers === 'object' ? (schedule.headers as Record<string, string>) : {};
 
       const hasBody = schedule.body != null && schedule.method !== 'GET';
 
-      const fetchOptions: RequestInit = {
+      const fetchOptions: PodRequestInit = {
         method: schedule.method,
         headers: {
           ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
           ...extraHeaders,
         },
         ...(hasBody ? { body: JSON.stringify(schedule.body) } : {}),
+        signal: AbortSignal.timeout(APP_ANSWER_TIMEOUT_MS),
       };
 
-      const response = await fetch(url, fetchOptions);
+      const response = await this.proxyService.fetchApp(routingId, schedule.targetPath, fetchOptions);
       const latencyMs = Date.now() - start;
       await this.scheduleService.recordExecution(scheduleId, trigger, response.status, latencyMs);
 

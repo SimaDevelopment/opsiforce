@@ -112,9 +112,7 @@ describe('a Working Agent holds its pod', () => {
     const project = await createRunningProject();
     await seam.runStarted(project, 'ses_a');
     seam.pod.setActive(['ses_a']);
-    await seam.app
-      .get(ProjectEnvironmentService)
-      .patch(project.environmentId, { status: ProjectStatus.Suspended, podIp: null });
+    await seam.app.get(ProjectEnvironmentService).patch(project.environmentId, { status: ProjectStatus.Suspended });
     const touches = agentKeyTouchesSince(project);
 
     await seam.rereadClock.elapse();

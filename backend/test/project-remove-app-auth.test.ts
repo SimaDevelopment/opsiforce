@@ -33,11 +33,7 @@ describe('Deleting a Project removes its App Auth', () => {
       platformVersion: '0.1.0',
       authMode: 'manual',
     });
-    await harness.projects.inheritAuth(
-      { id: project.id, authMode: 'manual' },
-      await harness.projectEnvironments.findById(published.id),
-      tenant.id
-    );
+    await harness.projects.inheritAuth({ id: project.id }, await harness.projectEnvironments.findById(published.id));
 
     await harness.projects.remove(project.id, tenant.id);
 

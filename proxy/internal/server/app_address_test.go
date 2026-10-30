@@ -484,6 +484,83 @@ func TestAProtectedAppReachedThroughTheUnprotectedRouteIsRefusedWithoutContactin
 	}
 }
 
+func TestASignedInUpgradeFromAnotherOriginIsRefusedWithoutContactingThePod(t *testing.T) {
+	upstream, upstreamURL := startUpstream(t)
+	plane := &appControlPlane{answer: protectedServeAnswer(upstreamURL)}
+	server := newAppServer(t, plane)
+
+	headers := http.Header{}
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	headers.Set("Origin", "https://sibling-dev-0123456789ab.apps.test")
+	headers.Set(signedInSubjectHeader, "visitor-1")
+	rec := visit(server, "https://"+readableAppHost+"/socket", headers)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d want 403", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("a refused cross-origin upgrade carries CORS permission")
+	}
+	if len(upstream.received()) != 0 || len(plane.ensureCalls()) != 0 {
+		t.Error("a signed-in upgrade from another origin reached the control plane or the pod")
+	}
+}
+
+func TestASignedInUpgradeFromTheAppsOwnOriginReachesThePod(t *testing.T) {
+	upstream, upstreamURL := startUpstream(t)
+	plane := &appControlPlane{answer: protectedServeAnswer(upstreamURL)}
+	server := newAppServer(t, plane)
+
+	headers := http.Header{}
+	headers.Set("Connection", "Upgrade")
+	headers.Set("Upgrade", "websocket")
+	headers.Set("Origin", "https://"+readableAppHost)
+	headers.Set(signedInSubjectHeader, "visitor-1")
+	visit(server, "https://"+readableAppHost+"/socket", headers)
+
+	if len(upstream.received()) != 1 {
+		t.Fatalf("upstream requests: got %d want 1", len(upstream.received()))
+	}
+}
+
+func TestAnAppReceivesTheCallersForwardedIdentityButNoTokens(t *testing.T) {
+	upstream, upstreamURL := startUpstream(t)
+	plane := &appControlPlane{answer: serveAnswer(upstreamURL)}
+	server := newAppServer(t, plane)
+
+	headers := http.Header{}
+	headers.Set("X-Forwarded-User", "alice")
+	headers.Set("X-Forwarded-Email", "alice@example-org.test")
+	headers.Set("X-Forwarded-Preferred-Username", "alice")
+	headers.Set("X-Forwarded-Groups", "role:example_can_view")
+	headers.Set("X-Forwarded-Access-Token", "access")
+	headers.Set("X-Forwarded-Id-Token", "id")
+	headers.Set("X-Forwarded-Refresh-Token", "refresh")
+	visit(server, "https://"+readableAppHost+"/orders", headers)
+
+	received := upstream.received()
+	if len(received) != 1 {
+		t.Fatalf("upstream requests: got %d want 1", len(received))
+	}
+	got := received[0].Header
+	for name, want := range map[string]string{
+		"X-Forwarded-User":               "alice",
+		"X-Forwarded-Email":              "alice@example-org.test",
+		"X-Forwarded-Preferred-Username": "alice",
+		"X-Forwarded-Groups":             "role:example_can_view",
+	} {
+		if got.Get(name) != want {
+			t.Errorf("%s: got %q want %q", name, got.Get(name), want)
+		}
+	}
+	for _, name := range []string{"X-Forwarded-Access-Token", "X-Forwarded-Id-Token", "X-Forwarded-Refresh-Token"} {
+		if got.Get(name) != "" {
+			t.Errorf("%s reached the App", name)
+		}
+	}
+}
+
 func TestAProtectedAppReachedThroughItsOwnRouteIsServed(t *testing.T) {
 	upstream, upstreamURL := startUpstream(t)
 	plane := &appControlPlane{answer: protectedServeAnswer(upstreamURL)}

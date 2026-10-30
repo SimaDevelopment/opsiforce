@@ -13,13 +13,13 @@ afterAll(async () => {
   await harness.close();
 });
 
-it('records the pod IP on the environment once the pod reports ready', async () => {
+it('turns the environment active once its pod reports ready', async () => {
   const tenant = await harness.tenants.getOrCreateTenant(`globex-${Date.now()}`);
   const project = await harness.projects.create({ title: 'Startup' }, tenant.id);
   const podName = harness.fakes.pods.assignedPodName(project.id);
 
   await waitFor(() => harness.fakes.pods.callsTo('waitForReady').length > 0);
-  harness.fakes.pods.markPodReady(podName, '10.244.0.7');
+  harness.fakes.pods.markPodReady(podName);
 
   await waitFor(async () => {
     const environment = await harness.projectEnvironments.findByIdOrNull(project.id);
@@ -27,5 +27,5 @@ it('records the pod IP on the environment once the pod reports ready', async () 
   });
 
   const environment = await harness.projectEnvironments.findByIdOrNull(project.id);
-  expect(environment?.podIp).toBe('10.244.0.7');
+  expect(environment?.status).toBe(ProjectStatus.Active);
 });

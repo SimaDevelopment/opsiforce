@@ -9,7 +9,7 @@ terms: [Settings]
 
 ## How it works
 
-- [Settings](../../GLOSSARY.md) is one page at `/settings`, reached from the Settings row in the sidebar, where a member configures the Organization chosen in the selector; while it is open the sidebar lists its sections by area in place of the project tree: Personal (Appearance), Access (Workspaces, Users), Configuration (Environments, Integrations, Model providers, Defaults, Limits) and Billing. Appearance is a per-browser preference (mode, contrast, density, font size, colour seeds) open to every member, so Settings is always reachable ([Design system](../frontend/design-system.md)). Limits is the one section that ignores the selector, because it sets every Organization's values at once ([Limit](limit.md)); Model providers lets a platform admin manage the platform's own providers on its Built-in rows, which are the same whatever the selector says ([Model provider](model-provider.md)).
+- [Settings](../../GLOSSARY.md) is one page at `/settings`, reached from the Settings row in the sidebar, where a member configures the Organization chosen in the selector; while it is open the sidebar lists its sections by area in place of the project tree: Personal (Appearance), Access (Workspaces, Sign-in providers, Users), Configuration (Environments, Model providers, Defaults, Limits) and Billing. Appearance is a per-browser preference (mode, contrast, density, font size, colour seeds) open to every member, so Settings is always reachable ([Design system](../frontend/design-system.md)). Limits is the one section that ignores the selector, because it sets every Organization's values at once ([Limit](limit.md)); Model providers lets a platform admin manage the platform's own providers on its Built-in rows, which are the same whatever the selector says ([Model provider](model-provider.md)).
 - Each section is its own route, so refresh and deep links keep the active tab, and each renders through a shared section header.
 - Gating is centralised in the layout route: the sidebar shows only sections the member may manage, and `/settings` and any forbidden tab redirect to the first permitted one.
 - The backend gates the matching endpoints, so a hidden section is also a refused call ([Permissions](permissions.md)).
@@ -37,4 +37,4 @@ terms: [Settings]
 - [Workspaces](workspaces.md) — the Workspaces section.
 - [Model provider](model-provider.md) — the Model providers section.
 - [Defaults](defaults.md) — the Defaults section.
-- [Integrations](integrations.md) — the Integrations section.
+- [Sign-in provider](sign-in-provider.md) — the Sign-in providers section.

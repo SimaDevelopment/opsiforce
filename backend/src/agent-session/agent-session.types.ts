@@ -2,7 +2,8 @@ import type { JsonValue } from '../common/json';
 
 export interface PodEnvironmentRef {
   id: string;
-  podIp: string | null;
+  status: string;
+  disabled: boolean;
 }
 
 export interface SessionInfo {

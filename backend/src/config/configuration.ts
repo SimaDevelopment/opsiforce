@@ -76,6 +76,7 @@ export const configuration = () => {
     agentControlPort: parseInt(process.env.AGENT_CONTROL_PORT || '4910', 10),
     agentWakeHoldMs: parseInt(process.env.AGENT_WAKE_HOLD_MS || '30000', 10),
     agentWakePollMs: parseInt(process.env.AGENT_WAKE_POLL_MS || '1000', 10),
+    agentRuntimeRefusalGraceMs: parseInt(process.env.AGENT_RUNTIME_REFUSAL_GRACE_MS || '10000', 10),
     skillDeliveryConfirmAttempts: parseInt(process.env.SKILL_DELIVERY_CONFIRM_ATTEMPTS || '10', 10),
     skillDeliveryConfirmPollMs: parseInt(process.env.SKILL_DELIVERY_CONFIRM_POLL_MS || '1000', 10),
     appPort: sharedAppPort(),
@@ -139,9 +140,5 @@ export const configuration = () => {
     webappServiceName: process.env.WEBAPP_SERVICE_NAME || 'proxy-app',
     webappServicePort: parseInt(process.env.WEBAPP_SERVICE_PORT || '3002', 10),
     oidcPluginSecret: process.env.OIDC_PLUGIN_SECRET || '',
-    managedOidcClientId: process.env.MANAGED_OIDC_CLIENT_ID || 'opsiforce-apps',
-    managedOidcClientSecret: process.env.MANAGED_OIDC_CLIENT_SECRET || '',
-    managedOidcIssuerUrl: process.env.MANAGED_OIDC_ISSUER_URL || '',
-    managedTenantRolePrefix: process.env.MANAGED_TENANT_ROLE_PREFIX || '',
   };
 };

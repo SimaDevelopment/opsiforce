@@ -16,6 +16,7 @@ import { SERVICE_POD_PORT, SERVICE_START_HOLD_MS } from '../../src/external-serv
 import { BUILT_IN_SERVICES_DIR } from '../../src/external-services/registry/built-in-services';
 import { GatewayAuthGuard } from '../../src/gateway/gateway-auth.guard';
 import { PermissionGuard } from '../../src/permission/permission.guard';
+import { PodModule } from '../../src/pod/pod.module';
 import { AppAgentController } from '../../src/project/app.controller.agent';
 import { ProjectEnvironmentModule } from '../../src/project-environment/project-environment.module';
 import { ProjectEventsModule } from '../../src/project/project-events.module';
@@ -44,6 +45,9 @@ class StubAgentSessionModule {}
 
 @Module({})
 class StubProjectEnvironmentModule {}
+
+@Module({})
+class StubPodModule {}
 
 @Module({})
 class StubProjectEventsModule {}
@@ -126,6 +130,8 @@ export async function createExternalServicesTestApp(
       .useModule(StubAgentSessionModule)
       .overrideModule(ProjectEnvironmentModule)
       .useModule(StubProjectEnvironmentModule)
+      .overrideModule(PodModule)
+      .useModule(StubPodModule)
       .overrideModule(ProjectEventsModule)
       .useModule(StubProjectEventsModule)
       .overrideModule(PublishModule)

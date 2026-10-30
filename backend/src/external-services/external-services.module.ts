@@ -5,6 +5,7 @@ import { ServiceSkillSource } from '../delivery/service-skill-source';
 import { ServiceSkillAvailability } from '../store/service-skill-availability';
 import { ServiceSwitchCatalog } from '../store/service-switch-catalog';
 import { GatewayModule } from '../gateway/gateway.module';
+import { PodModule } from '../pod/pod.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
 import { SealingModule } from '../sealing/sealing.module';
 import { BuiltInRecords } from './built-ins/built-in-records';
@@ -71,7 +72,7 @@ import { AvailableServiceSwitches } from './knowledge/available-service-switches
 
 @Global()
 @Module({
-  imports: [DiscoveryModule, GatewayModule, ProjectEnvironmentModule, SealingModule],
+  imports: [DiscoveryModule, GatewayModule, PodModule, ProjectEnvironmentModule, SealingModule],
   controllers: [
     PlatformServicesController,
     TenantServicesController,

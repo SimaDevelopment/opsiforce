@@ -83,7 +83,7 @@ export class TenantService {
         .onConflictDoNothing()
         .returning();
       if (!inserted) return undefined;
-      await tx.insert(tenantSettings).values({ tenantId: inserted.id, externalTenantName: name }).onConflictDoNothing();
+      await tx.insert(tenantSettings).values({ tenantId: inserted.id }).onConflictDoNothing();
       return inserted;
     });
 
@@ -139,7 +139,6 @@ export class TenantService {
       .insert(tenantSettings)
       .values({
         tenantId: tenant.tenantId,
-        externalTenantName: tenant.tenantName,
         privateWorkspaceEnabled: dto.privateWorkspaceEnabled,
       })
       .onConflictDoUpdate({
@@ -147,20 +146,5 @@ export class TenantService {
         set: { privateWorkspaceEnabled: dto.privateWorkspaceEnabled },
       });
     return this.getTenantConfig(tenant.tenantId);
-  }
-
-  async getTenantByExternalName(externalTenantName: string) {
-    const [row] = await db
-      .select({
-        id: tenants.id,
-        name: tenants.name,
-        displayName: tenants.displayName,
-        bifrostTenantId: tenants.bifrostTenantId,
-        createdAt: tenants.createdAt,
-      })
-      .from(tenantSettings)
-      .innerJoin(tenants, eq(tenants.id, tenantSettings.tenantId))
-      .where(eq(tenantSettings.externalTenantName, externalTenantName));
-    return row ?? null;
   }
 }

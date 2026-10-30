@@ -185,6 +185,7 @@ export class PublishService implements OnApplicationBootstrap {
           platformVersion: this.platformVersion,
           status: ProjectStatus.Publishing,
           authMode: devEnv.authMode,
+          signInProviderId: devEnv.signInProviderId,
         });
       } catch (err) {
         if (isProjectEnvironmentConflict(err)) {
@@ -255,7 +256,7 @@ export class PublishService implements OnApplicationBootstrap {
       });
     if (createdEnvironmentId) {
       await this.projectEnvironmentService
-        .patch(createdEnvironmentId, { status: ProjectStatus.Failed, podIp: null })
+        .patch(createdEnvironmentId, { status: ProjectStatus.Failed })
         .catch(() => undefined);
     }
   }

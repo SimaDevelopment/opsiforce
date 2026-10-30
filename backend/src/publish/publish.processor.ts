@@ -105,12 +105,12 @@ export class PublishProcessor extends WorkerHost {
       await this.writeEnvFile(prodEnv.directory, data.variables, data.isFirstPublish);
 
       if (data.isFirstPublish) {
-        await this.projectService.inheritAuth(devEnv, prodEnv, data.tenantId);
+        await this.projectService.inheritAuth(devEnv, prodEnv);
       }
 
       phase = PublishStatus.Building;
       await this.setStatus(data.publishJobId, PublishStatus.Building);
-      const podIp = await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
+      await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
 
       phase = PublishStatus.Migrating;
       await this.setStatus(data.publishJobId, PublishStatus.Migrating);
@@ -133,7 +133,7 @@ export class PublishProcessor extends WorkerHost {
         );
       }
 
-      await this.projectService.finishPublishDeploy(data.projectEnvironmentId, podIp, sha);
+      await this.projectService.finishPublishDeploy(data.projectEnvironmentId, sha);
       await this.serviceDefaults.publishedTo(data.projectId, data.projectEnvironmentId).catch((defaultErr) => {
         this.logger.error(
           `Setting the External Service Default environment after publishing ${data.projectEnvironmentId} failed: ${(defaultErr as Error).message}`
@@ -155,11 +155,8 @@ export class PublishProcessor extends WorkerHost {
             await this.restoreEnvFile(prodDir, previousEnvVars);
           }
           if (deployStarted) {
-            const rolledBackIp = await this.projectService.recreatePodForDeploy(
-              data.projectEnvironmentId,
-              POD_READY_TIMEOUT_MS
-            );
-            await this.projectService.finishPublishDeploy(data.projectEnvironmentId, rolledBackIp, previousSha);
+            await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
+            await this.projectService.finishPublishDeploy(data.projectEnvironmentId, previousSha);
           }
           await clearEnvJsonBackup(this.storageMountPath, prodDirectory).catch(() => undefined);
         } catch (rollbackErr) {

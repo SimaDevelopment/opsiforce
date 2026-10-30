@@ -41,6 +41,7 @@ var (
 )
 
 var unprotectedRouteBody = []byte(`{"error":"App sign-in is not configured for this host"}`)
+var crossOriginUpgradeBody = []byte(`{"error":"A signed-in connection upgrade must come from the App's own origin"}`)
 
 const (
 	logModeOff      = "off"
@@ -223,9 +224,16 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	stripPlatformCookies(r.Header)
-	setCORSHeaders(w, r)
+	crossOriginSignIn := signedInFromAnotherOrigin(r)
+	if !crossOriginSignIn {
+		setCORSHeaders(w, r)
+	}
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if crossOriginSignIn && isUpgradeRequest(r) {
+		writeJSONStatus(w, http.StatusForbidden, crossOriginUpgradeBody)
 		return
 	}
 
@@ -299,6 +307,9 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if crossOriginSignIn {
+		dropCORSHeaders(responseResult.headers)
+	}
 	writeHeaderMap(w.Header(), responseResult.headers)
 	if forwarded {
 		w.Header().Set("Cache-Control", "no-store")
@@ -487,7 +498,7 @@ func (s *Server) roundTripAppRequest(
 ) (appProxyResult, error) {
 	outgoing := r.Clone(r.Context())
 	outgoing.URL = targetURL
-	outgoing.Host = targetURL.Host
+	outgoing.Host = localHostOf(targetURL)
 	outgoing.RequestURI = ""
 	outgoing.Header = copyRequestHeaders(r.Header, true)
 	stripAuthProxyHeaders(outgoing.Header)
@@ -584,7 +595,7 @@ func (s *Server) serveReverseProxy(
 			proxyRequest.Out.URL.Path = targetURL.Path
 			proxyRequest.Out.URL.RawPath = targetURL.RawPath
 			proxyRequest.Out.URL.RawQuery = targetURL.RawQuery
-			proxyRequest.Out.Host = targetURL.Host
+			proxyRequest.Out.Host = localHostOf(targetURL)
 			passThroughForwardedHeaders(proxyRequest.Out.Header, proxyRequest.In.Header)
 			stripAuthProxyHeaders(proxyRequest.Out.Header)
 			if options.stripUserIdentity {
@@ -734,6 +745,10 @@ func joinURLPath(basePath string, requestPath string) string {
 	}
 }
 
+func localHostOf(target *url.URL) string {
+	return "localhost:" + target.Port()
+}
+
 func pathOrSlash(path string) string {
 	if path == "" {
 		return "/"
@@ -801,16 +816,19 @@ var authProxyHeaders = []string{
 	"X-Forwarded-Access-Token",
 	"X-Forwarded-Id-Token",
 	"X-Forwarded-Refresh-Token",
+	"X-Auth-Request-Access-Token",
+	"X-Auth-Request-Redirect",
+}
+
+var forwardedIdentityHeaders = []string{
 	"X-Forwarded-User",
 	"X-Forwarded-Email",
 	"X-Forwarded-Preferred-Username",
 	"X-Forwarded-Groups",
-	"X-Auth-Request-Access-Token",
 	"X-Auth-Request-User",
 	"X-Auth-Request-Email",
 	"X-Auth-Request-Preferred-Username",
 	"X-Auth-Request-Groups",
-	"X-Auth-Request-Redirect",
 }
 
 func stripAuthProxyHeaders(headers http.Header) {
@@ -822,10 +840,14 @@ func stripAuthProxyHeaders(headers http.Header) {
 func stripUserIdentityHeaders(headers http.Header) {
 	headers.Del("Cookie")
 	headers.Del("Authorization")
+	for _, name := range forwardedIdentityHeaders {
+		headers.Del(name)
+	}
 }
 
 func sanitizeReverseProxyHeaders(headers http.Header, stripFrameHeaders bool) {
 	stripReservedHeaders(headers)
+	dropPlatformSetCookies(headers)
 	headers.Del("Transfer-Encoding")
 	if stripFrameHeaders {
 		headers.Del("Content-Length")
@@ -852,6 +874,7 @@ func filterResponseHeaders(source http.Header, stripFrameHeaders bool) http.Head
 		}
 	}
 
+	dropPlatformSetCookies(target)
 	return target
 }
 

@@ -245,7 +245,7 @@ describe("a protected App's sign-in", () => {
     const tenant = await createTenant(app);
     const projectId = await runningProjectIn(tenant);
     await app.get(AppService).upsertProjectApp(projectId, projectId, { name: 'Warehouse', description: null });
-    await environments.patch(projectId, { authMode: 'managed' });
+    await environments.patch(projectId, { authMode: 'manual' });
     const env = await environments.findById(projectId);
     const rules = appAuthRouteRules(env, APPS);
 
@@ -261,7 +261,6 @@ describe("a protected App's sign-in", () => {
 
   it.each([
     ['public', false],
-    ['managed', true],
     ['manual', true],
   ] as const)('is reported to the proxy for %s App Auth on serve and redirect answers', async (authMode, expected) => {
     const tenant = await createTenant(app);
@@ -392,7 +391,7 @@ function wakesOf(environmentId: string) {
 async function suspendedProjectIn(tenant: TenantFixture): Promise<string> {
   const projectId = await runningProjectIn(tenant);
   await pods.deletePod(pods.assignedPodName(projectId));
-  await environments.patch(projectId, { status: ProjectStatus.Suspended, podIp: null });
+  await environments.patch(projectId, { status: ProjectStatus.Suspended });
   return projectId;
 }
 

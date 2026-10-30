@@ -81,7 +81,7 @@
 - [Linked account](organization/linked-account.md) — signing a ChatGPT account in as a Model provider, and what ends a sign-in
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
 - [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
-- [Integrations](organization/integrations.md) — mapping an Organization to its managed identity provider tenant
+- [Sign-in provider](organization/sign-in-provider.md) — registering an Organization's OIDC app once so its Apps sign members in with it
 
 **Frontend** (`frontend/`)
 - [Design System](frontend/design-system.md) — where colour, type, metrics and motion are authored, and how Appearance drives them

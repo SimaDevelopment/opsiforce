@@ -35,7 +35,6 @@ export class AgentNotLive extends Error {
 export class PodReloadClient {
   private readonly logger = new Logger(PodReloadClient.name);
   private readonly controlPort: number;
-  private readonly agentPort: number;
   private readonly confirmAttempts: number;
   private readonly confirmPollMs: number;
 
@@ -45,17 +44,16 @@ export class PodReloadClient {
     private readonly opencode: PodOpencodeClient
   ) {
     this.controlPort = configService.getOrThrow<number>('agentControlPort');
-    this.agentPort = configService.getOrThrow<number>('agentPort');
     this.confirmAttempts = configService.getOrThrow<number>('skillDeliveryConfirmAttempts');
     this.confirmPollMs = configService.getOrThrow<number>('skillDeliveryConfirmPollMs');
   }
 
   /** Best effort: a pod that cannot be notified is still confirmed, in case its watcher fired. */
-  async notify(projectEnvironmentId: string, podIp: string, targets: NotifyTarget[]): Promise<boolean> {
+  async notify(projectEnvironmentId: string, targets: NotifyTarget[]): Promise<boolean> {
     const token = await this.readControlToken(projectEnvironmentId);
     if (!token) return false;
     try {
-      const response = await fetch(`http://${podIp}:${this.controlPort}/notify-config-change`, {
+      const response = await this.podService.podFetch(projectEnvironmentId, this.controlPort, '/notify-config-change', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-control-token': token },
         body: JSON.stringify({ targets }),
@@ -72,14 +70,12 @@ export class PodReloadClient {
     }
   }
 
-  async confirmSkills(podIp: string, expected: string[], absent: string[]): Promise<void> {
+  async confirmSkills(projectEnvironmentId: string, expected: string[], absent: string[]): Promise<void> {
     let missing: string[] = expected;
     let unexpected: string[] = absent;
     for (let attempt = 0; attempt < Math.max(1, this.confirmAttempts); attempt += 1) {
       if (attempt > 0) await sleep(this.confirmPollMs);
-      const served = new Set(
-        await this.opencode.skillIds(`http://${podIp}:${this.agentPort}`, { timeoutMs: CONFIRM_TIMEOUT_MS })
-      );
+      const served = new Set(await this.opencode.skillIds(projectEnvironmentId, { timeoutMs: CONFIRM_TIMEOUT_MS }));
       missing = expected.filter((name) => !served.has(name));
       unexpected = absent.filter((name) => served.has(name));
       if (missing.length === 0 && unexpected.length === 0) return;
@@ -87,10 +83,10 @@ export class PodReloadClient {
     throw new SkillsNotLive(missing, unexpected);
   }
 
-  async confirmAgent(podIp: string, slug: string): Promise<void> {
+  async confirmAgent(projectEnvironmentId: string, slug: string): Promise<void> {
     for (let attempt = 0; attempt < Math.max(1, this.confirmAttempts); attempt += 1) {
       if (attempt > 0) await sleep(this.confirmPollMs);
-      const served = await this.opencode.agentIds(`http://${podIp}:${this.agentPort}`, {
+      const served = await this.opencode.agentIds(projectEnvironmentId, {
         timeoutMs: CONFIRM_TIMEOUT_MS,
       });
       if (served.includes(slug)) return;

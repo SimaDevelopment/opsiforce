@@ -26,10 +26,10 @@ const contextFields = {
   isDefault: projectEnvironments.isDefault,
   directory: projectEnvironments.directory,
   status: projectEnvironments.status,
-  podIp: projectEnvironments.podIp,
   sessionId: projectEnvironments.sessionId,
   platformVersion: projectEnvironments.platformVersion,
   authMode: projectEnvironments.authMode,
+  signInProviderId: projectEnvironments.signInProviderId,
   deployedCommitSha: projectEnvironments.deployedCommitSha,
   lastActiveAt: projectEnvironments.lastActiveAt,
   createdAt: projectEnvironments.createdAt,
@@ -155,6 +155,7 @@ export class ProjectEnvironmentService {
       platformVersion: input.platformVersion,
       status: input.status ?? 'starting',
       authMode: input.authMode ?? 'public',
+      signInProviderId: input.signInProviderId ?? null,
       deployedCommitSha: input.deployedCommitSha ?? null,
     });
   }
