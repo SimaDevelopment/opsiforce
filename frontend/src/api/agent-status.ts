@@ -12,26 +12,50 @@ interface EnvironmentStatusEvent extends AgentStatusEvent {
   environmentId: string;
 }
 
-type EnvironmentIdleListener = (environmentId: string) => void;
+interface AppStateEvent {
+  projectId: string;
+  environmentId: string;
+  serving: boolean;
+}
+
+type EnvironmentListener = (environmentId: string) => void;
 
 const [agentStatuses, setAgentStatuses] = createStore<Record<string, AgentStatus>>({});
-const environmentIdleListeners = new Set<EnvironmentIdleListener>();
+const environmentIdleListeners = new Set<EnvironmentListener>();
+const appServingListeners = new Set<EnvironmentListener>();
 
 export function isAgentWorking(projectId: string): boolean {
   return agentStatuses[projectId] === 'working';
 }
 
 export function onEnvironmentIdle(environmentId: () => string, callback: () => void): void {
-  const listener: EnvironmentIdleListener = (idleEnvironmentId) => {
-    if (idleEnvironmentId === environmentId()) callback();
+  listenForEnvironment(environmentIdleListeners, environmentId, callback);
+}
+
+export function onAppServing(environmentId: () => string, callback: () => void): void {
+  listenForEnvironment(appServingListeners, environmentId, callback);
+}
+
+function listenForEnvironment(
+  listeners: Set<EnvironmentListener>,
+  environmentId: () => string,
+  callback: () => void
+): void {
+  const listener: EnvironmentListener = (eventEnvironmentId) => {
+    if (eventEnvironmentId === environmentId()) callback();
   };
-  environmentIdleListeners.add(listener);
-  onCleanup(() => environmentIdleListeners.delete(listener));
+  listeners.add(listener);
+  onCleanup(() => listeners.delete(listener));
 }
 
 function applyEnvironmentStatus({ environmentId, agentStatus }: EnvironmentStatusEvent): void {
   if (agentStatus !== 'idle') return;
   for (const listener of environmentIdleListeners) listener(environmentId);
+}
+
+function applyAppState({ environmentId, serving }: AppStateEvent): void {
+  if (!serving) return;
+  for (const listener of appServingListeners) listener(environmentId);
 }
 
 export function useAgentStatusStream(projects: () => Project[] | undefined): void {
@@ -55,6 +79,11 @@ export function useAgentStatusStream(projects: () => Project[] | undefined): voi
     events.addEventListener('environment', (event) => {
       try {
         applyEnvironmentStatus(JSON.parse(event.data) as EnvironmentStatusEvent);
+      } catch {}
+    });
+    events.addEventListener('app', (event) => {
+      try {
+        applyAppState(JSON.parse(event.data) as AppStateEvent);
       } catch {}
     });
     onCleanup(() => events.close());

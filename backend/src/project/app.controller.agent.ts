@@ -52,12 +52,12 @@ export class AppAgentController {
       const name = typeof dto.name === 'string' ? dto.name : null;
       const description = typeof dto.description === 'string' ? dto.description : null;
       const changed = await this.appService.upsertProjectApp(key, projectId, { name, description });
-      this.appReadiness.markServing(key);
+      this.appReadiness.markServing(key, projectId);
       if (changed) {
         await this.projectEventsService.publish(projectId);
       }
     } else if (serving) {
-      this.appReadiness.markServing(key);
+      this.appReadiness.markServing(key, projectId);
     } else {
       this.appReadiness.markDown(key);
     }

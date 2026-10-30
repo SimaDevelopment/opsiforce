@@ -430,7 +430,7 @@ describe('an SDK 2 service reached through the Gate', () => {
       await startPod();
       podService().markPodReady(podService().assignedPodName(service.projectEnvironmentId), '127.0.0.1');
       await waitFor(async () => (await serviceEnvironmentRow(service.projectEnvironmentId))?.status === 'active');
-      app.get(AppReadinessService).markServing(service.projectEnvironmentId);
+      app.get(AppReadinessService).markServing(service.projectEnvironmentId, service.builderChatId);
       const res = await answer;
 
       expect(res.statusCode, res.body).toBe(200);

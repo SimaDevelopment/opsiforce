@@ -30,7 +30,7 @@ var projectIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 const (
 	retryAfterHeader         = "Retry-After"
-	restartRetryAfterSeconds = "5"
+	restartRetryAfterSeconds = 5
 )
 
 var (
@@ -199,18 +199,18 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 
 	ensured, err := s.resolve(r.Context(), projectID, backend.SurfaceAgent, r.Header, authSignature(r.Header))
 	if err != nil {
-		s.writeEnsureError(w, err)
+		s.writeEnsureError(w, r, err)
 		return
 	}
 
 	if ensured.State != "ready" {
-		writeStateResponse(w, ensured.State)
+		s.writeStateResponse(w, r, ensured.State)
 		return
 	}
 
 	targetURL, err := buildTargetURL(ensured.Upstream, upstreamPath, r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, projectID)
 		return
 	}
 
@@ -239,7 +239,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 
 	ensured, err := s.resolveApp(r.Context(), r.Host, r.Header)
 	if err != nil {
-		s.writeEnsureError(w, err)
+		s.writeEnsureError(w, r, err)
 		return
 	}
 
@@ -266,13 +266,13 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ensured.State != "ready" {
-		writeStateResponse(w, ensured.State)
+		s.writeStateResponse(w, r, ensured.State)
 		return
 	}
 
 	targetURL, err := buildTargetURL(ensured.Upstream, pathOrSlash(r.URL.Path), r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), environmentID)
+		s.sendFailureResponse(w, r, environmentID)
 		return
 	}
 
@@ -298,12 +298,12 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 
 	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), environmentID)
+		s.sendFailureResponse(w, r, environmentID)
 		return
 	}
 
 	if responseResult.restart {
-		s.sendFailureResponse(w, r.Context(), environmentID)
+		s.sendFailureResponse(w, r, environmentID)
 		return
 	}
 
@@ -373,12 +373,12 @@ func (s *Server) handleSubdomain(w http.ResponseWriter, r *http.Request, surface
 
 	ensured, err := s.resolve(r.Context(), projectID, surface, r.Header, "")
 	if err != nil {
-		s.writeEnsureError(w, err)
+		s.writeEnsureError(w, r, err)
 		return
 	}
 
 	if ensured.State != "ready" {
-		writeStateResponse(w, ensured.State)
+		s.writeStateResponse(w, r, ensured.State)
 		return
 	}
 
@@ -386,7 +386,7 @@ func (s *Server) handleSubdomain(w http.ResponseWriter, r *http.Request, surface
 
 	targetURL, err := buildTargetURL(targetBase, pathOrSlash(r.URL.Path), r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, projectID)
 		return
 	}
 
@@ -441,36 +441,36 @@ func (s *Server) cacheTTL(ensured backend.EnsureResponse) time.Duration {
 	return s.cfg.NonReadyCacheTTL
 }
 
-func (s *Server) writeEnsureError(w http.ResponseWriter, err error) {
+func (s *Server) writeEnsureError(w http.ResponseWriter, r *http.Request, err error) {
 	var statusErr *backend.StatusError
 	if errors.As(err, &statusErr) {
-		writeStatusError(w, statusErr)
+		s.writeStatusError(w, r, statusErr)
 		return
 	}
 
-	writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+	s.writeError(w, r, unresponsive)
 }
 
-func (s *Server) sendFailureResponse(w http.ResponseWriter, ctx context.Context, projectID string) {
-	restart, err := s.reportFailure(ctx, projectID)
+func (s *Server) sendFailureResponse(w http.ResponseWriter, r *http.Request, projectID string) {
+	restart, err := s.reportFailure(r.Context(), projectID)
 	if err != nil {
 		var statusErr *backend.StatusError
 		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
-			writeJSONStatus(w, http.StatusNotFound, notFoundBody)
+			s.writeError(w, r, notFound)
 			return
 		}
 
 		slog.Error("proxy failure reporting failed", "projectId", projectID, "error", err.Error())
-		writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+		s.writeError(w, r, unresponsive)
 		return
 	}
 
 	if restart {
-		writeRestarting(w)
+		s.writeRestarting(w, r)
 		return
 	}
 
-	writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+	s.writeError(w, r, unresponsive)
 }
 
 func (s *Server) reportFailure(ctx context.Context, projectID string) (bool, error) {
@@ -630,7 +630,7 @@ func (s *Server) serveReverseProxy(
 
 				if restart {
 					mutateResponse(resp, http.StatusServiceUnavailable, restartingBody)
-					resp.Header.Set(retryAfterHeader, restartRetryAfterSeconds)
+					resp.Header.Set(retryAfterHeader, strconv.Itoa(restartRetryAfterSeconds))
 				} else {
 					mutateResponse(resp, http.StatusBadGateway, badGatewayBody)
 				}
@@ -648,7 +648,7 @@ func (s *Server) serveReverseProxy(
 			}
 
 			slog.Error("reverse proxy error", "projectId", projectID, "error", err.Error())
-			s.sendFailureResponse(rw, req.Context(), projectID)
+			s.sendFailureResponse(rw, req, projectID)
 		},
 	}
 
@@ -888,20 +888,26 @@ func mutateResponse(resp *http.Response, statusCode int, body []byte) {
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 }
 
-func writeStateResponse(w http.ResponseWriter, state string) {
+func (s *Server) writeStateResponse(w http.ResponseWriter, r *http.Request, state string) {
 	switch state {
 	case "starting":
-		writeRestarting(w)
+		s.writeRestarting(w, r)
 	case "disabled":
-		writeJSONStatus(w, http.StatusLocked, disabledBody)
+		s.writeError(w, r, turnedOff)
+	case "failed":
+		s.writeError(w, r, failedToStart)
 	default:
-		writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+		s.writeError(w, r, unresponsive)
 	}
 }
 
-func writeStatusError(w http.ResponseWriter, statusErr *backend.StatusError) {
+func (s *Server) writeStatusError(w http.ResponseWriter, r *http.Request, statusErr *backend.StatusError) {
 	if statusErr.StatusCode == http.StatusNotFound {
-		writeJSONStatus(w, http.StatusNotFound, notFoundBody)
+		s.writeError(w, r, notFound)
+		return
+	}
+	if statusErr.StatusCode >= http.StatusInternalServerError && s.servesPage(r) {
+		writePage(w, unresponsive)
 		return
 	}
 
@@ -923,9 +929,9 @@ func writeJSONStatus(w http.ResponseWriter, statusCode int, body []byte) {
 	_, _ = w.Write(body)
 }
 
-func writeRestarting(w http.ResponseWriter) {
-	w.Header().Set(retryAfterHeader, restartRetryAfterSeconds)
-	writeJSONStatus(w, http.StatusServiceUnavailable, restartingBody)
+func (s *Server) writeRestarting(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(retryAfterHeader, strconv.Itoa(restartRetryAfterSeconds))
+	s.writeError(w, r, restarting)
 }
 
 func writeHeaderMap(target http.Header, source http.Header) {

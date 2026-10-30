@@ -1,7 +1,7 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, type JSX } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
-import { onEnvironmentIdle } from '~/api/agent-status';
+import { onAppServing, onEnvironmentIdle } from '~/api/agent-status';
 import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
 import { useProjectEnvironments } from '~/api/environments';
@@ -155,6 +155,8 @@ export function ProjectView(props: ProjectViewProps) {
     reloadPreview();
     setAgentIdleToken((token) => token + 1);
   });
+
+  onAppServing(activeEnvironmentId, () => reloadPreview());
 
   createEffect(() => {
     const unregister = jobDock.registerProjectView(props.projectId, {
