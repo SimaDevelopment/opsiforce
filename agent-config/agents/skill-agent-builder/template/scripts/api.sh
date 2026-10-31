@@ -6,12 +6,13 @@
 #   sh scripts/api.sh GET '/skills?filter=built_in'
 #   sh scripts/api.sh POST /skills @scratch/body.json
 #   sh scripts/api.sh status GET /projects/<projectId>                 # print the HTTP status only
-#   sh scripts/api.sh runtime /api/proxy/<envId> POST /api/session/<ses>/prompt '{"text":"hello"}'
+#   sh scripts/api.sh runtime <baseUrl> POST /api/session/<ses>/prompt '{"text":"hello"}'
 #
 # `<METHOD> <path> [json]` is one call on `public-api`'s Service host, as the `service-public-api`
 # skill describes, and waits out a 503 that names a Retry-After, up to three times. `runtime` talks to
-# a Test Project's opencode runtime through the runtime proxy at $OPSIFORCE_RUNTIME_PROXY_URL, whose
-# baseUrl a Connection reports, with the same key. $API_MAX_TIME, when set, bounds each request in seconds.
+# a Test Project's opencode runtime at the baseUrl a Connection reports, with the same key: absolute on
+# the runtime proxy, or, for one saved before that, /api/proxy/<envId> on $OPSIFORCE_RUNTIME_PROXY_URL.
+# $API_MAX_TIME, when set, bounds each request in seconds.
 set -eu
 
 : "${SERVICE_GATEWAY_API_KEY:?SERVICE_GATEWAY_API_KEY is not set}"
@@ -100,7 +101,11 @@ case "$command" in
     ;;
   runtime)
     base=${1:?baseUrl}; method=${2:?method}; path=${3:?path}; shift 3
-    runtime "$(origin)$base$path" "$method" "${1-}"
+    case "$base" in
+      http://* | https://*) ;;
+      *) base=$(origin)$base ;;
+    esac
+    runtime "$base$path" "$method" "${1-}"
     ;;
   origin)
     origin

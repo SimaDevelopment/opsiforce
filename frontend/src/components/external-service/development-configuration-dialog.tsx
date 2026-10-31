@@ -27,7 +27,12 @@ import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import { Spinner } from '~/components/ui/spinner';
 
-export function DevelopmentConfigurationDialog(props: { serviceId: string; open: boolean; onClose: () => void }) {
+export function DevelopmentConfigurationDialog(props: {
+  serviceId: string;
+  open: boolean;
+  focusedField?: string;
+  onClose: () => void;
+}) {
   const view = useDevelopmentService(
     () => props.serviceId,
     () => props.open
@@ -47,7 +52,7 @@ export function DevelopmentConfigurationDialog(props: { serviceId: string; open:
 
   return (
     <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
-      <DialogContent class="max-h-[85vh] max-w-xl overflow-y-auto" align="top">
+      <DialogContent class="max-h-[85vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Development configuration</DialogTitle>
           <DialogDescription>
@@ -75,7 +80,12 @@ export function DevelopmentConfigurationDialog(props: { serviceId: string; open:
           }
         >
           {(loaded) => (
-            <DevelopmentEditor serviceId={props.serviceId} initial={untrack(loaded)} onClose={props.onClose} />
+            <DevelopmentEditor
+              serviceId={props.serviceId}
+              initial={untrack(loaded)}
+              focusedField={props.focusedField}
+              onClose={props.onClose}
+            />
           )}
         </Show>
       </DialogContent>
@@ -83,7 +93,12 @@ export function DevelopmentConfigurationDialog(props: { serviceId: string; open:
   );
 }
 
-function DevelopmentEditor(props: { serviceId: string; initial: DevelopmentServiceView; onClose: () => void }) {
+function DevelopmentEditor(props: {
+  serviceId: string;
+  initial: DevelopmentServiceView;
+  focusedField?: string;
+  onClose: () => void;
+}) {
   const [confirmingCopy, setConfirmingCopy] = createSignal(false);
   const copy = useCopyProductionToDevelopment(() => props.serviceId);
   const rotate = useRotateDevelopmentConfiguration(() => props.serviceId);
@@ -147,6 +162,7 @@ function DevelopmentEditor(props: { serviceId: string; initial: DevelopmentServi
             serviceId={props.serviceId}
             view={view}
             edits={edits}
+            focusedField={props.focusedField}
             onSaved={(next) => {
               edits.rebase(next);
               if (next.hookFailure) return;
@@ -165,6 +181,7 @@ function DevelopmentForm(props: {
   serviceId: string;
   view: DevelopmentServiceView;
   edits: ConfigurationEdits<DevelopmentServiceView>;
+  focusedField?: string;
   onSaved: (view: DevelopmentServiceView) => void;
   onEdit: () => void;
 }) {
@@ -192,12 +209,26 @@ function DevelopmentForm(props: {
       callDevelopmentServiceForm(props.serviceId, route, name, { values: configuration.draftValues(), ...request }),
     revealed: props.edits.revealed,
     rotate: props.edits.rotate,
+    focusedField: props.focusedField,
+  };
+
+  const scrollToFocusedField = (formElement: HTMLFormElement) => {
+    const key = props.focusedField;
+    if (!key) return;
+    requestAnimationFrame(() =>
+      formElement.querySelector(`[data-field-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'center' })
+    );
   };
 
   return (
     <Show
       when={form.length > 0}
-      fallback={<p class="text-xs text-muted-foreground">Development's service.json has nothing to configure.</p>}
+      fallback={
+        <p class="text-xs text-muted-foreground">
+          This service has no fields yet. The External Service Builder adds them to service.json when it proposes the
+          service, and you type the upstream credential here then.
+        </p>
+      }
     >
       <Show when={props.view.hookFailure}>
         {(hookFailure) => (
@@ -205,6 +236,7 @@ function DevelopmentForm(props: {
         )}
       </Show>
       <form
+        ref={scrollToFocusedField}
         onSubmit={(event) => {
           event.preventDefault();
           void configuration.submit();

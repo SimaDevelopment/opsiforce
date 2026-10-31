@@ -1,13 +1,16 @@
 import { createFileRoute, useNavigate } from '@tanstack/solid-router';
 import { useProject } from '~/api/projects';
 import { ConfigureDeepLink } from '~/components/project/external-services/configure-deep-link';
+import {
+  initialPromptOf,
+  initialPromptSearchOf,
+  type InitialPromptSearch,
+} from '~/components/project/initial-prompt-search';
 import { createDocumentTitle } from '~/lib/create-document-title';
 import { projectTitleOf } from '~/lib/project-title';
 import { ProjectView } from '~/pages/project';
 
-interface ProjectSearch {
-  prompt: string | undefined;
-  promptId: string | undefined;
+interface ProjectSearch extends InitialPromptSearch {
   configure?: string;
   field?: string;
   environment?: string;
@@ -19,8 +22,7 @@ function optionalText(value: unknown): string | undefined {
 
 export const Route = createFileRoute('/projects/$projectId')({
   validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
-    prompt: typeof search.prompt === 'string' ? search.prompt : undefined,
-    promptId: typeof search.promptId === 'string' ? search.promptId : undefined,
+    ...initialPromptSearchOf(search),
     configure: optionalText(search.configure),
     field: optionalText(search.field),
     environment: optionalText(search.environment),
@@ -35,10 +37,7 @@ function ProjectPage() {
   const project = useProject(() => params().projectId);
   createDocumentTitle(() => project.data && projectTitleOf(project.data));
 
-  const initialPrompt = () => {
-    const { prompt, promptId } = search();
-    return prompt && promptId ? { id: promptId, text: prompt } : undefined;
-  };
+  const initialPrompt = () => initialPromptOf(search());
 
   const consumeInitialPrompt = () =>
     navigate({

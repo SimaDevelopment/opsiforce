@@ -183,32 +183,70 @@ test('form calls answer only the platform: a call token is not supported there',
   assert.equal(seen.outcome, 'not supported');
 });
 
-test('a Project-form handler refuses a platform token that names no ProjectEnvironment', async () => {
-  let ran = false;
+test('a Project-form options call with no ProjectEnvironment lists choices from the Service configuration alone', async () => {
+  const seen: unknown[] = [];
   const kit = testService(
     definedWith([], {
       options: {
-        repositories: () => {
-          ran = true;
-          return [];
+        repositories: (request, ctx) => {
+          seen.push(
+            revealed({
+              request,
+              caller: ctx.caller,
+              serviceConfiguration: ctx.serviceConfiguration,
+              projectConfiguration: ctx.projectConfiguration,
+            })
+          );
+          return [{ value: 'example-org/web', label: 'example-org/web' }];
         },
       },
     }),
     { serviceConfiguration, projectConfiguration }
   );
 
-  const seen = await refusalSeen(
-    await kit.fetch('/.well-known/opsiforce/options/repositories', {
-      method: 'POST',
-      headers: asPlatform(),
-      body: JSON.stringify({ form: 'projectForm', values: {} }),
-    })
-  );
+  const answer = await kit.fetch('/.well-known/opsiforce/options/repositories', {
+    method: 'POST',
+    headers: asPlatform(),
+    body: JSON.stringify({ form: 'projectForm', values: { coAuthor: 'Ada' }, query: 'web' }),
+  });
 
-  assert.equal(seen.status, 404);
-  assert.equal(seen.outcome, 'not supported');
-  assert.equal(ran, false);
+  assert.equal(answer.status, 200);
+  assert.deepEqual(await answer.json(), [{ value: 'example-org/web', label: 'example-org/web' }]);
+  assert.deepEqual(seen, [
+    {
+      request: { form: 'projectForm', values: { coAuthor: 'Ada' }, query: 'web' },
+      caller: serviceFormCaller,
+      serviceConfiguration: { appId: '1', privateKey: { secret: privateKey } },
+      projectConfiguration: null,
+    },
+  ]);
 });
+
+for (const kind of ['info', 'buttons'] as const) {
+  test(`a Project-form ${kind} call refuses a platform token that names no ProjectEnvironment`, async () => {
+    let ran = false;
+    const handler = () => {
+      ran = true;
+      return { message: 'ran', text: 'ran' };
+    };
+    const kit = testService(definedWith([], { [kind]: { check: handler } }), {
+      serviceConfiguration,
+      projectConfiguration,
+    });
+
+    const seen = await refusalSeen(
+      await kit.fetch(`/.well-known/opsiforce/${kind}/check`, {
+        method: 'POST',
+        headers: asPlatform(),
+        body: JSON.stringify({ form: 'projectForm', values: {} }),
+      })
+    );
+
+    assert.equal(seen.status, 404);
+    assert.equal(seen.outcome, 'not supported');
+    assert.equal(ran, false);
+  });
+}
 
 test('an unknown handler name is not supported and never reaches a Service route', async () => {
   let routed = false;

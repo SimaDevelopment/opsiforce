@@ -13,7 +13,7 @@ import type { RevealedSecret } from '../configuration/generated-values';
 import { ProjectConfigurationStore, type ProjectConfiguration } from '../configuration/project-configuration.store';
 import type { ProjectFormCallTarget } from '../configuration/project-service-views';
 import { ServiceConfigurationStore } from '../configuration/service-configuration.store';
-import { serviceWebhookUrl } from '../configuration/webhook-url';
+import { configuredPublicUrl, serviceWebhookUrl } from '../configuration/webhook-url';
 import { GateCallers } from '../gate/gate-caller';
 import { refuse, refuseUnconfiguredService, refuseUnknownCaller } from '../gate/gate-refusals';
 import { ExternalServiceStore, type StoredEvent } from '../inbound/external-service-store';
@@ -55,6 +55,7 @@ export interface BuilderLaneView {
   };
   development: {
     webhookUrl: string | null;
+    configurationLink: string;
     servable: boolean;
     problem: string | null;
     serviceConfiguration: { saved: boolean; values: ConfigurationValues; missing: string[] };
@@ -152,6 +153,7 @@ export class BuilderLane {
           origin: 'custom',
           home: { lane: 'development' },
         }),
+        configurationLink: `${configuredPublicUrl(this.config)}/store/external-services/${encodeURIComponent(chat.serviceId)}/builder?configure=development`,
         servable: development.service !== null,
         problem: development.problem,
         serviceConfiguration: {

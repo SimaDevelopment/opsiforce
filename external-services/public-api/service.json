@@ -1,39 +1,77 @@
 {
   "sdk": 2,
   "displayName": "Opsiforce Public API",
-  "description": "Manage this Organization's Agents, Skills and Projects as the human who created the calling Project.",
+  "description": "Manage the Organization's Agents, Skills and Projects as the person who created the calling Project.",
+  "icon": "icon.svg",
   "projectForm": [
     {
       "key": "reads",
       "type": "info",
       "label": "Always allowed",
-      "text": "Reading the Agents and Skills this Project's creator can see, and the Projects this Project created."
+      "text": "The Project can view the Agents and Skills its creator can see, the Projects it created and its Other Projects."
+    },
+    {
+      "key": "otherProjects",
+      "type": "multiselect",
+      "label": "Other Projects",
+      "help": "Existing Projects it may view. With **Open and restart Projects** on, it can also open and restart them. It never deletes them.\nOnly Projects its creator can open count, so pick ones in shared Workspaces.",
+      "options": { "call": "otherProjectChoices", "searchable": true },
+      "maxItems": 100
     },
     {
       "key": "authorSkillsAndAgents",
       "type": "toggle",
-      "label": "Edit Agents and Skills",
-      "help": "Create and update Skills, and change an Agent's instructions, model, starting files and Skills. Only the Agents and Skills this Project created, or the one its Builder chat is building.",
+      "label": "Edit Skills and Agents",
+      "help": "Create and update Skills, and change Agents' instructions, model, files and Skills. Only ones it created, or the one its Builder chat is building.",
       "default": false
     },
     {
       "key": "createAgents",
       "type": "toggle",
       "label": "Create Agents",
-      "help": "New Agents are private to this Project's creator.",
+      "help": "New Agents are private to the Project's creator. Editing them needs **Edit Skills and Agents**.",
       "default": false
+    },
+    {
+      "key": "maxCreatedAgents",
+      "type": "number",
+      "label": "Agent limit",
+      "help": "How many Agents it may have created at once. Deleting one frees a slot.",
+      "default": 5,
+      "min": 0,
+      "max": 100,
+      "integer": true,
+      "visibleWhen": { "field": "createAgents", "truthy": true }
     },
     {
       "key": "createProjects",
       "type": "toggle",
       "label": "Create Projects",
+      "help": "New Projects belong to the Project's creator. Turn on to also choose their Agents, Workspace and limit.",
       "default": false
+    },
+    {
+      "key": "createdProjectAgents",
+      "type": "multiselect",
+      "label": "Allowed Agents",
+      "help": "Agents its new Projects may use. Leave empty to allow any.\nOnly Agents the Project's creator can start count.",
+      "options": { "call": "createdProjectAgentChoices", "searchable": true },
+      "maxItems": 50,
+      "visibleWhen": { "field": "createProjects", "truthy": true }
+    },
+    {
+      "key": "createdProjectsWorkspace",
+      "type": "select",
+      "label": "Workspace for new Projects",
+      "help": "Shared Workspace its new Projects go to. Leave empty to let it choose.\nThe Project's creator must be a member.",
+      "options": { "call": "createdProjectWorkspaceChoices", "searchable": true },
+      "visibleWhen": { "field": "createProjects", "truthy": true }
     },
     {
       "key": "maxCreatedProjects",
       "type": "number",
-      "label": "Created Projects limit",
-      "help": "Counts every Project this Project created that still exists, disabled and test Projects included. Deleting one frees a slot.",
+      "label": "Project limit",
+      "help": "How many Projects it may have created at once, Test Projects included. Deleting one frees a slot.",
       "default": 5,
       "min": 0,
       "max": 100,
@@ -43,15 +81,15 @@
     {
       "key": "driveCreatedProjects",
       "type": "toggle",
-      "label": "Manage created Projects",
-      "help": "Open, restart, update and reset the Projects this Project created.",
+      "label": "Open and restart Projects",
+      "help": "Chat with, run commands in and restart the Projects it created and its Other Projects.",
       "default": false
     },
     {
       "key": "deleteCreatedProjects",
       "type": "toggle",
-      "label": "Delete created Projects",
-      "help": "Only the Projects this Project created.",
+      "label": "Delete Projects",
+      "help": "Only Projects it created, never Other Projects.",
       "default": false
     }
   ]

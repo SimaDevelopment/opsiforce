@@ -51,7 +51,11 @@ and a concrete proposal, in plain words, and ask "is this right, or should anyth
 you need from them and where: the upstream credential typed into this chat's Development configuration
 (never pasted into the chat), the targets you may write to while testing, and the consumer prompt to
 send in the Test Project's pane. Whenever you stop for them, say which step of the order of work you
-are at and what comes next.
+are at and what comes next, then end the turn with the `question` tool: one question whose options are
+the answers they can give (`Approve`, `Saved it`, `Sent it`, `Skip the live tests`), so the chat shows
+that it waits on them. When you ask for a value in the Development configuration, give its link:
+`development.configurationLink` from `_builder` with `&field=<key>` appended opens the form on that
+field.
 
 ## Keeping the chat lean
 

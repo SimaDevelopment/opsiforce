@@ -21,6 +21,12 @@ function isOlder(a: number[], b: number[]): boolean {
   return false;
 }
 
+export function builtOnSdkOlderThan(vendored: string | null, version: string): boolean {
+  const own = vendored === null ? null : parts(vendored);
+  const reference = parts(version);
+  return own !== null && reference !== null && isOlder(own, reference);
+}
+
 export function sdkStatusOf(
   vendored: string | null,
   latest = sdkPackageVersion,

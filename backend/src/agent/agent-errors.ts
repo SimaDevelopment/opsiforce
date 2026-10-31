@@ -89,13 +89,6 @@ export function notExportable(label: string): BadRequestException {
   });
 }
 
-export function builtInKeepsProjectConfiguration(label: string): BadRequestException {
-  return new BadRequestException({
-    code: 'built_in_agent',
-    message: `${label} is a Built-in Agent: its Projects keep their own External Service configuration`,
-  });
-}
-
 export function serviceSettingsInvalid(problems: string[]): BadRequestException {
   return new BadRequestException({ code: 'bad_request', message: problems.join('; ') });
 }
@@ -105,6 +98,14 @@ export function fieldSettingsNeedProjectPermission(skillName: string): Forbidden
     code: 'missing_permission',
     permission: 'can_configure_project_external_services',
     message: `Setting the service settings of \`${skillName}\` needs the Configure project External Services permission (can_configure_project_external_services)`,
+  });
+}
+
+export function serviceSettingsOptionsNeedProjectPermission(skillName: string): ForbiddenException {
+  return new ForbiddenException({
+    code: 'missing_permission',
+    permission: 'can_configure_project_external_services',
+    message: `Listing the options of \`${skillName}\`'s service settings needs the Configure project External Services permission (can_configure_project_external_services)`,
   });
 }
 

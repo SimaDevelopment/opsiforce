@@ -11,9 +11,9 @@ import { ServiceSkillAvailability } from '../store/service-skill-availability';
 import {
   isAgentServiceSettings,
   keptServiceSettings,
-  ServiceSwitchCatalog,
+  ServiceSettingsCatalog,
   settingsWithinGrants,
-} from '../store/service-switch-catalog';
+} from '../store/service-settings-catalog';
 import { isReservedForServiceSkills } from '../store/service-skill-names';
 import { reservedSkillNames } from '../store/skill-reconciler.service';
 import { SkillRepository } from '../store/skill.repository';
@@ -106,7 +106,7 @@ export class AgentImportService {
     private readonly skillRepository: SkillRepository,
     private readonly skillPublish: SkillPublishService,
     private readonly serviceSkillAvailability: ServiceSkillAvailability,
-    private readonly serviceSwitches: ServiceSwitchCatalog
+    private readonly serviceCatalog: ServiceSettingsCatalog
   ) {
     this.importsRoot = importsRootPath(configService.getOrThrow<string>('storageMountPath'));
   }
@@ -267,7 +267,7 @@ export class AgentImportService {
     settings: AgentServiceSettings,
     plan: ImportPlan
   ): Promise<AgentServiceSettings | null> {
-    const service = await this.serviceSwitches.availableService(caller.tenantId, externalServiceId);
+    const service = await this.serviceCatalog.availableService(caller.tenantId, externalServiceId);
     if (!service) return null;
     const kept = keptServiceSettings(service.manifest, settings);
     if (kept.dropped.length > 0) {

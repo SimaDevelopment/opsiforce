@@ -224,8 +224,9 @@ export function createFormHandlers(defined: DefinedService, platform: FormHandle
     const body = await jsonBody(call.body);
     const form = body.form === 'serviceForm' || body.form === 'projectForm' ? body.form : null;
     if (form === null) throw malformed('form is neither serviceForm nor projectForm');
-    if (form === 'projectForm' && call.caller.projectEnvironmentId === undefined) {
-      throw notSupported('a Project-form call names no ProjectEnvironment');
+    const outsideAnyProject = form === 'projectForm' && call.caller.projectEnvironmentId === undefined;
+    if (outsideAnyProject && kind !== 'options') {
+      throw notSupported(`a Project-form ${kind} call names no ProjectEnvironment`);
     }
     const values = isPlainObject(body.values) ? body.values : {};
     let plainServiceConfiguration: FormValues;
@@ -239,7 +240,7 @@ export function createFormHandlers(defined: DefinedService, platform: FormHandle
     } else {
       const saved = await savedConfigurations(call);
       plainServiceConfiguration = saved.serviceConfiguration;
-      configurations = opened(saved);
+      configurations = opened(outsideAnyProject ? { ...saved, projectConfiguration: null } : saved);
     }
     const draft = {
       form,

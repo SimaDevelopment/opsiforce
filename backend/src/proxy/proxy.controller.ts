@@ -18,6 +18,7 @@ import { PublicApiSettings } from '../external-services/configuration/public-api
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../identity/forwarded-identity.service';
 import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
+import { callingProjectReachOf, isReachedByCallingProject } from '../project/calling-project-reach';
 import { ProjectProvenanceRepository } from '../project/project-provenance.repository';
 import { isHiddenProjectReachable, isProjectAccessible } from '../project/project-visibility';
 import { ProjectService, type EnsureEnvironmentResult, type ProjectActivityKind } from '../project/project.service';
@@ -219,8 +220,9 @@ export class ProxyController {
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {
     const caller = await this.gatewayKeys.validateToken(token);
     if (!caller?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
-    if (caller.tenantId !== tenantId) throw new NotFoundException('Project not found');
-    if ((await this.publicApiSettings.of(caller.projectEnvironmentId))?.driveCreatedProjects !== true) {
+    if (caller.tenantId !== tenantId) throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
+    const settings = await this.publicApiSettings.of(caller.projectEnvironmentId);
+    if (settings?.driveCreatedProjects !== true) {
       throw new ForbiddenException(
         `"${this.publicApiSettings.labelOf('driveCreatedProjects')}" is off in the calling Project's configuration. ${WHO_CHANGES_PUBLIC_API_SETTINGS}`
       );
@@ -232,15 +234,14 @@ export class ProxyController {
     const creator = await this.identities.resolveByPlatformId(creatorId);
     const tenant = await this.tenantService.getTenantById(tenantId);
     if (!creator || !tenant || !this.tenantService.resolveAccessibleTenantNames(creator.groups).includes(tenant.name)) {
-      throw new NotFoundException('Project not found');
+      throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
     }
 
-    if (!(await isProjectAccessible(tenantId, creatorId, projectId))) {
-      throw new NotFoundException('Project not found');
-    }
-
-    if (!(await this.provenance.isCreatedByProject(projectId, caller.projectId))) {
-      throw new ForbiddenException('The calling Project did not create this Project');
+    if (
+      !(await isProjectAccessible(tenantId, creatorId, projectId)) ||
+      !(await isReachedByCallingProject(projectId, callingProjectReachOf(caller.projectId, settings)))
+    ) {
+      throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
     }
   }
 

@@ -84,17 +84,18 @@ four points, marked **wait**, and work on your own everywhere else.
    client shim for Stop 1. When the docs or the API live on the person's own instance, add only its
    address field to `service.json` (`format: url`, with `allowHttp: true` unless the person said the
    instance serves https, and a help line saying http is unencrypted), ask them to save it in this
-   chat's Development configuration, and
+   chat's Development configuration (give its link), and
    read it back from `GET $SERVICE_GATEWAY_URL/_builder` (`development.serviceConfiguration.values`,
    secrets masked). Keep what you learn in `/workspace/.cache/upstream/notes.md`, with the docs links,
    so a later change re-reads the notes instead of the docs. *Done when* the notes list, for every
    action in the brief, the requests each tool sends (method and path, startup calls included) and
    which of them change something upstream.
 3. **Stop 1. Wait** for the person's yes to the whole proposal: `references/review-stops.md` has the
-   exact contents. You may draft `service.json` and run `yarn check`; write no route, handler or test
-   yet. *Done when* the person approved the whole proposal. Then ask them to create the agreed
-   credential and type it into this chat's Development configuration, so the live tests can run when
-   the code is ready.
+   exact contents. Write the proposed Service form into `service.json` before you show it and run
+   `yarn check`, so the credential's field already shows in the Development configuration while the
+   person reads; write no route, handler or test yet. *Done when* the person approved the whole
+   proposal. Then ask them to create the agreed credential and type it into its field, so the live
+   tests can run when the code is ready.
 4. **Code and unit tests, one group at a time.** `service.json` (`references/manifest.md`), then
    `src/upstreams.ts` and each `src/groups/<group>.ts` with its `test/groups/<group>.test.ts`
    (`references/routes.md`, `references/testing.md`), form handlers and hooks (`references/handlers.md`),
@@ -181,11 +182,14 @@ committed (`yarn install --immutable`, then `external-service-cli serve`).
 A service runs the SDK in its `vendor/` file name until someone upgrades it, within major 2. Compare the
 vendored `CHANGELOG.md` with `/opt/opsiforce/external-service-sdk/latest/CHANGELOG.md`, and **suggest**
 an upgrade only when the newer version fixes a bug this service hits or adds something the person asked
-for. Once they agree:
+for. When the person asks for one (the service page's **Upgrade SDK** sends that request), or once they
+agree:
 
 1. Copy `/opt/opsiforce/external-service-sdk/external-service-sdk-<new>.tgz` into `vendor/`, point the
    dependency in `package.json` at `file:./vendor/external-service-sdk-<new>.tgz`, remove the old
    tarball and run `yarn install`.
-2. Run the loop, rerun the live lines the change touches and write a new test report.
-3. Commit the tarball, `package.json`, `yarn.lock` and `service.types.ts` together. Callers keep the old
-   version until a human publishes.
+2. Read every `CHANGELOG.md` entry after the vendored version and change the code each one asks of a
+   service's handlers or routes.
+3. Run the loop, rerun the live lines the change touches and write a new test report.
+4. Commit the tarball, `package.json`, `yarn.lock`, `service.types.ts` and the code changes together.
+   Callers keep the old version until a human publishes.

@@ -19,12 +19,15 @@ import { PaneStrip } from '~/components/ui/pane-strip';
 import { Bot, Cable, ChevronLeft, Files, KeyRound, MessageSquare } from '~/components/icons';
 import { DevelopmentConfigurationDialog } from '~/components/external-service/development-configuration-dialog';
 import { ProjectTitleLabel } from '~/components/project/project-header';
+import type { InitialPrompt } from '~/components/project/use-opencode-connection';
 import { DisabledBadge, FOCUS_RING } from '~/components/store/store-list';
 import { ProjectView } from '~/pages/project';
 import { cn } from '~/lib/cn';
 import { createDocumentTitle } from '~/lib/create-document-title';
 
 const SUBJECT_ICON = { agent: Bot, skill: Files, external_service: Cable } as const;
+
+const BUILDER_EDITS_POLL_MS = 5_000;
 
 const SUBJECT_NOUN = { agent: 'Agent', skill: 'Skill', external_service: 'External Service' } as const;
 
@@ -36,7 +39,18 @@ function builderLabel(type: BuilderSubjectRef['type']): string {
   return type === 'external_service' ? 'External Service Builder' : 'Builder';
 }
 
-export function BuilderPage(props: { subject: BuilderSubjectRef; returnEnv?: string }) {
+export interface DevelopmentConfigurationLink {
+  field?: string;
+}
+
+export function BuilderPage(props: {
+  subject: BuilderSubjectRef;
+  returnEnv?: string;
+  initialPrompt?: () => InitialPrompt | undefined;
+  onInitialPromptAdmitted?: () => void;
+  configurationLink?: DevelopmentConfigurationLink;
+  onConfigurationLinkClosed?: () => void;
+}) {
   const navigate = useNavigate();
   const chat = useBuilderChatFor(() => props.subject);
   createDocumentTitle(() => chat.data && `${subjectLabel(chat.data.subject)} · ${builderLabel(props.subject.type)}`);
@@ -47,7 +61,13 @@ export function BuilderPage(props: { subject: BuilderSubjectRef; returnEnv?: str
 
   return (
     <div class="flex h-full w-full flex-col overflow-hidden">
-      <BuilderBar subject={chat.data?.subject} target={props.subject} returnEnv={props.returnEnv} />
+      <BuilderBar
+        subject={chat.data?.subject}
+        target={props.subject}
+        returnEnv={props.returnEnv}
+        configurationLink={props.configurationLink}
+        onConfigurationLinkClosed={props.onConfigurationLinkClosed}
+      />
       <div class="min-h-0 flex-1">
         <Show when={!chat.isError} fallback={<ChatUnavailable error={chat.error} onBack={backToSubject} />}>
           <Show
@@ -62,6 +82,8 @@ export function BuilderPage(props: { subject: BuilderSubjectRef; returnEnv?: str
               <Show when={data().id} keyed>
                 <BuilderStrip
                   chat={data()}
+                  initialPrompt={() => props.initialPrompt?.()}
+                  onInitialPromptAdmitted={() => props.onInitialPromptAdmitted?.()}
                   onChanged={refreshSubject}
                   onGone={() => {
                     forget(props.subject);
@@ -77,7 +99,13 @@ export function BuilderPage(props: { subject: BuilderSubjectRef; returnEnv?: str
   );
 }
 
-function BuilderBar(props: { subject: BuilderSubject | undefined; target: BuilderSubjectRef; returnEnv?: string }) {
+function BuilderBar(props: {
+  subject: BuilderSubject | undefined;
+  target: BuilderSubjectRef;
+  returnEnv?: string;
+  configurationLink?: DevelopmentConfigurationLink;
+  onConfigurationLinkClosed?: () => void;
+}) {
   const icon = () => SUBJECT_ICON[props.target.type];
   return (
     <div class="flex shrink-0 items-center gap-2 border-b border-border bg-background px-3 py-1.5">
@@ -106,26 +134,60 @@ function BuilderBar(props: { subject: BuilderSubject | undefined; target: Builde
         <DisabledBadge />
       </Show>
       <Show when={props.target.type === 'external_service'}>
-        <DevelopmentConfigurationButton serviceId={props.target.id} />
+        <DevelopmentConfigurationButton
+          serviceId={props.target.id}
+          link={props.configurationLink}
+          onLinkClosed={props.onConfigurationLinkClosed}
+        />
       </Show>
     </div>
   );
 }
 
-function DevelopmentConfigurationButton(props: { serviceId: string }) {
+function DevelopmentConfigurationButton(props: {
+  serviceId: string;
+  link?: DevelopmentConfigurationLink;
+  onLinkClosed?: () => void;
+}) {
   const [open, setOpen] = createSignal(false);
+  const development = useDevelopmentService(
+    () => props.serviceId,
+    () => true,
+    BUILDER_EDITS_POLL_MS
+  );
+  const missing = () => development.data?.serviceConfiguration.missing.length ?? 0;
+  const close = () => {
+    setOpen(false);
+    if (props.link) props.onLinkClosed?.();
+  };
   return (
     <>
       <Button size="sm" variant="outline" class="ml-auto" onClick={() => setOpen(true)}>
         <KeyRound class="h-3.5 w-3.5" aria-hidden="true" />
         Development configuration
+        <Show when={missing() > 0}>
+          <span class="rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
+            {missing()} required
+          </span>
+        </Show>
       </Button>
-      <DevelopmentConfigurationDialog serviceId={props.serviceId} open={open()} onClose={() => setOpen(false)} />
+      <DevelopmentConfigurationDialog
+        serviceId={props.serviceId}
+        open={open() || props.link !== undefined}
+        focusedField={props.link?.field}
+        onClose={close}
+      />
     </>
   );
 }
 
-function BuilderStrip(props: { chat: BuilderChat; onChanged: () => void; onGone: () => void }) {
+function BuilderStrip(props: {
+  chat: BuilderChat;
+  initialPrompt: () => InitialPrompt | undefined;
+  onInitialPromptAdmitted: () => void;
+  onChanged: () => void;
+  onGone: () => void;
+}) {
   const testProjectId = () => props.chat.testProject?.id;
   const [renamingTestProject, setRenamingTestProject] = createSignal(false);
   const [revealTestProject, setRevealTestProject] = createSignal(0);
@@ -137,8 +199,8 @@ function BuilderStrip(props: { chat: BuilderChat; onChanged: () => void; onGone:
       first={
         <ProjectView
           projectId={props.chat.id}
-          initialPrompt={() => undefined}
-          onInitialPromptAdmitted={() => {}}
+          initialPrompt={props.initialPrompt}
+          onInitialPromptAdmitted={props.onInitialPromptAdmitted}
           onGone={props.onGone}
           onStatusEvent={props.onChanged}
           showSkillsAndServices={false}

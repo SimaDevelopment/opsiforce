@@ -57,6 +57,10 @@ answer what it said. An `info` field with a `call` runs on every form open; keep
 - A **Project-form** handler sees the saved Service configuration as `ctx.serviceConfiguration` and the
   saved Project configuration (or `null`) as `ctx.projectConfiguration`; the draft is only in
   `draft.values`. `ctx.caller.projectEnvironmentId` names the environment being edited.
+- A Project-form **`options`** handler is also asked with no Project, when someone presets the field
+  in an Agent's Service settings: `ctx.caller.projectEnvironmentId` is absent and
+  `ctx.projectConfiguration` is `null`. List what the Service configuration reaches, never read the
+  Project configuration unguarded.
 - A **Service-form** handler sees the draft itself as `ctx.serviceConfiguration`, so
   `api.fetch(ctx, …)` tries the credentials just typed; `ctx.projectConfiguration` is `null`.
   `service.configuration()` stays the saved copy.

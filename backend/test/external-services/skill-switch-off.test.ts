@@ -283,7 +283,9 @@ describe('a package Skill', () => {
       'description',
       'kind',
       'name',
+      'origin',
       'service',
+      'skillId',
       'state',
     ]);
 

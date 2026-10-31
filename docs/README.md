@@ -59,6 +59,7 @@
 - [External Service Builder](external-services/external-service-builder.md) — writing, testing, publishing and retiring a Custom External Service, and its Default environment
 - [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new service
 - [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls on its Service host
+- [Created Projects and Agents](external-services/created-projects-and-agents.md) — which Agents, which Workspace and how many Projects and Agents a pod may create
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment
 - [WhatsApp](external-services/whatsapp.md) — numbers in the Service configuration, chats per environment, the v1 import
 

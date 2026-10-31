@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { valueFieldsOf } from '@opsiforce/external-service-sdk/platform';
+import { labelsKey, valueFieldsOf } from '@opsiforce/external-service-sdk/platform';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../../db';
 import { externalServiceConfig, externalServiceProjectConfigs, externalServiceResource } from '../../../db/schema';
@@ -78,7 +78,7 @@ function projectConfigurationOf(wiring: V1Wiring[], itemIds: Map<string, string>
   );
   return {
     channels,
-    _labels: Object.keys(chatNames).length > 0 ? { chats: chatNames } : {},
+    [labelsKey]: Object.keys(chatNames).length > 0 ? { chats: chatNames } : {},
   };
 }
 
@@ -186,7 +186,7 @@ export class WhatsappUpgrade implements OnApplicationBootstrap {
           set: {
             values: sql`${externalServiceProjectConfigs.values} || jsonb_build_object(
               'channels', ${JSON.stringify(values.channels)}::jsonb,
-              '_labels', coalesce(${externalServiceProjectConfigs.values}->'_labels', '{}'::jsonb) || ${JSON.stringify(values._labels)}::jsonb
+              ${labelsKey}::text, coalesce(${externalServiceProjectConfigs.values}->${labelsKey}::text, '{}'::jsonb) || ${JSON.stringify(values[labelsKey])}::jsonb
             )`,
             updatedAt: new Date(),
           },
