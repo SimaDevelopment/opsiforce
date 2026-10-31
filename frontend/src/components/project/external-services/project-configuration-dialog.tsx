@@ -52,7 +52,7 @@ export function ProjectConfigurationDialog(props: {
     <Dialog open={props.serviceId !== null} onOpenChange={(open) => !open && props.onClose()}>
       <Show when={props.serviceId} keyed>
         {(serviceId) => (
-          <DialogContent class="flex h-[min(85vh,36rem)] max-w-xl flex-col overflow-hidden">
+          <DialogContent class="flex h-[min(85vh,36rem)] max-w-xl flex-col overflow-clip">
             <ProjectConfigurationLoader
               environment={props.environment}
               environmentName={props.environmentName}
@@ -156,7 +156,11 @@ function ProjectConfigurationPanel(props: {
             Calls
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="configuration" class="mt-4 flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="configuration"
+          forceMount
+          class="mt-4 flex min-h-0 flex-1 flex-col [&:not([data-selected])]:hidden"
+        >
           <Show when={notice}>{(shown) => <RemovedItemsNoticeBanner notice={shown()} />}</Show>
           <Show when={base()} keyed>
             {(view) => (
@@ -316,7 +320,7 @@ function ProjectConfigurationEditor(props: {
         void editor.submit();
       }}
     >
-      <div class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-4">
+      <div class="relative -mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-4">
         <Show when={props.view.hookFailure}>
           {(hookFailure) => (
             <Show when={canConfigure()}>
