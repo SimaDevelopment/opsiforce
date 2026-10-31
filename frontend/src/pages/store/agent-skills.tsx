@@ -187,14 +187,14 @@ function UpgradeButton(props: { from: number; to: number; disabled: boolean; onU
         onClick={props.onUpgrade}
         aria-label={`Upgrade to v${props.to}`}
         class={cn(
-          'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 text-xs font-medium text-amber-800 shadow-sm transition-colors hover:border-amber-400 hover:bg-amber-100 disabled:cursor-default disabled:opacity-60',
+          'of-tone of-tone-needs-you of-hair inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs font-medium shadow-sm transition-colors hover:[--tone-hair:60%] disabled:cursor-default disabled:opacity-60',
           FOCUS_RING
         )}
       >
         <CircleArrowUp class="h-3.5 w-3.5" aria-hidden="true" />
         Upgrade
-        <span class="font-mono text-[11px] tabular-nums text-amber-700/80">
-          v{props.from} → <strong class="font-semibold text-amber-900">v{props.to}</strong>
+        <span class="font-mono text-[0.6875rem] tabular-nums opacity-80">
+          v{props.from} → <strong class="font-semibold">v{props.to}</strong>
         </span>
       </TooltipTrigger>
       <TooltipContent>Upgrade to v{props.to}</TooltipContent>
@@ -211,7 +211,7 @@ function SkillName(props: { name: string; displayName: string | null }) {
       {(displayName) => (
         <>
           <span class="truncate text-sm text-foreground">{displayName()}</span>
-          <span class="shrink-0 font-mono text-[11px] text-muted-foreground">{props.name}</span>
+          <span class="shrink-0 font-mono text-[0.6875rem] text-muted-foreground">{props.name}</span>
         </>
       )}
     </Show>

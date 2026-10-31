@@ -21,14 +21,14 @@ type ServiceStatus = { label: string; icon: Component<{ class?: string }>; tone:
 
 function serviceStatus(service: ProjectServiceSummary): ServiceStatus {
   if (service.state === 'needs-configuration') {
-    return { label: 'Needs configuration', icon: CircleDashed, tone: 'text-amber-700' };
+    return { label: 'Needs configuration', icon: CircleDashed, tone: 'of-ink of-tone-needs-you' };
   }
   if (service.state === 'available')
     return { label: 'Available · Click to enable', icon: Plug, tone: 'text-muted-foreground' };
   if (needsAttention(service.configuration)) {
-    return { label: 'Needs attention', icon: AlertTriangle, tone: 'text-amber-700' };
+    return { label: 'Needs attention', icon: AlertTriangle, tone: 'of-ink of-tone-needs-you' };
   }
-  return { label: 'Connected', icon: CircleCheck, tone: 'text-emerald-700' };
+  return { label: 'Connected', icon: CircleCheck, tone: 'of-ink of-tone-done' };
 }
 
 function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void }) {
@@ -52,7 +52,7 @@ function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void 
             </Show>
           </span>
         </div>
-        <span class={cn('mt-0.5 flex items-center gap-1 text-[11px]', status().tone)}>
+        <span class={cn('mt-0.5 flex items-center gap-1 text-[0.6875rem]', status().tone)}>
           <Dynamic component={status().icon} class="h-3 w-3 shrink-0" aria-hidden="true" />
           {status().label}
         </span>

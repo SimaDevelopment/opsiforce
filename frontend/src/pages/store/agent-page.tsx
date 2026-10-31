@@ -771,7 +771,7 @@ function BuiltInBody(props: {
                 settings shape new projects only.
               </p>
               <Show when={notApplied() !== null}>
-                <p class={cn('text-xs', notApplied() === 0 ? 'text-muted-foreground' : 'text-amber-700')}>
+                <p class={cn('text-xs', notApplied() === 0 ? 'text-muted-foreground' : 'of-ink of-tone-needs-you')}>
                   {notApplied() === 0 ? 'Applied to every project.' : `Not applied to ${notApplied()} project(s) yet.`}
                 </p>
               </Show>

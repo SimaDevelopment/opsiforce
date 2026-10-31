@@ -219,7 +219,7 @@ export function VersionTag(props: { version: number; class?: string }) {
   return (
     <span
       class={cn(
-        'inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground',
+        'inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 font-mono text-[0.6875rem] font-semibold tabular-nums text-foreground',
         props.class
       )}
     >
@@ -290,7 +290,7 @@ export function FilterChips<T extends string>(props: {
               <Show when={option.count !== undefined}>
                 <span
                   class={cn(
-                    'min-w-[1.25rem] rounded-full px-1.5 text-center text-[10px] tabular-nums',
+                    'min-w-[1.25rem] rounded-full px-1.5 text-center text-[0.625rem] tabular-nums',
                     checked() ? 'bg-background text-foreground' : 'bg-muted text-muted-foreground'
                   )}
                 >
