@@ -10,12 +10,12 @@ export interface EnvironmentRowStatus {
   stale: boolean;
 }
 
-export function EnvironmentSplit(props: { children: JSX.Element; list: JSX.Element }) {
+export function EnvironmentSplit(props: { children: JSX.Element; list: JSX.Element; title?: string }) {
   return (
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
       {props.children}
       <aside class="order-first lg:order-none lg:sticky lg:top-4 lg:self-start">
-        <SectionTitle>Environments</SectionTitle>
+        <SectionTitle>{props.title ?? 'Environments'}</SectionTitle>
         {props.list}
       </aside>
     </div>

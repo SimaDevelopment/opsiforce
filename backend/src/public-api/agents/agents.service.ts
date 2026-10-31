@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import type { AgentCaller } from '../../agent/agent.types';
-import { assertPermission, callingProjectOf, chatProjectIdOf, type Caller } from '../auth/caller';
+import { CreatedAgentsCapReached, type CreatedAgentsCap } from '../../agent/created-agents-cap';
+import { MAX_CREATED_AGENTS, PublicApiSettings } from '../../external-services/configuration/public-api-settings';
+import { assertPermission, callingEnvironmentOf, callingProjectOf, chatProjectIdOf, type Caller } from '../auth/caller';
+import { Errors } from '../errors/public-api-error';
 import { mappingStoreErrors } from '../errors/store-error.mapper';
 import { AgentMapper } from './agents.mapper';
 import { PublicAgentsRepository } from './agents.repository';
@@ -21,7 +24,8 @@ import type {
 export class PublicAgentsService {
   constructor(
     private readonly repository: PublicAgentsRepository,
-    private readonly agents: AgentService
+    private readonly agents: AgentService,
+    private readonly publicApiSettings: PublicApiSettings
   ) {}
 
   async list(caller: Caller, query: AgentListQuery): Promise<AgentPageDto> {
@@ -41,7 +45,23 @@ export class PublicAgentsService {
 
   async create(caller: Caller, body: CreateAgent): Promise<AgentDetailDto> {
     assertPermission(caller, 'can_manage_agents');
-    return AgentMapper.toDetailDto(await mappingStoreErrors(() => this.agents.create(scopeOf(caller), body)));
+    const cap = await this.createdAgentsCapOf(caller);
+    const created = await mappingStoreErrors(() =>
+      this.agents.create(scopeOf(caller), body, cap).catch((error: unknown) => {
+        if (error instanceof CreatedAgentsCapReached) {
+          throw Errors.maxCreatedAgents(error.max, this.publicApiSettings.labelOf(MAX_CREATED_AGENTS));
+        }
+        throw error;
+      })
+    );
+    return AgentMapper.toDetailDto(created);
+  }
+
+  private async createdAgentsCapOf(caller: Caller): Promise<CreatedAgentsCap | null> {
+    const calling = callingEnvironmentOf(caller);
+    if (!calling) return null;
+    const settings = await this.publicApiSettings.of(calling.projectEnvironmentId);
+    return { creatingProjectId: calling.projectId, max: this.publicApiSettings.limitOf(settings, MAX_CREATED_AGENTS) };
   }
 
   async update(caller: Caller, agentId: string, body: UpdateAgent): Promise<AgentDetailDto> {

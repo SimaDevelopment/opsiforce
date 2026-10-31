@@ -261,9 +261,10 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
     });
   });
 
-  it('refuses a target, an undeclared name or an unfit value', async () => {
-    await expect(setSettings({ repositories: ['acme/web'] })).rejects.toMatchObject({
-      response: { code: 'bad_request', message: expect.stringContaining('repositories') },
+  it('keeps a picked target, and refuses a generated value, an undeclared name or an unfit value', async () => {
+    const kept = await setSettings({ repositories: ['example-org/web'] });
+    expect(kept.find((skill) => skill.serviceSettings)?.serviceSettings).toEqual({
+      repositories: ['example-org/web'],
     });
     await expect(setSettings({ webhookToken: 'chosen' })).rejects.toMatchObject({
       response: { code: 'bad_request', message: expect.stringContaining('webhookToken') },

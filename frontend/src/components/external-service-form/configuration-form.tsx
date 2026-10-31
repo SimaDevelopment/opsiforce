@@ -1,4 +1,4 @@
-import { Show, createSignal, type Accessor } from 'solid-js';
+import { Show, createSignal, type Accessor, type JSX } from 'solid-js';
 import type { Field } from '@opsiforce/external-service-sdk/forms';
 import { ApiError } from '~/api/client';
 import {
@@ -152,6 +152,7 @@ export function ConfigurationFooter(props: {
   canSave?: boolean;
   saveLabel?: string;
   cancel?: { label: string; onClick: () => void };
+  leading?: JSX.Element;
 }) {
   const textSize = () => (props.compact ? 'text-[0.6875rem]' : 'text-xs');
   const saveButton = () => (
@@ -167,6 +168,7 @@ export function ConfigurationFooter(props: {
       class={cn('flex flex-wrap items-center border-t border-border', props.compact ? 'gap-2 pt-3' : 'mt-5 gap-3 pt-4')}
     >
       <Show when={!props.compact}>{saveButton()}</Show>
+      {props.leading}
       <Show when={props.failure}>
         {(message) => (
           <span class={cn(textSize(), 'text-destructive')} role="alert">

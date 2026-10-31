@@ -38,6 +38,7 @@ import {
   type CatalogListFilter,
 } from '../store/catalog-filters';
 import { isWithinCallingProject } from '../store/calling-project';
+import type { ProjectlessOptionsAnswer } from '../store/service-settings-catalog';
 import { notDisableable, outsideCallingProject, visibilityIncoherent } from '../store/store-errors';
 import { defaultProfileModel } from './agent-config';
 import {
@@ -54,6 +55,7 @@ import { isChatKind, type ProjectKind } from '../project/project.types';
 import { assertModelSelection } from './agent-models';
 import { AgentProfileService, assertAgentCarriesNoPrivateSkill } from './agent-profile.service';
 import { AgentRepository } from './agent.repository';
+import type { CreatedAgentsCap } from './created-agents-cap';
 import {
   agentDisabledIn,
   assertAgentVisibleToUser,
@@ -190,7 +192,11 @@ export class AgentService {
     };
   }
 
-  async create(caller: AgentCaller, dto: CreateAgentDto): Promise<AgentDetail> {
+  async create(
+    caller: AgentCaller,
+    dto: CreateAgentDto,
+    createdAgentsCap: CreatedAgentsCap | null = null
+  ): Promise<AgentDetail> {
     const { displayName } = await this.bundles.availableName(caller.tenantId, dto.displayName ?? '');
 
     const fallback = defaultProfileModel();
@@ -209,6 +215,7 @@ export class AgentService {
         projectSettings: DEFAULT_AGENT_PROJECT_SETTINGS,
       },
       pins: [],
+      createdAgentsCap,
     });
     return this.findOne(caller, agentId);
   }
@@ -417,9 +424,14 @@ export class AgentService {
     return this.profiles.removeSkill(agent, caller, skillId);
   }
 
-  async serviceSettings(caller: AgentCaller, agentId: string, skillId: string): Promise<AgentServiceSettingsView> {
+  async serviceSettings(
+    caller: AgentCaller,
+    agentId: string,
+    skillId: string,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<AgentServiceSettingsView> {
     const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
-    return this.profiles.serviceSettings(agent, caller, skillId);
+    return this.profiles.serviceSettings(agent, caller, skillId, grants);
   }
 
   async setServiceSettings(
@@ -431,6 +443,18 @@ export class AgentService {
   ): Promise<AgentProfileSkillResponse[]> {
     const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
     return this.profiles.setServiceSettings(agent, caller, skillId, dto, grants);
+  }
+
+  async serviceSettingsOptions(
+    caller: AgentCaller,
+    agentId: string,
+    skillId: string,
+    name: string,
+    body: unknown,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<ProjectlessOptionsAnswer> {
+    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    return this.profiles.serviceSettingsOptions(agent, caller, skillId, name, body, grants);
   }
 
   async publish(caller: AgentCaller, agentId: string, dto: PublishAgentDto): Promise<PublishAgentResponse> {
@@ -571,7 +595,10 @@ export class AgentService {
 
   private async readProfiles(agent: AgentRow, tenantId: string): Promise<AgentProfileResponse[]> {
     const rows = await this.repository.profiles(agent.id, tenantId);
-    const skillsByProfile = await this.repository.skillsOf(rows.map((row) => row.id));
+    const skillsByProfile = await this.profiles.skillsOfProfiles(
+      tenantId,
+      rows.map((row) => row.id)
+    );
     const templates = await this.templates.hashes(agent.id);
     const templateAt = (environmentId: string) => templates.get(environmentId) ?? null;
 

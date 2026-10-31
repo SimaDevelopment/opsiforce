@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { outcomeHeader, settingHeader } from '@opsiforce/external-service-sdk/server';
 import {
   fallbackSlugForStatus,
   hasFallbackSlug,
@@ -53,7 +54,7 @@ export const Errors = {
     new PublicApiError('permission-denied', { detail: `Missing permission: ${permission}`, permission }),
   routeClosedToAgentCaller: () =>
     new PublicApiError('permission-denied', { detail: 'This route is not open to an Agent Caller' }),
-  projectNotFound: () => new PublicApiError('project-not-found'),
+  projectNotFound: (detail?: string) => new PublicApiError('project-not-found', detail === undefined ? {} : { detail }),
   routeNotFound: () => new PublicApiError('route-not-found'),
   environmentDisabled: () =>
     new PublicApiError('environment-disabled', { detail: 'This environment is disabled; enable it to continue' }),
@@ -102,6 +103,16 @@ export const Errors = {
   maxCreatedProjects: (max: number, setting: string) =>
     new PublicApiError('max-created-projects', {
       detail: `This Project may create at most ${max} Projects (${setting}). Delete one you created, or ask someone who can configure this Project's External Services to raise it.`,
+    }),
+  notAllowedBy: (settingKey: string, detail: string) =>
+    new PublicApiError(
+      'permission-denied',
+      { detail },
+      { [outcomeHeader]: 'not allowed', [settingHeader]: settingKey }
+    ),
+  maxCreatedAgents: (max: number, setting: string) =>
+    new PublicApiError('max-created-agents', {
+      detail: `This Project may create at most ${max} Agents (${setting}). Ask someone who can configure this Project's External Services to raise it.`,
     }),
   unexpected: () => new PublicApiError('unexpected'),
   fromForeignStatus: (status: number, detail: string) =>

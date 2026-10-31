@@ -1,5 +1,6 @@
-import { Match, Show, Switch, createSignal, untrack } from 'solid-js';
+import { Match, Show, Switch, createSignal, untrack, type JSX } from 'solid-js';
 import { toast } from 'solid-sonner';
+import { labelsKey } from '@opsiforce/external-service-sdk/forms';
 import { callLogSources } from '~/api/external-service-call-log';
 import {
   callProjectForm,
@@ -24,17 +25,21 @@ import {
   useConfigurationForm,
   type ConfigurationEdits,
 } from '~/components/external-service-form/configuration-form';
-import type { FormContext, ServiceCaller } from '~/components/external-service-form/form-context';
+import {
+  serviceConfigurationOptionsIn,
+  type FormContext,
+  type ServiceCaller,
+} from '~/components/external-service-form/form-context';
 import { ServiceFormFields } from '~/components/external-service-form/form-renderer';
 import { withDefaults } from '~/components/external-service-form/form-values';
 import { HookFailureNotice, RemovedItemsNoticeBanner } from '~/components/external-service-form/save-notices';
 import { NeedsAttentionBanner } from '~/components/external-service-form/needs-attention-banner';
 import { Button } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '~/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import { Spinner } from '~/components/ui/spinner';
-import { ChevronRight, Lock, Unplug } from '~/components/icons';
-import { cn } from '~/lib/cn';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
+import { Inbox, Lock, ScrollText, SlidersHorizontal, Unplug } from '~/components/icons';
 
 export function ProjectConfigurationDialog(props: {
   environment: ProjectEnvironmentRef;
@@ -47,7 +52,7 @@ export function ProjectConfigurationDialog(props: {
     <Dialog open={props.serviceId !== null} onOpenChange={(open) => !open && props.onClose()}>
       <Show when={props.serviceId} keyed>
         {(serviceId) => (
-          <DialogContent class="max-h-[85vh] max-w-xl overflow-y-auto" align="top">
+          <DialogContent class="flex h-[min(85vh,36rem)] max-w-xl flex-col overflow-clip">
             <ProjectConfigurationLoader
               environment={props.environment}
               environmentName={props.environmentName}
@@ -124,6 +129,7 @@ function ProjectConfigurationPanel(props: {
     }
   );
   const base = edits.base;
+  const receivesEvents = () => base().manifest.inbound === true && base().state === 'enabled';
   return (
     <>
       <DialogHeader>
@@ -132,38 +138,65 @@ function ProjectConfigurationPanel(props: {
           {base().displayName}
           <OriginBadge origin={base().origin} />
         </DialogTitle>
-        <DialogDescription>{props.environmentName} environment</DialogDescription>
       </DialogHeader>
-      <Show when={notice}>{(shown) => <RemovedItemsNoticeBanner notice={shown()} />}</Show>
-      <Show when={base()} keyed>
-        {(view) => (
-          <ProjectConfigurationEditor
-            view={view}
-            environment={props.environment}
-            edits={edits}
-            focusedField={props.focusedField}
-            onClose={props.onClose}
-          />
-        )}
-      </Show>
-      <Show when={base().manifest.inbound === true && base().state === 'enabled'}>
-        <EventDeliveryStatusLines environment={props.environment} serviceId={base().id} />
-      </Show>
-      <Show when={base().projectConfiguration.saved}>
-        <DisconnectSection
-          environment={props.environment}
-          environmentName={props.environmentName}
-          serviceId={base().id}
-          serviceName={base().displayName}
-          onDisconnected={props.onClose}
-        />
-      </Show>
-      <EnvironmentCalls environment={props.environment} serviceId={base().id} />
+      <Tabs defaultValue="configuration" class="mt-4 flex min-h-0 flex-1 flex-col">
+        <TabsList class="w-fit shrink-0 justify-start">
+          <TabsTrigger value="configuration">
+            <SlidersHorizontal class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            Configuration
+          </TabsTrigger>
+          <Show when={receivesEvents()}>
+            <TabsTrigger value="events">
+              <Inbox class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              Events
+            </TabsTrigger>
+          </Show>
+          <TabsTrigger value="calls">
+            <ScrollText class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            Calls
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent
+          value="configuration"
+          forceMount
+          class="mt-4 flex min-h-0 flex-1 flex-col [&:not([data-selected])]:hidden"
+        >
+          <Show when={notice}>{(shown) => <RemovedItemsNoticeBanner notice={shown()} />}</Show>
+          <Show when={base()} keyed>
+            {(view) => (
+              <ProjectConfigurationEditor
+                view={view}
+                environment={props.environment}
+                edits={edits}
+                focusedField={props.focusedField}
+                onClose={props.onClose}
+                leading={
+                  <Show when={view.projectConfiguration.saved}>
+                    <DisconnectButton
+                      environment={props.environment}
+                      environmentName={props.environmentName}
+                      serviceId={view.id}
+                      serviceName={view.displayName}
+                      onDisconnected={props.onClose}
+                    />
+                  </Show>
+                }
+              />
+            )}
+          </Show>
+        </TabsContent>
+        <TabsContent value="events" class="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <EventDeliveryStatusLines environment={props.environment} serviceId={base().id} />
+        </TabsContent>
+        <TabsContent value="calls" class="mt-4 min-h-0 flex-1 overflow-y-auto">
+          <CallLog source={callLogSources.projectEnvironment(props.environment, base().id)} compact />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }
 
-function DisconnectSection(props: {
+function DisconnectButton(props: {
   environment: ProjectEnvironmentRef;
   environmentName: string;
   serviceId: string;
@@ -188,21 +221,17 @@ function DisconnectSection(props: {
     });
   return (
     <Show when={canDisconnect()}>
-      <section class="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <p class="text-xs text-muted-foreground">
-          Disconnect deletes this environment's configuration; its calls are refused as not connected within seconds.
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          class="shrink-0"
-          loading={disconnect.isPending}
-          onClick={() => setConfirming(true)}
-        >
-          <Unplug class="h-3.5 w-3.5" aria-hidden="true" />
-          Disconnect
-        </Button>
-      </section>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        class="h-7 text-xs"
+        loading={disconnect.isPending}
+        onClick={() => setConfirming(true)}
+      >
+        <Unplug class="h-3.5 w-3.5" aria-hidden="true" />
+        Disconnect
+      </Button>
       <ConfirmDialog
         open={confirming()}
         onOpenChange={setConfirming}
@@ -216,34 +245,13 @@ function DisconnectSection(props: {
   );
 }
 
-function EnvironmentCalls(props: { environment: ProjectEnvironmentRef; serviceId: string }) {
-  const [open, setOpen] = createSignal(false);
-  return (
-    <section class="mt-4 border-t border-border pt-3">
-      <button
-        type="button"
-        class="flex w-full items-center gap-1.5 text-left text-xs font-medium text-foreground"
-        aria-expanded={open()}
-        onClick={() => setOpen(!open())}
-      >
-        <ChevronRight class={cn('h-3.5 w-3.5 transition-transform', open() && 'rotate-90')} aria-hidden="true" />
-        Calls for this environment
-      </button>
-      <Show when={open()}>
-        <div class="mt-3">
-          <CallLog source={callLogSources.projectEnvironment(props.environment, props.serviceId)} compact />
-        </div>
-      </Show>
-    </section>
-  );
-}
-
 function ProjectConfigurationEditor(props: {
   view: ProjectServiceView;
   environment: ProjectEnvironmentRef;
   edits: ConfigurationEdits<ProjectServiceView>;
   focusedField?: string;
   onClose: () => void;
+  leading?: JSX.Element;
 }) {
   const { hasPermission } = usePermissions();
   const form = props.view.manifest.projectForm ?? [];
@@ -258,7 +266,7 @@ function ProjectConfigurationEditor(props: {
     missing: configuration.saved ? configuration.missing : [],
     labels: configuration.labels,
     save,
-    submitted: (formValues, labels) => ({ ...formValues, _labels: labels.labelsFor(formValues) }),
+    submitted: (formValues, labels) => ({ ...formValues, [labelsKey]: labels.labelsFor(formValues) }),
     onEdit: props.edits.edited,
     onSaved: (next) => {
       const connecting = props.view.state !== 'enabled';
@@ -281,9 +289,7 @@ function ProjectConfigurationEditor(props: {
     draft: editor.draft,
     readOnly,
     templateValues: () => props.view.templateValues,
-    serviceConfigurationOptions: (listKey, labelKey) =>
-      props.view.serviceConfigurationOptions.find((source) => source.list === listKey && source.labelKey === labelKey)
-        ?.options ?? [],
+    serviceConfigurationOptions: serviceConfigurationOptionsIn(() => props.view.serviceConfigurationOptions),
     storedLabel: editor.labels.storedLabel,
     seenOptions: editor.labels.seenOptions,
     get callService() {
@@ -308,35 +314,38 @@ function ProjectConfigurationEditor(props: {
   return (
     <form
       ref={scrollToFocusedField}
-      class="mt-4 flex flex-col gap-4"
+      class="flex min-h-0 flex-1 flex-col"
       onSubmit={(event) => {
         event.preventDefault();
         void editor.submit();
       }}
     >
-      <Show when={props.view.hookFailure}>
-        {(hookFailure) => (
-          <Show when={canConfigure()}>
-            <HookFailureNotice failure={hookFailure()} onRetry={props.edits.retry} onDiscard={props.edits.discard} />
-          </Show>
-        )}
-      </Show>
-      <Show when={needsAttention(configuration)}>
-        <NeedsAttentionBanner serviceName={props.view.displayName} form={form} missing={configuration.missing} />
-      </Show>
-      <Show when={!canConfigure()}>
-        <div class="flex items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-2 text-[0.6875rem] text-muted-foreground">
-          <Lock class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          You can view this configuration. An Organization admin, or anyone with the "Configure project External
-          Services" permission, can change it.
-        </div>
-      </Show>
+      <div class="relative -mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 pb-4">
+        <Show when={props.view.hookFailure}>
+          {(hookFailure) => (
+            <Show when={canConfigure()}>
+              <HookFailureNotice failure={hookFailure()} onRetry={props.edits.retry} onDiscard={props.edits.discard} />
+            </Show>
+          )}
+        </Show>
+        <Show when={needsAttention(configuration)}>
+          <NeedsAttentionBanner serviceName={props.view.displayName} form={form} missing={configuration.missing} />
+        </Show>
+        <Show when={!canConfigure()}>
+          <div class="flex items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
+            <Lock class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            You can view this configuration. An Organization admin, or anyone with the "Configure project External
+            Services" permission, can change it.
+          </div>
+        </Show>
 
-      <Show when={form.length > 0}>
-        <ServiceFormFields fields={form} ctx={ctx} />
-      </Show>
+        <Show when={form.length > 0}>
+          <ServiceFormFields fields={form} ctx={ctx} />
+        </Show>
+      </div>
 
       <ConfigurationFooter
+        leading={props.leading}
         compact
         saving={editor.saving()}
         failure={editor.failure()}

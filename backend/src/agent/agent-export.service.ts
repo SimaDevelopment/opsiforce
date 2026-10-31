@@ -7,6 +7,7 @@ import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { packExportArchive } from '../export/export-archive';
 import { exportStampOf } from '../export/export-manifest';
 import { packSkill, scanKeyLike, type SkillTree } from '../store/gate';
+import { portableServiceSettings, ServiceSettingsCatalog } from '../store/service-settings-catalog';
 import { SkillRepository } from '../store/skill.repository';
 import { notExportable } from './agent-errors';
 import {
@@ -46,7 +47,8 @@ export class AgentExportService {
     private readonly configService: ConfigService,
     private readonly bundleReader: AgentBundleReader,
     private readonly templates: AgentTemplateStore,
-    private readonly skillRepository: SkillRepository
+    private readonly skillRepository: SkillRepository,
+    private readonly serviceCatalog: ServiceSettingsCatalog
   ) {}
 
   async export(caller: AgentCaller, agentId: string): Promise<AgentExportFile> {
@@ -74,10 +76,10 @@ export class AgentExportService {
     const template = bundle.template
       ? await this.templates.readVersionTree(bundle.template.sourceDir, bundle.template.hash)
       : null;
-    return { agent, bundle, template, skills: await this.readSkills(bundle.skills) };
+    return { agent, bundle, template, skills: await this.readSkills(caller.tenantId, bundle.skills) };
   }
 
-  private async readSkills(references: AgentBundleSkillReference[]): Promise<ExportedSkill[]> {
+  private async readSkills(tenantId: string, references: AgentBundleSkillReference[]): Promise<ExportedSkill[]> {
     if (references.length === 0) return [];
     const rows = await db
       .select({
@@ -106,10 +108,19 @@ export class AgentExportService {
         origin,
         contentHash: row.contentHash,
         tree: origin === 'custom' ? await this.skillRepository.readTree(reference.skillVersionId) : null,
-        serviceSettings: origin === 'service' ? (reference.serviceSettings ?? null) : null,
+        serviceSettings: origin === 'service' ? await this.portableSettings(tenantId, reference) : null,
       });
     }
     return exported;
+  }
+
+  private async portableSettings(
+    tenantId: string,
+    reference: AgentBundleSkillReference
+  ): Promise<AgentServiceSettings | null> {
+    if (!reference.serviceSettings || !reference.externalServiceId) return null;
+    const service = await this.serviceCatalog.tenantService(tenantId, reference.externalServiceId);
+    return service ? portableServiceSettings(service.manifest, reference.serviceSettings) : null;
   }
 
   private manifest({ agent, bundle, skills: exported }: ExportContents): AgentExportManifest {

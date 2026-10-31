@@ -42,6 +42,16 @@ export function chatProjectIdOf(caller: Caller): string | null {
   return caller.source === 'idp-bearer' ? null : (caller.projectId ?? null);
 }
 
+export interface CallingEnvironment {
+  projectId: string;
+  projectEnvironmentId: string;
+}
+
+export function callingEnvironmentOf(caller: Caller): CallingEnvironment | null {
+  if (caller.source !== 'caller-identity' || !caller.projectId || !caller.projectEnvironmentId) return null;
+  return { projectId: caller.projectId, projectEnvironmentId: caller.projectEnvironmentId };
+}
+
 export function callingProjectOf(caller: Caller): { callingProjectId?: string } {
   const projectId = chatProjectIdOf(caller);
   return projectId === null ? {} : { callingProjectId: projectId };

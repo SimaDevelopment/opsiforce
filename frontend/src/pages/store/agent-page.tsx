@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { Link, useNavigate } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
 import {
@@ -14,7 +15,6 @@ import {
   type AgentDeliverySummary,
   type AgentDetail,
   type AgentProfile,
-  type ShippedSkill,
 } from '~/api/agents';
 import { ApiError } from '~/api/client';
 import { useEnvironments, type Environment } from '~/api/environments';
@@ -39,8 +39,8 @@ import {
   EmptyState,
   ErrorState,
   FOCUS_RING,
+  KIND_ICONS,
   OriginBadge,
-  RowLink,
   RowList,
   SectionTitle,
   VisibilityBadge,
@@ -63,7 +63,6 @@ import {
   CirclePlay,
   Copy,
   Download,
-  Files,
   Globe,
   Plus,
   Rocket,
@@ -740,20 +739,48 @@ function BuiltInBody(props: {
     const summary = delivery.data;
     return summary ? Math.max(summary.total - summary.converged, 0) : null;
   };
-  const omitted = () => delivery.data?.omitted ?? [];
 
   return (
-    <div class="space-y-6">
-      <div class="of-note of-tone-running flex-col p-4 text-sm">
-        <div class="font-medium">Ships with the platform</div>
-        <div class="mt-0.5 text-xs opacity-80">
-          Its prompt, template and the skills it ships come from the agent image and update with releases. Skills your
-          organization adds reach <strong>every existing project</strong> on this agent, in every environment, as soon
-          as you change them.
-        </div>
-      </div>
-
-      <section>
+    <EnvironmentSplit
+      title="Where its skills come from"
+      list={
+        <RowList>
+          <div class="flex gap-3 px-4 py-3">
+            <Dynamic
+              component={KIND_ICONS.shipped}
+              class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div class="min-w-0 space-y-0.5">
+              <div class="text-sm font-medium">Package</div>
+              <p class="text-xs text-muted-foreground">
+                Its prompt, template and these skills ship with the platform and update with releases.
+              </p>
+            </div>
+          </div>
+          <div class="flex gap-3 px-4 py-3">
+            <Dynamic
+              component={KIND_ICONS.addons}
+              class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div class="min-w-0 space-y-0.5">
+              <div class="text-sm font-medium">Add-ons</div>
+              <p class="text-xs text-muted-foreground">
+                Added by your organization. They reach every project on this agent as soon as you change them. Service
+                settings shape new projects only.
+              </p>
+              <Show when={notApplied() !== null}>
+                <p class={cn('text-xs', notApplied() === 0 ? 'text-muted-foreground' : 'text-amber-700')}>
+                  {notApplied() === 0 ? 'Applied to every project.' : `Not applied to ${notApplied()} project(s) yet.`}
+                </p>
+              </Show>
+            </div>
+          </div>
+        </RowList>
+      }
+    >
+      <section class="min-w-0">
         <SectionTitle
           action={
             <Show when={props.canManage}>
@@ -764,71 +791,18 @@ function BuiltInBody(props: {
             </Show>
           }
         >
-          Added by your organization
+          Skills
         </SectionTitle>
         <AgentSkillList
           agent={props.agent}
           skills={props.skills ?? []}
+          shipped={props.agent.shippedSkills}
           editable={props.canManage}
           onAdd={props.onAdd}
         />
-        <Show when={notApplied() !== null}>
-          <p class="mt-2 text-xs text-muted-foreground">
-            {notApplied() === 0
-              ? 'Applied to every project on this agent.'
-              : `Not applied to ${notApplied()} project(s) yet.`}
-          </p>
-        </Show>
-        <OmittedSkills omitted={omitted()} />
+        <OmittedSkills omitted={delivery.data?.omitted ?? []} />
       </section>
-
-      <section>
-        <SectionTitle>Ships with the agent</SectionTitle>
-        <ShippedSkillList agentId={props.agent.id} skills={props.agent.shippedSkills} />
-      </section>
-    </div>
-  );
-}
-
-function ShippedSkillList(props: { agentId: string; skills: ShippedSkill[] }) {
-  return (
-    <Show
-      when={props.skills.length > 0}
-      fallback={
-        <p class="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          This agent's package ships no skills of its own.
-        </p>
-      }
-    >
-      <RowList>
-        <For each={props.skills}>
-          {(skill) => (
-            <Show
-              when={skill.skillId}
-              fallback={
-                <div class="flex items-center gap-3 px-4 py-2.5">
-                  <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span class="font-mono text-sm">{skill.name}</span>
-                </div>
-              }
-            >
-              {(skillId) => (
-                <RowLink
-                  href={`/store/skills/${skillId()}?${new URLSearchParams({ agent: props.agentId })}`}
-                  class="px-4 py-2.5"
-                >
-                  <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span class="min-w-0 flex-1 truncate font-mono text-sm">{skill.name}</span>
-                  <Show when={skill.version}>
-                    {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version()}</span>}
-                  </Show>
-                </RowLink>
-              )}
-            </Show>
-          )}
-        </For>
-      </RowList>
-    </Show>
+    </EnvironmentSplit>
   );
 }
 

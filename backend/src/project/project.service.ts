@@ -2133,7 +2133,7 @@ export class ProjectService implements OnApplicationBootstrap {
       if (!job) return;
 
       if (probeFirst && (await this.probeAppServing(envId))) {
-        this.appReadiness.markServing(envId);
+        this.appReadiness.markServing(envId, projectId);
       }
 
       const appReady = await this.appReadiness.awaitReady(envId, DUPLICATE_APP_READY_TIMEOUT_MS);
@@ -2200,7 +2200,7 @@ export class ProjectService implements OnApplicationBootstrap {
       if (!job) return;
 
       if (probeFirst && (await this.probeAppServing(envId))) {
-        this.appReadiness.markServing(envId);
+        this.appReadiness.markServing(envId, projectId);
       }
 
       const appReady = await this.appReadiness.awaitReady(envId, DUPLICATE_APP_READY_TIMEOUT_MS);

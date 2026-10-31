@@ -1,5 +1,5 @@
-import { Dialog as Kobalte } from '@kobalte/core/dialog';
-import { splitProps, Show, type ComponentProps, type ParentProps } from 'solid-js';
+import { Dialog as Kobalte, useDialogContext } from '@kobalte/core/dialog';
+import { createSignal, onCleanup, onMount, splitProps, Show, type ComponentProps, type ParentProps } from 'solid-js';
 import { X } from '~/components/icons';
 import { cn } from '~/lib/cn';
 
@@ -7,8 +7,35 @@ type DialogContentProps = ParentProps<
   ComponentProps<typeof Kobalte.Content> & { hideClose?: boolean; align?: 'center' | 'top' }
 >;
 
+function isInEmbeddedChat(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-embedded-chat]') !== null;
+}
+
+function useKeepFocusInside(content: () => HTMLElement | undefined) {
+  const dialog = useDialogContext();
+  const reclaim = (event: Event) => {
+    if (!dialog.isOpen() || !isInEmbeddedChat(event.target)) return;
+    if (event instanceof KeyboardEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') return dialog.close();
+    }
+    content()?.focus();
+  };
+  onMount(() => {
+    window.addEventListener('focusin', reclaim, true);
+    window.addEventListener('keydown', reclaim, true);
+  });
+  onCleanup(() => {
+    window.removeEventListener('focusin', reclaim, true);
+    window.removeEventListener('keydown', reclaim, true);
+  });
+}
+
 export function DialogContent(props: DialogContentProps) {
   const [local, rest] = splitProps(props, ['class', 'children', 'hideClose', 'align']);
+  const [content, setContent] = createSignal<HTMLDivElement>();
+  useKeepFocusInside(content);
   return (
     <Kobalte.Portal>
       <Kobalte.Overlay
@@ -24,6 +51,7 @@ export function DialogContent(props: DialogContentProps) {
         )}
       >
         <Kobalte.Content
+          ref={setContent}
           class={cn(
             'relative z-50 w-full max-w-md overflow-y-auto rounded-lg border border-border bg-popover p-6 shadow-lg',
             local.align === 'top' ? 'max-h-[84dvh]' : 'max-h-[calc(100dvh-2rem)]',

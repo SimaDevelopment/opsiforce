@@ -21,6 +21,7 @@ import {
   SearchInput,
   SortSelect,
   UpdateBadge,
+  VersionTag,
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ChevronRight, Files, Plus, Upload } from '~/components/icons';
@@ -141,7 +142,7 @@ function SkillRow(props: { skill: Skill }) {
             when={props.skill.latestVersion}
             fallback={<span class="text-xs text-muted-foreground">No version yet</span>}
           >
-            {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version().version}</span>}
+            {(version) => <VersionTag version={version().version} />}
           </Show>
           <OriginBadge origin={props.skill.origin} />
           <ServiceMark externalServiceId={props.skill.externalServiceId} available={props.skill.available} />

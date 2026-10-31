@@ -15,8 +15,7 @@ export function EventDeliveryStatusLines(props: { environment: ProjectEnvironmen
   return (
     <Show when={status.data}>
       {(shown) => (
-        <section class="mt-4 flex flex-col gap-1.5 border-t border-border pt-3 text-xs">
-          <p class="font-medium text-foreground">Events</p>
+        <section class="flex flex-col gap-1.5 text-xs">
           <p class="text-muted-foreground">{eventsWaiting(shown().notYetTaken)}</p>
           <Show when={shown().appNotWired}>
             <p class="of-ink of-tone-needs-you flex items-start gap-1.5">

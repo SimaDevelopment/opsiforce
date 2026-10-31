@@ -416,7 +416,7 @@ The values filled into an External Service's Service form, one per service and o
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
 _Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
 **Disconnect (External Service)**:
@@ -432,7 +432,7 @@ The skill an External Service carries to teach Agents what it is for and how to 
 _Avoid_: Integration skill, Connector skill
 
 **Service settings (Agent)**:
-The values of one External Service's Project form, other than its targets, that a Custom Agent writes into every Project created from it, held beside the Service skill it carries and set by whoever manages the Agent and may configure Projects' External Services. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it; its targets are still picked in the Project, and a later change to the settings reaches no existing Project.
+The values of one External Service's Project form that an Agent writes into every Project created from it — targets such as a repository or a board included, but never a secret or a generated value, which each Project gets for itself — held beside the Service skill it carries and set by whoever manages the Agent and may configure Projects' External Services. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it, and a later change to the settings reaches no existing Project.
 _Avoid_: Agent defaults, Default configuration, Service profile
 
 **Service host**:
@@ -508,7 +508,7 @@ The per-ProjectEnvironment `gw-` token a pod holds: the one key every pod has fo
 _Avoid_: API key (collides with API Token); Pod token; Platform-api key (retired: a pod has one key)
 
 **Agent Caller**:
-A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only at the Public API External Service's Service host: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the kinds of work its Project configuration turns on. It reads the Skills and Custom Agents that person can see but only the Projects its own Project created, and changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it; it keeps no more Projects than its Project configuration allows, and a chain of Projects creating Projects stops at depth two.
+A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only at the Public API External Service's Service host: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the kinds of work its Project configuration turns on. It reads the Skills and Custom Agents that person can see but only the Projects its own Project created or its Project configuration names as Other Projects, which it may also open and restart but never delete, and changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it; it keeps no more Projects than its Project configuration allows, and a chain of Projects creating Projects stops at depth two.
 _Avoid_: Bot (a service account is an ordinary user); Machine user; Pod identity (the identity is the human's)
 
 **Error**:

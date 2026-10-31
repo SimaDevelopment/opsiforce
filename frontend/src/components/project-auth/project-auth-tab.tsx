@@ -4,10 +4,10 @@ import { Button } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Spinner } from '~/components/ui/spinner';
 import type { ProjectAuthMode, ProjectAuthOidcConfig } from '~/api/client';
-import { AuthModeSelector } from './auth-mode-selector';
+import { AuthModeSelector, type AuthSelection } from './auth-mode-selector';
 import { OidcForm } from './oidc-form';
 import { BypassPathsEditor } from './bypass-paths-editor';
-import { SignInProviderPicker } from './sign-in-provider-picker';
+import { ForwardAccessTokenToggle } from './forward-access-token-toggle';
 import { useSignInProviderOptions } from '~/api/sign-in-providers';
 import { useProjectAuth } from './use-project-auth';
 
@@ -66,7 +66,7 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
   const [draftBypassPaths, setDraftBypassPaths] = createSignal<string[]>([]);
   const [draftProviderId, setDraftProviderId] = createSignal<string | null>(null);
   const [draftProviderForward, setDraftProviderForward] = createSignal(false);
-  const providerOptions = useSignInProviderOptions({ enabled: () => draftMode() === 'provider' });
+  const providerOptions = useSignInProviderOptions();
   const [saveAttempted, setSaveAttempted] = createSignal(false);
   const [confirmOpen, setConfirmOpen] = createSignal(false);
 
@@ -152,6 +152,11 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
     }
   });
 
+  const selectAccess = (selection: AuthSelection) => {
+    setDraftMode(selection.mode);
+    setDraftProviderId(selection.signInProviderId);
+  };
+
   const reset = () => {
     setDraftMode(serverMode());
     setDraftConfig(serverConfig());
@@ -163,14 +168,19 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
   return (
     <div class="space-y-4">
       <Show
-        when={!query.isLoading}
+        when={!query.isLoading && !providerOptions.isPending}
         fallback={
           <div class="py-6">
             <Spinner label="Loading auth settings…" />
           </div>
         }
       >
-        <AuthModeSelector value={draftMode()} onChange={setDraftMode} disabled={props.disabled || mutation.isPending} />
+        <AuthModeSelector
+          value={{ mode: draftMode(), signInProviderId: draftProviderId() }}
+          providers={providerOptions.data ?? []}
+          onChange={selectAccess}
+          disabled={props.disabled || mutation.isPending}
+        />
 
         <Show when={draftMode() === 'manual'}>
           <div class="pt-2 border-t border-border">
@@ -186,11 +196,9 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
 
         <Show when={draftMode() === 'provider'}>
           <div class="pt-2 border-t border-border">
-            <SignInProviderPicker
-              value={draftProviderId()}
-              onChange={setDraftProviderId}
-              forwardAccessToken={draftProviderForward()}
-              onForwardAccessTokenChange={setDraftProviderForward}
+            <ForwardAccessTokenToggle
+              checked={draftProviderForward()}
+              onChange={setDraftProviderForward}
               disabled={props.disabled || mutation.isPending}
             />
           </div>

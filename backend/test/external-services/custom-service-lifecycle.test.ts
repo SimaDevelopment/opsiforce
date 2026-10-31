@@ -230,7 +230,7 @@ describe('disabling and enabling a Custom External Service', () => {
     );
     pods().markPodReady(podName, '127.0.0.1');
     await waitFor(async () => (await serviceEnvironmentRow(service.projectEnvironmentId))?.status === 'active');
-    app.get(AppReadinessService).markServing(service.projectEnvironmentId);
+    app.get(AppReadinessService).markServing(service.projectEnvironmentId, service.builderChatId);
 
     const call = await listCards();
     expect(call.status).toBe(200);
@@ -730,7 +730,7 @@ describe("deleting a service whose Test Project's Development is asleep", () => 
     });
     pods.markPodReady(podName, '127.0.0.1');
     await waitFor(async () => (await serviceEnvironmentRow(development.projectEnvironmentId))?.status !== 'suspended');
-    app.get(AppReadinessService).markServing(development.projectEnvironmentId);
+    app.get(AppReadinessService).markServing(development.projectEnvironmentId, draft.builderChatId);
 
     expect((await deleted).statusCode).toBe(204);
     expect(

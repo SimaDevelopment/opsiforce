@@ -27,10 +27,12 @@ import {
   RowList,
   SearchInput,
   SortSelect,
+  KIND_ICONS,
+  type FilterChipOption,
 } from '~/components/store/store-list';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
-import { Cable, ChevronRight, Plus, Upload } from '~/components/icons';
+import { Ban, Cable, ChevronRight, CircleDashed, Plus, Upload, UserRound, Wrench } from '~/components/icons';
 import { SORT_OPTIONS, createSearchDraft, sortStoreRows, validateSort, type StoreSort } from './store-filters';
 
 export const EXTERNAL_SERVICE_FILTERS = [
@@ -60,14 +62,14 @@ export function validateExternalServicesSearch(
 
 type Audience = 'everyone' | 'operators' | 'tenantAdmins';
 
-const FILTER_OPTIONS: { id: ExternalServiceFilter; label: string; audience: Audience }[] = [
-  { id: 'all', label: 'All', audience: 'everyone' },
-  { id: 'mine', label: 'Created by me', audience: 'tenantAdmins' },
-  { id: 'built_in', label: 'Built-in', audience: 'everyone' },
-  { id: 'custom', label: 'Custom', audience: 'everyone' },
-  { id: 'not_published', label: 'Not published', audience: 'tenantAdmins' },
-  { id: 'needs_setup', label: 'Needs setup', audience: 'operators' },
-  { id: 'disabled', label: 'Disabled', audience: 'tenantAdmins' },
+const FILTER_OPTIONS: (FilterChipOption<ExternalServiceFilter> & { audience: Audience })[] = [
+  { id: 'all', label: 'All', icon: KIND_ICONS.all, audience: 'everyone' },
+  { id: 'mine', label: 'Created by me', icon: UserRound, audience: 'tenantAdmins' },
+  { id: 'built_in', label: 'Built-in', icon: KIND_ICONS.built_in, audience: 'everyone' },
+  { id: 'custom', label: 'Custom', icon: KIND_ICONS.custom, audience: 'everyone' },
+  { id: 'not_published', label: 'Not published', icon: CircleDashed, audience: 'tenantAdmins' },
+  { id: 'needs_setup', label: 'Needs setup', icon: Wrench, audience: 'operators' },
+  { id: 'disabled', label: 'Disabled', icon: Ban, audience: 'tenantAdmins' },
 ];
 
 interface ServiceRow extends ExternalServiceSummary {

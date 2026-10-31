@@ -18,10 +18,11 @@ import {
 import { ServiceSkillAvailability } from '../store/service-skill-availability';
 import {
   fieldValueSettingProblems,
-  ServiceSwitchCatalog,
+  ServiceSettingsCatalog,
   settingsWithinGrants,
-  type ServiceSwitches,
-} from '../store/service-switch-catalog';
+  type ProjectlessOptionsAnswer,
+  type SettableManifest,
+} from '../store/service-settings-catalog';
 import { serviceSkillUnavailable, skillRetired, visibilityIncoherent } from '../store/store-errors';
 import { assertSkillVisibleToUser, isRetiredSkill, isServiceSkill, type SkillRow } from '../store/skill-visibility';
 import { packageSkillNames } from '../store/skill-tree';
@@ -35,11 +36,11 @@ import { serviceSettingsLeftOut, serviceSettingsOfUnavailableService, type Agent
 import { canEditAgent } from './agent-visibility';
 import { ModelProvidersService } from '../model-provider/model-provider.service';
 import {
-  builtInKeepsProjectConfiguration,
   duplicateSkillName,
   modelUnreachable,
   notPublishable,
   fieldSettingsNeedProjectPermission,
+  serviceSettingsOptionsNeedProjectPermission,
   serviceSettingsInvalid,
   serviceSettingsUnavailable,
   shippedSkillName,
@@ -81,7 +82,7 @@ export class AgentProfileService {
     private readonly templates: AgentTemplateStore,
     private readonly modelProviders: ModelProvidersService,
     private readonly serviceSkillAvailability: ServiceSkillAvailability,
-    private readonly serviceSwitches: ServiceSwitchCatalog
+    private readonly serviceCatalog: ServiceSettingsCatalog
   ) {}
 
   private async serviceAvailable(tenantId: string, externalServiceId: string): Promise<boolean> {
@@ -122,7 +123,31 @@ export class AgentProfileService {
 
   async listSkills(agent: AgentRow, caller: AgentCaller): Promise<AgentProfileSkillResponse[]> {
     const profile = await this.targetProfile(agent, caller.tenantId);
-    return (await this.repository.skillsOf([profile.id])).get(profile.id) ?? [];
+    return (await this.skillsOfProfiles(caller.tenantId, [profile.id])).get(profile.id) ?? [];
+  }
+
+  async skillsOfProfiles(tenantId: string, profileIds: string[]): Promise<Map<string, AgentProfileSkillResponse[]>> {
+    const byProfile = await this.repository.skillsOf(profileIds);
+    const carriesServiceSkill = [...byProfile.values()].some((carried) =>
+      carried.some((skill) => skill.externalServiceId !== null)
+    );
+    const connectedByDefault = new Set(
+      carriesServiceSkill
+        ? (await this.serviceCatalog.availableServices(tenantId))
+            .filter((service) => service.manifest.connectedByDefault)
+            .map((service) => service.id)
+        : []
+    );
+    return new Map(
+      [...byProfile].map(([profileId, carried]) => [
+        profileId,
+        carried.map((skill) => ({
+          ...skill,
+          serviceConnectedByDefault:
+            skill.externalServiceId !== null && connectedByDefault.has(skill.externalServiceId),
+        })),
+      ])
+    );
   }
 
   async setSkill(
@@ -186,9 +211,35 @@ export class AgentProfileService {
     return this.listSkills(agent, caller);
   }
 
-  async serviceSettings(agent: AgentRow, caller: AgentCaller, skillId: string): Promise<AgentServiceSettingsView> {
+  async serviceSettings(
+    agent: AgentRow,
+    caller: AgentCaller,
+    skillId: string,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<AgentServiceSettingsView> {
     const { service, pin } = await this.carriedService(agent, caller, skillId);
-    return { service, settings: pin.serviceSettings };
+    return {
+      service,
+      settings: pin.serviceSettings,
+      serviceConfigurationOptions:
+        this.isProfileWritable(agent, caller) && grants.canConfigureProjects
+          ? await this.serviceCatalog.serviceConfigurationOptions(caller.tenantId, service.id)
+          : [],
+    };
+  }
+
+  async serviceSettingsOptions(
+    agent: AgentRow,
+    caller: AgentCaller,
+    skillId: string,
+    name: string,
+    body: unknown,
+    grants: { canConfigureProjects: boolean }
+  ): Promise<ProjectlessOptionsAnswer> {
+    this.assertProfileWritable(agent, caller);
+    const { service, pin } = await this.carriedService(agent, caller, skillId);
+    if (!grants.canConfigureProjects) throw serviceSettingsOptionsNeedProjectPermission(pin.name);
+    return this.serviceCatalog.callProjectlessOptions(caller.tenantId, service.id, name, body, caller.userId);
   }
 
   async setServiceSettings(
@@ -221,7 +272,7 @@ export class AgentProfileService {
         continue;
       }
       const service = externalServiceId
-        ? await this.serviceSwitches.availableService(tenantId, externalServiceId)
+        ? await this.serviceCatalog.availableService(tenantId, externalServiceId)
         : null;
       if (!service) {
         notes.push(serviceSettingsOfUnavailableService(name));
@@ -238,7 +289,6 @@ export class AgentProfileService {
   }
 
   private async carriedService(agent: AgentRow, caller: AgentCaller, skillId: string) {
-    if (agent.origin === 'built_in') throw builtInKeepsProjectConfiguration(agent.displayName ?? agent.name);
     const profile = await this.targetProfile(agent, caller.tenantId);
     const [pin] = await db
       .select({
@@ -253,7 +303,7 @@ export class AgentProfileService {
     if (!pin?.externalServiceId) {
       throw new NotFoundException(`Agent \`${agent.name}\` carries no Service skill ${skillId}`);
     }
-    const service = await this.serviceSwitches.availableService(caller.tenantId, pin.externalServiceId);
+    const service = await this.serviceCatalog.availableService(caller.tenantId, pin.externalServiceId);
     if (!service) throw serviceSettingsUnavailable(pin.name);
     return { service, pin, profile };
   }
@@ -346,10 +396,13 @@ export class AgentProfileService {
   }
 
   assertProfileWritable(agent: AgentRow, caller: AgentCaller): void {
-    if (agent.origin === 'built_in') return;
-    if (!canEditAgent(agent, caller.userId)) {
+    if (!this.isProfileWritable(agent, caller)) {
       throw new ForbiddenException({ code: 'not_editable', message: `Agent \`${agent.name}\` cannot be edited` });
     }
+  }
+
+  private isProfileWritable(agent: AgentRow, caller: AgentCaller): boolean {
+    return agent.origin === 'built_in' || canEditAgent(agent, caller.userId);
   }
 
   private async resolveVersion(skill: SkillRow, versionId: string | undefined): Promise<string> {
@@ -368,15 +421,16 @@ export class AgentProfileService {
 }
 
 function submittedFieldValueSettings(
-  manifest: ServiceSwitches,
+  manifest: SettableManifest,
   dto: SetServiceSettingsDto,
   skillName: string,
   grants: { canConfigureProjects: boolean }
-): AgentServiceSettings {
+): AgentServiceSettings | null {
   if (!grants.canConfigureProjects) throw fieldSettingsNeedProjectPermission(skillName);
   const values = dto?.values;
-  if (typeof values !== 'object' || values === null || Array.isArray(values)) {
-    throw serviceSettingsInvalid(['values must be an object of Project-form field values']);
+  if (values === null) return null;
+  if (typeof values !== 'object' || Array.isArray(values)) {
+    throw serviceSettingsInvalid(['values must be an object of Project-form field values, or null to clear them']);
   }
   const problems = fieldValueSettingProblems(manifest, values as Record<string, unknown>);
   if (problems.length > 0) throw serviceSettingsInvalid(problems);

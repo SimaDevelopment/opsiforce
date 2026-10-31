@@ -2,7 +2,12 @@ import { Global, Module } from '@nestjs/common';
 import { db } from '../../db';
 import { externalServices } from '../../db/schema';
 import { ServiceSkillAvailability } from '../../src/store/service-skill-availability';
-import { ServiceSwitchCatalog, type SwitchableService } from '../../src/store/service-switch-catalog';
+import {
+  ServiceSettingsCatalog,
+  type ServiceConfigurationOptions,
+  type ProjectlessOptionsAnswer,
+  type SettableService,
+} from '../../src/store/service-settings-catalog';
 
 class EveryServiceAvailable extends ServiceSkillAvailability {
   async availableServiceIds(): Promise<ReadonlySet<string>> {
@@ -11,9 +16,25 @@ class EveryServiceAvailable extends ServiceSkillAvailability {
   }
 }
 
-class NoServiceSwitches extends ServiceSwitchCatalog {
-  availableService(): Promise<SwitchableService | null> {
+class NoSettableServices extends ServiceSettingsCatalog {
+  availableServices(): Promise<SettableService[]> {
+    return Promise.resolve([]);
+  }
+
+  availableService(): Promise<SettableService | null> {
     return Promise.resolve(null);
+  }
+
+  tenantService(): Promise<SettableService | null> {
+    return Promise.resolve(null);
+  }
+
+  serviceConfigurationOptions(): Promise<ServiceConfigurationOptions[]> {
+    return Promise.resolve([]);
+  }
+
+  callProjectlessOptions(): Promise<ProjectlessOptionsAnswer> {
+    return Promise.reject(new Error('No External Service is available'));
   }
 }
 
@@ -21,8 +42,8 @@ class NoServiceSwitches extends ServiceSwitchCatalog {
 @Module({
   providers: [
     { provide: ServiceSkillAvailability, useClass: EveryServiceAvailable },
-    { provide: ServiceSwitchCatalog, useClass: NoServiceSwitches },
+    { provide: ServiceSettingsCatalog, useClass: NoSettableServices },
   ],
-  exports: [ServiceSkillAvailability, ServiceSwitchCatalog],
+  exports: [ServiceSkillAvailability, ServiceSettingsCatalog],
 })
 export class EveryServiceAvailableModule {}
