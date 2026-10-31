@@ -16,6 +16,7 @@ export function SidebarWorkspaceGroup(props: {
   index: number;
   folded: boolean;
   search: string;
+  filtering: boolean;
   projects: Project[];
   activeProjectId: string | undefined;
   isFolderExpanded: (folderId: string) => boolean;
@@ -81,11 +82,13 @@ export function SidebarWorkspaceGroup(props: {
     }
 
     if (!searchActive()) {
-      const folderView = folderList.map((folder) => ({
-        folder,
-        projects: byFolder.get(folder.id) ?? [],
-        autoExpanded: false,
-      }));
+      const folderView = folderList
+        .filter((folder) => !props.filtering || byFolder.has(folder.id))
+        .map((folder) => ({
+          folder,
+          projects: byFolder.get(folder.id) ?? [],
+          autoExpanded: false,
+        }));
       return { folders: folderView, loose, expanded: !props.folded };
     }
 
@@ -97,7 +100,7 @@ export function SidebarWorkspaceGroup(props: {
         return {
           folder,
           projects: nameMatch ? folderProjects : matching,
-          visible: nameMatch || matching.length > 0,
+          visible: (nameMatch && (!props.filtering || folderProjects.length > 0)) || matching.length > 0,
         };
       })
       .filter((entry) => entry.visible)

@@ -362,6 +362,7 @@ export function ProjectSidebar(props: { search: string }) {
                   index={idx()}
                   folded={isFolded(ws.id)}
                   search={props.search}
+                  filtering={filters.active()}
                   projects={groupedProjects().byWs.get(ws.id) ?? []}
                   activeProjectId={activeProjectId()}
                   isFolderExpanded={isFolderExpanded}
