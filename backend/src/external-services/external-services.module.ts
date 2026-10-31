@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DiscoveryModule } from '@nestjs/core';
 import { ServiceSkillSource } from '../delivery/service-skill-source';
 import { ServiceSkillAvailability } from '../store/service-skill-availability';
-import { ServiceSwitchCatalog } from '../store/service-switch-catalog';
+import { ServiceSettingsCatalog } from '../store/service-settings-catalog';
 import { GatewayModule } from '../gateway/gateway.module';
 import { PodModule } from '../pod/pod.module';
 import { ProjectEnvironmentModule } from '../project-environment/project-environment.module';
@@ -68,7 +68,7 @@ import { RetiredSkillSwapUpgrade } from './upgrade/retired-skill-swap-upgrade';
 import { WhatsappUpgrade } from './upgrade/whatsapp-upgrade';
 import { PROJECT_LIFECYCLE } from '../project/project-lifecycle';
 import { ExternalServicesProjectLifecycle } from './external-services-project-lifecycle';
-import { AvailableServiceSwitches } from './knowledge/available-service-switches';
+import { AvailableServiceSettings } from './knowledge/available-service-settings';
 
 @Global()
 @Module({
@@ -114,8 +114,8 @@ import { AvailableServiceSwitches } from './knowledge/available-service-switches
     ServiceSkills,
     { provide: ServiceSkillSource, useExisting: ServiceSkills },
     { provide: ServiceSkillAvailability, useExisting: ServiceSkills },
-    AvailableServiceSwitches,
-    { provide: ServiceSwitchCatalog, useExisting: AvailableServiceSwitches },
+    AvailableServiceSettings,
+    { provide: ServiceSettingsCatalog, useExisting: AvailableServiceSettings },
     ServiceSkillVersions,
     ServiceSkillReach,
     ConfigurationsAtCreate,
@@ -155,7 +155,7 @@ import { AvailableServiceSwitches } from './knowledge/available-service-switches
     ServiceDefaultEnvironments,
     ServiceSkillSource,
     ServiceSkillAvailability,
-    ServiceSwitchCatalog,
+    ServiceSettingsCatalog,
     ServiceSkillReach,
     PROJECT_LIFECYCLE,
     PublicApiSettings,

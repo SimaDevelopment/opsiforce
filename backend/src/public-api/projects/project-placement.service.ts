@@ -25,6 +25,10 @@ function unknownReference(field: keyof typeof REFERENCE_LABELS, id: string): Val
   };
 }
 
+function accessOf(caller: Caller): WorkspaceAccess {
+  return { tenantId: caller.tenant.id, userId: caller.user.platformId, canManageWorkspaces: false };
+}
+
 @Injectable()
 export class ProjectPlacementService {
   constructor(
@@ -33,12 +37,12 @@ export class ProjectPlacementService {
     private readonly tenants: TenantService
   ) {}
 
+  async isMemberOf(caller: Caller, workspaceId: string): Promise<boolean> {
+    return (await this.visibleWorkspaceId(workspaceId, accessOf(caller))) !== null;
+  }
+
   async resolve(caller: Caller, body: CreateProject): Promise<ProjectPlacement> {
-    const access: WorkspaceAccess = {
-      tenantId: caller.tenant.id,
-      userId: caller.user.platformId,
-      canManageWorkspaces: false,
-    };
+    const access = accessOf(caller);
     const privateWorkspacesEnabled = await this.tenants.isPrivateWorkspaceEnabled(access.tenantId);
     const personalIsDefault = caller.user.kind === 'user' && privateWorkspacesEnabled;
     const named = body.workspaceId;

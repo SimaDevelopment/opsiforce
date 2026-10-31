@@ -325,11 +325,12 @@ export function callDevelopmentServiceForm(
   return api.post<unknown>(`${developmentPath(id)}/${route}/${encodeURIComponent(name)}`, body);
 }
 
-export function useDevelopmentService(id: () => string, enabled: () => boolean) {
+export function useDevelopmentService(id: () => string, enabled: () => boolean, refetchIntervalMs?: number) {
   return createAppQuery(() => ({
     queryKey: externalServiceViewKeys.developmentView(id()),
     queryFn: () => api.get<DevelopmentServiceView>(developmentPath(id())),
     enabled: enabled(),
+    refetchInterval: refetchIntervalMs,
     retry: false,
   }));
 }

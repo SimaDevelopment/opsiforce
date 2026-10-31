@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projects } from '../../db/schema';
 import { MAX_PROJECT_CHAIN_DEPTH } from './project.constants';
@@ -15,14 +15,6 @@ export class ProjectProvenanceRepository {
   async findKind(projectId: string): Promise<ProjectKind | null> {
     const [row] = await db.select({ kind: projects.kind }).from(projects).where(eq(projects.id, projectId));
     return row?.kind ?? null;
-  }
-
-  async isCreatedByProject(projectId: string, creatingProjectId: string): Promise<boolean> {
-    const [row] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.createdByProjectId, creatingProjectId)));
-    return row !== undefined;
   }
 
   async chainDepth(projectId: string): Promise<number> {

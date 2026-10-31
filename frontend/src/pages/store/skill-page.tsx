@@ -43,6 +43,7 @@ import {
   RowLink,
   RowList,
   SectionTitle,
+  VersionTag,
   VersionUpdateBadge,
   VisibilityBadge,
 } from '~/components/store/store-list';
@@ -162,52 +163,52 @@ export function SkillPage(props: SkillPageProps) {
 
                 <div class="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
                   <Show when={latestVersion() > 0} fallback={<NoVersionYet canBuild={canManage() && isCustom()} />}>
-                  <div class="min-w-0 space-y-6">
-                    <section>
-                      <SectionTitle>Contents · v{selectedVersion()}</SectionTitle>
-                      <Show
-                        when={!files.isError}
-                        fallback={<ErrorState message="This version's files could not be loaded." />}
-                      >
+                    <div class="min-w-0 space-y-6">
+                      <section>
+                        <SectionTitle>Contents · v{selectedVersion()}</SectionTitle>
                         <Show
-                          when={files.data}
-                          fallback={
-                            <div class="flex justify-center py-8">
-                              <Spinner />
-                            </div>
-                          }
+                          when={!files.isError}
+                          fallback={<ErrorState message="This version's files could not be loaded." />}
                         >
-                          {(tree) => <SkillContent files={tree()} selected={props.file} onSelect={props.onFile} />}
+                          <Show
+                            when={files.data}
+                            fallback={
+                              <div class="flex justify-center py-8">
+                                <Spinner />
+                              </div>
+                            }
+                          >
+                            {(tree) => <SkillContent files={tree()} selected={props.file} onSelect={props.onFile} />}
+                          </Show>
                         </Show>
-                      </Show>
-                    </section>
+                      </section>
 
-                    <section>
-                      <SectionTitle>Versions</SectionTitle>
-                      <Show when={versions.data}>
-                        {(rows) => (
-                          <VersionList
-                            versions={rows()}
-                            selected={selectedVersion()}
-                            latest={latestVersion()}
-                            onSelect={(version) => props.onVersion(version === latestVersion() ? undefined : version)}
-                          />
-                        )}
-                      </Show>
-                      <Show when={isCustom()}>
-                        <p class="mt-2 text-xs text-muted-foreground">
-                          Every save publishes the next version. Agents stay on the version they pinned until someone
-                          upgrades them.
-                        </p>
-                      </Show>
-                      <Show when={loaded().externalServiceId}>
-                        <p class="mt-2 text-xs text-muted-foreground">
-                          Read-only: each publish of its External Service lays the next version, and every Agent
-                          carrying it follows the latest.
-                        </p>
-                      </Show>
-                    </section>
-                  </div>
+                      <section>
+                        <SectionTitle>Versions</SectionTitle>
+                        <Show when={versions.data}>
+                          {(rows) => (
+                            <VersionList
+                              versions={rows()}
+                              selected={selectedVersion()}
+                              latest={latestVersion()}
+                              onSelect={(version) => props.onVersion(version === latestVersion() ? undefined : version)}
+                            />
+                          )}
+                        </Show>
+                        <Show when={isCustom()}>
+                          <p class="mt-2 text-xs text-muted-foreground">
+                            Every save publishes the next version. Agents stay on the version they pinned until someone
+                            upgrades them.
+                          </p>
+                        </Show>
+                        <Show when={loaded().externalServiceId}>
+                          <p class="mt-2 text-xs text-muted-foreground">
+                            Read-only: each publish of its External Service lays the next version, and every Agent
+                            carrying it follows the latest.
+                          </p>
+                        </Show>
+                      </section>
+                    </div>
                   </Show>
 
                   <aside class="space-y-6">
@@ -336,10 +337,7 @@ function SkillHeader(props: {
             </a>
           </Show>
           <Show when={editable()}>
-            <OpenBuilderButton
-              subject={{ type: 'skill', id: props.skill.id }}
-              disabled={props.skill.disabled}
-            />
+            <OpenBuilderButton subject={{ type: 'skill', id: props.skill.id }} disabled={props.skill.disabled} />
           </Show>
           <Show when={props.canManage && !props.skill.retired}>
             <SkillActionsMenu skill={props.skill} agents={props.agents} />
@@ -571,7 +569,10 @@ function DeleteSkillDialog(props: {
       <DialogContent>
         <DialogTitle>Delete {props.skill.name}?</DialogTitle>
         <DialogDescription>
-          <Show when={inUse()} fallback={<NotDisabledYet disabled={props.skill.disabled} unpublished={unpublished()} />}>
+          <Show
+            when={inUse()}
+            fallback={<NotDisabledYet disabled={props.skill.disabled} unpublished={unpublished()} />}
+          >
             <Show
               when={blockers().length > 0}
               fallback="It can't be deleted while an agent still pins it, and the agent holding it isn't one you can open. Disable it instead."
@@ -665,7 +666,7 @@ function VersionList(props: {
               )}
             >
               <span class="flex items-center gap-2">
-                <span class="font-medium tabular-nums">v{version.version}</span>
+                <VersionTag version={version.version} />
                 <Show when={version.version === props.latest}>
                   <Badge variant="success">Latest</Badge>
                 </Show>
@@ -717,13 +718,10 @@ function OnAgents(props: { skillId: string; agents: SkillAgentUsage[]; latest: n
               <RowLink href={agentHref(agent.id, props.skillId)} class="px-3 py-2.5 text-sm">
                 <Bot class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span class="min-w-0 flex-1 truncate">{agent.displayName ?? agent.name}</span>
-                <Show
-                  when={!agent.shipped}
-                  fallback={<span class="text-xs tabular-nums text-muted-foreground">v{props.latest}</span>}
-                >
+                <Show when={!agent.shipped} fallback={<VersionTag version={props.latest} />}>
                   <Show when={split() || !agent.outdated}>
-                    <span class="text-xs tabular-nums text-muted-foreground">
-                      {agent.pinnedVersions.map((version) => `v${version}`).join(' · ')}
+                    <span class="flex flex-wrap gap-1">
+                      <For each={agent.pinnedVersions}>{(version) => <VersionTag version={version} />}</For>
                     </span>
                   </Show>
                 </Show>

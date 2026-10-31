@@ -2,6 +2,8 @@ import { createEffect, createSignal } from 'solid-js';
 import type { SearchSchemaInput } from '@tanstack/solid-router';
 import { debounce } from '@solid-primitives/scheduled';
 import { STORE_FILTERS, type StoreFilter } from '~/api/store';
+import { Ban, Lock, UserRound } from '~/components/icons';
+import { KIND_ICONS, type FilterChipOption } from '~/components/store/store-list';
 
 export const STORE_SORTS = ['name', 'newest'] as const;
 
@@ -55,16 +57,16 @@ export function sortStoreRows<T>(
   });
 }
 
-const FILTER_OPTIONS: { id: StoreFilter; label: string; managersOnly?: boolean }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'mine', label: 'Created by me', managersOnly: true },
-  { id: 'built_in', label: 'Built-in' },
-  { id: 'custom', label: 'Custom' },
-  { id: 'private', label: 'Private' },
-  { id: 'disabled', label: 'Disabled', managersOnly: true },
+const FILTER_OPTIONS: (FilterChipOption<StoreFilter> & { managersOnly?: boolean })[] = [
+  { id: 'all', label: 'All', icon: KIND_ICONS.all },
+  { id: 'mine', label: 'Created by me', icon: UserRound, managersOnly: true },
+  { id: 'built_in', label: 'Built-in', icon: KIND_ICONS.built_in },
+  { id: 'custom', label: 'Custom', icon: KIND_ICONS.custom },
+  { id: 'private', label: 'Private', icon: Lock },
+  { id: 'disabled', label: 'Disabled', icon: Ban, managersOnly: true },
 ];
 
-export function filterOptions(canManage: boolean): { id: StoreFilter; label: string }[] {
+export function filterOptions(canManage: boolean): FilterChipOption<StoreFilter>[] {
   return FILTER_OPTIONS.filter((option) => canManage || !option.managersOnly);
 }
 

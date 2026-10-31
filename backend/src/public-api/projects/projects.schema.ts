@@ -13,9 +13,9 @@ export const OpencodeDescriptorSchema = z
     baseUrl: z
       .string()
       .describe(
-        "Origin-relative base URL of this environment's opencode runtime; resolve it against the origin you called this API on"
+        "Base URL of this environment's opencode runtime; resolve it against the origin you called this API on. A call made with a Project's Gateway Key on public-api's Service host gets it absolute, on the runtime proxy that Project's pod reaches, which resolving leaves unchanged"
       ),
-    openapiUrl: z.string().describe("The runtime's own OpenAPI document, origin-relative"),
+    openapiUrl: z.string().describe("The runtime's own OpenAPI document, relative or absolute as baseUrl is"),
     sessionId: z
       .string()
       .nullable()

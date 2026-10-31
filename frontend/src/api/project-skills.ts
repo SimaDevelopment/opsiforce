@@ -14,6 +14,8 @@ export interface EnvironmentSkill {
   state: EnvironmentSkillState;
   service: string | null;
   carried: boolean;
+  skillId: string | null;
+  origin: string | null;
 }
 
 export interface EnvironmentSkills {

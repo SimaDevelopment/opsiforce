@@ -1,0 +1,22 @@
+{
+  "id": "20261030_runtime_base_url",
+  "requiresPodRecreate": false,
+  "operations": [
+    {
+      "type": "copy",
+      "source": "../../template/scripts/api.sh",
+      "target": "scripts/api.sh",
+      "managedChecksums": [
+        "7e3b66b5663c063dcdecb99454f57336a9b12f8cbeb16230f299ca88c073ae50",
+        "8ec16491949289f96faa2a2bc446d1a1a9c6ca918e6b30b03147426a5985505d",
+        "a086ee29d99eaf0e1e6a746f945003bfd2c16d454731f85ceb52ccabe93015ea",
+        "a9fdae225e8e1d8301803c6dce150e6058ed3f737a4745e57e41e7c7bce2a552",
+        "ab447750b7bdb1d6747ac260bfbc845fb2ff5ea5b7ea1de4895747fbfd0b2a70",
+        "e08fbd5aa801e8f824c722172755c495d5935c06b2bc43d5c4dfbad6be81a925",
+        "f2e6b145d1a574d1d61d3a19d104181dc245480e58fc6e7f93c72bd223034f30",
+        "fb4bb5206aff7c35b2652818e5354df24c4ef75217a5395981d715e9a512c994",
+        "fe8802b15450373f756e190ceeecf0ec1c758e5739ee7cc9b101655f3d8255b7"
+      ]
+    }
+  ]
+}

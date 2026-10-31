@@ -10,7 +10,7 @@ adrs: [0044]
 ## How it works
 
 - Each [ProjectEnvironment](../../GLOSSARY.md) of a [Project](../../GLOSSARY.md) holds one [Gateway Key](../../GLOSSARY.md), its `service` key; the backend validates it, resolves the Project, ProjectEnvironment and tenant, and reaches outside systems itself with credentials it keeps, so an App never holds a provider key ([ADR-0044](../adr/0044-apps-reach-non-llm-services-through-the-backend-owned-service-gateway.md)).
-- The same token reaches the platform API only on `public-api`'s Service host, and a child's runtime through the runtime proxy at `OPSIFORCE_RUNTIME_PROXY_URL` while its *Manage created Projects* setting is on; `/api/v1` itself answers 401 to it ([API Token](../public-api/api-token.md), [ADR-0087](../adr/0087-the-public-api-is-a-built-in-external-service-that-api-v1-itself-serves-and-pods-reach-it-only-through-its-service-host.md)).
+- The same token reaches the platform API only on `public-api`'s Service host, and a child's or an Other Project's runtime through the runtime proxy at `OPSIFORCE_RUNTIME_PROXY_URL` while its *Open and restart Projects* setting is on; `/api/v1` itself answers 401 to it ([API Token](../public-api/api-token.md), [ADR-0087](../adr/0087-the-public-api-is-a-built-in-external-service-that-api-v1-itself-serves-and-pods-reach-it-only-through-its-service-host.md)).
 - The endpoint is public to the cluster and authenticates on the token alone, because pods call it without the edge's identity headers; the gateway path is meant to be cluster-internal, so a leaked token is useless from the internet.
 - Outside systems are reached as [External Services](../../GLOSSARY.md) on their Service hosts, `https://<slug>.$EXTERNAL_SERVICES_HOST`, through the [Gate](../external-services/gate.md), which takes the same token in any request header. `POST /api/gateway` (`{service, payload}`) dispatches to a provider registry whose only provider is email, and the controller refuses `service: "email"` with `400`, so no call through it reaches a provider.
 - The `service` token is created with the Project, injected as `SERVICE_GATEWAY_API_KEY` next to `SERVICE_GATEWAY_URL`, and revoked by status on Project deletion; gateway keys live in their own table, never among the LLM virtual keys.
@@ -22,7 +22,7 @@ adrs: [0044]
 pod ──Bearer gw-… (SERVICE_GATEWAY_API_KEY)──┬─▶ /api/gateway/{schedules,app,agent}   Schedules, Go-live, Agent Status
                                              ├─▶ /api/gateway/{configuration,events} a service's configurations and Events
                                              ├─▶ <slug>.$EXTERNAL_SERVICES_HOST      the Gate, then the service
-                                             └─▶ OPSIFORCE_RUNTIME_PROXY_URL         a child's runtime (Manage created Projects on)
+                                             └─▶ OPSIFORCE_RUNTIME_PROXY_URL         a child's or Other Project's runtime (Open and restart Projects on)
 ```
 
 ## Code

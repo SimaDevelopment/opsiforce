@@ -27,6 +27,7 @@ import {
   type ProjectConfigurationSave,
 } from './project-configuration.store';
 import type { RemovedItemsNotice } from './removed-items';
+import type { ServiceConfigurationOptions } from '../../store/service-settings-catalog';
 import { rotationTarget } from './rotation';
 import { ServiceConfigurationStore } from './service-configuration.store';
 import { ServiceConsumers } from './service-consumers';
@@ -56,17 +57,6 @@ export interface ProjectServiceSummary extends ServiceSummary {
 export interface ProjectServiceList {
   agentId: string;
   services: ProjectServiceSummary[];
-}
-
-export interface ServiceConfigurationOption {
-  value: string;
-  label: string;
-}
-
-export interface ServiceConfigurationOptions {
-  list: string;
-  labelKey: string;
-  options: ServiceConfigurationOption[];
 }
 
 export interface ProjectServiceView extends ServiceSummary {
@@ -140,7 +130,7 @@ function templateValuesOf(
   return values;
 }
 
-function serviceConfigurationOptionsOf(
+export function serviceConfigurationOptionsOf(
   service: RegisteredService,
   serviceConfiguration: TolerantRead
 ): ServiceConfigurationOptions[] {

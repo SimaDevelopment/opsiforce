@@ -120,7 +120,7 @@ describe("the External Service Builder's lane on the gateway", () => {
   }
 
   describe('GET /_builder', () => {
-    it("tells the builder the Service host, Development's Webhook address and the missing required fields", async () => {
+    it("tells the builder the Service host, Development's Webhook address, the link to its configuration and the missing required fields", async () => {
       const res = await builderLane(app, development.key, {});
 
       expect(res.statusCode, res.body).toBe(200);
@@ -128,6 +128,7 @@ describe("the External Service Builder's lane on the gateway", () => {
         service: { id: service.id, slug: 'boards', serviceHost: `https://boards.${EXTERNAL_SERVICES_HOST}` },
         development: {
           webhookUrl: `${PUBLIC_URL}/api/external-services/webhooks/${service.id}/development`,
+          configurationLink: `${PUBLIC_URL}/store/external-services/${service.id}/builder?configure=development`,
           servable: true,
           serviceConfiguration: { saved: false, missing: ['apiToken'] },
         },

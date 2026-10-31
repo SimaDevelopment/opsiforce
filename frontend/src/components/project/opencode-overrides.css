@@ -36,6 +36,14 @@
   width: 100% !important;
   min-width: 0 !important;
   --container-session: 800px;
+  --shell-inline-inset: 0px;
+  --shell-top-inset: 0px;
+  --shell-bottom-inset: 0px;
+}
+
+.oc-chat-only [data-slot='session-chat-panel'] > div {
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 @media (min-width: 96rem) {

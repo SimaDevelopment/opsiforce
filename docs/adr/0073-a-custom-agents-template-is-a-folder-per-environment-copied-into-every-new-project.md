@@ -14,7 +14,7 @@ A Custom Agent's Projects need the same starting files every time: an App's star
 
 ## Save
 
-- The Builder drafts in a fixed `template/` folder at the root of its chat's workspace, and saves with `PUT /agents/:id/template`, which has no body. Only the Agent's own Builder chat pod may call it ([ADR-0062](0062-a-pod-calls-the-platform-api-as-the-human-who-created-its-project-bounded-to-what-it-created.md)'s gateway caller, whose Project is the Agent's Builder chat).
+- The Builder drafts in a fixed `template/` folder at the root of its chat's workspace, and saves with `PUT /agents/:id/template`, which has no body. Only the Agent's own Builder chat pod may call it ([ADR-0062](0062-a-pod-calls-the-platform-api-as-the-human-who-created-its-project-bounded-to-what-it-created-or-names.md)'s gateway caller, whose Project is the Agent's Builder chat).
 - A save mirrors `template/`: a file deleted there leaves the Template, and a missing or empty `template/` removes it. The backend copies into a staging folder while hashing, hashes the source again, renames the staging folder into `.versions/<hash>/` (or drops it when that version exists), and switches the Development link with one `rename()`. Saving the same content twice gives the same version.
 - Answers: **200** with the hash (or null), the saved files, the skipped paths and the warnings; **422** listing every refused path with its reason, saving nothing; **409** when `template/` changed during the copy, saving nothing.
 - There is no read-back route and no mount of Templates into any pod. `GET /agents/:id` carries `template: { hash } | null` per Environment, so the Store and the Builder can tell whether Production is behind Development.

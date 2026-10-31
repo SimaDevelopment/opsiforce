@@ -16,7 +16,26 @@ export interface ServiceConfigurationSource {
   labelKey: string;
 }
 
-export const reservedProjectConfigurationKeys = ['_labels'] as const;
+export const labelsKey = '_labels';
+
+export const reservedProjectConfigurationKeys = [labelsKey] as const;
+
+export type ValueLabels = Record<string, Record<string, string>>;
+
+const maxLabelLength = 200;
+
+export const wellFormedLabelsRule = `must map fields to {value: label} with labels of at most ${maxLabelLength} characters`;
+
+export function isWellFormedLabels(value: unknown): value is ValueLabels {
+  return (
+    isPlainObject(value) &&
+    Object.values(value).every(
+      (byValue) =>
+        isPlainObject(byValue) &&
+        Object.values(byValue).every((label) => typeof label === 'string' && label.length <= maxLabelLength)
+    )
+  );
+}
 
 export function placedFieldsOf(fields: readonly Field[], conditions: VisibleWhen[] = []): PlacedField[] {
   return fields.flatMap((field): PlacedField[] => {
@@ -36,9 +55,14 @@ export function valueFieldsOf(fields: readonly Field[]): ValueField[] {
     .filter(isValueField);
 }
 
-export function isTargetField(field: KeyedField): boolean {
+export function isPerProjectField(field: KeyedField): boolean {
   if (field.type === 'secret') return true;
   if (field.type === 'text' && field.generate !== undefined) return true;
+  if (field.type === 'list') return placedFieldsOf(field.item).some((placed) => isPerProjectField(placed.field));
+  return false;
+}
+
+export function isTargetField(field: KeyedField): boolean {
   if (field.type === 'list') return placedFieldsOf(field.item).some((placed) => isTargetField(placed.field));
   return 'options' in field && !Array.isArray(field.options);
 }
@@ -50,7 +74,7 @@ export function serviceSettingsFormOf(projectForm: readonly Field[]): Field[] {
       return fields.length > 0 ? [{ ...field, fields }] : [];
     }
     if (field.type === 'button' || (field.type === 'info' && field.call !== undefined)) return [];
-    return isTargetField(field) ? [] : [field];
+    return isPerProjectField(field) ? [] : [field];
   });
 }
 

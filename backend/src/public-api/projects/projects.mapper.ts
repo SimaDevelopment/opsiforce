@@ -9,7 +9,12 @@ function isoOrNull(value: Date | null): string | null {
   return value === null ? null : value.toISOString();
 }
 
-function toEnvironmentDto(row: EnvironmentRow, projectDisabled: boolean, publicUrls: PublicUrlService): EnvironmentDto {
+function toEnvironmentDto(
+  row: EnvironmentRow,
+  projectDisabled: boolean,
+  publicUrls: PublicUrlService,
+  runtimeOrigin: string
+): EnvironmentDto {
   return {
     id: row.id,
     name: environmentDisplayName(row),
@@ -21,8 +26,8 @@ function toEnvironmentDto(row: EnvironmentRow, projectDisabled: boolean, publicU
     publicUrl: publicUrls.publicUrlOnceLive(row),
     lastActiveAt: isoOrNull(row.lastActiveAt),
     opencode: {
-      baseUrl: runtimeBaseUrl(row.id),
-      openapiUrl: runtimeOpenapiUrl(row.id),
+      baseUrl: `${runtimeOrigin}${runtimeBaseUrl(row.id)}`,
+      openapiUrl: `${runtimeOrigin}${runtimeOpenapiUrl(row.id)}`,
       sessionId: row.sessionId,
     },
   };
@@ -33,7 +38,8 @@ export const ProjectMapper = {
     project: ProjectRow,
     environments: EnvironmentRow[],
     agentStatus: AgentStatus,
-    publicUrls: PublicUrlService
+    publicUrls: PublicUrlService,
+    runtimeOrigin: string
   ): ProjectDto => ({
     id: project.id,
     title: project.title,
@@ -57,6 +63,8 @@ export const ProjectMapper = {
     lastPromptAt: isoOrNull(project.lastPromptAt),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
-    environments: environments.map((environment) => toEnvironmentDto(environment, project.disabled, publicUrls)),
+    environments: environments.map((environment) =>
+      toEnvironmentDto(environment, project.disabled, publicUrls, runtimeOrigin)
+    ),
   }),
 };

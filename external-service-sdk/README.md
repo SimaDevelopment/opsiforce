@@ -45,7 +45,7 @@ A Service route's `ctx` has:
 - `ctx.service`: the service as a whole (`configuration()`, `projectConfigurations()`, `deliver()`, `count()`, `state`, `webhookUrl`, the copy's Webhook address from `$SERVICE_WEBHOOK_URL`).
 - `ctx.count(name, n)` adds to a declared counter, `ctx.note(fields)` adds fields to this request's Call log row.
 
-Form calls and save hooks run named handlers, never routes: `options: { name: (draft, ctx) => [{ value, label }] }`, `info`, `buttons` and `hooks: { onServiceConfigurationSaved, onProjectConfigurationSaved }`. `draft` is `{ form, values, query?, item? }`; `ctx.serviceConfiguration` is the draft itself for a Service-form call, so `upstream.fetch(ctx, …)` tests the values just typed. `webhook(request, ctx)` answers the service's Webhook address when `"inbound": true`; `service.deliver(event, { to })` stores Events for the ProjectEnvironments it names.
+Form calls and save hooks run named handlers, never routes: `options: { name: (draft, ctx) => [{ value, label }] }`, `info`, `buttons` and `hooks: { onServiceConfigurationSaved, onProjectConfigurationSaved }`. `draft` is `{ form, values, query?, item? }`; `ctx.serviceConfiguration` is the draft itself for a Service-form call, so `upstream.fetch(ctx, …)` tests the values just typed. A Project-form `options` handler may also be asked with no Project, for an Agent's Service settings: `ctx.projectConfiguration` is then `null`, so list what the Service configuration reaches. `webhook(request, ctx)` answers the service's Webhook address when `"inbound": true`; `service.deliver(event, { to })` stores Events for the ProjectEnvironments it names.
 
 ## Records
 

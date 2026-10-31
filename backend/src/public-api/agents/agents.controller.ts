@@ -66,7 +66,8 @@ export class AgentsController {
     'name-unavailable',
     'model-unknown',
     'model-unreachable',
-    'bad-request'
+    'bad-request',
+    'max-created-agents'
   )
   create(@Caller() caller: Caller, @Body({ schema: CreateAgentSchema }) body: CreateAgent): Promise<AgentDetailDto> {
     return this.agents.create(caller, body);

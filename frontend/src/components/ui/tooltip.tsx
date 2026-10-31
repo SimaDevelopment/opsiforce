@@ -16,7 +16,7 @@ function TooltipContent(props: ParentProps<ComponentProps<typeof Kobalte.Content
     <Kobalte.Portal>
       <Kobalte.Content
         class={cn(
-          'z-50 max-w-xs overflow-hidden rounded-md bg-popover px-2.5 py-1.5 text-xs leading-relaxed text-popover-foreground shadow-md border border-border',
+          'z-50 max-w-xs overflow-hidden rounded-md bg-zinc-800 px-2.5 py-1.5 text-xs leading-relaxed text-zinc-50 shadow-lg dark:bg-zinc-700',
           'animate-in fade-in-0 zoom-in-95 data-[closed]:animate-out data-[closed]:fade-out-0 data-[closed]:zoom-out-95',
           local.class
         )}

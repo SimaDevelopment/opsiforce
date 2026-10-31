@@ -62,7 +62,7 @@ provider ──any method webhooks/<service>──▶ Gate: resolve the copy, dr
 - When the backend restarts between queueing and ringing, the job survives in Redis and rings afterwards.
 - When the App's pod is asleep, the doorbell wakes it; an App can always catch up by selecting rows with `app_delivered_at IS NULL`.
 - When a delivery's store fails for a receiver, `POST /events` answers `500 {message}` after ringing for the stored ones; when the doorbell cannot be queued it answers `503 {message}`. `deliver()` throws on either, so a webhook handler that lets it throw answers the provider `502` and the provider retries; the repeat is stored once and still rings.
-- The Project dialog shows, for an enabled service with `"inbound": true`, how many of that environment's Events of the service the App has not taken (`app_delivered_at IS NULL`) and "App not wired" while the doorbell's not-wired mark is set (`GET …/services/<id>/event-delivery`).
+- The Project dialog's Events tab shows, for an enabled service with `"inbound": true`, how many of that environment's Events of the service the App has not taken (`app_delivered_at IS NULL`) and "App not wired" while the doorbell's not-wired mark is set (`GET …/services/<id>/event-delivery`).
 
 ## Code
 
