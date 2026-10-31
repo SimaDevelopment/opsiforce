@@ -15,7 +15,7 @@ import { projectDisplayTitle } from '~/lib/project-display';
  * permission, the one state where nothing moves until someone acts. Every
  * member of the Project sees it, since anyone can answer. Broken
  * and disabled projects are marked on their own rows instead, and a failed
- * run stays on its card in the runs dock. Running is every chat working right
+ * run stays on its card in the runs dock. Working is every chat working right
  * now that is not waiting. Both read the agent-status stream, so they cost no
  * request and cannot drift from the rows below. A folded section keeps its
  * count in the header.
@@ -23,7 +23,7 @@ import { projectDisplayTitle } from '~/lib/project-display';
 
 const SECTIONS_FOLDED_KEY = 'opsiforce:sidebar:sections-folded';
 
-type SectionId = 'waiting' | 'running';
+type SectionId = 'waiting' | 'working';
 
 interface AttentionRow {
   id: string;
@@ -53,7 +53,7 @@ function Section(props: {
   return (
     <Show when={props.rows.length > 0}>
       <div class="px-2 pt-2">
-        <button type="button" class="of-sb-sec-head" aria-expanded={!props.folded} onClick={props.onToggleFold}>
+        <button type="button" class="of-sb-sec-head" aria-expanded={!props.folded} onClick={() => props.onToggleFold()}>
           {props.folded ? <ChevronRight class="w-3 h-3 shrink-0" /> : <ChevronDown class="w-3 h-3 shrink-0" />}
           <span class="ttl">{props.title}</span>
           <span class="of-count">{props.rows.length}</span>
@@ -106,8 +106,8 @@ export function SidebarAttention() {
     (projects.data ?? []).filter((p) => isAgentWaiting(p.id)).map((p) => row(p, 'waiting'))
   );
 
-  const running = createMemo<AttentionRow[]>(() =>
-    (projects.data ?? []).filter((p) => isAgentWorking(p.id) && !isAgentWaiting(p.id)).map((p) => row(p, 'running'))
+  const working = createMemo<AttentionRow[]>(() =>
+    (projects.data ?? []).filter((p) => isAgentWorking(p.id) && !isAgentWaiting(p.id)).map((p) => row(p, 'working'))
   );
 
   return (
@@ -119,10 +119,10 @@ export function SidebarAttention() {
         onToggleFold={() => toggle('waiting')}
       />
       <Section
-        title="Running"
-        rows={running()}
-        folded={folded().running === true}
-        onToggleFold={() => toggle('running')}
+        title="Working"
+        rows={working()}
+        folded={folded().working === true}
+        onToggleFold={() => toggle('working')}
         pulse
       />
     </>

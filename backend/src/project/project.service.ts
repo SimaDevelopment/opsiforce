@@ -273,6 +273,7 @@ const projectSelectFields = {
     WHERE ${projectEnvAll.projectId} = ${projects.id}
       AND ${projectEnvAll.environmentId} IS NOT NULL
   )`.as('environment_ids'),
+  lastPromptAt: projects.lastPromptAt,
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 };

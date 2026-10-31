@@ -137,6 +137,7 @@ export interface ProjectResponse {
   environmentIds: string[];
   agentStatus?: AgentStatus;
   waitingForInput?: boolean;
+  lastPromptAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -55,14 +55,14 @@ function daysSince(iso: string | null): number | null {
 }
 
 /**
- * A project that has never run has no `lastActiveAt`, so its age is the day it
+ * A project nobody has prompted yet has no `lastPromptAt`, so its age is the day it
  * was made — one created an hour ago is not "older", it is simply empty. Only
  * when neither date exists does it fall to Older, where an unplaceable project
  * is at least not claiming to be recent.
  */
 export function matchesRecency(project: Project, recency: Recency): boolean {
   if (recency === 'any') return true;
-  const age = daysSince(project.lastActiveAt) ?? daysSince(project.createdAt);
+  const age = daysSince(project.lastPromptAt) ?? daysSince(project.createdAt);
   if (age === null) return recency === 'older';
   if (recency === '7d') return age <= 7;
   if (recency === '30d') return age <= 30;

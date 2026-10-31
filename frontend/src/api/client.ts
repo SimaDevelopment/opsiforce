@@ -166,9 +166,9 @@ export interface Project {
   appDescription: string | null;
   environmentIds: string[];
   agentStatus?: AgentStatus;
-  /** A chat in this Project is waiting for its user's answer or permission. */
+  /** A chat in this Project is waiting for an answer or a permission. */
   waitingForInput?: boolean;
-  lastActiveAt: string | null;
+  lastPromptAt: string | null;
   createdAt: string;
   disabled: boolean;
 }
