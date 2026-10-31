@@ -62,9 +62,9 @@ flowchart LR
 
 - When a request arrives while the environment is starting, the proxy answers 503 with `Retry-After` and the frontend retries.
 - When a live request fails mid-stream, the proxy reports it to the failure endpoint, and the backend re-reads the pod and answers 503 for a gone pod being recreated or 502 for a dead process inside a Ready pod.
-- When the last WebSocket of a surface closes, that surface falls back to its plain idle timeout.
+- When a browser navigation to an App (a `GET` or `HEAD` with `Sec-Fetch-Mode: navigate`, or with an `Accept` naming `text/html` and no fetch metadata) cannot be answered, the app proxy answers the same status as an HTML page marked `no-store` while every other request keeps the JSON error — starting 503, not responding 502 (an ensure 5xx included), failed 502, disabled 423, no App 404 — and the starting and not-responding pages re-request their address in the background every 5 to 30 seconds, reload with any `#` route kept once an answer is below 500, and stop after 5 minutes.
+- When the last WebSocket of a surface closes, or its client vanishes without closing (sleep, network loss) and TCP keepalive detects that within a few minutes, that surface falls back to its plain idle timeout.
 - When the Kubernetes API is unavailable, ensure answers 5xx and nothing else compensates; the frontend retries.
-- When a client vanishes without closing (sleep, network loss), TCP keepalive detects it within a few minutes and the surface falls back to its idle timeout.
 - When a Project is deleted, every environment's pod is deleted, its keep-alive keys are cleared, the Bifrost team is revoked and each environment is tombstoned before its row goes ([Persistence](persistence.md)).
 - When an App sets a cookie of its own named `_opsiforce_…`, the app proxy drops that `Set-Cookie` and deletes any such cookie from every request to that App.
 - When a request signed in by App Auth comes from another origin, such as another App, the app proxy sends no CORS headers and removes the App's own, so a script there cannot read the answer.
@@ -73,7 +73,7 @@ flowchart LR
 
 - `backend/src/proxy/` — the ensure, activity and failure endpoints the proxies call, App address resolution by host, and the Apps-host refusal for an External Service's Projects.
 - `backend/src/timeout/` — the two keep-alive keys and the idle-timeout floor.
-- `proxy/internal/server/` — the Go runtime proxy: routing modes, following the backend's App address answer, decision cache, WebSocket keep-alive, failure reporting, removing the platform's session cookies on the App surface.
+- `proxy/internal/server/` — the Go runtime proxy: routing modes, following the backend's App address answer, decision cache, WebSocket keep-alive, failure reporting, removing the platform's session cookies on the App surface, the browser error pages.
 - `proxy/cmd/agent-control/` — the in-pod control port and the OpenCode front proxy.
 - `helm/opsiforce-proxy/` — the edge: oauth2-proxy, static auth mode, and the catch-all apps route with its unprotected-route marker.
 

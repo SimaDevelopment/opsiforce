@@ -6,6 +6,7 @@ import { UserService } from '../user/user.service';
 import { ProjectService } from './project.service';
 import { ProjectEventsService } from './project-events.service';
 import { AgentStatusService } from './agent-status.service';
+import { AppReadinessService } from './app-readiness.service';
 import { AgentStatus } from './project.types';
 
 @Controller('agent-status')
@@ -14,7 +15,8 @@ export class AgentStatusStreamController {
     private readonly projectService: ProjectService,
     private readonly userService: UserService,
     private readonly projectEventsService: ProjectEventsService,
-    private readonly agentStatusService: AgentStatusService
+    private readonly agentStatusService: AgentStatusService,
+    private readonly appReadiness: AppReadinessService
   ) {}
 
   @Get('events')
@@ -80,10 +82,28 @@ export class AgentStatusStreamController {
       sentWorkingEnvironments.set(projectId, working);
     };
 
+    const sentServingEnvironments = new Map<string, Set<string>>();
+    const sendApp = (projectId: string, environmentId: string, serving: boolean) => {
+      reply.raw.write(`event: app\ndata: ${JSON.stringify({ projectId, environmentId, serving })}\n\n`);
+    };
+    const sendApps = (projectId: string) => {
+      const serving = this.appReadiness.servingEnvironmentsOf(projectId);
+      const sentServing = sentServingEnvironments.get(projectId);
+      sentServingEnvironments.set(projectId, serving);
+      if (!sentServing) return;
+      for (const environmentId of serving) {
+        if (!sentServing.has(environmentId)) sendApp(projectId, environmentId, true);
+      }
+      for (const environmentId of sentServing) {
+        if (!serving.has(environmentId)) sendApp(projectId, environmentId, false);
+      }
+    };
+
     const send = (projectId: string) => {
       if (closed) return;
       sendProject(projectId);
       sendEnvironments(projectId);
+      sendApps(projectId);
     };
 
     for (const projectId of visibleIds) {

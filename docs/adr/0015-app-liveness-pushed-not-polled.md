@@ -2,7 +2,7 @@
 
 The platform needs to know two things about a Project's App at runtime: that it has **gone live** (`app.meta.json` exists, giving the App an identity) and that its process is **serving** on its port. The app pane appears at go-live, and publish, duplicate and schedule all wait for the App to serve. **The pod tells the backend instead of the backend asking.** The in-pod `agent-control` process watches `app.meta.json` and probes `http://127.0.0.1:$APP_PORT/` (any HTTP response counts as serving), and pushes `{serving, live, name, description}` to `POST /gateway/app/state` over the **Service Gateway channel**, authenticated by the environment's `SERVICE_GATEWAY_API_KEY`. `live`, `name` and `description` are set only while the App serves and the file parses.
 
-The backend keeps the two answers apart. Identity from a `live` push is written to that environment's `project_app` row, and a change notifies clients over SSE. `serving` is held only in memory by `AppReadinessService`, whose `awaitReady` is what publish, duplicate and schedule wait on.
+The backend keeps the two answers apart. Identity from a `live` push is written to that environment's `project_app` row, and a change notifies clients over SSE. `serving` is held only in memory by `AppReadinessService`, whose `awaitReady` is what publish, duplicate and schedule wait on, and every flip of it notifies clients over SSE, so an open preview reloads when its App starts serving.
 
 The pod is the only party that knows the moment go-live happens. Passive sensing from real traffic cannot bootstrap it: a freshly built Development App has no traffic until its pane is shown, and the pane is gated on the very signal being produced.
 

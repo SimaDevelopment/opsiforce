@@ -10,6 +10,7 @@ import { ProjectStatus } from '../../src/project/project.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { TimeoutService } from '../../src/timeout/timeout.service';
 import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
+import { openAgentStatusStream as openStream, type AgentStatusStream } from './agent-status-stream';
 import { startFakePod, type FakePod } from './fake-pod';
 import type { FakePodService, FakeTimeoutService, FakeTimer } from './infra-fakes';
 import { addMember, createProject, createTenant, type MemberFixture, type TenantFixture } from './project-fixtures';
@@ -27,23 +28,6 @@ export interface ObservedProject {
   projectId: string;
   environmentId: string;
   gatewayKey: string;
-}
-
-export interface AgentStatusEvent {
-  projectId: string;
-  agentStatus: string;
-}
-
-export interface EnvironmentStatusEvent extends AgentStatusEvent {
-  environmentId: string;
-}
-
-export interface AgentStatusStream {
-  events: AgentStatusEvent[];
-  environmentEvents: EnvironmentStatusEvent[];
-  statusesOf: (projectId: string) => string[];
-  environmentStatusesOf: (environmentId: string) => string[];
-  close: () => void;
 }
 
 export interface ObservationSeam {
@@ -130,45 +114,11 @@ export async function createObservationSeam(): Promise<ObservationSeam> {
   }
 
   async function openAgentStatusStream(member: MemberFixture): Promise<AgentStatusStream> {
-    const aborter = new AbortController();
-    const res = await fetch(`${baseUrl}/api/agent-status/events`, { headers: member.headers, signal: aborter.signal });
-    if (!res.ok || !res.body) throw new Error(`agent-status stream answered ${res.status}`);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    const events: AgentStatusEvent[] = [];
-    const environmentEvents: EnvironmentStatusEvent[] = [];
-    let buffered = '';
-
-    void (async () => {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffered += decoder.decode(value, { stream: true });
-        let boundary = buffered.indexOf('\n\n');
-        while (boundary >= 0) {
-          const frame = buffered.slice(0, boundary);
-          buffered = buffered.slice(boundary + 2);
-          const lines = frame.split('\n');
-          const name = lines.find((line) => line.startsWith('event: '))?.slice('event: '.length);
-          const data = lines
-            .filter((line) => line.startsWith('data: '))
-            .map((line) => line.slice('data: '.length))
-            .join('\n');
-          if (data && name === 'environment') environmentEvents.push(JSON.parse(data) as EnvironmentStatusEvent);
-          else if (data) events.push(JSON.parse(data) as AgentStatusEvent);
-          boundary = buffered.indexOf('\n\n');
-        }
-      }
-    })().catch(() => undefined);
-
+    const opened = await openStream(baseUrl, member.headers);
     const stream: AgentStatusStream = {
-      events,
-      environmentEvents,
-      statusesOf: (projectId) => events.filter((event) => event.projectId === projectId).map((e) => e.agentStatus),
-      environmentStatusesOf: (environmentId) =>
-        environmentEvents.filter((event) => event.environmentId === environmentId).map((e) => e.agentStatus),
+      ...opened,
       close: () => {
-        aborter.abort();
+        opened.close();
         streams.delete(stream);
       },
     };

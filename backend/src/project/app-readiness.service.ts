@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ProjectEventsService } from './project-events.service';
 
 interface Waiter {
   resolve: (ready: boolean) => void;
@@ -7,20 +8,28 @@ interface Waiter {
 
 @Injectable()
 export class AppReadinessService {
-  private readonly serving = new Map<string, boolean>();
+  private readonly servingProjects = new Map<string, string>();
   private readonly waiters = new Map<string, Set<Waiter>>();
 
-  markServing(key: string): void {
-    this.serving.set(key, true);
+  constructor(private readonly projectEvents: ProjectEventsService) {}
+
+  markServing(key: string, projectId: string): void {
+    if (!this.servingProjects.has(key)) {
+      this.servingProjects.set(key, projectId);
+      void this.projectEvents.publish(projectId);
+    }
     this.resolveWaiters(key);
   }
 
   markDown(key: string): void {
-    this.serving.set(key, false);
+    const projectId = this.servingProjects.get(key);
+    if (projectId === undefined) return;
+    this.servingProjects.delete(key);
+    void this.projectEvents.publish(projectId);
   }
 
   clear(key: string): void {
-    this.serving.delete(key);
+    this.servingProjects.delete(key);
     const waiters = this.waiters.get(key);
     if (!waiters) return;
     for (const waiter of waiters) {
@@ -30,8 +39,16 @@ export class AppReadinessService {
     this.waiters.delete(key);
   }
 
+  servingEnvironmentsOf(projectId: string): Set<string> {
+    const environments = new Set<string>();
+    for (const [key, servingProjectId] of this.servingProjects) {
+      if (servingProjectId === projectId) environments.add(key);
+    }
+    return environments;
+  }
+
   awaitReady(key: string, timeoutMs: number): Promise<boolean> {
-    if (this.serving.get(key)) return Promise.resolve(true);
+    if (this.servingProjects.has(key)) return Promise.resolve(true);
 
     return new Promise<boolean>((resolve) => {
       const waiters = this.waiters.get(key) ?? new Set<Waiter>();
