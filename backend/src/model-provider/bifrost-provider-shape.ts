@@ -7,6 +7,7 @@ import type {
   UpdateBifrostProviderRequest,
 } from '../bifrost/bifrost.types';
 import type { BaseFormat, ModelProviderKind } from './base-formats';
+import { GATEWAY_ONLY_MODELS } from './gateway-model-catalog';
 
 const STANDARD_NETWORK_CONFIG: BifrostNetworkConfig = {
   default_request_timeout_in_seconds: 1200,
@@ -63,7 +64,7 @@ function baseUrlConfigOf(spec: BifrostProviderSpec): Pick<BifrostNetworkConfig, 
 }
 
 export function servedModelsOf(format: BaseFormat, catalog: ModelCatalog = readModelCatalog()): string[] {
-  return catalogModelIdsOf(format.modelCatalogKey, catalog);
+  return [...new Set([...catalogModelIdsOf(format.modelCatalogKey, catalog), ...GATEWAY_ONLY_MODELS[format.id]])];
 }
 
 export function bifrostProviderKeyName(bifrostName: string): string {
