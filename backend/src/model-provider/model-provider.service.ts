@@ -12,6 +12,7 @@ import {
   projects,
   tenants,
 } from '../../db/schema';
+import { catalogModelIdsOf } from '../agent/agent-models';
 import { BifrostService } from '../bifrost/bifrost.service';
 import { retryBifrostWrite } from '../bifrost/bifrost-retries';
 import type {
@@ -153,7 +154,7 @@ function modelRefOf(format: BaseFormatId, model: string): string {
 }
 
 function catalogModelRefsOf(format: BaseFormatId): string[] {
-  return servedModelsOf(BASE_FORMATS[format]).map((model) => modelRefOf(format, model));
+  return catalogModelIdsOf(BASE_FORMATS[format].modelCatalogKey).map((model) => modelRefOf(format, model));
 }
 
 function overrideKey(row: ProviderRowIdentity): string {
