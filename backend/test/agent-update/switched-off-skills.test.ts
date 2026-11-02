@@ -17,6 +17,7 @@ import { AgentUpdateService } from '../../src/agent-update/agent-update.service'
 import { AGENT_WORKSPACE_UPDATE_QUEUE, type AgentEnvironmentJobData } from '../../src/agent-update/agent-update.types';
 import { DEFAULT_AGENT_NAME } from '../../src/agent/agent.types';
 import { SkillSwitchRepository } from '../../src/delivery/skill-switch.repository';
+import { SkillAvailability } from '../../src/store/skill-availability';
 import { ensureBuiltInAgent } from '../support/agent-fixtures';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import type { FakeQueue } from '../support/infra-fakes';
@@ -56,6 +57,9 @@ class ScriptJobRunner {
   }
 }
 
+const withPrivilegedPods = new SkillAvailability(new ConfigService({ agentPrivileged: true }));
+const withoutPrivilegedPods = new SkillAvailability(new ConfigService({ agentPrivileged: false }));
+
 const podReload = {
   async notify(): Promise<boolean> {
     return true;
@@ -84,16 +88,21 @@ beforeAll(async () => {
   agentId = await ensureBuiltInAgent(PACKAGE);
   imageRoot = await mkdtemp(path.join(tmpdir(), 'agent-image-'));
   runner.imageRoot = imageRoot;
-  processor = new AgentUpdateProcessor(
+  processor = processorOffering(withPrivilegedPods);
+});
+
+function processorOffering(availability: SkillAvailability): AgentUpdateProcessor {
+  return new AgentUpdateProcessor(
     harness.moduleRef.get(AgentUpdateService),
     runner as never,
     harness.projectEnvironments,
     harness.skillDeliveries,
     harness.moduleRef.get(ConfigService),
     podReload as never,
-    switches
+    switches,
+    availability
   );
-});
+}
 
 afterAll(async () => {
   await harness.close();
@@ -109,7 +118,7 @@ async function layImage(version: string): Promise<void> {
     path.join(imageRoot, 'agents', 'agents.json'),
     JSON.stringify({ agents: { [PACKAGE]: { version } } })
   );
-  for (const name of ['platform', 'brand-kit']) {
+  for (const name of ['platform', 'brand-kit', 'docker']) {
     await mkdir(path.join(packageRoot, 'skills', name), { recursive: true });
     await writeFile(path.join(packageRoot, 'skills', name, 'SKILL.md'), `# ${name} ${version}\n`);
   }
@@ -117,14 +126,14 @@ async function layImage(version: string): Promise<void> {
   await db.update(agents).set({ version }).where(eq(agents.id, agentId));
 }
 
-async function sweep(): Promise<void> {
+async function sweep(by: AgentUpdateProcessor = processor): Promise<void> {
   const before = queue.acceptedJobs.length;
-  await processor.process({ name: 'sweep', data: {} } as Job);
+  await by.process({ name: 'sweep', data: {} } as Job);
   const enqueued = queue.acceptedJobs
     .slice(before)
     .map((job) => (job as unknown as { data: AgentEnvironmentJobData }).data);
   for (const data of enqueued) {
-    await processor.process({ name: 'environment', data } as unknown as Job).catch(() => undefined);
+    await by.process({ name: 'environment', data } as unknown as Job).catch(() => undefined);
   }
 }
 
@@ -179,5 +188,46 @@ describe('the Agent Updates Job in an environment that switched a package Skill 
       '# brand-kit 9.2.0\n'
     );
     expect(await ownedSkills(projectId)).toContain('brand-kit');
+  });
+});
+
+describe('the Agent Updates Job on a deployment without privileged agent pods', () => {
+  let projectId: string;
+
+  beforeAll(async () => {
+    await layImage('10.0.0');
+    projectId = (await harness.projects.create({ agentId }, tenantId, { createdBy: userId })).id;
+    await sweep();
+    expect(await installedSkillNames(projectId)).toContain('docker');
+  });
+
+  it('is handed docker with no switch-off of its own, and removes it', async () => {
+    await layImage('10.1.0');
+
+    await sweep(processorOffering(withoutPrivilegedPods));
+
+    const lastRun = runner.runs.findLast((options) => options.projectEnvironmentId === projectId);
+    expect(lastRun).toMatchObject({ switchedOffSkills: ['docker'] });
+    expect(await installedSkillNames(projectId)).not.toContain('docker');
+    expect(await ownedSkills(projectId)).not.toContain('docker');
+  });
+
+  it('lays it again once the deployment runs privileged pods', async () => {
+    await layImage('10.2.0');
+
+    await sweep();
+
+    expect(await installedSkillNames(projectId)).toContain('docker');
+    expect(await ownedSkills(projectId)).toContain('docker');
+  });
+
+  it('hands over one list when the environment switched docker off too', async () => {
+    await switches.switchOff(projectId, 'docker', null);
+    await layImage('10.3.0');
+
+    await sweep(processorOffering(withoutPrivilegedPods));
+
+    const lastRun = runner.runs.findLast((options) => options.projectEnvironmentId === projectId);
+    expect(lastRun).toMatchObject({ switchedOffSkills: ['docker'] });
   });
 });

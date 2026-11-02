@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PLATFORM_SKILL_NAME } from '../agent/agent.types';
 import { SkillRepository } from '../store/skill.repository';
-import { packageSkillNames, readPackageSkill } from '../store/skill-tree';
+import { SkillAvailability } from '../store/skill-availability';
 import { DeliveryRepository, type DeliveryTarget } from './delivery.repository';
 import { DeliveryService } from './delivery.service';
 import { CUSTOM_AGENT_PACKAGE, type DeliverySkill } from './delivery.types';
@@ -77,7 +77,8 @@ export class EnvironmentSkillsService {
     private readonly skillDeliveries: SkillDeliveryService,
     private readonly switches: SkillSwitchRepository,
     private readonly writer: WorkspaceWriter,
-    private readonly skills: SkillRepository
+    private readonly skills: SkillRepository,
+    private readonly skillAvailability: SkillAvailability
   ) {}
 
   async list(projectEnvironmentId: string): Promise<EnvironmentSkills> {
@@ -166,13 +167,13 @@ export class EnvironmentSkillsService {
     const packageName = builtIn ? target.agentName : CUSTOM_AGENT_PACKAGE;
     const carried = new Map<string, CarriedSkill>();
 
-    for (const name of packageSkillNames(packageName)) {
+    for (const name of this.skillAvailability.packageSkillNames(packageName)) {
       carried.set(name, {
         name,
         kind: name === PLATFORM_SKILL_NAME ? 'platform' : 'package',
         description: this.packageSkillDescription(packageName, name),
         lay: async () => {
-          const shipped = readPackageSkill(packageName, name);
+          const shipped = this.skillAvailability.readPackageSkill(packageName, name);
           if (!shipped) throw new EnvironmentSkillNotFound(name);
           return {
             skill: { name, skillVersionId: null, contentHash: shipped.contentHash, tree: shipped.tree },
@@ -221,7 +222,10 @@ export class EnvironmentSkillsService {
   private packageSkillDescription(packageName: string, name: string): string | null {
     const key = `${packageName}/${name}`;
     if (!this.packageDescriptions.has(key)) {
-      this.packageDescriptions.set(key, readPackageSkill(packageName, name)?.description ?? null);
+      this.packageDescriptions.set(
+        key,
+        this.skillAvailability.readPackageSkill(packageName, name)?.description ?? null
+      );
     }
     return this.packageDescriptions.get(key) ?? null;
   }

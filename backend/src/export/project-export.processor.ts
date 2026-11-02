@@ -30,7 +30,7 @@ import {
 interface ArchiveEntry {
   source: string;
   relPath: string;
-  type: 'file' | 'symlink';
+  type: 'file' | 'symlink' | 'directory';
   mode: number;
   size: number;
 }
@@ -183,6 +183,7 @@ export class ProjectExportProcessor extends WorkerHost {
         const relPath = relDir ? `${relDir}/${child}` : child;
         const stats = await lstat(source);
         if (stats.isDirectory()) {
+          entries.push({ source, relPath, type: 'directory', mode: stats.mode, size: 0 });
           await walk(source, relPath);
         } else if (stats.isSymbolicLink()) {
           entries.push({ source, relPath, type: 'symlink', mode: stats.mode, size: 0 });
@@ -228,7 +229,9 @@ export class ProjectExportProcessor extends WorkerHost {
     archive.pipe(output);
     for (const entry of entries) {
       const mode = entry.mode & 0o777;
-      if (entry.type === 'symlink') {
+      if (entry.type === 'directory') {
+        archive.append(Buffer.alloc(0), { name: `${entry.relPath}/`, mode });
+      } else if (entry.type === 'symlink') {
         archive.symlink(entry.relPath, await readlink(entry.source), mode);
       } else {
         archive.file(entry.source, { name: entry.relPath, mode });

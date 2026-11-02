@@ -5,7 +5,7 @@ import { Queue } from 'bullmq';
 import { and, desc, eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import path from 'node:path';
-import { chmod, mkdir, rename, rm, symlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, rename, rm, symlink } from 'node:fs/promises';
 import type yauzl from 'yauzl';
 import { db } from '../../db';
 import { folders, projectTransferJobs, workspaceMembers, workspaces } from '../../db/schema';
@@ -260,8 +260,9 @@ export class ProjectImportService {
 
   /**
    * Unpacks the bundle's `workspace/` tree into the target project directory,
-   * restoring file modes and symlinks. Writes are confined to the target
-   * directory: an entry whose path escapes it is rejected.
+   * restoring directories (empty ones included), file and directory modes, and
+   * symlinks. Writes are confined to the target directory: an entry whose path
+   * escapes it, or that would be placed through or over a symlink, is rejected.
    */
   async unpack(
     archivePath: string,
@@ -276,8 +277,10 @@ export class ProjectImportService {
       await report(0, bytesTotal);
 
       await mkdir(root, { recursive: true });
+      const directories = new Set<string>();
       let bytesProcessed = 0;
       let lastReportedAt = 0;
+      const directoryModes: Array<{ target: string; perms: number }> = [];
 
       for (const entry of entries) {
         if (!entry.fileName.startsWith(WORKSPACE_PREFIX)) continue;
@@ -288,11 +291,12 @@ export class ProjectImportService {
         const mode = entryMode(entry);
 
         if (entry.fileName.endsWith('/')) {
-          await mkdir(target, { recursive: true });
+          await ensureDirectory(root, target, directories);
+          directoryModes.push({ target, perms: mode & 0o777 });
           continue;
         }
 
-        await mkdir(path.dirname(target), { recursive: true });
+        await ensureDirectory(root, path.dirname(target), directories);
 
         if (isSymlinkMode(mode)) {
           const linkBuffer = await readEntry(zip, entry);
@@ -300,11 +304,11 @@ export class ProjectImportService {
           if (!isConfined(root, path.resolve(path.dirname(target), linkTarget))) {
             throw new BadRequestException('The project export contains an unsafe symlink.');
           }
-          await symlink(linkTarget, target);
+          await symlink(linkTarget, target).catch(refuseExisting);
           continue;
         }
 
-        await writeEntryToFile(zip, entry, target);
+        await writeEntryToFile(zip, entry, target).catch(refuseExisting);
         const perms = mode & 0o777;
         if (perms) await chmod(target, perms);
 
@@ -316,11 +320,19 @@ export class ProjectImportService {
         }
       }
 
+      for (const { target, perms } of directoryModes.toSorted((a, b) => depth(b.target) - depth(a.target))) {
+        if (perms) await chmod(target, perms);
+      }
+
       await report(bytesProcessed, bytesTotal);
     } finally {
       zip.close();
     }
   }
+}
+
+function depth(target: string): number {
+  return target.split(path.sep).length;
 }
 
 export function assertProjectExportKind(manifest: { kind?: unknown }): void {
@@ -348,8 +360,27 @@ function isConfined(root: string, target: string): boolean {
 
 function resolveConfined(root: string, rel: string): string {
   const target = path.resolve(root, rel);
-  if (!isConfined(root, target)) {
-    throw new BadRequestException('The project export contains an unsafe file path.');
-  }
+  if (!isConfined(root, target)) throw unsafeFilePath();
   return target;
+}
+
+async function ensureDirectory(root: string, dir: string, directories: Set<string>): Promise<void> {
+  if (dir === root || directories.has(dir)) return;
+  if (!isConfined(root, dir)) throw unsafeFilePath();
+  await ensureDirectory(root, path.dirname(dir), directories);
+  try {
+    await mkdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    if (!(await lstat(dir)).isDirectory()) throw unsafeFilePath();
+  }
+  directories.add(dir);
+}
+
+function refuseExisting(err: NodeJS.ErrnoException): never {
+  throw err.code === 'EEXIST' ? unsafeFilePath() : err;
+}
+
+function unsafeFilePath(): BadRequestException {
+  return new BadRequestException('The project export contains an unsafe file path.');
 }

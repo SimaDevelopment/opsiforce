@@ -25,7 +25,7 @@ import {
 } from '../store/service-settings-catalog';
 import { serviceSkillUnavailable, skillRetired, visibilityIncoherent } from '../store/store-errors';
 import { assertSkillVisibleToUser, isRetiredSkill, isServiceSkill, type SkillRow } from '../store/skill-visibility';
-import { packageSkillNames } from '../store/skill-tree';
+import { SkillAvailability } from '../store/skill-availability';
 import { SkillDeliveryService } from '../delivery/skill-delivery.service';
 import { templateDamaged } from '../agent-template/agent-template.errors';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
@@ -82,7 +82,8 @@ export class AgentProfileService {
     private readonly templates: AgentTemplateStore,
     private readonly modelProviders: ModelProvidersService,
     private readonly serviceSkillAvailability: ServiceSkillAvailability,
-    private readonly serviceCatalog: ServiceSettingsCatalog
+    private readonly serviceCatalog: ServiceSettingsCatalog,
+    private readonly skillAvailability: SkillAvailability
   ) {}
 
   private async serviceAvailable(tenantId: string, externalServiceId: string): Promise<boolean> {
@@ -166,7 +167,7 @@ export class AgentProfileService {
       });
     }
     if (skill.visibility === 'private') assertAgentCarriesNoPrivateSkill(agent, [skill.name]);
-    if (agent.origin === 'built_in' && packageSkillNames(agent.name).has(skill.name)) {
+    if (agent.origin === 'built_in' && this.skillAvailability.packageSkillNames(agent.name).has(skill.name)) {
       throw shippedSkillName(skill.name);
     }
     if (isServiceSkill(skill) && !(await this.serviceAvailable(caller.tenantId, skill.externalServiceId))) {

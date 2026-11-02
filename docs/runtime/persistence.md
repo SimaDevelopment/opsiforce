@@ -13,8 +13,8 @@ adrs: [0042]
 
 - A [ProjectEnvironment](../../GLOSSARY.md)'s pod is disposable; its workspace directory on the shared claim is what persists, mounted into the pod by `subPath` ([ADR-0042](../adr/0042-pod-is-disposable-the-environment-workspace-is-the-durable-unit.md)).
 - [Development](../../GLOSSARY.md)'s directory is `projects/{projectId}`; published environments get their own directories.
-- On the volume: the OpenCode session database and chat history, the App source and git history, the App's SQLite databases and generated output, agent config and skills copied into the workspace, code-server settings and extensions, and uploaded files.
-- In the pod only: in-memory process state, PTY sessions, live connections and in-flight streams, and temp files outside `/workspace`.
+- On the volume: the OpenCode session database and chat history, the App source and git history, the App's SQLite databases and the data its containers bind-mount under `app/data/`, generated output, agent config and skills copied into the workspace, code-server settings and extensions, and uploaded files.
+- In the pod only: in-memory process state, PTY sessions, live connections and in-flight streams, temp files outside `/workspace`, and on a privileged pod Docker's images, containers and volumes ([Pod Tools](pod-tools.md)).
 - The pod template redirects all four XDG directories under `/workspace/.xdg/`, so OpenCode and code-server state lands on the volume.
 
 ### Replacement and resume

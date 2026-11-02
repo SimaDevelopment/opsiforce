@@ -6,7 +6,7 @@ import { lockProjectGit } from '../common/locks';
 import { GitService } from '../git/git.service';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { SkillRepository } from '../store/skill.repository';
-import { packageSkillNames } from '../store/skill-tree';
+import { SkillAvailability } from '../store/skill-availability';
 import { DeliveryRepository, type DeliveryTarget, type PinnedSkill } from './delivery.repository';
 import {
   BUILDER_TEMPLATE_DIR,
@@ -44,6 +44,7 @@ export class DeliveryService {
     private readonly templates: AgentTemplateStore,
     private readonly switches: SkillSwitchRepository,
     private readonly git: GitService,
+    private readonly skillAvailability: SkillAvailability,
     @Optional() private readonly serviceSkillSource?: ServiceSkillSource
   ) {}
 
@@ -217,7 +218,7 @@ export class DeliveryService {
   /** On a colliding name the snapshot wins for a Custom Agent, the package for a Built-in one (ADR-0060). */
   private deliverableSkills(target: DeliveryTarget, pinned: PinnedSkill[]): PinnedSkill[] {
     if (target.agentOrigin === 'custom') return pinned;
-    const shipped = packageSkillNames(target.agentName);
+    const shipped = this.skillAvailability.packageSkillNames(target.agentName);
     return pinned.filter((skill) => !shipped.has(skill.name));
   }
 

@@ -25,6 +25,7 @@ import { DEFAULT_AGENT_NAME, type AgentCaller } from '../../src/agent/agent.type
 import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
 import type { NotifyTarget } from '../../src/delivery/pod-reload.client';
 import { SkillSwitchRepository } from '../../src/delivery/skill-switch.repository';
+import { SkillAvailability } from '../../src/store/skill-availability';
 import { ProjectStatus } from '../../src/project/project.types';
 import type { SkillCaller } from '../../src/store/skill.service';
 import { defaultEnvironmentId, ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
@@ -133,7 +134,8 @@ function rebuildProcessor(): void {
     harness.skillDeliveries,
     withImageVersion as never,
     podReload as never,
-    harness.moduleRef.get(SkillSwitchRepository)
+    harness.moduleRef.get(SkillSwitchRepository),
+    harness.moduleRef.get(SkillAvailability)
   );
 }
 

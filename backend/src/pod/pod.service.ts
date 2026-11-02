@@ -5,6 +5,7 @@ import { loadKubeConfig } from '../common/k8s-client';
 import { AGENT_PODS_SERVICE, buildPodSpec, PodTemplateOptions } from './pod.template';
 import { fetchAsLocalhost, type PodRequestInit } from './pod-fetch';
 import { PodCacheService } from './pod.cache.service';
+import { SkillAvailability } from '../store/skill-availability';
 import { resolvePreset, toK8sResources, type K8sResourceRequirements } from './pod-classes';
 
 export interface TenantPodOptions {
@@ -43,7 +44,8 @@ export class PodService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly podCache: PodCacheService
+    private readonly podCache: PodCacheService,
+    private readonly skillAvailability: SkillAvailability
   ) {
     const kc = loadKubeConfig();
     this.coreApi = kc.makeApiClient(k8s.CoreV1Api);
@@ -65,6 +67,7 @@ export class PodService {
       imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
       resources: this.smallResources(),
       privileged: this.configService.get<boolean>('agentPrivileged', false),
+      unofferedSkills: this.skillAvailability.unofferedSkills(),
       runtimeClassName: this.configService.get<string>('agentRuntimeClassName'),
       nodeSelector: this.configService.get('agentNodeSelector'),
       tolerations: this.configService.get('agentTolerations'),

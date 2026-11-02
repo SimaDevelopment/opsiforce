@@ -9,6 +9,7 @@ import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service
 import { AgentRepository } from '../../src/agent/agent.repository';
 import { AgentService } from '../../src/agent/agent.service';
 import { AgentTemplateStore } from '../../src/agent-template/agent-template.store';
+import { SkillAvailability } from '../../src/store/skill-availability';
 import { SkillPublishService } from '../../src/store/skill-publish.service';
 import { SkillReconcilerService } from '../../src/store/skill-reconciler.service';
 import { SkillRepository } from '../../src/store/skill.repository';
@@ -122,6 +123,7 @@ const REAL_SERVICES = [
   ProxyService,
   PublicUrlService,
   SecretSealer,
+  SkillAvailability,
   SkillDeliveryRepository,
   SkillDeliveryService,
   SkillSwitchRepository,

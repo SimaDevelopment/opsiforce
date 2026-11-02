@@ -15,6 +15,7 @@ import { ProjectEnvironmentService } from '../project-environment/project-enviro
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { hasRunningPod } from '../project-environment/running-pod';
 import { ProjectStatus } from '../project/project.types';
+import { SkillAvailability } from '../store/skill-availability';
 import { AgentUpdateK8sService } from './agent-update.k8s.service';
 import { AgentUpdateService } from './agent-update.service';
 import {
@@ -68,7 +69,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     private readonly skillDeliveries: SkillDeliveryService,
     private readonly configService: ConfigService,
     private readonly podReload: PodReloadClient,
-    private readonly skillSwitches: SkillSwitchRepository
+    private readonly skillSwitches: SkillSwitchRepository,
+    private readonly skillAvailability: SkillAvailability
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -231,7 +233,12 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         packageName: data.packageName,
         targetVersion: data.targetVersion,
         mode: data.mode,
-        switchedOffSkills: [...(await this.skillSwitches.switchedOffNames(env.id))].toSorted(),
+        switchedOffSkills: [
+          ...new Set([
+            ...(await this.skillSwitches.switchedOffNames(env.id)),
+            ...this.skillAvailability.unofferedSkills(),
+          ]),
+        ].toSorted(),
       });
       const summary = await this.readSummary(env.directory, data.packageName, result.logs);
       const succeeded = result.succeeded && summary.status !== 'failed';

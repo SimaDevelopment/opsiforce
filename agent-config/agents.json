@@ -5,7 +5,7 @@
       "description": "Build apps and assist with your requests.",
       "default": true,
       "port": 3000,
-      "version": "0.13.0",
+      "version": "0.14.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
       "poolSize": 3,

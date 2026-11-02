@@ -28,7 +28,7 @@ import {
   writeWarmPoolSize,
 } from './agent-pod-settings';
 import { SkillDeliveryRepository } from '../delivery/skill-delivery.repository';
-import { packageSkillNames } from '../store/skill-tree';
+import { SkillAvailability } from '../store/skill-availability';
 import { developmentEnvironmentId } from '../store/agent-profile.repository';
 import {
   CATALOG_LIST_FILTERS,
@@ -128,7 +128,8 @@ export class AgentService {
     private readonly bundleReader: AgentBundleReader,
     private readonly bundles: AgentBundleWriter,
     private readonly configService: ConfigService,
-    private readonly pool: ProjectPoolService
+    private readonly pool: ProjectPoolService,
+    private readonly skillAvailability: SkillAvailability
   ) {}
 
   async findAll(caller: AgentCaller): Promise<AgentResponse[]> {
@@ -187,7 +188,9 @@ export class AgentService {
       podSettings: await readAgentPodSettings(agent.id),
       profiles,
       shippedSkills:
-        agent.origin === 'built_in' ? await this.repository.shippedSkills(packageSkillNames(agent.name)) : [],
+        agent.origin === 'built_in'
+          ? await this.repository.shippedSkills(this.skillAvailability.packageSkillNames(agent.name))
+          : [],
       projectCount: await this.repository.projectCount(agent.id, caller.tenantId),
     };
   }

@@ -26,8 +26,9 @@ adrs: [0017]
 
 ### Import
 
+- The zip records every directory with its permissions alongside the files and symlinks, so Import brings back empty directories and directory modes, which a database server's data directory needs in order to start; an archive without directory entries still imports, its directories created as their files need them.
 - Import rehydrates the manifest into fresh rows, unpacks the files into the new Project's directory and boots it through the Duplicate path; the image-owned half of `.opencode/` re-syncs from the target's own agent image on first boot, while the Agent prompt and Skills the archive carried stay as they were.
-- The archive is untrusted: writes are confined to the new directory, escaping symlinks are rejected, and a failed or interrupted Import removes the half-created Project, directory and keys.
+- The archive is untrusted: every directory, file and symlink lands inside the new directory, created one path component at a time and never through or over a symlink, so a link an earlier entry planted cannot carry a later one outside; a symlink whose target, read from where the link sits, leaves the directory is refused, and a failed or interrupted Import removes the half-created Project, directory and keys.
 - The file arrives as an upload session of 8 MiB chunks (`IMPORT_CHUNK_SIZE`, server-returned), each a short `PUT` carrying its own SHA-256 and renamed into place only when length and digest match, so no request outlives the edge's 60-second read timeout and replicas need no coordination.
 - Finalize claims the session by renaming its staging directory, so exactly one finalize wins; it verifies the parts are contiguous and full-sized, concatenates them into the regular Import path, and the zip's own CRC32s are the final check.
 - Finalize refuses a manifest whose `kind` is anything but `project`, such as an Agent export or a Service export, with 400.
