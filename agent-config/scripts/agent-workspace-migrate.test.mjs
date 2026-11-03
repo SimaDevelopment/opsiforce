@@ -55,12 +55,13 @@ async function makeRoots({ packages = ["app-builder"], skills = { "app-builder":
   return { root, workspace, agentsRoot, opencodeRoot }
 }
 
-function contextFor(roots, agentName) {
+function contextFor(roots, agentName, env = {}) {
   return createContext({
     AGENT_NAME: agentName,
     WORKSPACE: roots.workspace,
     AGENTS_ROOT: roots.agentsRoot,
     OPENCODE_ROOT: roots.opencodeRoot,
+    ...env,
   })
 }
 
@@ -183,6 +184,22 @@ test("planSkills leaves a switched-off Skill unwritten, unowned and removed from
   })
   assert.deepEqual(plan.write, ["ui"])
   assert.deepEqual(plan.remove, ["web-app"])
+})
+
+test("first boot leaves a Skill the deployment does not offer unlaid, and a later update without the skip lays it", async (t) => {
+  const roots = await makeRoots({ skills: { "app-builder": ["docker", "ui"] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  const unoffered = contextFor(roots, "app-builder", { SWITCHED_OFF_SKILLS: "docker" })
+  await provisionWorkspace(unoffered, summaryFor(unoffered))
+
+  assert.deepEqual(await readdir(unoffered.skillsDir), ["ui"])
+  assert.deepEqual((await readLedger(unoffered)).ownedSkills, ["ui"])
+
+  const offered = contextFor(roots, "app-builder")
+  await reconcileContent(offered, summaryFor(offered))
+
+  assert.deepEqual(await readdir(offered.skillsDir), ["docker", "ui"])
+  assert.deepEqual((await readLedger(offered)).ownedSkills, ["docker", "ui"])
 })
 
 test("first boot lays every owned file and writes the ledger last", async (t) => {

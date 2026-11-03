@@ -11,7 +11,7 @@
 - [Persistence](runtime/persistence.md) — what survives a pod swap, where it lives, resume and cleanup
 - [Storage](runtime/storage.md) — how disk usage on the shared volume is measured and attributed
 - [Resources](runtime/resources.md) — how a Project's pod size is chosen, stored and applied
-- [Pod Tools](runtime/pod-tools.md) — the five processes in a pod and how VS Code and the DB viewer reach the browser
+- [Pod Tools](runtime/pod-tools.md) — the processes in a pod, Docker on a privileged one, and how VS Code and the DB viewer reach the browser
 - [Process Log](runtime/process-log.md) — where each pod process's output and lifecycle events go, their rotation and how an Agent reads them
 
 **Projects** (`projects/`)
