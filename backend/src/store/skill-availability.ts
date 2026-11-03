@@ -29,4 +29,12 @@ export class SkillAvailability {
   readPackageSkill(packageName: string, name: string): ComposedSkill | null {
     return this.packageSkillNames(packageName).has(name) ? readPackageSkill(packageName, name) : null;
   }
+
+  ownedSkillDrift(packageName: string, owned: ReadonlySet<string>): { unoffered: string[]; missing: string[] } {
+    const offered = this.packageSkillNames(packageName);
+    return {
+      unoffered: this.unofferedSkills().filter((name) => owned.has(name)),
+      missing: privilegedOnlySkillNames().filter((name) => offered.has(name) && !owned.has(name)),
+    };
+  }
 }

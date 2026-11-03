@@ -231,3 +231,46 @@ describe('the Agent Updates Job on a deployment without privileged agent pods', 
     expect(lastRun).toMatchObject({ switchedOffSkills: ['docker'] });
   });
 });
+
+describe('the Agent Updates sweep when privileged agent pods are turned on or off with no new Agent version', () => {
+  let projectId: string;
+
+  function runsFor(id: string): number {
+    return runner.runs.filter((options) => options.projectEnvironmentId === id).length;
+  }
+
+  beforeAll(async () => {
+    await layImage('11.0.0');
+    projectId = (await harness.projects.create({ agentId }, tenantId, { createdBy: userId })).id;
+    await sweep(processorOffering(withoutPrivilegedPods));
+    expect(await installedSkillNames(projectId)).not.toContain('docker');
+  });
+
+  it('lays docker once privileged pods are on, then leaves the workspace alone', async () => {
+    await sweep();
+
+    expect(await installedSkillNames(projectId)).toContain('docker');
+    expect(await ownedSkills(projectId)).toContain('docker');
+
+    const runs = runsFor(projectId);
+    await sweep();
+    expect(runsFor(projectId)).toBe(runs);
+  });
+
+  it('removes docker once privileged pods are off', async () => {
+    await sweep(processorOffering(withoutPrivilegedPods));
+
+    expect(await installedSkillNames(projectId)).not.toContain('docker');
+    expect(await ownedSkills(projectId)).not.toContain('docker');
+  });
+
+  it('runs nothing when privileged pods come back on in an environment that switched docker off', async () => {
+    await switches.switchOff(projectId, 'docker', null);
+    const runs = runsFor(projectId);
+
+    await sweep();
+
+    expect(runsFor(projectId)).toBe(runs);
+    expect(await installedSkillNames(projectId)).not.toContain('docker');
+  });
+});

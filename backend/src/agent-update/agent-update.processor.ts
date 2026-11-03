@@ -102,7 +102,14 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         );
         continue;
       }
-      if (await this.workspaceAtTarget(row.directory, packageName, targetVersion, row.agentOrigin)) continue;
+      const atTarget = await this.workspaceAtTarget({
+        projectEnvironmentId: row.projectEnvironmentId,
+        directory: row.directory,
+        packageName,
+        targetVersion,
+        origin: row.agentOrigin,
+      });
+      if (atTarget) continue;
       behind.push({
         projectEnvironmentId: row.projectEnvironmentId,
         packageName,
@@ -218,7 +225,14 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
 
     const agent = await this.agentOf(env.agentId);
     if (!agent) return;
-    if (await this.workspaceAtTarget(env.directory, data.packageName, data.targetVersion, agent.origin)) {
+    const atTarget = await this.workspaceAtTarget({
+      projectEnvironmentId: env.id,
+      directory: env.directory,
+      packageName: data.packageName,
+      targetVersion: data.targetVersion,
+      origin: agent.origin,
+    });
+    if (atTarget) {
       await this.closePendingRows(env.id);
       return;
     }
@@ -372,21 +386,43 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     return row;
   }
 
-  private async workspaceAtTarget(
-    directory: string,
-    packageName: string,
-    targetVersion: string,
-    origin: string
-  ): Promise<boolean> {
+  private async workspaceAtTarget({
+    projectEnvironmentId,
+    directory,
+    packageName,
+    targetVersion,
+    origin,
+  }: {
+    projectEnvironmentId: string;
+    directory: string;
+    packageName: string;
+    targetVersion: string;
+    origin: string;
+  }): Promise<boolean> {
     if (!directory) return false;
     const ledger = await this.readLedger(directory, packageName);
     if (ledger?.contentVersion !== targetVersion) return false;
+    if (!(await this.ownsOfferedSkills(projectEnvironmentId, packageName, ledger))) return false;
     if (origin !== 'built_in') return true;
     const modelSelection = this.agentUpdateService.agentModelSelection(packageName);
     if (!modelSelection) return true;
     const config = await this.readWorkspaceOpenCodeConfig(directory);
     const expected = modelReference(modelSelection.model, modelSelection.variant ?? null);
     return config?.model === expected && config?.agents?.[packageName]?.model === expected;
+  }
+
+  /** Turning privileged pods on or off changes the Skills offered without an Agent version bump. */
+  private async ownsOfferedSkills(
+    projectEnvironmentId: string,
+    packageName: string,
+    ledger: WorkspaceLedger
+  ): Promise<boolean> {
+    const owned = new Set(ledger.ownedSkills ?? []);
+    const { unoffered, missing } = this.skillAvailability.ownedSkillDrift(packageName, owned);
+    if (unoffered.length > 0) return false;
+    if (missing.length === 0) return true;
+    const switchedOff = await this.skillSwitches.switchedOffNames(projectEnvironmentId);
+    return missing.every((name) => switchedOff.has(name));
   }
 
   private async lastAppliedVersion(projectEnvironmentId: string, agentId: string): Promise<string | null> {

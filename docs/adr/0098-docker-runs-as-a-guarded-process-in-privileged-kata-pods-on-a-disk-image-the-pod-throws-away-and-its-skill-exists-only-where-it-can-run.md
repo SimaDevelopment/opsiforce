@@ -32,5 +32,5 @@ We chose a supervised process because a separate `docker:dind` container would k
 - Data a container keeps on `/workspace` waits on CephFS for every commit: Postgres managed 175 transactions a second there against 5,047 with its data in RAM, the same storage SQLite Apps already write to.
 - Export carries empty folders and folder permissions, because a Postgres data folder that lost its empty folders refuses to start. Duplicate and Export copy a running database with the torn-write risk SQLite already carries ([ADR-0011](0011-duplication-reuses-git-publish-path.md)).
 - Containers share the pod's CPU and memory with the agent and the App.
-- Turning privileged pods on or off on an existing deployment reaches existing workspaces' skills at their next Agent Update or retired-skill sweep, and existing pods keep their runtime until they are recreated.
+- Turning privileged pods on or off on an existing deployment reaches existing workspaces' skills at the next backend start, with no Agent version bump: the Agent Updates sweep finds any workspace whose owned skills do not match what the deployment offers. Existing pods keep their runtime until they are recreated.
 - Agent images on deployments without privileged pods carry Docker's binaries unused.
