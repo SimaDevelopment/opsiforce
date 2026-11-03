@@ -146,30 +146,39 @@ const groupOf = async (target: string) => (await lstat(target)).gid;
 
 const otherGroup = process.getgroups?.().find((gid) => gid !== process.getgid?.());
 
-async function giveDataToOtherGroup(workspace: string): Promise<void> {
+async function giveDataGroups(workspace: string): Promise<void> {
   const data = path.join(workspace, 'app/data/postgres');
   await mkdir(path.join(data, '18/docker'), { recursive: true });
+  await mkdir(path.join(data, 'shared/own'), { recursive: true });
   await writeFile(path.join(data, 'PG_VERSION'), '18\n');
-  await chmod(path.join(data, '18'), 0o700);
+  await writeFile(path.join(data, 'shared/own.conf'), 'kept\n');
   const uid = process.getuid?.() ?? 0;
   await lchown(path.join(data, '18'), uid, otherGroup ?? 0);
   await lchown(path.join(data, 'PG_VERSION'), uid, otherGroup ?? 0);
+  await lchown(path.join(data, 'shared'), uid, otherGroup ?? 0);
+  await lchown(path.join(data, 'shared/own'), uid, process.getgid?.() ?? 0);
+  await lchown(path.join(data, 'shared/own.conf'), uid, process.getgid?.() ?? 0);
+  await chmod(path.join(data, '18'), 0o700);
+  await chmod(path.join(data, 'shared'), 0o2750);
 }
 
-async function expectOtherGroupKept(workspace: string): Promise<void> {
+async function expectGroupsKept(workspace: string): Promise<void> {
   const data = path.join(workspace, 'app/data/postgres');
   expect(await groupOf(path.join(data, '18'))).toBe(otherGroup);
   expect(await groupOf(path.join(data, 'PG_VERSION'))).toBe(otherGroup);
   expect(await modeOf(path.join(data, '18'))).toBe(0o700);
+  expect(await groupOf(path.join(data, 'shared'))).toBe(otherGroup);
+  expect(await groupOf(path.join(data, 'shared/own'))).toBe(process.getgid?.());
+  expect(await groupOf(path.join(data, 'shared/own.conf'))).toBe(process.getgid?.());
 }
 
 describe.skipIf(otherGroup === undefined)('Project copies keep the owners of container data', () => {
-  it('Duplicate gives a nested directory and a file the same group as the source', async () => {
-    await expectOtherGroupKept(await duplicateProject(giveDataToOtherGroup));
+  it('Duplicate gives every entry the group it has in the source, under a setgid directory too', async () => {
+    await expectGroupsKept(await duplicateProject(giveDataGroups));
   });
 
-  it('Export and Import give a nested directory and a file the same group as the source', async () => {
-    await expectOtherGroupKept(await importInto(await exportProject(giveDataToOtherGroup)));
+  it('Export and Import give every entry the group it has in the source, under a setgid directory too', async () => {
+    await expectGroupsKept(await importInto(await exportProject(giveDataGroups)));
   });
 });
 
