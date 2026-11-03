@@ -39,7 +39,7 @@ export function ReadOnlyPanel(props: {
       <div>
         <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
           <span class="text-xs font-medium text-muted-foreground">Prompt</span>
-          <span class="font-mono text-[11px] text-muted-foreground">{modelLabel(props.profile)}</span>
+          <span class="font-mono text-[0.6875rem] text-muted-foreground">{modelLabel(props.profile)}</span>
         </div>
         <Textarea
           readOnly
@@ -150,7 +150,7 @@ export function DevelopmentPanel(props: {
                 <SelectItem item={itemProps.item}>
                   <span class="flex flex-col">
                     <span>{itemProps.item.rawValue.name}</span>
-                    <span class="font-mono text-[10px] text-muted-foreground">{itemProps.item.rawValue.id}</span>
+                    <span class="font-mono text-[0.625rem] text-muted-foreground">{itemProps.item.rawValue.id}</span>
                   </span>
                 </SelectItem>
               )}
@@ -166,7 +166,7 @@ export function DevelopmentPanel(props: {
               <SelectContent />
             </Select>
             <Show when={unavailableModel() && !modelError()}>
-              <p class="mt-1 text-xs text-amber-700">
+              <p class="of-ink of-tone-needs-you mt-1 text-xs">
                 <span class="font-mono">{model()}</span> is unavailable in your organization
               </p>
             </Show>
@@ -214,7 +214,7 @@ export function DevelopmentPanel(props: {
             Prompt
           </label>
           <Show when={!props.canManage}>
-            <span class="font-mono text-[11px] text-muted-foreground">{modelLabel(props.profile)}</span>
+            <span class="font-mono text-[0.6875rem] text-muted-foreground">{modelLabel(props.profile)}</span>
           </Show>
         </div>
         <Textarea

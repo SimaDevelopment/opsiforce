@@ -21,14 +21,14 @@ type ServiceStatus = { label: string; icon: Component<{ class?: string }>; tone:
 
 function serviceStatus(service: ProjectServiceSummary): ServiceStatus {
   if (service.state === 'needs-configuration') {
-    return { label: 'Needs configuration', icon: CircleDashed, tone: 'text-amber-700' };
+    return { label: 'Needs configuration', icon: CircleDashed, tone: 'of-ink of-tone-needs-you' };
   }
   if (service.state === 'available')
     return { label: 'Available · Click to enable', icon: Plug, tone: 'text-muted-foreground' };
   if (needsAttention(service.configuration)) {
-    return { label: 'Needs attention', icon: AlertTriangle, tone: 'text-amber-700' };
+    return { label: 'Needs attention', icon: AlertTriangle, tone: 'of-ink of-tone-needs-you' };
   }
-  return { label: 'Connected', icon: CircleCheck, tone: 'text-emerald-700' };
+  return { label: 'Connected', icon: CircleCheck, tone: 'of-ink of-tone-done' };
 }
 
 function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void }) {
@@ -52,7 +52,7 @@ function ServiceRow(props: { service: ProjectServiceSummary; onOpen: () => void 
             </Show>
           </span>
         </div>
-        <span class={cn('mt-0.5 flex items-center gap-1 text-[11px]', status().tone)}>
+        <span class={cn('mt-0.5 flex items-center gap-1 text-[0.6875rem]', status().tone)}>
           <Dynamic component={status().icon} class="h-3 w-3 shrink-0" aria-hidden="true" />
           {status().label}
         </span>
@@ -100,7 +100,7 @@ export function ExternalServicesButton(props: {
         <PopoverTrigger class={STRIP_BUTTON_CLASS} aria-label={`External services, ${names().length} connected`}>
           <Cable class="h-3.5 w-3.5" aria-hidden="true" />
           <span>External services</span>
-          <span class={cn(STRIP_COUNT_CLASS, attentionCount() > 0 && 'bg-amber-100 text-amber-800')}>
+          <span class={cn(STRIP_COUNT_CLASS, attentionCount() > 0 && 'of-tone of-tone-needs-you')}>
             <Show when={attentionCount() > 0}>
               <AlertTriangle class="h-3 w-3" aria-label="A configuration needs attention" />
             </Show>
@@ -134,7 +134,7 @@ export function ExternalServicesButton(props: {
               <Link
                 to="/store/agents/$id"
                 params={{ id: agentId() }}
-                class="block border-t border-border px-3 py-2 text-[11px] text-muted-foreground hover:text-foreground"
+                class="block border-t border-border px-3 py-2 text-[0.6875rem] text-muted-foreground hover:text-foreground"
               >
                 Give this agent a service's skill for every Project: on the Agent →
               </Link>

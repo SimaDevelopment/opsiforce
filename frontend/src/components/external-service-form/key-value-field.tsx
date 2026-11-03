@@ -72,7 +72,7 @@ export function KeyValueField(props: {
         </Button>
       </Show>
       <Show when={props.disabled && pairs().length === 0}>
-        <span class="text-[11px] text-muted-foreground">None</span>
+        <span class="text-[0.6875rem] text-muted-foreground">None</span>
       </Show>
     </div>
   );

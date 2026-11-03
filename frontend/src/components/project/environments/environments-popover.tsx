@@ -12,7 +12,7 @@ import {
 } from '~/api/environments';
 import { usePublishTargets, type PublishTarget } from '~/api/publish';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
-import { Check, ChevronsUpDown, Layers, LoaderCircle } from '~/components/icons';
+import { Check, ChevronsUpDown, Layers, LoaderCircle, Upload } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Skeleton } from '~/components/ui/skeleton';
 import { ProjectAuthDialog } from '~/components/project-auth-dialog';
@@ -26,6 +26,12 @@ import { EditAppUrlDialog } from '../edit-app-url-dialog';
 
 export interface EnvironmentsPopoverProps {
   projectId: string;
+  /**
+   * Surfaces Publish as a primary action beside the switcher. The band asks
+   * for it: publishing is the point of the screen, and it was reachable only
+   * from inside this popover's rows.
+   */
+  showPublishButton?: boolean;
   environments: ProjectEnvironment[];
   activeEnvironmentId: string;
   onActiveEnvironmentChange: (environmentId: string) => void;
@@ -58,10 +64,14 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const environments = useProjectEnvironments(() => props.projectId, {
     enabled: open,
   });
+  // Targets were fetched only while the popover was open. The band's Publish
+  // button has to know whether there is anywhere to publish to before anyone
+  // opens anything, so it widens the gate when it is on.
   const targets = usePublishTargets(() => props.projectId, {
-    enabled: () => open() && canPublish(),
+    enabled: () => (open() || props.showPublishButton === true) && canPublish(),
   });
-  const projects = useProjects({ enabled: open });
+  // hasApp gates every Publish action, so the band button needs it too
+  const projects = useProjects({ enabled: () => open() || props.showPublishButton === true });
   const hasApp = () => projects.data?.find((p) => p.id === props.projectId)?.hasApp === true;
 
   const restart = useRestartProjectEnvironment();
@@ -174,13 +184,21 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     onDelete: () => setPendingDelete(env),
   });
 
+  // One publishable target publishes straight away; several means the choice
+  // is the user's, so the switcher opens instead of guessing.
+  const publishable = () => (targets.data ?? []).filter((t) => t !== null);
+  const startPublish = () => {
+    if (!hasApp()) return;
+    const list = publishable();
+    if (canPublish() && list.length === 1) setPublishTarget(list[0]);
+    else setOpen(true);
+  };
+
   return (
     <>
       <Popover open={open()} onOpenChange={setOpen} placement="bottom-start">
-        <PopoverTrigger
-          class="flex h-8 min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs transition-colors hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Environments"
-        >
+        {/* a pill with its status dot, not a bordered select */}
+        <PopoverTrigger class="of-chip of-chip-btn fr" aria-label="Environments">
           <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}>
             <Match when={publishIndicator() === 'running'}>
               <LoaderCircle class="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
@@ -189,7 +207,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
               <span class="h-2 w-2 shrink-0 rounded-full bg-destructive" />
             </Match>
             <Match when={publishIndicator() === 'done'}>
-              <Check class="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+              <Check class="of-ink of-tone-done h-3.5 w-3.5 shrink-0" />
             </Match>
           </Switch>
           <Show when={activeEnvironment()} fallback={<span class="font-medium text-foreground">Environments</span>}>
@@ -247,6 +265,12 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
           </div>
         </PopoverContent>
       </Popover>
+      <Show when={props.showPublishButton && canPublish() && hasApp() && publishable().length > 0}>
+        <button type="button" class="of-btn of-btn-primary of-btn-compact fr" onClick={startPublish}>
+          <Upload class="h-3.5 w-3.5" />
+          Publish
+        </button>
+      </Show>
 
       <ProjectAuthDialog
         projectId={props.projectId}

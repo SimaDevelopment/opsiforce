@@ -58,12 +58,16 @@ export class AgentStatusStreamController {
       for (const unsubscribe of unsubscribes) unsubscribe();
     };
 
-    const lastSent = new Map<string, AgentStatus>();
+    const lastSent = new Map<string, string>();
     const sendProject = (projectId: string) => {
-      const agentStatus = this.agentStatusService.statusOf(projectId);
-      if (lastSent.get(projectId) === agentStatus) return;
-      lastSent.set(projectId, agentStatus);
-      reply.raw.write(`data: ${JSON.stringify({ projectId, agentStatus })}\n\n`);
+      const message = JSON.stringify({
+        projectId,
+        agentStatus: this.agentStatusService.statusOf(projectId),
+        waitingForInput: this.agentStatusService.waitingForInput(projectId),
+      });
+      if (lastSent.get(projectId) === message) return;
+      lastSent.set(projectId, message);
+      reply.raw.write(`data: ${message}\n\n`);
     };
 
     const sentWorkingEnvironments = new Map<string, Set<string>>();

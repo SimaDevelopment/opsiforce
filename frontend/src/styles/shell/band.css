@@ -1,0 +1,159 @@
+@layer components {
+  /* ==========================================================================
+     BAND — the single 44px chrome strip. No separate project-title row.
+     ========================================================================== */
+  /* The folder tabs sit on the band's floor, so the band's top padding is the
+     space above them, and everything else centres in the same strip: one
+     line for the trail, the tabs and the controls. */
+  .of-band {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--band-h);
+    flex: none;
+    padding: calc(var(--band-h) - var(--tab-h)) 10px 0 8px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* The left of the band scrolls sideways on a narrow screen instead of
+     pushing the controls on the right out of reach. The 1px of bottom padding
+     keeps the selected folder tab's cover strip inside the clip. */
+  .of-band-lead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    align-self: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 1px;
+    margin-bottom: -1px;
+    scrollbar-width: none;
+  }
+
+  .of-band-lead::-webkit-scrollbar {
+    display: none;
+  }
+
+  .of-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .of-crumbs a,
+  .of-crumbs button {
+    color: var(--ink-subtle);
+    padding: 3px 6px;
+    border-radius: var(--radius-md-of);
+    font: var(--text-ui);
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-crumbs a:hover,
+  .of-crumbs button:hover {
+    background: var(--bg-element-hover);
+    color: var(--ink-strong);
+    text-decoration: none;
+  }
+
+  /* a chevron, never "/": project titles are full of paths */
+  .of-crumbs .sep {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    color: var(--ink-subtle);
+    opacity: 0.6;
+  }
+
+  /* padded like the crumbs so the chevron sits evenly between them, and
+     capped so the tabs after it stay put from project to project */
+  .of-crumbs .last {
+    color: var(--ink-strong);
+    font: var(--text-ui-med);
+    padding: 3px 6px;
+    max-width: 36ch;
+    min-width: 0;
+  }
+
+  /* where you are, then where you can go: a hairline between the trail and
+     the tabs */
+  .of-crumbs::after {
+    content: '';
+    flex: none;
+    width: 1px;
+    height: 16px;
+    margin-left: 6px;
+    background: var(--border-default);
+  }
+
+  /* Folder tabs: the active tab's background EQUALS the content tone and its
+     ::after covers the band's bottom hairline, so the tab and the panel below
+     are one surface. Inactive tabs stay on the band. No shadow trick, no
+     floating pills. */
+  .of-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    align-self: stretch;
+    margin-bottom: -1px;
+  }
+
+  .of-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--tab-h);
+    /* the bottom pixel overlaps the band's hairline, so the label centres on
+       the visible part, level with everything else on the band */
+    padding: 0 calc(var(--row-pad) + 2px) 1px;
+    border-radius: var(--control-radius) var(--control-radius) 0 0;
+    color: var(--ink-subtle);
+    font: var(--text-ui-med);
+    position: relative;
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-tab:hover {
+    color: var(--ink-strong);
+    background: var(--bg-element);
+  }
+
+  .of-tab[data-selected] {
+    background: var(--bg-content);
+    color: var(--ink-strong);
+    box-shadow:
+      inset 1px 0 0 var(--border-subtle),
+      inset -1px 0 0 var(--border-subtle),
+      inset 0 1px 0 var(--border-subtle);
+  }
+
+  .of-tab[data-selected]::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: var(--bg-content);
+  }
+
+  .of-tab:focus-visible,
+  .of-tab[data-selected]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--ring-accent);
+    position: relative;
+    z-index: 2;
+  }
+}

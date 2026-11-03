@@ -2,6 +2,7 @@ import { For, Show, createSignal, type JSX } from 'solid-js';
 import { useDraggable, useDroppable } from '@dnd-kit/solid';
 import { toast } from 'solid-sonner';
 import { type Folder, type Project } from '~/api/client';
+import { FoldedGroupStatus } from './folded-group-status';
 import { useDeleteFolder } from '~/api/workspaces';
 import {
   DndType,
@@ -88,6 +89,7 @@ export function SidebarFolderGroup(props: {
   return (
     <div
       ref={droppable.ref}
+      data-sidebar-group={props.folder.id}
       class="flex flex-col ml-2 rounded-md transition-colors"
       classList={{ 'bg-sidebar-accent/40': droppable.isDropTarget() }}
       style={{ opacity: draggable.isDragging() ? 0.5 : 1 }}
@@ -112,6 +114,7 @@ export function SidebarFolderGroup(props: {
           <FolderOpen class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         </Show>
         <span class="flex-1 min-w-0 text-sm truncate text-foreground">{props.folder.name}</span>
+        <FoldedGroupStatus projects={props.projects} folded={!props.expanded} />
         <DropdownMenu>
           <DropdownMenuTrigger
             class="opacity-0 group-hover/folderrow:opacity-100 pointer-coarse:opacity-100 data-[expanded]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"

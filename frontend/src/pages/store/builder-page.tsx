@@ -166,7 +166,7 @@ function DevelopmentConfigurationButton(props: {
         <KeyRound class="h-3.5 w-3.5" aria-hidden="true" />
         Development configuration
         <Show when={missing() > 0}>
-          <span class="rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700">
+          <span class="of-tone of-tone-needs-you rounded-md px-1.5 py-0.5 text-xs font-semibold">
             {missing()} required
           </span>
         </Show>

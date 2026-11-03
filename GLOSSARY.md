@@ -261,6 +261,10 @@ _Avoid_: Start command (startup.sh already is one); Health check route (no route
 Whether an Agent is **Working** — processing a run it was prompted to do, including the runs of sub-agents it started, even after its own run has ended, and any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. A Working Agent counts as Keep-alive's *Agent activity*, so it keeps its pod up; Agent activity is wider than Working (it also covers the user's own traffic).
 _Avoid_: Agent activity (the Keep-alive kind that Working feeds, not a synonym for it); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
 
+**Waiting for input**:
+Whether a chat in a ProjectEnvironment is held on its user — the Agent asked for a permission or asked a question and no one has replied yet. Carried per ProjectEnvironment beside Agent Status, not as a value of it: a waiting run is still Working. A Project is waiting when any of its environments is.
+_Avoid_: Blocked, Paused (suggest the run stopped; it is still Working)
+
 **Prompt**:
 The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project. A Prompt sent while the Agent is already working is either _steered_ (folded into the running turn) or _queued_ (starts the next turn once the Agent is idle); a queued Prompt waits until a new turn begins.
 _Avoid_: Message (ambiguous — also covers the Agent's reply); Query, Command
@@ -542,7 +546,7 @@ The permission-gated surface where a member **configures** the Organization curr
 _Avoid_: Tenant Settings (retired user-facing label — the old modal that held only Integrations + Environments); Config (non-canonical); Admin (the operational sibling — a separate destination, not a synonym for Settings); conflating with Defaults (one section within Settings, not the whole)
 
 **Admin**:
-The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown, built on the same left-rail layout (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
+The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown; while it is open the sidebar lists its pages (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
 _Avoid_: Settings (the configuration sibling — a different destination); Admin panel, Console, Operations, Monitoring (non-canonical — say Admin); conflating with Pods (the first page within Admin, not the whole)
 
 **Store**:

@@ -51,7 +51,7 @@ function managedRow(row: PlatformModelProvider): ManagedBuiltIn | null {
 function NotMeteredPill() {
   return (
     <Tip content={TIPS.notMetered}>
-      <span class="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+      <span class="of-note of-note-sm of-tone-needs-you">
         Not metered
       </span>
     </Tip>
@@ -76,7 +76,7 @@ export function BuiltInPlatformDetails(props: { row: PlatformModelProvider; edit
     <>
       <Show when={props.row.url}>
         {(url) => (
-          <p class="mt-0.5 break-all font-mono text-[11px] text-muted-foreground" translate="no">
+          <p class="mt-0.5 break-all font-mono text-[0.6875rem] text-muted-foreground" translate="no">
             {url()}
           </p>
         )}

@@ -1,10 +1,14 @@
 # Operational views live in an "Admin" section, in their own aggregator module — not folded into `pod`
 
-**Operational views live in Admin, a sibling of Settings reached from the avatar dropdown and built on the same left rail.** The dividing line is *configure vs operate*: a page that changes stored configuration belongs to Settings; a page that shows or acts on what is running now belongs to Admin. Admin's pages are Pods and Storage, each gated by its own permission (`can_view_pods`, `can_view_platform_storage`). Schedules stays a standalone dropdown item.
+**Operational views live in Admin, a sibling of Settings reached from the avatar dropdown; while either section is open, the sidebar lists that section's pages in place of the project tree.** The dividing line is *configure vs operate*: a page that changes stored configuration belongs to Settings; a page that shows or acts on what is running now belongs to Admin. Admin's pages are Pods and Storage, each gated by its own permission (`can_view_pods`, `can_view_platform_storage`). Schedules stays a standalone sidebar row.
 
-## Why the rail is shared, not duplicated
+## Why the section navigation is shared, not duplicated
 
-Settings and Admin need identical behaviour: a tab config, a rail, and a layout route that redirects to the first permitted tab. Both render one `SectionRail` driven by their own tab config. Two rails would drift; one keeps the sections visually and behaviourally identical for free.
+Settings and Admin need identical behaviour: a tab config, a navigation list, and a layout route that redirects to the first permitted tab. Both hand their own tab config to one `SidebarSectionNav`, which the sidebar renders in place of the project tree. Two lists would drift; one keeps the sections visually and behaviourally identical for free.
+
+## Why the navigation lives in the sidebar rather than in a second rail
+
+A rail beside the sidebar put two columns of navigation in front of one page of content. The sidebar is the one place the product lists where a member can go, so a section swaps the sidebar's contents and offers the way back, instead of opening a column of its own.
 
 ## Why the Pods view has its own backend module instead of living in `pod`
 

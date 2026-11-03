@@ -142,7 +142,7 @@ export function SkillPage(props: SkillPageProps) {
                 />
 
                 <Show when={loaded().externalServiceId && !loaded().available}>
-                  <div class="mb-6 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <div class="of-note of-tone-needs-you mb-6 gap-2 text-xs">
                     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>
                       Its External Service is unavailable here: disabled, unpublished or not set up. No agent gets this
@@ -152,7 +152,7 @@ export function SkillPage(props: SkillPageProps) {
                 </Show>
 
                 <Show when={loaded().retired}>
-                  <div class="mb-6 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <div class="of-note of-tone-needs-you mb-6 gap-2 text-xs">
                     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>
                       This skill is retired: the agent image no longer ships it. It is out of the Store, can't be added
@@ -240,7 +240,7 @@ function NotVisible() {
     <EmptyState
       icon={Files}
       title="This skill isn't visible to you."
-      hint="It may be private to its creator, or it was deleted."
+      description="It may be private to its creator, or it was deleted."
     />
   );
 }
@@ -503,7 +503,7 @@ function MakePublicDialog(props: { skill: Skill; open: boolean; onOpenChange: (o
       confirmLabel="Make public"
       onConfirm={() => void confirm()}
     >
-      <div class="mt-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+      <div class="of-note of-tone-needs-you mt-4 gap-2 text-xs">
         <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span>This can't be undone. Public never goes back to private — the way back is a private copy.</span>
       </div>
@@ -763,7 +763,7 @@ function NoVersionYet(props: { canBuild: boolean }) {
       <EmptyState
         icon={Files}
         title="No version yet."
-        hint={
+        description={
           props.canBuild
             ? 'Open the Builder to write it — its first save becomes version 1.'
             : 'Nothing has been published under this name yet.'

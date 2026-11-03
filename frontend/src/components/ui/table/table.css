@@ -56,7 +56,7 @@
   & td[data-label]::before {
     content: attr(data-label);
     flex-shrink: 0;
-    color: hsl(var(--muted-foreground));
+    color: var(--ink-subtle);
     font-size: 0.75rem;
   }
 

@@ -18,6 +18,8 @@ export type OpencodeEvent = { readonly type: string; readonly data?: unknown };
 
 type Observation =
   | { kind: 'run.started' | 'run.ended'; sessionId: string }
+  | { kind: 'input.requested'; sessionId: string; requestId: string; input: 'permission' | 'question' }
+  | { kind: 'input.resolved'; sessionId: string; requestId: string }
   | { kind: 'titled'; sessionId: string; root: boolean; title: string }
   | { kind: 'prompted'; sessionId: string; root: boolean };
 
@@ -88,10 +90,20 @@ export function startObserver(host: ObserverHost): () => void {
   return () => controller.abort();
 }
 
-type EventData = { sessionID?: unknown; title?: unknown; item?: { type?: unknown } };
+type EventData = {
+  sessionID?: unknown;
+  title?: unknown;
+  item?: { type?: unknown };
+  id?: unknown;
+  requestID?: unknown;
+  form?: { id?: unknown; sessionID?: unknown };
+};
 
 async function observationFor(event: OpencodeEvent, getSession: GetSession): Promise<Observation | undefined> {
-  const { sessionID: sessionId, title, item } = (event.data ?? {}) as EventData;
+  const data = (event.data ?? {}) as EventData;
+  const input = inputObservationFor(event.type, data);
+  if (input) return input;
+  const { sessionID: sessionId, title, item } = data;
   if (typeof sessionId !== 'string') return undefined;
   const isRoot = async () => (await getSession(sessionId)).parentID === undefined;
   const runKind = RUN_KINDS[event.type];
@@ -103,4 +115,28 @@ async function observationFor(event: OpencodeEvent, getSession: GetSession): Pro
     return { kind: 'prompted', sessionId, root: await isRoot() };
   }
   return undefined;
+}
+
+function inputObservationFor(type: string, data: EventData): Observation | undefined {
+  const [sessionId, requestId] = inputRequestOf(type, data);
+  if (typeof sessionId !== 'string' || typeof requestId !== 'string') return undefined;
+  if (type === 'permission.asked') return { kind: 'input.requested', sessionId, requestId, input: 'permission' };
+  if (type === 'form.created') return { kind: 'input.requested', sessionId, requestId, input: 'question' };
+  return { kind: 'input.resolved', sessionId, requestId };
+}
+
+function inputRequestOf(type: string, data: EventData): [unknown, unknown] {
+  switch (type) {
+    case 'permission.asked':
+      return [data.sessionID, data.id];
+    case 'permission.replied':
+      return [data.sessionID, data.requestID];
+    case 'form.created':
+      return [data.form?.sessionID, data.form?.id];
+    case 'form.replied':
+    case 'form.cancelled':
+      return [data.sessionID, data.id];
+    default:
+      return [undefined, undefined];
+  }
 }

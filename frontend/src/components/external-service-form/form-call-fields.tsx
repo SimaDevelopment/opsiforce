@@ -23,8 +23,8 @@ function badgeVariant(level: MessageLevel | undefined) {
 
 function messageClass(level: MessageLevel | undefined): string {
   if (level === 'error') return 'text-destructive';
-  if (level === 'warning') return 'text-amber-700';
-  if (level === 'success') return 'text-emerald-700';
+  if (level === 'warning') return 'of-ink of-tone-needs-you';
+  if (level === 'success') return 'of-ink of-tone-done';
   return 'text-muted-foreground';
 }
 
@@ -73,7 +73,7 @@ export function CallInfo(props: {
       </Show>
       <Show
         when={props.ctx.callService}
-        fallback={<span class="text-[11px] text-muted-foreground">Shown live to people who can change this.</span>}
+        fallback={<span class="text-[0.6875rem] text-muted-foreground">Shown live to people who can change this.</span>}
       >
         <div
           class="flex min-h-6 items-center gap-1.5"
@@ -82,20 +82,20 @@ export function CallInfo(props: {
         >
           <Switch>
             <Match when={asking()}>
-              <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span class="inline-flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
                 <LoaderCircle class="h-3 w-3 animate-spin" aria-hidden="true" /> Asking the service…
               </span>
             </Match>
             <Match when={failure()}>
               {(message) => (
-                <Badge variant="destructive" class="w-fit px-1.5 py-0 text-[10px] font-medium">
+                <Badge variant="destructive" class="w-fit px-1.5 py-0 text-[0.625rem] font-medium">
                   {message()}
                 </Badge>
               )}
             </Match>
             <Match when={result()}>
               {(answer) => (
-                <Badge variant={badgeVariant(answer().level)} class="w-fit px-1.5 py-0 text-[10px] font-medium">
+                <Badge variant={badgeVariant(answer().level)} class="w-fit px-1.5 py-0 text-[0.625rem] font-medium">
                   {answer().text}
                 </Badge>
               )}
@@ -165,7 +165,7 @@ export function CallButton(props: { field: ButtonFieldDefinition; itemId?: strin
       </Button>
       <Show when={failure()}>
         {(message) => (
-          <span class="text-[11px] text-destructive" role="alert">
+          <span class="text-[0.6875rem] text-destructive" role="alert">
             {message()}
           </span>
         )}
@@ -189,7 +189,7 @@ function ButtonAnswer(props: { result: ButtonResult }) {
     <div role="status" class="flex flex-col gap-1.5">
       <Switch>
         <Match when={'message' in props.result && props.result}>
-          {(answer) => <span class={cn('text-[11px]', messageClass(answer().level))}>{answer().message}</span>}
+          {(answer) => <span class={cn('text-[0.6875rem]', messageClass(answer().level))}>{answer().message}</span>}
         </Match>
         <Match when={'image' in props.result && props.result}>
           {(answer) => (
@@ -197,7 +197,7 @@ function ButtonAnswer(props: { result: ButtonResult }) {
               <Show
                 when={SHOWN_IMAGE_TYPES.has(answer().image.mimeType)}
                 fallback={
-                  <span class="text-[11px] text-muted-foreground">
+                  <span class="text-[0.6875rem] text-muted-foreground">
                     The service answered an image this page can't show.
                   </span>
                 }
@@ -209,7 +209,7 @@ function ButtonAnswer(props: { result: ButtonResult }) {
                 />
               </Show>
               <Show when={answer().caption}>
-                <figcaption class="text-[11px] text-muted-foreground">{answer().caption}</figcaption>
+                <figcaption class="text-[0.6875rem] text-muted-foreground">{answer().caption}</figcaption>
               </Show>
             </figure>
           )}
@@ -218,13 +218,13 @@ function ButtonAnswer(props: { result: ButtonResult }) {
           {(answer) => (
             <Show
               when={isHttpLink(answer().link)}
-              fallback={<span class="text-[11px] text-muted-foreground">{answer().link}</span>}
+              fallback={<span class="text-[0.6875rem] text-muted-foreground">{answer().link}</span>}
             >
               <a
                 href={answer().link}
                 target="_blank"
                 rel="noopener noreferrer"
-                class="inline-flex w-fit items-center gap-1 text-[11px] text-foreground underline underline-offset-2"
+                class="inline-flex w-fit items-center gap-1 text-[0.6875rem] text-foreground underline underline-offset-2"
               >
                 {answer().label ?? answer().link}
                 <ExternalLink class="h-3 w-3" aria-hidden="true" />

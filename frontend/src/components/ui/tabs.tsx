@@ -7,12 +7,19 @@ function Tabs(props: ComponentProps<typeof Kobalte>) {
   return <Kobalte class={cn('w-full', local.class)} {...rest} />;
 }
 
-function TabsList(props: ParentProps<ComponentProps<typeof Kobalte.List>>) {
-  const [local, rest] = splitProps(props, ['class', 'children']);
+/**
+ * `segmented` is the default — a control inside a panel. `folder` is for tabs
+ * that sit on the band and own the surface below them, where the selected tab
+ * has to merge into the content rather than float above it.
+ */
+function TabsList(props: ParentProps<ComponentProps<typeof Kobalte.List> & { variant?: 'segmented' | 'folder' }>) {
+  const [local, rest] = splitProps(props, ['class', 'children', 'variant']);
   return (
     <Kobalte.List
       class={cn(
-        'inline-flex h-9 items-center justify-start overflow-x-auto [scrollbar-width:none] rounded-lg bg-muted p-1 text-muted-foreground w-full',
+        local.variant === 'folder'
+          ? 'of-tabs overflow-x-auto [scrollbar-width:none]'
+          : 'of-seg inline-flex items-center justify-start overflow-x-auto [scrollbar-width:none] w-full',
         local.class
       )}
       {...rest}
@@ -27,10 +34,7 @@ function TabsTrigger(props: ParentProps<ComponentProps<typeof Kobalte.Trigger>>)
   return (
     <Kobalte.Trigger
       class={cn(
-        'inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium ring-offset-background transition-all',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'disabled:pointer-events-none disabled:opacity-50',
-        'data-[selected]:bg-background data-[selected]:text-foreground data-[selected]:shadow-sm',
+        'flex-1 fr disabled:pointer-events-none disabled:opacity-50',
         local.class
       )}
       {...rest}

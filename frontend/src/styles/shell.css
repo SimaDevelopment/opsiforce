@@ -1,0 +1,30 @@
+/* ==========================================================================
+   OPSIFORCE — THE SHELL DESIGN LAYER
+   Light-first · comfortable density · brand-forward · Preview privileged.
+
+   This folder is the single place colour, type, metrics and motion are
+   authored, one file per concern, imported here in cascade order.
+   Everything below L2 is semantic: components reference the semantic names,
+   never a literal. Tailwind's shadcn colour names (bg-background,
+   text-muted-foreground, …) point at these tokens in index.css, so the
+   components that already use them inherit the look and every Appearance
+   choice without being touched.
+
+   Files, in cascade order
+     tokens      — fonts, the L2 semantic tokens light and dark, the federated
+                   HSL triplets the keycloak-ms Users page reads, and the
+                   Appearance controls (contrast, density, scheme, motion)
+     base        — Tailwind's base layer
+     primitives  — .of-btn .of-chip .of-row, the tone recipe … the shared shapes
+     sidebar, band, home, command-palette, runs-dock, settings — one per surface
+   ========================================================================== */
+
+@import './shell/tokens.css';
+@import './shell/base.css';
+@import './shell/primitives.css';
+@import './shell/sidebar.css';
+@import './shell/band.css';
+@import './shell/home.css';
+@import './shell/command-palette.css';
+@import './shell/runs-dock.css';
+@import './shell/settings.css';

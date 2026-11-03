@@ -11,9 +11,12 @@ const badgeVariants = cva(
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
         destructive: 'border-transparent bg-destructive text-destructive-foreground shadow',
         outline: 'text-foreground',
-        success: 'border-transparent bg-emerald-50 text-emerald-700',
-        warning: 'border-transparent bg-amber-50 text-amber-700',
-        info: 'border-transparent bg-blue-50 text-blue-700',
+        // status variants read from the domain tokens, which hold the same hue
+        // in both schemes; the tint is mixed against the live surface so they
+        // survive a mode flip instead of staying a light-mode pastel
+        success: 'border-transparent of-tone of-tone-done',
+        warning: 'border-transparent of-tone of-tone-needs-you',
+        info: 'border-transparent of-tone of-tone-running',
       },
     },
     defaultVariants: {

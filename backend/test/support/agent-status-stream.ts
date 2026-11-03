@@ -1,6 +1,7 @@
 export interface AgentStatusEvent {
   projectId: string;
   agentStatus: string;
+  waitingForInput?: boolean;
 }
 
 export interface EnvironmentStatusEvent extends AgentStatusEvent {
@@ -18,6 +19,7 @@ export interface AgentStatusStream {
   environmentEvents: EnvironmentStatusEvent[];
   appEvents: AppStateEvent[];
   statusesOf: (projectId: string) => string[];
+  waitingOf: (projectId: string) => boolean[];
   environmentStatusesOf: (environmentId: string) => string[];
   servingOf: (environmentId: string) => boolean[];
   close: () => void;
@@ -65,6 +67,8 @@ export async function openAgentStatusStream(
     environmentEvents,
     appEvents,
     statusesOf: (projectId) => events.filter((event) => event.projectId === projectId).map((e) => e.agentStatus),
+    waitingOf: (projectId) =>
+      events.filter((event) => event.projectId === projectId).map((e) => e.waitingForInput === true),
     environmentStatusesOf: (environmentId) =>
       environmentEvents.filter((event) => event.environmentId === environmentId).map((e) => e.agentStatus),
     servingOf: (environmentId) =>

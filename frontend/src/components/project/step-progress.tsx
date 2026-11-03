@@ -38,7 +38,7 @@ export function StepProgress(props: StepProgressProps) {
                   <span
                     class={cn(
                       'absolute top-5 h-[calc(100%-0.25rem)] w-px',
-                      state() === 'done' ? 'bg-emerald-500/40' : 'bg-border'
+                      state() === 'done' ? 'of-fill of-tone-done opacity-40' : 'bg-border'
                     )}
                   />
                 </Show>
@@ -72,7 +72,7 @@ function StepMarker(props: { state: StepState }) {
     <span
       class={cn(
         'z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 bg-background transition-colors',
-        props.state === 'done' && 'border-emerald-500 bg-emerald-500 text-white',
+        props.state === 'done' && 'of-fill of-tone-done border-transparent text-white',
         props.state === 'active' && 'border-primary text-primary',
         props.state === 'failed' && 'border-destructive bg-destructive text-white',
         props.state === 'pending' && 'border-border text-muted-foreground'

@@ -63,4 +63,4 @@ adrs: [0097]
 - [Environments](../projects/environments.md) — App Auth per environment and how publish seeds it.
 - [Token forwarding](../projects/token-forwarding.md) — what an App receives with the visitor's access token.
 - [Permissions](permissions.md) — who may register providers and who may choose them.
-- [Settings](settings.md) — the section's place in the rail.
+- [Settings](settings.md) — the section's place in the Settings sidebar list.

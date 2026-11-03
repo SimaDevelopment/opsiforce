@@ -1,5 +1,5 @@
 import { Show, createSignal } from 'solid-js';
-import { isAgentWorking } from '~/api/agent-status';
+import { isAgentWaiting, isAgentWorking } from '~/api/agent-status';
 import type { Project } from '~/api/client';
 import { cn } from '~/lib/cn';
 import { projectDisplayTitle } from '~/lib/project-display';
@@ -16,6 +16,8 @@ export function ProjectCard(props: {
   onDeleted?: () => void;
 }) {
   const isDisabled = () => props.project.status === 'disabled';
+  const isFailed = () => props.project.status === 'failed';
+  const isWaiting = () => isAgentWaiting(props.project.id);
 
   const [editing, setEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal('');
@@ -49,8 +51,8 @@ export function ProjectCard(props: {
     <div
       onClick={handleCardClick}
       class={cn(
-        'w-full text-left rounded-lg px-2.5 py-2 transition-all duration-150 group relative cursor-pointer',
-        props.isActive ? 'bg-background shadow-sm ring-1 ring-black/[0.04]' : 'hover:bg-sidebar-accent/60'
+        'of-sb-card w-full text-left rounded-lg transition-all duration-150 group relative cursor-pointer',
+        props.isActive ? 'of-sb-open-card' : 'hover:bg-sidebar-accent/60'
       )}
     >
       <div class="flex items-center gap-2 min-w-0">
@@ -73,14 +75,26 @@ export function ProjectCard(props: {
             }
           >
             <div class="flex items-center gap-1 min-w-0">
-              <Show when={isAgentWorking(props.project.id)}>
-                <span role="status" aria-label="Agent working" class="flex items-center shrink-0">
-                  <Spinner size="xs" />
-                </span>
+              <Show
+                when={isWaiting()}
+                fallback={
+                  <Show when={isAgentWorking(props.project.id)}>
+                    <span role="status" aria-label="Agent working" class="flex items-center shrink-0">
+                      <Spinner size="xs" />
+                    </span>
+                  </Show>
+                }
+              >
+                <span
+                  role="status"
+                  aria-label="Waiting for an answer"
+                  title="Waiting for an answer"
+                  class="of-dot of-tone-needs-you shrink-0"
+                />
               </Show>
               <span
                 class={cn(
-                  'block text-xs font-medium truncate leading-tight flex-1 min-w-0',
+                  'block t-ui-med truncate flex-1 min-w-0',
                   isDisabled() ? 'text-sidebar-muted-foreground' : 'text-sidebar-foreground'
                 )}
               >
@@ -93,7 +107,10 @@ export function ProjectCard(props: {
               <Show when={isDisabled()}>
                 <span class="text-xs text-sidebar-muted-foreground">Disabled</span>
               </Show>
-              <EnvironmentBadges environmentIds={props.project.environmentIds} dimmed={isDisabled()} />
+              <Show when={isFailed()}>
+                <span class="text-xs of-ink of-tone-failed">Failed</span>
+              </Show>
+              <EnvironmentBadges environmentIds={props.project.environmentIds} dimmed={isDisabled()} size="sm" />
             </div>
           </Show>
         </div>

@@ -1,10 +1,12 @@
 import { createEffect, onMount, untrack } from 'solid-js';
+import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
 import { useTheme } from '@opencode/ui/theme/context';
 import { useSettings } from '@opencode/app/settings/model';
 import { useGlobal } from '@opencode/app/runtime/server/runtime';
 import type { ServerConnection } from '@opencode/app';
-import { timelinePresets, type TimelineDetail } from '@opencode/session-ui/timeline/detail';
 import { BASE_FORMAT_IDS } from '~/api/model-providers';
+import { useAppearance } from '~/lib/appearance';
+import { shellChatTheme } from './opencode-shell-theme';
 
 const detailedPreset = timelinePresets.find((preset) => preset.id === 'detailed');
 if (!detailedPreset) throw new Error('opencode timeline presets no longer include "detailed"');
@@ -14,6 +16,13 @@ const activityTimeline: TimelineDetail = {
   edit: { placement: 'separate', details: 'collapsed' },
   thinking: { placement: 'separate', details: 'expanded' },
 };
+
+// opencode keeps a stored theme id only if it knows that id when it starts,
+// and a theme registered afterwards is not yet known, so it would be reset to
+// the default on every mount and stored again after it. Registering the shell
+// theme under the default id makes it the theme opencode starts with: nothing
+// is stored, and other tabs see no change.
+export const OPENCODE_DEFAULT_THEME_ID = 'oc-2';
 
 type ModelKey = { providerID: string; modelID: string };
 type Visibility = 'show' | 'hide';
@@ -58,13 +67,29 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
   const theme = useTheme();
   const settings = useSettings();
 
+  const appearance = useAppearance();
+
   onMount(() => {
-    theme.setColorScheme('light');
+    if (theme.themeId() !== OPENCODE_DEFAULT_THEME_ID) theme.setTheme(OPENCODE_DEFAULT_THEME_ID);
     settings.appearance.setTabLayout('horizontal');
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
     settings.general.setTimelineDetail(activityTimeline);
+    // The embed never registers opencode's palette, yet its capture-phase
+    // listener would still swallow Cmd/Ctrl K before the shell palette sees it.
+    settings.keybinds.set('command.palette', 'none');
   });
+
+  // The chat renders from opencode's own theme system. Re-registering the
+  // theme is what reapplies it, so a seed change reaches the chat too; the
+  // live tokens inside it follow Contrast on their own.
+  createEffect(() =>
+    theme.registerTheme(shellChatTheme(OPENCODE_DEFAULT_THEME_ID, appearance.scheme(), appearance.seedTokens()))
+  );
+
+  // The shell's `system` is already resolved by `appearance.scheme()`, so the
+  // chat and the shell can never disagree on light or dark.
+  createEffect(() => theme.setColorScheme(appearance.scheme()));
 
   pinModelVisibilityToCatalog(
     untrack(() => props.server),

@@ -39,7 +39,7 @@ export function FilesDropzone(props: FilesDropzoneProps) {
               />
             </div>
             <span class="text-xs text-muted-foreground tabular-nums">{props.upload.percent()}%</span>
-            <span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+            <span class="shrink-0 text-[0.6875rem] text-muted-foreground tabular-nums">
               <Show
                 when={props.upload.totalBytes() > 0}
                 fallback={`${props.upload.preparedFiles()} / ${props.upload.totalFiles()} files`}
@@ -76,7 +76,7 @@ export function FilesDropzone(props: FilesDropzoneProps) {
           Folder
         </button>
         <span
-          class="pointer-events-none shrink-0 max-w-1/3 truncate text-[11px] text-muted-foreground"
+          class="pointer-events-none shrink-0 max-w-1/3 truncate text-[0.6875rem] text-muted-foreground"
           title={props.hint}
         >
           {props.hint}

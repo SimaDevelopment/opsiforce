@@ -273,6 +273,7 @@ const projectSelectFields = {
     WHERE ${projectEnvAll.projectId} = ${projects.id}
       AND ${projectEnvAll.environmentId} IS NOT NULL
   )`.as('environment_ids'),
+  lastPromptAt: projects.lastPromptAt,
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 };
@@ -975,6 +976,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     for (const row of rows) {
       row.agentStatus = this.agentStatusService.statusOf(row.id);
+      row.waitingForInput = this.agentStatusService.waitingForInput(row.id);
     }
     return rows;
   }

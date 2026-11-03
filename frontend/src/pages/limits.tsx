@@ -280,7 +280,7 @@ function UsageCell(props: { limit: TenantLimit; platformValue: number | null }) 
     <TableCell label={LIMITS[props.limit.key].label}>
       <Tooltip>
         <TooltipTrigger as="div" class="w-24 space-y-1">
-          <span class="block text-sm tabular-nums" classList={{ 'text-amber-600 dark:text-amber-500': reached() }}>
+          <span class="block text-sm tabular-nums" classList={{ 'of-ink of-tone-needs-you': reached() }}>
             {props.limit.used}
             <span
               class={cn(
@@ -295,7 +295,7 @@ function UsageCell(props: { limit: TenantLimit; platformValue: number | null }) 
           <Show when={props.limit.limit !== null}>
             <div class="h-1 overflow-hidden rounded-full bg-muted">
               <div
-                class={cn('h-full rounded-full', reached() ? 'bg-amber-500' : 'bg-primary/60')}
+                class={cn('h-full rounded-full', reached() ? 'of-fill of-tone-needs-you' : 'bg-primary/60')}
                 style={{ width: `${share()}%` }}
               />
             </div>
@@ -448,7 +448,7 @@ function LoadingState() {
 function ErrorState(props: { onRetry: () => void }) {
   return (
     <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <AlertTriangle class="w-10 h-10 mx-auto mb-3 text-amber-500 opacity-70" />
+      <AlertTriangle class="of-ink of-tone-needs-you w-10 h-10 mx-auto mb-3 opacity-70" />
       <p class="text-sm font-medium text-foreground">Couldn't load the limits</p>
       <Button variant="outline" size="sm" class="mt-4" onClick={() => props.onRetry()}>
         <RefreshCw class="w-3.5 h-3.5" />

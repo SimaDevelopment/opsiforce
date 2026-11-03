@@ -17,8 +17,12 @@ Watches opencode and tells the backend what it saw. It registers **no hooks**, o
 | `session.execution.succeeded` / `failed` / `interrupted` (any reason) | `{ kind: "run.ended", sessionId }` |
 | `session.renamed` | `{ kind: "titled", sessionId, root, title }` |
 | `session.inbox.enqueued` with `item.type === "user"` | `{ kind: "prompted", sessionId, root }` |
+| `permission.asked` | `{ kind: "input.requested", sessionId, requestId: id, input: "permission" }` |
+| `form.created` | `{ kind: "input.requested", sessionId: form.sessionID, requestId: form.id, input: "question" }` |
+| `permission.replied` | `{ kind: "input.resolved", sessionId, requestId: requestID }` |
+| `form.replied` / `form.cancelled` | `{ kind: "input.resolved", sessionId, requestId: id }` |
 
-Every other event, and every other inbox item type, is ignored. `root` is true when the session has no `parentID` (`ctx.session.get`). The observer decides nothing: what counts as Working, which title names the Project and which item stamps a Prompt are backend rules.
+Every other event, every other inbox item type and an input event without its request id is ignored. `root` is true when the session has no `parentID` (`ctx.session.get`). The observer decides nothing: what counts as Working or waiting for input, which title names the Project and which item stamps a Prompt are backend rules.
 
 - **Where it posts.** `POST ${SERVICE_GATEWAY_URL}/agent/observations` with `Authorization: Bearer ${SERVICE_GATEWAY_API_KEY}`, the environment's gateway key that the pod template already puts in the `opencode` container's environment (the same key and header agent-control's pusher uses).
 - **Delivery.** Fire-and-forget: each observation is posted on its own, up to 4 attempts (5 s timeout each, backoff 1.5 s, 3 s, 4.5 s, like agent-control's `push.go`), then dropped and logged. No queue, no persistence.

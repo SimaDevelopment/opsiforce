@@ -37,7 +37,7 @@ export const ProjectMapper = {
   toDto: (
     project: ProjectRow,
     environments: EnvironmentRow[],
-    agentStatus: AgentStatus,
+    activity: { agentStatus: AgentStatus; waitingForInput: boolean },
     publicUrls: PublicUrlService,
     runtimeOrigin: string
   ): ProjectDto => ({
@@ -59,7 +59,8 @@ export const ProjectMapper = {
     kind: project.kind,
     importedAgent: project.importedAgent,
     timezone: project.timezone,
-    agentStatus,
+    agentStatus: activity.agentStatus,
+    waitingForInput: activity.waitingForInput,
     lastPromptAt: isoOrNull(project.lastPromptAt),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),

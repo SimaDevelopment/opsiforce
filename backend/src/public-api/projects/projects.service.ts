@@ -279,7 +279,7 @@ export class PublicProjectsService {
       ProjectMapper.toDto(
         row,
         environments.get(row.id) ?? [],
-        this.agentStatus.statusOf(row.id),
+        { agentStatus: this.agentStatus.statusOf(row.id), waitingForInput: this.agentStatus.waitingForInput(row.id) },
         this.publicUrls,
         runtimeOrigin
       )

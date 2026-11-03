@@ -58,7 +58,9 @@ export function MultiSelect(props: Props) {
 
   return (
     <div class="flex flex-col gap-1 min-w-0 flex-1">
-      <div class="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">{props.options.name}(s)</div>
+      <div class="text-[0.625rem] uppercase tracking-wide text-muted-foreground font-medium">
+        {props.options.name}(s)
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger class="flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 py-1 text-xs transition-colors hover:bg-accent/50">
           <div class="flex items-center gap-1 flex-wrap overflow-hidden min-w-0">
@@ -66,7 +68,7 @@ export function MultiSelect(props: Props) {
               {(items) => (
                 <For each={items()}>
                   {(item) => (
-                    <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+                    <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0">
                       {item}
                     </Badge>
                   )}
@@ -86,7 +88,7 @@ export function MultiSelect(props: Props) {
                     closeOnSelect={false}
                     onSelect={() => toggleOption(option)}
                     class={cn(
-                      'justify-center text-[11px] px-2 py-1',
+                      'justify-center text-[0.6875rem] px-2 py-1',
                       isActive() && 'bg-accent text-accent-foreground font-medium'
                     )}
                   >

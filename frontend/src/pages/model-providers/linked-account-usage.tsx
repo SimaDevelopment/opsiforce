@@ -32,7 +32,7 @@ function planLabel(plan: string): string {
 
 function barClass(usedPercent: number): string {
   if (usedPercent >= AT_LIMIT_PERCENT) return 'bg-destructive';
-  if (usedPercent >= NEAR_LIMIT_PERCENT) return 'bg-amber-500';
+  if (usedPercent >= NEAR_LIMIT_PERCENT) return 'of-fill of-tone-needs-you';
   return 'bg-primary';
 }
 

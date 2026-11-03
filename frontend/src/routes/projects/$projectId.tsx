@@ -9,6 +9,7 @@ import {
 import { createDocumentTitle } from '~/lib/create-document-title';
 import { projectTitleOf } from '~/lib/project-title';
 import { ProjectView } from '~/pages/project';
+import { ProjectTitleLabel } from '~/components/project/project-header';
 
 interface ProjectSearch extends InitialPromptSearch {
   configure?: string;
@@ -64,6 +65,9 @@ function ProjectPage() {
         projectId={params().projectId}
         initialPrompt={initialPrompt}
         onInitialPromptAdmitted={consumeInitialPrompt}
+        /* The band had no title at all on this route: a project screen that
+           never says which project, or which workspace it belongs to. */
+        headerLabel={<ProjectTitleLabel projectId={params().projectId} />}
       />
       <ConfigureDeepLink
         projectId={params().projectId}

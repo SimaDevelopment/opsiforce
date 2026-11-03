@@ -85,6 +85,7 @@
 - [Sign-in provider](organization/sign-in-provider.md) — registering an Organization's OIDC app once so its Apps sign members in with it
 
 **Frontend** (`frontend/`)
+- [Design System](frontend/design-system.md) — where colour, type, metrics and motion are authored, and how Appearance drives them
 - [OpenCode Embed](frontend/opencode-embed.md) — how OpenCode's chat renders inline and reaches the pod
 - [Query Adapter](frontend/query-adapter.md) — why reads use `createAppQuery` and what it changes
 - [Job Dock](frontend/job-dock.md) — one progress surface for publish, duplicate, export and import

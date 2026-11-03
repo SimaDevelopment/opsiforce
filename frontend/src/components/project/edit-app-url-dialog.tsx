@@ -113,11 +113,8 @@ export function EditAppUrlDialog(props: EditAppUrlDialogProps) {
             <p class="break-all text-xs text-muted-foreground">Current address: {props.environment?.publicUrl}</p>
           </Show>
           <Show when={signsInOutside() && showsNewAddress()}>
-            <div
-              class="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
-              role="alert"
-            >
-              <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+            <div class="of-note of-tone-needs-you items-start gap-2 text-xs" role="alert">
+              <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <div class="min-w-0 flex-1 space-y-1 break-words">
                 <p>
                   This App signs visitors in with your identity provider. Register this sign-in callback there before

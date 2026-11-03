@@ -154,7 +154,7 @@ export function ConfigurationFooter(props: {
   cancel?: { label: string; onClick: () => void };
   leading?: JSX.Element;
 }) {
-  const textSize = () => (props.compact ? 'text-[11px]' : 'text-xs');
+  const textSize = () => (props.compact ? 'text-[0.6875rem]' : 'text-xs');
   const saveButton = () => (
     <Show when={props.canSave ?? true}>
       <Button size="sm" type="submit" class={props.compact ? 'h-7 text-xs' : undefined} loading={props.saving}>

@@ -111,11 +111,11 @@ function SkillsEmptyState(props: { narrowed: boolean }) {
         <EmptyState
           icon={Files}
           title="No skills yet."
-          hint="New skill writes one with the Builder, or import a .skill archive."
+          description="New skill writes one with the Builder, or import a .skill archive."
         />
       }
     >
-      <EmptyState icon={Files} title="No skills match." hint="Try another filter, or clear the search." />
+      <EmptyState icon={Files} title="No skills match." description="Try another filter, or clear the search." />
     </Show>
   );
 }
@@ -134,7 +134,7 @@ function SkillRow(props: { skill: Skill }) {
             {(displayName) => (
               <>
                 <span class="text-sm font-medium">{displayName()}</span>
-                <span class="font-mono text-[11px] text-muted-foreground">{props.skill.name}</span>
+                <span class="font-mono text-[0.6875rem] text-muted-foreground">{props.skill.name}</span>
               </>
             )}
           </Show>

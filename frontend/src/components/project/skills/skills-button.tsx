@@ -32,8 +32,8 @@ function StateLine(props: { skill: EnvironmentSkill }) {
     <Show when={props.skill.state !== 'on' && props.skill.state !== 'always-on'}>
       <span
         class={cn(
-          'inline-flex items-center gap-1 text-[10px]',
-          props.skill.state === 'retrying' ? 'text-amber-700' : 'text-muted-foreground'
+          'inline-flex items-center gap-1 text-[0.625rem]',
+          props.skill.state === 'retrying' ? 'of-ink of-tone-needs-you' : 'text-muted-foreground'
         )}
       >
         <Show when={props.skill.state === 'switching-on'}>
@@ -162,9 +162,11 @@ export function SkillsButton(props: { projectId: string; projectEnvironmentId: s
             <Pager {...skillPages.pagerProps()} />
           </Show>
           <Show when={switchSkill.error}>
-            {(error) => <p class="border-t border-border px-3 py-2 text-[11px] text-destructive">{error().message}</p>}
+            {(error) => (
+              <p class="border-t border-border px-3 py-2 text-[0.6875rem] text-destructive">{error().message}</p>
+            )}
           </Show>
-          <p class="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+          <p class="border-t border-border px-3 py-2 text-[0.625rem] leading-relaxed text-muted-foreground">
             Applies from the next message; instructions already read stay in this conversation.
           </p>
         </PopoverContent>

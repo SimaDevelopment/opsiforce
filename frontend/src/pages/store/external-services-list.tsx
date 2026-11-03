@@ -213,7 +213,7 @@ export function ExternalServicesListPage(props: {
           <EmptyState
             icon={Cable}
             title="External Services are managed by platform operators and Organization admins."
-            hint="Ask an admin if you need a service set up."
+            description="Ask an admin if you need a service set up."
           />
         }
       >
@@ -246,7 +246,7 @@ export function ExternalServicesListPage(props: {
                   <EmptyState
                     icon={Cable}
                     title="No External Services match."
-                    hint="Try another filter, or clear the search."
+                    description="Try another filter, or clear the search."
                   />
                 </Show>
               }
@@ -305,7 +305,7 @@ function ServiceListRow(props: { row: ServiceRow; environments: Environment[] })
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span class="text-sm font-medium">{props.row.displayName}</span>
-          <span class="font-mono text-[11px] text-muted-foreground" translate="no">
+          <span class="font-mono text-[0.6875rem] text-muted-foreground" translate="no">
             {props.row.slug}
           </span>
           <OriginBadge origin={props.row.origin} />
@@ -321,7 +321,7 @@ function ServiceListRow(props: { row: ServiceRow; environments: Environment[] })
         </Show>
         <ServiceEnvironments row={props.row} environments={props.environments} />
         <Show when={props.row.hidesBuiltIn}>
-          <div class="mt-1.5 text-xs text-amber-800">
+          <div class="of-ink of-tone-needs-you mt-1.5 text-xs">
             A built-in service now has this name too. It stays hidden in your Organization, so your agents keep reaching
             this one.
           </div>

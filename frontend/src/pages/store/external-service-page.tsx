@@ -222,7 +222,7 @@ export function ExternalServicePage(props: {
               <EmptyState
                 icon={Cable}
                 title="This External Service isn't available."
-                hint="It may need setup by a platform operator, or it no longer exists."
+                description="It may need setup by a platform operator, or it no longer exists."
               />
             }
           >
@@ -573,18 +573,18 @@ function OverviewTab(props: {
   const ServiceOverview = () => (
     <div class="flex min-w-0 flex-col gap-8">
       <Show when={props.service.hidesBuiltIn}>
-        <div class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-          <p class="flex-1 text-xs text-amber-900">
+        <div class="of-note of-tone-needs-you gap-3 p-4">
+          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <p class="flex-1 text-xs">
             A built-in service called <span class="font-mono">{props.service.slug}</span> was added to the platform
             after this one. It stays hidden in your Organization, so your agents and Apps keep reaching this service.
           </p>
         </div>
       </Show>
       <Show when={props.editable && !props.editable.available}>
-        <div class="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4 sm:flex-row sm:items-center">
-          <AlertTriangle class="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-          <p class="flex-1 text-xs text-amber-900">
+        <div class="of-note of-tone-needs-you flex-col gap-3 p-4 sm:flex-row sm:items-center">
+          <AlertTriangle class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <p class="flex-1 text-xs">
             {props.service.origin === 'custom'
               ? "Your Projects can't use this service until every required field of its Service configuration is filled."
               : "Organizations can't see or use this service until every required field of its Service configuration is filled."}
@@ -606,7 +606,7 @@ function OverviewTab(props: {
           <EmptyState
             icon={Rocket}
             title={`Nothing published to ${shown().environmentName ?? 'this environment'} yet.`}
-            hint="Publish, at the top of the page, copies Development here."
+            description="Publish, at the top of the page, copies Development here."
           />
         }
       >
@@ -636,7 +636,7 @@ function OverviewTab(props: {
                   connected to this service read it until the builder replaces it.
                 </p>
               </Show>
-              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[11px] leading-relaxed">
+              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[0.6875rem] leading-relaxed">
                 {skill()}
               </pre>
             </>
@@ -670,9 +670,9 @@ function OverviewTab(props: {
 
 function BuiltOnSdk1Notice() {
   return (
-    <div class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-      <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-      <p class="flex-1 text-xs text-amber-900">
+    <div class="of-note of-tone-needs-you gap-3 p-4">
+      <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <p class="flex-1 text-xs">
         Built on SDK 1, rebuild or delete. Opsiforce no longer serves SDK 1 services: rebuild this one on SDK 2 in the
         Builder, or delete it.
       </p>
@@ -702,7 +702,7 @@ function ManifestLists(props: { manifest: ShownManifest; shown: ManifestShown })
                 <ManifestRow
                   listed={listed}
                   kind={
-                    <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Event</span>
+                    <span class="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">Event</span>
                   }
                   title={listed.item.title}
                   description={listed.item.description}

@@ -215,7 +215,7 @@ export function ServiceUsage(props: { serviceId: string; showCopy: boolean }) {
                 <EmptyState
                   icon={ChartColumn}
                   title={shown().month ? `No usage in ${formatMonth(shown().month ?? '')}` : 'No usage counted yet'}
-                  hint="Counts fill as Projects call the service and as it counts what it does."
+                  description="Counts fill as Projects call the service and as it counts what it does."
                 />
               }
             >

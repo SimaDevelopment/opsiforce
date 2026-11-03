@@ -140,7 +140,7 @@ export function OidcForm(props: OidcFormProps) {
                     aria-label="Copy callback URL"
                   >
                     <Show when={copiedUrl() === url} fallback={<Copy class="h-3.5 w-3.5" />}>
-                      <Check class="h-3.5 w-3.5 text-green-500" />
+                      <Check class="of-ink of-tone-done h-3.5 w-3.5" />
                     </Show>
                   </button>
                 </div>

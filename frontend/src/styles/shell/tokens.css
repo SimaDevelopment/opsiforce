@@ -1,0 +1,432 @@
+/* --------------------------------------------------------------------------
+   FONTS — bundled, never a CDN. Inter is the vendored opencode file served at
+   /assets/Inter.ttf, the URL the embedded chat's own @font-face asks for, so
+   the two share one download; IBM Plex Mono comes from the @ibm/plex
+   dependency. The shell renders in the same two faces as the chat.
+   -------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Inter';
+  src: url('/assets/Inter.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('@ibm/plex/IBM-Plex-Mono/fonts/complete/woff2/IBMPlexMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ==========================================================================
+   L2 SEMANTIC — LIGHT (the authored primary mode)
+   Neutrals are tinted toward #3F3D6F so the chrome reads periwinkle, never
+   zinc. Surface ladder app -> panel -> content with ~7/255 steps.
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  /* ---- fonts ---------------------------------------------------------- */
+  --font-sans-stack: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono-stack: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+
+  /* ---- TYPE: composite tokens. Size, line-height and weight travel
+         together; tracking rides alongside as --ls-*. --font-scale is driven
+         by Settings -> Appearance and is the only multiplier in the system. */
+  --font-scale: 1;
+  --text-label: 600 calc(11px * var(--font-scale)) / calc(14px * var(--font-scale)) var(--font-sans);
+  --ls-label: 0.05em;
+  --text-meta: 500 calc(12px * var(--font-scale)) / calc(16px * var(--font-scale)) var(--font-sans);
+  --ls-meta: 0;
+  --text-ui: 400 calc(13px * var(--font-scale)) / calc(18px * var(--font-scale)) var(--font-sans);
+  --ls-ui: 0;
+  --text-ui-med: 510 calc(13px * var(--font-scale)) / calc(18px * var(--font-scale)) var(--font-sans);
+  --text-body: 400 calc(14px * var(--font-scale)) / calc(20px * var(--font-scale)) var(--font-sans);
+  --ls-body: -0.005em;
+  --text-input: 400 calc(16px * var(--font-scale)) / calc(24px * var(--font-scale)) var(--font-sans);
+  --ls-input: -0.01em;
+  --text-title: 590 calc(20px * var(--font-scale)) / calc(26px * var(--font-scale)) var(--font-sans);
+  --ls-title: -0.015em;
+  --text-display: 590 calc(32px * var(--font-scale)) / calc(36px * var(--font-scale)) var(--font-sans);
+  --ls-display: -0.02em;
+  --mono-ui: 400 calc(12px * var(--font-scale)) / calc(20px * var(--font-scale)) var(--font-mono);
+  --mono-code: 400 calc(12.5px * var(--font-scale)) / calc(20px * var(--font-scale)) var(--font-mono);
+  --weight-emphasis: 510;
+  --weight-strong: 590;
+
+  /* ---- METRICS: exactly three control heights -------------------------- */
+  --h-compact: 24px;
+  --h-default: 32px;
+  --h-primary: 36px;
+  /* Comfortable is the default density, so the bare stylesheet matches it
+     when storage is blocked and the boot script sets no data-density */
+  --row-h: var(--h-primary);
+  /* the project tabs are rows on their side: Density moves them, and the band
+     is the tab plus the air above it */
+  --tab-h: var(--row-h);
+  --band-h: calc(var(--tab-h) + 8px);
+  --row-pad: 10px;
+  --row-gap: 10px;
+  --indent: 12px;
+  --card-pad: 8px;
+
+  --radius-sm-of: 6px;
+  --radius-md-of: 8px;
+  --control-radius: 8px;
+  --radius-lg-of: 10px;
+  --radius-xl-of: 14px;
+  --radius-full: 999px;
+
+  /* ---- MOTION ---------------------------------------------------------- */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 240ms;
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---- SURFACES + INK --------------------------------------------------- */
+  --bg-app: #ececf3;
+  --bg-panel: #f5f5fa;
+  --bg-content: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-element: rgb(63 61 111 / 0.045);
+  --bg-element-hover: rgb(63 61 111 / 0.075);
+  /* the same element tones flattened onto the content surface, for the legacy
+     fills (bg-muted, bg-accent) that sit under sticky and overlaid content */
+  --bg-element-solid: color-mix(in srgb, var(--border-ink) 4.5%, var(--bg-content));
+  --bg-element-hover-solid: color-mix(in srgb, var(--border-ink) 7.5%, var(--bg-content));
+  --bg-element-selected: rgb(96 94 246 / 0.1);
+  /* a border is one ink at two strengths. Contrast moves the strengths and a
+     seed moves the ink, so the two can never overwrite each other's choice. */
+  --border-ink: #3f3d6f;
+  --border-subtle-mix: 10%;
+  --border-default-mix: 17%;
+  --border-subtle: color-mix(in srgb, var(--border-ink) var(--border-subtle-mix), transparent);
+  --border-default: color-mix(in srgb, var(--border-ink) var(--border-default-mix), transparent);
+  --border-accent: #605ef6;
+  --fill-solid: #605ef6; /* white reaches APCA Lc 75.1 here */
+  --fill-solid-hover: #5049e6;
+
+  /* the two text ramps are declared as -base and re-exposed, so the Contrast
+     control can mix against the canvas without anyone typing a resolved value */
+  --ink-subtle-base: #6b6990;
+  --ink-default-base: #3c3a5e;
+  --ink-subtle: var(--ink-subtle-base);
+  --ink-default: var(--ink-default-base);
+  --ink-strong: #1d1b32;
+  --ink-on-solid: #ffffff;
+
+  /* accent used as TEXT (links, inline accent) — #6666FF fails on white */
+  --ink-accent: #544fe6;
+  --fill-tint: rgb(96 94 246 / 0.11);
+  --fill-tint-strong: rgb(96 94 246 / 0.18);
+  --ring-accent: rgb(96 94 246 / 0.38);
+  --scrim: rgb(29 27 50 / 0.34);
+
+  --shadow-1: inset 0 0 0 1px var(--border-subtle);
+  --shadow-2: 0 1px 2px rgb(29 27 50 / 0.07), 0 0 0 1px var(--border-subtle);
+  --shadow-floating: 0 10px 24px rgb(29 27 50 / 0.16), 0 1px 3px rgb(29 27 50 / 0.08);
+  --glow-composer: 0 26px 72px -22px rgb(96 94 246 / 0.26);
+
+  /* ---- DOMAIN TOKENS — identical in light and dark, so an environment, a
+         job phase or a diff side keeps its identity across a mode flip. ---- */
+  --env-development: #4f86e8;
+  --env-staging: #c2871b;
+  --env-production: #1c9a6b;
+  --job-running: #4f86e8;
+  --job-needs-you: #c2871b;
+  --job-failed: #d9484c;
+  --job-done: #1c9a6b;
+  --job-stopping: #c7671f; /* going away, not warming up — amber is taken */
+  --published: #7a5af0;
+  --diff-added: #1c9a6b;
+  --diff-deleted: #d9484c;
+  --ai-generated: #6666ff;
+
+  /* File kinds are identity, not status: a spreadsheet is green because it is a
+     spreadsheet, not because something succeeded. Same hue family as the job
+     tones so the two never look like different design systems. */
+  --kind-doc: #4f86e8;
+  --kind-sheet: #1c9a6b;
+  --kind-slide: #c7671f;
+  --kind-image: #1194ac;
+  --kind-text: #7a5af0;
+  --kind-pdf: #d9484c;
+
+  /* A chart series is a third kind of colour: not a status and not an identity,
+     just six things that must stay apart. Evenly spread at one lightness so no
+     slice reads as more important, and sat at L .585 because that is where all
+     six clear 3:1 on BOTH schemes' surfaces (3.64–4.15 light, 3.98–4.54 dark). */
+  --series-1: #6871cd;
+  --series-2: #209166;
+  --series-3: #0487b6;
+  --series-4: #8f63be;
+  --series-5: #c05362;
+  --series-6: #018e8b;
+
+  /* ---- TONE MACHINERY ---------------------------------------------------
+     Every coloured surface in the product is the same four things: a tint, an
+     ink that stays readable on it, a hairline, and sometimes a solid dot. They
+     are derived from one hue with `oklch(from …)` rather than hand-picked per
+     colour, which is why the hue is written once and a new tone costs a line.
+
+     The derivation moves LIGHTNESS and never hue — `color-mix` toward white or
+     black would rotate it (white has no hue, so it reads as 0 and drags blue
+     to teal and violet to pink).
+
+     Measured, not guessed. Light ink L .46 sits at APCA Lc 65.5–69.2 on its own
+     tint over the panel, WCAG 5.6–6.5 on content. Dark ink L .82 at c×.7 (bright
+     chroma clips) reaches |Lc| 64.4–68.4, WCAG 7.1–7.8. The dot drops .06 in
+     light because mid-tones sit too close to bright surfaces — raw amber is
+     2.85:1 on the panel, under the 3:1 floor for a meaningful graphic — and
+     holds still in dark, where near-black separates them for free (3.57 worst). */
+  --tone-tint: 16%;
+  --tone-wash: 7%;
+  --tone-hair: 32%;
+  --tone-ink-l: 0.46;
+  --tone-ink-c: 1;
+  --tone-dot-dl: -0.06;
+
+  /* ======================================================================
+     FEDERATED BRIDGE — the shadcn triplets for the Users page, which the
+     keycloak-ms remote renders with its own `hsl(var(--primary))` CSS. This
+     app's own components read the live tokens instead (index.css @theme), so
+     these exist only for the remote: keep them, and keep them in step with the
+     palette. Same palette, expressed as "H S% L%"; alpha-based tokens are
+     flattened on their own surface.
+     ====================================================================== */
+  --background: 240 22.6% 93.9%; /* --bg-app */
+  --foreground: 243.3 23.7% 29.8%; /* --ink-default */
+  --card: 0 0% 100%;
+  --card-foreground: 243.3 23.7% 29.8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 243.3 23.7% 29.8%;
+  --primary: 240.8 89.4% 66.7%; /* --fill-solid */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 20% 97.1%; /* --bg-element on content */
+  --secondary-foreground: 245.2 29.9% 15.1%;
+  --muted: 240 20% 97.1%;
+  --muted-foreground: 243.1 15.7% 48.8%; /* --ink-subtle */
+  --accent: 255 15.4% 94.9%; /* --bg-element-hover on content */
+  --accent-foreground: 245.2 29.9% 15.1%;
+  --destructive: 358.3 65.6% 56.7%; /* --job-failed */
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 15.2% 93.5%; /* --border-subtle on content */
+  --input: 240 15.8% 88.8%; /* --border-default on content */
+  --ring: 240.8 89.4% 66.7%;
+  --radius: 0.625rem;
+  --sidebar: 240 33.3% 97.1%; /* --bg-panel */
+  --sidebar-foreground: 243.3 23.7% 29.8%;
+  --sidebar-border: 240 15.2% 93.5%;
+  --sidebar-accent: 255 15.4% 94.9%;
+  --sidebar-accent-foreground: 245.2 29.9% 15.1%;
+  --sidebar-muted-foreground: 243.1 15.7% 48.8%;
+}
+
+/* ==========================================================================
+   L2 SEMANTIC — DARK. Authored, not inverted. Near-black compresses
+   perceptually, so the surface ladder carries ~4x the separation of light,
+   the solid fill BRIGHTENS and takes dark ink, and accent TEXT becomes
+   #CBCBFF because #6666FF on a dark panel measures APCA Lc 32.6.
+   ========================================================================== */
+[data-scheme='dark'] {
+  color-scheme: dark;
+
+  --bg-app: #0a0a12;
+  --bg-panel: #101019;
+  --bg-content: #16161f;
+  --bg-elevated: #1e1e2b;
+  --bg-element: rgb(203 203 255 / 0.055);
+  --bg-element-hover: rgb(203 203 255 / 0.095);
+  --bg-element-solid: color-mix(in srgb, var(--border-ink) 5.5%, var(--bg-content));
+  --bg-element-hover-solid: color-mix(in srgb, var(--border-ink) 9.5%, var(--bg-content));
+  --bg-element-selected: rgb(140 137 255 / 0.17);
+  --border-ink: #cbcbff;
+  --border-subtle-mix: 9.5%;
+  --border-default-mix: 18%;
+  --border-accent: #8e8aff;
+
+  /* the solid fill BRIGHTENS all the way to the brand tint. A mid-tone like
+     #8C89FF tops out at APCA Lc 48.3 against ANY ink, pure black included, so
+     no choice of ink rescues it; #CBCBFF carries #15122E at Lc 77.1 and clears
+     the Lc 75 floor for a 13px/510 Publish label. */
+  --fill-solid: #cbcbff;
+  --fill-solid-hover: #d6d5ff;
+
+  /* the dark text ramp is tuned to the same APCA floors as the light one,
+     measured against the resolved surfaces rather than eyeballed:
+       subtle  = Lc 64.2 / 63.7 / 62.6 on panel / content / elevated (floor 60)
+       default = Lc 80.1 / 79.6 on panel / content                   (floor 75) */
+  --ink-subtle-base: #b7b5e1;
+  --ink-default-base: #d3d2eb;
+  --ink-subtle: var(--ink-subtle-base);
+  --ink-default: var(--ink-default-base);
+  --ink-strong: #f3f2fb;
+  --ink-on-solid: #15122e;
+
+  --ink-accent: #cbcbff;
+  --fill-tint: rgb(140 137 255 / 0.14);
+  --fill-tint-strong: rgb(140 137 255 / 0.24);
+  --ring-accent: rgb(142 138 255 / 0.46);
+  --scrim: rgb(4 4 9 / 0.64);
+
+  /* dark lifts the tint (a 16% wash disappears on near-black), lifts the ink
+     and trims its chroma, and leaves the dot at the raw hue */
+  --tone-tint: 24%;
+  --tone-wash: 10%;
+  --tone-hair: 34%;
+  --tone-ink-l: 0.82;
+  --tone-ink-c: 0.7;
+  --tone-dot-dl: 0;
+
+  --shadow-1: inset 0 0 0 1px var(--border-subtle);
+  --shadow-2: 0 1px 2px rgb(0 0 0 / 0.5), 0 0 0 1px var(--border-subtle);
+  --shadow-floating: 0 14px 34px rgb(0 0 0 / 0.62), 0 1px 3px rgb(0 0 0 / 0.5);
+  --glow-composer: 0 30px 86px -26px rgb(140 137 255 / 0.22);
+
+  /* legacy bridge, dark */
+  --background: 240 28.6% 5.5%;
+  --foreground: 242.4 38.5% 87.3%;
+  --card: 240 17% 10.4%;
+  --card-foreground: 242.4 38.5% 87.3%;
+  --popover: 240 17.8% 14.3%;
+  --popover-foreground: 242.4 38.5% 87.3%;
+  --primary: 240 100% 89.8%;
+  --primary-foreground: 246.4 43.8% 12.5%;
+  --secondary: 240 14.7% 14.7%;
+  --secondary-foreground: 246.7 52.9% 96.7%;
+  --muted: 240 14.7% 14.7%;
+  --muted-foreground: 242.7 42.3% 79.6%;
+  --accent: 240 14.3% 17.8%;
+  --accent-foreground: 246.7 52.9% 96.7%;
+  --destructive: 358.3 65.6% 56.7%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 14.3% 17.8%;
+  --input: 240 12.7% 24.7%;
+  --ring: 240 100% 89.8%;
+  --sidebar: 240 22% 8%;
+  --sidebar-foreground: 242.4 38.5% 87.3%;
+  --sidebar-border: 240 14.3% 17.8%;
+  --sidebar-accent: 240 14.3% 17.8%;
+  --sidebar-accent-foreground: 246.7 52.9% 96.7%;
+  --sidebar-muted-foreground: 242.7 42.3% 79.6%;
+}
+
+/* ==========================================================================
+   APPEARANCE CONTROLS — Contrast, Density and Font are the only three knobs,
+   and each one moves tokens the rest of the sheet already reads.
+   ========================================================================== */
+
+/* Contrast raises the two text ramps toward --ink-strong rather than
+   inventing a third ramp, so nothing can drift out of the system. */
+[data-contrast='softer'] {
+  --ink-subtle: color-mix(in oklch, var(--ink-subtle-base) 82%, var(--bg-content));
+  --ink-default: color-mix(in oklch, var(--ink-default-base) 86%, var(--bg-content));
+  --border-subtle-mix: 7%;
+  --border-default-mix: 12%;
+}
+
+[data-scheme='dark'][data-contrast='softer'] {
+  --border-subtle-mix: 7%;
+  --border-default-mix: 13%;
+}
+
+[data-contrast='high'] {
+  --ink-subtle: color-mix(in oklch, var(--ink-subtle-base) 55%, var(--ink-strong));
+  --ink-default: color-mix(in oklch, var(--ink-default-base) 45%, var(--ink-strong));
+  --border-subtle-mix: 20%;
+  --border-default-mix: 34%;
+}
+
+[data-scheme='dark'][data-contrast='high'] {
+  --border-subtle-mix: 20%;
+  --border-default-mix: 34%;
+}
+
+/* Density is wired to an audited list only: the sidebar lists (.of-row), the
+   command palette rows, the project tabs and their band, the project cards and
+   the runs dock cards, which take --card-pad. All three steps are authored, and each one moves --row-h, so the
+   choice is visible rather than decorative. Comfortable is the default. */
+[data-density='comfortable'] {
+  --row-h: 36px;
+  --row-pad: 10px;
+  --row-gap: 10px;
+  --indent: 12px;
+  --card-pad: 8px;
+}
+
+[data-density='default'] {
+  --row-h: var(--h-default);
+  --row-pad: 8px;
+  --row-gap: 8px;
+  --indent: 12px;
+  --card-pad: 6px;
+}
+
+[data-density='compact'] {
+  --row-h: var(--h-compact);
+  --row-pad: 6px;
+  --row-gap: 6px;
+  --indent: 10px;
+  --card-pad: 4px;
+}
+
+/* The shell owns the page's colour scheme and canvas. The embedded chat
+   appends `:root { color-scheme }` after this stylesheet and writes a
+   background straight onto <html>, and both outlive it when it unmounts. A
+   more specific selector and !important win over them, so nothing has to
+   remove what the chat wrote. */
+:root[data-scheme='light'] {
+  color-scheme: light;
+}
+
+:root[data-scheme='dark'] {
+  color-scheme: dark;
+}
+
+html {
+  background-color: var(--bg-app) !important;
+  /* Font size scales the root, so every rem (Tailwind's text sizes and its
+     spacing alike) grows with it, as zooming does. The shell's own type
+     tokens are in px and multiply --font-scale themselves. */
+  font-size: calc(100% * var(--font-scale));
+}
+
+/* motion policy lives in ONE place: the OS setting applies unless the user
+   chose Full in Appearance, and Reduced applies whatever the OS says */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+    --ease-standard: linear;
+    --ease-spring: linear;
+  }
+}
+
+[data-motion='reduced'] {
+  --dur-fast: 0ms;
+  --dur: 0ms;
+  --dur-slow: 0ms;
+  --ease-standard: linear;
+  --ease-spring: linear;
+}
+
+/* theme swaps kill transitions but KEEP animations, or running indicators
+   freeze mid-flip */
+.no-transitions * {
+  transition: none !important;
+}

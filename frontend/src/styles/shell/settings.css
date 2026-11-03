@@ -1,0 +1,182 @@
+@layer components {
+  /* ==========================================================================
+     SETTINGS — fields separated by hairlines, never by cards
+     ========================================================================== */
+  .of-field {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .of-field:last-child {
+    border-bottom: 0;
+  }
+
+  .of-field-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 9px;
+  }
+
+  .of-field-icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--ink-subtle);
+  }
+
+  .of-field-head .tx {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .of-field-head .tx b {
+    display: block;
+    font: var(--text-ui-med);
+    color: var(--ink-strong);
+  }
+
+  .of-field-head .tx span {
+    color: var(--ink-subtle);
+    font: var(--text-meta);
+  }
+
+  .of-seg-wide button {
+    min-width: 92px;
+    justify-content: center;
+  }
+
+  .of-swatch-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .of-swatches {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+
+  .of-swatch {
+    position: relative;
+    width: var(--h-default);
+    height: var(--h-default);
+    border-radius: var(--radius-md-of);
+    background: var(--sw-color);
+    box-shadow: inset 0 0 0 1px var(--border-default);
+    transition: transform var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-swatch:hover {
+    transform: scale(1.06);
+  }
+
+  .of-swatch[aria-pressed='true'] {
+    box-shadow: 0 0 0 2px var(--bg-content), 0 0 0 4px var(--border-accent);
+  }
+
+  .of-swatch-name {
+    color: var(--ink-subtle);
+    font: var(--text-meta);
+  }
+
+  .of-swatch-name b {
+    color: var(--ink-default);
+    font-weight: var(--weight-emphasis);
+  }
+
+  .of-specimen {
+    margin-top: 9px;
+    padding: 9px 11px;
+    border-radius: var(--radius-md-of);
+    background: var(--bg-app);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .of-specimen .sans {
+    font: var(--text-body);
+    letter-spacing: var(--ls-body);
+    color: var(--ink-strong);
+  }
+
+  /* the settings column and the preview that judges it */
+  .of-set-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 26px;
+    align-items: start;
+  }
+
+  @media (max-width: 1040px) {
+    .of-set-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .of-tprev {
+      position: static;
+    }
+  }
+
+  .of-tprev {
+    border-radius: var(--radius-lg-of);
+    background: var(--bg-app);
+    padding: 12px;
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .of-tprev-card {
+    border-radius: var(--radius-md-of);
+    background: var(--bg-panel);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+    padding: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .of-tprev-diff {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 5px 7px;
+    border-radius: var(--radius-sm-of);
+    background: var(--bg-content);
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+  }
+
+  .of-tprev-add {
+    color: var(--diff-added);
+    font: var(--mono-ui);
+  }
+
+  .of-tprev-del {
+    color: var(--diff-deleted);
+    font: var(--mono-ui);
+  }
+
+  .of-tprev-foot {
+    margin: 0;
+    color: var(--ink-subtle);
+    font: var(--text-meta);
+  }
+
+  .of-chip-mono {
+    font: var(--mono-ui);
+  }
+
+  .of-specimen .mono-s {
+    font: var(--mono-code);
+    color: var(--ink-default);
+  }
+}

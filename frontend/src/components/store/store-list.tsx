@@ -159,7 +159,7 @@ export function VisibilityBadge(props: { visibility: string }) {
 }
 
 const DEFAULT_MARK_CLASS =
-  'inline-flex cursor-default items-center rounded px-1 text-[10px] font-semibold uppercase tracking-wide text-primary';
+  'inline-flex cursor-default items-center rounded px-1 text-[0.625rem] font-semibold uppercase tracking-wide text-primary';
 
 export function DefaultEnvironmentMark(props: { environmentName: string; plain?: boolean; explanation?: string }) {
   const explanation = () => props.explanation ?? `New projects start from ${props.environmentName}.`;
@@ -219,7 +219,7 @@ export function VersionTag(props: { version: number; class?: string }) {
   return (
     <span
       class={cn(
-        'inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground',
+        'inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-1.5 font-mono text-[0.6875rem] font-semibold tabular-nums text-foreground',
         props.class
       )}
     >
@@ -242,17 +242,7 @@ export function VersionUpdateBadge(props: { from: number; to: number }) {
   );
 }
 
-export function EmptyState(props: { icon: Component<{ class?: string }>; title: string; hint?: string }) {
-  return (
-    <div class="rounded-xl border border-border bg-card p-10 text-center">
-      <Dynamic component={props.icon} class="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" aria-hidden="true" />
-      <p class="text-sm text-muted-foreground">{props.title}</p>
-      <Show when={props.hint}>
-        <p class="mt-1 text-xs text-muted-foreground">{props.hint}</p>
-      </Show>
-    </div>
-  );
-}
+export { EmptyState } from '~/components/ui/empty-state';
 
 export interface FilterChipOption<T extends string> {
   id: T;
@@ -300,7 +290,7 @@ export function FilterChips<T extends string>(props: {
               <Show when={option.count !== undefined}>
                 <span
                   class={cn(
-                    'min-w-[1.25rem] rounded-full px-1.5 text-center text-[10px] tabular-nums',
+                    'min-w-[1.25rem] rounded-full px-1.5 text-center text-[0.625rem] tabular-nums',
                     checked() ? 'bg-background text-foreground' : 'bg-muted text-muted-foreground'
                   )}
                 >

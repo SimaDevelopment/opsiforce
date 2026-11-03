@@ -1,6 +1,6 @@
-import { Show, createSignal } from 'solid-js';
+import { Show, createSignal, type Component } from 'solid-js';
 import { toast } from 'solid-sonner';
-import { useNavigate } from '@tanstack/solid-router';
+import { useLocation, useNavigate } from '@tanstack/solid-router';
 import { useAgents } from '~/api/agents';
 import { usePermissions } from '~/api/permissions';
 import { useCurrentUser } from '~/api/user';
@@ -27,17 +27,25 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '~/components/ui/dropdown-menu';
-import { Button } from '~/components/ui/button';
 import { TenantSelector } from '~/components/tenant-selector';
 import { BrandMark } from './brand-mark';
 import { ProjectSidebar } from './project-sidebar';
 import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
+import { SidebarAttention } from './sidebar-attention';
+import { COLLAPSED_HIDDEN, COLLAPSED_ROW, SidebarSectionNav } from './sidebar-section-nav';
+import { ProjectFilters } from './project-filters';
+import { useProjects } from '~/api/projects';
+import { useWorkspaces } from '~/api/workspaces';
+import { createProjectFilters, filterProjects } from '~/lib/project-filters';
+import { SETTINGS_TABS, SETTINGS_GROUP_ORDER } from '~/constants/settings-tabs';
+import { ADMIN_TABS, ADMIN_GROUP_ORDER } from '~/constants/admin-tabs';
 import {
   Calendar,
   ChevronsUpDown,
   FolderKanban,
+  House,
   LogOut,
   Plus,
   Search,
@@ -47,8 +55,36 @@ import {
   X,
 } from '~/components/icons';
 
+/** One destination in the sidebar's nav block — the shared row geometry. */
+function NavRow(props: {
+  icon: Component<{ class?: string }>;
+  label: string;
+  to: string;
+  active: boolean;
+  onNavigate: ReturnType<typeof useNavigate>;
+}) {
+  return (
+    <button
+      type="button"
+      class={`of-row fr-panel ${COLLAPSED_ROW}`}
+      title={props.label}
+      aria-label={props.label}
+      aria-current={props.active ? 'page' : undefined}
+      onClick={() => props.onNavigate({ to: props.to })}
+    >
+      <props.icon class="w-4 h-4 shrink-0" />
+      <span class={`lbl ${COLLAPSED_HIDDEN}`}>{props.label}</span>
+    </button>
+  );
+}
+
 export function AppSidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const path = () => location().pathname;
+  const inSettings = () => path().startsWith('/settings');
+  const inAdmin = () => path().startsWith('/admin');
+  const inSection = () => inSettings() || inAdmin();
   const { toggleSidebar } = useSidebar();
   const { hasPermission } = usePermissions();
   const currentUser = useCurrentUser();
@@ -56,6 +92,19 @@ export function AppSidebar() {
   const createDefaultProject = useCreateDefaultProject();
 
   const [search, setSearch] = createSignal('');
+  // the same persisted signals ProjectSidebar reads, kept in step by the
+  // storage event rather than by a shared provider
+  const filters = createProjectFilters();
+  const [filtersOpen, setFiltersOpen] = createSignal(false);
+  const allProjects = useProjects();
+  const allWorkspaces = useWorkspaces();
+  const matchCount = () =>
+    filterProjects(
+      allProjects.data,
+      { scope: filters.scope(), recency: filters.recency(), status: filters.status() },
+      allWorkspaces.data,
+      currentUser.data?.id
+    ).length;
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = createSignal(false);
   const [importOpen, setImportOpen] = createSignal(false);
   let searchRef: HTMLInputElement | undefined;
@@ -82,6 +131,7 @@ export function AppSidebar() {
   };
 
   const userName = () => currentUser.data?.displayName ?? '';
+  const userEmail = () => currentUser.data?.email ?? '';
   const userInitial = () => {
     const name = userName();
     return name ? name.charAt(0).toUpperCase() : 'U';
@@ -89,9 +139,9 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader class="gap-3 pb-0">
-        <div class="flex items-center gap-2 px-1 py-0.5 group-data-[collapsible=icon]/sidebar:justify-center group-data-[collapsible=icon]/sidebar:px-0">
-          <BrandMark nameClass="text-sidebar-foreground group-data-[collapsible=icon]/sidebar:hidden" />
+      <SidebarHeader class="gap-2 pb-0">
+        <div class="of-sb-head group-data-[collapsible=icon]/sidebar:justify-center group-data-[collapsible=icon]/sidebar:pl-0">
+          <BrandMark nameClass="of-sb-word group-data-[collapsible=icon]/sidebar:hidden" />
           <div class="ml-auto group-data-[collapsible=icon]/sidebar:hidden">
             <SidebarTrigger />
           </div>
@@ -100,13 +150,19 @@ export function AppSidebar() {
           <SidebarTrigger />
         </div>
 
-        <div class="group-data-[collapsible=icon]/sidebar:hidden flex items-center gap-1.5 pb-2">
-          <div class="relative flex-1 min-w-0">
-            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+        <TenantSelector />
+
+        <div class="group-data-[collapsible=icon]/sidebar:hidden flex items-center gap-1.5 pb-1">
+          <div class="of-sb-filter flex-1 min-w-0">
+            <Search
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+              style={{ color: 'var(--ink-subtle)' }}
+            />
             <input
               ref={(el) => (searchRef = el)}
               type="text"
-              placeholder="Search..."
+              placeholder="Filter projects"
+              aria-label="Filter projects"
               onInput={(e) => setSearch(e.currentTarget.value)}
               onBlur={(e) => {
                 if (!e.relatedTarget) {
@@ -117,7 +173,6 @@ export function AppSidebar() {
                   });
                 }
               }}
-              class="flex h-8 w-full rounded-md border border-input bg-background py-1 pl-7 pr-7 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
             <Show when={search()}>
               <button
@@ -135,6 +190,20 @@ export function AppSidebar() {
               </button>
             </Show>
           </div>
+          <ProjectFilters
+            open={filtersOpen()}
+            onOpenChange={setFiltersOpen}
+            scope={filters.scope()}
+            onScopeChange={filters.setScope}
+            recency={filters.recency()}
+            onRecencyChange={filters.setRecency}
+            status={filters.status()}
+            onStatusChange={filters.setStatus}
+            active={filters.active()}
+            onReset={filters.reset}
+            matchCount={matchCount()}
+            totalCount={allProjects.data?.length ?? 0}
+          />
           <CreateMenu
             disabled={projectCreateDisabled()}
             canCreateWorkspace={hasPermission('can_manage_workspaces')}
@@ -143,17 +212,19 @@ export function AppSidebar() {
             onCreateProject={handleCreateProject}
             onOpenCreateWorkspace={() => setCreateWorkspaceOpen(true)}
             onOpenImport={() => setImportOpen(true)}
+            /* the same primitive as the filter beside it: both are icon buttons
+               on the search row, so they share one shape */
             trigger={(triggerProps) => (
-              <Button
+              <button
                 {...triggerProps}
-                variant="outline"
-                size="icon"
-                class="h-8 w-8 shrink-0"
+                type="button"
+                class="of-btn of-btn-icon of-btn-outline fr-panel shrink-0"
                 disabled={menuDisabled()}
                 title="Create"
+                aria-label="Create"
               >
                 <Plus class="w-4 h-4" />
-              </Button>
+              </button>
             )}
           />
         </div>
@@ -180,28 +251,77 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
+      {/* Destinations sit above the tree, so the sidebar reads as one list of
+          places rather than a project tree with a hidden menu under the avatar. */}
+      <Show when={!inSection()}>
+        <nav class="px-2 pb-1" aria-label="Main">
+          <NavRow icon={House} label="Home" to="/" active={path() === '/'} onNavigate={navigate} />
+          <Show when={hasPermission('can_manage_schedules')}>
+            <NavRow
+              icon={Calendar}
+              label="Schedules"
+              to="/schedules"
+              active={path().startsWith('/schedules')}
+              onNavigate={navigate}
+            />
+          </Show>
+          <Show when={canOpenSettings()}>
+            <NavRow
+              icon={Settings}
+              label="Settings"
+              to="/settings"
+              active={path().startsWith('/settings')}
+              onNavigate={navigate}
+            />
+          </Show>
+        </nav>
+      </Show>
+
       <SidebarSeparator />
 
       <SidebarContent>
-        <div class="hidden group-data-[collapsible=icon]/sidebar:block px-2 py-2">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => toggleSidebar()}>
-                <FolderKanban class="w-4 h-4 shrink-0" />
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </div>
-        <div class="group-data-[collapsible=icon]/sidebar:hidden px-2 py-1">
-          <ProjectSidebar search={search()} />
-        </div>
+        {/* On /settings and /admin the sidebar becomes that section's navigation
+          rather than letting a second rail open beside it. */}
+        <Show when={inSettings()}>
+          <SidebarSectionNav
+            title="Settings"
+            tabs={SETTINGS_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+            groupOrder={SETTINGS_GROUP_ORDER}
+          />
+        </Show>
+        <Show when={inAdmin()}>
+          <SidebarSectionNav
+            title="Admin"
+            tabs={ADMIN_TABS.filter((tab) => tab.isPermitted(hasPermission))}
+            groupOrder={ADMIN_GROUP_ORDER}
+          />
+        </Show>
+        <Show when={!inSection()}>
+          <div class="group-data-[collapsible=icon]/sidebar:hidden">
+            <SidebarAttention />
+          </div>
+        </Show>
+        <Show when={!inSection()}>
+          <div class="hidden group-data-[collapsible=icon]/sidebar:block px-2 py-2">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => toggleSidebar()} title="Show projects">
+                  <FolderKanban class="w-4 h-4 shrink-0" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </div>
+        </Show>
+        <Show when={!inSection()}>
+          <div class="group-data-[collapsible=icon]/sidebar:hidden px-2 py-1">
+            <ProjectSidebar search={search()} />
+          </div>
+        </Show>
       </SidebarContent>
 
       <SidebarSeparator />
 
       <SidebarFooter>
-        <TenantSelector />
-
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
@@ -209,15 +329,19 @@ export function AppSidebar() {
                 as={(triggerProps: Record<string, unknown>) => (
                   <button
                     {...triggerProps}
-                    class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none transition-colors hover:bg-sidebar-accent group-data-[collapsible=icon]/sidebar:justify-center"
+                    class="of-sb-user fr-panel group-data-[collapsible=icon]/sidebar:justify-center"
                   >
-                    <div class="w-7 h-7 shrink-0 rounded-lg bg-sidebar-accent flex items-center justify-center text-sidebar-foreground">
-                      <span class="text-xs font-semibold">{userInitial()}</span>
-                    </div>
-                    <div class="flex-1 min-w-0 text-left group-data-[collapsible=icon]/sidebar:hidden">
-                      <span class="block text-sm font-medium truncate text-sidebar-foreground">{userName()}</span>
-                    </div>
-                    <ChevronsUpDown class="w-4 h-4 shrink-0 text-sidebar-muted-foreground group-data-[collapsible=icon]/sidebar:hidden" />
+                    <span class="av">{userInitial()}</span>
+                    <span class="two group-data-[collapsible=icon]/sidebar:hidden">
+                      <b>{userName()}</b>
+                      <Show when={userEmail()}>
+                        <span class="truncate">{userEmail()}</span>
+                      </Show>
+                    </span>
+                    <ChevronsUpDown
+                      class="w-3.5 h-3.5 shrink-0 group-data-[collapsible=icon]/sidebar:hidden"
+                      style={{ color: 'var(--ink-subtle)' }}
+                    />
                   </button>
                 )}
               />
@@ -230,22 +354,10 @@ export function AppSidebar() {
                   <Store class="w-4 h-4 text-muted-foreground" />
                   Skill & Agent Store
                 </DropdownMenuItem>
-                <Show when={canOpenSettings()}>
-                  <DropdownMenuItem onSelect={() => navigate({ to: '/settings' })}>
-                    <Settings class="w-4 h-4 text-muted-foreground" />
-                    Settings
-                  </DropdownMenuItem>
-                </Show>
                 <Show when={canOpenAdmin()}>
                   <DropdownMenuItem onSelect={() => navigate({ to: '/admin' })}>
                     <Server class="w-4 h-4 text-muted-foreground" />
                     Admin
-                  </DropdownMenuItem>
-                </Show>
-                <Show when={hasPermission('can_manage_schedules')}>
-                  <DropdownMenuItem onSelect={() => navigate({ to: '/schedules' })}>
-                    <Calendar class="w-4 h-4 text-muted-foreground" />
-                    Schedules
                   </DropdownMenuItem>
                 </Show>
                 <DropdownMenuItem

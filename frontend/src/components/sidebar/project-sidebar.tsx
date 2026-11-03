@@ -22,6 +22,9 @@ import {
 } from '~/api/workspaces';
 import { useUpdateWorkspacePreferences } from '~/api/users';
 import { createPersistedSignal } from '~/lib/persisted-signal';
+import { createProjectFilters, filterProjects } from '~/lib/project-filters';
+import { ProjectFilterChips } from './project-filters';
+import { useCurrentUser } from '~/api/user';
 import { projectMoveBlockReason } from '~/lib/project-move';
 import {
   DndType,
@@ -45,10 +48,9 @@ import { SidebarWorkspaceGroup } from './sidebar-workspace-group';
 import { SidebarPublicGroup } from './sidebar-public-group';
 import { CreateMenu } from './create-menu';
 import { ProjectImportDialog } from '~/components/project/project-import-dialog';
+import { FOLDER_EXPANDED_KEY, WORKSPACE_FOLDED_KEY } from '~/lib/sidebar-reveal';
 
-const FOLDED_KEY = 'opsiforce:workspace:folded';
 const PUBLIC_FOLDED_KEY = 'opsiforce:workspace:public-folded';
-const FOLDER_EXPANDED_KEY = 'opsiforce:folder:expanded';
 
 type DragStartEvent = Parameters<NonNullable<DragDropProviderProps['onDragStart']>>[0];
 type DragEndEvent = Parameters<NonNullable<DragDropProviderProps['onDragEnd']>>[0];
@@ -121,7 +123,7 @@ export function ProjectSidebar(props: { search: string }) {
   const moveFolder = useMoveFolder();
   const renameProject = useRenameProject();
 
-  const [folded, setFolded] = createPersistedSignal<Record<string, boolean>>(FOLDED_KEY, {});
+  const [folded, setFolded] = createPersistedSignal<Record<string, boolean>>(WORKSPACE_FOLDED_KEY, {});
   const [publicFolded, setPublicFolded] = createPersistedSignal<boolean>(PUBLIC_FOLDED_KEY, false);
   const [folderExpanded, setFolderExpanded] = createPersistedSignal<Record<string, boolean>>(FOLDER_EXPANDED_KEY, {});
   const [createFolderWorkspaceId, setCreateFolderWorkspaceId] = createSignal<string | null>(null);
@@ -139,10 +141,25 @@ export function ProjectSidebar(props: { search: string }) {
 
   const isFolded = (id: string) => (id === PUBLIC_ID ? publicFolded() : !!folded()[id]);
 
+  const filters = createProjectFilters();
+  const currentUser = useCurrentUser();
+
+  // Scope and activity narrow the list the tree is built from, so a workspace
+  // with nothing left in it simply does not render — the tree keeps its shape
+  // and its ordering, it just gets shorter.
+  const visibleProjects = createMemo(() =>
+    filterProjects(
+      projects.data,
+      { scope: filters.scope(), recency: filters.recency(), status: filters.status() },
+      workspaces.data,
+      currentUser.data?.id
+    )
+  );
+
   const groupedProjects = createMemo(() => {
     const byWs = new Map<string, Project[]>();
     const publicProjects: Project[] = [];
-    for (const p of projects.data ?? []) {
+    for (const p of visibleProjects()) {
       if (p.workspaceId) {
         const arr = byWs.get(p.workspaceId) ?? [];
         arr.push(p);
@@ -153,6 +170,12 @@ export function ProjectSidebar(props: { search: string }) {
     }
     return { byWs, publicProjects };
   });
+
+  const visibleWorkspaces = createMemo(() =>
+    filters.active() ? (workspaces.data ?? []).filter((w) => groupedProjects().byWs.has(w.id)) : (workspaces.data ?? [])
+  );
+  const showPublicGroup = () => !filters.active() || groupedProjects().publicProjects.length > 0;
+  const nothingMatches = () => filters.active() && visibleProjects().length === 0;
 
   const searchQuery = () => props.search.toLowerCase().trim();
 
@@ -172,9 +195,12 @@ export function ProjectSidebar(props: { search: string }) {
     return folders?.find((f) => f.id === folderId)?.name ?? null;
   };
 
-  const reorderWorkspacesByIndex = (fromIdx: number, toIdx: number) => {
+  const reorderWorkspacesByIndex = (visibleFromIdx: number, visibleToIdx: number) => {
     const current = (workspaces.data ?? []).map((w) => w.id);
-    if (fromIdx < 0 || toIdx < 0 || fromIdx >= current.length || fromIdx === toIdx) return;
+    const visible = visibleWorkspaces();
+    const fromIdx = current.indexOf(visible[visibleFromIdx]?.id);
+    const toIdx = current.indexOf(visible[visibleToIdx]?.id);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
     const next = [...current];
     const [moved] = next.splice(fromIdx, 1);
     next.splice(toIdx, 0, moved);
@@ -317,15 +343,26 @@ export function ProjectSidebar(props: { search: string }) {
           </div>
         }
       >
+        <ProjectFilterChips
+          scope={filters.scope()}
+          recency={filters.recency()}
+          status={filters.status()}
+          active={filters.active()}
+          onReset={filters.reset}
+        />
+        <Show when={nothingMatches()}>
+          <p class="text-xs text-muted-foreground/60 px-2 py-1 italic">No projects match these filters.</p>
+        </Show>
         <DragDropProvider onDragStart={onDragStart} onDragEnd={onDragEnd}>
           <div class="flex flex-col gap-1">
-            <For each={workspaces.data}>
+            <For each={visibleWorkspaces()}>
               {(ws, idx) => (
                 <SidebarWorkspaceGroup
                   workspace={ws}
                   index={idx()}
                   folded={isFolded(ws.id)}
                   search={props.search}
+                  filtering={filters.active()}
                   projects={groupedProjects().byWs.get(ws.id) ?? []}
                   activeProjectId={activeProjectId()}
                   isFolderExpanded={isFolderExpanded}
@@ -367,33 +404,35 @@ export function ProjectSidebar(props: { search: string }) {
               )}
             </For>
 
-            <SidebarPublicGroup
-              expanded={!isFolded(PUBLIC_ID)}
-              projects={filterByQuery(groupedProjects().publicProjects)}
-              activeProjectId={activeProjectId()}
-              onToggleFold={() => toggleFold(PUBLIC_ID)}
-              renderCreate={
-                canCreateInPublic() || canImport()
-                  ? (renderTrigger) => (
-                      <CreateMenu
-                        trigger={renderTrigger}
-                        agents={agents.data}
-                        disabled={createUnassigned.isPending}
-                        canCreateProject={canCreateInPublic()}
-                        canImport={canImport()}
-                        onCreateProject={(agentId) => handleCreateUnassigned(agentId)}
-                        onOpenImport={() => setImportTarget({ workspaceId: null })}
-                      />
-                    )
-                  : undefined
-              }
-              onSelectProject={navigateToProject}
-              onRenameProject={(id, title) => renameProject.mutate({ id, title })}
-              onProjectSettings={(id) => setSettingsProjectId(id)}
-              onProjectDeleted={(id) => {
-                if (id === activeProjectId()) navigate({ to: '/' });
-              }}
-            />
+            <Show when={showPublicGroup()}>
+              <SidebarPublicGroup
+                expanded={!isFolded(PUBLIC_ID)}
+                projects={filterByQuery(groupedProjects().publicProjects)}
+                activeProjectId={activeProjectId()}
+                onToggleFold={() => toggleFold(PUBLIC_ID)}
+                renderCreate={
+                  canCreateInPublic() || canImport()
+                    ? (renderTrigger) => (
+                        <CreateMenu
+                          trigger={renderTrigger}
+                          agents={agents.data}
+                          disabled={createUnassigned.isPending}
+                          canCreateProject={canCreateInPublic()}
+                          canImport={canImport()}
+                          onCreateProject={(agentId) => handleCreateUnassigned(agentId)}
+                          onOpenImport={() => setImportTarget({ workspaceId: null })}
+                        />
+                      )
+                    : undefined
+                }
+                onSelectProject={navigateToProject}
+                onRenameProject={(id, title) => renameProject.mutate({ id, title })}
+                onProjectSettings={(id) => setSettingsProjectId(id)}
+                onProjectDeleted={(id) => {
+                  if (id === activeProjectId()) navigate({ to: '/' });
+                }}
+              />
+            </Show>
 
             <Show when={(workspaces.data?.length ?? 0) === 0 && (projects.data?.length ?? 0) === 0}>
               <div class="flex flex-col items-center justify-center py-8 px-4 text-center">
