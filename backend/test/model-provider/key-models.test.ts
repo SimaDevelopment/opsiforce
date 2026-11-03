@@ -5,6 +5,7 @@ import { appliedModelCatalog, modelProviders, projectVirtualKeys } from '../../d
 import { catalogModelIdsOf, readModelCatalog, type ModelCatalog } from '../../src/agent/agent-models';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { BASE_FORMATS } from '../../src/model-provider/base-formats';
+import { servedModelsOf } from '../../src/model-provider/bifrost-provider-shape';
 import { ModelProviderKeyModelsService } from '../../src/model-provider/model-provider-key-models.service';
 import { ModelProvidersModule } from '../../src/model-provider/model-provider.module';
 import { startFakeBifrost, type FakeBifrost, type FakeProviderKey } from '../support/fake-bifrost';
@@ -20,11 +21,12 @@ import { startFakeVendorApi, type FakeVendorApi } from './support/fake-vendor-ap
 
 const HELM_PROVIDERS = ['openai', 'anthropic', 'custom-openai-1'];
 const OPENAI_CATALOG_IDS = catalogModelIdsOf('openai');
+const OPENAI_GATEWAY_IDS = servedModelsOf(BASE_FORMATS.openai);
 const NEXT_CATALOG: ModelCatalog = {
   openai: { models: { 'gpt-7': { experimental: { modes: { fast: {} } } }, 'gpt-6-astra': {} } },
   anthropic: { models: { 'claude-opus-6': {} } },
 };
-const NEXT_OPENAI_IDS = ['gpt-7', 'gpt-7-fast', 'gpt-6-astra'];
+const NEXT_OPENAI_IDS = ['gpt-7', 'gpt-7-fast', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-luna'];
 const OPENAI_IMAGE_MODELS = BASE_FORMATS.openai.imageModels;
 
 function staleKey(name: string, models: string[]): FakeProviderKey {
@@ -146,6 +148,17 @@ describe('a managed model provider serves the models the catalog lists', () => {
     expect(bifrost.providerNamed(bifrostName)?.keys[0]?.models).toEqual(['gpt-7']);
   });
 
+  it('does not broaden an explicit agent-only key to the added gateway models', async () => {
+    const bifrostName = await createCustomProvider('agent-only');
+    servingOnly(bifrostName, OPENAI_CATALOG_IDS);
+
+    const before = keyWrites().length;
+    await reconcile(readModelCatalog());
+
+    expect(keyWrites().slice(before)).toEqual([]);
+    expect(bifrost.providerNamed(bifrostName)?.keys[0]?.models).toEqual(OPENAI_CATALOG_IDS);
+  });
+
   it('leaves the key-less Dock custom-openai-1, the standard openai key and a provider missing from Bifrost alone', async () => {
     await db
       .insert(modelProviders)
@@ -241,8 +254,33 @@ describe('a managed model provider serves the models the catalog lists', () => {
 
       expect(bifrost.providerConfigWritesTo(chatKeyId)).toHaveLength(before);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
-        { servedModels: { openai: [...OPENAI_CATALOG_IDS, ...OPENAI_IMAGE_MODELS], anthropic: expect.any(Array) } },
+        { servedModels: { openai: [...OPENAI_GATEWAY_IDS, ...OPENAI_IMAGE_MODELS], anthropic: expect.any(Array) } },
       ]);
+    });
+
+    it('refreshes existing virtual keys when only the gateway catalog changes, then records it once', async () => {
+      const name = await createCustomProvider('gateway-refresh');
+      const chatKeyId = await chatKeyOfNewProject();
+      // The previous deployment recorded only the agent catalog and image models.
+      await db.insert(appliedModelCatalog).values({
+        id: true,
+        servedModels: {
+          openai: [...OPENAI_CATALOG_IDS, ...OPENAI_IMAGE_MODELS],
+          anthropic: servedModelsOf(BASE_FORMATS.anthropic),
+        },
+      });
+      const before = bifrost.providerConfigWritesTo(chatKeyId).length;
+
+      await applyToKeys(readModelCatalog());
+
+      const writes = bifrost.providerConfigWritesTo(chatKeyId);
+      expect(writes.length).toBeGreaterThan(before);
+      const configs = writes.at(-1)?.body as { provider_configs: { provider: string; allowed_models: string[] }[] };
+      expect(configs.provider_configs.find((config) => config.provider === name)?.allowed_models).toEqual(
+        expect.arrayContaining(['gpt-6-luna', 'gpt-6.1-terra'])
+      );
+      await applyToKeys(readModelCatalog());
+      expect(bifrost.providerConfigWritesTo(chatKeyId)).toHaveLength(writes.length);
     });
 
     it('rewrites the keys once for a catalog that changed since, and not again for the same one', async () => {
@@ -273,7 +311,7 @@ describe('a managed model provider serves the models the catalog lists', () => {
       await applyToKeys(NEXT_CATALOG);
 
       expect(stillOld).toEqual([
-        { servedModels: { openai: [...OPENAI_CATALOG_IDS, ...OPENAI_IMAGE_MODELS], anthropic: expect.any(Array) } },
+        { servedModels: { openai: [...OPENAI_GATEWAY_IDS, ...OPENAI_IMAGE_MODELS], anthropic: expect.any(Array) } },
       ]);
       expect(await db.select({ servedModels: appliedModelCatalog.servedModels }).from(appliedModelCatalog)).toEqual([
         { servedModels: { openai: [...NEXT_OPENAI_IDS, ...OPENAI_IMAGE_MODELS], anthropic: ['claude-opus-6'] } },

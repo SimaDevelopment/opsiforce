@@ -1,5 +1,6 @@
 {
   "customPackageSharedSkills": ["platform"],
+  "privilegedOnlySkills": ["docker"],
   "sharedSkillExclusions": {
     "makara-app-builder": ["web-app", "dates"],
     "skill-agent-builder": [
@@ -8,6 +9,7 @@
       "data-fetching",
       "dates",
       "dnd-kit",
+      "docker",
       "document-generation",
       "llm-api",
       "nestjs-api",
@@ -26,6 +28,7 @@
       "data-fetching",
       "dates",
       "dnd-kit",
+      "docker",
       "document-generation",
       "llm-api",
       "nestjs-api",

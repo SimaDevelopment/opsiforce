@@ -7,6 +7,7 @@ import path from 'path';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectDuplicateJobs } from '../../db/schema';
+import { restoreOwner } from '../common/fs';
 import { DeliveryService } from '../delivery/delivery.service';
 import { GitService } from '../git/git.service';
 import { ProjectService } from './project.service';
@@ -20,6 +21,10 @@ import {
 
 interface CopyProgress {
   bytesCopied: number;
+}
+
+function depth(relPath: string): number {
+  return relPath.split('/').length;
 }
 
 @Processor(PROJECT_DUPLICATE_QUEUE)
@@ -81,6 +86,7 @@ export class ProjectDuplicateProcessor extends WorkerHost {
         await persistProgress();
       }
 
+      await this.restoreDirectories(entries, tempPath);
       await persistProgress(true);
       await rm(targetPath, { recursive: true, force: true });
       await rename(tempPath, targetPath);
@@ -103,7 +109,6 @@ export class ProjectDuplicateProcessor extends WorkerHost {
 
     if (entry.type === 'directory') {
       await mkdir(target, { recursive: true });
-      await chmod(target, entry.mode);
       return;
     }
 
@@ -112,12 +117,23 @@ export class ProjectDuplicateProcessor extends WorkerHost {
     if (entry.type === 'symlink') {
       const link = await readlink(entry.source);
       await symlink(link, target);
+      await restoreOwner(target, entry);
       return;
     }
 
     await copyFile(entry.source, target);
+    await restoreOwner(target, entry);
     await chmod(target, entry.mode);
     progress.bytesCopied += entry.size;
+  }
+
+  private async restoreDirectories(entries: ProjectFileEntry[], targetRoot: string): Promise<void> {
+    const directories = entries.filter((entry) => entry.type === 'directory');
+    for (const entry of directories.toSorted((a, b) => depth(b.relPath) - depth(a.relPath))) {
+      const target = path.join(targetRoot, entry.relPath);
+      await restoreOwner(target, entry);
+      await chmod(target, entry.mode);
+    }
   }
 
   private async markStatus(

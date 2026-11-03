@@ -5,7 +5,7 @@ import { packSkill, SkillArchiveError, unpackSkill, type SkillTree } from './gat
 import { isTextFile } from './gate/skill-tree';
 import { readMergedAgentRegistry } from '../agent/agent-config';
 import { ServiceSkillAvailability } from './service-skill-availability';
-import { packageSkillNames } from './skill-tree';
+import { SkillAvailability } from './skill-availability';
 import { manifestName, manifestSourceRef, SkillPublishService } from './skill-publish.service';
 import {
   SkillRepository,
@@ -68,7 +68,8 @@ export class SkillService {
   constructor(
     private readonly repository: SkillRepository,
     private readonly publishService: SkillPublishService,
-    private readonly serviceSkillAvailability: ServiceSkillAvailability
+    private readonly serviceSkillAvailability: ServiceSkillAvailability,
+    private readonly skillAvailability: SkillAvailability
   ) {}
 
   async list(caller: SkillCaller, rawFilter: string | undefined, query: string | undefined): Promise<SkillSummary[]> {
@@ -133,7 +134,9 @@ export class SkillService {
   /** Which skills each Built-in Agent's image package ships: they reach its Projects without any pin (ADR-0060). */
   private async shippers(): Promise<SkillShipper[]> {
     const registered = await this.repository.builtInAgentsNamed(Object.keys(readMergedAgentRegistry().agents));
-    return registered.map((agent) => Object.assign(agent, { ships: packageSkillNames(agent.name) }));
+    return registered.map((agent) =>
+      Object.assign(agent, { ships: this.skillAvailability.packageSkillNames(agent.name) })
+    );
   }
 
   async listVersions(caller: SkillCaller, skillId: string): Promise<SkillVersionResponse[]> {

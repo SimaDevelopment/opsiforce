@@ -310,8 +310,8 @@ A named instruction package — a directory with a `SKILL.md` and optional suppo
 _Avoid_: Plugin, Extension, Command (non-canonical); Tool (a different Agent capability concept); Global skill (retired — authored Skills never span Organizations)
 
 **Built-in Skill**:
-A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image is retired — hidden from the Store, closed to new use and delivered to no workspace any more, even where an Agent still pins it — while its stored content survives, and it comes back if the image ships it again.
-_Avoid_: Platform skill, System skill (non-canonical); Deprecated (retired term — leaving the image is the whole mechanism)
+A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image, or that needs a capability this deployment does not offer, is retired — hidden from the Store, closed to new use and delivered to no workspace any more, even where an Agent still pins it — while its stored content survives, and it comes back once the image ships it and the deployment offers what it needs.
+_Avoid_: Platform skill, System skill (non-canonical); Deprecated (retired term — not being shipped or offered is the whole mechanism); Feature-flagged skill (no deployment setting names a Skill — what the deployment's agent pods can run decides)
 
 **Custom Skill**:
 A Skill authored in the platform rather than shipped in the image — through the Skill & Agent Builder or the Store's form — owned by one Organization and carrying a Visibility. The sibling of Built-in Skill.

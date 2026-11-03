@@ -29,3 +29,9 @@ The backend rejects privileged agent creation unless the runtime is exactly
 The shared chart defaults this option to false, leaving Azure and local deployments
 unprivileged. Backend and proxy containers are unaffected. Existing app pods need
 recreation to pick up this setting. To disable it, set `config.agentPrivileged=false`.
+
+Privileged pods also run Docker, on pod-local storage capped at 21Gi
+([Pod Tools](../runtime/pod-tools.md)). Every new pod pulls its images again, and
+every pull counts against Docker Hub's anonymous limit for the cluster's outgoing
+address as a whole. `process-logs docker` in a pod says why Docker is not running
+there. Existing app pods get Docker only when they are recreated.

@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ConfigService } from '@nestjs/config';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { skills, skillVersionFiles, skillVersions } from '../../db/schema';
 import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service';
 import { hashSkillTree, validateSkillTree } from '../../src/store/gate';
+import { SkillAvailability } from '../../src/store/skill-availability';
 import { reservedSkillNames, SkillReconcilerService } from '../../src/store/skill-reconciler.service';
 import { readComposedSkills, skillSourceDirectories } from '../../src/store/skill-tree';
 import { ensureBuiltInServiceSkill } from '../support/agent-fixtures';
@@ -20,8 +22,12 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'agent-config-'));
 });
 
-function newReconciler(): SkillReconcilerService {
-  return new SkillReconcilerService(agentReconciler);
+function offeredBy(agentPrivileged: boolean): SkillAvailability {
+  return new SkillAvailability(new ConfigService({ agentPrivileged }));
+}
+
+function newReconciler(availability: SkillAvailability = offeredBy(true)): SkillReconcilerService {
+  return new SkillReconcilerService(agentReconciler, availability);
 }
 
 function writeSkill(directory: string, name: string, body: string, extra: Record<string, string> = {}): void {
@@ -157,6 +163,19 @@ describe('the built-in skill reconciler', () => {
 
     expect((await skillRow(returning)).retiredAt).toBeNull();
     expect(await versionsOf(returning)).toHaveLength(1);
+  });
+
+  it('retires a Skill only privileged pods run on a deployment without them, and brings it back with its Versions', async () => {
+    await newReconciler(offeredBy(true)).ready();
+    expect((await skillRow('docker')).retiredAt).toBeNull();
+
+    await newReconciler(offeredBy(false)).ready();
+    expect((await skillRow('docker')).retiredAt).not.toBeNull();
+    expect((await skillRow('platform')).retiredAt).toBeNull();
+
+    await newReconciler(offeredBy(true)).ready();
+    expect((await skillRow('docker')).retiredAt).toBeNull();
+    expect(await versionsOf('docker')).toHaveLength(1);
   });
 
   it('retires nothing when it reads no skill at all, so a missing tree never empties the Store', async () => {

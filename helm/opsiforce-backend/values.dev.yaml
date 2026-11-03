@@ -1,6 +1,7 @@
 # Development only: Helsinki cloud and dedicated workers; existing exclusions retained.
 ---
 config:
+  storageClaimSize: "600Gi"
   agentAffinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

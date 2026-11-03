@@ -24,7 +24,7 @@ resources:
     cpu: 50m
     memory: 96Mi
   limits:
-    memory: 256Mi
+    memory: 1Gi
 
 podSecurityContext:
   runAsNonRoot: true
