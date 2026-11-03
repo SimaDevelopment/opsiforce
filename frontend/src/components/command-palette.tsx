@@ -218,9 +218,13 @@ export function CommandPalette() {
     // aria-modal does not contain focus by itself. The input is the only
     // tab stop in the palette (the rows are reached with the arrow keys, as in
     // any combobox) and the page behind is inert while it is open, so Tab in
-    // either direction simply stays put.
+    // either direction simply stays put. Escape is claimed here, before a
+    // dialog open underneath sees it, so it closes the palette alone.
     if (e.key === 'Tab') {
       e.preventDefault();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       move(1);
@@ -237,17 +241,20 @@ export function CommandPalette() {
   return (
     <>
       {/* a control, not a decorated div: clicking it closes, and it stays out
-          of the Tab order so the input keeps focus */}
+          of the Tab order so the input keeps focus. Both carry Kobalte's top
+          layer mark: a dialog already open underneath then lets focus and
+          clicks reach the palette instead of pulling them back into itself. */}
       <button
         type="button"
         class="of-scrim"
         data-open={open()}
+        data-kb-top-layer=""
         tabindex={-1}
         aria-hidden={open() ? undefined : true}
         aria-label="Close"
         onClick={() => setOpen(false)}
       />
-      <div class="of-cmdk" data-open={open()} role="dialog" aria-modal="true" aria-label="Go to">
+      <div class="of-cmdk" data-open={open()} data-kb-top-layer="" role="dialog" aria-modal="true" aria-label="Go to">
         <div class="of-cmdk-top">
           <Search class="w-4 h-4 shrink-0" style={{ color: 'var(--ink-subtle)' }} />
           <input
