@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectApps, projectTransferJobs } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
+import { isForeignOwner } from '../common/fs';
 import { runtimeAgentSlug } from '../delivery/runtime-agent-slug';
 import { GitService } from '../git/git.service';
 import { ProjectService } from '../project/project.service';
@@ -124,6 +125,7 @@ export class ProjectExportProcessor extends WorkerHost {
           ? { name: project.appName, description: project.appDescription, appSlug: developmentApp?.appSlug ?? null }
           : null,
         schedules,
+        owners: runtimeEntries.filter(isForeignOwner).map(({ relPath, uid, gid }) => ({ path: relPath, uid, gid })),
         stamp: exportStampOf(this.configService, EXPORT_FORMAT_VERSION),
       };
       await writeFile(path.join(stagingRoot, 'manifest.json'), JSON.stringify(manifest, null, 2));

@@ -10,6 +10,7 @@ import type yauzl from 'yauzl';
 import { db } from '../../db';
 import { folders, projectTransferJobs, workspaceMembers, workspaces } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
+import { restoreOwner, type FileOwner } from '../common/fs';
 import {
   collectEntries,
   entryMode,
@@ -22,8 +23,8 @@ import {
 import { TenantService } from '../tenant/tenant.service';
 import { ProjectService } from './project.service';
 import { ProjectEventsService } from './project-events.service';
-import { PROJECT_EXPORT_KIND, type ExportManifest } from '../export/project-export.types';
-import { wrongExportKind } from '../export/export-manifest';
+import { PROJECT_EXPORT_KIND, type ExportManifest, type ExportManifestOwner } from '../export/project-export.types';
+import { EXPORT_MANIFEST_FILE, wrongExportKind } from '../export/export-manifest';
 import {
   importsRootPath,
   PROJECT_IMPORT_QUEUE,
@@ -34,6 +35,7 @@ import {
 } from './project-import.types';
 
 const WORKSPACE_PREFIX = 'workspace/';
+const MAX_OWNER_ID = 0xfffffffe;
 
 @Injectable()
 export class ProjectImportService {
@@ -246,7 +248,7 @@ export class ProjectImportService {
       if (!buffer) throw new BadRequestException('The file is not a valid project export (missing manifest).');
       const manifest = JSON.parse(buffer.toString('utf8')) as ExportManifest;
       if (typeof manifest !== 'object' || manifest === null || !manifest.stamp) {
-        throw new BadRequestException('The project export manifest is malformed.');
+        throw malformedManifest();
       }
       assertProjectExportKind(manifest);
       return manifest;
@@ -260,9 +262,10 @@ export class ProjectImportService {
 
   /**
    * Unpacks the bundle's `workspace/` tree into the target project directory,
-   * restoring directories (empty ones included), file and directory modes, and
-   * symlinks. Writes are confined to the target directory: an entry whose path
-   * escapes it, or that would be placed through or over a symlink, is rejected.
+   * restoring directories (empty ones included), file and directory modes, the
+   * owners the manifest records, and symlinks. Writes are confined to the target
+   * directory: an entry whose path escapes it, or that would be placed through or
+   * over a symlink, is rejected.
    */
   async unpack(
     archivePath: string,
@@ -273,6 +276,7 @@ export class ProjectImportService {
     const zip = await openZip(archivePath);
     try {
       const entries = await collectEntries(zip);
+      const owners = await recordedOwners(zip, entries, root);
       const bytesTotal = entries.reduce((total, entry) => total + entry.uncompressedSize, 0);
       await report(0, bytesTotal);
 
@@ -280,19 +284,19 @@ export class ProjectImportService {
       const directories = new Set<string>();
       let bytesProcessed = 0;
       let lastReportedAt = 0;
-      const directoryModes: Array<{ target: string; perms: number }> = [];
+      const directoryModes: Array<{ target: string; perms: number; owner: FileOwner | undefined }> = [];
 
       for (const entry of entries) {
         if (!entry.fileName.startsWith(WORKSPACE_PREFIX)) continue;
-        const rel = entry.fileName.slice(WORKSPACE_PREFIX.length);
-        if (rel.length === 0) continue;
+        const target = resolveConfined(root, entry.fileName.slice(WORKSPACE_PREFIX.length));
+        if (target === root) continue;
 
-        const target = resolveConfined(root, rel);
         const mode = entryMode(entry);
+        const owner = owners.get(target);
 
         if (entry.fileName.endsWith('/')) {
           await ensureDirectory(root, target, directories);
-          directoryModes.push({ target, perms: mode & 0o777 });
+          directoryModes.push({ target, perms: mode & 0o777, owner });
           continue;
         }
 
@@ -305,10 +309,12 @@ export class ProjectImportService {
             throw new BadRequestException('The project export contains an unsafe symlink.');
           }
           await symlink(linkTarget, target).catch(refuseExisting);
+          if (owner) await restoreOwner(target, owner);
           continue;
         }
 
         await writeEntryToFile(zip, entry, target).catch(refuseExisting);
+        if (owner) await restoreOwner(target, owner);
         const perms = mode & 0o777;
         if (perms) await chmod(target, perms);
 
@@ -320,7 +326,8 @@ export class ProjectImportService {
         }
       }
 
-      for (const { target, perms } of directoryModes.toSorted((a, b) => depth(b.target) - depth(a.target))) {
+      for (const { target, perms, owner } of directoryModes.toSorted((a, b) => depth(b.target) - depth(a.target))) {
+        if (owner) await restoreOwner(target, owner);
         if (perms) await chmod(target, perms);
       }
 
@@ -329,6 +336,34 @@ export class ProjectImportService {
       zip.close();
     }
   }
+}
+
+async function recordedOwners(
+  zip: yauzl.ZipFile,
+  entries: yauzl.Entry[],
+  root: string
+): Promise<Map<string, FileOwner>> {
+  const manifestEntry = entries.find((entry) => entry.fileName === EXPORT_MANIFEST_FILE);
+  const recorded = manifestEntry
+    ? (JSON.parse((await readEntry(zip, manifestEntry)).toString('utf8')) as ExportManifest).owners
+    : undefined;
+  const owners = new Map<string, FileOwner>();
+  if (recorded === undefined) return owners;
+  if (!Array.isArray(recorded)) throw malformedManifest();
+  for (const owner of recorded as unknown[]) {
+    const { path: rel, uid, gid } = (owner ?? {}) as Partial<Record<keyof ExportManifestOwner, unknown>>;
+    if (typeof rel !== 'string' || !isOwnerId(uid) || !isOwnerId(gid)) throw malformedManifest();
+    owners.set(resolveConfined(root, rel), { uid, gid });
+  }
+  return owners;
+}
+
+function isOwnerId(id: unknown): id is number {
+  return typeof id === 'number' && Number.isInteger(id) && id >= 0 && id <= MAX_OWNER_ID;
+}
+
+function malformedManifest(): BadRequestException {
+  return new BadRequestException('The project export manifest is malformed.');
 }
 
 function depth(target: string): number {

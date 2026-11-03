@@ -7,6 +7,7 @@ import path from 'path';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectDuplicateJobs } from '../../db/schema';
+import { restoreOwner } from '../common/fs';
 import { DeliveryService } from '../delivery/delivery.service';
 import { GitService } from '../git/git.service';
 import { ProjectService } from './project.service';
@@ -103,6 +104,7 @@ export class ProjectDuplicateProcessor extends WorkerHost {
 
     if (entry.type === 'directory') {
       await mkdir(target, { recursive: true });
+      await restoreOwner(target, entry);
       await chmod(target, entry.mode);
       return;
     }
@@ -112,10 +114,12 @@ export class ProjectDuplicateProcessor extends WorkerHost {
     if (entry.type === 'symlink') {
       const link = await readlink(entry.source);
       await symlink(link, target);
+      await restoreOwner(target, entry);
       return;
     }
 
     await copyFile(entry.source, target);
+    await restoreOwner(target, entry);
     await chmod(target, entry.mode);
     progress.bytesCopied += entry.size;
   }

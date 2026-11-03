@@ -8,6 +8,8 @@ export interface ProjectFileEntry {
   source: string;
   size: number;
   mode: number;
+  uid: number;
+  gid: number;
   type: 'file' | 'directory' | 'symlink';
 }
 
@@ -38,8 +40,10 @@ export class ProjectFilesService {
     const stats = await lstat(source).catch(() => null);
     if (!stats) return;
 
+    const { mode, uid, gid } = stats;
+
     if (stats.isDirectory()) {
-      entries.push({ relPath, source, size: 0, mode: stats.mode, type: 'directory' });
+      entries.push({ relPath, source, size: 0, mode, uid, gid, type: 'directory' });
       const children = await readdir(source);
       for (const child of children) {
         await this.walk(path.join(source, child), `${relPath}/${child}`, entries);
@@ -48,12 +52,12 @@ export class ProjectFilesService {
     }
 
     if (stats.isSymbolicLink()) {
-      entries.push({ relPath, source, size: 0, mode: stats.mode, type: 'symlink' });
+      entries.push({ relPath, source, size: 0, mode, uid, gid, type: 'symlink' });
       return;
     }
 
     if (stats.isFile()) {
-      entries.push({ relPath, source, size: stats.size, mode: stats.mode, type: 'file' });
+      entries.push({ relPath, source, size: stats.size, mode, uid, gid, type: 'file' });
     }
   }
 }
