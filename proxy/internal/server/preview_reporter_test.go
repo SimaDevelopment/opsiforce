@@ -1,10 +1,12 @@
 package server
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const platformOrigin = "https://opsiforce.test"
@@ -100,5 +102,60 @@ func TestAFramedPreviewLoadAlwaysGetsAWholePageToReportFrom(t *testing.T) {
 
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "opsiforce-preview:location") {
 		t.Errorf("got %d %.80q, want the whole page with the reporter instead of the browser's cached copy", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAStreamedPageReachesTheFrameBeforeTheAppFinishesIt(t *testing.T) {
+	shell := `<!doctype html><html><head><title>Orders</title></head><body>` + strings.Repeat("<p>row</p>", 1000)
+	finish := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(shell))
+		w.(http.Flusher).Flush()
+		<-finish
+		_, _ = w.Write([]byte(`<p>deferred</p></body></html>`))
+	}))
+	t.Cleanup(upstream.Close)
+	proxy := httptest.NewServer(newAppServer(t, previewAnswer(upstream.URL)))
+	t.Cleanup(proxy.Close)
+	t.Cleanup(func() { close(finish) })
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = testEnvironmentID + ".preview.apps.test"
+	req.Header.Set("Sec-Fetch-Dest", "iframe")
+	arrived := make(chan string, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			arrived <- err.Error()
+			return
+		}
+		defer resp.Body.Close()
+		head := make([]byte, 4<<10)
+		n, _ := io.ReadFull(resp.Body, head)
+		arrived <- string(head[:n])
+	}()
+
+	select {
+	case head := <-arrived:
+		if !strings.HasPrefix(head, `<!doctype html><html><head><script>`) {
+			t.Errorf("the shell arrived without the reporter first in <head>: %.80q", head)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("nothing reached the frame while the App was still rendering")
+	}
+}
+
+func TestAPageAFormPostsIntoTheFrameReportsItsLocationToo(t *testing.T) {
+	server := newAppServer(t, previewAnswer(startPageUpstream(t, appPage)))
+	req := httptest.NewRequest(http.MethodPost, "https://"+testEnvironmentID+".preview.apps.test/", strings.NewReader("status=open"))
+	req.Header.Set("Sec-Fetch-Dest", "iframe")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	server.ServeHTTP(rec, req)
+
+	if !strings.Contains(rec.Body.String(), "opsiforce-preview:location") {
+		t.Errorf("a posted page has no reporter: %.120q", rec.Body.String())
 	}
 }

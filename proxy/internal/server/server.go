@@ -504,7 +504,7 @@ func (s *Server) roundTripAppRequest(
 	outgoing.Header = copyRequestHeaders(r.Header, true)
 	stripAuthProxyHeaders(outgoing.Header)
 	framedPreview := previewFrameOrigin != "" && loadsIntoAFrame(r)
-	if framedPreview {
+	if framedPreview && r.Method == http.MethodGet {
 		askForAWholePage(outgoing.Header)
 	}
 
@@ -550,7 +550,20 @@ func (s *Server) roundTripAppRequest(
 	rewritesUpstreamPath := upstreamPath != "/" && strings.Contains(contentType, "text/html")
 	reportsPreviewLocation := framedPreview && strings.Contains(contentType, "text/html")
 
-	if rewritesUpstreamPath || reportsPreviewLocation {
+	if reportsPreviewLocation && !rewritesUpstreamPath {
+		stream, err := streamWithPreviewReporter(resp.Body, previewFrameOrigin)
+		if err != nil {
+			return appProxyResult{}, err
+		}
+		return appProxyResult{
+			statusCode:  resp.StatusCode,
+			headers:     headers,
+			stream:      stream,
+			contentType: contentType,
+		}, nil
+	}
+
+	if rewritesUpstreamPath {
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
