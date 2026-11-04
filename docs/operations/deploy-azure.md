@@ -52,7 +52,8 @@ kind: operations
                → Opsiforce app charts  (see Deployment)
    ```
 
-8. Deploy the app charts per [Deployment](deployment.md) with the environment-specific inputs changed: the hostnames (your DNS zone) and the ReadWriteMany storage-class name.
+8. Deploy the app charts per [Deployment](deployment.md) with the environment-specific inputs changed: the hostnames (your DNS zone) and the ReadWriteMany storage-class name. The Azure deployment uses `.github/workflows/opsiforce-azure.yml`, builds all five Opsiforce images in ACR, and keeps Entra sign-in and the Azure Bifrost values. It explicitly leaves the agent RuntimeClass empty and privileged mode off; AKS does not need the regular workflow's Kata runtime or CloudFleet node affinity.
+9. Make the `EXTERNAL_SERVICES_ENCRYPTION_KEY` GitHub secret available to the workflow, at repository level or in the deployment's GitHub environment, before deploying. Use the existing key for an established installation; for a new installation, generate one with `openssl rand -hex 32` and back it up. Linked-account credentials and external-service secrets depend on this stable key. The workflow passes the deployment's public HTTPS origin to the backend and creates the linked-account proxy service token once in Kubernetes, sharing it between the backend and proxy on subsequent deployments. `deploy_only` requires all five images to exist under the selected commit or `image_revision`, including `linked-account-proxy-<image-suffix>-<revision>`.
 
 ## Verify
 
@@ -60,3 +61,5 @@ kind: operations
 - The ingress owns a stable public IP, external-dns creates records in the zone, and certificates are issued for your hosts, wildcards included.
 - The in-cluster Postgres and Valkey are up.
 - Bifrost reaches Azure AI Foundry through the cluster's egress, and its running image matches the pinned tag.
+- The `opsiforce-linked-account-proxy` Deployment is ready, uses its ACR image, and reaches the backend with the shared service token. After signing in a Linked account, a model request succeeds through Bifrost and the in-cluster proxy.
+- A newly created agent pod has no Kata RuntimeClass or privileged containers, and workspace access and app routing work.
