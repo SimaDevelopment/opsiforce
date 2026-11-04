@@ -532,12 +532,16 @@ func (s *Server) roundTripAppRequest(
 		if isK8sPodError(body) {
 			return appProxyResult{restart: true}, nil
 		}
+		served := body
+		if framedPreview && strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+			served = withPreviewReporter(body, previewFrameOf(r, previewFrameOrigin))
+		}
 
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,
 			headers:      headers,
-			body:         body,
-			responseSize: int64(len(body)),
+			body:         served,
+			responseSize: int64(len(served)),
 		}
 		if captureBody {
 			result.responseBody = truncate(string(body), bodyLimit)
@@ -551,7 +555,7 @@ func (s *Server) roundTripAppRequest(
 	reportsPreviewLocation := framedPreview && strings.Contains(contentType, "text/html")
 
 	if reportsPreviewLocation && !rewritesUpstreamPath {
-		stream, err := streamWithPreviewReporter(resp.Body, previewFrameOrigin)
+		stream, err := streamWithPreviewReporter(resp.Body, previewFrameOf(r, previewFrameOrigin))
 		if err != nil {
 			return appProxyResult{}, err
 		}
@@ -575,7 +579,7 @@ func (s *Server) roundTripAppRequest(
 			rewritten = bytes.ReplaceAll(rewritten, []byte(upstreamPath), nil)
 		}
 		if reportsPreviewLocation {
-			rewritten = withPreviewReporter(rewritten, previewFrameOrigin)
+			rewritten = withPreviewReporter(rewritten, previewFrameOf(r, previewFrameOrigin))
 		}
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,

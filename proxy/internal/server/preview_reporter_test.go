@@ -146,16 +146,38 @@ func TestAStreamedPageReachesTheFrameBeforeTheAppFinishesIt(t *testing.T) {
 	}
 }
 
-func TestAPageAFormPostsIntoTheFrameReportsItsLocationToo(t *testing.T) {
+func TestAnAppsOwnErrorPageInTheFrameReportsItsLocationAndKeepsItsStatus(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Not found</title></head><body>No such order</body></html>`))
+	}))
+	t.Cleanup(upstream.Close)
+	server := newAppServer(t, previewAnswer(upstream.URL))
+
+	rec := visit(server, "https://"+testEnvironmentID+".preview.apps.test/", loadedIntoTheFrame())
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status %d, want the App's 404", rec.Code)
+	}
+	if !strings.HasPrefix(rec.Body.String(), `<!doctype html><html><head><script>`) {
+		t.Errorf("the App's 404 page has no reporter: %.80q", rec.Body.String())
+	}
+}
+
+func TestOnlyAPostedPageAsksToBeReloadedWithoutResubmitting(t *testing.T) {
 	server := newAppServer(t, previewAnswer(startPageUpstream(t, appPage)))
-	req := httptest.NewRequest(http.MethodPost, "https://"+testEnvironmentID+".preview.apps.test/", strings.NewReader("status=open"))
-	req.Header.Set("Sec-Fetch-Dest", "iframe")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
+	posted := httptest.NewRequest(http.MethodPost, "https://"+testEnvironmentID+".preview.apps.test/", strings.NewReader("status=open"))
+	posted.Header.Set("Sec-Fetch-Dest", "iframe")
+	postedPage := httptest.NewRecorder()
+	server.ServeHTTP(postedPage, posted)
 
-	server.ServeHTTP(rec, req)
+	linkedPage := visit(server, "https://"+testEnvironmentID+".preview.apps.test/", loadedIntoTheFrame())
 
-	if !strings.Contains(rec.Body.String(), "opsiforce-preview:location") {
-		t.Errorf("a posted page has no reporter: %.120q", rec.Body.String())
+	if !strings.Contains(postedPage.Body.String(), "var postedDocument = true;") {
+		t.Error("a page a form posted would be reloaded by resubmitting the form")
+	}
+	if !strings.Contains(linkedPage.Body.String(), "var postedDocument = false;") {
+		t.Error("a linked page lost its ordinary reload")
 	}
 }

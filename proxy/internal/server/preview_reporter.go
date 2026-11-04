@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -31,12 +32,21 @@ func askForAWholePage(headers http.Header) {
 	headers.Del("If-Modified-Since")
 }
 
-func withPreviewReporter(page []byte, platformOrigin string) []byte {
-	at, _ := reporterInsertionPoint(page)
-	return spliced(page, at, reporterScript(platformOrigin))
+type previewFrame struct {
+	platformOrigin string
+	posted         bool
 }
 
-func streamWithPreviewReporter(page io.ReadCloser, platformOrigin string) (io.ReadCloser, error) {
+func previewFrameOf(r *http.Request, platformOrigin string) previewFrame {
+	return previewFrame{platformOrigin: platformOrigin, posted: r.Method != http.MethodGet}
+}
+
+func withPreviewReporter(page []byte, frame previewFrame) []byte {
+	at, _ := reporterInsertionPoint(page)
+	return spliced(page, at, reporterScript(frame))
+}
+
+func streamWithPreviewReporter(page io.ReadCloser, frame previewFrame) (io.ReadCloser, error) {
 	chunk := make([]byte, 4<<10)
 	var prefix []byte
 	for {
@@ -44,7 +54,7 @@ func streamWithPreviewReporter(page io.ReadCloser, platformOrigin string) (io.Re
 		prefix = append(prefix, chunk[:n]...)
 		at, found := reporterInsertionPoint(prefix)
 		if found || errors.Is(err, io.EOF) || len(prefix) >= reporterSearchLimit {
-			head := spliced(prefix, at, reporterScript(platformOrigin))
+			head := spliced(prefix, at, reporterScript(frame))
 			return struct {
 				io.Reader
 				io.Closer
@@ -66,9 +76,13 @@ func reporterInsertionPoint(page []byte) (int, bool) {
 	return 0, false
 }
 
-func reporterScript(platformOrigin string) []byte {
-	origin, _ := json.Marshal(platformOrigin)
-	return []byte("<script>" + strings.Replace(previewReporterSource, "PLATFORM_ORIGIN", string(origin), 1) + "</script>")
+func reporterScript(frame previewFrame) []byte {
+	origin, _ := json.Marshal(frame.platformOrigin)
+	source := strings.NewReplacer(
+		"PLATFORM_ORIGIN", string(origin),
+		"POSTED_DOCUMENT", strconv.FormatBool(frame.posted),
+	).Replace(previewReporterSource)
+	return []byte("<script>" + source + "</script>")
 }
 
 func spliced(page []byte, at int, script []byte) []byte {

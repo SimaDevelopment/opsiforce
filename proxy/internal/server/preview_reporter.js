@@ -1,5 +1,6 @@
 (function () {
   var platformOrigin = PLATFORM_ORIGIN;
+  var postedDocument = POSTED_DOCUMENT;
   if (window.parent === window || window.__opsiforcePreviewReporter) return;
   window.__opsiforcePreviewReporter = true;
   var navigation = window.navigation;
@@ -14,6 +15,11 @@
       },
       platformOrigin
     );
+  }
+
+  function reload() {
+    if (!postedDocument) return location.reload();
+    location.replace(location.hash ? location.href.slice(0, -location.hash.length) : location.href);
   }
 
   function traverse(direction) {
@@ -42,7 +48,7 @@
     if (event.source !== window.parent || event.origin !== platformOrigin || !event.data) return;
     if (['opsiforce-preview:reload', 'opsiforce-preview:back', 'opsiforce-preview:forward'].indexOf(event.data.type) === -1) return;
     window.parent.postMessage({ type: 'opsiforce-preview:acknowledged' }, platformOrigin);
-    if (event.data.type === 'opsiforce-preview:reload') location.reload();
+    if (event.data.type === 'opsiforce-preview:reload') reload();
     if (event.data.type === 'opsiforce-preview:back') traverse('back');
     if (event.data.type === 'opsiforce-preview:forward') traverse('forward');
   });
