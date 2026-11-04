@@ -7,6 +7,7 @@ import type { ServiceSkillAudience } from '../../delivery/service-skill-source';
 import { SkillDeliveryService } from '../../delivery/skill-delivery.service';
 import { ProjectConfigurationSaveHooks } from '../configuration/project-configuration-save-hooks';
 import type { ConfigurationValues } from '../configuration/configuration-values';
+import { withNewListItemIds } from '../configuration/form-save';
 import {
   ProjectConfigurationStore,
   type ProjectConfigurationStart,
@@ -15,7 +16,7 @@ import { ServiceAvailability } from '../configuration/service-availability';
 import { profileIdAt, serviceSettingsCarriedBy } from '../knowledge/service-skill.repository';
 import { servableOrNone } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
-import { settableFieldValues } from '../../store/service-switch-catalog';
+import { settableFieldValues, settingLabels } from '../../store/service-settings-catalog';
 
 interface StartingConfiguration {
   service: RegisteredService;
@@ -31,8 +32,12 @@ function formDefaultsOf(service: RegisteredService): ConfigurationValues {
 }
 
 function startOf(service: RegisteredService, settings: AgentServiceSettings | undefined): ProjectConfigurationStart {
-  const carried = settings ? settableFieldValues(service.manifest, settings) : {};
-  return { values: { ...formDefaultsOf(service), ...carried } };
+  if (!settings) return { values: formDefaultsOf(service) };
+  const carried = withNewListItemIds(
+    service.manifest.projectForm ?? [],
+    settableFieldValues(service.manifest, settings)
+  );
+  return { values: { ...formDefaultsOf(service), ...carried }, labels: settingLabels(service.manifest, settings) };
 }
 
 @Injectable()
@@ -106,7 +111,6 @@ export class ConfigurationsAtCreate {
   }
 
   private async agentSettingsOf(audience: ServiceSkillAudience): Promise<Map<string, AgentServiceSettings>> {
-    if (audience.agentOrigin !== 'custom') return new Map();
     const profileId = await profileIdAt(audience.agentId, audience.environmentId);
     const carried = profileId ? await serviceSettingsCarriedBy(profileId) : [];
     return new Map(carried.map(({ externalServiceId, serviceSettings }) => [externalServiceId, serviceSettings]));

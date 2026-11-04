@@ -13,6 +13,8 @@ import { Button } from '~/components/ui/button';
 import { Menu } from '~/components/icons';
 import { PRIVATE_ROOT_COMPONENTS } from '~/private-loader';
 import { createTenantChangeHandler } from '~/lib/tenant-state';
+import { mountAppearance } from '~/lib/appearance';
+import { CommandPalette, commandPaletteOpen } from '~/components/command-palette';
 import { Toaster } from 'solid-sonner';
 
 const queryClient = new QueryClient({
@@ -57,8 +59,11 @@ function SidebarLayout() {
 
   return (
     <JobDockHost>
+      <CommandPalette />
       <div
         class="group/sidebar-wrapper flex h-full w-full"
+        // the open palette is the only thing a keyboard can reach
+        inert={commandPaletteOpen()}
         style={{
           '--sidebar-width': `${sidebarResize.width()}px`,
           '--sidebar-width-icon': '3rem',
@@ -94,6 +99,10 @@ function AppContent() {
   const isPermissionDenied = () => location().pathname === '/permission-denied';
 
   createTenantChangeHandler();
+  // The one writer of the appearance onto <html>, which keeps `system` mode
+  // tracking the OS after boot; the inline script in index.html has already
+  // painted the first frame with the stored choice.
+  mountAppearance();
 
   return (
     <>

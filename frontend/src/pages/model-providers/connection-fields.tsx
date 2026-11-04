@@ -212,7 +212,9 @@ export function RadioChoice<T extends string>(props: {
                 <span class="block font-medium leading-4 text-foreground">{props.title(option)}</span>
                 <Show when={props.hint}>
                   {(hint) => (
-                    <span class="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{hint()(option)}</span>
+                    <span class="mt-0.5 block text-[0.6875rem] leading-snug text-muted-foreground">
+                      {hint()(option)}
+                    </span>
                   )}
                 </Show>
               </span>
@@ -314,7 +316,7 @@ export function TestOutcome(props: { result: TestResult | null; idle: string; pa
         {(outcome) => {
           const current = outcome();
           return current.passed ? (
-            <span class="inline-flex items-center gap-1 text-xs text-emerald-700">
+            <span class="of-ink of-tone-done inline-flex items-center gap-1 text-xs">
               <Check class="h-3 w-3" /> {props.passed}
             </span>
           ) : (
@@ -415,7 +417,7 @@ export function ModelChoiceField(props: {
               {(format) => (
                 <div class="space-y-1">
                   <Show when={formats().length > 1}>
-                    <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <p class="text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
                       {BASE_FORMAT_LABEL[format]}
                     </p>
                   </Show>

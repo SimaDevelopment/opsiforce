@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as k8s from '@kubernetes/client-node';
 import { loadKubeConfig } from '../common/k8s-client';
-import { buildPodSpec, PodTemplateOptions } from './pod.template';
+import { AGENT_PODS_SERVICE, buildPodSpec, PodTemplateOptions } from './pod.template';
+import { fetchAsLocalhost, type PodRequestInit } from './pod-fetch';
 import { PodCacheService } from './pod.cache.service';
+import { SkillAvailability } from '../store/skill-availability';
 import { resolvePreset, toK8sResources, type K8sResourceRequirements } from './pod-classes';
 
 export interface TenantPodOptions {
@@ -16,7 +18,7 @@ export interface TenantPodOptions {
   runtimeProxyUrl?: string;
   agentName?: string;
   opsiforceEnv?: string;
-  environmentSlug?: string | null;
+  appPublicUrl?: string;
   resources?: K8sResourceRequirements;
   controlToken?: string;
 }
@@ -42,7 +44,8 @@ export class PodService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly podCache: PodCacheService
+    private readonly podCache: PodCacheService,
+    private readonly skillAvailability: SkillAvailability
   ) {
     const kc = loadKubeConfig();
     this.coreApi = kc.makeApiClient(k8s.CoreV1Api);
@@ -58,13 +61,13 @@ export class PodService {
       storageType: this.configService.getOrThrow<'cephfs' | 'hostPath'>('storageType'),
       cephfsPvcName: this.configService.getOrThrow<string>('cephfsPvcName'),
       storageMountPath: this.configService.getOrThrow<string>('storageMountPath'),
-      appsHostname: this.configService.getOrThrow<string>('appsHostname'),
       externalServicesHost: this.configService.get<string>('externalServicesHost') || undefined,
       caBundleConfigMap: this.configService.get<string>('podCaBundleConfigMap') || undefined,
       controlPort: this.configService.getOrThrow<number>('agentControlPort'),
       imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
       resources: this.smallResources(),
       privileged: this.configService.get<boolean>('agentPrivileged', false),
+      unofferedSkills: this.skillAvailability.unofferedSkills(),
       runtimeClassName: this.configService.get<string>('agentRuntimeClassName'),
       nodeSelector: this.configService.get('agentNodeSelector'),
       tolerations: this.configService.get('agentTolerations'),
@@ -80,6 +83,19 @@ export class PodService {
 
   assignedPodName(environmentId: string): string {
     return `opsiforce-agent-${environmentId.slice(0, 8)}`;
+  }
+
+  podAddress(environmentId: string, port: number): string {
+    return `http://${this.assignedPodName(environmentId)}.${AGENT_PODS_SERVICE}.${this.namespace}.svc.cluster.local:${port}`;
+  }
+
+  podFetch(environmentId: string, port: number, path: string, init?: PodRequestInit): Promise<Response> {
+    return fetchAsLocalhost(new URL(`${this.podAddress(environmentId, port)}${path}`), init);
+  }
+
+  isAssignedPodReady(environmentId: string): boolean {
+    const pod = this.podCache.getPod(this.assignedPodName(environmentId));
+    return !!pod && !pod.metadata?.deletionTimestamp && this.isPodReady(pod);
   }
 
   async createAssignedPod(
@@ -190,7 +206,7 @@ export class PodService {
     }
   }
 
-  async waitForReady(podName: string, timeoutMs = 180 * 1000): Promise<string> {
+  async waitForReady(podName: string, timeoutMs = 180 * 1000): Promise<void> {
     const synced = await this.podCache.waitForSyncWithTimeout(5000);
     if (!synced) {
       return this.waitForReadyByPolling(podName, timeoutMs);
@@ -202,23 +218,22 @@ export class PodService {
       if (failure === 'ImagePullBackOff') {
         throw new PodStartupFailedError(podName, failure);
       }
-      const podIp = initial.status?.podIP;
-      if (!initial.metadata?.deletionTimestamp && this.isPodReady(initial) && podIp) {
-        return podIp;
+      if (!initial.metadata?.deletionTimestamp && this.isPodReady(initial)) {
+        return;
       }
     }
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       let settled = false;
       let awaitingRecreate = !!initial?.metadata?.deletionTimestamp;
       const timer = setTimeout(() => {
         const current = this.podCache.getPod(podName);
         const failure = current ? this.inspectFailureReason(current) : null;
         if (current && failure === 'Unschedulable') {
-          finish(undefined, new PodStartupFailedError(podName, failure, this.inspectFailureMessage(current)));
+          finish(new PodStartupFailedError(podName, failure, this.inspectFailureMessage(current)));
           return;
         }
-        finish(undefined, new Error(`Pod ${podName} not ready after ${timeoutMs}ms`));
+        finish(new Error(`Pod ${podName} not ready after ${timeoutMs}ms`));
       }, timeoutMs);
 
       const inspect = (pod: k8s.V1Pod) => {
@@ -229,12 +244,11 @@ export class PodService {
         }
         const failure = this.inspectFailureReason(pod);
         if (failure === 'ImagePullBackOff') {
-          finish(undefined, new PodStartupFailedError(podName, failure));
+          finish(new PodStartupFailedError(podName, failure));
           return;
         }
-        const podIp = pod.status?.podIP;
-        if (this.isPodReady(pod) && podIp) {
-          finish(podIp);
+        if (this.isPodReady(pod)) {
+          finish();
         }
       };
 
@@ -246,10 +260,10 @@ export class PodService {
           awaitingRecreate = false;
           return;
         }
-        finish(undefined, new Error(`Pod ${podName} was deleted before becoming ready`));
+        finish(new Error(`Pod ${podName} was deleted before becoming ready`));
       });
 
-      const finish = (podIp?: string, err?: Error) => {
+      const finish = (err?: Error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -257,7 +271,7 @@ export class PodService {
         offUpdate();
         offDelete();
         if (err) reject(err);
-        else if (podIp) resolve(podIp);
+        else resolve();
       };
 
       const current = this.podCache.getPod(podName);
@@ -376,7 +390,7 @@ export class PodService {
     throw new Error(`Pod ${podName} was not deleted after ${timeoutMs}ms`);
   }
 
-  private async waitForReadyByPolling(podName: string, timeoutMs: number): Promise<string> {
+  private async waitForReadyByPolling(podName: string, timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let seenReady = false;
     let awaitingRecreate = false;
@@ -392,8 +406,7 @@ export class PodService {
         } else {
           seenReady = true;
           awaitingRecreate = false;
-          const podIp = pod.status?.podIP;
-          if (this.isPodReady(pod) && podIp) return podIp;
+          if (this.isPodReady(pod)) return;
         }
       } else if (awaitingRecreate) {
         awaitingRecreate = false;

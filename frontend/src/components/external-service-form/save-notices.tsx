@@ -50,10 +50,10 @@ function FailedHookNotice(props: HookFailureActions) {
 
   return (
     <div
-      class="mb-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
+      class="of-note of-tone-needs-you mb-4 gap-2 text-xs"
       role="alert"
     >
-      <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+      <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
         <span>Saved, but the service could not apply it. {props.failure.detail ?? 'Try again.'}</span>
         <Show when={actionFailed()}>{(message) => <span class="text-destructive">{message()}</span>}</Show>

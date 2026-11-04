@@ -75,7 +75,7 @@ export function DictationLanguageMenu(props: { languages: readonly string[] }) {
       >
         <Show when={dictationLanguage()} fallback={<ChevronDown class="h-3 w-3" />}>
           {(code) => (
-            <span class="rounded border border-border bg-muted px-1 py-px text-[10px] font-semibold uppercase leading-3">
+            <span class="rounded border border-border bg-muted px-1 py-px text-[0.625rem] font-semibold uppercase leading-3">
               {code()}
             </span>
           )}

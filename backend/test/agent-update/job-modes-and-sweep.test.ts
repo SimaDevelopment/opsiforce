@@ -25,6 +25,7 @@ import { DEFAULT_AGENT_NAME, type AgentCaller } from '../../src/agent/agent.type
 import { CUSTOM_AGENT_PACKAGE } from '../../src/delivery/delivery.types';
 import type { NotifyTarget } from '../../src/delivery/pod-reload.client';
 import { SkillSwitchRepository } from '../../src/delivery/skill-switch.repository';
+import { SkillAvailability } from '../../src/store/skill-availability';
 import { ProjectStatus } from '../../src/project/project.types';
 import type { SkillCaller } from '../../src/store/skill.service';
 import { defaultEnvironmentId, ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
@@ -75,7 +76,7 @@ let processor: AgentUpdateProcessor;
 const podReload = {
   reachable: true,
   notified: [] as Array<{ projectEnvironmentId: string; targets: NotifyTarget[] }>,
-  async notify(projectEnvironmentId: string, _podIp: string, targets: NotifyTarget[]): Promise<boolean> {
+  async notify(projectEnvironmentId: string, targets: NotifyTarget[]): Promise<boolean> {
     this.notified.push({ projectEnvironmentId, targets });
     return this.reachable;
   },
@@ -133,7 +134,8 @@ function rebuildProcessor(): void {
     harness.skillDeliveries,
     withImageVersion as never,
     podReload as never,
-    harness.moduleRef.get(SkillSwitchRepository)
+    harness.moduleRef.get(SkillSwitchRepository),
+    harness.moduleRef.get(SkillAvailability)
   );
 }
 
@@ -572,11 +574,17 @@ describe('a Job on an environment whose pod is running', () => {
   beforeAll(async () => {
     project = await harness.projects.create({ agentId: builtInAgentId }, tenantId, { createdBy: userId });
     await sweep();
-    await db.update(projectEnvironments).set({ podIp: '127.0.0.1' }).where(eq(projectEnvironments.id, project.id));
+    await db
+      .update(projectEnvironments)
+      .set({ status: ProjectStatus.Active })
+      .where(eq(projectEnvironments.id, project.id));
   });
 
   afterAll(async () => {
-    await db.update(projectEnvironments).set({ podIp: null }).where(eq(projectEnvironments.id, project.id));
+    await db
+      .update(projectEnvironments)
+      .set({ status: ProjectStatus.Starting })
+      .where(eq(projectEnvironments.id, project.id));
     podReload.reachable = true;
   });
 

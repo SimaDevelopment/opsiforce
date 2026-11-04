@@ -55,7 +55,7 @@ export function LabelWithTip(props: { label: string; tip: string }) {
 export function BuiltInPill() {
   return (
     <Tip content={TIPS.builtIn}>
-      <span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <span class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
         Built-in
       </span>
     </Tip>
@@ -65,7 +65,7 @@ export function BuiltInPill() {
 export function KindChip(props: { kind: ModelProviderKind | null }) {
   return (
     <Tip content={TIPS.custom}>
-      <span class="inline-flex items-center rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <span class="inline-flex items-center rounded border border-border px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
         {props.kind ? KIND_LABEL[props.kind] : 'Custom'}
       </span>
     </Tip>
@@ -96,7 +96,7 @@ const STATUS_VARIANT: Record<ModelProviderStatus, 'success' | 'destructive' | 'w
 export function StatusBadge(props: { status: ModelProviderStatus }) {
   return (
     <Tip content={TIPS.status[props.status]}>
-      <Badge variant={STATUS_VARIANT[props.status]} class="h-5 whitespace-nowrap px-1.5 text-[10px] font-medium">
+      <Badge variant={STATUS_VARIANT[props.status]} class="h-5 whitespace-nowrap px-1.5 text-[0.625rem] font-medium">
         {STATUS_LABEL[props.status]}
       </Badge>
     </Tip>

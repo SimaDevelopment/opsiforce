@@ -13,6 +13,7 @@ import { writeAgentPodSettings, writeWarmPoolSize } from './agent-pod-settings';
 import { PLATFORM_SKILL_NAME, type AgentCaller } from './agent.types';
 import { isPostgresError, PG_UNIQUE_VIOLATION } from '../common/postgres-errors';
 import type { AgentBundle, SkillPin } from './agent-bundle';
+import { assertRoomForCreatedAgent, type CreatedAgentsCap } from './created-agents-cap';
 
 const SLUG_MAX_LENGTH = 60;
 const AGENT_NAME_UNIQUE = 'agents_tenant_id_name_unique';
@@ -34,6 +35,7 @@ export interface NewAgent {
   pins: SkillPin[];
   /** Skill writes that commit with the Agent's rows, answering the pins they minted. */
   writeSkills?: (tx: DbExecutor) => Promise<SkillPin[]>;
+  createdAgentsCap?: CreatedAgentsCap | null;
 }
 
 @Injectable()
@@ -71,6 +73,7 @@ export class AgentBundleWriter {
       }
 
       await db.transaction(async (tx) => {
+        await assertRoomForCreatedAgent(tx, draft.createdAgentsCap);
         const mintedPins = draft.writeSkills ? await draft.writeSkills(tx) : [];
         await tx.insert(agents).values({
           id: agentId,

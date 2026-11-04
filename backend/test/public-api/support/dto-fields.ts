@@ -12,6 +12,7 @@ export const PROJECT_FIELDS = [
   'importedAgent',
   'timezone',
   'agentStatus',
+  'waitingForInput',
   'lastPromptAt',
   'createdAt',
   'updatedAt',
@@ -26,6 +27,7 @@ export const ENVIRONMENT_FIELDS = [
   'status',
   'hasApp',
   'appName',
+  'publicUrl',
   'lastActiveAt',
   'opencode',
 ];

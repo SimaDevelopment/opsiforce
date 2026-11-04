@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServiceUsage } from '../../db/schema';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { addMember } from '../support/project-fixtures';
 import {
   builtInServiceId,
@@ -11,7 +11,7 @@ import {
   tenantAdmin,
   platformOperator,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import {
   channelsOf,
   configuringProject,

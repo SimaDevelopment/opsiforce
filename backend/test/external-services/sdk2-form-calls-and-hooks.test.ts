@@ -7,9 +7,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { ProjectConfigurationCarry } from '../../src/external-services/configuration/project-configuration-carry';
 import { ExternalServicesProjectLifecycle } from '../../src/external-services/external-services-project-lifecycle';
 import { addMember } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { gatewayUrlOf } from './support/gate-proxy';
 import { productionCaller } from './support/gate';
 import { projectServiceUrl, saveProjectService, type ConfiguringProject } from './support/generating';

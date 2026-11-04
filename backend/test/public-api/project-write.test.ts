@@ -192,7 +192,7 @@ describe('projects write routes', () => {
       expect(pointers(res)).toEqual(['#/workspaceId']);
     });
 
-    it('answers 422 for a workspace the caller is not a member of', async () => {
+    it('answers 422 for a workspace the caller is not a member of, though it holds every permission', async () => {
       const outsider = await addMember(app, tenant);
 
       const res = await post(outsider, { title: 'Not mine', agentId, workspaceId });
@@ -296,7 +296,7 @@ describe('projects write routes', () => {
       expect(await placementOf(projectId)).toMatchObject({ workspaceId: null });
     });
 
-    it('honours an explicit workspace the caller belongs to, without any workspace permission', async () => {
+    it('honours an explicit workspace the caller belongs to, and shows it the Project there', async () => {
       const tenant = await createTenant(app);
       const member = await addMember(app, tenant);
       const workspaceId = await createSharedWorkspace(app, tenant, member);
@@ -304,6 +304,8 @@ describe('projects write routes', () => {
       const projectId = await createdProjectId(member, { workspaceId });
 
       expect(await placementOf(projectId)).toMatchObject({ workspaceId, workspaceType: 'shared' });
+      const read = await app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}`, headers: member.headers });
+      expect(read.statusCode, read.body).toBe(200);
     });
 
     it('honours an explicit folder inside that workspace', async () => {
@@ -405,22 +407,16 @@ describe('projects write routes', () => {
 
       expect(res.statusCode, res.body).toBe(204);
       expect(res.body).toBe('');
-      expect(pods.callsTo('deletePod').filter((call) => call.args.podName === podName).length).toBe(
-        deletesBefore + 1
-      );
+      expect(pods.callsTo('deletePod').filter((call) => call.args.podName === podName).length).toBe(deletesBefore + 1);
     });
 
-    it('refuses a visible Project to a member without can_restart_project', async () => {
-      const projectId = await createProject(app, tenant, { title: 'Kept running' });
-      const member = await addMember(app, tenant);
+    it('restarts a visible Project for a caller holding only the public API permission', async () => {
+      const projectId = await createProject(app, tenant, { title: 'Restarted by a program' });
+      const member = await addMember(app, tenant, ['can_use_public_api']);
 
       const res = await restart(member, projectId);
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({
-        type: 'urn:opsiforce:error:permission-denied',
-        permission: 'can_restart_project',
-      });
+      expect(res.statusCode, res.body).toBe(204);
     });
 
     it('reports a disabled Project as locked', async () => {
@@ -478,18 +474,14 @@ describe('projects write routes', () => {
       expect((await remove(deleter, randomUUID())).statusCode).toBe(404);
     });
 
-    it('refuses a visible Project to a member without can_delete_project', async () => {
-      const projectId = await createProject(app, tenant, { title: 'Kept' });
-      const member = await addMember(app, tenant);
+    it('deletes a visible Project for a caller holding only the public API permission', async () => {
+      const projectId = await createProject(app, tenant, { title: 'Deleted by a program' });
+      const member = await addMember(app, tenant, ['can_use_public_api']);
 
       const res = await remove(member, projectId);
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json()).toMatchObject({
-        type: 'urn:opsiforce:error:permission-denied',
-        permission: 'can_delete_project',
-      });
-      expect(await placementOf(projectId)).toMatchObject({ workspaceId: null });
+      expect(res.statusCode, res.body).toBe(204);
+      expect((await remove(member, projectId)).statusCode).toBe(404);
     });
 
     it('answers 404 before the permission for a Project the caller cannot see', async () => {

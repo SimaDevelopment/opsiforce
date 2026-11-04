@@ -2,6 +2,7 @@
   "sdk": 2,
   "displayName": "Incoming email",
   "description": "Receive email, with attachments, at a Project's own address.",
+  "icon": "icon.svg",
   "inbound": true,
   "connectedByDefault": true,
   "serviceForm": [

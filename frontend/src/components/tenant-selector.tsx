@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
 } from '~/components/ui/dropdown-menu';
 import { SidebarMenu, SidebarMenuItem } from '~/components/ui/sidebar';
-import { Building2, ChevronsUpDown } from '~/components/icons';
+import { Check, ChevronsUpDown } from '~/components/icons';
 import { createAppQuery } from '~/lib/create-app-query';
 
 export function TenantSelector() {
@@ -26,6 +26,8 @@ export function TenantSelector() {
     return match?.displayName ?? currentTenant();
   };
 
+  const tenantInitial = () => (currentDisplayName() || '?').trim().charAt(0).toUpperCase();
+
   const initTenant = () => {
     const tenants = tenantsQuery.data;
     if (!tenants || tenants.length === 0) return;
@@ -38,24 +40,36 @@ export function TenantSelector() {
     <Show when={tenantsQuery.data} fallback={null}>
       {(tenants) => {
         initTenant();
+        // The tenant was hidden entirely below two of them, so the shell never
+        // said which organization you were in. It is orientation first and a
+        // switcher second: with one tenant it reads as a static label, with
+        // several it opens the menu.
         return (
-          <Show when={tenants().length >= 2}>
+          <Show when={tenants().length > 0}>
             <SidebarMenu>
               <SidebarMenuItem>
+                <Show
+                  when={tenants().length >= 2}
+                  fallback={
+                    <div class="of-sb-tenant group-data-[collapsible=icon]/sidebar:justify-center">
+                      <span class="av">{tenantInitial()}</span>
+                      <span class="nm group-data-[collapsible=icon]/sidebar:hidden">{currentDisplayName()}</span>
+                    </div>
+                  }
+                >
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     as={(props: Record<string, unknown>) => (
                       <button
                         {...props}
-                        class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent group-data-[collapsible=icon]/sidebar:justify-center"
+                        class="of-sb-tenant fr-panel group-data-[collapsible=icon]/sidebar:justify-center"
                       >
-                        <div class="w-7 h-7 shrink-0 rounded-lg bg-sidebar-accent flex items-center justify-center">
-                          <Building2 class="w-4 h-4" />
-                        </div>
-                        <span class="truncate flex-1 text-left text-sm font-medium group-data-[collapsible=icon]/sidebar:hidden">
-                          {currentDisplayName()}
-                        </span>
-                        <ChevronsUpDown class="w-4 h-4 shrink-0 text-sidebar-muted-foreground group-data-[collapsible=icon]/sidebar:hidden" />
+                        <span class="av">{tenantInitial()}</span>
+                        <span class="nm group-data-[collapsible=icon]/sidebar:hidden">{currentDisplayName()}</span>
+                        <ChevronsUpDown
+                          class="w-3.5 h-3.5 shrink-0 group-data-[collapsible=icon]/sidebar:hidden"
+                          style={{ color: 'var(--ink-subtle)' }}
+                        />
                       </button>
                     )}
                   />
@@ -66,12 +80,19 @@ export function TenantSelector() {
                           class={tenant.name === currentTenant() ? 'bg-accent' : ''}
                           onSelect={() => setTenant(tenant.name)}
                         >
-                          {tenant.displayName}
+                          <span class="of-tenant-avatar">
+                            {(tenant.displayName || tenant.name).trim().charAt(0).toUpperCase()}
+                          </span>
+                          <span class="flex-1 truncate">{tenant.displayName}</span>
+                          <Show when={tenant.name === currentTenant()}>
+                            <Check class="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--ink-accent)' }} />
+                          </Show>
                         </DropdownMenuItem>
                       )}
                     </For>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                </Show>
               </SidebarMenuItem>
             </SidebarMenu>
           </Show>

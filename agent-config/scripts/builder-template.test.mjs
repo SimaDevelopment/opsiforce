@@ -177,13 +177,21 @@ describe("api.sh", () => {
     assert.equal(seen.length - before, 2)
   })
 
-  test("resolves a runtime baseUrl against the runtime proxy origin with the same key", async () => {
+  test("resolves a relative runtime baseUrl against the runtime proxy origin with the same key", async () => {
     await run(["runtime", "/api/proxy/env-1", "POST", "/api/session/ses_1/prompt", '{"text":"hi"}'])
 
     const last = seen.at(-1)
     assert.equal(last.url, "/api/proxy/env-1/api/session/ses_1/prompt")
     assert.equal(last.authorization, "Bearer gw-test")
     assert.deepEqual(JSON.parse(last.body), { text: "hi" })
+  })
+
+  test("calls an absolute runtime baseUrl as given, with the same key", async () => {
+    await run(["runtime", `${origin}/api/proxy/env-1`, "GET", "/api/session/ses_1"], { OPSIFORCE_RUNTIME_PROXY_URL: "" })
+
+    const last = seen.at(-1)
+    assert.equal(last.url, "/api/proxy/env-1/api/session/ses_1")
+    assert.equal(last.authorization, "Bearer gw-test")
   })
 
   test("gives up on a request that outlives API_MAX_TIME", async () => {
@@ -1260,6 +1268,19 @@ describe("the template files migration", () => {
     }
   })
 
+  test("every later copy accepts the file it writes, so a chat laid from today's template migrates cleanly", () => {
+    const migrationsDir = path.dirname(migrationDir)
+    for (const id of readdirSync(migrationsDir)) {
+      const { operations } = JSON.parse(readFileSync(path.join(migrationsDir, id, "migration.json"), "utf8"))
+      for (const operation of operations.filter((each) => each.type === "copy")) {
+        assert.ok(
+          operation.managedChecksums.includes(sha256(path.join(migrationsDir, id, operation.source))),
+          `${id}: add the current sha256 of ${operation.target} to its managedChecksums`,
+        )
+      }
+    }
+  })
+
   test("brings back a missing file and keeps an edited one as a conflict, which holds back the pod recreate", async (t) => {
     const context = provisionedChat(t)
     await provisionWorkspace(context, createSummary(context))
@@ -1271,6 +1292,7 @@ describe("the template files migration", () => {
     assert.equal(summary.status, "conflict")
     assert.deepEqual(summary.conflicts, [
       { migrationId: migration.id, path: "scripts/api.sh", reason: "checksum mismatch" },
+      { migrationId: "20261030_runtime_base_url", path: "scripts/api.sh", reason: "checksum mismatch" },
     ])
     assert.equal(summary.requiresPodRecreate, false)
     assert.equal(readFileSync(path.join(context.workspace, "scripts", "api.sh"), "utf8"), "# edited in this chat\n")

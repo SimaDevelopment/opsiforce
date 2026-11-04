@@ -11,7 +11,7 @@ Guard rails that keep this from becoming a new failure mode:
 
 - **Only confirmed absence counts.** A K8s 404 (or a pod already carrying a `deletionTimestamp`) means missing; any other API error means *skip the environment*. Treating "can't tell" as "missing" would let a K8s API blip mass-flip every active environment into recreation — the kind of self-inflicted incident the K8s-authoritative lifecycle avoids.
 - **Idle-timers are never refreshed by recovery.** An environment five minutes from suspension gets its pod back and still suspends five minutes later; scale-to-zero economics are untouched, and fully-expired environments are left for the suspension sweep.
-- **Self-inflicted deletions no-op for free.** Suspend, restart, and publish move the row out of `active` *before* deleting the pod, and disable commits its project-level flag first; the watcher's conditional `UPDATE … WHERE status='active' AND project enabled` then matches zero rows — no allow-list of "our own" deletions to maintain.
+- **Self-inflicted deletions no-op for free.** Suspend, restart, publish and disable move the row out of `active` *before* deleting the pod; the watcher's conditional `UPDATE … WHERE status='active' AND project enabled` then matches zero rows — no allow-list of "our own" deletions to maintain.
 
 ## Considered options
 
@@ -22,6 +22,7 @@ Guard rails that keep this from becoming a new failure mode:
 
 ## Consequences
 
-- A deploy that kills pods converges ~a startup-worker cycle after backend boot, and the recreated pods carry the new template — recovery is the rollout for everything that was running.
+- A deploy that kills pods converges ~a startup-worker cycle after backend boot, and the recreated pods carry the new template — recovery is the rollout for everything that was running. Deleting every agent pod on purpose (`kubectl delete pod -l app=opsiforce-agent`) rolls a pod-template change out the same way, and the pool integrity job refills the pending slots.
+- A pod that keeps its name on a restarted node but comes back with a new IP is not a deletion and needs nothing from recovery: environments reach pods by DNS name ([ADR-0094](0094-agent-pods-are-reached-by-dns-name-and-the-database-stores-no-address.md)).
 - Boot may recreate many pods at once after a fleet-scale deletion. Bounded by "recently active with live timers", and the workers are async; accepted rather than staggered until scale says otherwise.
 - Steady-state pod *creation* remains lazy — nothing here creates pods for suspended, failed, or disabled environments; recovery only restores what the status row already promises.

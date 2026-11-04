@@ -44,7 +44,7 @@ export function ServiceIcon(props: { icon: string | null; name: string; class?: 
         <span
           aria-hidden="true"
           class={cn(
-            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-[11px] font-semibold uppercase text-muted-foreground',
+            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-[0.6875rem] font-semibold uppercase text-muted-foreground',
             props.class
           )}
         >

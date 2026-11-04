@@ -9,9 +9,9 @@ import {
   Param,
   Put,
 } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db';
-import { projectEnvironments, projects, users } from '../../db/schema';
+import { projectEnvironments, projects, skills, users } from '../../db/schema';
 import {
   AgentUpdateInProgress,
   EnvironmentSkillNotFound,
@@ -23,6 +23,7 @@ import {
 } from '../delivery/environment-skills';
 import { hasPermission } from '../permission/permission.utils';
 import { isProjectAccessible } from '../project/project-visibility';
+import { visibleSkillsWhere } from '../store/skill-visibility';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 
@@ -36,9 +37,9 @@ export class ProjectSkillsController {
     @Param('projectEnvironmentId') projectEnvironmentId: string,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
-  ): Promise<EnvironmentSkills> {
-    await reachableUserId(tenant, user, projectId, projectEnvironmentId);
-    return this.environmentSkills.list(projectEnvironmentId);
+  ): Promise<LinkedEnvironmentSkills> {
+    const userId = await reachableUserId(tenant, user, projectId, projectEnvironmentId);
+    return withSkillLinks(tenant.tenantId, userId, await this.environmentSkills.list(projectEnvironmentId));
   }
 
   @Put(':skillName')
@@ -49,7 +50,7 @@ export class ProjectSkillsController {
     @Body() body: { on?: unknown } | undefined,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
-  ): Promise<EnvironmentSkills> {
+  ): Promise<LinkedEnvironmentSkills> {
     if (typeof body?.on !== 'boolean') throw new BadRequestException('Send {"on": true} or {"on": false}');
     const userId = await reachableUserId(tenant, user, projectId, projectEnvironmentId);
     try {
@@ -60,8 +61,37 @@ export class ProjectSkillsController {
     } catch (err) {
       throw asHttpError(err);
     }
-    return this.environmentSkills.list(projectEnvironmentId);
+    return withSkillLinks(tenant.tenantId, userId, await this.environmentSkills.list(projectEnvironmentId));
   }
+}
+
+type LinkedEnvironmentSkills = EnvironmentSkills & {
+  skills: (EnvironmentSkill & { skillId: string | null; origin: string | null })[];
+};
+
+async function withSkillLinks(
+  tenantId: string,
+  userId: string,
+  listed: EnvironmentSkills
+): Promise<LinkedEnvironmentSkills> {
+  const names = listed.skills.map((skill) => skill.name);
+  const rows =
+    names.length === 0
+      ? []
+      : await db
+          .select({ id: skills.id, name: skills.name, origin: skills.origin, tenantId: skills.tenantId })
+          .from(skills)
+          .where(and(inArray(skills.name, names), visibleSkillsWhere(tenantId, userId, { includeDisabled: true })));
+  const byName = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) if (!byName.has(row.name) || row.tenantId !== null) byName.set(row.name, row);
+  return {
+    ...listed,
+    skills: listed.skills.map((skill) => ({
+      ...skill,
+      skillId: byName.get(skill.name)?.id ?? null,
+      origin: byName.get(skill.name)?.origin ?? null,
+    })),
+  };
 }
 
 function assertMaySwitch(user: UserContext, skill: EnvironmentSkill): void {

@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PodService } from '../pod/pod.service';
 import { OpencodeErrorBody, PodResponded, PodTimeout, PodUnreachable } from './agent-session.errors';
 import type { JsonObject } from '../common/json';
 import type { RuntimeInfo, SessionInfo } from './agent-session.types';
@@ -31,10 +33,19 @@ function unwrap<T>(payload: T | Envelope<T>): T {
 
 @Injectable()
 export class PodOpencodeClient {
-  async call<T>(upstream: string, path: string, options: CallOptions = {}): Promise<T> {
+  private readonly agentPort: number;
+
+  constructor(
+    configService: ConfigService,
+    private readonly pods: PodService
+  ) {
+    this.agentPort = configService.getOrThrow<number>('agentPort');
+  }
+
+  async call<T>(environmentId: string, path: string, options: CallOptions = {}): Promise<T> {
     let res: Response;
     try {
-      res = await fetch(`${upstream}${path}`, {
+      res = await this.pods.podFetch(environmentId, this.agentPort, path, {
         method: options.method ?? 'GET',
         headers: options.body === undefined ? {} : { 'content-type': 'application/json' },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -50,14 +61,14 @@ export class PodOpencodeClient {
   }
 
   async oldestRootSession(
-    upstream: string,
+    environmentId: string,
     options: CallOptions & { maxPages?: number } = {}
   ): Promise<SessionInfo | null> {
     const maxPages = options.maxPages ?? MAX_SESSION_LIST_PAGES;
     let oldest: SessionInfo | null = null;
     let path: string | null = '/api/session?parentID=null&order=asc';
     for (let pages = 0; path !== null; pages += 1) {
-      const page: SessionPage = await this.call<SessionPage>(upstream, path, options);
+      const page: SessionPage = await this.call<SessionPage>(environmentId, path, options);
       const roots = (page.data ?? []).filter(isRootSession);
       if (roots.length > 0 && pages >= maxPages) {
         throw new PodTimeout(`Root session list did not end within ${maxPages} pages; refusing to bind a partial scan`);
@@ -69,64 +80,84 @@ export class PodOpencodeClient {
     return oldest;
   }
 
-  async createSession(upstream: string, agent: string, options: CallOptions = {}): Promise<SessionInfo> {
-    return this.callForData<SessionInfo>(upstream, '/api/session', { ...options, method: 'POST', body: { agent } });
+  async createSession(environmentId: string, agent: string, options: CallOptions = {}): Promise<SessionInfo> {
+    return this.callForData<SessionInfo>(environmentId, '/api/session', {
+      ...options,
+      method: 'POST',
+      body: { agent },
+    });
   }
 
   /** `POST /api/session/{id}/agent` — the runtime stores the id unvalidated and re-resolves it each step. */
   async switchSessionAgent(
-    upstream: string,
+    environmentId: string,
     sessionId: string,
     agent: string,
     options: CallOptions = {}
   ): Promise<void> {
-    await this.call<void>(upstream, `/api/session/${sessionId}/agent`, { ...options, method: 'POST', body: { agent } });
+    await this.call<void>(environmentId, `/api/session/${sessionId}/agent`, {
+      ...options,
+      method: 'POST',
+      body: { agent },
+    });
   }
 
-  async getSession(upstream: string, sessionId: string, options: CallOptions = {}): Promise<SessionInfo> {
-    return this.callForData<SessionInfo>(upstream, `/api/session/${sessionId}`, options);
+  async getSession(environmentId: string, sessionId: string, options: CallOptions = {}): Promise<SessionInfo> {
+    return this.callForData<SessionInfo>(environmentId, `/api/session/${sessionId}`, options);
   }
 
   async getSessionIfPresent(
-    upstream: string,
+    environmentId: string,
     sessionId: string,
     options: CallOptions = {}
   ): Promise<SessionInfo | null> {
     try {
-      return await this.getSession(upstream, sessionId, options);
+      return await this.getSession(environmentId, sessionId, options);
     } catch (error) {
       if (error instanceof PodResponded && isConfirmedAbsence(error)) return null;
       throw error;
     }
   }
 
-  async info(upstream: string, options: CallOptions = {}): Promise<RuntimeInfo> {
-    return this.call<RuntimeInfo>(upstream, '/api/info', options);
+  async info(environmentId: string, options: CallOptions = {}): Promise<RuntimeInfo> {
+    return this.call<RuntimeInfo>(environmentId, '/api/info', options);
   }
 
   /**
    * `GET /api/skill` — the ids opencode currently serves. A skill's id is its directory name under
    * `.opencode/skills/`, so this is what a delivery confirms itself against (ADR-0060).
    */
-  async skillIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
-    const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/skill', options);
+  async skillIds(environmentId: string, options: CallOptions = {}): Promise<string[]> {
+    const listed = await this.call<{ data?: Array<{ id?: string }> }>(environmentId, '/api/skill', options);
     return (listed.data ?? []).flatMap((skill) => (skill.id === undefined ? [] : [skill.id]));
   }
 
-  async agentIds(upstream: string, options: CallOptions = {}): Promise<string[]> {
-    const listed = await this.call<{ data?: Array<{ id?: string }> }>(upstream, '/api/agent', options);
+  async agentIds(environmentId: string, options: CallOptions = {}): Promise<string[]> {
+    const listed = await this.call<{ data?: Array<{ id?: string }> }>(environmentId, '/api/agent', options);
     return (listed.data ?? []).flatMap((agent) => (agent.id === undefined ? [] : [agent.id]));
   }
 
-  async activeSessions(upstream: string, timeoutMs: number): Promise<string[]> {
-    const snapshot = await this.call<{ data?: Record<string, unknown> }>(upstream, '/api/session/active', {
+  async activeSessions(environmentId: string, timeoutMs: number): Promise<string[]> {
+    const snapshot = await this.call<{ data?: Record<string, unknown> }>(environmentId, '/api/session/active', {
       timeoutMs,
     });
     return Object.keys(snapshot.data ?? {});
   }
 
-  private async callForData<T>(upstream: string, path: string, options: CallOptions = {}): Promise<T> {
-    return unwrap(await this.call<T | Envelope<T>>(upstream, path, options));
+  /** `GET /api/permission/request` and `GET /api/form` — the ids of every permission and form waiting for a reply. */
+  async pendingInputRequests(environmentId: string, timeoutMs: number): Promise<string[]> {
+    const lists = await Promise.all(
+      ['/api/permission/request', '/api/form'].map((path) =>
+        this.call<{ data?: Array<{ id?: string }> }>(environmentId, path, { timeoutMs })
+      )
+    );
+    return lists.flatMap((listed) =>
+      (listed.data ?? []).flatMap((request) => (request.id === undefined ? [] : [request.id]))
+    );
+  }
+
+  private async callForData<T>(environmentId: string, path: string, options: CallOptions = {}): Promise<T> {
+    return unwrap(await this.call<T | Envelope<T>>(environmentId, path, options));
   }
 }
 

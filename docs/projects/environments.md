@@ -1,12 +1,12 @@
 ---
 kind: explanation
 terms: [Environment, Environment Slug, Environment Color, Badge Label, ProjectEnvironment, App Auth, Auth mode, Active environment, Development, Production]
-adrs: [0001, 0002, 0007, 0012, 0040]
+adrs: [0001, 0002, 0007, 0040]
 ---
 
 # Environments
 
-> How does a [Project](../../GLOSSARY.md) run in several Environments, how is each one addressed and protected, and how does the workspace switch between them?
+> How does a [Project](../../GLOSSARY.md) run in several Environments, how is each one named and protected, and how does the workspace switch between them?
 
 ## How it works
 
@@ -16,8 +16,8 @@ adrs: [0001, 0002, 0007, 0012, 0040]
 - Every Project starts with a ProjectEnvironment bound to [Development](../../GLOSSARY.md) whose id is the Project's own id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)); each [Publish](publish.md) adds one with a fresh id, conventionally to [Production](../../GLOSSARY.md) first.
 - Projects reference the Environment registry by id, so renaming a custom Environment renames it for every Project at once; the two protected Environments cannot be renamed or deleted, and deleting a custom Environment is refused while any [Custom Agent](../../GLOSSARY.md) holds a profile there or starts its new Projects from it, naming those Agents ([ADR-0058](../adr/0058-a-custom-agent-holds-one-definition-per-environment-and-a-project-keeps-the-files-it-was-created-with.md)).
 - Each Environment carries an [Environment Color](../../GLOSSARY.md) and a [Badge Label](../../GLOSSARY.md), editable text of 2 to 5 letters or digits stored as `environments.short_name`; the sidebar renders one badge per ProjectEnvironment with the label over the colour as tint ([ADR-0040](../adr/0040-environment-badges-carry-a-short-name-over-the-identity-colour.md)). Both are edited from the Environment registry in [Settings](../organization/settings.md), protected Environments included, since neither appears in a URL.
-- The Project owns identity, budget and idle timeouts, [Resources](../../GLOSSARY.md), and the disabled flag, while the ProjectEnvironment owns files, pod, status, pod IP, [Auth mode](../../GLOSSARY.md), [Schedules](../../GLOSSARY.md), and service-gateway key. LLM keys are project-scoped: one Bifrost team and one key pair serve every environment ([ADR-0003](../adr/0003-one-bifrost-team-per-project-keys-per-env.md)).
-- Actions follow the split: rename, duplicate, disable, enable, and delete act on the Project, where disable tears down every environment's pod, enable is refused when the Organization is at its Projects [Limit](../organization/limit.md), and delete removes every environment and the Bifrost team. Restart, Publish, App Auth, [Environment Variables](../../GLOSSARY.md) ([Publish](publish.md)), Rotate Gateway Key, and delete environment act on one ProjectEnvironment. Rotate Gateway Key (`POST /api/projects/<id>/environments/<environmentId>/gateway-key/rotate`, anyone who can open the Project) mints a new service-gateway key, revokes the old one at once, has the Gate forget it and restarts a pod that is not asleep. An [External Service Builder](../../GLOSSARY.md) Project's delete and delete environment answer `409 manage-from-service-page`, since its [Custom External Service](../../GLOSSARY.md) is deleted only from the service's page, and its disable and enable do what the service page's do ([External Service Builder](../external-services/external-service-builder.md)).
+- The Project owns identity, budget and idle timeouts, [Resources](../../GLOSSARY.md), and the disabled flag, while the ProjectEnvironment owns files, pod, status, [Auth mode](../../GLOSSARY.md), [Schedules](../../GLOSSARY.md), and service-gateway key. LLM keys are project-scoped: one Bifrost team and one key pair serve every environment ([ADR-0003](../adr/0003-one-bifrost-team-per-project-keys-per-env.md)).
+- Actions follow the split: rename, duplicate, disable, enable, and delete act on the Project, where disable suspends every environment and tears down its pod, enable is refused when the Organization is at its Projects [Limit](../organization/limit.md), and delete removes every environment and the Bifrost team. Restart, Publish, App Auth, [Environment Variables](../../GLOSSARY.md) ([Publish](publish.md)), Rotate Gateway Key, and delete environment act on one ProjectEnvironment. Rotate Gateway Key (`POST /api/projects/<id>/environments/<environmentId>/gateway-key/rotate`, anyone who can open the Project) mints a new service-gateway key, revokes the old one at once, has the Gate forget it and restarts a pod that is not asleep. An [External Service Builder](../../GLOSSARY.md) Project's delete and delete environment answer `409 manage-from-service-page`, since its [Custom External Service](../../GLOSSARY.md) is deleted only from the service's page, and its disable and enable do what the service page's do ([External Service Builder](../external-services/external-service-builder.md)).
 
 ```
 Tenant ── Environment registry: [ Development* , Production* , Staging ]   (*protected)
@@ -26,15 +26,19 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
  (shell)        = the working copy              = a published snapshot
 ```
 
-### Public URLs
+### Addressing
 
-- An App's public host is `{environmentId}-{slug}` under the apps domain, where the slug is the Environment's [Environment Slug](../../GLOSSARY.md) ([ADR-0012](../adr/0012-public-app-hostnames-carry-environment-slug.md)); the routing key is the environment id alone.
-- The bare `{environmentId}` host also answers, and a request carrying a wrong slug redirects to the canonical host.
+- Each Environment carries an [Environment Slug](../../GLOSSARY.md): `dev` and `prod` for the protected ones; for a custom one it is prefilled from the name and editable once before saving, unique within the tenant, never ending with 12 or more characters from 0-9 and a-f (how a Public URL ends its App Short ID), then immutable, so renames never move an address. It names the environment in every App's [Public URL](../../GLOSSARY.md) ([Public URL](public-url.md)), where the [App Short ID](../../GLOSSARY.md), not the slug, picks the ProjectEnvironment ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
 
 ### App Auth
 
-- [App Auth](../../GLOSSARY.md) is enforced by an OIDC gate on the environment's own host, keyed by routing id ([ADR-0007](../adr/0007-per-environment-app-auth.md)).
-- A newly published environment is seeded once, fail-closed, from Development's setting at first publish, then changed independently.
+- [App Auth](../../GLOSSARY.md) is enforced by an OIDC gate keyed by routing id ([ADR-0007](../adr/0007-per-environment-app-auth.md)) on every address that reaches the App: any first label ending in `-{App Short ID}` under the apps domain, and the environment id alone or followed by a dash and any suffix, which covers both legacy hosts. The backend serves or redirects only hosts these patterns match, so a new or edited App Slug never opens an unprotected address, and the environment-id rule outranks the App Short ID pattern, so a legacy host whose Environment Slug equals another App's Short ID still reaches its own App ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
+- `manual` configures the gate with the owner's own client, and `provider` fills it from one of the Organization's [Sign-in providers](../../GLOSSARY.md), picked by name without seeing its secret ([Sign-in provider](../organization/sign-in-provider.md)).
+- The catch-all apps route, which has no gate, marks every request it passes, and the app proxy answers a marked request for an environment whose Auth mode is not public with a 403, without contacting the pod or redirecting, and logs a warning naming the environment. A missing or stale gate route therefore makes a protected App unreachable on that host, never unprotected ([ADR-0012](../adr/0012-a-public-url-reads-as-app-slug-environment-slug-and-app-short-id-and-old-hosts-keep-serving.md)).
+- At backend start, and once more five minutes later, every environment whose App Auth is not public has its gate route's rules rewritten when they are out of date; the OIDC Middleware, which holds the whole OIDC config including token forwarding, is never touched, and replicas running it at once converge on the same rules. An environment with no route gets none, and a gate whose environment is public, or gone, is removed.
+- For `manual`, the App Auth dialog lists `/oidc/callback` on every host that serves the App: the Public URL's host when the App has an App Slug, and the two legacy hosts.
+- A newly published environment is seeded once, fail-closed, from Development's setting at first publish, and a [Duplicate](../../GLOSSARY.md)'s Development from its source's ([Duplication](duplication.md)); each is changed independently after that. Deleting an environment removes its gate, and deleting a Project removes the gate of every one of its environments, as does discarding a Project a failed create, Duplicate or Import left half-made.
+- App code receives `manual` App Auth's own `TraefikOidcAuth…` session cookies, scoped to the host the visitor signed in on, but never the platform's, a Sign-in provider's session included: the app proxy deletes every cookie named `_opsiforce_…`, a prefix reserved for the platform on App hosts, and drops any an App tries to set ([Request Flows](../runtime/request-flows.md#per-surface)).
 
 ### In the workspace
 
@@ -45,20 +49,22 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
 
 ## Edge cases
 
+- When a client ID, client secret or discovery URL, typed in `manual` mode or saved on a Sign-in provider, is written whole as `${NAME}` or `${file:/path}`, the save is refused, because the OIDC plugin would swap such a value for Traefik's own environment variable or file before using it.
+- When an environment switches to `manual` from another mode, the save needs a client secret, so a secret another mode holds never reaches a configuration the owner typed.
 - When the Badge Label is empty, the badge shows the Environment Slug's first letters, uppercased.
-- When a custom Environment's slug is saved, it is immutable from then on; renames never change it, so published URLs outlive renames.
 
 ## Code
 
 - `backend/src/environment/` — the tenant-wide Environment registry: names, slugs, colours, Badge Labels.
 - `backend/src/project-environment/` — ProjectEnvironment rows, per-environment status, Auth mode and service-gateway key.
-- `proxy/internal/server/server.go` — parses `{environmentId}-{slug}` hosts and redirects a wrong slug to the canonical host.
 - `backend/src/project/project-auth.service.ts` — the App Auth gate configuration, keyed by routing id.
+- `backend/src/project/app-auth-route.ts` — the gate route's rules over every App address and their priorities.
 - `frontend/src/components/project/environments/` — the Environments switcher, row menus and the non-Development banner.
 - `frontend/src/components/tenant-environments/` — the registry editor for colour and Badge Label.
 
 ## Related
 
+- [Public URL](public-url.md) — the address each App answers on, the App Slug and Edit URL.
 - [Publish](publish.md) — moving the App from Development into an environment, and Environment Variables.
 - [App](app.md) — per-environment App Details.
 - [Duplication](duplication.md) — copies a whole Project through the same git path.

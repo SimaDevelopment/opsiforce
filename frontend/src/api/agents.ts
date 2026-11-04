@@ -2,6 +2,7 @@ import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { api, currentTenant, type Agent, type PodSettings, type UpdatePodClassDto } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
 import { limitUsageKey } from './limits';
+import type { ServiceConfigurationOptions } from './project-external-services';
 import { skillKeys, type SkillFlags } from './skills';
 import type { StoreFilter } from './store';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk/forms';
@@ -39,6 +40,7 @@ export interface AgentProfileSkill {
   skillId: string;
   name: string;
   displayName: string | null;
+  origin: string;
   /** The Version row the pin points at — what Undo after Remove re-pins, rather than the latest. */
   pinnedVersionId: string;
   pinnedVersion: number;
@@ -49,6 +51,7 @@ export interface AgentProfileSkill {
   flags: SkillFlags;
   externalServiceId: string | null;
   serviceSettings: AgentServiceSettings | null;
+  serviceConnectedByDefault: boolean;
 }
 
 export type AgentServiceSettings = Record<string, unknown>;
@@ -58,13 +61,14 @@ export interface AgentServiceSettingsView {
     id: string;
     slug: string;
     displayName: string;
-    manifest: Pick<ServiceManifest, 'projectForm'>;
+    manifest: Pick<ServiceManifest, 'projectForm' | 'connectedByDefault'>;
   };
   settings: AgentServiceSettings | null;
+  serviceConfigurationOptions: ServiceConfigurationOptions[];
 }
 
 export interface AgentServiceSettingsInput {
-  values: AgentServiceSettings;
+  values: AgentServiceSettings | null;
 }
 
 export interface AgentProfileTemplate {
@@ -300,6 +304,18 @@ export function useUpdateAgentProfile(id: () => string) {
 export function useSetAgentSkill(id: () => string) {
   return useAgentMutation(id, (agentId, input: { skillId: string; versionId?: string }) =>
     api.put<AgentProfileSkill[]>(`/agents/${agentId}/skills/${input.skillId}`, { versionId: input.versionId })
+  );
+}
+
+export function callAgentServiceSettingsOptions(
+  agentId: string,
+  skillId: string,
+  name: string,
+  body: { values: AgentServiceSettings; query?: string; item?: string }
+): Promise<unknown> {
+  return api.post<unknown>(
+    `/agents/${agentId}/skills/${skillId}/service-settings/options/${encodeURIComponent(name)}`,
+    body
   );
 }
 

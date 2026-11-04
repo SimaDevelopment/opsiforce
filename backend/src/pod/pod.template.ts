@@ -1,7 +1,6 @@
 import * as k8s from '@kubernetes/client-node';
 import { agentSecurityContext } from './agent-security-context';
 import { agentAppPort } from '../agent/agent-config';
-import { appPublicUrl } from '../common/app-host';
 import type { K8sResourceRequirements } from './pod-classes';
 
 export interface PodTemplateOptions {
@@ -15,13 +14,13 @@ export interface PodTemplateOptions {
   subPath?: string;
   projectId?: string;
   environmentId?: string;
-  environmentSlug?: string | null;
   opsiforceEnv?: string;
-  appsHostname?: string;
+  appPublicUrl?: string;
   imagePullPolicy: string;
   resources: K8sResourceRequirements;
   runtimeClassName?: string;
   privileged?: boolean;
+  unofferedSkills?: string[];
   nodeSelector?: Record<string, string>;
   tolerations?: Array<Record<string, string>>;
   affinity?: Record<string, unknown>;
@@ -41,6 +40,8 @@ export interface PodTemplateOptions {
   controlPort?: number;
 }
 
+export const AGENT_PODS_SERVICE = 'opsiforce-agents';
+
 const CA_BUNDLE_VOLUME = 'ca-bundle';
 const CA_BUNDLE_DIRECTORY = '/etc/opsiforce/ca';
 const CA_BUNDLE_FILE = `${CA_BUNDLE_DIRECTORY}/ca-certificates.crt`;
@@ -51,12 +52,15 @@ const CA_BUNDLE_VARIABLES = [
   'NODE_EXTRA_CA_CERTS',
   'REQUESTS_CA_BUNDLE',
 ];
+const DOCKER_STORAGE_VOLUME = 'docker-storage';
+const DOCKER_STORAGE_DIRECTORY = '/var/lib/docker-storage';
+const DOCKER_STORAGE_LIMIT = '21Gi';
 
 export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
   const securityContext = agentSecurityContext(options.runtimeClassName, options.privileged);
+  const runsDocker = securityContext?.privileged === true;
   const resolvedAgentName = options.agentName || 'app-builder';
   const appPort = agentAppPort(resolvedAgentName);
-  const routingId = options.environmentId ?? options.projectId;
 
   const volumeMounts: k8s.V1VolumeMount[] = [
     {
@@ -82,6 +86,8 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       },
     },
     spec: {
+      hostname: options.podName,
+      subdomain: AGENT_PODS_SERVICE,
       ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }
@@ -97,7 +103,12 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
           ...(securityContext ? { securityContext } : {}),
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
-          env: [{ name: 'AGENT_NAME', value: resolvedAgentName }],
+          env: [
+            { name: 'AGENT_NAME', value: resolvedAgentName },
+            ...(options.unofferedSkills?.length
+              ? [{ name: 'SWITCHED_OFF_SKILLS', value: options.unofferedSkills.join(',') }]
+              : []),
+          ],
           command: [
             'sh',
             '-c',
@@ -131,14 +142,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                 ]
               : []),
             ...(options.opsiforceEnv ? [{ name: 'OPSIFORCE_ENV', value: options.opsiforceEnv }] : []),
-            ...(routingId && options.appsHostname
-              ? [
-                  {
-                    name: 'APP_PUBLIC_URL',
-                    value: appPublicUrl(routingId, options.environmentSlug, options.appsHostname),
-                  },
-                ]
-              : []),
+            ...(options.appPublicUrl ? [{ name: 'APP_PUBLIC_URL', value: options.appPublicUrl }] : []),
             ...(options.bifrostApiKey && options.bifrostProxyUrl
               ? [
                   { name: 'OPENAI_API_KEY', value: options.bifrostApiKey },
@@ -183,10 +187,15 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
             ...(options.runtimeProxyUrl
               ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),
+            ...(runsDocker ? [{ name: 'OPSIFORCE_DOCKER', value: '1' }] : []),
           ],
-          volumeMounts: options.caBundleConfigMap
-            ? [...volumeMounts, { name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
-            : volumeMounts,
+          volumeMounts: [
+            ...volumeMounts,
+            ...(options.caBundleConfigMap
+              ? [{ name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
+              : []),
+            ...(runsDocker ? [{ name: DOCKER_STORAGE_VOLUME, mountPath: DOCKER_STORAGE_DIRECTORY }] : []),
+          ],
           readinessProbe: {
             httpGet: {
               path: '/api/info',
@@ -207,6 +216,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
         ...(options.caBundleConfigMap
           ? [{ name: CA_BUNDLE_VOLUME, configMap: { name: options.caBundleConfigMap } }]
           : []),
+        ...(runsDocker ? [{ name: DOCKER_STORAGE_VOLUME, emptyDir: { sizeLimit: DOCKER_STORAGE_LIMIT } }] : []),
       ],
       restartPolicy: 'Always',
     },

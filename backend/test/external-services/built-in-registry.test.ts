@@ -1,14 +1,16 @@
+import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { externalServices } from '../../db/schema';
 import {
-  brokenBuiltInsDir,
   createExternalServicesTestApp,
-  handlerlessBuiltInsDir,
   FIXTURE_SERVICE,
   type ExternalServicesTestApp,
-} from './support/app';
+} from '../support/external-services-app';
+
+const brokenBuiltInsDir = resolve(__dirname, 'support/broken-built-ins');
+const handlerlessBuiltInsDir = resolve(__dirname, 'support/handlerless-built-ins');
 
 async function builtInRows() {
   return db.select().from(externalServices).where(eq(externalServices.slug, FIXTURE_SERVICE));

@@ -4,16 +4,18 @@ import { Button } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Spinner } from '~/components/ui/spinner';
 import type { ProjectAuthMode, ProjectAuthOidcConfig } from '~/api/client';
-import { config } from '~/config/config';
-import { AuthModeSelector } from './auth-mode-selector';
+import { AuthModeSelector, type AuthSelection } from './auth-mode-selector';
 import { OidcForm } from './oidc-form';
 import { BypassPathsEditor } from './bypass-paths-editor';
+import { ForwardAccessTokenToggle } from './forward-access-token-toggle';
+import { useSignInProviderOptions } from '~/api/sign-in-providers';
 import { useProjectAuth } from './use-project-auth';
 
 export interface ProjectAuthTabProps {
   projectId: string;
   environmentId: string;
   disabled?: boolean;
+  onSaved?: () => void;
 }
 
 const EMPTY_CONFIG: ProjectAuthOidcConfig = {
@@ -39,8 +41,10 @@ function arraysEqual(a: string[], b: string[]): boolean {
 function validationError(
   mode: ProjectAuthMode,
   config: ProjectAuthOidcConfig,
-  serverHasExistingConfig: boolean
+  serverHasExistingConfig: boolean,
+  signInProviderId: string | null
 ): string | null {
+  if (mode === 'provider') return signInProviderId ? null : 'Choose a sign-in provider';
   if (mode !== 'manual') return null;
   if (!config.clientId?.trim()) return 'Client Id is required';
   if (!serverHasExistingConfig && !config.clientSecret?.trim()) {
@@ -60,6 +64,9 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
   const [draftMode, setDraftMode] = createSignal<ProjectAuthMode>('public');
   const [draftConfig, setDraftConfig] = createSignal<ProjectAuthOidcConfig>(EMPTY_CONFIG);
   const [draftBypassPaths, setDraftBypassPaths] = createSignal<string[]>([]);
+  const [draftProviderId, setDraftProviderId] = createSignal<string | null>(null);
+  const [draftProviderForward, setDraftProviderForward] = createSignal(false);
+  const providerOptions = useSignInProviderOptions();
   const [saveAttempted, setSaveAttempted] = createSignal(false);
   const [confirmOpen, setConfirmOpen] = createSignal(false);
 
@@ -69,22 +76,33 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
     setDraftMode(data.mode);
     setDraftConfig(data.config ?? EMPTY_CONFIG);
     setDraftBypassPaths(data.bypassAuthPaths ?? []);
+    setDraftProviderId(data.signInProviderId ?? null);
+    setDraftProviderForward(data.mode === 'provider' && (data.config?.forwardAccessToken ?? false));
     setSaveAttempted(false);
   });
 
   const serverMode = () => query.data?.mode ?? 'public';
   const serverConfig = () => query.data?.config ?? EMPTY_CONFIG;
   const serverBypassPaths = () => query.data?.bypassAuthPaths ?? [];
+  const serverProviderId = () => query.data?.signInProviderId ?? null;
+  const serverProviderForward = () =>
+    query.data?.mode === 'provider' && (query.data.config?.forwardAccessToken ?? false);
+  const providerName = () =>
+    providerOptions.data?.find((option) => option.id === draftProviderId())?.name ?? 'the chosen provider';
 
   const dirty = createMemo(() => {
     if (draftMode() !== serverMode()) return true;
     if (draftMode() === 'manual' && !configsEqual(draftConfig(), serverConfig())) return true;
+    if (draftMode() === 'provider' && draftProviderId() !== serverProviderId()) return true;
+    if (draftMode() === 'provider' && draftProviderForward() !== serverProviderForward()) return true;
     if (draftMode() !== 'public' && !arraysEqual(draftBypassPaths(), serverBypassPaths())) return true;
     return false;
   });
 
   const serverHasExistingConfig = () => query.data?.mode === 'manual';
-  const error = createMemo(() => validationError(draftMode(), draftConfig(), serverHasExistingConfig()));
+  const error = createMemo(() =>
+    validationError(draftMode(), draftConfig(), serverHasExistingConfig(), draftProviderId())
+  );
 
   const requestSave = () => {
     setSaveAttempted(true);
@@ -101,11 +119,20 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
     mutation.mutate(
       {
         mode,
-        config: mode === 'manual' ? draftConfig() : undefined,
+        signInProviderId: mode === 'provider' ? (draftProviderId() ?? undefined) : undefined,
+        config:
+          mode === 'manual'
+            ? draftConfig()
+            : mode === 'provider'
+              ? { forwardAccessToken: draftProviderForward() }
+              : undefined,
         bypassAuthPaths: mode === 'public' ? undefined : draftBypassPaths(),
       },
       {
-        onSuccess: () => toast.success('Auth settings saved'),
+        onSuccess: () => {
+          toast.success('Auth settings saved');
+          props.onSaved?.();
+        },
         onError: (e) => toast.error(`Failed to save: ${(e as Error).message}`),
       }
     );
@@ -118,30 +145,42 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
     switch (to) {
       case 'public':
         return `You're about to update ${transition}. The app will be accessible to anyone without signing in.`;
-      case 'managed':
-        return `You're about to update ${transition}. Visitors will be required to sign in with ${config.managedAuthLabel} before the app loads.`;
       case 'manual':
         return `You're about to update ${transition}. Visitors will be required to sign in via the configured OIDC provider before the app loads.`;
+      case 'provider':
+        return `You're about to update ${transition}. Visitors will be required to sign in with ${providerName()} before the app loads.`;
     }
   });
+
+  const selectAccess = (selection: AuthSelection) => {
+    setDraftMode(selection.mode);
+    setDraftProviderId(selection.signInProviderId);
+  };
 
   const reset = () => {
     setDraftMode(serverMode());
     setDraftConfig(serverConfig());
     setDraftBypassPaths(serverBypassPaths());
+    setDraftProviderId(serverProviderId());
+    setDraftProviderForward(serverProviderForward());
   };
 
   return (
     <div class="space-y-4">
       <Show
-        when={!query.isLoading}
+        when={!query.isLoading && !providerOptions.isPending}
         fallback={
           <div class="py-6">
             <Spinner label="Loading auth settings…" />
           </div>
         }
       >
-        <AuthModeSelector value={draftMode()} onChange={setDraftMode} disabled={props.disabled || mutation.isPending} />
+        <AuthModeSelector
+          value={{ mode: draftMode(), signInProviderId: draftProviderId() }}
+          providers={providerOptions.data ?? []}
+          onChange={selectAccess}
+          disabled={props.disabled || mutation.isPending}
+        />
 
         <Show when={draftMode() === 'manual'}>
           <div class="pt-2 border-t border-border">
@@ -155,7 +194,17 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
           </div>
         </Show>
 
-        <Show when={draftMode() !== 'public'}>
+        <Show when={draftMode() === 'provider'}>
+          <div class="pt-2 border-t border-border">
+            <ForwardAccessTokenToggle
+              checked={draftProviderForward()}
+              onChange={setDraftProviderForward}
+              disabled={props.disabled || mutation.isPending}
+            />
+          </div>
+        </Show>
+
+        <Show when={draftMode() === 'manual' || draftMode() === 'provider'}>
           <div class="pt-2 border-t border-border">
             <BypassPathsEditor
               value={draftBypassPaths()}

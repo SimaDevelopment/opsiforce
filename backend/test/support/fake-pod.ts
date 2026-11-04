@@ -18,6 +18,8 @@ export type FakePodRoute =
   | 'session.inbox.steer'
   | 'session.inbox.cancel'
   | 'session.active'
+  | 'permission.list'
+  | 'form.list'
   | 'skill.list'
   | 'notify.configChange'
   | 'event';
@@ -83,6 +85,7 @@ export interface FakePod {
   addSession: (overrides?: Partial<SessionInfo>) => SessionInfo;
   setMessages: (sessionId: string, page: MessagePage) => void;
   setActive: (sessionIds: string[]) => void;
+  setPendingInput: (pending: { permissions?: string[]; forms?: string[] }) => void;
   setInfo: (info: { status: number; body: JsonValue }) => void;
   serveSkills: (provider: () => string[] | Promise<string[]>) => void;
   script: (route: FakePodRoute, script: RouteScript) => void;
@@ -136,6 +139,8 @@ function matchRoute(method: string, pathname: string): RouteMatch {
   if (pathname === '/api/info' && method === 'GET') return unscoped('info');
   if (pathname === '/api/event' && method === 'GET') return unscoped('event');
   if (pathname === '/api/session/active' && method === 'GET') return unscoped('session.active');
+  if (pathname === '/api/permission/request' && method === 'GET') return unscoped('permission.list');
+  if (pathname === '/api/form' && method === 'GET') return unscoped('form.list');
   const experimentalWait = /^\/api\/experimental\/session\/([^/]+)\/wait$/.exec(pathname);
   if (experimentalWait && method === 'POST') {
     return { route: 'session.wait', sessionId: decodeURIComponent(experimentalWait[1]), inboxId: null };
@@ -233,6 +238,7 @@ export async function startFakePod(): Promise<FakePod> {
   const scripts = new Map<FakePodRoute, RouteScript>();
   const streams = new Set<ServerResponse>();
   let active: string[] = [];
+  let pendingInput: { permissions: string[]; forms: string[] } = { permissions: [], forms: [] };
   let info: { status: number; body: JsonValue } = {
     status: 200,
     body: { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } },
@@ -394,6 +400,16 @@ export async function startFakePod(): Promise<FakePod> {
         return sendJson(res, 200, { location: {}, data: [] });
       case 'session.active':
         return sendJson(res, 200, { data: Object.fromEntries(active.map((id) => [id, { type: 'running' }])) });
+      case 'permission.list':
+        return sendJson(res, 200, {
+          location: {},
+          data: pendingInput.permissions.map((id) => ({ id, sessionID: 'ses_pending', action: 'bash', resources: [] })),
+        });
+      case 'form.list':
+        return sendJson(res, 200, {
+          location: {},
+          data: pendingInput.forms.map((id) => ({ id, sessionID: 'ses_pending', title: 'Question', fields: [] })),
+        });
       default: {
         const session = request.sessionId === null ? undefined : sessions.get(request.sessionId);
         if (!session) return sessionNotFound(res, request.sessionId);
@@ -461,6 +477,9 @@ export async function startFakePod(): Promise<FakePod> {
     setMessages: (sessionId, page) => messages.set(sessionId, page),
     setActive: (sessionIds) => {
       active = [...sessionIds];
+    },
+    setPendingInput: ({ permissions = [], forms = [] }) => {
+      pendingInput = { permissions: [...permissions], forms: [...forms] };
     },
     setInfo: (next) => {
       info = next;

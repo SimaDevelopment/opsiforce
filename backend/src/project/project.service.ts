@@ -30,7 +30,6 @@ import {
   projectSchedules,
   workspaceMembers,
   workspaces,
-  tenants,
   tenantSettings,
   projectDuplicateJobs,
   projectTransferJobs,
@@ -49,6 +48,7 @@ import { ProjectPoolService } from '../pool/project-pool.service';
 import { TimeoutService } from '../timeout/timeout.service';
 import { BifrostService } from '../bifrost/bifrost.service';
 import { ModelProvidersService } from '../model-provider/model-provider.service';
+import { appSlugBrokenRule, toAppSlug } from '../common/app-slug';
 import { assertIdleTimeoutMs } from '../common/validation';
 import { restoreEnvJsonBackup } from '../common/env-file';
 import { writeJsonAtomic } from '../common/fs';
@@ -59,10 +59,14 @@ import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ScheduleService } from '../schedule/schedule.service';
 import { AgentService } from '../agent/agent.service';
 import { EnvironmentService } from '../environment/environment.service';
+import { DEVELOPMENT_ENVIRONMENT_NAME } from '../environment/environment.types';
 import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
+import { PublicUrlService } from '../project-environment/public-url.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { hasRunningPod } from '../project-environment/running-pod';
+import type { EnvironmentNotRunningState } from '../agent-session/agent-session.errors';
 import type {
   ExportManifestAppDetails,
   ExportManifestResources,
@@ -70,6 +74,7 @@ import type {
   ExportManifestSettings,
   JsonValue,
 } from '../export/project-export.types';
+import { withEnvironmentAuthLock } from './environment-auth-lock';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -90,7 +95,7 @@ import {
   REQUEST_LOG_BODY_LIMIT_MAX,
   TEST_PROJECT_KIND,
   isChatKind,
-  availableAuthModes,
+  SELECTABLE_AUTH_MODES,
 } from './project.types';
 import {
   buildPodClassCatalog,
@@ -115,13 +120,15 @@ const CRASH_LOOP_RECREATE_AGE_MS = 60 * 1000;
 const UNSCHEDULABLE_STARTUP_GRACE_MS = 180 * 1000;
 const STARTUP_RETRY_BASE_MS = 5 * 1000;
 const STARTUP_RETRY_MAX_MS = 5 * 60 * 1000;
+const RUNTIME_REPLACEMENT_WINDOW_MS = 10 * 60 * 1000;
 const DUPLICATE_APP_READY_TIMEOUT_MS = 5 * 60 * 1000;
 const APP_SERVING_PROBE_TIMEOUT_MS = 3 * 1000;
 const TEMPLATE_UPDATE_COMMIT_MESSAGE = 'Template update';
 
-interface AppMetaPatch {
+interface AppDetailsPatch {
   name?: string;
   description?: string | null;
+  appSlug?: string;
 }
 
 function environmentIdFromPodLabels(pod: V1Pod): string | null {
@@ -130,17 +137,40 @@ function environmentIdFromPodLabels(pod: V1Pod): string | null {
   );
 }
 
-function validateUpdateAppDto(body: UpdateAppDto): AppMetaPatch {
-  const patch: AppMetaPatch = {};
+type EditedEnvironment = Pick<
+  ProjectEnvironmentContext,
+  'environmentSlug' | 'shortId' | 'isDefault' | 'environmentName'
+>;
+
+export function environmentDisplayName(env: Pick<ProjectEnvironmentContext, 'isDefault' | 'environmentName'>): string {
+  return env.isDefault ? DEVELOPMENT_ENVIRONMENT_NAME : (env.environmentName ?? 'Environment');
+}
+
+function offersAReadableAddress(env: ProjectEnvironmentContext): boolean {
+  return env.appSlug === null && env.environmentSlug !== null && !env.servesAnExternalService;
+}
+
+function validateUpdateAppDto(body: UpdateAppDto, env: EditedEnvironment): AppDetailsPatch {
+  const patch: AppDetailsPatch = {};
 
   if ('name' in body) patch.name = validateAppName(body.name);
   if ('description' in body) patch.description = validateAppDescription(body.description);
+  if ('appSlug' in body) patch.appSlug = validateAppSlug(body.appSlug, env);
 
-  if (!('name' in patch) && !('description' in patch)) {
-    throw new BadRequestException("At least one of 'name' or 'description' must be provided");
+  if (Object.keys(patch).length === 0) {
+    throw new BadRequestException("At least one of 'name', 'description' or 'appSlug' must be provided");
   }
 
   return patch;
+}
+
+function validateAppSlug(value: unknown, env: EditedEnvironment): string {
+  if (typeof value !== 'string') {
+    throw new BadRequestException("'appSlug' must be a string");
+  }
+  const brokenRule = appSlugBrokenRule(value, env, environmentDisplayName(env));
+  if (brokenRule) throw new BadRequestException(brokenRule);
+  return value;
 }
 
 function validateAppName(value: unknown): string {
@@ -169,9 +199,12 @@ function validateAppDescription(value: unknown): string | null {
   }
   return trimmed.length === 0 ? null : trimmed;
 }
+import { appSignInCallbackUrls, type AppAuthRouteTarget } from './app-auth-route';
 import { ProjectAuthService } from './project-auth.service';
+import { connectionOf, findTenantSignInProvider } from '../sign-in-provider/sign-in-provider-rows';
+import { SecretSealer } from '../sealing/secret-sealer';
 import { ProjectEventsService } from './project-events.service';
-import { AppService } from './app.service';
+import { AppService, appSlugOfNewApp } from './app.service';
 import { AppReadinessService } from './app-readiness.service';
 import { AgentStatusService } from './agent-status.service';
 import { assertRoomForCreatedProject, assertRoomForProject, CreatedProjectsCapReached } from './project-limit';
@@ -222,7 +255,6 @@ const projectSelectFields = {
   importedAgent: projects.importedAgent,
   directory: projectEnvironments.directory,
   status: effectiveStatus.as('status'),
-  podIp: projectEnvironments.podIp,
   authMode: projectEnvironments.authMode,
   timeoutIdle: projectSettings.timeoutIdle,
   appTimeoutIdle: projectSettings.appTimeoutIdle,
@@ -241,6 +273,7 @@ const projectSelectFields = {
     WHERE ${projectEnvAll.projectId} = ${projects.id}
       AND ${projectEnvAll.environmentId} IS NOT NULL
   )`.as('environment_ids'),
+  lastPromptAt: projects.lastPromptAt,
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 };
@@ -252,6 +285,7 @@ export class ProjectService implements OnApplicationBootstrap {
   private readonly startupRetries = new Map<string, number>();
   private readonly recreateRequests = new Set<string>();
   private readonly recoveryStartups = new Set<string>();
+  private readonly runtimeReplacements = new Map<string, { podUid: string; at: number }>();
   constructor(
     private readonly podService: PodService,
     private readonly podCache: PodCacheService,
@@ -266,6 +300,7 @@ export class ProjectService implements OnApplicationBootstrap {
     @Inject(forwardRef(() => ScheduleService))
     private readonly scheduleService: ScheduleService,
     private readonly projectAuthService: ProjectAuthService,
+    private readonly sealer: SecretSealer,
     private readonly projectEventsService: ProjectEventsService,
     private readonly appService: AppService,
     private readonly appReadiness: AppReadinessService,
@@ -275,6 +310,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly environmentService: EnvironmentService,
     private readonly gitService: GitService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
+    private readonly publicUrls: PublicUrlService,
     private readonly proxyService: ProxyService,
     private readonly deliveryService: DeliveryService,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
@@ -308,7 +344,7 @@ export class ProjectService implements OnApplicationBootstrap {
     for (const env of stranded) {
       const recoveredStatus = await this.rollBackStrandedPublish(env);
       await this.projectEnvironmentService
-        .patch(env.id, { status: recoveredStatus, podIp: null }, ProjectStatus.Publishing)
+        .patch(env.id, { status: recoveredStatus }, ProjectStatus.Publishing)
         .catch((err) => {
           this.logger.warn(`Failed to recover publishing environment ${env.id}: ${(err as Error).message}`);
         });
@@ -434,7 +470,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     const [updated] = await db
       .update(projectEnvironments)
-      .set({ status: ProjectStatus.Starting, podIp: null, updatedAt: new Date() })
+      .set({ status: ProjectStatus.Starting, updatedAt: new Date() })
       .where(
         and(
           eq(projectEnvironments.id, env.id),
@@ -625,6 +661,7 @@ export class ProjectService implements OnApplicationBootstrap {
     createdBy: string | null
   ): Promise<ProjectResponse> {
     const source = await this.findOne(sourceId, tenantId);
+    const sourceAuth = await this.projectEnvironmentService.findById(source.id);
     const parentProjectId = source.createdByProjectId;
     await this.assertNoActiveGitOperation(source.id);
 
@@ -674,16 +711,20 @@ export class ProjectService implements OnApplicationBootstrap {
         memoryLimitMib: source.memoryLimitMib,
       });
 
-      await tx.insert(projectEnvironments).values({
-        id,
-        projectId: id,
-        environmentId: defaultEnvironment.id,
-        isDefault: true,
-        directory,
-        platformVersion,
-        status: ProjectStatus.Starting,
-        authMode: source.authMode,
-      });
+      const [copy] = await tx
+        .insert(projectEnvironments)
+        .values({
+          id,
+          projectId: id,
+          environmentId: defaultEnvironment.id,
+          isDefault: true,
+          directory,
+          platformVersion,
+          status: ProjectStatus.Starting,
+          authMode: sourceAuth.authMode,
+          signInProviderId: sourceAuth.signInProviderId,
+        })
+        .returning({ shortId: projectEnvironments.shortId, authMode: projectEnvironments.authMode });
 
       if (sourceApp) {
         await tx.insert(projectApps).values({
@@ -691,6 +732,7 @@ export class ProjectService implements OnApplicationBootstrap {
           projectId: id,
           name: sourceApp.name,
           description: sourceApp.description,
+          slug: appSlugOfNewApp(sourceApp, { ...copy, environmentSlug: defaultEnvironment.slug }),
         });
       }
 
@@ -725,6 +767,7 @@ export class ProjectService implements OnApplicationBootstrap {
     await this.discardOnFailure(id, async () => {
       await this.createBifrostResources(id, tenantId);
       await this.createGatewayKey(id, id, tenantId);
+      await this.inheritAuth(source, await this.projectEnvironmentService.findById(id));
       await this.enqueueDuplicateJob({
         duplicateJobId,
         sourceProjectId: source.id,
@@ -804,23 +847,31 @@ export class ProjectService implements OnApplicationBootstrap {
         ...podResources.resources,
       });
 
-      await tx.insert(projectEnvironments).values({
-        id,
-        projectId: id,
-        environmentId: defaultEnvironment.id,
-        isDefault: true,
-        directory,
-        platformVersion,
-        status: ProjectStatus.Starting,
-        authMode: 'public',
-      });
+      const [copy] = await tx
+        .insert(projectEnvironments)
+        .values({
+          id,
+          projectId: id,
+          environmentId: defaultEnvironment.id,
+          isDefault: true,
+          directory,
+          platformVersion,
+          status: ProjectStatus.Starting,
+          authMode: 'public',
+        })
+        .returning({ shortId: projectEnvironments.shortId, authMode: projectEnvironments.authMode });
 
       if (appDetails) {
+        const exportedAppSlug = typeof appDetails.appSlug === 'string' ? appDetails.appSlug : null;
         await tx.insert(projectApps).values({
           projectEnvironmentId: id,
           projectId: id,
           name: appDetails.name,
           description: appDetails.description,
+          slug: appSlugOfNewApp(
+            { slug: exportedAppSlug, name: appDetails.name },
+            { ...copy, environmentSlug: defaultEnvironment.slug }
+          ),
         });
       }
 
@@ -925,6 +976,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     for (const row of rows) {
       row.agentStatus = this.agentStatusService.statusOf(row.id);
+      row.waitingForInput = this.agentStatusService.waitingForInput(row.id);
     }
     return rows;
   }
@@ -1092,7 +1144,7 @@ export class ProjectService implements OnApplicationBootstrap {
           id: env.id,
           projectId: env.projectId,
           environmentId: env.environmentId,
-          name: env.isDefault ? 'Development' : (env.environmentName ?? 'Environment'),
+          name: environmentDisplayName(env),
           slug: env.environmentSlug,
           isDefault: env.isDefault,
           status: env.disabled ? ProjectStatus.Disabled : env.status,
@@ -1102,6 +1154,10 @@ export class ProjectService implements OnApplicationBootstrap {
           hasApp: !!app,
           appName: app?.name ?? null,
           appDescription: app?.description ?? null,
+          publicUrl: this.publicUrls.publicUrlOnceLive(env),
+          appSlug: env.appSlug,
+          suggestedAppSlug: app && offersAReadableAddress(env) ? toAppSlug(app.name, env) : null,
+          shortId: env.shortId,
           sessionId: env.sessionId,
         };
       });
@@ -1230,10 +1286,18 @@ export class ProjectService implements OnApplicationBootstrap {
 
   async getAuth(projectId: string, environmentId: string, tenantId: string): Promise<ProjectAuthResponse> {
     const env = await this.resolveProjectEnvironment(projectId, environmentId, tenantId);
-    const callbackUrls = this.projectAuthService.callbackUrls(env.id, env.environmentSlug);
+    const callbackUrls = appSignInCallbackUrls(env, this.configService.getOrThrow<string>('appsHostname'));
     if (env.authMode === 'public') return { mode: 'public', callbackUrls };
     const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
-    if (env.authMode === 'managed') return { mode: 'managed', bypassAuthPaths, callbackUrls };
+    if (env.authMode === 'provider') {
+      return {
+        mode: 'provider',
+        signInProviderId: env.signInProviderId ?? undefined,
+        config: { forwardAccessToken: config?.forwardAccessToken },
+        bypassAuthPaths,
+        callbackUrls: [],
+      };
+    }
     return { mode: 'manual', config, bypassAuthPaths, callbackUrls };
   }
 
@@ -1244,29 +1308,52 @@ export class ProjectService implements OnApplicationBootstrap {
     tenantId: string
   ): Promise<ProjectAuthResponse> {
     const env = await this.resolveProjectEnvironment(projectId, environmentId, tenantId);
-    const allowedModes = availableAuthModes({
-      managedOidcClientSecret: this.configService.get<string>('managedOidcClientSecret'),
-      managedOidcIssuerUrl: this.configService.get<string>('managedOidcIssuerUrl'),
-    });
-    if (!allowedModes.includes(dto.mode)) {
+    if (!SELECTABLE_AUTH_MODES.includes(dto.mode)) {
       throw new BadRequestException(`Unknown or unavailable auth mode: ${String(dto.mode)}`);
     }
-
-    if (dto.mode === 'manual') {
-      await this.projectAuthService.apply(env.id, env.environmentSlug, dto.config ?? {}, dto.bypassAuthPaths);
-    } else if (dto.mode === 'managed') {
-      const externalTenantName = await this.findExternalTenantName(tenantId);
-      await this.projectAuthService.applyManaged(env.id, env.environmentSlug, externalTenantName, dto.bypassAuthPaths);
-    } else {
-      await this.projectAuthService.remove(env.id);
+    if (dto.mode === 'provider' && !dto.signInProviderId) {
+      throw new BadRequestException('signInProviderId is required for the provider mode');
     }
+    const provider =
+      dto.mode === 'provider' && dto.signInProviderId
+        ? await findTenantSignInProvider(tenantId, dto.signInProviderId)
+        : null;
 
-    await db
-      .update(projectEnvironments)
-      .set({ authMode: dto.mode, updatedAt: new Date() })
-      .where(eq(projectEnvironments.id, env.id));
+    await withEnvironmentAuthLock(env.id, async (tx, current) => {
+      if (dto.mode === 'manual' && current?.authMode !== 'manual' && !dto.config?.clientSecret?.trim()) {
+        throw new BadRequestException('clientSecret is required when switching to manual auth');
+      }
+      if (dto.mode === 'manual') {
+        await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
+      } else if (provider) {
+        await this.projectAuthService.applyProvider(
+          env,
+          connectionOf(this.sealer, provider),
+          dto.config?.forwardAccessToken,
+          dto.bypassAuthPaths
+        );
+      } else {
+        await this.projectAuthService.remove(env.id);
+      }
+      await tx
+        .update(projectEnvironments)
+        .set({ authMode: dto.mode, signInProviderId: provider?.id ?? null, updatedAt: new Date() })
+        .where(eq(projectEnvironments.id, env.id));
+    });
 
     return this.getAuth(projectId, env.id, tenantId);
+  }
+
+  async inheritAuth(from: { id: string }, to: AppAuthRouteTarget): Promise<void> {
+    const source = await this.projectEnvironmentService.findById(from.id);
+    let signInProviderId: string | null = null;
+    if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
+    else signInProviderId = await this.projectAuthService.inheritAuth(source.id, to);
+    const authMode = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
+    await db
+      .update(projectEnvironments)
+      .set({ authMode, signInProviderId, updatedAt: new Date() })
+      .where(eq(projectEnvironments.id, to.id));
   }
 
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
@@ -1280,11 +1367,16 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await db
       .update(projectEnvironments)
-      .set({ status: ProjectStatus.Suspended, podIp: null, updatedAt: new Date() })
+      .set({ status: ProjectStatus.Suspended, updatedAt: new Date() })
       .where(eq(projectEnvironments.projectId, id));
 
     await Promise.allSettled([
       ...envs.map((env) => this.safeDeletePod(this.podService.assignedPodName(env.id), `removing project ${id}`)),
+      ...envs.map((env) =>
+        this.projectAuthService.remove(env.id).catch((err) => {
+          this.logger.warn(`Failed to remove auth middleware for environment ${env.id}: ${(err as Error).message}`);
+        })
+      ),
       this.bifrostService.isEnabled()
         ? this.bifrostService.revokeProjectKeys(id).catch((err) => {
             this.logger.warn(`Failed to revoke Bifrost keys for project ${id}: ${(err as Error).message}`);
@@ -1340,8 +1432,13 @@ export class ProjectService implements OnApplicationBootstrap {
       await tx.update(projects).set({ disabled: true, updatedAt: new Date() }).where(eq(projects.id, id));
       await tx
         .update(projectEnvironments)
-        .set({ podIp: null, updatedAt: new Date() })
-        .where(eq(projectEnvironments.projectId, id));
+        .set({ status: ProjectStatus.Suspended, updatedAt: new Date() })
+        .where(
+          and(
+            eq(projectEnvironments.projectId, id),
+            inArray(projectEnvironments.status, [ProjectStatus.Active, ProjectStatus.Starting])
+          )
+        );
     });
 
     await Promise.allSettled([
@@ -1373,7 +1470,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
     });
     await Promise.all(
-      envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting, podIp: null }))
+      envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting }))
     );
 
     envs.forEach((env) => this.spawnStartupWorker(env.id));
@@ -1430,7 +1527,7 @@ export class ProjectService implements OnApplicationBootstrap {
     await this.lifecycle?.resetting(env.id);
     this.agentStatusService.clear(env.projectId, env.id);
     this.appReadiness.markDown(env.id);
-    await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
+    await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended });
     await this.podService.deletePodAndWait(this.podService.assignedPodName(env.id));
 
     const workspace = this.workspacePath(env.directory);
@@ -1460,7 +1557,7 @@ export class ProjectService implements OnApplicationBootstrap {
     }
     await this.lifecycle?.environmentRemoving(env.id);
 
-    await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended, podIp: null });
+    await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended });
 
     await Promise.allSettled([
       this.safeDeletePod(this.podService.assignedPodName(env.id), `deleting environment ${env.id}`),
@@ -1511,19 +1608,24 @@ export class ProjectService implements OnApplicationBootstrap {
       );
     }
 
-    const patch = validateUpdateAppDto(body);
-    const name = patch.name ?? appRow.name;
-    const description = 'description' in patch ? (patch.description ?? null) : appRow.description;
-
-    if (!name) {
-      throw new BadRequestException("'name' is required and cannot be empty");
+    const patch = validateUpdateAppDto(body, targetEnv);
+    if (patch.appSlug !== undefined && targetEnv.servesAnExternalService) {
+      throw new BadRequestException('A Project that serves an External Service has no Public URL to edit');
     }
 
-    await this.writeAppMetaFile(targetEnv.directory, { name, description });
-    await db
-      .update(projectApps)
-      .set({ name, description, updatedAt: new Date() })
-      .where(eq(projectApps.projectEnvironmentId, targetEnv.id));
+    const changes: Partial<typeof projectApps.$inferInsert> = { updatedAt: new Date() };
+    if ('name' in patch || 'description' in patch) {
+      const name = patch.name ?? appRow.name;
+      const description = 'description' in patch ? (patch.description ?? null) : appRow.description;
+      if (!name) {
+        throw new BadRequestException("'name' is required and cannot be empty");
+      }
+      await this.writeAppMetaFile(targetEnv.directory, { name, description });
+      Object.assign(changes, { name, description });
+    }
+    if (patch.appSlug !== undefined) changes.slug = patch.appSlug;
+
+    await db.update(projectApps).set(changes).where(eq(projectApps.projectEnvironmentId, targetEnv.id));
 
     await this.projectEventsService.publish(id);
 
@@ -1541,19 +1643,6 @@ export class ProjectService implements OnApplicationBootstrap {
     await writeJsonAtomic(target, content);
   }
 
-  async findExternalTenantName(tenantId: string): Promise<string> {
-    const [row] = await db
-      .select({
-        externalTenantName: tenantSettings.externalTenantName,
-        tenantName: tenants.name,
-      })
-      .from(tenants)
-      .leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id))
-      .where(eq(tenants.id, tenantId));
-    if (!row) throw new BadRequestException(`Tenant ${tenantId} not found`);
-    return row.externalTenantName ?? row.tenantName;
-  }
-
   async reassignPodById(id: string): Promise<void> {
     const env = await this.projectEnvironmentService.findById(id);
     await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
@@ -1569,35 +1658,31 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async beginPublishDeploy(envId: string): Promise<void> {
-    const updated = await this.projectEnvironmentService.patch(
-      envId,
-      { status: ProjectStatus.Publishing, podIp: null },
-      [
-        ProjectStatus.Active,
-        ProjectStatus.Starting,
-        ProjectStatus.Failed,
-        ProjectStatus.Suspended,
-        ProjectStatus.Publishing,
-      ]
-    );
+    const updated = await this.projectEnvironmentService.patch(envId, { status: ProjectStatus.Publishing }, [
+      ProjectStatus.Active,
+      ProjectStatus.Starting,
+      ProjectStatus.Failed,
+      ProjectStatus.Suspended,
+      ProjectStatus.Publishing,
+    ]);
     if (updated) {
       this.agentStatusService.clear(updated.projectId, envId);
       await this.projectEventsService.publish(updated.projectId).catch(() => undefined);
     }
   }
 
-  async recreatePodForDeploy(envId: string, timeoutMs: number): Promise<string> {
+  async recreatePodForDeploy(envId: string, timeoutMs: number): Promise<void> {
     const env = await this.projectEnvironmentService.findById(envId);
     const podName = this.podService.assignedPodName(envId);
     await this.safeDeletePod(podName, `publish deploy for environment ${envId}`);
     await this.spawnPodForEnvironment(env);
-    return this.podService.waitForReady(podName, timeoutMs);
+    await this.podService.waitForReady(podName, timeoutMs);
   }
 
-  async finishPublishDeploy(envId: string, podIp: string, deployedCommitSha: string): Promise<void> {
+  async finishPublishDeploy(envId: string, deployedCommitSha: string): Promise<void> {
     const updated = await this.projectEnvironmentService.patch(
       envId,
-      { status: ProjectStatus.Active, podIp, deployedCommitSha, lastActiveAt: new Date() },
+      { status: ProjectStatus.Active, deployedCommitSha, lastActiveAt: new Date() },
       ProjectStatus.Publishing
     );
     if (!updated) {
@@ -1614,7 +1699,7 @@ export class ProjectService implements OnApplicationBootstrap {
   async failPublishDeploy(envId: string): Promise<void> {
     const updated = await this.projectEnvironmentService.patch(
       envId,
-      { status: ProjectStatus.Failed, podIp: null },
+      { status: ProjectStatus.Failed },
       ProjectStatus.Publishing
     );
     if (updated) {
@@ -1663,10 +1748,6 @@ export class ProjectService implements OnApplicationBootstrap {
       return this.handleStartingEnvironment(env);
     }
 
-    if (env.podIp) {
-      return this.verifyCachedActiveEnvironment(env);
-    }
-
     return this.verifyActiveEnvironment(env);
   }
 
@@ -1674,6 +1755,53 @@ export class ProjectService implements OnApplicationBootstrap {
     const env = await this.projectEnvironmentService.findByIdOrNull(envId);
     if (!env) return false;
     return this.handleProxyFailureForEnvironment(env);
+  }
+
+  async replaceRefusingRuntime(envId: string): Promise<Extract<EnvironmentNotRunningState, 'starting' | 'failed'>> {
+    const env = await this.projectEnvironmentService.findById(envId);
+    const podName = this.podService.assignedPodName(env.id);
+    const pod = await this.readPodOrNull(podName);
+    const podUid = pod?.metadata?.uid;
+    if (!hasRunningPod(env) || !pod || !podUid || !this.podService.isPodReady(pod)) {
+      await this.handleProxyFailureForEnvironment(env);
+      return 'starting';
+    }
+
+    this.forgetExpiredRuntimeReplacements();
+    const replaced = this.runtimeReplacements.get(env.id);
+    if (replaced?.podUid === podUid) return 'starting';
+    if (replaced) {
+      if (!(await this.failRefusingEnvironment(env, podName))) return 'starting';
+      this.runtimeReplacements.delete(env.id);
+      return 'failed';
+    }
+
+    this.runtimeReplacements.set(env.id, { podUid, at: Date.now() });
+    this.logger.warn(`Pod ${podName} is ready but its runtime refused to identify itself; recreating it`);
+    await this.requestEnvironmentStartup(env, { deleteExistingPod: true });
+    return 'starting';
+  }
+
+  private forgetExpiredRuntimeReplacements(): void {
+    for (const [envId, replacement] of this.runtimeReplacements) {
+      if (Date.now() - replacement.at >= RUNTIME_REPLACEMENT_WINDOW_MS) this.runtimeReplacements.delete(envId);
+    }
+  }
+
+  private async failRefusingEnvironment(env: ProjectEnvironmentContext, podName: string): Promise<boolean> {
+    const failed = await this.projectEnvironmentService.patch(
+      env.id,
+      { status: ProjectStatus.Failed },
+      ProjectStatus.Active
+    );
+    if (!failed) return false;
+
+    this.logger.warn(`Pod ${podName} replaced a refusing runtime and refused too; environment ${env.id} failed`);
+    this.agentStatusService.clear(env.projectId, env.id);
+    this.appReadiness.markDown(env.id);
+    await this.safeDeletePod(podName, `refusing runtime for environment ${env.id}`);
+    await this.projectEventsService.publish(env.projectId).catch(() => {});
+    return true;
   }
 
   async stampLastPromptByEnvId(envId: string): Promise<void> {
@@ -1699,19 +1827,13 @@ export class ProjectService implements OnApplicationBootstrap {
       return true;
     }
 
-    const livePodIp = pod.status?.podIP ?? null;
-    if (livePodIp && livePodIp !== env.podIp) {
-      await this.projectEnvironmentService.patch(env.id, { podIp: livePodIp }, ProjectStatus.Active);
-      this.logger.warn(`Repaired stale pod_ip for environment ${env.id}: ${env.podIp} -> ${livePodIp}`);
-    }
-
     return false;
   }
 
   private async wakeSuspendedEnvironment(env: ProjectEnvironmentContext): Promise<EnsureEnvironmentResult> {
     const updated = await this.projectEnvironmentService.patch(
       env.id,
-      { status: ProjectStatus.Starting, podIp: null },
+      { status: ProjectStatus.Starting },
       ProjectStatus.Suspended
     );
 
@@ -1723,7 +1845,7 @@ export class ProjectService implements OnApplicationBootstrap {
     this.spawnStartupWorker(env.id);
     return {
       state: 'starting',
-      env: { ...env, status: ProjectStatus.Starting, podIp: null },
+      env: { ...env, status: ProjectStatus.Starting },
     };
   }
 
@@ -1736,12 +1858,11 @@ export class ProjectService implements OnApplicationBootstrap {
       return { state: 'starting', env };
     }
 
-    const podIp = pod.status?.podIP ?? null;
-    if (this.podService.isPodReady(pod) && podIp) {
-      await this.markEnvironmentActive(env.id, podIp, podName);
+    if (this.podService.isPodReady(pod)) {
+      await this.markEnvironmentActive(env.id, podName);
       return {
         state: 'ready',
-        env: { ...env, status: ProjectStatus.Active, podIp },
+        env: { ...env, status: ProjectStatus.Active },
       };
     }
 
@@ -1754,7 +1875,7 @@ export class ProjectService implements OnApplicationBootstrap {
       );
       return {
         state: 'failed',
-        env: { ...env, status: ProjectStatus.Failed, podIp: null },
+        env: { ...env, status: ProjectStatus.Failed },
       };
     }
 
@@ -1766,7 +1887,7 @@ export class ProjectService implements OnApplicationBootstrap {
       );
       return {
         state: 'failed',
-        env: { ...env, status: ProjectStatus.Failed, podIp: null },
+        env: { ...env, status: ProjectStatus.Failed },
       };
     }
 
@@ -1784,39 +1905,19 @@ export class ProjectService implements OnApplicationBootstrap {
 
   private async verifyActiveEnvironment(env: ProjectEnvironmentContext): Promise<EnsureEnvironmentResult> {
     const podName = this.podService.assignedPodName(env.id);
-    const pod = await this.readPodOrNull(podName);
-    const podIp = pod?.status?.podIP ?? null;
-
-    if (pod && this.podService.isPodReady(pod) && podIp) {
-      if (podIp !== env.podIp) {
-        await this.projectEnvironmentService.patch(env.id, { podIp }, ProjectStatus.Active);
-      }
-      return { state: 'ready', env: { ...env, podIp } };
-    }
-
-    const startingEnv = await this.requestEnvironmentStartup(env, { deleteExistingPod: !!pod });
-    return { state: 'starting', env: startingEnv };
-  }
-
-  private async verifyCachedActiveEnvironment(env: ProjectEnvironmentContext): Promise<EnsureEnvironmentResult> {
-    const podName = this.podService.assignedPodName(env.id);
     const snapshot = this.podService.getCachedPodSnapshot(podName);
     if (!snapshot.synced) return { state: 'ready', env };
 
     const pod = snapshot.pod;
-    const podIp = pod?.status?.podIP ?? null;
-    if (pod && this.podService.isPodReady(pod) && podIp) {
-      if (podIp !== env.podIp) {
-        await this.projectEnvironmentService.patch(env.id, { podIp }, ProjectStatus.Active);
-      }
-      return { state: 'ready', env: { ...env, podIp } };
+    if (pod && this.podService.isPodReady(pod)) {
+      return { state: 'ready', env };
     }
 
     const startingEnv = await this.requestEnvironmentStartup(env, { deleteExistingPod: !!pod });
     return { state: 'starting', env: startingEnv };
   }
 
-  private async markEnvironmentActive(envId: string, podIp: string, podName: string): Promise<void> {
+  private async markEnvironmentActive(envId: string, podName: string): Promise<void> {
     const recovery = this.recoveryStartups.delete(envId);
 
     if (
@@ -1826,7 +1927,7 @@ export class ProjectService implements OnApplicationBootstrap {
     ) {
       const suspended = await this.projectEnvironmentService.patch(
         envId,
-        { status: ProjectStatus.Suspended, podIp: null },
+        { status: ProjectStatus.Suspended },
         ProjectStatus.Starting
       );
       if (suspended) {
@@ -1841,7 +1942,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     const [updated] = await db
       .update(projectEnvironments)
-      .set({ status: ProjectStatus.Active, podIp, lastActiveAt: new Date(), updatedAt: new Date() })
+      .set({ status: ProjectStatus.Active, lastActiveAt: new Date(), updatedAt: new Date() })
       .where(
         and(
           eq(projectEnvironments.id, envId),
@@ -1853,6 +1954,8 @@ export class ProjectService implements OnApplicationBootstrap {
 
     if (!updated) {
       this.startupRetries.delete(envId);
+      const current = await this.projectEnvironmentService.findByIdOrNull(envId);
+      if (current && hasRunningPod(current)) return;
       await this.safeDeletePod(podName, `orphan after disable/delete race for environment ${envId}`);
       return;
     }
@@ -1874,7 +1977,7 @@ export class ProjectService implements OnApplicationBootstrap {
         this.logger.warn(`Failed to publish active event for environment ${envId}: ${(err as Error).message}`);
       }),
     ]);
-    this.logger.log(`Environment ${envId} active on pod ${podName} (${podIp})`);
+    this.logger.log(`Environment ${envId} active on pod ${podName}`);
   }
 
   private async createBifrostResources(projectId: string, tenantId: string): Promise<void> {
@@ -1924,7 +2027,7 @@ export class ProjectService implements OnApplicationBootstrap {
     for (const job of activeJobs) {
       if (job.status === ProjectDuplicateStatus.Starting) {
         const env = await this.projectEnvironmentService.findByIdOrNull(job.targetProjectId);
-        if (env && env.status === ProjectStatus.Active && env.podIp) {
+        if (env && hasRunningPod(env)) {
           this.completeDuplicateWhenAppReady(job.targetProjectId, env.id, true);
         } else {
           this.spawnStartupWorker(job.targetProjectId);
@@ -2031,7 +2134,7 @@ export class ProjectService implements OnApplicationBootstrap {
       if (!job) return;
 
       if (probeFirst && (await this.probeAppServing(envId))) {
-        this.appReadiness.markServing(envId);
+        this.appReadiness.markServing(envId, projectId);
       }
 
       const appReady = await this.appReadiness.awaitReady(envId, DUPLICATE_APP_READY_TIMEOUT_MS);
@@ -2098,7 +2201,7 @@ export class ProjectService implements OnApplicationBootstrap {
       if (!job) return;
 
       if (probeFirst && (await this.probeAppServing(envId))) {
-        this.appReadiness.markServing(envId);
+        this.appReadiness.markServing(envId, projectId);
       }
 
       const appReady = await this.appReadiness.awaitReady(envId, DUPLICATE_APP_READY_TIMEOUT_MS);
@@ -2142,7 +2245,7 @@ export class ProjectService implements OnApplicationBootstrap {
     for (const job of activeJobs) {
       if (job.status === ProjectImportStatus.Starting) {
         const env = await this.projectEnvironmentService.findByIdOrNull(job.projectId);
-        if (env && env.status === ProjectStatus.Active && env.podIp) {
+        if (env && hasRunningPod(env)) {
           this.completeImportWhenAppReady(job.projectId, env.id, true);
         } else {
           this.spawnStartupWorker(job.projectId);
@@ -2193,8 +2296,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
   private async probeAppServing(envId: string): Promise<boolean> {
     try {
-      const upstream = await this.proxyService.resolveAppUpstreamByEnvironmentId(envId);
-      await fetch(`${upstream}/`, {
+      await this.proxyService.fetchApp(envId, '/', {
         signal: AbortSignal.timeout(APP_SERVING_PROBE_TIMEOUT_MS),
       });
       return true;
@@ -2219,11 +2321,11 @@ export class ProjectService implements OnApplicationBootstrap {
       return env;
     }
 
-    const updated = await this.projectEnvironmentService.patch(
-      env.id,
-      { status: ProjectStatus.Starting, podIp: null },
-      [ProjectStatus.Active, ProjectStatus.Suspended, ProjectStatus.Failed]
-    );
+    const updated = await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting }, [
+      ProjectStatus.Active,
+      ProjectStatus.Suspended,
+      ProjectStatus.Failed,
+    ]);
 
     if (!updated) {
       const current = await this.projectEnvironmentService.findById(env.id);
@@ -2268,11 +2370,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (current.disabled) {
       this.recoveryStartups.delete(envId);
       this.startupRetries.delete(envId);
-      await this.projectEnvironmentService.patch(
-        envId,
-        { status: ProjectStatus.Suspended, podIp: null },
-        ProjectStatus.Starting
-      );
+      await this.projectEnvironmentService.patch(envId, { status: ProjectStatus.Suspended }, ProjectStatus.Starting);
       return;
     }
     if (current.isDefault && (await this.hasBlockingDuplicateOperation(current.projectId))) {
@@ -2295,9 +2393,8 @@ export class ProjectService implements OnApplicationBootstrap {
         return;
       }
     } else if (existingPod) {
-      const existingPodIp = existingPod.status?.podIP ?? null;
-      if (this.podService.isPodReady(existingPod) && existingPodIp) {
-        await this.markEnvironmentActive(envId, existingPodIp, podName);
+      if (this.podService.isPodReady(existingPod)) {
+        await this.markEnvironmentActive(envId, podName);
         return;
       }
 
@@ -2321,8 +2418,8 @@ export class ProjectService implements OnApplicationBootstrap {
 
       if (failure !== 'CrashLoopBackOff' || this.podService.podAgeMs(existingPod) <= CRASH_LOOP_RECREATE_AGE_MS) {
         try {
-          const podIp = await this.podService.waitForReady(podName);
-          await this.markEnvironmentActive(envId, podIp, podName);
+          await this.podService.waitForReady(podName);
+          await this.markEnvironmentActive(envId, podName);
         } catch (err) {
           await this.handleStartupFailure(envId, podName, err);
         }
@@ -2339,8 +2436,8 @@ export class ProjectService implements OnApplicationBootstrap {
 
     try {
       await this.spawnPodForEnvironment(current);
-      const podIp = await this.podService.waitForReady(podName);
-      await this.markEnvironmentActive(envId, podIp, podName);
+      await this.podService.waitForReady(podName);
+      await this.markEnvironmentActive(envId, podName);
     } catch (err) {
       await this.handleStartupFailure(envId, podName, err);
     }
@@ -2373,7 +2470,7 @@ export class ProjectService implements OnApplicationBootstrap {
       serviceWebhookUrl,
       runtimeProxyUrl: this.configService.get<string>('runtimeProxyUrl', ''),
       opsiforceEnv: env.isDefault ? undefined : 'production',
-      environmentSlug: env.environmentSlug,
+      appPublicUrl: this.publicUrls.publicUrlLiveOrNot(env) ?? undefined,
       resources: podResources,
       controlToken: crypto.randomBytes(32).toString('hex'),
     };
@@ -2417,11 +2514,7 @@ export class ProjectService implements OnApplicationBootstrap {
       this.startupRetries.delete(envId);
       this.agentStatusService.clear(projectId, envId);
       this.recoveryStartups.delete(envId);
-      await this.projectEnvironmentService.patch(
-        envId,
-        { status: ProjectStatus.Failed, podIp: null },
-        ProjectStatus.Starting
-      );
+      await this.projectEnvironmentService.patch(envId, { status: ProjectStatus.Failed }, ProjectStatus.Starting);
       await this.projectEventsService.publish(projectId).catch(() => {});
       return;
     }
@@ -2429,7 +2522,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (this.recoveryStartups.has(envId) && (await this.timeoutService.isFullyExpired(envId).catch(() => false))) {
       const suspended = await this.projectEnvironmentService.patch(
         envId,
-        { status: ProjectStatus.Suspended, podIp: null },
+        { status: ProjectStatus.Suspended },
         ProjectStatus.Starting
       );
       if (suspended) {

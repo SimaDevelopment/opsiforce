@@ -10,6 +10,7 @@ import { configuration } from '../../src/config/configuration';
 import { DeliveryService } from '../../src/delivery/delivery.service';
 import { SkillDeliveryService } from '../../src/delivery/skill-delivery.service';
 import { EnvironmentService } from '../../src/environment/environment.service';
+import { ProjectAuthService } from '../../src/project/project-auth.service';
 import { ProjectImportService } from '../../src/project/project-import.service';
 import { ProjectService } from '../../src/project/project.service';
 import { SkillService } from '../../src/store/skill.service';
@@ -29,6 +30,7 @@ import { PublicApiConfigurationDoubleModule } from './public-api-configuration-d
 import type {
   FakeBifrostService,
   FakePodService,
+  FakeProjectAuthService,
   FakeProjectEventsService,
   FakeProjectPoolService,
   FakeScheduleService,
@@ -57,6 +59,7 @@ export interface DomainTestHarness {
     bifrost: FakeBifrostService;
     pods: FakePodService;
     pool: FakeProjectPoolService;
+    projectAuth: FakeProjectAuthService;
     projectEvents: FakeProjectEventsService;
     schedules: FakeScheduleService;
     timeouts: FakeTimeoutService;
@@ -96,6 +99,7 @@ export async function createDomainTestingModule(): Promise<DomainTestHarness> {
       bifrost: moduleRef.get<typeof BifrostService, FakeBifrostService>(BifrostService),
       pods: moduleRef.get<typeof PodService, FakePodService>(PodService),
       pool: moduleRef.get<typeof ProjectPoolService, FakeProjectPoolService>(ProjectPoolService),
+      projectAuth: moduleRef.get<typeof ProjectAuthService, FakeProjectAuthService>(ProjectAuthService),
       projectEvents: moduleRef.get<typeof ProjectEventsService, FakeProjectEventsService>(ProjectEventsService),
       schedules: moduleRef.get<typeof ScheduleService, FakeScheduleService>(ScheduleService),
       timeouts: moduleRef.get<typeof TimeoutService, FakeTimeoutService>(TimeoutService),

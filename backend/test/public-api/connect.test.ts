@@ -1,4 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { callerIdentityHeader } from '@opsiforce/external-service-sdk/server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db';
@@ -12,14 +13,18 @@ import { startFakePod, type FakePod } from '../support/fake-pod';
 import type { FakePodService } from '../support/infra-fakes';
 import {
   addMember,
+  callerIdentityFor,
   createTenant,
   createProject,
   createSharedWorkspace,
   disableProject,
   type MemberFixture,
+  type ProjectFixtureOptions,
   type TenantFixture,
 } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
+
+const RUNTIME_PROXY_URL = 'http://runtime-proxy.test';
 
 describe('connecting to an environment', () => {
   let pod: FakePod;
@@ -36,6 +41,7 @@ describe('connecting to an environment', () => {
       AGENT_PORT: String(pod.port),
       AGENT_WAKE_HOLD_MS: '600',
       AGENT_WAKE_POLL_MS: '100',
+      OPSIFORCE_RUNTIME_PROXY_URL: `${RUNTIME_PROXY_URL}/`,
     });
     app = harness.app;
     pods = app.get<PodService, FakePodService>(PodService);
@@ -55,7 +61,7 @@ describe('connecting to an environment', () => {
     pod.setInfo({ status: 200, body: { version: '2.1.2', pid: 1, urls: [], paths: { tmp: '/tmp' } } });
   });
 
-  async function runningProject(options: { workspaceId?: string | null } = {}): Promise<string> {
+  async function runningProject(options: ProjectFixtureOptions = {}): Promise<string> {
     const projectId = await createProject(app, tenant, options);
     const podName = pods.assignedPodName(projectId);
     await waitFor(() => pods.callsTo('waitForReady').some((call) => call.args.podName === podName));
@@ -64,20 +70,20 @@ describe('connecting to an environment', () => {
     return projectId;
   }
 
-  function connect(projectId: string, environmentId: string, as: MemberFixture = member) {
+  function connect(projectId: string, environmentId: string, headers: Record<string, string> = member.headers) {
     return app.inject({
       method: 'POST',
       url: `/api/v1/projects/${projectId}/environments/${environmentId}/connect`,
-      headers: as.headers,
+      headers,
     });
   }
 
-  function getProject(projectId: string, as: MemberFixture = member) {
-    return app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}`, headers: as.headers });
+  function getProject(projectId: string, headers: Record<string, string> = member.headers) {
+    return app.inject({ method: 'GET', url: `/api/v1/projects/${projectId}`, headers });
   }
 
   describe('the discovery a Project carries', () => {
-    it('is origin-relative and needs no pod call, wake or build column', async () => {
+    it('is origin-relative for a person and needs no pod call, wake or build column', async () => {
       const projectId = await runningProject();
       const podCalls = pod.requests.length;
       const podsCreated = pods.callsTo('createAssignedPod').length;
@@ -133,6 +139,27 @@ describe('connecting to an environment', () => {
     });
   });
 
+  describe('a Project another Project created', () => {
+    it('gives the creating Project absolute runtime URLs on the runtime proxy, connected or read', async () => {
+      const callingProjectId = await createProject(app, tenant, { createdBy: member.userId });
+      const projectId = await runningProject({ createdBy: member.userId, createdByProjectId: callingProjectId });
+      const asCallingProject = { [callerIdentityHeader]: callerIdentityFor(app, tenant, callingProjectId) };
+      const runtime = {
+        baseUrl: `${RUNTIME_PROXY_URL}/api/proxy/${projectId}`,
+        openapiUrl: `${RUNTIME_PROXY_URL}/api/proxy/${projectId}/openapi.json`,
+      };
+
+      const connected = await connect(projectId, projectId, asCallingProject);
+      const read = await getProject(projectId, asCallingProject);
+      const readByPerson = await getProject(projectId);
+
+      expect(connected.statusCode).toBe(200);
+      expect(connected.json()).toMatchObject(runtime);
+      expect(read.json().environments[0].opencode).toMatchObject(runtime);
+      expect(readByPerson.json().environments[0].opencode.baseUrl).toBe(`/api/proxy/${projectId}`);
+    });
+  });
+
   describe('resources the caller may not touch', () => {
     it('answers not found for an environment of another Project', async () => {
       const own = await runningProject();
@@ -180,7 +207,7 @@ describe('connecting to an environment', () => {
       const projectId = await runningProject();
       await db
         .update(projectEnvironments)
-        .set({ status: ProjectStatus.Failed, podIp: null })
+        .set({ status: ProjectStatus.Failed })
         .where(eq(projectEnvironments.id, projectId));
 
       const res = await connect(projectId, projectId);
@@ -194,7 +221,7 @@ describe('connecting to an environment', () => {
       await pods.deletePod(pods.assignedPodName(projectId));
       await db
         .update(projectEnvironments)
-        .set({ status: ProjectStatus.Starting, podIp: null })
+        .set({ status: ProjectStatus.Starting })
         .where(eq(projectEnvironments.id, projectId));
 
       const res = await connect(projectId, projectId);

@@ -1,9 +1,9 @@
 import type { Component } from 'solid-js';
-import { FolderKanban, Gauge, Layers, SlidersHorizontal, Wallet, Waypoints } from '~/components/icons';
+import { FolderKanban, Gauge, KeyRound, Layers, Palette, SlidersHorizontal, Wallet, Waypoints } from '~/components/icons';
 import type { HasPermission } from '~/constants/permissions';
 import { PRIVATE_TABS } from '~/private-loader';
 
-export type SettingsGroup = 'Access' | 'Configuration' | 'Billing';
+export type SettingsGroup = 'Personal' | 'Access' | 'Configuration' | 'Billing';
 
 export interface SettingsTab {
   to: string;
@@ -14,9 +14,19 @@ export interface SettingsTab {
   isPermitted: (hasPermission: HasPermission) => boolean;
 }
 
-export const SETTINGS_GROUP_ORDER: SettingsGroup[] = ['Access', 'Configuration', 'Billing'];
+export const SETTINGS_GROUP_ORDER: SettingsGroup[] = ['Personal', 'Access', 'Configuration', 'Billing'];
 
 export const SETTINGS_TABS: SettingsTab[] = [
+  {
+    // A per-browser preference, so it needs no permission and is listed first:
+    // it is the one Settings page everyone can reach.
+    to: '/settings/appearance',
+    label: 'Appearance',
+    description: 'Mode, contrast, density and font size for this browser.',
+    group: 'Personal',
+    icon: Palette,
+    isPermitted: () => true,
+  },
   {
     to: '/settings/workspaces',
     label: 'Workspaces',
@@ -24,6 +34,14 @@ export const SETTINGS_TABS: SettingsTab[] = [
     group: 'Access',
     icon: FolderKanban,
     isPermitted: (has) => has('can_manage_workspaces'),
+  },
+  {
+    to: '/settings/sign-in-providers',
+    label: 'Sign-in providers',
+    description: "The sign-in providers this organization's apps let members sign in with.",
+    group: 'Access',
+    icon: KeyRound,
+    isPermitted: (has) => has('can_manage_tenant_sign_in_providers'),
   },
   {
     to: '/settings/environments',

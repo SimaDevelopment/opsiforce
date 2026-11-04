@@ -9,6 +9,7 @@ import {
 } from '@opsiforce/external-service-sdk/server';
 import { failureMessages } from '@opsiforce/external-service-sdk/platform';
 import { GatewayKeyService } from '../../gateway/gateway-key.service';
+import type { PodRequestInit } from '../../pod/pod-fetch';
 import { BuiltInsAdapter, isAdaptedBuiltIn, type AdaptedBuiltIn } from '../built-ins/built-ins-adapter';
 import type { RegisteredService } from '../registry/service-registry';
 import { FORM_ANSWER_LIMIT } from './gate-routes';
@@ -64,6 +65,8 @@ export interface PlatformCallTarget {
   environment: string;
 }
 
+export type PlatformCallFor = PlatformCallTarget | Pick<PlatformCallTarget, 'tenantId'>;
+
 export function platformCallTargetOf(caller: PlatformCallTarget): PlatformCallTarget {
   return {
     tenantId: caller.tenantId,
@@ -76,7 +79,7 @@ export function platformCallTargetOf(caller: PlatformCallTarget): PlatformCallTa
 interface Exchange {
   gatewayKey: string;
   describedAs: string;
-  send(path: string, init: RequestInit): Promise<Response>;
+  send(path: string, init: PodRequestInit): Promise<Response>;
 }
 
 export type PlatformRoute = 'options' | 'info' | 'buttons' | 'hooks';
@@ -86,7 +89,7 @@ export interface PodDispatchRequest {
   name: string;
   body: unknown;
   signal?: AbortSignal;
-  for?: PlatformCallTarget;
+  for?: PlatformCallFor;
 }
 
 export interface ServiceResponse {
@@ -197,7 +200,7 @@ export class ServiceDispatcher {
       {
         gatewayKey,
         describedAs: `The pod of "${service.slug}"`,
-        send: (path, init) => fetch(new URL(path, pod.url), init),
+        send: (path, init) => this.pods.podFetch(pod, path, init),
       },
       request,
       pod.projectEnvironmentId

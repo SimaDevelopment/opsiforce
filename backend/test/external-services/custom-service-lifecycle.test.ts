@@ -23,7 +23,7 @@ import { seedLiveAgent } from '../support/agent-fixtures';
 import type { FakePodService, FakeQueue } from '../support/infra-fakes';
 import { addMember } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import {
   builderProjectRow,
   createCustomService,
@@ -31,8 +31,8 @@ import {
   ensureExternalServiceBuilder,
   TENANT_SERVICES,
   postCustomService,
-} from './support/custom-services';
-import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from './support/fixtures';
+} from '../support/custom-services';
+import { memberWithout, tenantAdmin, platformOperator, type PersonFixture } from '../support/external-service-fixtures';
 import { callThroughGate, gatewayUrlOf, resolveCaller, resolveWebhook } from './support/gate-proxy';
 import { productionCaller, type GateCallerFixture } from './support/gate';
 import { startSdk2ServicePod, type Sdk2PodHandlers, type Sdk2ServicePod } from './support/sdk2-service-pod';
@@ -230,7 +230,7 @@ describe('disabling and enabling a Custom External Service', () => {
     );
     pods().markPodReady(podName, '127.0.0.1');
     await waitFor(async () => (await serviceEnvironmentRow(service.projectEnvironmentId))?.status === 'active');
-    app.get(AppReadinessService).markServing(service.projectEnvironmentId);
+    app.get(AppReadinessService).markServing(service.projectEnvironmentId, service.builderChatId);
 
     const call = await listCards();
     expect(call.status).toBe(200);
@@ -730,7 +730,7 @@ describe("deleting a service whose Test Project's Development is asleep", () => 
     });
     pods.markPodReady(podName, '127.0.0.1');
     await waitFor(async () => (await serviceEnvironmentRow(development.projectEnvironmentId))?.status !== 'suspended');
-    app.get(AppReadinessService).markServing(development.projectEnvironmentId);
+    app.get(AppReadinessService).markServing(development.projectEnvironmentId, draft.builderChatId);
 
     expect((await deleted).statusCode).toBe(204);
     expect(

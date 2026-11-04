@@ -10,6 +10,8 @@ import { AgentObservationsService } from './agent-observations.service';
 import { AgentStatusStreamController } from './agent-status-stream.controller';
 import { PodClassController } from './pod-class.controller';
 import { ProjectService } from './project.service';
+import { AppAuthRouteReconciler } from './app-auth-route.reconciler';
+import { AppSlugBackfill } from './app-slug-backfill';
 import { ProjectAuthService } from './project-auth.service';
 import { ProjectFilesService } from './project-files.service';
 import { ProjectDuplicateProcessor } from './project-duplicate.processor';
@@ -40,6 +42,7 @@ import { ProjectEnvironmentModule } from '../project-environment/project-environ
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
 import { ModelProvidersModule } from '../model-provider/model-provider.module';
+import { SealingModule } from '../sealing/sealing.module';
 
 @Module({
   imports: [
@@ -71,6 +74,7 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     ExternalServicesModule,
     forwardRef(() => ModelProvidersModule),
     GitModule,
+    SealingModule,
     AppReadinessModule,
   ],
   controllers: [
@@ -85,6 +89,9 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
   providers: [
     ProjectService,
     ProjectAuthService,
+    AppAuthRouteReconciler,
+    // TODO: remove in the release after readable Public URLs ship: AppSlugBackfill, with its describe block in test/public-url/existing-app-slugs.test.ts and its bullets in docs/projects/public-url.md and ADR-0012; the Switch prompt and suggestedAppSlug stay
+    AppSlugBackfill,
     ProjectFilesService,
     ProjectDuplicateProcessor,
     ProjectImportService,

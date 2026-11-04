@@ -19,12 +19,13 @@ import { Route as StoreIndexRouteImport } from './routes/store/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsWorkspacesRouteImport } from './routes/settings/workspaces'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
+import { Route as SettingsSignInProvidersRouteImport } from './routes/settings/sign-in-providers'
 import { Route as SettingsModelProvidersRouteImport } from './routes/settings/model-providers'
 import { Route as SettingsLimitsRouteImport } from './routes/settings/limits'
-import { Route as SettingsIntegrationsRouteImport } from './routes/settings/integrations'
 import { Route as SettingsEnvironmentsRouteImport } from './routes/settings/environments'
 import { Route as SettingsDefaultsRouteImport } from './routes/settings/defaults'
 import { Route as SettingsBillingRouteImport } from './routes/settings/billing'
+import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as AdminStorageRouteImport } from './routes/admin/storage'
 import { Route as AdminPodsRouteImport } from './routes/admin/pods'
@@ -88,6 +89,11 @@ const SettingsUsersRoute = SettingsUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
+const SettingsSignInProvidersRoute = SettingsSignInProvidersRouteImport.update({
+  id: '/sign-in-providers',
+  path: '/sign-in-providers',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
 const SettingsModelProvidersRoute = SettingsModelProvidersRouteImport.update({
   id: '/model-providers',
   path: '/model-providers',
@@ -96,11 +102,6 @@ const SettingsModelProvidersRoute = SettingsModelProvidersRouteImport.update({
 const SettingsLimitsRoute = SettingsLimitsRouteImport.update({
   id: '/limits',
   path: '/limits',
-  getParentRoute: () => SettingsRouteRoute,
-} as any)
-const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
-  id: '/integrations',
-  path: '/integrations',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 const SettingsEnvironmentsRoute = SettingsEnvironmentsRouteImport.update({
@@ -116,6 +117,11 @@ const SettingsDefaultsRoute = SettingsDefaultsRouteImport.update({
 const SettingsBillingRoute = SettingsBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: '/appearance',
+  path: '/appearance',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
@@ -192,12 +198,13 @@ export interface FileRoutesByFullPath {
   '/admin/pods': typeof AdminPodsRoute
   '/admin/storage': typeof AdminStorageRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/billing': typeof SettingsBillingRoute
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
-  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/limits': typeof SettingsLimitsRoute
   '/settings/model-providers': typeof SettingsModelProvidersRoute
+  '/settings/sign-in-providers': typeof SettingsSignInProvidersRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
@@ -220,12 +227,13 @@ export interface FileRoutesByTo {
   '/admin/pods': typeof AdminPodsRoute
   '/admin/storage': typeof AdminStorageRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/billing': typeof SettingsBillingRoute
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
-  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/limits': typeof SettingsLimitsRoute
   '/settings/model-providers': typeof SettingsModelProvidersRoute
+  '/settings/sign-in-providers': typeof SettingsSignInProvidersRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings': typeof SettingsIndexRoute
@@ -251,12 +259,13 @@ export interface FileRoutesById {
   '/admin/pods': typeof AdminPodsRoute
   '/admin/storage': typeof AdminStorageRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/billing': typeof SettingsBillingRoute
   '/settings/defaults': typeof SettingsDefaultsRoute
   '/settings/environments': typeof SettingsEnvironmentsRoute
-  '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/limits': typeof SettingsLimitsRoute
   '/settings/model-providers': typeof SettingsModelProvidersRoute
+  '/settings/sign-in-providers': typeof SettingsSignInProvidersRoute
   '/settings/users': typeof SettingsUsersRoute
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/settings/': typeof SettingsIndexRoute
@@ -283,12 +292,13 @@ export interface FileRouteTypes {
     | '/admin/pods'
     | '/admin/storage'
     | '/projects/$projectId'
+    | '/settings/appearance'
     | '/settings/billing'
     | '/settings/defaults'
     | '/settings/environments'
-    | '/settings/integrations'
     | '/settings/limits'
     | '/settings/model-providers'
+    | '/settings/sign-in-providers'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
@@ -311,12 +321,13 @@ export interface FileRouteTypes {
     | '/admin/pods'
     | '/admin/storage'
     | '/projects/$projectId'
+    | '/settings/appearance'
     | '/settings/billing'
     | '/settings/defaults'
     | '/settings/environments'
-    | '/settings/integrations'
     | '/settings/limits'
     | '/settings/model-providers'
+    | '/settings/sign-in-providers'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings'
@@ -341,12 +352,13 @@ export interface FileRouteTypes {
     | '/admin/pods'
     | '/admin/storage'
     | '/projects/$projectId'
+    | '/settings/appearance'
     | '/settings/billing'
     | '/settings/defaults'
     | '/settings/environments'
-    | '/settings/integrations'
     | '/settings/limits'
     | '/settings/model-providers'
+    | '/settings/sign-in-providers'
     | '/settings/users'
     | '/settings/workspaces'
     | '/settings/'
@@ -444,6 +456,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof SettingsUsersRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
+    '/settings/sign-in-providers': {
+      id: '/settings/sign-in-providers'
+      path: '/sign-in-providers'
+      fullPath: '/settings/sign-in-providers'
+      preLoaderRoute: typeof SettingsSignInProvidersRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
     '/settings/model-providers': {
       id: '/settings/model-providers'
       path: '/model-providers'
@@ -456,13 +475,6 @@ declare module '@tanstack/solid-router' {
       path: '/limits'
       fullPath: '/settings/limits'
       preLoaderRoute: typeof SettingsLimitsRouteImport
-      parentRoute: typeof SettingsRouteRoute
-    }
-    '/settings/integrations': {
-      id: '/settings/integrations'
-      path: '/integrations'
-      fullPath: '/settings/integrations'
-      preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     '/settings/environments': {
@@ -484,6 +496,13 @@ declare module '@tanstack/solid-router' {
       path: '/billing'
       fullPath: '/settings/billing'
       preLoaderRoute: typeof SettingsBillingRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
+    '/settings/appearance': {
+      id: '/settings/appearance'
+      path: '/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     '/projects/$projectId': {
@@ -588,24 +607,26 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
 )
 
 interface SettingsRouteRouteChildren {
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsBillingRoute: typeof SettingsBillingRoute
   SettingsDefaultsRoute: typeof SettingsDefaultsRoute
   SettingsEnvironmentsRoute: typeof SettingsEnvironmentsRoute
-  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsLimitsRoute: typeof SettingsLimitsRoute
   SettingsModelProvidersRoute: typeof SettingsModelProvidersRoute
+  SettingsSignInProvidersRoute: typeof SettingsSignInProvidersRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsWorkspacesRoute: typeof SettingsWorkspacesRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
 const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsBillingRoute: SettingsBillingRoute,
   SettingsDefaultsRoute: SettingsDefaultsRoute,
   SettingsEnvironmentsRoute: SettingsEnvironmentsRoute,
-  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsLimitsRoute: SettingsLimitsRoute,
   SettingsModelProvidersRoute: SettingsModelProvidersRoute,
+  SettingsSignInProvidersRoute: SettingsSignInProvidersRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   SettingsWorkspacesRoute: SettingsWorkspacesRoute,
   SettingsIndexRoute: SettingsIndexRoute,

@@ -1,13 +1,10 @@
-import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
-import { db } from '../../db';
-import { projectEnvironments } from '../../db/schema';
 import { PodService } from '../pod/pod.service';
+import type { PodRequestInit } from '../pod/pod-fetch';
 
 interface EnvironmentUpstreamRef {
   id: string;
-  podIp: string | null;
 }
 
 @Injectable()
@@ -28,41 +25,26 @@ export class ProxyService {
   }
 
   resolveUpstreamForProject(env: EnvironmentUpstreamRef): string {
-    return this.upstreamFromEnvironment(env, this.agentPort);
+    return this.podService.podAddress(env.id, this.agentPort);
   }
 
   resolveAppUpstreamForProject(env: EnvironmentUpstreamRef): string {
-    return this.upstreamFromEnvironment(env, this.appPort);
+    return this.podService.podAddress(env.id, this.appPort);
   }
 
   resolveVscodeUpstreamForProject(env: EnvironmentUpstreamRef): string {
-    return this.upstreamFromEnvironment(env, this.vscodePort);
+    return this.podService.podAddress(env.id, this.vscodePort);
   }
 
   resolveDbUpstreamForProject(env: EnvironmentUpstreamRef): string {
-    return this.upstreamFromEnvironment(env, this.dbViewerPort);
+    return this.podService.podAddress(env.id, this.dbViewerPort);
   }
 
   getAssignedPodName(environmentId: string): string {
     return this.podService.assignedPodName(environmentId);
   }
 
-  async resolveAppUpstreamByEnvironmentId(environmentId: string): Promise<string> {
-    const [env] = await db
-      .select({ id: projectEnvironments.id, podIp: projectEnvironments.podIp })
-      .from(projectEnvironments)
-      .where(eq(projectEnvironments.id, environmentId));
-
-    if (!env) throw new NotFoundException(`Project environment ${environmentId} not found`);
-
-    return this.upstreamFromEnvironment(env, this.appPort);
-  }
-
-  private upstreamFromEnvironment(env: EnvironmentUpstreamRef, port: number): string {
-    if (env.podIp) {
-      return `http://${env.podIp}:${port}`;
-    }
-
-    throw new ServiceUnavailableException(`Project environment ${env.id} has no active pod`);
+  fetchApp(environmentId: string, path: string, init?: PodRequestInit): Promise<Response> {
+    return this.podService.podFetch(environmentId, this.appPort, path, init);
   }
 }

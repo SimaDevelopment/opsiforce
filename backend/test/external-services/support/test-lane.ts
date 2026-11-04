@@ -6,8 +6,8 @@ import { db } from '../../../db';
 import { externalServiceConfigs, projectEnvironments } from '../../../db/schema';
 import { GatewayKeyService } from '../../../src/gateway/gateway-key.service';
 import { ensureBuiltInAgent } from '../../support/agent-fixtures';
-import { TENANT_SERVICES } from './custom-services';
-import type { PersonFixture } from './fixtures';
+import { TENANT_SERVICES } from '../../support/custom-services';
+import type { PersonFixture } from '../../support/external-service-fixtures';
 import { BOARDS_MANIFEST, writeServiceFiles } from './published-services';
 
 export const BUILDER_LANE = '/api/gateway/_builder';
@@ -32,7 +32,7 @@ export async function runningDevelopment(
 ): Promise<BuilderDevelopment> {
   const [environment] = await db
     .update(projectEnvironments)
-    .set({ status: 'active', podIp: '127.0.0.1' })
+    .set({ status: 'active' })
     .where(and(eq(projectEnvironments.projectId, builderChatId), eq(projectEnvironments.isDefault, true)))
     .returning({
       id: projectEnvironments.id,

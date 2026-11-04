@@ -1,0 +1,62 @@
+@layer components {
+  /* ==========================================================================
+     RUNS DOCK — one stack, bottom right, each run carrying its phase as a rail
+     ========================================================================== */
+  .of-dock {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: 300px;
+    /* below dialogs, sheets and menus (z-50): a background job must never
+       cover the fields or footer of something the user is working in */
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+
+  @media (max-width: 768px) {
+    .of-dock {
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      width: auto;
+    }
+  }
+
+  .of-job {
+    flex: none;
+    border-radius: var(--radius-lg-of);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-2);
+    overflow: hidden;
+    padding: var(--card-pad) var(--row-pad);
+    transition: box-shadow var(--dur) var(--ease-standard);
+  }
+
+  .of-job:hover {
+    box-shadow: var(--shadow-floating);
+  }
+
+  .of-job-rail {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--job-color, var(--ink-subtle));
+  }
+
+  .of-cmdk-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--ink-subtle);
+    font: var(--text-meta);
+  }
+}

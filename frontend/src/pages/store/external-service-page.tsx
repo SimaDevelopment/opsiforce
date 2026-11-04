@@ -1,4 +1,5 @@
-import { For, Show, createMemo, createSignal, untrack, type JSX } from 'solid-js';
+import { For, Show, createMemo, createSignal, untrack, type Component, type JSX } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { toast } from 'solid-sonner';
 import { useNavigate } from '@tanstack/solid-router';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk/forms';
@@ -35,7 +36,7 @@ import { ConnectedProjects } from '~/components/external-service/connected-proje
 import { ServiceUsage } from '~/components/external-service/service-usage';
 import { PublishServiceDialog } from '~/components/external-service/publish-service-dialog';
 import { DuplicateServiceDialog, ExportServiceDialog } from '~/components/external-service/service-copy-dialogs';
-import { SdkBadge } from '~/components/external-service/sdk-badge';
+import { SdkBadge, UpgradeSdkButton } from '~/components/external-service/sdk-badge';
 import { canManageExternalService, canSeeExternalServices } from '~/components/external-service/service-access';
 import { DeleteServiceDialog, DisableServiceDialog } from '~/components/external-service/service-lifecycle-dialogs';
 import { ChangeMark, NeedsSetupBadge, ServiceIcon } from '~/components/external-service/service-marks';
@@ -67,12 +68,16 @@ import {
   AlertTriangle,
   Ban,
   Cable,
+  ChartColumn,
   CirclePlay,
   Copy,
   Download,
   Files,
+  Info,
   Pencil,
   Rocket,
+  ScrollText,
+  SlidersHorizontal,
   Trash2,
 } from '~/components/icons';
 import { Badge } from '~/components/ui/badge';
@@ -83,11 +88,11 @@ export const EXTERNAL_SERVICE_TABS = ['overview', 'configuration', 'calls', 'usa
 
 export type ExternalServiceTab = (typeof EXTERNAL_SERVICE_TABS)[number];
 
-const TAB_LABELS: Record<ExternalServiceTab, string> = {
-  overview: 'Overview',
-  configuration: 'Service configuration',
-  calls: 'Calls',
-  usage: 'Usage',
+const TABS: Record<ExternalServiceTab, { label: string; icon: Component<{ class?: string }> }> = {
+  overview: { label: 'Overview', icon: Info },
+  configuration: { label: 'Service configuration', icon: SlidersHorizontal },
+  calls: { label: 'Calls', icon: ScrollText },
+  usage: { label: 'Usage', icon: ChartColumn },
 };
 
 interface ServicePageModel extends ExternalServiceSummary {
@@ -217,7 +222,7 @@ export function ExternalServicePage(props: {
               <EmptyState
                 icon={Cable}
                 title="This External Service isn't available."
-                hint="It may need setup by a platform operator, or it no longer exists."
+                description="It may need setup by a platform operator, or it no longer exists."
               />
             }
           >
@@ -277,7 +282,14 @@ function ServiceBody(props: {
       <ServiceHeader service={props.service} editable={editable()} canManage={props.canManage} />
       <Tabs value={tab()} onChange={(next) => props.onTab(next as ExternalServiceTab)}>
         <TabsList class="w-fit justify-start">
-          <For each={tabs()}>{(key) => <TabsTrigger value={key}>{TAB_LABELS[key]}</TabsTrigger>}</For>
+          <For each={tabs()}>
+            {(key) => (
+              <TabsTrigger value={key}>
+                <Dynamic component={TABS[key].icon} class="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                {TABS[key].label}
+              </TabsTrigger>
+            )}
+          </For>
         </TabsList>
         <TabsContent value="overview" class="mt-6">
           <OverviewTab
@@ -408,6 +420,7 @@ function ServiceHeader(props: { service: ServicePageModel; editable: OperatorSer
                       <Pencil class="h-3.5 w-3.5" aria-hidden="true" />
                       Edit in Builder
                     </Button>
+                    <UpgradeSdkButton serviceId={service().id} sdk={service().sdk} />
                     <Show when={!service().builtOnSdk1}>
                       <Button size="sm" onClick={() => setPublishOpen(true)}>
                         <Rocket class="h-3.5 w-3.5" aria-hidden="true" />
@@ -560,18 +573,18 @@ function OverviewTab(props: {
   const ServiceOverview = () => (
     <div class="flex min-w-0 flex-col gap-8">
       <Show when={props.service.hidesBuiltIn}>
-        <div class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-          <p class="flex-1 text-xs text-amber-900">
+        <div class="of-note of-tone-needs-you gap-3 p-4">
+          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <p class="flex-1 text-xs">
             A built-in service called <span class="font-mono">{props.service.slug}</span> was added to the platform
             after this one. It stays hidden in your Organization, so your agents and Apps keep reaching this service.
           </p>
         </div>
       </Show>
       <Show when={props.editable && !props.editable.available}>
-        <div class="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4 sm:flex-row sm:items-center">
-          <AlertTriangle class="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-          <p class="flex-1 text-xs text-amber-900">
+        <div class="of-note of-tone-needs-you flex-col gap-3 p-4 sm:flex-row sm:items-center">
+          <AlertTriangle class="h-4 w-4 shrink-0" aria-hidden="true" />
+          <p class="flex-1 text-xs">
             {props.service.origin === 'custom'
               ? "Your Projects can't use this service until every required field of its Service configuration is filled."
               : "Organizations can't see or use this service until every required field of its Service configuration is filled."}
@@ -593,7 +606,7 @@ function OverviewTab(props: {
           <EmptyState
             icon={Rocket}
             title={`Nothing published to ${shown().environmentName ?? 'this environment'} yet.`}
-            hint="Publish, at the top of the page, copies Development here."
+            description="Publish, at the top of the page, copies Development here."
           />
         }
       >
@@ -623,7 +636,7 @@ function OverviewTab(props: {
                   connected to this service read it until the builder replaces it.
                 </p>
               </Show>
-              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[11px] leading-relaxed">
+              <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card p-4 font-mono text-[0.6875rem] leading-relaxed">
                 {skill()}
               </pre>
             </>
@@ -657,9 +670,9 @@ function OverviewTab(props: {
 
 function BuiltOnSdk1Notice() {
   return (
-    <div class="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-      <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
-      <p class="flex-1 text-xs text-amber-900">
+    <div class="of-note of-tone-needs-you gap-3 p-4">
+      <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <p class="flex-1 text-xs">
         Built on SDK 1, rebuild or delete. Opsiforce no longer serves SDK 1 services: rebuild this one on SDK 2 in the
         Builder, or delete it.
       </p>
@@ -689,7 +702,7 @@ function ManifestLists(props: { manifest: ShownManifest; shown: ManifestShown })
                 <ManifestRow
                   listed={listed}
                   kind={
-                    <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Event</span>
+                    <span class="text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">Event</span>
                   }
                   title={listed.item.title}
                   description={listed.item.description}

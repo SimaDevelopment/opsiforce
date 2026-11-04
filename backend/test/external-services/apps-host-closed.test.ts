@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PodService } from '../../src/pod/pod.service';
@@ -9,9 +10,9 @@ import { startFakePod, type FakePod } from '../support/fake-pod';
 import type { FakePodService } from '../support/infra-fakes';
 import { createProject, createTenant, addMember } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin } from '../support/external-service-fixtures';
 
 const CONTROL_TOKEN = 'proxy-control-token-for-apps-host-tests';
 
@@ -54,6 +55,23 @@ describe('the Apps host and External Services', () => {
     const res = await ensureApp(service.builderChatId);
 
     expect(res.statusCode, res.body).toBe(404);
+  });
+
+  it("answers 404 on every address of an External Service's Project when the proxy asks by host", async () => {
+    const admin = await tenantAdmin(app);
+    const service = await createCustomService(app, admin, 'Ledgers', 'ledgers');
+    const appsHostname = app.get(ConfigService).getOrThrow<string>('appsHostname');
+    const shortId = service.builderChatId.replaceAll('-', '').slice(0, 12);
+
+    for (const label of [service.builderChatId, `${service.builderChatId}-dev`, `ledgers-dev-${shortId}`]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/internal/proxy/apps/ensure',
+        headers: { 'x-proxy-control-token': CONTROL_TOKEN },
+        payload: { host: `${label}.${appsHostname}` },
+      });
+      expect(res.statusCode, `${label}: ${res.body}`).toBe(404);
+    }
   });
 
   it('still serves an ordinary Project', async () => {

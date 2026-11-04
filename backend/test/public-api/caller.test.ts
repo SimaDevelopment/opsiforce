@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db';
 import { users, workspaces } from '../../db/schema';
+import { PERMISSIONS } from '../../src/permission/permission.constants';
 import type { ApiError } from '../../src/public-api/errors/error.schema';
 import { createPublicApiTestApp, type PublicApiTestApp } from './support/app';
 import { tenantName, proxyHeaders, serviceAccountUsername } from '../support/proxy-identity';
@@ -49,7 +50,7 @@ describe('public api caller and GET /me', () => {
         email: headers['x-forwarded-email'],
         tenant: { name: tenant },
         tenants: [{ name: tenant }],
-        permissions: ['can_use_public_api'],
+        permissions: [...PERMISSIONS].toSorted(),
       });
       expect(body.tenant.id).toEqual(expect.any(String));
       expect(body.tenants).toHaveLength(1);
@@ -67,7 +68,7 @@ describe('public api caller and GET /me', () => {
       expect(id).toBe(row.id);
     });
 
-    it('sorts the raw permission names', async () => {
+    it('reports every permission, sorted, to a caller holding the public API permission', async () => {
       const headers = proxyHeaders({
         tenants: [tenantName()],
         permissions: SEVERAL_PERMISSIONS,
@@ -75,7 +76,7 @@ describe('public api caller and GET /me', () => {
 
       const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers });
 
-      expect(res.json().permissions).toEqual(SEVERAL_PERMISSIONS.toSorted());
+      expect(res.json().permissions).toEqual([...PERMISSIONS].toSorted());
     });
 
     it('creates the user row on the first call', async () => {
@@ -244,7 +245,7 @@ describe('public api caller and GET /me', () => {
 
         const me = await staticApp.inject({ method: 'GET', url: '/api/v1/me', headers });
         expect(me.statusCode).toBe(200);
-        expect(me.json().permissions).toEqual(SEVERAL_PERMISSIONS.toSorted());
+        expect(me.json().permissions).toEqual([...PERMISSIONS].toSorted());
       } finally {
         await staticHarness.close();
       }

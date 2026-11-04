@@ -16,7 +16,7 @@
     "kubernetes": "v1.32.0",
     "charts": {
       "traefik": "39.0.8",
-      "traefikOidcPlugin": "v0.19.0",
+      "traefikOidcPlugin": "v0.21.0",
       "postgresql": "15.5.38",
       "redis": "20.2.1",
       "bifrost": "2.1.45"

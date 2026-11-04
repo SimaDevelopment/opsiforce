@@ -304,7 +304,7 @@ function AddProviderDialog(
                     </Show>
                   </Show>
                   <Show when={global() && !azure()}>
-                    <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                    <div class="of-note of-tone-needs-you gap-2 text-xs">
                       <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span>{TIPS.notMetered}</span>
                     </div>

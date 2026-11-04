@@ -40,6 +40,10 @@ export interface ProjectEnvironment {
   hasApp: boolean;
   appName: string | null;
   appDescription: string | null;
+  publicUrl: string | null;
+  appSlug: string | null;
+  suggestedAppSlug: string | null;
+  shortId: string;
   sessionId: string | null;
 }
 

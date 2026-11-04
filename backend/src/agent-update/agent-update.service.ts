@@ -10,6 +10,7 @@ import { PodResponded } from '../agent-session/agent-session.errors';
 import type { PodEnvironmentRef } from '../agent-session/agent-session.types';
 import { ProjectService } from '../project/project.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
+import { hasRunningPod } from '../project-environment/running-pod';
 import { ProjectStatus } from '../project/project.types';
 import { type AgentModelSelection } from '../agent/agent-config';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
@@ -211,11 +212,11 @@ export class AgentUpdateService implements OnApplicationBootstrap {
     ) {
       return this.applyReload(update.id, 'skipped:no-active-pod');
     }
-    if (!project.podIp) {
-      return this.deferReload(update.id, 'pending:no-pod-ip');
+    if (!hasRunningPod(project)) {
+      return this.deferReload(update.id, 'pending:pod-not-running');
     }
 
-    const session = await this.checkSession({ id: project.id, podIp: project.podIp });
+    const session = await this.checkSession(project);
     if ('error' in session) return this.deferReload(update.id, session.reloadStatus, session.error);
     if (session.busy) return this.deferReload(update.id, 'pending:active-session');
 

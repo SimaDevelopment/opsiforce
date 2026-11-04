@@ -12,13 +12,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyRequest } from 'fastify';
-import { appCanonicalHost } from '../common/app-host';
+import { legacyAppHost } from '../common/app-host';
 import { WHO_CHANGES_PUBLIC_API_SETTINGS } from '../external-services/built-ins/public-api-service';
 import { PublicApiSettings } from '../external-services/configuration/public-api-settings';
-import { servesAnExternalService } from '../external-services/gate/service-projects';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../identity/forwarded-identity.service';
 import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
+import { callingProjectReachOf, isReachedByCallingProject } from '../project/calling-project-reach';
 import { ProjectProvenanceRepository } from '../project/project-provenance.repository';
 import { isHiddenProjectReachable, isProjectAccessible } from '../project/project-visibility';
 import { ProjectService, type EnsureEnvironmentResult, type ProjectActivityKind } from '../project/project.service';
@@ -28,12 +28,17 @@ import type { ProjectEnvironmentContext } from '../project-environment/project-e
 import { TenantService } from '../tenant/tenant.service';
 import { Public } from '../tenant/tenant.decorator';
 import { AgentSessionGateway } from '../agent-session/agent-session.gateway';
+import { resolveAppAddress, type AppDomains, type ResolvedAppAddress } from './app-address';
 import { ProxyService } from './proxy.service';
 
 type ProxySurface = 'agent' | 'app' | 'vscode' | 'db';
 
 interface ProxySurfaceBody {
   surface?: ProxySurface;
+}
+
+interface AppAddressBody {
+  host?: unknown;
 }
 
 interface ProxyLoggingConfig {
@@ -50,11 +55,23 @@ interface EnsureProxyResponse {
   logging?: ProxyLoggingConfig;
 }
 
+interface AppAddressAnswer {
+  environmentId: string;
+  canonicalHost: string;
+  protected: boolean;
+  previewFrameOrigin?: string;
+}
+
+type AppEnsureResponse =
+  | (EnsureProxyResponse & AppAddressAnswer & { action: 'serve' })
+  | (AppAddressAnswer & { action: 'redirect' });
+
 @Public()
 @Controller('internal/proxy')
 export class ProxyController {
   private readonly proxyControlToken: string;
-  private readonly appsHostname: string;
+  private readonly appDomains: AppDomains;
+  private readonly platformOrigin: string | null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -69,7 +86,11 @@ export class ProxyController {
     private readonly publicApiSettings: PublicApiSettings
   ) {
     this.proxyControlToken = this.configService.getOrThrow<string>('proxyControlToken');
-    this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
+    this.appDomains = {
+      appsHostname: this.configService.getOrThrow<string>('appsHostname'),
+      previewAppsHostname: this.configService.getOrThrow<string>('previewAppsHostname'),
+    };
+    this.platformOrigin = originOf(this.configService.get<string>('opsiforcePublicUrl', ''));
   }
 
   @Post('projects/:environmentId/ensure')
@@ -86,7 +107,7 @@ export class ProxyController {
     const env = await this.projectEnvironmentService.findByIdOrNull(environmentId);
     if (!env) throw new NotFoundException(`Project environment ${environmentId} not found`);
 
-    if (surface === 'app' && (await servesAnExternalService(env.projectId))) {
+    if (surface === 'app' && env.servesAnExternalService) {
       throw new NotFoundException(`Project environment ${environmentId} not found`);
     }
 
@@ -100,7 +121,26 @@ export class ProxyController {
         ? await this.agentSessionGateway.ensureAgentSurface(env)
         : await this.projectService.ensureEnvironment(env, activityForSurface(surface));
 
-    return this.toEnsureResponse(surface, ensured, env);
+    const response = this.toEnsureResponse(surface, ensured);
+    if (surface !== 'app') return response;
+    const hostOlderAppProxiesRedirectTo = legacyAppHost(env.id, env.environmentSlug, this.appDomains.appsHostname);
+    return { ...response, canonicalHost: hostOlderAppProxiesRedirectTo };
+  }
+
+  @Post('apps/ensure')
+  async ensureApp(
+    @Body() body: AppAddressBody,
+    @Headers('x-proxy-control-token') token: string | undefined
+  ): Promise<AppEnsureResponse> {
+    this.assertToken(token);
+
+    const host = requireAppHost(body);
+    const address = await resolveAppAddress(host, this.appDomains, this.projectEnvironmentService);
+    if (!address || address.env.servesAnExternalService) {
+      throw new NotFoundException(`No App answers on ${host}`);
+    }
+
+    return this.answerAppAddress(address);
   }
 
   @Post('projects/:environmentId/failure')
@@ -125,18 +165,27 @@ export class ProxyController {
     await this.projectService.touchEnvironmentActivity(environmentId, activityForSurface(surface));
   }
 
-  private toEnsureResponse(
-    surface: ProxySurface,
-    ensured: EnsureEnvironmentResult,
-    resolved: ProjectEnvironmentContext
-  ): EnsureProxyResponse {
-    const canonical =
-      surface === 'app'
-        ? { canonicalHost: appCanonicalHost(resolved.id, resolved.environmentSlug, this.appsHostname) }
-        : {};
+  private async answerAppAddress({
+    env,
+    action,
+    canonicalHost,
+    previewed,
+  }: ResolvedAppAddress): Promise<AppEnsureResponse> {
+    const answer: AppAddressAnswer = {
+      environmentId: env.id,
+      canonicalHost,
+      protected: env.authMode !== 'public',
+      ...(previewed && this.platformOrigin ? { previewFrameOrigin: this.platformOrigin } : {}),
+    };
+    if (action === 'redirect') return { action, ...answer };
 
+    const ensured = await this.projectService.ensureEnvironment(env, 'app');
+    return { ...this.toEnsureResponse('app', ensured), action, ...answer };
+  }
+
+  private toEnsureResponse(surface: ProxySurface, ensured: EnsureEnvironmentResult): EnsureProxyResponse {
     if (ensured.state !== 'ready') {
-      return { state: ensured.state, ...canonical };
+      return { state: ensured.state };
     }
 
     const env = ensured.env;
@@ -144,7 +193,6 @@ export class ProxyController {
 
     return {
       state: ensured.state,
-      ...canonical,
       upstream,
       podName: this.proxyService.getAssignedPodName(env.id),
       directory: env.directory,
@@ -185,8 +233,9 @@ export class ProxyController {
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {
     const caller = await this.gatewayKeys.validateToken(token);
     if (!caller?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
-    if (caller.tenantId !== tenantId) throw new NotFoundException('Project not found');
-    if ((await this.publicApiSettings.of(caller.projectEnvironmentId))?.driveCreatedProjects !== true) {
+    if (caller.tenantId !== tenantId) throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
+    const settings = await this.publicApiSettings.of(caller.projectEnvironmentId);
+    if (settings?.driveCreatedProjects !== true) {
       throw new ForbiddenException(
         `"${this.publicApiSettings.labelOf('driveCreatedProjects')}" is off in the calling Project's configuration. ${WHO_CHANGES_PUBLIC_API_SETTINGS}`
       );
@@ -198,15 +247,14 @@ export class ProxyController {
     const creator = await this.identities.resolveByPlatformId(creatorId);
     const tenant = await this.tenantService.getTenantById(tenantId);
     if (!creator || !tenant || !this.tenantService.resolveAccessibleTenantNames(creator.groups).includes(tenant.name)) {
-      throw new NotFoundException('Project not found');
+      throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
     }
 
-    if (!(await isProjectAccessible(tenantId, creatorId, projectId))) {
-      throw new NotFoundException('Project not found');
-    }
-
-    if (!(await this.provenance.isCreatedByProject(projectId, caller.projectId))) {
-      throw new ForbiddenException('The calling Project did not create this Project');
+    if (
+      !(await isProjectAccessible(tenantId, creatorId, projectId)) ||
+      !(await isReachedByCallingProject(projectId, callingProjectReachOf(caller.projectId, settings)))
+    ) {
+      throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
     }
   }
 
@@ -242,10 +290,19 @@ function requireSurface(body: ProxySurfaceBody): ProxySurface {
   return surface;
 }
 
+function requireAppHost(body: AppAddressBody): string {
+  if (typeof body.host !== 'string' || !body.host) throw new BadRequestException('Missing host');
+  return body.host;
+}
+
 function activityForSurface(surface: ProxySurface): ProjectActivityKind {
   return surface === 'app' ? 'app' : 'agent';
 }
 
 function isProxySurface(value: string): value is ProxySurface {
   return value === 'agent' || value === 'app' || value === 'vscode' || value === 'db';
+}
+
+function originOf(url: string): string | null {
+  return URL.canParse(url.trim()) ? new URL(url.trim()).origin : null;
 }

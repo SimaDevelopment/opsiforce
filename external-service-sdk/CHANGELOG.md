@@ -2,6 +2,11 @@
 
 Minor versions only add optional things; a service written for `2.0.0` runs on every `2.x`. A change that breaks the wire or the manifest is a new `sdk` major.
 
+## 2.2.0
+
+- A Project-form `options` handler also answers with no ProjectEnvironment: the platform asks it for choices on an Agent's Service settings, outside any Project. Its `ctx.caller` names no Project and `ctx.projectConfiguration` is `null`; list what the Service configuration reaches. Project-form `info` and `buttons` calls still need a ProjectEnvironment.
+- `/forms` and `/platform` export `labelsKey` and the `ValueLabels` type, and `/platform` the platform's own `_labels` check, `isWellFormedLabels` with `wellFormedLabelsRule`. `serviceSettingsFormOf` keeps target fields and drops only the fields each Project gets for itself (secrets, generated values and lists holding them), and `isTargetField` marks only targets, no longer secrets or generated values.
+
 ## 2.1.0
 
 - `"connectedByDefault": true` in the manifest connects every new Project to the service while it is Available: the Project starts with a Project configuration made from the Project form's defaults and generated values, as if a person had saved it.

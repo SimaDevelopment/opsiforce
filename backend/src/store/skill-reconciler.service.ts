@@ -5,7 +5,8 @@ import { skills, skillVersionFiles, skillVersions } from '../../db/schema';
 import { AgentReconcilerService } from '../agent/agent-reconciler.service';
 import { isTextFile } from './gate/skill-tree';
 import { renameSkillsReservedForServices } from './service-skill-names';
-import { agentConfigRoot, readComposedSkills, skillSourceDirectories, type ComposedSkill } from './skill-tree';
+import { SkillAvailability } from './skill-availability';
+import { agentConfigRoot, skillSourceDirectories, type ComposedSkill } from './skill-tree';
 import { readdirSync } from 'node:fs';
 
 const MINT_LOCK_NAMESPACE = 'skill-version-mint:';
@@ -15,7 +16,10 @@ export class SkillReconcilerService implements OnModuleInit {
   private readonly logger = new Logger(SkillReconcilerService.name);
   private reconciled: Promise<void> | null = null;
 
-  constructor(private readonly agentReconciler: AgentReconcilerService) {}
+  constructor(
+    private readonly agentReconciler: AgentReconcilerService,
+    private readonly skillAvailability: SkillAvailability
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.ready();
@@ -24,7 +28,7 @@ export class SkillReconcilerService implements OnModuleInit {
   ready(): Promise<void> {
     this.reconciled ??= this.agentReconciler
       .ready()
-      .then(() => this.reconcileImage(readComposedSkills()))
+      .then(() => this.reconcileImage(this.skillAvailability.composedSkills()))
       .then(() => renameSkillsReservedForServices());
     return this.reconciled;
   }
@@ -60,7 +64,8 @@ export class SkillReconcilerService implements OnModuleInit {
       )
       .returning({ name: skills.name });
     const names = retired.map((row) => row.name).toSorted();
-    if (names.length > 0) this.logger.log(`Retired built-in skill(s) the image no longer ships: ${names.join(', ')}`);
+    if (names.length > 0)
+      this.logger.log(`Retired built-in skill(s) this deployment no longer offers: ${names.join(', ')}`);
     return names;
   }
 

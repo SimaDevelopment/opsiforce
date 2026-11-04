@@ -6,10 +6,10 @@ import type { DeliveredEvent, WebhookHandler } from '@opsiforce/external-service
 import { gatewayEvents, verifyCallerIdentity } from '@opsiforce/external-service-sdk/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Doorbell } from '../../src/external-services/doorbell/doorbell';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder } from './support/custom-services';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
 import { doorbellQueue } from './support/doorbell';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { gatewayUrlOf, resolvedWebhook, resolveWebhook, webhookAsGate } from './support/gate-proxy';
 import type { GateCallerFixture } from './support/gate';
 import { projectServiceUrl } from './support/generating';

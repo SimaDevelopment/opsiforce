@@ -7,7 +7,7 @@ AI coding-assistant platform: users converse with an agent inside a Kubernetes p
 ### Organization
 
 **Organization**:
-The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the code and the public API contract — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
+The top-level customer account a user works inside — owner of its Workspaces, Users, Billing, Defaults, Sign-in providers, and Environment registry. A user may belong to several and switches between them in the selector (shown by display name and a building mark). Its technical name is **tenant** — the `tenants` table, the `*_tenant_*` permissions, the code and the public API contract — which must never surface in user-facing copy. Prefer omitting the noun entirely where context already makes the scope obvious.
 _Avoid_: Tenant (internal name only — never user-facing); Account (collides with the user's login); Workspace (a grouping *within* an Organization, not the Organization itself)
 
 **Workspace**:
@@ -84,7 +84,7 @@ A tenant-scoped, named target a Project can run in and a Custom Agent can publis
 _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
-The short, immutable, URL-safe identifier an Environment carries alongside its name, shown as the environment suffix in an App's public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
+The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
 _Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:
@@ -108,12 +108,28 @@ The second protected Environment present in every tenant — the conventional ta
 _Avoid_: Prod (non-canonical in user-facing copy); Live
 
 **App**:
-The application the agent builds inside a ProjectEnvironment, served at that environment's public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).
+The application the agent builds inside a ProjectEnvironment, served at that environment's Public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).
 _Avoid_: Project (when you mean the built application); "one App per Project" (retired — each ProjectEnvironment is its own App)
 
 **App Details**:
 An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at publish and evolve independently afterwards.
 _Avoid_: App metadata (vague); Project title (the Project shell's label — a different thing); project-level identity (retired — App Details belong to each App/environment, not the Project)
+
+**Public URL**:
+The internet address at which an App is served, the one the platform hands out and people share. It reads as the App Slug, the Environment Slug, then the App Short ID — e.g. `equipment-monitor-dev-6713b7a51450` — or, for an App with no App Slug, as the older address built from its environment's id. A Project that serves an External Service has no public App, so no Public URL.
+_Avoid_: App URL, Built-in URL, Link, Domain
+
+**App Slug**:
+The readable part of an App's Public URL, in front of the Environment Slug — `equipment-monitor` in `equipment-monitor-dev-6713b7a51450`. It comes from the App's name, or from the App Slug of the App it was copied from, and afterwards changes only through Edit URL, never with a rename. It need not be unique: the App Short ID already is.
+_Avoid_: Subdomain, Vanity URL, Name (the App Details field it derives from)
+
+**App Short ID**:
+The code at the end of an App's Public URL that identifies the App: the first twelve hex characters of its ProjectEnvironment's id with the dashes dropped, two more at a time when another App already holds that prefix. Every App has its own, unique across all Apps of every tenant, and it never changes for the App's lifetime — renames and URL edits leave it alone, which is what keeps old links working.
+_Avoid_: Hash (it is not one); Short UUID; Code
+
+**Edit URL**:
+Choosing an App's App Slug by hand, which moves the App's Public URL to the new address while every address it answered on before keeps reaching it. The only way an App Slug changes once it is set.
+_Avoid_: Rename (renaming the App leaves its address alone); Custom domain (an address outside the apps domain)
 
 **Go-live**:
 The moment an App first exists and is running in a ProjectEnvironment — for Development, when the agent finishes the first feature, it builds and boots, and the agent publishes App Details; for a published environment, when its freshly-deployed pod first serves. Go-live is decoupled from "done": it happens before the agent's feature testing, which follows with the App already live. Each environment goes live independently. Before its App goes live an environment has a pod but no App; that environment's app pane appears only once it happens.
@@ -156,15 +172,19 @@ Stopping a Project without losing it: every ProjectEnvironment's pod is deleted 
 _Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
 
 **App Auth**:
-Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **managed** (a shared identity provider configured by the platform operator, scoped to the tenant). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
+Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **provider** (one of the Organization's Sign-in providers). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
 _Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)
 
 **Auth mode**:
-The chosen App Auth setting for one ProjectEnvironment — `public`, `manual`, or `managed` (the stored identifier is `auth_mode`).
+The chosen App Auth setting for one ProjectEnvironment — `public`, `manual` or `provider` (the stored identifier is `auth_mode`).
 _Avoid_: Auth type, Auth provider
 
+**Sign-in provider**:
+An OIDC app an Organization admin registers once — issuer, client ID, client secret, scopes and an optional required claim — so that the Organization's members sign in to its Apps with it. It is shared by every App whose Auth mode is `provider` and names it.
+_Avoid_: Organization provider, Identity provider (the vendor product, not this record), Custom auth, SSO app
+
 **Token forwarding**:
-An opt-in App Auth setting, available only in manual mode, that passes the signed-in visitor's access token from the owner's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
+An opt-in App Auth setting, available in manual and provider modes, that passes the signed-in visitor's access token from the App's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
 _Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
 
 **Resources**:
@@ -241,6 +261,10 @@ _Avoid_: Start command (startup.sh already is one); Health check route (no route
 Whether an Agent is **Working** — processing a run it was prompted to do, including the runs of sub-agents it started, even after its own run has ended, and any mid-run provider retries — or **Idle** (no run in flight; a suspended or absent pod is simply Idle, not a third state). Carried per ProjectEnvironment, since each environment has its own Agent; a Project counts as Working when any of its environments' Agents is, shown at-a-glance beside the project in the sidebar. A Working Agent counts as Keep-alive's *Agent activity*, so it keeps its pod up; Agent activity is wider than Working (it also covers the user's own traffic).
 _Avoid_: Agent activity (the Keep-alive kind that Working feeds, not a synonym for it); Busy (the engine's wire value, not user-facing copy); Running (collides with pod lifecycle)
 
+**Waiting for input**:
+Whether a chat in a ProjectEnvironment is held on its user — the Agent asked for a permission or asked a question and no one has replied yet. Carried per ProjectEnvironment beside Agent Status, not as a value of it: a waiting run is still Working. A Project is waiting when any of its environments is.
+_Avoid_: Blocked, Paused (suggest the run stopped; it is still Working)
+
 **Prompt**:
 The single chat input a user composes and sends to the Agent — one turn's worth of instruction. Sending a Prompt is the canonical act of interacting with a Project's Agent, distinct from merely viewing or navigating the Project. A Prompt sent while the Agent is already working is either _steered_ (folded into the running turn) or _queued_ (starts the next turn once the Agent is idle); a queued Prompt waits until a new turn begins.
 _Avoid_: Message (ambiguous — also covers the Agent's reply); Query, Command
@@ -250,7 +274,7 @@ Speaking into the chat instead of typing — a recording made from the prompt's 
 _Avoid_: Voice message (implies the audio itself is attached or kept); Voice chat, Speech-to-text (the mechanism, not the feature); Transcription (the backend step, not the user-facing act)
 
 **Session**:
-The primary OpenCode conversation a ProjectEnvironment carries — the durable thread of Prompts and Agent replies every surface shares. "Prompting a Project" means prompting that environment's primary Session; the UI, a program connecting through the public API, and any channel wired to the Project all read and write the same thread. The platform resolves and remembers the binding during a Connection; a caller never has to pick it. Other native Sessions may exist in the environment — opencode allows them and a native client can create them — and they are not the platform's concern: they never become the primary one.
+An OpenCode conversation in a ProjectEnvironment — a durable thread of Prompts and Agent replies. Each environment has one primary Session, the thread every surface shares: "prompting a Project" means prompting it, a program connecting through the public API and any channel wired to the Project read and write it, and an untitled Project takes its name from it. The platform resolves and remembers the binding during a Connection; a caller never has to pick it. A user may open more Sessions beside it from the chat, and a native client can create them; they share the environment's workspace, start on the Project's Agent, and nothing the platform sends is routed to them.
 _Avoid_: Chat, Conversation, Thread (non-canonical); Run (Trello shorthand for a Project)
 
 **Connection**:
@@ -286,8 +310,8 @@ A named instruction package — a directory with a `SKILL.md` and optional suppo
 _Avoid_: Plugin, Extension, Command (non-canonical); Tool (a different Agent capability concept); Global skill (retired — authored Skills never span Organizations)
 
 **Built-in Skill**:
-A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image is retired — hidden from the Store, closed to new use and delivered to no workspace any more, even where an Agent still pins it — while its stored content survives, and it comes back if the image ships it again.
-_Avoid_: Platform skill, System skill (non-canonical); Deprecated (retired term — leaving the image is the whole mechanism)
+A Skill shipped in the platform's agent image and reconciled into the catalog from code — changing or retiring one is a platform rollout. The sibling of Custom Skill, and the exact counterpart of Built-in Agent: one that leaves the image, or that needs a capability this deployment does not offer, is retired — hidden from the Store, closed to new use and delivered to no workspace any more, even where an Agent still pins it — while its stored content survives, and it comes back once the image ships it and the deployment offers what it needs.
+_Avoid_: Platform skill, System skill (non-canonical); Deprecated (retired term — not being shipped or offered is the whole mechanism); Feature-flagged skill (no deployment setting names a Skill — what the deployment's agent pods can run decides)
 
 **Custom Skill**:
 A Skill authored in the platform rather than shipped in the image — through the Skill & Agent Builder or the Store's form — owned by one Organization and carrying a Visibility. The sibling of Built-in Skill.
@@ -392,7 +416,7 @@ The values filled into an External Service's Service form, one per service and o
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Custom Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
 _Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
 **Disconnect (External Service)**:
@@ -408,7 +432,7 @@ The skill an External Service carries to teach Agents what it is for and how to 
 _Avoid_: Integration skill, Connector skill
 
 **Service settings (Agent)**:
-The values of one External Service's Project form, other than its targets, that a Custom Agent writes into every Project created from it, held beside the Service skill it carries and set by whoever manages the Agent and may configure Projects' External Services. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it; its targets are still picked in the Project, and a later change to the settings reaches no existing Project.
+The values of one External Service's Project form that an Agent writes into every Project created from it — targets such as a repository or a board included, but never a secret or a generated value, which each Project gets for itself — held beside the Service skill it carries and set by whoever manages the Agent and may configure Projects' External Services. A new Project of the Agent starts with a Project configuration written from them, as if a person had saved it, and a later change to the settings reaches no existing Project.
 _Avoid_: Agent defaults, Default configuration, Service profile
 
 **Service host**:
@@ -476,7 +500,7 @@ _Avoid_: Cron job (the mechanism, not the domain concept); Job (collides with Bu
 ### Public API
 
 **API Token**:
-The credential a program — the CLI, an integration, another Agent — presents to call the public API on a user's behalf. Today it is the bearer token the deployment's identity provider issues when that user signs in, so it carries exactly the Organization memberships and permissions they hold in the UI; a token issued by Opsiforce itself is a possible later form of the same concept. The public API selects the Organization it acts in with the same organization header the UI already sends (implicit when the caller belongs to exactly one), and its documentation speaks of Organizations, never of the internal tenant vocabulary.
+The credential a program — the CLI, an integration, another Agent — presents to call the public API on a user's behalf. Today it is the bearer token the deployment's identity provider issues when that user signs in, so it carries exactly the Organization memberships they hold in the UI, and holding `can_use_public_api` gives it every permission on the public API; a token issued by Opsiforce itself is a possible later form of the same concept. The public API selects the Organization it acts in with the same organization header the UI already sends (implicit when the caller belongs to exactly one), and its documentation speaks of Organizations, never of the internal tenant vocabulary.
 _Avoid_: Client key; API key (non-canonical); Personal access token (canonical only in other products); Tenant header (internal name — never user-facing)
 
 **Gateway Key**:
@@ -484,7 +508,7 @@ The per-ProjectEnvironment `gw-` token a pod holds: the one key every pod has fo
 _Avoid_: API key (collides with API Token); Pod token; Platform-api key (retired: a pod has one key)
 
 **Agent Caller**:
-A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only at the Public API External Service's Service host: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the kinds of work its Project configuration turns on. It reads the Skills and Custom Agents that person can see but only the Projects its own Project created, and changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it; it keeps no more Projects than its Project configuration allows, and a chain of Projects creating Projects stops at depth two.
+A public-API caller acting for a ProjectEnvironment's pod, which reaches the public API only at the Public API External Service's Service host: it acts as the human who created its Project, with that person's permissions as the platform last saw them and without needing `can_use_public_api`, and only for the kinds of work its Project configuration turns on. It reads the Skills and Custom Agents that person can see but only the Projects its own Project created or its Project configuration names as Other Projects, which it may also open and restart but never delete, and changes only what its own Project created — Projects, Skills and Custom Agents — and its builder chat's subject, with every verb except Delete, Disable and making public on Skills and Custom Agents. What it creates records which Project made it; it keeps no more Projects than its Project configuration allows, and a chain of Projects creating Projects stops at depth two.
 _Avoid_: Bot (a service account is an ordinary user); Machine user; Pod identity (the identity is the human's)
 
 **Error**:
@@ -518,15 +542,15 @@ _Avoid_: Chat (one input to Agent activity, not a category of its own); Heartbea
 ### Administration
 
 **Settings**:
-The permission-gated surface where a member **configures** the Organization currently chosen in the selector — its Workspaces, Users, Billing, Defaults, Integrations, and Environment registry. One destination with one section per area; each section is independently gated, so a member sees only the areas they may manage. It changes stored configuration; the running-state counterpart is Admin.
+The permission-gated surface where a member **configures** the Organization currently chosen in the selector — its Workspaces, Users, Billing, Defaults, Sign-in providers, and Environment registry. One destination with one section per area; each section is independently gated, so a member sees only the areas they may manage. It changes stored configuration; the running-state counterpart is Admin.
 _Avoid_: Tenant Settings (retired user-facing label — the old modal that held only Integrations + Environments); Config (non-canonical); Admin (the operational sibling — a separate destination, not a synonym for Settings); conflating with Defaults (one section within Settings, not the whole)
 
 **Admin**:
-The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown, built on the same left-rail layout (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
+The permission-gated surface where a member **observes and operates** running state — the counterpart to Settings, which configures it. A sibling destination reached from the avatar dropdown; while it is open the sidebar lists its pages (one page per area, each independently gated). Most pages show the Organization currently chosen in the selector (Pods); a page gated by a Platform-scope permission shows all Organizations at once and ignores the selector. Its first page is Pods. The test for where a view belongs: if it shows or acts on what is running now, it is Admin; if it changes stored configuration, it is Settings.
 _Avoid_: Settings (the configuration sibling — a different destination); Admin panel, Console, Operations, Monitoring (non-canonical — say Admin); conflating with Pods (the first page within Admin, not the whole)
 
 **Store**:
-The third sibling beside Settings and Admin, reached from the avatar dropdown at `/store`, where a member browses the Organization's catalog of Agents and Skills and, with `can_manage_skills` or `can_manage_agents`, authors them — each through its own Builder chat. Its two sections, Agents and Skills, sit in a tab bar and are open to every member because consuming the catalog is free. It contains the Skill Store, which is its Skills section rather than a separate destination. The test for where a view belongs: if it browses or authors the catalog, it is Store; if it shows what is running now, it is Admin; if it changes stored configuration, it is Settings.
+The third sibling beside Settings and Admin, at `/store`, where a member browses the Organization's catalog of Agents and Skills and, with `can_manage_skills` or `can_manage_agents`, authors them — each through its own Builder chat. Its Agents and Skills sections sit in a tab bar beside External Services and are open to every member because consuming the catalog is free; the way in is offered only to those who can manage something in it. It contains the Skill Store, which is its Skills section rather than a separate destination. The test for where a view belongs: if it browses or authors the catalog, it is Store; if it shows what is running now, it is Admin; if it changes stored configuration, it is Settings.
 _Avoid_: Marketplace, Catalog, Library (non-canonical — say Store); Skill Store (one tab within Store, not the whole); Settings, Admin (the sibling destinations)
 
 **Platform-scope permission**:

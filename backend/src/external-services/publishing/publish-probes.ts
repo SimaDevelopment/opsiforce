@@ -86,10 +86,10 @@ export class PublishProbes {
   private async expect(pod: ServicePod, probe: Probe): Promise<void> {
     let answer: ProbeAnswer;
     try {
-      const res = await fetch(`${pod.url}/`, {
+      const res = await this.pods.podFetch(pod, '/', {
         headers: probe.headers,
-        redirect: 'manual',
         signal: AbortSignal.timeout(PUBLISH_PROBE_TIMEOUT_MS),
+        redirect: 'manual',
       });
       await res.body?.cancel();
       answer = { status: res.status, outcome: res.headers.get(OUTCOME_HEADER) };

@@ -1,7 +1,6 @@
 import type { Component } from 'solid-js';
 import type { QueryClient } from '@tanstack/solid-query';
 import { Copy, Download, ExternalLink, Layers, Package, Rocket, RotateCcw } from '~/components/icons';
-import { appPublicUrl } from '~/lib/app-url';
 import { environmentKeys } from '~/api/environments';
 import {
   publishEventsUrl,
@@ -163,12 +162,9 @@ const publishAdapter: JobKindAdapter<TrackedPublish> = {
     const job = entry.job;
     if (!job || job.status !== 'done') return [];
     return [
-      {
-        label: 'Open app',
-        icon: ExternalLink,
-        variant: 'outline',
-        href: appPublicUrl(job.projectEnvironmentId, entry.environmentSlug),
-      },
+      ...(job.publicUrl
+        ? [{ label: 'Open app', icon: ExternalLink, variant: 'outline' as const, href: job.publicUrl }]
+        : []),
       {
         label: 'View environment',
         icon: Layers,

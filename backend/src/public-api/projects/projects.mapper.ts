@@ -1,35 +1,46 @@
+import type { PublicUrlService } from '../../project-environment/public-url.service';
+import { environmentDisplayName } from '../../project/project.service';
 import { ProjectStatus, type AgentStatus } from '../../project/project.types';
 import { runtimeBaseUrl, runtimeOpenapiUrl } from '../../common/runtime-urls';
 import type { EnvironmentRow, ProjectRow } from './projects.repository';
 import type { EnvironmentDto, ProjectDto } from './projects.schema';
 
-const DEFAULT_ENVIRONMENT_NAME = 'Development';
-const UNNAMED_ENVIRONMENT_NAME = 'Environment';
-
 function isoOrNull(value: Date | null): string | null {
   return value === null ? null : value.toISOString();
 }
 
-function toEnvironmentDto(row: EnvironmentRow, projectDisabled: boolean): EnvironmentDto {
+function toEnvironmentDto(
+  row: EnvironmentRow,
+  projectDisabled: boolean,
+  publicUrls: PublicUrlService,
+  runtimeOrigin: string
+): EnvironmentDto {
   return {
     id: row.id,
-    name: row.isDefault ? DEFAULT_ENVIRONMENT_NAME : (row.environmentName ?? UNNAMED_ENVIRONMENT_NAME),
+    name: environmentDisplayName(row),
     slug: row.environmentSlug,
     isDefault: row.isDefault,
     status: projectDisabled ? ProjectStatus.Disabled : row.status,
     hasApp: row.hasApp,
     appName: row.appName,
+    publicUrl: publicUrls.publicUrlOnceLive(row),
     lastActiveAt: isoOrNull(row.lastActiveAt),
     opencode: {
-      baseUrl: runtimeBaseUrl(row.id),
-      openapiUrl: runtimeOpenapiUrl(row.id),
+      baseUrl: `${runtimeOrigin}${runtimeBaseUrl(row.id)}`,
+      openapiUrl: `${runtimeOrigin}${runtimeOpenapiUrl(row.id)}`,
       sessionId: row.sessionId,
     },
   };
 }
 
 export const ProjectMapper = {
-  toDto: (project: ProjectRow, environments: EnvironmentRow[], agentStatus: AgentStatus): ProjectDto => ({
+  toDto: (
+    project: ProjectRow,
+    environments: EnvironmentRow[],
+    activity: { agentStatus: AgentStatus; waitingForInput: boolean },
+    publicUrls: PublicUrlService,
+    runtimeOrigin: string
+  ): ProjectDto => ({
     id: project.id,
     title: project.title,
     description: project.description,
@@ -48,10 +59,13 @@ export const ProjectMapper = {
     kind: project.kind,
     importedAgent: project.importedAgent,
     timezone: project.timezone,
-    agentStatus,
+    agentStatus: activity.agentStatus,
+    waitingForInput: activity.waitingForInput,
     lastPromptAt: isoOrNull(project.lastPromptAt),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
-    environments: environments.map((environment) => toEnvironmentDto(environment, project.disabled)),
+    environments: environments.map((environment) =>
+      toEnvironmentDto(environment, project.disabled, publicUrls, runtimeOrigin)
+    ),
   }),
 };

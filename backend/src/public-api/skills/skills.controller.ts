@@ -108,7 +108,7 @@ export class SkillsController {
       "Sets the display name the Store and the Agent pages show. The `name` — the Skill's identity and its frontmatter `name` — stays what it was at creation.\n\n**Use it for** renaming when the author asks for another name.",
   })
   @PublicResponse(200, SkillSchema)
-  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'forbidden')
+  @PublicApiErrors('validation-error', 'permission-denied', 'not-found', 'not-editable')
   update(
     @Caller() caller: Caller,
     @Param({ schema: SkillPathSchema }) path: SkillPath,
@@ -152,7 +152,8 @@ export class SkillsController {
     'permission-denied',
     'not-found',
     'validation-failed',
-    'forbidden',
+    'not-editable',
+    'skill-disabled',
     'bad-request'
   )
   addVersion(

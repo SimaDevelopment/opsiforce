@@ -8,15 +8,19 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { db } from '../../db';
 import { externalServices } from '../../db/schema';
 import { addMember } from '../support/project-fixtures';
-import { createExternalServicesTestApp, FIXTURE_SERVICE, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
+import {
+  createExternalServicesTestApp,
+  FIXTURE_SERVICE,
+  type ExternalServicesTestApp,
+} from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
 import {
   builtInServiceId,
   forgetPlatformServiceConfiguration,
   tenantAdmin,
   platformOperator,
   type PersonFixture,
-} from './support/fixtures';
+} from '../support/external-service-fixtures';
 import { resolveCaller } from './support/gate-proxy';
 import { configurePlatformService, READY_FIXTURE_CRM, type GateCallerFixture } from './support/gate';
 import {

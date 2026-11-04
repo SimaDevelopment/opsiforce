@@ -18,7 +18,7 @@ place that sets it.
 ## Where things live
 
 Tests are grouped by the area they drive, one directory deep — today `public-api/`, `store/`,
-`delivery/`, `agent-update/`, `model-provider/`, `linked-accounts/` and `external-services/`, with the tests for other areas
+`delivery/`, `agent-update/`, `model-provider/`, `linked-accounts/`, `external-services/` and `app-auth/`, with the tests for other areas
 flat at the root until one of them reaches three files. Nothing test-shaped lives under
 `src/`. The rules and the reasoning are [ADR 0037](../../docs/adr/0037-backend-tests-are-grouped-by-area-under-test-never-under-src.md);
 what follows is where to actually put a new file.

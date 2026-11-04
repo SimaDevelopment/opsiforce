@@ -20,7 +20,7 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 import { saveProjectConfiguration } from './support/gate';
 
 const CONTROL_TOKEN = 'proxy-control-token-for-runtime-proxy-tests';
@@ -83,7 +83,7 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     return { projectId, key: await serviceKeyFor(app, tenant, projectId) };
   }
 
-  it('lets the service key reach a Project its Project created while Manage created Projects is on', async () => {
+  it('lets the service key reach a Project its Project created while Open and restart Projects is on', async () => {
     const { projectId, key } = await caller(true);
     const childId = await runningProject({ createdByProjectId: projectId });
 
@@ -101,10 +101,10 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     const res = await ensure(childId, key);
 
     expect(res.statusCode).toBe(403);
-    expect(res.body).toContain('Manage created Projects');
+    expect(res.body).toContain('Open and restart Projects');
   });
 
-  it('refuses while Manage created Projects is off, as a new Project configuration has it', async () => {
+  it('refuses while Open and restart Projects is off, as a new Project configuration has it', async () => {
     const { projectId, key } = await caller(false);
     const childId = await runningProject({ createdByProjectId: projectId });
 
@@ -126,11 +126,37 @@ describe('a pod reaching a Project runtime through the runtime proxy', () => {
     expect((await ensure(childId, key)).statusCode).toBe(201);
   });
 
-  it('refuses a sibling Project its Project did not create', async () => {
+  it('answers 404 for a sibling Project its Project did not create, naming Other Projects', async () => {
     const { key } = await caller(true);
     const siblingId = await runningProject();
 
-    expect((await ensure(siblingId, key)).statusCode).toBe(403);
+    const res = await ensure(siblingId, key);
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toContain('Opsiforce Public API → Other Projects');
+  });
+
+  it('lets the service key reach a Project picked under Other Projects', async () => {
+    const pickedId = await runningProject();
+    const projectId = await runningProject();
+    await saveProjectConfiguration(app, PUBLIC_API, projectId, {
+      driveCreatedProjects: true,
+      otherProjects: [pickedId],
+    });
+    const key = await serviceKeyFor(app, tenant, projectId);
+
+    const res = await ensure(pickedId, key);
+
+    expect(res.statusCode, res.body).toBe(201);
+  });
+
+  it('answers 404 for a Builder chat listed under Other Projects', async () => {
+    const chatId = await runningProject();
+    await stampProjectKind(chatId, 'agent_builder_chat');
+    const projectId = await runningProject();
+    await saveProjectConfiguration(app, PUBLIC_API, projectId, { driveCreatedProjects: true, otherProjects: [chatId] });
+
+    expect((await ensure(chatId, await serviceKeyFor(app, tenant, projectId))).statusCode).toBe(404);
   });
 
   it('lets a builder chat reach the Test Project it created', async () => {

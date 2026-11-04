@@ -1,6 +1,6 @@
 ---
 kind: explanation
-adrs: [0009]
+adrs: [0009, 0098]
 ---
 
 # Pod Tools
@@ -12,10 +12,12 @@ adrs: [0009]
 ### Processes
 
 - Every environment pod runs five `guard`-supervised processes on the shared `/workspace` volume: the App server (`$APP_PORT`, 3000 from the Agent's registry entry), OpenCode (internal port, fronted on 4096), code-server (8080), Datasette (8081), and agent-control.
+- A privileged pod also runs the Docker daemon as `docker`, on an ext4 disk image it builds at start on the pod-local `docker-storage` volume and mounts at `/var/lib/docker`, so Docker's images and containers last only as long as the pod ([ADR-0098](../adr/0098-docker-runs-as-a-guarded-process-in-privileged-kata-pods-on-a-disk-image-the-pod-throws-away-and-its-skill-exists-only-where-it-can-run.md)). When that storage cannot be prepared, the reason is in the `docker` [Process Log](../../GLOSSARY.md) and the other processes start as usual, and a `dockerd` that gives up leaves them running.
+- Before the daemon starts, entrypoint moves the container's processes into a child cgroup, `init`, and hands every controller to its children, so a container's own memory and CPU limits apply within the pod's and a container that runs out of memory reports `OOMKilled`; processes started later, `kubectl exec` included, land in `init` too ([ADR-0098](../adr/0098-docker-runs-as-a-guarded-process-in-privileged-kata-pods-on-a-disk-image-the-pod-throws-away-and-its-skill-exists-only-where-it-can-run.md)). Where the cgroup cannot be changed, the daemon still starts, without those limits.
 - Each guard writes its command's output and lifecycle events to that process's [Process Log](../../GLOSSARY.md) under `/workspace/data/logs/` ([Process Log](process-log.md)).
 - `guard` restarts its command whenever it exits, a clean exit included, with exponential backoff (2 s doubling to 60 s, back to 2 s after a run of 30 s or more), until the guard itself is signalled or it gives up after 50 restarts. Every guarded process is meant to run for good, so a service stopped gracefully (by the App restart, say) comes back like a crashed one.
 - The App's guard waits for an executable `/workspace/app/startup.sh` instead of running it straight away, so a workspace with no App yet idles quietly rather than crash-looping to `gave_up` ([ADR-0061](../adr/0061-the-platform-harness-is-a-built-in-skill-and-an-agents-prompt-is-the-authors-body-alone.md)).
-- agent-control is the in-pod control process: it restarts the App's processes on request from the backend over the control port so the guards revive them with new values ([ADR-0009](../adr/0009-in-pod-control-process.md)), pushes [Go-live](../../GLOSSARY.md) to the backend, and fronts OpenCode with injected auth ([OpenCode Embed](../frontend/opencode-embed.md)).
+- agent-control is the in-pod control process: it restarts the App's processes on request from the backend over the control port so the guards revive them with new values ([ADR-0009](../adr/0009-in-pod-control-process.md)), pushes [Go-live](../../GLOSSARY.md) to the backend, and fronts OpenCode with injected auth ([OpenCode Embed](../frontend/opencode-embed.md)). Run as `app-url` (`agent-control app-url`), it is instead a one-shot command that prints the App's current Public URL for the agent to share ([App Readiness](../projects/app-readiness.md)).
 - Chat, Code and DB are lazy-loaded iframe tabs in the project view; once mounted a tab stays in the DOM, so switching never reloads it.
 
 ### Routing
@@ -41,8 +43,8 @@ adrs: [0009]
 
 ## Code
 
-- `agent-config/scripts/entrypoint.sh` — the five guard-wrapped processes and the database seeding.
-- `proxy/cmd/agent-control/` — the control port, the readiness push, the OpenCode front proxy.
+- `agent-config/scripts/entrypoint.sh` — the guard-wrapped processes, the Docker storage and cgroup nesting of a privileged pod, and the database seeding.
+- `proxy/cmd/agent-control/` — the control port, the readiness push, the OpenCode front proxy, the `app-url` command.
 - `proxy/cmd/opsiforce-proxy/` — the single runtime-proxy binary and its vscode and db modes.
 - `agent-config/datasette-metadata.yml` — per-database access.
 - `frontend/src/components/project/` — the Chat, Code and DB tabs.

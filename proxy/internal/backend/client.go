@@ -20,13 +20,19 @@ const (
 	SurfaceDB     Surface = "db"
 )
 
+const ActionRedirect = "redirect"
+
 type EnsureResponse struct {
-	State         string         `json:"state"`
-	CanonicalHost string         `json:"canonicalHost"`
-	Upstream      string         `json:"upstream"`
-	PodName       string         `json:"podName"`
-	Directory     string         `json:"directory"`
-	Logging       *LoggingConfig `json:"logging"`
+	Action             string         `json:"action"`
+	EnvironmentID      string         `json:"environmentId"`
+	State              string         `json:"state"`
+	CanonicalHost      string         `json:"canonicalHost"`
+	Protected          bool           `json:"protected"`
+	PreviewFrameOrigin string         `json:"previewFrameOrigin"`
+	Upstream           string         `json:"upstream"`
+	PodName            string         `json:"podName"`
+	Directory          string         `json:"directory"`
+	Logging            *LoggingConfig `json:"logging"`
 }
 
 // LoggingConfig is the per-project request-logging policy resolved by the
@@ -152,19 +158,35 @@ func (c *Client) resolve(ctx context.Context, path string, body map[string]any) 
 }
 
 func (c *Client) Ensure(ctx context.Context, projectID string, surface Surface, headers http.Header) (EnsureResponse, error) {
-	payload, err := json.Marshal(map[string]string{
-		"surface": string(surface),
-	})
+	ensured, err := c.postEnsure(
+		ctx,
+		fmt.Sprintf("/api/internal/proxy/projects/%s/ensure", projectID),
+		map[string]string{"surface": string(surface)},
+		headers,
+	)
+	if err != nil {
+		return EnsureResponse{}, err
+	}
+	ensured.EnvironmentID = projectID
+	return ensured, nil
+}
+
+func (c *Client) EnsureApp(ctx context.Context, host string, headers http.Header) (EnsureResponse, error) {
+	return c.postEnsure(
+		ctx,
+		"/api/internal/proxy/apps/ensure",
+		map[string]string{"host": host},
+		headers,
+	)
+}
+
+func (c *Client) postEnsure(ctx context.Context, path string, body map[string]string, headers http.Header) (EnsureResponse, error) {
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return EnsureResponse{}, err
 	}
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		fmt.Sprintf("%s/api/internal/proxy/projects/%s/ensure", c.baseURL, projectID),
-		bytes.NewReader(payload),
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(payload))
 	if err != nil {
 		return EnsureResponse{}, err
 	}
@@ -179,17 +201,17 @@ func (c *Client) Ensure(ctx context.Context, projectID string, surface Surface, 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	answer, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return EnsureResponse{}, err
 	}
 
 	if resp.StatusCode >= 400 {
-		return EnsureResponse{}, &StatusError{StatusCode: resp.StatusCode, Body: body}
+		return EnsureResponse{}, &StatusError{StatusCode: resp.StatusCode, Body: answer}
 	}
 
 	var decoded EnsureResponse
-	if err := json.Unmarshal(body, &decoded); err != nil {
+	if err := json.Unmarshal(answer, &decoded); err != nil {
 		return EnsureResponse{}, err
 	}
 

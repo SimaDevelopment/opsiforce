@@ -5,8 +5,8 @@ import { AgentUpdateService } from '../agent-update/agent-update.service';
 import type { Deadline } from '../common/deadline';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { hasRunningPod } from '../project-environment/running-pod';
 import { ProjectService, type EnsureEnvironmentResult } from '../project/project.service';
-import { ProxyService } from '../proxy/proxy.service';
 import { EnvironmentNotRunning } from './agent-session.errors';
 import { PodOpencodeClient } from './pod-opencode.client';
 import type { ActiveSessionSnapshot, PodEnvironmentRef } from './agent-session.types';
@@ -22,7 +22,6 @@ export class AgentSessionGateway {
     @Inject(forwardRef(() => ProjectService))
     private readonly projectService: ProjectService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
-    private readonly proxyService: ProxyService,
     @Inject(forwardRef(() => AgentUpdateService))
     private readonly agentUpdateService: AgentUpdateService,
     private readonly pod: PodOpencodeClient,
@@ -43,10 +42,14 @@ export class AgentSessionGateway {
   }
 
   async activeSessions(env: PodEnvironmentRef): Promise<ActiveSessionSnapshot> {
-    if (env.podIp === null) throw new EnvironmentNotRunning('starting');
-    const upstream = this.proxyService.resolveUpstreamForProject(env);
-    const sessionIds = await this.pod.activeSessions(upstream, ACTIVE_PROBE_TIMEOUT_MS);
+    if (!hasRunningPod(env)) throw new EnvironmentNotRunning('starting');
+    const sessionIds = await this.pod.activeSessions(env.id, ACTIVE_PROBE_TIMEOUT_MS);
     return { sessionIds, busy: sessionIds.length > 0 };
+  }
+
+  async pendingInputRequests(env: PodEnvironmentRef): Promise<string[]> {
+    if (!hasRunningPod(env)) throw new EnvironmentNotRunning('starting');
+    return this.pod.pendingInputRequests(env.id, ACTIVE_PROBE_TIMEOUT_MS);
   }
 
   private async holdUntilReady(
@@ -92,7 +95,7 @@ export class AgentSessionGateway {
 }
 
 function requireReady(ensured: EnsureEnvironmentResult): ProjectEnvironmentContext {
-  if (ensured.state === 'ready' && ensured.env.podIp !== null) return ensured.env;
+  if (ensured.state === 'ready') return ensured.env;
   if (ensured.state === 'disabled') throw new EnvironmentNotRunning('disabled');
   if (ensured.state === 'failed') throw new EnvironmentNotRunning('failed');
   throw new EnvironmentNotRunning('starting');

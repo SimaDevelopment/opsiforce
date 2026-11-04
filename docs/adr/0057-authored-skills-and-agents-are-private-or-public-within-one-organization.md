@@ -12,7 +12,7 @@ Every Custom Skill and Custom Agent belongs to exactly one Organization. Opsifor
 - **One predicate per kind.** `visibleSkillsWhere` and `visibleAgentsWhere` decide what a caller sees, for lists and single reads alike.
 - **Visibility is coherent downward.** A public or Built-in Agent may carry only public Skills. The API refuses to add a private Skill to one, to make an Agent public while it carries one, and to publish an Agent that carries one.
 - **Disable and Delete.** Disable takes an artifact out of use and is reversible ([ADR-0070](0070-skills-and-agents-are-disabled-per-organization-like-projects.md)). Delete is permanent and refused while the artifact is in use: a Skill while any Agent carries it, naming the Agents; a Custom Agent while any ordinary Project runs on it. A Skill that has a Version, and a Custom Agent published beyond Development, are disabled before they are deleted.
-- **Nothing withdraws a published Version.** A Built-in Skill that leaves the image stops being offered, and its stored Versions stay so Agents that pinned it keep working.
+- **Nothing withdraws a published Version.** A Built-in Skill that leaves the image, or that this deployment does not offer, stops being offered, and its stored Versions stay so Agents that pinned it keep working.
 - **Standalone collapses to instance-admin.** The static identity holds both, and an identity provider grants them through `SSO_GROUP_MAP`; a single-operator install is the whole Organization.
 
 ## Considered options

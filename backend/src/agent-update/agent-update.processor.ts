@@ -13,7 +13,9 @@ import { PodReloadClient, type NotifyTarget } from '../delivery/pod-reload.clien
 import { SkillSwitchRepository } from '../delivery/skill-switch.repository';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
+import { hasRunningPod } from '../project-environment/running-pod';
 import { ProjectStatus } from '../project/project.types';
+import { SkillAvailability } from '../store/skill-availability';
 import { AgentUpdateK8sService } from './agent-update.k8s.service';
 import { AgentUpdateService } from './agent-update.service';
 import {
@@ -67,7 +69,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     private readonly skillDeliveries: SkillDeliveryService,
     private readonly configService: ConfigService,
     private readonly podReload: PodReloadClient,
-    private readonly skillSwitches: SkillSwitchRepository
+    private readonly skillSwitches: SkillSwitchRepository,
+    private readonly skillAvailability: SkillAvailability
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
@@ -99,7 +102,14 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         );
         continue;
       }
-      if (await this.workspaceAtTarget(row.directory, packageName, targetVersion, row.agentOrigin)) continue;
+      const atTarget = await this.workspaceAtTarget({
+        projectEnvironmentId: row.projectEnvironmentId,
+        directory: row.directory,
+        packageName,
+        targetVersion,
+        origin: row.agentOrigin,
+      });
+      if (atTarget) continue;
       behind.push({
         projectEnvironmentId: row.projectEnvironmentId,
         packageName,
@@ -215,7 +225,14 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
 
     const agent = await this.agentOf(env.agentId);
     if (!agent) return;
-    if (await this.workspaceAtTarget(env.directory, data.packageName, data.targetVersion, agent.origin)) {
+    const atTarget = await this.workspaceAtTarget({
+      projectEnvironmentId: env.id,
+      directory: env.directory,
+      packageName: data.packageName,
+      targetVersion: data.targetVersion,
+      origin: agent.origin,
+    });
+    if (atTarget) {
       await this.closePendingRows(env.id);
       return;
     }
@@ -230,7 +247,12 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
         packageName: data.packageName,
         targetVersion: data.targetVersion,
         mode: data.mode,
-        switchedOffSkills: [...(await this.skillSwitches.switchedOffNames(env.id))].toSorted(),
+        switchedOffSkills: [
+          ...new Set([
+            ...(await this.skillSwitches.switchedOffNames(env.id)),
+            ...this.skillAvailability.unofferedSkills(),
+          ]),
+        ].toSorted(),
       });
       const summary = await this.readSummary(env.directory, data.packageName, result.logs);
       const succeeded = result.succeeded && summary.status !== 'failed';
@@ -318,16 +340,16 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     env: ProjectEnvironmentContext,
     summary: AgentWorkspaceMigrationSummary
   ): Promise<boolean> {
-    if (!env.podIp || summary.requiresPodRecreate) return true;
+    if (!hasRunningPod(env) || summary.requiresPodRecreate) return true;
     const { written, removed } = summary.ownedSkills;
     const skillsChanged = written.length > 0 || removed.length > 0;
     const targets: NotifyTarget[] = ['agents'];
     if (summary.configChanged) targets.push('config');
     if (skillsChanged) targets.push('skills');
-    if (!(await this.podReload.notify(env.id, env.podIp, targets))) return false;
+    if (!(await this.podReload.notify(env.id, targets))) return false;
     if (!skillsChanged) return true;
     try {
-      await this.podReload.confirmSkills(env.podIp, written, removed);
+      await this.podReload.confirmSkills(env.id, written, removed);
       return true;
     } catch (err) {
       this.logger.warn(`Environment ${env.id} did not serve the Job's skills: ${(err as Error).message}`);
@@ -364,21 +386,43 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     return row;
   }
 
-  private async workspaceAtTarget(
-    directory: string,
-    packageName: string,
-    targetVersion: string,
-    origin: string
-  ): Promise<boolean> {
+  private async workspaceAtTarget({
+    projectEnvironmentId,
+    directory,
+    packageName,
+    targetVersion,
+    origin,
+  }: {
+    projectEnvironmentId: string;
+    directory: string;
+    packageName: string;
+    targetVersion: string;
+    origin: string;
+  }): Promise<boolean> {
     if (!directory) return false;
     const ledger = await this.readLedger(directory, packageName);
     if (ledger?.contentVersion !== targetVersion) return false;
+    if (!(await this.ownsOfferedSkills(projectEnvironmentId, packageName, ledger))) return false;
     if (origin !== 'built_in') return true;
     const modelSelection = this.agentUpdateService.agentModelSelection(packageName);
     if (!modelSelection) return true;
     const config = await this.readWorkspaceOpenCodeConfig(directory);
     const expected = modelReference(modelSelection.model, modelSelection.variant ?? null);
     return config?.model === expected && config?.agents?.[packageName]?.model === expected;
+  }
+
+  /** Turning privileged pods on or off changes the Skills offered without an Agent version bump. */
+  private async ownsOfferedSkills(
+    projectEnvironmentId: string,
+    packageName: string,
+    ledger: WorkspaceLedger
+  ): Promise<boolean> {
+    const owned = new Set(ledger.ownedSkills ?? []);
+    const { unoffered, missing } = this.skillAvailability.ownedSkillDrift(packageName, owned);
+    if (unoffered.length > 0) return false;
+    if (missing.length === 0) return true;
+    const switchedOff = await this.skillSwitches.switchedOffNames(projectEnvironmentId);
+    return missing.every((name) => switchedOff.has(name));
   }
 
   private async lastAppliedVersion(projectEnvironmentId: string, agentId: string): Promise<string | null> {
@@ -433,8 +477,8 @@ export class AgentUpdateProcessor extends WorkerHost implements OnApplicationShu
     return AgentUpdateStatus.Applied;
   }
 
-  private needsDeferredReload(env: { podIp: string | null }, summary: AgentWorkspaceMigrationSummary): boolean {
-    if (!env.podIp) return false;
+  private needsDeferredReload(env: ProjectEnvironmentContext, summary: AgentWorkspaceMigrationSummary): boolean {
+    if (!hasRunningPod(env)) return false;
     return summary.requiresPodRecreate;
   }
 

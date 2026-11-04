@@ -90,7 +90,10 @@ function SelectSection(props: ParentProps<ComponentProps<typeof Kobalte.Section>
   const [local, rest] = splitProps(props, ['class', 'children']);
   return (
     <Kobalte.Section
-      class={cn('px-2 pt-1.5 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground', local.class)}
+      class={cn(
+        'px-2 pt-1.5 pb-1 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground',
+        local.class
+      )}
       {...rest}
     >
       {local.children}

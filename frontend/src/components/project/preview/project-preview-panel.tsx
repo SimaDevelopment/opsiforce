@@ -1,4 +1,5 @@
 import { Show, createEffect, createSignal, on, onMount, type Accessor } from 'solid-js';
+import { DialogProvider } from '@opencode/ui/context/dialog';
 import { MarkedProvider } from '@opencode/ui/context/marked';
 import { ChevronLeft, PanelRightOpen } from '~/components/icons';
 import { ResizeHandle } from '~/components/ui/resize-handle';
@@ -17,7 +18,7 @@ export interface FilePreviewRequest {
 export interface ProjectPreviewPanelProps {
   projectId: string;
   environmentId: string;
-  environmentSlug: string | null;
+  publicUrl: string | null;
   hasApp: boolean;
   appName?: string;
   previewRequest: FilePreviewRequest | null;
@@ -71,6 +72,8 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
   const fitsBesideContent = () => column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH;
   const open = () => (fitsBesideContent() ? docked() : overlaid());
   const setOpen = (next: boolean) => (fitsBesideContent() ? setDocked(next) : setOverlaid(next));
+  const [opened, setOpened] = createSignal(false);
+  createEffect(() => open() && setOpened(true));
 
   createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
   onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
@@ -100,11 +103,10 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
   );
 
   return (
-    <MarkedProvider>
-      <span ref={anchor} hidden />
-      <Show
-        when={open()}
-        fallback={
+    <DialogProvider>
+      <MarkedProvider>
+        <span ref={anchor} hidden />
+        <Show when={!open()}>
           <button
             onClick={() => setOpen(true)}
             class={cn(
@@ -119,68 +121,72 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
               {props.hasApp ? 'App preview' : 'Open panel'}
             </span>
           </button>
-        }
-      >
-        <div
-          class={cn(
-            'flex flex-col bg-background',
-            !fitsBesideContent()
-              ? 'absolute inset-0 z-20'
-              : cn('relative shrink-0 border-l border-border', column ? 'snap-start pr-2' : 'pl-2')
-          )}
-          style={fitsBesideContent() ? { width: `${panel.width()}px` } : undefined}
-        >
-          <Show
-            when={fitsBesideContent()}
-            fallback={
-              <button
-                type="button"
-                onClick={() => setOverlaid(false)}
-                class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              >
-                <ChevronLeft class="h-4 w-4" />
-                {props.overlayBackLabel}
-              </button>
-            }
+        </Show>
+        <Show when={opened()}>
+          <div
+            class={cn(
+              'flex flex-col bg-background',
+              !fitsBesideContent()
+                ? 'absolute inset-0 z-20'
+                : cn('relative shrink-0 border-l border-border', column ? 'snap-start pr-2' : 'pl-2')
+            )}
+            style={{
+              display: open() ? undefined : 'none',
+              width: fitsBesideContent() ? `${panel.width()}px` : undefined,
+            }}
           >
-            <ResizeHandle
-              onPointerDown={panel.startResize}
-              resizing={panel.resizing()}
-              position={column ? 'right' : 'left'}
-              panel={panel}
-              label="Resize the preview"
-            />
-          </Show>
-
-          <Show when={props.hasApp}>
-            <div class="flex-1 min-h-0 flex flex-col" style={{ display: fileMode() ? 'none' : 'flex' }}>
-              <AppPreviewPane
-                projectId={props.projectId}
-                environmentId={props.environmentId}
-                environmentSlug={props.environmentSlug}
-                appName={props.appName}
-                switcher={switcher()}
-                onCollapse={fitsBesideContent() ? () => setDocked(false) : undefined}
-                onReloadRef={props.onReloadRef}
+            <Show
+              when={fitsBesideContent()}
+              fallback={
+                <button
+                  type="button"
+                  onClick={() => setOverlaid(false)}
+                  class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <ChevronLeft class="h-4 w-4" />
+                  {props.overlayBackLabel}
+                </button>
+              }
+            >
+              <ResizeHandle
+                onPointerDown={panel.startResize}
+                resizing={panel.resizing()}
+                position={column ? 'right' : 'left'}
+                panel={panel}
+                label="Resize the preview"
               />
-            </div>
-          </Show>
+            </Show>
 
-          <Show when={previewPath()}>
-            {(path) => (
-              <div class="flex-1 min-h-0 flex flex-col" style={{ display: fileMode() ? 'flex' : 'none' }}>
-                <FilePreviewPane
+            <Show when={props.hasApp}>
+              <div class="flex-1 min-h-0 flex flex-col" style={{ display: fileMode() ? 'none' : 'flex' }}>
+                <AppPreviewPane
                   projectId={props.projectId}
                   environmentId={props.environmentId}
-                  path={path()}
+                  publicUrl={props.publicUrl}
+                  appName={props.appName}
                   switcher={switcher()}
-                  onClose={props.onClosePreview}
+                  onCollapse={fitsBesideContent() ? () => setDocked(false) : undefined}
+                  onReloadRef={props.onReloadRef}
                 />
               </div>
-            )}
-          </Show>
-        </div>
-      </Show>
-    </MarkedProvider>
+            </Show>
+
+            <Show when={previewPath()}>
+              {(path) => (
+                <div class="flex-1 min-h-0 flex flex-col" style={{ display: fileMode() ? 'flex' : 'none' }}>
+                  <FilePreviewPane
+                    projectId={props.projectId}
+                    environmentId={props.environmentId}
+                    path={path()}
+                    switcher={switcher()}
+                    onClose={props.onClosePreview}
+                  />
+                </div>
+              )}
+            </Show>
+          </div>
+        </Show>
+      </MarkedProvider>
+    </DialogProvider>
   );
 }

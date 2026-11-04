@@ -1,7 +1,7 @@
 import type { EnvironmentTemplate, TemplateComparison } from '../agent-template/agent-template.types';
 import type { AgentServiceSettings } from '../../db/schema';
 import type { SkillFlags } from '../store/gate';
-import type { SwitchableService } from '../store/service-switch-catalog';
+import type { ServiceConfigurationOptions, SettableService } from '../store/service-settings-catalog';
 import type { AgentImportNote } from './agent-import';
 import type { PodClassSelection, PodSettings } from '../pod/pod-classes';
 import type { AgentProjectSettingsChoice } from './agent-copy-settings';
@@ -33,6 +33,7 @@ export interface AgentProfileSkillResponse {
   skillId: string;
   name: string;
   displayName: string | null;
+  origin: string;
   /** The Version row the pin points at — what an Undo after Remove re-pins, rather than the latest. */
   pinnedVersionId: string;
   pinnedVersion: number;
@@ -43,7 +44,11 @@ export interface AgentProfileSkillResponse {
   flags: SkillFlags;
   externalServiceId: string | null;
   serviceSettings: AgentServiceSettings | null;
+  /** The service connects every new Project even when `serviceSettings` is null (ADR-0095). */
+  serviceConnectedByDefault: boolean;
 }
+
+export type CarriedSkillRow = Omit<AgentProfileSkillResponse, 'serviceConnectedByDefault'>;
 
 export interface AgentProfileResponse {
   environmentId: string;
@@ -124,8 +129,9 @@ export interface SetServiceSettingsDto {
 }
 
 export interface AgentServiceSettingsView {
-  service: SwitchableService;
+  service: SettableService;
   settings: AgentServiceSettings | null;
+  serviceConfigurationOptions: ServiceConfigurationOptions[];
 }
 
 export interface PublishAgentDto {

@@ -109,7 +109,7 @@ export function BillingPage() {
                     class="h-full rounded-full transition-all"
                     classList={{
                       'bg-primary': pct() < 80,
-                      'bg-yellow-500': pct() >= 80 && pct() < 100,
+                      'of-fill of-tone-needs-you': pct() >= 80 && pct() < 100,
                       'bg-destructive': pct() >= 100,
                     }}
                     style={{ width: `${pct()}%` }}

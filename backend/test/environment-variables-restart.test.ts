@@ -8,6 +8,7 @@ import type { ConfigService } from '@nestjs/config';
 import { EnvironmentVariablesService } from '../src/project-environment/environment-variables.service';
 import type { ProjectEnvironmentService } from '../src/project-environment/project-environment.service';
 import type { PodService } from '../src/pod/pod.service';
+import { fetchAsLocalhost, type PodRequestInit } from '../src/pod/pod-fetch';
 
 const CONTROL_TOKEN = 'control-token';
 
@@ -35,10 +36,18 @@ function serviceFor(controlPort: number): EnvironmentVariablesService {
       ({ storageMountPath: mkdtempSync(join(tmpdir(), 'env-vars-')), agentControlPort: controlPort })[key],
   } as unknown as ConfigService;
   const environments = {
-    findById: async (id: string) => ({ id, projectId: 'project-1', podIp: '127.0.0.1', directory: 'project-1' }),
+    findById: async (id: string) => ({
+      id,
+      projectId: 'project-1',
+      status: 'active',
+      disabled: false,
+      directory: 'project-1',
+    }),
   } as unknown as ProjectEnvironmentService;
   const pods = {
     assignedPodName: (id: string) => `pod-${id}`,
+    podFetch: (_id: string, port: number, path: string, init?: PodRequestInit) =>
+      fetchAsLocalhost(new URL(`http://127.0.0.1:${port}${path}`), init),
     getPod: async () => ({
       spec: { containers: [{ name: 'agent', env: [{ name: 'OPSIFORCE_CONTROL_TOKEN', value: CONTROL_TOKEN }] }] },
     }),

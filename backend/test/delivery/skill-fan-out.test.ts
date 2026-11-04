@@ -106,7 +106,7 @@ async function seedSixEnvironments(): Promise<string[]> {
       isDefault: false,
       directory: `projects/${publishedId}`,
       platformVersion: '0.0.0-test',
-      status: ProjectStatus.Active,
+      status: ProjectStatus.Suspended,
     });
     ids.push(project.id, publishedId);
   }
@@ -425,7 +425,7 @@ describe('a running pod', () => {
 
   beforeEach(async () => {
     harness.fakes.pods.setPod(harness.fakes.pods.assignedPodName(project.id), '127.0.0.1', CONTROL_TOKEN);
-    await harness.projectEnvironments.patch(project.id, { status: ProjectStatus.Active, podIp: '127.0.0.1' });
+    await harness.projectEnvironments.patch(project.id, { status: ProjectStatus.Active });
   });
 
   it('is notified locally and the delivery is confirmed against what it serves', async () => {
@@ -470,7 +470,7 @@ describe('a running pod', () => {
 describe('a suspended environment', () => {
   it('is written to now and left for its next ensure to confirm', async () => {
     const project = await harness.projects.create({ agentId }, tenantId, { createdBy: agent.userId });
-    await harness.projectEnvironments.patch(project.id, { status: ProjectStatus.Suspended, podIp: null });
+    await harness.projectEnvironments.patch(project.id, { status: ProjectStatus.Suspended });
     const skill = await seedSkill(`suspended-${randomUUID().slice(0, 8)}`, '# suspended\n');
     await harness.agents.setSkill(agent, agentId, skill.skillId, {});
 

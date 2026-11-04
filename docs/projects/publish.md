@@ -44,7 +44,7 @@ Publish job stages in order, during which the target ProjectEnvironment holds st
 | `swapping` | First Publish: the target directory is cloned and reset to the commit, and the backend-owned `.opencode/` files are copied in. Update: the diff is synced and the previous variables are backed up. Variables are written |
 | `building` | The target pod is recreated on the new tree |
 | `migrating` | The backend waits for the App to report ready ([Go-live](../../GLOSSARY.md)) |
-| `done` | Deployed commit and pod IP are recorded; the target serves the new App |
+| `done` | The deployed commit is recorded; the target serves the new App |
 | `failed` | Update: files and variables reset to the previous commit. First Publish: nothing to roll back to |
 
 ## Edge cases
@@ -69,7 +69,7 @@ Publish job stages in order, during which the target ProjectEnvironment holds st
 
 ## Related
 
-- [Environments](environments.md) — the two-entity model, public URLs, App Auth, the switcher.
+- [Environments](environments.md) — the two-entity model, Environment Slugs, App Auth, the switcher.
 - [App Readiness](app-readiness.md) — how Go-live of a freshly published environment is detected.
 - [Job Dock](../frontend/job-dock.md) — the progress card and dialog every long job shares.
 - [Duplication](duplication.md) — copies a whole Project through the same git path.

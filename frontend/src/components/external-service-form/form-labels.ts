@@ -1,10 +1,10 @@
-import { valueFieldsOf, type Field } from '@opsiforce/external-service-sdk/forms';
+import { valueFieldsOf, type Field, type ValueLabels } from '@opsiforce/external-service-sdk/forms';
 import { createStore, produce } from 'solid-js/store';
 import { ApiError } from '~/api/client';
 import type { FieldOption } from './form-context';
 import { isPlainValues, type FormValues } from './form-values';
 
-export type ValueLabels = Record<string, Record<string, string>>;
+export type { ValueLabels };
 
 function callSourcedSelections(fields: readonly Field[], values: FormValues, selections: Map<string, Set<string>>) {
   for (const field of valueFieldsOf(fields)) {

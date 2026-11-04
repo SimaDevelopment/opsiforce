@@ -1,5 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { V1Pod } from '@kubernetes/client-node';
+import { fetchAsLocalhost, type PodRequestInit } from '../../src/pod/pod-fetch';
 import type { StartTimer } from '../../src/project/agent-status.service';
+import type { SignInProviderConnection } from '../../src/sign-in-provider/sign-in-provider.types';
+import type { AppAuthRouteTarget } from '../../src/project/app-auth-route';
+import type { ProjectAuthOidcConfig } from '../../src/project/project.types';
 import type { JsonObject } from './json';
 
 export interface RecordedCall {
@@ -20,18 +25,31 @@ class RecordingFake {
 }
 
 export class FakePodService extends RecordingFake {
-  private readonly readiness = new Map<string, { resolve: (ip: string) => void; reject: (err: Error) => void }>();
+  private readonly readiness = new Map<string, { resolve: () => void; reject: (err: Error) => void }>();
   private readonly pods = new Map<string, V1Pod>();
 
   assignedPodName(environmentId: string): string {
     return `opsiforce-agent-${environmentId}`;
   }
 
+  podAddress(_environmentId: string, port: number): string {
+    return `http://127.0.0.1:${port}`;
+  }
+
+  podFetch(environmentId: string, port: number, path: string, init?: PodRequestInit): Promise<Response> {
+    return fetchAsLocalhost(new URL(`${this.podAddress(environmentId, port)}${path}`), init);
+  }
+
+  isAssignedPodReady(environmentId: string): boolean {
+    const pod = this.pods.get(this.assignedPodName(environmentId));
+    return !!pod && !pod.metadata?.deletionTimestamp;
+  }
+
   async createAssignedPod(
     environmentId: string,
     directory: string,
     projectId: string,
-    options: { serviceWebhookUrl?: string; runtimeProxyUrl?: string } = {}
+    options: { serviceWebhookUrl?: string; runtimeProxyUrl?: string; appPublicUrl?: string } = {}
   ): Promise<{ podName: string; created: boolean }> {
     this.record('createAssignedPod', {
       environmentId,
@@ -39,6 +57,7 @@ export class FakePodService extends RecordingFake {
       projectId,
       ...(options.serviceWebhookUrl === undefined ? {} : { serviceWebhookUrl: options.serviceWebhookUrl }),
       ...(options.runtimeProxyUrl === undefined ? {} : { runtimeProxyUrl: options.runtimeProxyUrl }),
+      ...(options.appPublicUrl === undefined ? {} : { appPublicUrl: options.appPublicUrl }),
     });
     return { podName: this.assignedPodName(environmentId), created: true };
   }
@@ -89,16 +108,16 @@ export class FakePodService extends RecordingFake {
     return null;
   }
 
-  waitForReady(podName: string): Promise<string> {
+  waitForReady(podName: string): Promise<void> {
     this.record('waitForReady', { podName });
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       this.readiness.set(podName, { resolve, reject });
     });
   }
 
   setPod(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
     this.pods.set(podName, {
-      metadata: { name: podName },
+      metadata: { name: podName, uid: randomUUID() },
       status: { podIP: podIp },
       ...(controlToken
         ? { spec: { containers: [{ name: 'agent', env: [{ name: 'OPSIFORCE_CONTROL_TOKEN', value: controlToken }] }] } }
@@ -108,7 +127,7 @@ export class FakePodService extends RecordingFake {
 
   markPodReady(podName: string, podIp = '10.244.0.1', controlToken?: string): void {
     this.setPod(podName, podIp, controlToken);
-    this.readiness.get(podName)?.resolve(podIp);
+    this.readiness.get(podName)?.resolve();
     this.readiness.delete(podName);
   }
 
@@ -225,26 +244,127 @@ export function fakeTimer(): FakeTimer {
   });
 }
 
+export type FakeAppAuthGate =
+  | { mode: 'manual'; config: ProjectAuthOidcConfig; bypassAuthPaths: string[] }
+  | { mode: 'provider'; providerId: string; forwardAccessToken: boolean; bypassAuthPaths: string[] };
+
 export class FakeProjectAuthService extends RecordingFake {
-  async apply(environmentId: string): Promise<void> {
-    this.record('apply', { environmentId });
+  private readonly unreachable = new Set<string>();
+  private readonly gates = new Map<string, FakeAppAuthGate>();
+  private readonly unreconcilable = new Set<string>();
+  private readonly held = new Map<string, { reached: () => void; released: Promise<void> }>();
+
+  async apply(env: AppAuthRouteTarget, config: ProjectAuthOidcConfig, bypassAuthPaths: string[] = []): Promise<void> {
+    this.record('apply', addressesOf(env));
+    this.gates.set(env.id, { mode: 'manual', config, bypassAuthPaths });
   }
 
-  async applyManaged(environmentId: string): Promise<void> {
-    this.record('applyManaged', { environmentId });
+  async applyProvider(
+    env: AppAuthRouteTarget,
+    provider: SignInProviderConnection,
+    forwardAccessToken = false,
+    bypassAuthPaths: string[] = []
+  ): Promise<void> {
+    if (this.unreachable.has(env.id)) throw new Error(`Kubernetes refused ${env.id}`);
+    const hold = this.held.get(env.id);
+    if (hold) {
+      this.held.delete(env.id);
+      hold.reached();
+      await hold.released;
+    }
+    this.record('applyProvider', {
+      ...addressesOf(env),
+      providerId: provider.id,
+      clientSecret: provider.clientSecret,
+      requiredClaim: provider.requiredClaim ? { ...provider.requiredClaim } : null,
+      groupsClaim: provider.groupsClaim ?? null,
+      forwardAccessToken,
+      bypassAuthPaths,
+    });
+    this.gates.set(env.id, { mode: 'provider', providerId: provider.id, forwardAccessToken, bypassAuthPaths });
+  }
+
+  async applySignInHost(provider: SignInProviderConnection): Promise<void> {
+    this.record('applySignInHost', {
+      providerId: provider.id,
+      clientSecret: provider.clientSecret,
+      requiredClaim: provider.requiredClaim ? { ...provider.requiredClaim } : null,
+    });
+  }
+
+  async removeSignInHost(providerId: string): Promise<void> {
+    this.record('removeSignInHost', { providerId });
+  }
+
+  signInCallbackUrl(providerId: string): string {
+    return `https://auth.apps.example.test/p/${providerId}/oidc/callback`;
+  }
+
+  setGate(environmentId: string, gate: FakeAppAuthGate): void {
+    this.gates.set(environmentId, gate);
+  }
+
+  async inheritAuth(fromEnvironmentId: string, to: AppAuthRouteTarget): Promise<string | null> {
+    this.record('inheritAuth', { fromEnvironmentId, ...addressesOf(to) });
+    const source = this.gates.get(fromEnvironmentId);
+    if (!source) throw new Error(`Cannot inherit app auth: source middleware for ${fromEnvironmentId} not found`);
+    this.gates.set(to.id, source);
+    return source.mode === 'provider' ? source.providerId : null;
+  }
+
+  holdNextApplyFor(environmentId: string): { reached: Promise<void>; release: () => void } {
+    let reached!: () => void;
+    let release!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => (reached = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+    this.held.set(environmentId, { reached, released });
+    return { reached: reachedPromise, release };
+  }
+
+  refuseApplyFor(environmentId: string): void {
+    this.unreachable.add(environmentId);
+  }
+
+  failReconcileFor(environmentId: string): void {
+    this.unreconcilable.add(environmentId);
+  }
+
+  async reconcileRoute(env: AppAuthRouteTarget): Promise<void> {
+    this.record('reconcileRoute', addressesOf(env));
+    if (this.unreconcilable.has(env.id)) throw new Error(`route of ${env.id} cannot be read`);
   }
 
   async remove(environmentId: string): Promise<void> {
     this.record('remove', { environmentId });
+    this.gates.delete(environmentId);
   }
 
-  callbackUrls(): string[] {
-    return [];
+  async gatedRoutingIds(): Promise<string[]> {
+    return [...this.gates.keys()];
   }
 
-  getConfig(): null {
-    return null;
+  async getConfig(environmentId: string): Promise<{ config?: ProjectAuthOidcConfig; bypassAuthPaths: string[] }> {
+    const gate = this.gates.get(environmentId);
+    const config =
+      gate?.mode === 'manual'
+        ? gate.config
+        : gate?.mode === 'provider'
+          ? { forwardAccessToken: gate.forwardAccessToken }
+          : undefined;
+    return { config, bypassAuthPaths: gate?.bypassAuthPaths ?? [] };
   }
+
+  gateOf(environmentId: string): FakeAppAuthGate | undefined {
+    return this.gates.get(environmentId);
+  }
+
+  loseGate(environmentId: string): void {
+    this.gates.delete(environmentId);
+  }
+}
+
+function addressesOf(env: AppAuthRouteTarget): JsonObject {
+  return { environmentId: env.id, shortId: env.shortId };
 }
 
 type ProjectListener = () => void;

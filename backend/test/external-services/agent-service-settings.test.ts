@@ -14,10 +14,14 @@ import type { AgentCaller, AgentRow } from '../../src/agent/agent.types';
 import { ProjectService } from '../../src/project/project.service';
 import { TEST_PROJECT_KIND } from '../../src/project/project.types';
 import { productionEnvironmentId } from '../../src/store/agent-profile.repository';
-import { ensureBuiltInAgent, seedLiveAgent } from '../support/agent-fixtures';
+import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, createTenant, type MemberFixture, type TenantFixture } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { builtInServiceId, forgetPlatformServiceConfiguration, platformOperator } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import {
+  builtInServiceId,
+  forgetPlatformServiceConfiguration,
+  platformOperator,
+} from '../support/external-service-fixtures';
 import {
   failHooks,
   forgetRecordedHooks,
@@ -31,7 +35,7 @@ import {
 const storageMountPath = process.env.STORAGE_MOUNT_PATH ?? '';
 const SERVICE_SKILL = `service-${KEYS_SERVICE}`;
 
-describe("a Custom Agent's service settings", () => {
+describe("an Agent's service settings", () => {
   let harness: ExternalServicesTestApp;
   let app: NestFastifyApplication;
   let serviceId: string;
@@ -105,8 +109,8 @@ describe("a Custom Agent's service settings", () => {
     ).toBe(true);
   });
 
-  function setSettings(values: Record<string, unknown>, canConfigureProjects = true, target: AgentRow = agent) {
-    return profiles().setServiceSettings(target, managerCaller(), serviceSkillId, { values }, { canConfigureProjects });
+  function setSettings(values: Record<string, unknown>, canConfigureProjects = true) {
+    return profiles().setServiceSettings(agent, managerCaller(), serviceSkillId, { values }, { canConfigureProjects });
   }
 
   async function storedSettingsOf(agentId: string, environmentId: string) {
@@ -135,22 +139,17 @@ describe("a Custom Agent's service settings", () => {
     await setSettings({ greeting: 'hello' });
     const listed = await profiles().listSkills(agent, managerCaller());
     expect(listed.find((skill) => skill.skillId === serviceSkillId)?.serviceSettings).toEqual({ greeting: 'hello' });
-    const view = await profiles().serviceSettings(agent, managerCaller(), serviceSkillId);
+    const view = await profiles().serviceSettings(agent, managerCaller(), serviceSkillId, {
+      canConfigureProjects: true,
+    });
     expect(view.service).toMatchObject({ id: serviceId, slug: KEYS_SERVICE });
-    expect(view.service.manifest).toEqual({ projectForm: expect.any(Array) });
+    expect(view.service.manifest).toEqual({ projectForm: expect.any(Array), connectedByDefault: false });
 
     await profiles().removeSkill(agent, managerCaller(), serviceSkillId);
     await profiles().setSkill(agent, managerCaller(), serviceSkillId, {});
 
     const again = await profiles().listSkills(agent, managerCaller());
     expect(again.find((skill) => skill.skillId === serviceSkillId)?.serviceSettings).toBeNull();
-  });
-
-  it('refuses service settings on a Built-in Agent', async () => {
-    const builtIn = await agentRow(await ensureBuiltInAgent('app-builder'));
-    await expect(setSettings({}, true, builtIn)).rejects.toMatchObject({
-      response: { code: 'built_in_agent' },
-    });
   });
 
   it('snapshots the settings at creation: later changes leave existing Projects alone', async () => {

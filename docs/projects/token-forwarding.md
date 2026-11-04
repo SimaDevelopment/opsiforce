@@ -1,6 +1,6 @@
 # Forward OAuth access tokens to generated apps
 
-Manual App Auth has an opt-in **Forward the signed-in user's access token** checkbox. The pinned Traefik OIDC plugin already supports access-token templates; no plugin fork is required. Select the intended API scopes and register every callback shown in the form.
+Manual and Sign-in provider App Auth have an opt-in **Forward the signed-in user's access token** checkbox. The pinned Traefik OIDC plugin already supports access-token templates; no plugin fork is required. In manual mode, select the intended API scopes and register every callback shown in the form. In Sign-in provider mode, the provider's scopes apply ([Sign-in provider](../organization/sign-in-provider.md)).
 
 The app backend receives `X-Opsiforce-Access-Token` and `X-Opsiforce-User-Id` (the ID token `sub` claim, unique per user with every provider) for the current visitor. When the ID token carries them, it also receives `X-Opsiforce-Object-Id` (the `oid` claim, such as Microsoft Entra's directory-wide user ID) and `X-Opsiforce-Directory-Id` (the `tid` claim, the identity provider's tenant, not the Opsiforce Organization); otherwise they are omitted. Requests without a user ID are not forwarded. Use the access token only server-side for the intended API. Never return or store it in the frontend. Each user signs in independently; do not use an app owner's token as a fallback.
 

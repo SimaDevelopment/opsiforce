@@ -121,7 +121,6 @@ export interface ProjectResponse {
   importedAgent: string | null;
   directory: string;
   status: ProjectStatus;
-  podIp: string | null;
   authMode: ProjectAuthMode;
   timeoutIdle: number;
   appTimeoutIdle: number;
@@ -137,6 +136,8 @@ export interface ProjectResponse {
   appDescription: string | null;
   environmentIds: string[];
   agentStatus?: AgentStatus;
+  waitingForInput?: boolean;
+  lastPromptAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -163,6 +164,10 @@ export interface ProjectEnvironmentSummary {
   hasApp: boolean;
   appName: string | null;
   appDescription: string | null;
+  publicUrl: string | null;
+  appSlug: string | null;
+  suggestedAppSlug: string | null;
+  shortId: string;
   sessionId: string | null;
 }
 
@@ -180,23 +185,13 @@ export interface ProjectAuthOidcConfig {
   scope?: string;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'managed';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider';
 
-export interface ManagedAuthConfig {
-  managedOidcClientSecret?: string;
-  managedOidcIssuerUrl?: string;
-}
-
-export function availableAuthModes(config: ManagedAuthConfig): ProjectAuthMode[] {
-  const modes: ProjectAuthMode[] = ['public', 'manual'];
-  if (config.managedOidcClientSecret?.trim() && config.managedOidcIssuerUrl?.trim()) {
-    modes.push('managed');
-  }
-  return modes;
-}
+export const SELECTABLE_AUTH_MODES: ProjectAuthMode[] = ['public', 'manual', 'provider'];
 
 export interface ProjectAuthResponse {
   mode: ProjectAuthMode;
+  signInProviderId?: string;
   config?: ProjectAuthOidcConfig;
   bypassAuthPaths?: string[];
   callbackUrls: string[];
@@ -204,6 +199,7 @@ export interface ProjectAuthResponse {
 
 export interface UpdateProjectAuthDto {
   mode: ProjectAuthMode;
+  signInProviderId?: string;
   config?: ProjectAuthOidcConfig;
   bypassAuthPaths?: string[];
 }
@@ -211,5 +207,6 @@ export interface UpdateProjectAuthDto {
 export interface UpdateAppDto {
   name?: string;
   description?: string | null;
+  appSlug?: string;
   environmentId?: string;
 }

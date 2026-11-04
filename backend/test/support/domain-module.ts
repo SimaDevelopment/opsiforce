@@ -9,6 +9,7 @@ import { AgentReconcilerService } from '../../src/agent/agent-reconciler.service
 import { AgentRepository } from '../../src/agent/agent.repository';
 import { AgentService } from '../../src/agent/agent.service';
 import { AgentTemplateStore } from '../../src/agent-template/agent-template.store';
+import { SkillAvailability } from '../../src/store/skill-availability';
 import { SkillPublishService } from '../../src/store/skill-publish.service';
 import { SkillReconcilerService } from '../../src/store/skill-reconciler.service';
 import { SkillRepository } from '../../src/store/skill.repository';
@@ -51,6 +52,7 @@ import { ProjectImportUploadService } from '../../src/project/project-import-upl
 import { PROJECT_IMPORT_QUEUE } from '../../src/project/project-import.types';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { EnvironmentVariablesService } from '../../src/project-environment/environment-variables.service';
+import { PublicUrlService } from '../../src/project-environment/public-url.service';
 import { ProjectPoolService } from '../../src/pool/project-pool.service';
 import { PROJECT_POOL_QUEUE, PROJECT_POOL_TEARDOWN_QUEUE } from '../../src/pool/project-pool.types';
 import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
@@ -58,6 +60,7 @@ import { PodCacheService } from '../../src/pod/pod.cache.service';
 import { PodService } from '../../src/pod/pod.service';
 import { ProxyService } from '../../src/proxy/proxy.service';
 import { ScheduleService } from '../../src/schedule/schedule.service';
+import { SecretSealer } from '../../src/sealing/secret-sealer';
 import { TenantService } from '../../src/tenant/tenant.service';
 import { TimeoutService } from '../../src/timeout/timeout.service';
 import { UserService } from '../../src/user/user.service';
@@ -118,6 +121,9 @@ const REAL_SERVICES = [
   ProjectProvenanceRepository,
   ProjectService,
   ProxyService,
+  PublicUrlService,
+  SecretSealer,
+  SkillAvailability,
   SkillDeliveryRepository,
   SkillDeliveryService,
   SkillSwitchRepository,

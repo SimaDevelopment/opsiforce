@@ -1,6 +1,6 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { FIXTURE_SERVICE, fixtureBuiltInsDir } from './app';
+import { FIXTURE_SERVICE, fixtureBuiltInsDir } from '../../support/external-services-app';
 
 export interface EvolvedBuiltIns {
   dir: string;

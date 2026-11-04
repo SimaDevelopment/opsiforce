@@ -1,4 +1,5 @@
 import { and, eq, ilike, isNotNull, not, or, type Column, type SQL } from 'drizzle-orm';
+import { containsPattern } from '../common/like-pattern';
 
 export type CatalogListFilter = 'all' | 'mine' | 'built_in' | 'custom' | 'private' | 'disabled';
 
@@ -19,7 +20,11 @@ export interface CatalogScope {
   disabled: SQL<boolean>;
 }
 
-export function catalogFilterWhere(columns: CatalogColumns, filter: CatalogListFilter, scope: CatalogScope): SQL | undefined {
+export function catalogFilterWhere(
+  columns: CatalogColumns,
+  filter: CatalogListFilter,
+  scope: CatalogScope
+): SQL | undefined {
   const enabled = not(scope.disabled);
   switch (filter) {
     case 'mine':
@@ -40,6 +45,6 @@ export function catalogFilterWhere(columns: CatalogColumns, filter: CatalogListF
 export function catalogSearchWhere(columns: CatalogColumns, query: string | undefined): SQL | undefined {
   const trimmed = query?.trim();
   if (!trimmed) return undefined;
-  const pattern = `%${trimmed.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
+  const pattern = containsPattern(trimmed);
   return or(ilike(columns.name, pattern), ilike(columns.displayName, pattern), ilike(columns.description, pattern));
 }

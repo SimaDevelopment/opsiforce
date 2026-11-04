@@ -178,7 +178,7 @@ export function ChoiceField(props: {
           {(value) => (
             <span
               class={cn(
-                'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-1.5 text-[11px]',
+                'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-1.5 text-[0.6875rem]',
                 isGone(value)
                   ? 'border-destructive/40 bg-destructive/10 text-destructive'
                   : 'border-border bg-muted text-foreground'
@@ -190,7 +190,7 @@ export function ChoiceField(props: {
               </Show>
               <span class="truncate">{labelOf(value)}</span>
               <Show when={isGone(value)}>
-                <span class="shrink-0 text-[10px]">· {goneNote()}</span>
+                <span class="shrink-0 text-[0.625rem]">· {goneNote()}</span>
               </Show>
               <Show when={!props.ctx.readOnly() && (multiple() || !props.field.required)}>
                 <button
@@ -207,8 +207,8 @@ export function ChoiceField(props: {
         </For>
         <Show when={canChoose()}>
           <Popover open={open()} onOpenChange={openPicker} placement="bottom-start">
-            <PopoverTrigger class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
-              <Show when={multiple()} fallback={selected().length > 0 ? 'Change' : 'Choose…'}>
+            <PopoverTrigger class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[0.6875rem] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
+              <Show when={multiple()} fallback={selected().length > 0 ? 'Change' : 'Choose'}>
                 <Plus class="h-3 w-3" aria-hidden="true" /> Add
               </Show>
             </PopoverTrigger>
@@ -228,7 +228,7 @@ export function ChoiceField(props: {
               <Show
                 when={!loading()}
                 fallback={
-                  <div class="flex items-center gap-1.5 px-2 py-2 text-[11px] text-muted-foreground" role="status">
+                  <div class="flex items-center gap-1.5 px-2 py-2 text-[0.6875rem] text-muted-foreground" role="status">
                     <LoaderCircle class="h-3 w-3 animate-spin" aria-hidden="true" /> Asking the service…
                   </div>
                 }
@@ -240,7 +240,7 @@ export function ChoiceField(props: {
                       <For
                         each={options() ?? []}
                         fallback={
-                          <div class="px-2 py-2 text-[11px] text-muted-foreground">
+                          <div class="px-2 py-2 text-[0.6875rem] text-muted-foreground">
                             {callSource() ? 'Nothing found.' : 'Nothing to choose yet.'}
                           </div>
                         }
@@ -256,7 +256,7 @@ export function ChoiceField(props: {
                             <span class="min-w-0 flex-1">
                               <span class="block truncate">{option.label}</span>
                               <Show when={option.description}>
-                                <span class="block truncate text-[10px] text-muted-foreground">
+                                <span class="block truncate text-[0.625rem] text-muted-foreground">
                                   {option.description}
                                 </span>
                               </Show>
@@ -271,11 +271,14 @@ export function ChoiceField(props: {
                   }
                 >
                   {(message) => (
-                    <div class="flex flex-col items-start gap-1 px-2 py-2 text-[11px] text-destructive" role="alert">
+                    <div
+                      class="flex flex-col items-start gap-1 px-2 py-2 text-[0.6875rem] text-destructive"
+                      role="alert"
+                    >
                       {message()}
                       <button
                         type="button"
-                        class="text-[11px] text-foreground underline underline-offset-2"
+                        class="text-[0.6875rem] text-foreground underline underline-offset-2"
                         onClick={() => void load(query())}
                       >
                         Try again
@@ -288,18 +291,18 @@ export function ChoiceField(props: {
           </Popover>
         </Show>
         <Show when={selected().length === 0 && !canChoose()}>
-          <span class="px-1 text-[11px] text-muted-foreground">
+          <span class="px-1 text-[0.6875rem] text-muted-foreground">
             {waitingFor().length > 0 && !props.ctx.readOnly() ? `Choose ${parentLabels()} first` : 'None'}
           </span>
         </Show>
       </div>
       <Show when={callSource()}>
-        <span class="inline-flex items-center gap-1 text-[10px] text-muted-foreground/80">
+        <span class="inline-flex items-center gap-1 text-[0.625rem] text-muted-foreground/80">
           <ExternalLink class="h-2.5 w-2.5" aria-hidden="true" /> Choices come from the service
         </span>
       </Show>
       <Show when={!open() && failure() && selected().length > 0}>
-        <span class="text-[10px] text-muted-foreground">Couldn't check these picks with the service.</span>
+        <span class="text-[0.625rem] text-muted-foreground">Couldn't check these picks with the service.</span>
       </Show>
     </div>
   );

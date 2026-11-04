@@ -14,9 +14,9 @@ import type { AgentCaller, AgentDetail, AgentRow } from '../../src/agent/agent.t
 import { ProjectService } from '../../src/project/project.service';
 import { seedLiveAgent } from '../support/agent-fixtures';
 import { addMember, type MemberFixture } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import {
   freePort,
   publishCustomService,
@@ -261,9 +261,10 @@ describe("a Custom Agent's service settings for an SDK 2 service", () => {
     });
   });
 
-  it('refuses a target, an undeclared name or an unfit value', async () => {
-    await expect(setSettings({ repositories: ['acme/web'] })).rejects.toMatchObject({
-      response: { code: 'bad_request', message: expect.stringContaining('repositories') },
+  it('keeps a picked target, and refuses a generated value, an undeclared name or an unfit value', async () => {
+    const kept = await setSettings({ repositories: ['example-org/web'] });
+    expect(kept.find((skill) => skill.serviceSettings)?.serviceSettings).toEqual({
+      repositories: ['example-org/web'],
     });
     await expect(setSettings({ webhookToken: 'chosen' })).rejects.toMatchObject({
       response: { code: 'bad_request', message: expect.stringContaining('webhookToken') },

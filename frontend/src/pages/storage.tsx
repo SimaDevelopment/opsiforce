@@ -19,6 +19,7 @@ import { Button } from '~/components/ui/button';
 import { Skeleton } from '~/components/ui/skeleton';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
+import { EmptyState } from '~/components/ui/empty-state';
 import {
   AlertTriangle,
   Building2,
@@ -39,16 +40,18 @@ import {
 const COLUMN_COUNT = 4;
 const STALENESS_NOTE = 'sizes may lag recent writes by ~30 s';
 
-const TENANT_SEGMENT_COLORS = [
-  'bg-indigo-500',
-  'bg-emerald-500',
-  'bg-sky-500',
-  'bg-violet-500',
-  'bg-rose-500',
-  'bg-teal-500',
+/* tone setters, not colours: a segment, its legend swatch and its row all take
+   the same one, and the scale itself is authored in styles/shell/tokens.css */
+const TENANT_SEGMENT_TONES = [
+  'of-series-1',
+  'of-series-2',
+  'of-series-3',
+  'of-series-4',
+  'of-series-5',
+  'of-series-6',
 ];
-const UNATTRIBUTED_COLOR = 'bg-slate-400';
-const UNACCOUNTED_COLOR = 'bg-amber-400';
+const UNATTRIBUTED_TONE = 'of-tone-neutral';
+const UNACCOUNTED_TONE = 'of-tone-needs-you';
 
 const CAPACITY_SUSPECT_NOTE =
   'The volume quota could not be confirmed, so the claim’s capacity and used bytes are not trustworthy — statfs may be reporting the whole cluster. Measured directory sizes below are unaffected.';
@@ -56,7 +59,7 @@ const UNACCOUNTED_NOTE =
   'Claim usage minus everything measured above. Small values are recursive-statistic propagation lag, not lost storage.';
 
 function tenantColor(index: number): string {
-  return TENANT_SEGMENT_COLORS[index % TENANT_SEGMENT_COLORS.length];
+  return TENANT_SEGMENT_TONES[index % TENANT_SEGMENT_TONES.length];
 }
 
 function agentCount(count: number): string {
@@ -172,7 +175,7 @@ export function StoragePage() {
         {(view) => (
           <>
             <CapacityBar snapshot={view()} />
-            <Show when={hasLedgerRows(view())} fallback={<EmptyState />}>
+            <Show when={hasLedgerRows(view())} fallback={<EmptyState icon={Database} title="No organization storage yet" description="Environment directories appear here once projects have been opened." />}>
               <RollupTable snapshot={view()} />
             </Show>
           </>
@@ -190,7 +193,7 @@ function CapacityBadge(props: { snapshot: PlatformStorageView }) {
         <Tooltip>
           <TooltipTrigger
             as="span"
-            class={cn(badgeVariants({ variant: 'warning' }), 'text-[10px] px-2 py-0 gap-1 cursor-default')}
+            class={cn(badgeVariants({ variant: 'warning' }), 'text-[0.625rem] px-2 py-0 gap-1 cursor-default')}
           >
             <AlertTriangle class="w-3 h-3" />
             Capacity unverified
@@ -199,7 +202,7 @@ function CapacityBadge(props: { snapshot: PlatformStorageView }) {
         </Tooltip>
       }
     >
-      <Badge variant="secondary" class="text-[10px] px-2 py-0 font-medium tabular-nums">
+      <Badge variant="secondary" class="text-[0.625rem] px-2 py-0 font-medium tabular-nums">
         {formatBytes(props.snapshot.usedBytes)} / {formatBytes(props.snapshot.capacityBytes)}
       </Badge>
     </Show>
@@ -229,7 +232,7 @@ function CapacityBar(props: { snapshot: PlatformStorageView }) {
         <For each={tenantSegments()}>
           {(segment) => (
             <div
-              class={cn('h-full', segment.color)}
+              class={cn('of-fill h-full', segment.color)}
               style={{ width: `${width(segment.bytes)}%` }}
               title={`${segment.name} · ${formatBytes(segment.bytes)}`}
             />
@@ -237,30 +240,30 @@ function CapacityBar(props: { snapshot: PlatformStorageView }) {
         </For>
         <Show when={unattributedBytes() > 0}>
           <div
-            class={cn('h-full', UNATTRIBUTED_COLOR)}
+            class={cn('of-fill h-full', UNATTRIBUTED_TONE)}
             style={{ width: `${width(unattributedBytes())}%` }}
             title={`Unattributed · ${formatBytes(unattributedBytes())}`}
           />
         </Show>
         <Show when={unaccountedBytes() > 0}>
           <div
-            class={cn('h-full', UNACCOUNTED_COLOR)}
+            class={cn('of-fill h-full', UNACCOUNTED_TONE)}
             style={{ width: `${width(unaccountedBytes())}%` }}
             title={`Unaccounted · ${formatBytes(unaccountedBytes())}`}
           />
         </Show>
       </div>
 
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px] text-muted-foreground">
-        <LegendItem color={TENANT_SEGMENT_COLORS[0]} label="Organizations" />
-        <LegendItem color={UNATTRIBUTED_COLOR} label="Unattributed" />
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[0.6875rem] text-muted-foreground">
+        <LegendItem color={TENANT_SEGMENT_TONES[0]} label="Organizations" />
+        <LegendItem color={UNATTRIBUTED_TONE} label="Unattributed" />
         <Show when={!props.snapshot.capacitySuspect}>
-          <LegendItem color={UNACCOUNTED_COLOR} label="Unaccounted" />
+          <LegendItem color={UNACCOUNTED_TONE} label="Unaccounted" />
           <span class="text-muted-foreground/70 tabular-nums">{formatBytes(freeBytes())} free</span>
         </Show>
         <Show when={props.snapshot.capacitySuspect}>
           <Tooltip>
-            <TooltipTrigger as="span" class="inline-flex items-center gap-1 text-amber-600 cursor-default">
+            <TooltipTrigger as="span" class="of-ink of-tone-needs-you inline-flex items-center gap-1 cursor-default">
               <AlertTriangle class="w-3 h-3" />
               Claim capacity unverified — showing the composition of measured storage only
             </TooltipTrigger>
@@ -275,7 +278,7 @@ function CapacityBar(props: { snapshot: PlatformStorageView }) {
 function LegendItem(props: { color: string; label: string }) {
   return (
     <span class="inline-flex items-center gap-1.5">
-      <span class={cn('w-1.5 h-1.5 rounded-full', props.color)} />
+      <span class={cn('of-dot w-1.5 h-1.5', props.color)} />
       {props.label}
     </span>
   );
@@ -457,7 +460,7 @@ function UnaccountedRow(props: { snapshot: PlatformStorageView }) {
             <Tooltip>
               <TooltipTrigger
                 as="span"
-                class="inline-flex items-center gap-1 text-[11px] text-amber-600 cursor-default"
+                class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[0.6875rem] cursor-default"
               >
                 <AlertTriangle class="w-3 h-3" />
                 Unverified
@@ -500,8 +503,8 @@ function TenantRow(props: {
           />
           <Building2 class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
           <span class="font-medium text-sm truncate">{props.tenant.name}</span>
-          <span class={cn('w-1.5 h-1.5 rounded-full shrink-0', props.color)} />
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+          <span class={cn('of-dot w-1.5 h-1.5', props.color)} />
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0 shrink-0">
             {props.tenant.projects.length}
           </Badge>
           <PendingDeletionBadge tenant={props.tenant} />
@@ -522,7 +525,7 @@ function TenantRow(props: {
 function pendingDeletionBadgeClass(interactive: boolean): string {
   return cn(
     badgeVariants({ variant: 'outline' }),
-    'text-[10px] px-1.5 py-0 gap-1 font-normal text-muted-foreground shrink-0',
+    'text-[0.625rem] px-1.5 py-0 gap-1 font-normal text-muted-foreground shrink-0',
     interactive ? 'cursor-pointer hover:bg-muted' : 'cursor-default'
   );
 }
@@ -624,7 +627,7 @@ function ProjectRow(props: {
           />
           <FolderKanban class="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
           <span class="text-sm truncate">{props.project.title?.trim() || 'Untitled project'}</span>
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0 shrink-0">
             {props.project.environments.length}
           </Badge>
           <Show when={props.project.error}>
@@ -690,7 +693,7 @@ function MeasurementError(props: { label: string }) {
     <Tooltip>
       <TooltipTrigger
         as="span"
-        class="inline-flex items-center gap-1 text-[11px] text-amber-600 shrink-0 cursor-default"
+        class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[0.6875rem] shrink-0 cursor-default"
       >
         <AlertTriangle class="w-3 h-3" />
         Unmeasured
@@ -704,7 +707,7 @@ function SizeBar(props: { bytes: number; max: number }) {
   const width = () => (props.max <= 0 ? 0 : Math.max((props.bytes / props.max) * 100, 1));
   return (
     <div class="h-1.5 w-full rounded-full bg-muted overflow-hidden max-w-40">
-      <div class="h-full rounded-full bg-indigo-500/70" style={{ width: `${width()}%` }} />
+      <div class="of-fill of-tone-accent h-full rounded-full opacity-80" style={{ width: `${width()}%` }} />
     </div>
   );
 }
@@ -729,7 +732,7 @@ function LoadingState() {
 function ErrorState(props: { onRetry: () => void }): JSX.Element {
   return (
     <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <AlertTriangle class="w-10 h-10 mx-auto mb-3 text-amber-500 opacity-70" />
+      <AlertTriangle class="of-ink of-tone-needs-you w-10 h-10 mx-auto mb-3 opacity-70" />
       <p class="text-sm font-medium text-foreground">Couldn't load the storage snapshot</p>
       <p class="text-xs mt-1">The request failed — the volume may be unreachable.</p>
       <Button variant="outline" size="sm" class="mt-4" onClick={() => props.onRetry()}>
@@ -740,12 +743,3 @@ function ErrorState(props: { onRetry: () => void }): JSX.Element {
   );
 }
 
-function EmptyState(): JSX.Element {
-  return (
-    <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <Database class="w-10 h-10 mx-auto mb-3 opacity-40" />
-      <p class="text-sm font-medium">No organization storage yet</p>
-      <p class="text-xs mt-1">Environment directories appear here once projects have been opened.</p>
-    </div>
-  );
-}

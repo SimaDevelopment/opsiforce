@@ -1,5 +1,5 @@
-import { createSignal } from 'solid-js';
-import { Check, Copy, ExternalLink } from '~/components/icons';
+import { Show, createSignal } from 'solid-js';
+import { Check, Copy, ExternalLink, Pencil } from '~/components/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/cn';
 
@@ -7,6 +7,7 @@ export interface EnvAppLinkButtonsProps {
   appUrl: string;
   enabled: boolean;
   disabledReason: string;
+  onEditUrl?: () => void;
 }
 
 export function EnvAppLinkButtons(props: EnvAppLinkButtonsProps) {
@@ -43,15 +44,29 @@ export function EnvAppLinkButtons(props: EnvAppLinkButtonsProps) {
         <TooltipTrigger
           class={buttonClass()}
           aria-disabled={!props.enabled}
-          aria-label="Copy app URL"
+          aria-label="Copy Public URL"
           onClick={copyUrl}
         >
-          {copied() ? <Check class="h-3.5 w-3.5 text-emerald-500" /> : <Copy class="h-3.5 w-3.5" />}
+          {copied() ? <Check class="of-ink of-tone-done h-3.5 w-3.5" /> : <Copy class="h-3.5 w-3.5" />}
         </TooltipTrigger>
         <TooltipContent>
-          {props.enabled ? (copied() ? 'Copied!' : 'Copy app URL') : props.disabledReason}
+          {props.enabled ? (copied() ? 'Copied!' : 'Copy Public URL') : props.disabledReason}
         </TooltipContent>
       </Tooltip>
+      <Show when={props.onEditUrl}>
+        {(onEditUrl) => (
+          <Tooltip>
+            <TooltipTrigger
+              class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="Edit URL"
+              onClick={() => onEditUrl()()}
+            >
+              <Pencil class="h-3.5 w-3.5" />
+            </TooltipTrigger>
+            <TooltipContent>Edit URL</TooltipContent>
+          </Tooltip>
+        )}
+      </Show>
     </span>
   );
 }

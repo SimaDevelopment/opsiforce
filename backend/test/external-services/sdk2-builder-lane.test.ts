@@ -15,9 +15,9 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
 import { ensureBuiltInAgent } from '../support/agent-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { gatewayUrlOf } from './support/gate-proxy';
 import { consumerIn, freePort, publishCustomService, type PublishedService } from './support/published-services';
 import { revealed, startSdk2ServicePod, type Sdk2ServicePod } from './support/sdk2-service-pod';
@@ -120,7 +120,7 @@ describe("the External Service Builder's lane on the gateway", () => {
   }
 
   describe('GET /_builder', () => {
-    it("tells the builder the Service host, Development's Webhook address and the missing required fields", async () => {
+    it("tells the builder the Service host, Development's Webhook address, the link to its configuration and the missing required fields", async () => {
       const res = await builderLane(app, development.key, {});
 
       expect(res.statusCode, res.body).toBe(200);
@@ -128,6 +128,7 @@ describe("the External Service Builder's lane on the gateway", () => {
         service: { id: service.id, slug: 'boards', serviceHost: `https://boards.${EXTERNAL_SERVICES_HOST}` },
         development: {
           webhookUrl: `${PUBLIC_URL}/api/external-services/webhooks/${service.id}/development`,
+          configurationLink: `${PUBLIC_URL}/store/external-services/${service.id}/builder?configure=development`,
           servable: true,
           serviceConfiguration: { saved: false, missing: ['apiToken'] },
         },

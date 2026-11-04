@@ -1,24 +1,33 @@
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import solidPlugin from "vite-plugin-solid";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { createRequire } from "node:module";
 
 import {
   deploymentBranding,
   dropUnloadedOfficeFiles,
   OC_PACKAGES_ROOT,
   opencodeMessageStamp,
+  opencodePublicAssets,
   opencodeResolver,
 } from "./vite-plugins/index.ts";
 
 const OFFICE_DEPS = ["@betteroffice/docx", "@betteroffice/fonts", "@betteroffice/pptx", "@betteroffice/xlsx"];
+
+// The shell loads its mono face from the @ibm/plex dependency (same file the
+// embedded chat uses) rather than a CDN. Yarn unplugs that package to the repo
+// root, which is outside the dev server's default allow list, so the woff2
+// would 403 in dev while working fine in a production build.
+const IBM_PLEX_ROOT = path.dirname(createRequire(import.meta.url).resolve("@ibm/plex/package.json"));
 
 export default defineConfig(({ mode }) => ({
   plugins: [
     deploymentBranding(),
     opencodeResolver(),
     opencodeMessageStamp(),
+    opencodePublicAssets(),
     tanstackRouter({
       target: "solid",
       autoCodeSplitting: mode !== "production",
@@ -78,6 +87,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     port: 8084,
     allowedHosts: ["host.minikube.internal", ".opsiforce.localtest.me"],
+    fs: { allow: [searchForWorkspaceRoot(import.meta.dirname), IBM_PLEX_ROOT] },
     proxy: {
       "/api": {
         target: "http://localhost:3010",

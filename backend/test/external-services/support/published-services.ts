@@ -16,8 +16,8 @@ import { ServiceDefaultEnvironments } from '../../../src/external-services/publi
 import { ServiceRegistry, type RegisteredService } from '../../../src/external-services/registry/service-registry';
 import { GatewayKeyService } from '../../../src/gateway/gateway-key.service';
 import { createProject, serviceKeyFor, type TenantFixture } from '../../support/project-fixtures';
-import { createCustomService, TENANT_SERVICES } from './custom-services';
-import type { PersonFixture } from './fixtures';
+import { createCustomService, TENANT_SERVICES } from '../../support/custom-services';
+import type { PersonFixture } from '../../support/external-service-fixtures';
 import type { GateCallerFixture } from './gate';
 
 export const BOARDS_MANIFEST = {
@@ -115,7 +115,6 @@ export async function addServiceEnvironment(
     directory,
     platformVersion: '0.0.0-test',
     status: 'active',
-    podIp: '127.0.0.1',
     deployedCommitSha: PUBLISHED_COMMIT,
   });
   const key = await app.get(GatewayKeyService).createKey(builderChatId, projectEnvironmentId, tenantId);
@@ -192,7 +191,7 @@ export async function saveConsumerConfiguration(
 export async function suspendServicePod(projectEnvironmentId: string): Promise<void> {
   await db
     .update(projectEnvironments)
-    .set({ status: 'suspended', podIp: null })
+    .set({ status: 'suspended' })
     .where(eq(projectEnvironments.id, projectEnvironmentId));
 }
 

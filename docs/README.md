@@ -4,17 +4,19 @@
 
 **Runtime** (`runtime/`)
 - [Request Flows](runtime/request-flows.md) — how a request reaches the right pod through the edge, the runtime proxies and the ensure gate
+- [Service host](runtime/service-host.md) — how a call to an External Service's host passes the Gate's proxy to its pod
 - [Pod Lifecycle](runtime/pod-lifecycle.md) — how a pod comes to exist, recovers and suspends, with Kubernetes as the source of truth
 - [Pods](runtime/pods.md) — the Admin view of an Organization's running pods and their keep-alive
 - [Pending Project Pools](runtime/pending-project-pools.md) — how "New Project" claims an already-running environment
 - [Persistence](runtime/persistence.md) — what survives a pod swap, where it lives, resume and cleanup
 - [Storage](runtime/storage.md) — how disk usage on the shared volume is measured and attributed
 - [Resources](runtime/resources.md) — how a Project's pod size is chosen, stored and applied
-- [Pod Tools](runtime/pod-tools.md) — the five processes in a pod and how VS Code and the DB viewer reach the browser
+- [Pod Tools](runtime/pod-tools.md) — the processes in a pod, Docker on a privileged one, and how VS Code and the DB viewer reach the browser
 - [Process Log](runtime/process-log.md) — where each pod process's output and lifecycle events go, their rotation and how an Agent reads them
 
 **Projects** (`projects/`)
-- [Environments](projects/environments.md) — the two-entity model, public URLs, App Auth and the Environments switcher
+- [Environments](projects/environments.md) — the two-entity model, Environment Slugs, App Auth and the Environments switcher
+- [Public URL](projects/public-url.md) — the address each App answers on, its App Slug, Edit URL and the older addresses that keep serving
 - [Publish](projects/publish.md) — moving an App from Development into an environment, Environment Variables and the publish stages
 - [Duplication](projects/duplication.md) — copying a whole Project with its working state
 - [Export and Import](projects/export-import.md) — carrying a Project to another deployment as a file
@@ -57,6 +59,7 @@
 - [External Service Builder](external-services/external-service-builder.md) — writing, testing, publishing and retiring a Custom External Service, and its Default environment
 - [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new service
 - [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls on its Service host
+- [Created Projects and Agents](external-services/created-projects-and-agents.md) — which Agents, which Workspace and how many Projects and Agents a pod may create
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment
 - [WhatsApp](external-services/whatsapp.md) — numbers in the Service configuration, chats per environment, the v1 import
 
@@ -79,9 +82,10 @@
 - [Linked account](organization/linked-account.md) — signing a ChatGPT account in as a Model provider, and what ends a sign-in
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
 - [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
-- [Integrations](organization/integrations.md) — mapping an Organization to its managed identity provider tenant
+- [Sign-in provider](organization/sign-in-provider.md) — registering an Organization's OIDC app once so its Apps sign members in with it
 
 **Frontend** (`frontend/`)
+- [Design System](frontend/design-system.md) — where colour, type, metrics and motion are authored, and how Appearance drives them
 - [OpenCode Embed](frontend/opencode-embed.md) — how OpenCode's chat renders inline and reaches the pod
 - [Query Adapter](frontend/query-adapter.md) — why reads use `createAppQuery` and what it changes
 - [Job Dock](frontend/job-dock.md) — one progress surface for publish, duplicate, export and import

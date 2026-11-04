@@ -7,9 +7,12 @@ import type { ValidationErrorItem } from './error.schema';
 const PROBLEM_BY_CODE: Record<string, (message: string) => PublicApiError> = {
   name_unavailable: Errors.nameUnavailable,
   visibility_incoherent: Errors.visibilityIncoherent,
+  not_editable: Errors.notEditable,
   skill_in_use: Errors.skillInUse,
+  skill_disabled: Errors.skillDisabled,
   duplicate_skill_name: Errors.duplicateSkillName,
   model_unknown: Errors.modelUnknown,
+  model_unreachable: Errors.modelUnreachable,
   not_publishable: Errors.notPublishable,
   template_changed: Errors.templateChanged,
   outside_calling_project: Errors.outsideCallingProject,

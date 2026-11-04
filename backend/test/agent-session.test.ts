@@ -34,6 +34,7 @@ beforeAll(async () => {
   process.env.AGENT_PORT = String(pod.port);
   process.env.AGENT_WAKE_HOLD_MS = '2000';
   process.env.AGENT_WAKE_POLL_MS = '100';
+  process.env.AGENT_RUNTIME_REFUSAL_GRACE_MS = '400';
   harness = await createDomainTestingModule();
   second = await createDomainTestingModule();
 });
@@ -66,11 +67,11 @@ function callsSince(route: Parameters<FakePod['requestsTo']>[0]): () => number {
   return () => pod.requestsTo(route).length - before;
 }
 
-async function markNextPodReady(projectId: string, podIp = '127.0.0.1'): Promise<void> {
+async function markNextPodReady(projectId: string): Promise<void> {
   const podName = harness.fakes.pods.assignedPodName(projectId);
   const before = harness.fakes.pods.callsTo('waitForReady').length;
   await waitFor(() => harness.fakes.pods.callsTo('waitForReady').length > before);
-  harness.fakes.pods.markPodReady(podName, podIp);
+  harness.fakes.pods.markPodReady(podName);
   await waitFor(
     async () => (await harness.projectEnvironments.findByIdOrNull(projectId))?.status === ProjectStatus.Active
   );
@@ -89,12 +90,8 @@ async function environmentOf(environmentId: string): Promise<ProjectEnvironmentC
   return env;
 }
 
-async function setStatus(
-  environmentId: string,
-  status: ProjectStatus,
-  podIp: string | null = null
-): Promise<ProjectEnvironmentContext> {
-  await harness.projectEnvironments.patch(environmentId, { status, podIp });
+async function setStatus(environmentId: string, status: ProjectStatus): Promise<ProjectEnvironmentContext> {
+  await harness.projectEnvironments.patch(environmentId, { status });
   return environmentOf(environmentId);
 }
 
@@ -189,15 +186,117 @@ describe('connecting to a project environment', () => {
     pod.setInfo({ status: 200, body: runtimeInfo });
   });
 
-  it('treats a runtime that is not serving yet as a starting environment, not a connection', async () => {
+  it('replaces a ready pod whose runtime refuses to identify itself, and answers starting meanwhile', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 404, body: { message: 'Not Found' } });
+
+    expect(await stateOfConnect(env)).toBe('starting');
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Starting);
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
+
+    pod.setInfo({ status: 200, body: runtimeInfo });
+    await markNextPodReady(env.id);
+    expect(await stateOfConnect(await environmentOf(env.id))).toBe('ready');
+  });
+
+  it('keeps a pod whose runtime answers again within the grace, and connects on it', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 502, body: {} });
+    const restarted = setTimeout(() => pod.setInfo({ status: 200, body: runtimeInfo }), 150);
+
+    expect(await stateOfConnect(env)).toBe('ready');
+    clearTimeout(restarted);
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(0);
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Active);
+  });
+
+  it('replaces a refusing pod once when two connections meet it together', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 503, body: runtimeInfo });
+
+    expect(await Promise.all([stateOfConnect(env), stateOfConnect(env)])).toEqual(['starting', 'starting']);
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
+  });
+
+  it('fails the environment when the pod that replaced a refusing runtime refuses too', async () => {
     const env = await createRunningProject();
     pod.setInfo({ status: 503, body: runtimeInfo });
 
-    const error: unknown = await harness.agentConnections.connect(env).catch((reason: unknown) => reason);
-    pod.setInfo({ status: 200, body: runtimeInfo });
+    expect(await stateOfConnect(env)).toBe('starting');
+    await markNextPodReady(env.id);
 
-    expect(error).toBeInstanceOf(EnvironmentNotRunning);
-    expect(error).toMatchObject({ state: 'starting' });
+    expect(await stateOfConnect(await environmentOf(env.id))).toBe('failed');
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Failed);
+  });
+
+  it('caps the grace at half the remaining budget, so a refusing pod is still replaced within it', async () => {
+    const env = await createRunningProject();
+    process.env.AGENT_RUNTIME_REFUSAL_GRACE_MS = '5000';
+    const patient = await createDomainTestingModule().finally(() => {
+      process.env.AGENT_RUNTIME_REFUSAL_GRACE_MS = '400';
+    });
+    try {
+      patient.fakes.pods.markPodReady(patient.fakes.pods.assignedPodName(env.id));
+      pod.setInfo({ status: 503, body: runtimeInfo });
+
+      const state = await patient.agentConnections.connect(env).then(() => 'ready', notRunningState);
+
+      expect(state).toBe('starting');
+      expect(patient.fakes.pods.callsTo('deletePod')).toHaveLength(1);
+    } finally {
+      await patient.close();
+    }
+  });
+
+  it('replaces a refusing pod again once the earlier replacement is ten minutes old', async () => {
+    const env = await createRunningProject();
+    pod.setInfo({ status: 503, body: runtimeInfo });
+    expect(await stateOfConnect(env)).toBe('starting');
+    await markNextPodReady(env.id);
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    const realNow = Date.now;
+    const tenMinutesLater = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 10 * 60 * 1000);
+
+    try {
+      expect(await stateOfConnect(await environmentOf(env.id))).toBe('starting');
+    } finally {
+      tenMinutesLater.mockRestore();
+    }
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Starting);
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
+  });
+
+  it('leaves a refusing pod alone when its project is disabled during the grace', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 503, body: runtimeInfo });
+    const disabling = sleep(100).then(() => disableProject(env.projectId));
+
+    expect(await stateOfConnect(env)).toBe('starting');
+    await disabling;
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(0);
+
+    await db.update(projects).set({ disabled: false }).where(eq(projects.id, env.projectId));
+    expect(await stateOfConnect(await environmentOf(env.id))).toBe('starting');
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
+  });
+
+  it('leaves a refusing pod alone when its environment starts publishing during the grace', async () => {
+    const env = await createRunningProject();
+    const deleted = harness.fakes.pods.callsTo('deletePod').length;
+    pod.setInfo({ status: 503, body: runtimeInfo });
+    const publishing = sleep(100).then(() => setStatus(env.id, ProjectStatus.Publishing));
+
+    expect(await stateOfConnect(env)).toBe('starting');
+    await publishing;
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(0);
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Publishing);
+
+    expect(await stateOfConnect(await setStatus(env.id, ProjectStatus.Active))).toBe('starting');
+    expect(harness.fakes.pods.callsTo('deletePod').length - deleted).toBe(1);
   });
 
   it('maps every non-running environment state to a typed error', async () => {
@@ -226,7 +325,7 @@ describe('connecting to a project environment', () => {
     expect(error).toBeInstanceOf(EnvironmentNotRunning);
     expect(error).toMatchObject({ state: 'starting' });
     expect(Date.now() - startedAt).toBeLessThan(4_000);
-    await setStatus(env.id, ProjectStatus.Active, '127.0.0.1');
+    await setStatus(env.id, ProjectStatus.Active);
   });
 
   it('reports a budget spent on a ready runtime as a timeout, not as a startup state', async () => {
@@ -249,7 +348,7 @@ describe('connecting to a project environment', () => {
     controller.abort();
 
     await expect(connecting).rejects.toBeInstanceOf(EnvironmentNotRunning);
-    await setStatus(env.id, ProjectStatus.Active, '127.0.0.1');
+    await setStatus(env.id, ProjectStatus.Active);
   });
 
   it('applies a pending agent reload before answering', async () => {
@@ -282,14 +381,13 @@ describe('connecting to a project environment', () => {
     if (!shuttingDown) throw new Error('the running project has no pod');
     shuttingDown.metadata = { ...shuttingDown.metadata, deletionTimestamp: new Date() };
     const starting = await setStatus(env.id, ProjectStatus.Starting);
-    const replaced = markNextPodReady(env.id, '127.0.0.2');
+    const replaced = markNextPodReady(env.id);
 
     const ensured = await harness.agentSessions.ensureAgentSurface(starting);
 
     expect(ensured.state).toBe('starting');
     await replaced;
-    expect((await environmentOf(env.id)).podIp).toBe('127.0.0.2');
-    await setStatus(env.id, ProjectStatus.Active, '127.0.0.1');
+    expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Active);
   });
 
   it('applies the same reload gate on the proxy controller path', async () => {
@@ -359,7 +457,7 @@ describe('resolving the primary session', () => {
     const client = harness.moduleRef.get(PodOpencodeClient);
 
     const error: unknown = await client
-      .oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 })
+      .oldestRootSession(randomUUID(), { maxPages: 1 })
       .catch((reason: unknown) => reason);
 
     expect(error).toBeInstanceOf(PodTimeout);
@@ -371,7 +469,7 @@ describe('resolving the primary session', () => {
     const client = harness.moduleRef.get(PodOpencodeClient);
     const listed = callsSince('session.list');
 
-    const found = await client.oldestRootSession(`http://127.0.0.1:${pod.port}`, { maxPages: 1 });
+    const found = await client.oldestRootSession(randomUUID(), { maxPages: 1 });
 
     expect(found?.id).toBe(oldest.id);
     expect(listed()).toBe(2);
@@ -641,13 +739,12 @@ describe('reporting a pod failure back to the environment', () => {
     expect((await environmentOf(env.id)).status).toBe(ProjectStatus.Active);
   });
 
-  it('reports a runtime whose service failed to start and restarts the environment', async () => {
+  it('restarts the environment when its pod is gone and the runtime it reached failed to start', async () => {
     const env = await createRunningProject();
     await harness.fakes.pods.deletePod(harness.fakes.pods.assignedPodName(env.id));
     pod.setInfo({ status: 500, body: runtimeInfo });
 
-    await expect(harness.agentConnections.connect(env)).rejects.toMatchObject({ status: 500 });
-    pod.setInfo({ status: 200, body: runtimeInfo });
+    expect(await stateOfConnect(env)).toBe('starting');
     await waitFor(async () => (await environmentOf(env.id)).status === ProjectStatus.Starting);
   });
 

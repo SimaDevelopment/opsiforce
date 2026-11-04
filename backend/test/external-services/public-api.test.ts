@@ -4,11 +4,16 @@ import { mintCallerIdentity, callerIdentityHeader } from '@opsiforce/external-se
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
-import { projects } from '../../db/schema';
+import { agents, projects, skills } from '../../db/schema';
 import { builtInCallerKey } from '../../src/external-services/built-ins/built-in-caller-key';
 import { ServiceRegistry } from '../../src/external-services/registry/service-registry';
+import { AgentProfileService } from '../../src/agent/agent-profile.service';
 import {
+  CREATED_PROJECT_AGENTS,
+  CREATED_PROJECTS_WORKSPACE,
+  MAX_CREATED_AGENTS,
   MAX_CREATED_PROJECTS,
+  OTHER_PROJECTS,
   PUBLIC_API_SWITCHES,
   PublicApiSettings,
 } from '../../src/external-services/configuration/public-api-settings';
@@ -21,6 +26,7 @@ import {
   addMember,
   clearProjectCreator,
   createProject,
+  createSharedWorkspace,
   createTenant,
   removeMemberFromTenant,
   serviceKeyFor,
@@ -29,15 +35,18 @@ import {
   type MemberFixture,
   type TenantFixture,
 } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { TENANT_SERVICES } from './support/custom-services';
-import { builtInServiceId } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { TENANT_SERVICES } from '../support/custom-services';
+import { builtInServiceId } from '../support/external-service-fixtures';
 import { callThroughGate } from './support/gate-proxy';
 import { saveProjectConfiguration } from './support/gate';
 
 const PUBLIC_API = 'public-api';
 
 const WHO_CHANGES_IT = "Someone who can configure this Project's External Services can change it.";
+
+const UNREACHED_DETAIL =
+  'The calling Project reaches only the Projects it created and those listed under "Opsiforce Public API → Other Projects", and only while the person who created it can see them. Someone who can configure the calling Project\'s External Services can add a Project there.';
 
 const READS = [
   'GET /api/v1/agents',
@@ -78,15 +87,23 @@ const WRITES: Record<string, string[]> = {
 const ALL_OFF = {
   authorSkillsAndAgents: false,
   createAgents: false,
+  maxCreatedAgents: 5,
   createProjects: false,
   maxCreatedProjects: 5,
   driveCreatedProjects: false,
   deleteCreatedProjects: false,
+  otherProjects: [] as string[],
+  createdProjectAgents: [] as string[],
+  createdProjectsWorkspace: undefined as string | undefined,
 };
 
 interface Pod {
   projectId: string;
   key: string;
+}
+
+function idsOf(page: unknown): string[] {
+  return (page as { items: { id: string }[] }).items.map((item) => item.id);
 }
 
 interface DescribedRoute {
@@ -203,19 +220,19 @@ describe('the Public API on its Service host', () => {
         method: 'PATCH',
         path: () => `/api/v1/skills/${randomUUID()}`,
         body: { displayName: 'Renamed' },
-        label: 'Edit Agents and Skills',
+        label: 'Edit Skills and Agents',
       },
       createAgents: { method: 'POST', path: () => '/api/v1/agents', body: {}, label: 'Create Agents' },
       createProjects: { method: 'POST', path: () => '/api/v1/projects', body: {}, label: 'Create Projects' },
       driveCreatedProjects: {
         method: 'POST',
         path: (id) => `/api/v1/projects/${id}/restart`,
-        label: 'Manage created Projects',
+        label: 'Open and restart Projects',
       },
       deleteCreatedProjects: {
         method: 'DELETE',
         path: () => `/api/v1/projects/${randomUUID()}`,
-        label: 'Delete created Projects',
+        label: 'Delete Projects',
       },
     };
 
@@ -253,13 +270,20 @@ describe('the Public API on its Service host', () => {
       'key' in field && field.type !== 'info' ? [field.key] : []
     );
 
-    expect(keys.toSorted()).toEqual([...PUBLIC_API_SWITCHES, MAX_CREATED_PROJECTS].toSorted());
-    expect(app.get(PublicApiSettings).labelOf(MAX_CREATED_PROJECTS)).toBe(
-      'Opsiforce Public API → Created Projects limit'
+    expect(keys.toSorted()).toEqual(
+      [
+        ...PUBLIC_API_SWITCHES,
+        MAX_CREATED_PROJECTS,
+        MAX_CREATED_AGENTS,
+        OTHER_PROJECTS,
+        CREATED_PROJECT_AGENTS,
+        CREATED_PROJECTS_WORKSPACE,
+      ].toSorted()
     );
+    expect(app.get(PublicApiSettings).labelOf(MAX_CREATED_PROJECTS)).toBe('Opsiforce Public API → Project limit');
   });
 
-  describe('Created Projects limit', () => {
+  describe('Project limit', () => {
     it('refuses the next Project at the cap with 409 naming the setting and who can raise it', async () => {
       const caller = await connectedPod({ createProjects: true, maxCreatedProjects: 2 });
       for (const title of ['First', 'Second']) {
@@ -273,7 +297,7 @@ describe('the Public API on its Service host', () => {
       expect(await refused.json()).toMatchObject({
         type: 'urn:opsiforce:error:max-created-projects',
         detail:
-          "This Project may create at most 2 Projects (Opsiforce Public API → Created Projects limit). Delete one you created, or ask someone who can configure this Project's External Services to raise it.",
+          "This Project may create at most 2 Projects (Opsiforce Public API → Project limit). Delete one you created, or ask someone who can configure this Project's External Services to raise it.",
       });
     });
 
@@ -377,6 +401,270 @@ describe('the Public API on its Service host', () => {
       expect(ids).toContain(own);
       expect(ids).not.toContain(foreign);
       expect(ids).not.toContain(caller.projectId);
+    });
+  });
+
+  describe('Other Projects', () => {
+    it('lists the picked Projects beside the ones its Project created, and no others', async () => {
+      const { projectId: picked } = await pod();
+      const { projectId: unpicked } = await pod();
+      const caller = await connectedPod({ otherProjects: [picked] });
+      const own = (await pod(caller.projectId)).projectId;
+
+      const res = await call(caller, 'GET', '/api/v1/projects');
+
+      const ids = idsOf(await res.json());
+      expect(ids).toEqual(expect.arrayContaining([own, picked]));
+      expect(ids).not.toContain(unpicked);
+    });
+
+    it('reads a picked Project and answers 404 for one left out', async () => {
+      const { projectId: picked } = await pod();
+      const { projectId: unpicked } = await pod();
+      const caller = await connectedPod({ otherProjects: [picked] });
+
+      const read = await call(caller, 'GET', `/api/v1/projects/${picked}`);
+      const hidden = await call(caller, 'GET', `/api/v1/projects/${unpicked}`);
+
+      expect(read.status, await read.text()).toBe(200);
+      expect(hidden.status).toBe(404);
+      expect(await hidden.json()).toMatchObject({
+        type: 'urn:opsiforce:error:project-not-found',
+        detail: UNREACHED_DETAIL,
+      });
+    });
+
+    it('still hides a picked Project its creator cannot see', async () => {
+      const outsider = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, outsider);
+      const unseen = await createProject(app, tenant, { agentId, createdBy: outsider.userId, workspaceId });
+      const caller = await connectedPod({ otherProjects: [unseen] });
+
+      const listed = idsOf(await (await call(caller, 'GET', '/api/v1/projects')).json());
+      const read = await call(caller, 'GET', `/api/v1/projects/${unseen}`);
+
+      expect(listed).not.toContain(unseen);
+      expect(read.status).toBe(404);
+    });
+
+    it('reaches no Project that lists itself among its Other Projects', async () => {
+      const caller = await pod();
+      await saveProjectConfiguration(app, PUBLIC_API, caller.projectId, {
+        ...ALL_OFF,
+        driveCreatedProjects: true,
+        otherProjects: [caller.projectId],
+      });
+
+      const read = await call(caller, 'GET', `/api/v1/projects/${caller.projectId}`);
+
+      expect(read.status).toBe(404);
+    });
+
+    it('reaches no Builder chat listed among its Other Projects', async () => {
+      const { projectId: chat } = await pod();
+      await stampProjectKind(chat, 'agent_builder_chat');
+      const caller = await connectedPod({ otherProjects: [chat] });
+
+      const read = await call(caller, 'GET', `/api/v1/projects/${chat}`);
+
+      expect(read.status).toBe(404);
+    });
+
+    it('restarts a picked Project under Open and restart Projects', async () => {
+      const { projectId: picked } = await pod();
+      const caller = await connectedPod({ driveCreatedProjects: true, otherProjects: [picked] });
+      await setMemberPermissions(tenant, creator, ['can_delete_project', 'can_restart_project']);
+
+      const res = await call(caller, 'POST', `/api/v1/projects/${picked}/restart`);
+      await setMemberPermissions(tenant, creator, ['can_delete_project']);
+
+      expect(res.status, await res.text()).toBe(204);
+    });
+
+    it('never deletes a picked Project, even with Delete Projects on', async () => {
+      const { projectId: picked } = await pod();
+      const caller = await connectedPod({ deleteCreatedProjects: true, otherProjects: [picked] });
+
+      const res = await call(caller, 'DELETE', `/api/v1/projects/${picked}`);
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({
+        type: 'urn:opsiforce:error:permission-denied',
+        detail:
+          'The calling Project may delete only the Projects it created, never those listed under "Opsiforce Public API → Other Projects".',
+      });
+      expect(await db.select({ id: projects.id }).from(projects).where(eq(projects.id, picked))).toHaveLength(1);
+    });
+
+    it('offers the Projects its creator can see, but not itself or the ones it created, to pick from', async () => {
+      const configurer = await addMember(app, tenant, ['can_configure_project_external_services']);
+      const titled = await createProject(app, tenant, { agentId, createdBy: creator.userId, title: 'Billing repo' });
+      const outsider = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, outsider);
+      const unseen = await createProject(app, tenant, { agentId, createdBy: outsider.userId, workspaceId });
+      const caller = await connectedPod();
+      const own = (await pod(caller.projectId)).projectId;
+      const serviceId = await builtInServiceId(PUBLIC_API);
+
+      const options = async (query: string) => {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/external-services/projects/${caller.projectId}/environments/${caller.projectId}/services/${serviceId}/options/otherProjectChoices`,
+          headers: configurer.headers,
+          payload: { values: {}, query },
+        });
+        expect(res.statusCode, res.body).toBe(200);
+        return res.json() as { value: string; label: string }[];
+      };
+
+      const all = (await options('')).map((option) => option.value);
+      expect(all).toContain(titled);
+      expect(all).not.toContain(unseen);
+      expect(all).not.toContain(caller.projectId);
+      expect(all).not.toContain(own);
+      expect(await options('billing')).toEqual([{ value: titled, label: 'Billing repo · Public' }]);
+    });
+
+    it('offers the Projects the person configuring an Agent can see, when no Project asks', async () => {
+      const configurer = await addMember(app, tenant, ['can_configure_project_external_services', 'can_manage_agents']);
+      const seen = await createProject(app, tenant, { agentId, createdBy: configurer.userId, title: 'Shared notes' });
+      const outsider = await addMember(app, tenant);
+      const workspaceId = await createSharedWorkspace(app, tenant, outsider);
+      const unseen = await createProject(app, tenant, { agentId, createdBy: outsider.userId, workspaceId });
+      const serviceId = await builtInServiceId(PUBLIC_API);
+      const [skill] = await db.select({ id: skills.id }).from(skills).where(eq(skills.externalServiceId, serviceId));
+      const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
+      const agent = { ...row, disabled: false };
+      const asConfigurer = { tenantId: tenant.tenantId, userId: configurer.userId, canManageAgents: true };
+      const profiles = app.get(AgentProfileService);
+      await profiles.setSkill(agent, asConfigurer, skill.id, {});
+
+      const answer = await profiles.serviceSettingsOptions(
+        agent,
+        asConfigurer,
+        skill.id,
+        'otherProjectChoices',
+        { values: {}, query: '' },
+        { canConfigureProjects: true }
+      );
+
+      const offered = (JSON.parse(Buffer.from(answer.body).toString('utf8')) as { value: string }[]).map(
+        (option) => option.value
+      );
+      expect(offered).toContain(seen);
+      expect(offered).not.toContain(unseen);
+    });
+
+    it('offers the Agents its creator can start, for Allowed Agents', async () => {
+      const configurer = await addMember(app, tenant, ['can_configure_project_external_services']);
+      const caller = await connectedPod();
+      const serviceId = await builtInServiceId(PUBLIC_API);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/external-services/projects/${caller.projectId}/environments/${caller.projectId}/services/${serviceId}/options/createdProjectAgentChoices`,
+        headers: configurer.headers,
+        payload: { values: {}, query: '' },
+      });
+
+      expect(res.statusCode, res.body).toBe(200);
+      expect((res.json() as { value: string }[]).map((option) => option.value)).toContain(agentId);
+    });
+
+    it('creates Projects only of the Agents listed under Allowed Agents', async () => {
+      const allowedAgentId = (await seedLiveAgent(tenant.tenantId, creator.userId)).id;
+      const caller = await connectedPod({ createProjects: true, createdProjectAgents: [allowedAgentId] });
+
+      const refused = await createProjectAs(caller, 'Another Agent');
+      const allowed = await call(caller, 'POST', '/api/v1/projects', {
+        title: 'Listed Agent',
+        agentId: allowedAgentId,
+      });
+
+      expect(refused.status).toBe(403);
+      expect(refused.headers.get('opsiforce-outcome')).toBe('not allowed');
+      expect(refused.headers.get('opsiforce-setting')).toBe(CREATED_PROJECT_AGENTS);
+      expect(await refused.json()).toMatchObject({
+        type: 'urn:opsiforce:error:permission-denied',
+        detail: expect.stringContaining('"Opsiforce Public API → Allowed Agents"'),
+      });
+      expect(allowed.status, await allowed.clone().text()).toBe(201);
+    });
+  });
+
+  describe('Agent limit', () => {
+    it('refuses the next Agent at the cap with 409 naming the setting', async () => {
+      const caller = await connectedPod({ createAgents: true, maxCreatedAgents: 1 });
+      await setMemberPermissions(tenant, creator, ['can_delete_project', 'can_manage_agents']);
+
+      const first = await call(caller, 'POST', '/api/v1/agents', { displayName: `Capped ${randomUUID().slice(0, 6)}` });
+      const second = await call(caller, 'POST', '/api/v1/agents', {
+        displayName: `Capped ${randomUUID().slice(0, 6)}`,
+      });
+      await setMemberPermissions(tenant, creator, ['can_delete_project']);
+
+      expect(first.status, await first.clone().text()).toBe(201);
+      expect(second.status).toBe(409);
+      expect(await second.json()).toMatchObject({
+        type: 'urn:opsiforce:error:max-created-agents',
+        detail: expect.stringContaining('at most 1 Agents (Opsiforce Public API → Agent limit)'),
+      });
+    });
+  });
+
+  describe('Workspace for new Projects', () => {
+    it('puts a created Project in the chosen Workspace and refuses another one', async () => {
+      const chosen = await createSharedWorkspace(app, tenant, creator);
+      const elsewhere = await createSharedWorkspace(app, tenant, creator);
+      const caller = await connectedPod({ createProjects: true, createdProjectsWorkspace: chosen });
+
+      const placed = await createProjectAs(caller, 'Placed');
+      const refused = await call(caller, 'POST', '/api/v1/projects', {
+        title: 'Elsewhere',
+        agentId,
+        workspaceId: elsewhere,
+      });
+
+      expect(placed.status, await placed.clone().text()).toBe(201);
+      const [row] = await db
+        .select({ workspaceId: projects.workspaceId })
+        .from(projects)
+        .where(eq(projects.id, ((await placed.json()) as { id: string }).id));
+      expect(row?.workspaceId).toBe(chosen);
+      expect(refused.status).toBe(403);
+      expect(refused.headers.get('opsiforce-setting')).toBe(CREATED_PROJECTS_WORKSPACE);
+    });
+
+    it('refuses to place a Project in a chosen Workspace its creator is not a member of', async () => {
+      const outsider = await addMember(app, tenant);
+      const theirs = await createSharedWorkspace(app, tenant, outsider);
+      const caller = await connectedPod({ createProjects: true, createdProjectsWorkspace: theirs });
+
+      const refused = await createProjectAs(caller, 'Not a member');
+
+      expect(refused.status).toBe(403);
+      expect(refused.headers.get('opsiforce-setting')).toBe(CREATED_PROJECTS_WORKSPACE);
+      expect((await refused.json()).detail).toContain('is not a member of the Workspace chosen under');
+    });
+
+    it('offers the shared Workspaces its creator is in, for Workspace for new Projects', async () => {
+      const configurer = await addMember(app, tenant, ['can_configure_project_external_services']);
+      const mine = await createSharedWorkspace(app, tenant, creator);
+      const theirs = await createSharedWorkspace(app, tenant, configurer);
+      const caller = await connectedPod();
+      const serviceId = await builtInServiceId(PUBLIC_API);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/external-services/projects/${caller.projectId}/environments/${caller.projectId}/services/${serviceId}/options/createdProjectWorkspaceChoices`,
+        headers: configurer.headers,
+        payload: { values: {}, query: '' },
+      });
+
+      expect(res.statusCode, res.body).toBe(200);
+      const offered = (res.json() as { value: string }[]).map((option) => option.value);
+      expect(offered).toContain(mine);
+      expect(offered).not.toContain(theirs);
     });
   });
 

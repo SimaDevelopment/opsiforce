@@ -67,6 +67,55 @@ describe('privileged Kata agents', () => {
   });
 });
 
+const envNames = (container?: { env?: Array<{ name: string }> }) => (container?.env ?? []).map(({ name }) => name);
+
+describe('Docker in privileged Kata agents', () => {
+  const kata = { ...options, runtimeClassName: 'kata-clh-runtime-rs-opsiforce' };
+
+  it('turns Docker on in the agent container and gives it pod-local storage', () => {
+    const pod = buildPodSpec({ ...kata, privileged: true });
+    const [agent] = pod.spec?.containers ?? [];
+
+    expect(agent.env).toContainEqual({ name: 'OPSIFORCE_DOCKER', value: '1' });
+    expect(agent.volumeMounts).toContainEqual({ name: 'docker-storage', mountPath: '/var/lib/docker-storage' });
+    expect(pod.spec?.volumes).toContainEqual({ name: 'docker-storage', emptyDir: { sizeLimit: '21Gi' } });
+  });
+
+  it('tells the init container which Skills this deployment does not offer', () => {
+    const [init] = buildPodSpec({ ...options, unofferedSkills: ['docker'] }).spec?.initContainers ?? [];
+
+    expect(init.env).toContainEqual({ name: 'SWITCHED_OFF_SKILLS', value: 'docker' });
+  });
+
+  it.each([undefined, []])(
+    'leaves the init container without a skip list when every Skill is offered (%s)',
+    (unofferedSkills) => {
+      const [init] = buildPodSpec({ ...kata, privileged: true, unofferedSkills }).spec?.initContainers ?? [];
+
+      expect(envNames(init)).not.toContain('SWITCHED_OFF_SKILLS');
+    }
+  );
+
+  it('keeps Docker out of the init container', () => {
+    const [init] = buildPodSpec({ ...kata, privileged: true }).spec?.initContainers ?? [];
+
+    expect(envNames(init)).not.toContain('OPSIFORCE_DOCKER');
+    expect(init.volumeMounts?.map(({ name }) => name)).toEqual(['workspace']);
+  });
+
+  it.each([undefined, '', 'kata-clh-runtime-rs-opsiforce'])(
+    'leaves an unprivileged pod without Docker on runtime %s',
+    (runtimeClassName) => {
+      const pod = buildPodSpec({ ...options, runtimeClassName, caBundleConfigMap: 'opsiforce-local-ca' });
+      const [agent] = pod.spec?.containers ?? [];
+
+      expect(envNames(agent)).not.toContain('OPSIFORCE_DOCKER');
+      expect(agent.volumeMounts?.map(({ name }) => name)).toEqual(['workspace', 'ca-bundle']);
+      expect(pod.spec?.volumes?.map(({ name }) => name)).toEqual(['workspace', 'ca-bundle']);
+    }
+  );
+});
+
 describe('small class CPU reservation', () => {
   it('requests 100m without capping CPU or changing memory', () => {
     expect(buildPodSpec(options).spec?.containers[0].resources).toEqual({

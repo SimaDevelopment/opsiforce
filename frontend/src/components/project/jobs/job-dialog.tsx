@@ -53,7 +53,7 @@ export function JobDialog(props: JobDialogProps) {
         <Show when={display().notice}>
           {(notice) => (
             <div class="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
-              <AlertTriangle class="h-3.5 w-3.5 shrink-0 text-amber-500" />
+              <AlertTriangle class="of-ink of-tone-needs-you h-3.5 w-3.5 shrink-0" />
               <span>{notice()}</span>
             </div>
           )}

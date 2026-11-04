@@ -25,9 +25,9 @@ import {
 import { EnvironmentService } from '../../src/environment/environment.service';
 import { DefaultLaneHolds } from '../../src/external-services/gate/default-lane-holds';
 import { ServiceDefaultEnvironments } from '../../src/external-services/publishing/service-default-environments';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { gatewayUrlOf, resolveCaller } from './support/gate-proxy';
 import type { GateCallerFixture } from './support/gate';
 import {

@@ -9,7 +9,7 @@ import { KEPT_SECRET, isKeptSecret } from './form-values';
 type SecretFieldDefinition = Extract<Field, { type: 'secret' }>;
 
 const STORED_BOX_CLASS =
-  'inline-flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 font-mono text-[11px] text-muted-foreground';
+  'inline-flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 font-mono text-[0.6875rem] text-muted-foreground';
 
 export function SecretField(props: {
   id: string;

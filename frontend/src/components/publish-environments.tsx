@@ -34,7 +34,7 @@ export function PublishTargetList<T extends EnvironmentChoice>(props: {
               <span class="text-xs font-medium text-foreground">{environment.name}</span>
             </span>
             <span
-              class={cn('text-right text-xs', props.stale?.(environment) ? 'text-amber-700' : 'text-muted-foreground')}
+              class={cn('text-right text-xs', props.stale?.(environment) ? 'of-ink of-tone-needs-you' : 'text-muted-foreground')}
             >
               {props.status(environment)}
             </span>
@@ -48,7 +48,7 @@ export function PublishTargetList<T extends EnvironmentChoice>(props: {
 export function PublishPreviewCard(props: { title: string; children: JSX.Element }) {
   return (
     <div class="overflow-hidden rounded-lg border border-border">
-      <div class="border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+      <div class="border-b border-border bg-muted/40 px-3 py-1.5 text-[0.6875rem] font-medium text-muted-foreground">
         {props.title}
       </div>
       <div class="divide-y divide-border">{props.children}</div>
@@ -109,7 +109,7 @@ export function DefaultEnvironmentSetting<T extends EnvironmentChoice>(props: {
         </div>
       </div>
       <Show when={props.notice}>
-        {(notice) => <p class="border-t border-border px-3 py-2 text-xs text-amber-700">{notice()}</p>}
+        {(notice) => <p class="of-ink of-tone-needs-you border-t border-border px-3 py-2 text-xs">{notice()}</p>}
       </Show>
     </div>
   );

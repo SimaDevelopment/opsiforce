@@ -10,6 +10,6 @@ export {
   type ServiceTestReport,
   type ServiceTestReportLine,
 } from './test-report.ts';
-export { reservedProjectConfigurationKeys } from './form-levels.ts';
+export { isWellFormedLabels, reservedProjectConfigurationKeys, wellFormedLabelsRule } from './form-levels.ts';
 export { configurationHookNames } from './form-handlers.ts';
 export { failureMessages, type FailureKind } from './refusals.ts';

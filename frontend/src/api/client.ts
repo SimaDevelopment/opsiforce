@@ -166,7 +166,9 @@ export interface Project {
   appDescription: string | null;
   environmentIds: string[];
   agentStatus?: AgentStatus;
-  lastActiveAt: string | null;
+  /** A chat in this Project is waiting for an answer or a permission. */
+  waitingForInput?: boolean;
+  lastPromptAt: string | null;
   createdAt: string;
   disabled: boolean;
 }
@@ -190,7 +192,7 @@ export interface ProjectAppMeta {
   description: string | null;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'managed';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider';
 
 export interface ProjectAuthOidcConfig {
   forwardAccessToken?: boolean;
@@ -202,6 +204,7 @@ export interface ProjectAuthOidcConfig {
 
 export interface ProjectAuthResponse {
   mode: ProjectAuthMode;
+  signInProviderId?: string;
   config?: ProjectAuthOidcConfig;
   bypassAuthPaths?: string[];
   callbackUrls: string[];
@@ -209,6 +212,7 @@ export interface ProjectAuthResponse {
 
 export interface UpdateProjectAuthDto {
   mode: ProjectAuthMode;
+  signInProviderId?: string;
   config?: ProjectAuthOidcConfig;
   bypassAuthPaths?: string[];
 }

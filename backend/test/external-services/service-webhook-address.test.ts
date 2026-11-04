@@ -6,9 +6,9 @@ import { PodService } from '../../src/pod/pod.service';
 import type { FakePodService } from '../support/infra-fakes';
 import { createProject, createTenant } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder } from './support/custom-services';
-import { tenantAdmin } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder } from '../support/custom-services';
+import { tenantAdmin } from '../support/external-service-fixtures';
 
 const PUBLIC_URL = 'https://opsiforce.example.com';
 

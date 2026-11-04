@@ -18,7 +18,7 @@ import { MAX_WARM_POOL_SIZE } from './agent-pod-settings';
 import { agentColumnsIn, tenantStartableAgentsWhere } from './agent-visibility';
 
 const STARTABLE_AGENT_LOCK = 'startable-agent:';
-import type { AgentProfileSkillResponse, AgentRow, AgentSettingsResponse, ShippedSkillResponse } from './agent.types';
+import type { AgentRow, CarriedSkillRow, AgentSettingsResponse, ShippedSkillResponse } from './agent.types';
 
 export type AgentSettingsRow = typeof agentSettings.$inferSelect;
 
@@ -194,8 +194,8 @@ export class AgentRepository {
     return row;
   }
 
-  async skillsOf(profileIds: string[]): Promise<Map<string, AgentProfileSkillResponse[]>> {
-    const byProfile = new Map<string, AgentProfileSkillResponse[]>(profileIds.map((id) => [id, []]));
+  async skillsOf(profileIds: string[]): Promise<Map<string, CarriedSkillRow[]>> {
+    const byProfile = new Map<string, CarriedSkillRow[]>(profileIds.map((id) => [id, []]));
     if (profileIds.length === 0) return byProfile;
 
     const rows = await db
@@ -204,6 +204,7 @@ export class AgentRepository {
         skillId: skills.id,
         name: skills.name,
         displayName: skills.displayName,
+        origin: skills.origin,
         visibility: skills.visibility,
         externalServiceId: skills.externalServiceId,
         latestVersionId: skills.latestVersionId,
@@ -228,6 +229,7 @@ export class AgentRepository {
         skillId: row.skillId,
         name: row.name,
         displayName: row.displayName,
+        origin: row.origin,
         pinnedVersionId: row.pinnedVersionId,
         pinnedVersion: row.pinnedVersion,
         latestVersion: row.latestVersion === null ? null : Number(row.latestVersion),

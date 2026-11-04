@@ -45,6 +45,22 @@ export function newListItemId(): string {
   return `li_${randomBytes(8).toString('hex')}`;
 }
 
+export function withNewListItemIds(form: readonly Field[], values: ConfigurationValues): ConfigurationValues {
+  const fields = new Map(valueFieldsOf(form).map((field) => [field.key, field]));
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      const field = fields.get(key);
+      if (field?.type !== 'list' || !Array.isArray(value)) return [key, value];
+      return [
+        key,
+        value.map((item) =>
+          isPlainValues(item) ? { ...withNewListItemIds(field.item, item), id: newListItemId() } : item
+        ),
+      ];
+    })
+  );
+}
+
 export interface RepeatableItemIds {
   next: () => string;
   restart: () => void;

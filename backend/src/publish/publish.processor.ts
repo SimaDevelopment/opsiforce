@@ -12,7 +12,6 @@ import { PublishService } from './publish.service';
 import { ProjectEventsService } from '../project/project-events.service';
 import { PROJECT_PUBLISH_QUEUE, PublishJobData, PublishReportLine, PublishStatus } from './publish.types';
 import { ProjectService } from '../project/project.service';
-import { ProjectAuthService } from '../project/project-auth.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ScheduleService } from '../schedule/schedule.service';
@@ -38,7 +37,6 @@ export class PublishProcessor extends WorkerHost {
     private readonly git: GitService,
     private readonly publishService: PublishService,
     private readonly projectService: ProjectService,
-    private readonly projectAuthService: ProjectAuthService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly gatewayKeyService: GatewayKeyService,
     private readonly scheduleService: ScheduleService,
@@ -106,20 +104,13 @@ export class PublishProcessor extends WorkerHost {
 
       await this.writeEnvFile(prodEnv.directory, data.variables, data.isFirstPublish);
 
-      if (data.isFirstPublish && devEnv.authMode !== 'public') {
-        const managedFallbackTenantName =
-          devEnv.authMode === 'managed' ? await this.projectService.findExternalTenantName(data.tenantId) : undefined;
-        await this.projectAuthService.inheritAuth(
-          devEnv.id,
-          data.projectEnvironmentId,
-          prodEnv.environmentSlug,
-          managedFallbackTenantName
-        );
+      if (data.isFirstPublish) {
+        await this.projectService.inheritAuth(devEnv, prodEnv);
       }
 
       phase = PublishStatus.Building;
       await this.setStatus(data.publishJobId, PublishStatus.Building);
-      const podIp = await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
+      await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
 
       phase = PublishStatus.Migrating;
       await this.setStatus(data.publishJobId, PublishStatus.Migrating);
@@ -142,7 +133,7 @@ export class PublishProcessor extends WorkerHost {
         );
       }
 
-      await this.projectService.finishPublishDeploy(data.projectEnvironmentId, podIp, sha);
+      await this.projectService.finishPublishDeploy(data.projectEnvironmentId, sha);
       await this.serviceDefaults.publishedTo(data.projectId, data.projectEnvironmentId).catch((defaultErr) => {
         this.logger.error(
           `Setting the External Service Default environment after publishing ${data.projectEnvironmentId} failed: ${(defaultErr as Error).message}`
@@ -164,11 +155,8 @@ export class PublishProcessor extends WorkerHost {
             await this.restoreEnvFile(prodDir, previousEnvVars);
           }
           if (deployStarted) {
-            const rolledBackIp = await this.projectService.recreatePodForDeploy(
-              data.projectEnvironmentId,
-              POD_READY_TIMEOUT_MS
-            );
-            await this.projectService.finishPublishDeploy(data.projectEnvironmentId, rolledBackIp, previousSha);
+            await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
+            await this.projectService.finishPublishDeploy(data.projectEnvironmentId, previousSha);
           }
           await clearEnvJsonBackup(this.storageMountPath, prodDirectory).catch(() => undefined);
         } catch (rollbackErr) {

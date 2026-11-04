@@ -77,7 +77,7 @@ export async function readNamedEntry(zip: yauzl.ZipFile, name: string): Promise<
 }
 
 export async function writeEntryToFile(zip: yauzl.ZipFile, entry: yauzl.Entry, target: string): Promise<void> {
-  await pipeline(await openEntry(zip, entry), createWriteStream(target));
+  await pipeline(await openEntry(zip, entry), createWriteStream(target, { flags: 'wx' }));
 }
 
 export async function writeConfinedEntry(

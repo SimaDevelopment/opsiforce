@@ -12,9 +12,9 @@ import { AppReadinessService } from '../../src/project/app-readiness.service';
 import type { FakePodService } from '../support/infra-fakes';
 import { disableProject } from '../support/project-fixtures';
 import { waitFor } from '../support/wait-for';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
-import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from './support/custom-services';
-import { tenantAdmin, type PersonFixture } from './support/fixtures';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
+import { createCustomService, ensureExternalServiceBuilder, TENANT_SERVICES } from '../support/custom-services';
+import { tenantAdmin, type PersonFixture } from '../support/external-service-fixtures';
 import { callAsGate, gatewayUrlOf, resolveCaller, resolved } from './support/gate-proxy';
 import { productionCaller, type GateCallerFixture } from './support/gate';
 import {
@@ -430,7 +430,7 @@ describe('an SDK 2 service reached through the Gate', () => {
       await startPod();
       podService().markPodReady(podService().assignedPodName(service.projectEnvironmentId), '127.0.0.1');
       await waitFor(async () => (await serviceEnvironmentRow(service.projectEnvironmentId))?.status === 'active');
-      app.get(AppReadinessService).markServing(service.projectEnvironmentId);
+      app.get(AppReadinessService).markServing(service.projectEnvironmentId, service.builderChatId);
       const res = await answer;
 
       expect(res.statusCode, res.body).toBe(200);

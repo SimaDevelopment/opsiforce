@@ -85,20 +85,14 @@ data:
   {{- if .Values.config.appsHostname }}
   APPS_HOSTNAME: {{ .Values.config.appsHostname | quote }}
   {{- end }}
+  {{- if .Values.config.previewAppsHostname }}
+  PREVIEW_APPS_HOSTNAME: {{ .Values.config.previewAppsHostname | quote }}
+  {{- end }}
   {{- if .Values.config.webappServiceName }}
   WEBAPP_SERVICE_NAME: {{ .Values.config.webappServiceName | quote }}
   {{- end }}
   {{- if .Values.config.webappServicePort }}
   WEBAPP_SERVICE_PORT: {{ .Values.config.webappServicePort | quote }}
-  {{- end }}
-  {{- if .Values.config.managedOidcClientId }}
-  MANAGED_OIDC_CLIENT_ID: {{ .Values.config.managedOidcClientId | quote }}
-  {{- end }}
-  {{- if .Values.config.managedOidcIssuerUrl }}
-  MANAGED_OIDC_ISSUER_URL: {{ .Values.config.managedOidcIssuerUrl | quote }}
-  {{- end }}
-  {{- if .Values.config.managedTenantRolePrefix }}
-  MANAGED_TENANT_ROLE_PREFIX: {{ .Values.config.managedTenantRolePrefix | quote }}
   {{- end }}
   {{- if .Values.config.ssoGroupMap }}
   SSO_GROUP_MAP: {{ .Values.config.ssoGroupMap | quote }}

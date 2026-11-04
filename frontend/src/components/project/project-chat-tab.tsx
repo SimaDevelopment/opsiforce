@@ -7,9 +7,9 @@ import { FileUpload } from '~/components/file-upload';
 import { ExternalServicesButton } from './external-services/external-services-button';
 import { SkillsButton } from './skills/skills-button';
 import { DictationButton } from '~/components/dictation-button';
-import { Spinner } from '~/components/ui/spinner';
 import { WorkspaceFileLinks } from './workspace-file-links';
 import { OpencodeOverrides } from './opencode-overrides';
+import { ProjectConnecting } from './project-states';
 import { createProxyPlatform } from './platform';
 
 export interface ProjectChatTabProps {
@@ -90,7 +90,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
 
   return (
     <div class="relative flex-1 min-h-0 flex flex-col">
-      <div ref={embedHost} class="contents" />
+      <div ref={embedHost} class="contents" data-embedded-chat />
       <DictationButton projectId={props.projectId} environmentId={props.environmentId} host={host} />
       <FileUpload
         projectId={props.projectId}
@@ -98,11 +98,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         host={host}
         stripItems={
           <Show when={props.showSkillsAndServices}>
-            <SkillsButton
-              projectId={props.projectId}
-              projectEnvironmentId={props.environmentId}
-              environmentName={props.environmentName}
-            />
+            <SkillsButton projectId={props.projectId} projectEnvironmentId={props.environmentId} />
             <ExternalServicesButton
               projectId={props.projectId}
               projectEnvironmentId={props.environmentId}
@@ -118,7 +114,9 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         onPreviewFile={props.onPreviewFile}
       />
       <Show when={booting()}>
-        <Spinner label="Connecting..." overlay />
+        <div class="absolute inset-0 z-10 bg-background">
+          <ProjectConnecting starting={false} />
+        </div>
       </Show>
     </div>
   );

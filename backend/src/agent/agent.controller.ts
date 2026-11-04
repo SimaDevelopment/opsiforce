@@ -257,7 +257,9 @@ export class AgentController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<AgentServiceSettingsView> {
-    return this.agentService.serviceSettings(await this.caller(req, tenant, user), id, skillId);
+    return this.agentService.serviceSettings(await this.caller(req, tenant, user), id, skillId, {
+      canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
+    });
   }
 
   @Put(':id/skills/:skillId/service-settings')
@@ -272,6 +274,28 @@ export class AgentController {
     return this.agentService.setServiceSettings(await this.caller(req, tenant, user), id, skillId, dto ?? {}, {
       canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
     });
+  }
+
+  @Post(':id/skills/:skillId/service-settings/options/:name')
+  async serviceSettingsOptions(
+    @Param('id') id: string,
+    @Param('skillId') skillId: string,
+    @Param('name') name: string,
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext,
+    @Res() reply: FastifyReply
+  ): Promise<void> {
+    const answer = await this.agentService.serviceSettingsOptions(
+      await this.caller(req, tenant, user),
+      id,
+      skillId,
+      name,
+      body,
+      { canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services') }
+    );
+    await reply.status(answer.status).headers(answer.headers).send(Buffer.from(answer.body));
   }
 
   @Post(':id/publish')

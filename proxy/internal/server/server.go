@@ -28,11 +28,9 @@ import (
 
 var projectIDPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-const environmentIDLength = 36
-
 const (
 	retryAfterHeader         = "Retry-After"
-	restartRetryAfterSeconds = "5"
+	restartRetryAfterSeconds = 5
 )
 
 var (
@@ -41,6 +39,9 @@ var (
 	notFoundBody   = []byte(`{"error":"Project not found"}`)
 	disabledBody   = []byte(`{"error":"Project is disabled"}`)
 )
+
+var unprotectedRouteBody = []byte(`{"error":"App sign-in is not configured for this host"}`)
+var crossOriginUpgradeBody = []byte(`{"error":"A signed-in connection upgrade must come from the App's own origin"}`)
 
 const (
 	logModeOff      = "off"
@@ -198,18 +199,18 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 
 	ensured, err := s.resolve(r.Context(), projectID, backend.SurfaceAgent, r.Header, authSignature(r.Header))
 	if err != nil {
-		s.writeEnsureError(w, err)
+		s.writeEnsureError(w, r, err)
 		return
 	}
 
 	if ensured.State != "ready" {
-		writeStateResponse(w, ensured.State)
+		s.writeStateResponse(w, r, ensured.State)
 		return
 	}
 
 	targetURL, err := buildTargetURL(ensured.Upstream, upstreamPath, r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, projectID)
 		return
 	}
 
@@ -222,50 +223,63 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
-	setCORSHeaders(w, r)
+	stripPlatformCookies(r.Header)
+	crossOriginSignIn := signedInFromAnotherOrigin(r)
+	if !crossOriginSignIn {
+		setCORSHeaders(w, r)
+	}
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
-	projectID, hostLabel := extractAppHostLabel(r.Host)
-	if projectID == "" {
-		writeJSONStatus(w, http.StatusBadRequest, []byte(`{"error":"Invalid subdomain"}`))
+	if crossOriginSignIn && isUpgradeRequest(r) {
+		writeJSONStatus(w, http.StatusForbidden, crossOriginUpgradeBody)
 		return
 	}
 
-	forwarded := acceptForwarding(r.Header, projectID, s.cfg.AppAuthForwardingSigningKey)
+	ensured, err := s.resolveApp(r.Context(), r.Host, r.Header)
+	if err != nil {
+		s.writeEnsureError(w, r, err)
+		return
+	}
+
+	if ensured.Protected && r.Header.Get(unprotectedRouteHeader) != "" {
+		slog.Warn("protected App reached through the unprotected apps route", "environmentId", ensured.EnvironmentID, "host", r.Host)
+		writeJSONStatus(w, http.StatusForbidden, unprotectedRouteBody)
+		return
+	}
+
+	if ensured.Action == backend.ActionRedirect {
+		w.Header().Set("Location", "https://"+ensured.CanonicalHost+r.URL.RequestURI())
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusPermanentRedirect)
+		return
+	}
+
+	environmentID := ensured.EnvironmentID
+	forwarded := acceptForwarding(r.Header, environmentID, s.cfg.AppAuthForwardingSigningKey)
 	if forwarded && !sameOriginForwarding(r) {
 		w.Header().Del("Access-Control-Allow-Origin")
 		w.Header().Del("Access-Control-Allow-Credentials")
 		writeJSONStatus(w, http.StatusForbidden, []byte(`{"error":"Forwarded-token requests must be same-origin"}`))
 		return
 	}
-	ensured, err := s.resolveLabeled(r.Context(), projectID, hostLabel, backend.SurfaceApp, r.Header, "")
-	if err != nil {
-		s.writeEnsureError(w, err)
-		return
-	}
-
-	if redirected := redirectToCanonicalHost(w, r, projectID, ensured); redirected {
-		return
-	}
 
 	if ensured.State != "ready" {
-		writeStateResponse(w, ensured.State)
+		s.writeStateResponse(w, r, ensured.State)
 		return
 	}
 
 	targetURL, err := buildTargetURL(ensured.Upstream, pathOrSlash(r.URL.Path), r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, environmentID)
 		return
 	}
 
 	if isUpgradeRequest(r) {
-		release := s.wsKeepAlive.acquire(projectID, backend.SurfaceApp)
+		release := s.wsKeepAlive.acquire(environmentID, backend.SurfaceApp)
 		defer release()
-		s.serveReverseProxy(w, r, projectID, targetURL, reverseProxyOptions{})
+		s.serveReverseProxy(w, r, environmentID, targetURL, reverseProxyOptions{})
 		return
 	}
 
@@ -282,17 +296,20 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit)
+	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit, ensured.PreviewFrameOrigin)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, environmentID)
 		return
 	}
 
 	if responseResult.restart {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, environmentID)
 		return
 	}
 
+	if crossOriginSignIn {
+		dropCORSHeaders(responseResult.headers)
+	}
 	writeHeaderMap(w.Header(), responseResult.headers)
 	if forwarded {
 		w.Header().Set("Cache-Control", "no-store")
@@ -313,13 +330,13 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 			responseResult.responseSize = size
 			responseBodyText = capturer.captured()
 			if copyErr != nil {
-				slog.Debug("app response stream interrupted", "projectId", projectID, "error", copyErr.Error())
+				slog.Debug("app response stream interrupted", "environmentId", environmentID, "error", copyErr.Error())
 			}
 		} else {
 			size, copyErr := copyBuffer(w, responseResult.stream, s.bufferPool)
 			responseResult.responseSize = size
 			if copyErr != nil {
-				slog.Debug("app response stream interrupted", "projectId", projectID, "error", copyErr.Error())
+				slog.Debug("app response stream interrupted", "environmentId", environmentID, "error", copyErr.Error())
 			}
 		}
 	}
@@ -356,12 +373,12 @@ func (s *Server) handleSubdomain(w http.ResponseWriter, r *http.Request, surface
 
 	ensured, err := s.resolve(r.Context(), projectID, surface, r.Header, "")
 	if err != nil {
-		s.writeEnsureError(w, err)
+		s.writeEnsureError(w, r, err)
 		return
 	}
 
 	if ensured.State != "ready" {
-		writeStateResponse(w, ensured.State)
+		s.writeStateResponse(w, r, ensured.State)
 		return
 	}
 
@@ -369,7 +386,7 @@ func (s *Server) handleSubdomain(w http.ResponseWriter, r *http.Request, surface
 
 	targetURL, err := buildTargetURL(targetBase, pathOrSlash(r.URL.Path), r.URL.RawQuery)
 	if err != nil {
-		s.sendFailureResponse(w, r.Context(), projectID)
+		s.sendFailureResponse(w, r, projectID)
 		return
 	}
 
@@ -393,25 +410,26 @@ func (s *Server) resolve(
 	headers http.Header,
 	authKey string,
 ) (backend.EnsureResponse, error) {
-	return s.resolveLabeled(ctx, projectID, projectID, surface, headers, authKey)
-}
-
-func (s *Server) resolveLabeled(
-	ctx context.Context,
-	projectID string,
-	hostLabel string,
-	surface backend.Surface,
-	headers http.Header,
-	authKey string,
-) (backend.EnsureResponse, error) {
 	if backend.GatewayBearer(headers) != "" {
 		return s.backend.Ensure(ctx, projectID, surface, headers)
 	}
 
-	cacheKey := fmt.Sprintf("%s|%s|%s", hostLabel, surface, authKey)
+	cacheKey := fmt.Sprintf("%s|%s|%s", projectID, surface, authKey)
 
-	return s.cache.GetOrLoad(ctx, cacheKey, projectID, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {
+	return s.cache.GetOrLoad(ctx, cacheKey, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {
 		return s.backend.Ensure(ctx, projectID, surface, headers)
+	})
+}
+
+func (s *Server) resolveApp(ctx context.Context, host string, headers http.Header) (backend.EnsureResponse, error) {
+	if backend.GatewayBearer(headers) != "" {
+		return s.backend.EnsureApp(ctx, host, headers)
+	}
+
+	cacheKey := fmt.Sprintf("%s|%s", host, backend.SurfaceApp)
+
+	return s.cache.GetOrLoad(ctx, cacheKey, s.cacheTTL, func(ctx context.Context) (backend.EnsureResponse, error) {
+		return s.backend.EnsureApp(ctx, host, headers)
 	})
 }
 
@@ -423,40 +441,40 @@ func (s *Server) cacheTTL(ensured backend.EnsureResponse) time.Duration {
 	return s.cfg.NonReadyCacheTTL
 }
 
-func (s *Server) writeEnsureError(w http.ResponseWriter, err error) {
+func (s *Server) writeEnsureError(w http.ResponseWriter, r *http.Request, err error) {
 	var statusErr *backend.StatusError
 	if errors.As(err, &statusErr) {
-		writeStatusError(w, statusErr)
+		s.writeStatusError(w, r, statusErr)
 		return
 	}
 
-	writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+	s.writeError(w, r, unresponsive)
 }
 
-func (s *Server) sendFailureResponse(w http.ResponseWriter, ctx context.Context, projectID string) {
-	restart, err := s.reportFailure(ctx, projectID)
+func (s *Server) sendFailureResponse(w http.ResponseWriter, r *http.Request, projectID string) {
+	restart, err := s.reportFailure(r.Context(), projectID)
 	if err != nil {
 		var statusErr *backend.StatusError
 		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
-			writeJSONStatus(w, http.StatusNotFound, notFoundBody)
+			s.writeError(w, r, notFound)
 			return
 		}
 
 		slog.Error("proxy failure reporting failed", "projectId", projectID, "error", err.Error())
-		writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+		s.writeError(w, r, unresponsive)
 		return
 	}
 
 	if restart {
-		writeRestarting(w)
+		s.writeRestarting(w, r)
 		return
 	}
 
-	writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+	s.writeError(w, r, unresponsive)
 }
 
 func (s *Server) reportFailure(ctx context.Context, projectID string) (bool, error) {
-	s.cache.InvalidateProject(projectID)
+	s.cache.InvalidateEnvironment(projectID)
 	return s.backend.ReportFailure(ctx, projectID)
 }
 
@@ -477,13 +495,18 @@ func (s *Server) roundTripAppRequest(
 	requestBody []byte,
 	captureBody bool,
 	bodyLimit int,
+	previewFrameOrigin string,
 ) (appProxyResult, error) {
 	outgoing := r.Clone(r.Context())
 	outgoing.URL = targetURL
-	outgoing.Host = targetURL.Host
+	outgoing.Host = localHostOf(targetURL)
 	outgoing.RequestURI = ""
 	outgoing.Header = copyRequestHeaders(r.Header, true)
 	stripAuthProxyHeaders(outgoing.Header)
+	framedPreview := previewFrameOrigin != "" && loadsIntoAFrame(r)
+	if framedPreview && r.Method == http.MethodGet {
+		askForAWholePage(outgoing.Header)
+	}
 
 	if len(requestBody) > 0 {
 		outgoing.Body = io.NopCloser(bytes.NewReader(requestBody))
@@ -498,6 +521,9 @@ func (s *Server) roundTripAppRequest(
 	}
 
 	headers := filterResponseHeaders(resp.Header, false)
+	if previewFrameOrigin != "" && strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		varyByFrameDestination(headers)
+	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		defer resp.Body.Close()
@@ -509,12 +535,16 @@ func (s *Server) roundTripAppRequest(
 		if isK8sPodError(body) {
 			return appProxyResult{restart: true}, nil
 		}
+		served := body
+		if framedPreview && takesTheReporter(resp.Header.Get("Content-Type")) {
+			served = withPreviewReporter(body, previewFrameOf(r, previewFrameOrigin))
+		}
 
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,
 			headers:      headers,
-			body:         body,
-			responseSize: int64(len(body)),
+			body:         served,
+			responseSize: int64(len(served)),
 		}
 		if captureBody {
 			result.responseBody = truncate(string(body), bodyLimit)
@@ -524,15 +554,36 @@ func (s *Server) roundTripAppRequest(
 
 	contentType := resp.Header.Get("Content-Type")
 	upstreamPath := targetURL.Path
+	rewritesUpstreamPath := upstreamPath != "/" && strings.Contains(contentType, "text/html")
+	reportsPreviewLocation := framedPreview && takesTheReporter(contentType)
 
-	if upstreamPath != "/" && strings.Contains(contentType, "text/html") {
+	if reportsPreviewLocation && !rewritesUpstreamPath {
+		stream, err := streamWithPreviewReporter(resp.Body, previewFrameOf(r, previewFrameOrigin))
+		if err != nil {
+			return appProxyResult{}, err
+		}
+		return appProxyResult{
+			statusCode:  resp.StatusCode,
+			headers:     headers,
+			stream:      stream,
+			contentType: contentType,
+		}, nil
+	}
+
+	if rewritesUpstreamPath {
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return appProxyResult{}, err
 		}
 
-		rewritten := bytes.ReplaceAll(body, []byte(upstreamPath), nil)
+		rewritten := body
+		if rewritesUpstreamPath {
+			rewritten = bytes.ReplaceAll(rewritten, []byte(upstreamPath), nil)
+		}
+		if reportsPreviewLocation {
+			rewritten = withPreviewReporter(rewritten, previewFrameOf(r, previewFrameOrigin))
+		}
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,
 			headers:      headers,
@@ -577,7 +628,7 @@ func (s *Server) serveReverseProxy(
 			proxyRequest.Out.URL.Path = targetURL.Path
 			proxyRequest.Out.URL.RawPath = targetURL.RawPath
 			proxyRequest.Out.URL.RawQuery = targetURL.RawQuery
-			proxyRequest.Out.Host = targetURL.Host
+			proxyRequest.Out.Host = localHostOf(targetURL)
 			passThroughForwardedHeaders(proxyRequest.Out.Header, proxyRequest.In.Header)
 			stripAuthProxyHeaders(proxyRequest.Out.Header)
 			if options.stripUserIdentity {
@@ -612,7 +663,7 @@ func (s *Server) serveReverseProxy(
 
 				if restart {
 					mutateResponse(resp, http.StatusServiceUnavailable, restartingBody)
-					resp.Header.Set(retryAfterHeader, restartRetryAfterSeconds)
+					resp.Header.Set(retryAfterHeader, strconv.Itoa(restartRetryAfterSeconds))
 				} else {
 					mutateResponse(resp, http.StatusBadGateway, badGatewayBody)
 				}
@@ -630,7 +681,7 @@ func (s *Server) serveReverseProxy(
 			}
 
 			slog.Error("reverse proxy error", "projectId", projectID, "error", err.Error())
-			s.sendFailureResponse(rw, req.Context(), projectID)
+			s.sendFailureResponse(rw, req, projectID)
 		},
 	}
 
@@ -691,51 +742,12 @@ func extractProjectIDFromHost(host string) string {
 	return subdomain
 }
 
-// extractAppHostLabel parses the public app host label, which is either a bare
-// 36-char environment uuid or "{envId}-{slug}". The uuid's fixed length is the
-// parsing rule (ADR 0012); anything that doesn't fit it is treated as a whole
-// label and fails resolution downstream.
-func extractAppHostLabel(host string) (string, string) {
-	label := firstHostLabel(host)
-	if !projectIDPattern.MatchString(label) {
-		return "", ""
-	}
-
-	if len(label) > environmentIDLength && label[environmentIDLength] == '-' {
-		return label[:environmentIDLength], label
-	}
-
-	return label, label
-}
-
 func firstHostLabel(host string) string {
 	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
 		host = parsedHost
 	}
 
 	return strings.Split(host, ".")[0]
-}
-
-// redirectToCanonicalHost issues a permanent redirect when the request arrived
-// on a host that may not serve this environment. The canonical slugged host
-// and the legacy bare env-id host both serve — the per-environment auth
-// IngressRoute matches both, so neither bypasses the auth gate. Anything else
-// (a wrong slug) redirects to canonical.
-func redirectToCanonicalHost(w http.ResponseWriter, r *http.Request, envID string, ensured backend.EnsureResponse) bool {
-	if ensured.CanonicalHost == "" {
-		return false
-	}
-
-	requestLabel := firstHostLabel(r.Host)
-	canonicalLabel := strings.Split(ensured.CanonicalHost, ".")[0]
-
-	if strings.EqualFold(requestLabel, canonicalLabel) || strings.EqualFold(requestLabel, envID) {
-		return false
-	}
-
-	w.Header().Set("Location", "https://"+ensured.CanonicalHost+r.URL.RequestURI())
-	w.WriteHeader(http.StatusPermanentRedirect)
-	return true
 }
 
 func buildTargetURL(upstream string, requestPath string, rawQuery string) (*url.URL, error) {
@@ -764,6 +776,10 @@ func joinURLPath(basePath string, requestPath string) string {
 	default:
 		return basePath + requestPath
 	}
+}
+
+func localHostOf(target *url.URL) string {
+	return "localhost:" + target.Port()
 }
 
 func pathOrSlash(path string) string {
@@ -833,16 +849,19 @@ var authProxyHeaders = []string{
 	"X-Forwarded-Access-Token",
 	"X-Forwarded-Id-Token",
 	"X-Forwarded-Refresh-Token",
+	"X-Auth-Request-Access-Token",
+	"X-Auth-Request-Redirect",
+}
+
+var forwardedIdentityHeaders = []string{
 	"X-Forwarded-User",
 	"X-Forwarded-Email",
 	"X-Forwarded-Preferred-Username",
 	"X-Forwarded-Groups",
-	"X-Auth-Request-Access-Token",
 	"X-Auth-Request-User",
 	"X-Auth-Request-Email",
 	"X-Auth-Request-Preferred-Username",
 	"X-Auth-Request-Groups",
-	"X-Auth-Request-Redirect",
 }
 
 func stripAuthProxyHeaders(headers http.Header) {
@@ -854,10 +873,14 @@ func stripAuthProxyHeaders(headers http.Header) {
 func stripUserIdentityHeaders(headers http.Header) {
 	headers.Del("Cookie")
 	headers.Del("Authorization")
+	for _, name := range forwardedIdentityHeaders {
+		headers.Del(name)
+	}
 }
 
 func sanitizeReverseProxyHeaders(headers http.Header, stripFrameHeaders bool) {
 	stripReservedHeaders(headers)
+	dropPlatformSetCookies(headers)
 	headers.Del("Transfer-Encoding")
 	if stripFrameHeaders {
 		headers.Del("Content-Length")
@@ -884,6 +907,7 @@ func filterResponseHeaders(source http.Header, stripFrameHeaders bool) http.Head
 		}
 	}
 
+	dropPlatformSetCookies(target)
 	return target
 }
 
@@ -897,20 +921,26 @@ func mutateResponse(resp *http.Response, statusCode int, body []byte) {
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 }
 
-func writeStateResponse(w http.ResponseWriter, state string) {
+func (s *Server) writeStateResponse(w http.ResponseWriter, r *http.Request, state string) {
 	switch state {
 	case "starting":
-		writeRestarting(w)
+		s.writeRestarting(w, r)
 	case "disabled":
-		writeJSONStatus(w, http.StatusLocked, disabledBody)
+		s.writeError(w, r, turnedOff)
+	case "failed":
+		s.writeError(w, r, failedToStart)
 	default:
-		writeJSONStatus(w, http.StatusBadGateway, badGatewayBody)
+		s.writeError(w, r, unresponsive)
 	}
 }
 
-func writeStatusError(w http.ResponseWriter, statusErr *backend.StatusError) {
+func (s *Server) writeStatusError(w http.ResponseWriter, r *http.Request, statusErr *backend.StatusError) {
 	if statusErr.StatusCode == http.StatusNotFound {
-		writeJSONStatus(w, http.StatusNotFound, notFoundBody)
+		s.writeError(w, r, notFound)
+		return
+	}
+	if statusErr.StatusCode >= http.StatusInternalServerError && s.servesPage(r) {
+		writePage(w, unresponsive)
 		return
 	}
 
@@ -932,9 +962,9 @@ func writeJSONStatus(w http.ResponseWriter, statusCode int, body []byte) {
 	_, _ = w.Write(body)
 }
 
-func writeRestarting(w http.ResponseWriter) {
-	w.Header().Set(retryAfterHeader, restartRetryAfterSeconds)
-	writeJSONStatus(w, http.StatusServiceUnavailable, restartingBody)
+func (s *Server) writeRestarting(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(retryAfterHeader, strconv.Itoa(restartRetryAfterSeconds))
+	s.writeError(w, r, restarting)
 }
 
 func writeHeaderMap(target http.Header, source http.Header) {

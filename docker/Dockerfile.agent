@@ -68,6 +68,35 @@ RUN corepack enable && corepack prepare yarn@4.17.0 --activate
 
 RUN curl -fsSL https://code-server.dev/install.sh | sh -s -- --version 4.117.0
 
+ARG TARGETARCH=amd64
+RUN set -eu; \
+    case "${TARGETARCH}" in \
+      amd64) arch=x86_64; \
+        engine_sha=9ac225999fd5e863f7694c728ef23d480616b1e5639328fa309befd4243d69eb; \
+        compose_sha=47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0; \
+        buildx_sha=e25d5cd675092bb5d1d03632fdc46cdf3fede7b514dc5f023a105e00d3ce5ad4 ;; \
+      arm64) arch=aarch64; \
+        engine_sha=873b3e0207857c3b2f28392fb922f3ea6efe37620c16d4d4aaf2fef409c90b73; \
+        compose_sha=42cfa75f51ad0ccf290bad37899e0038a8c10a0069e85233ecc1d53e3ff1347d; \
+        buildx_sha=3b83b3731916ba433feccaaa689fe5bcdc81c641d92c8e6c2ea865dfa141c97a ;; \
+      *) echo "Unsupported TARGETARCH ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends iptables; \
+    rm -rf /var/lib/apt/lists/*; \
+    plugins=/usr/local/lib/docker/cli-plugins; \
+    mkdir -p "${plugins}"; \
+    curl -fsSLo /tmp/docker.tgz "https://download.docker.com/linux/static/stable/${arch}/docker-29.9.2.tgz"; \
+    curl -fsSLo "${plugins}/docker-compose" "https://github.com/docker/compose/releases/download/v5.6.1/docker-compose-linux-${arch}"; \
+    curl -fsSLo "${plugins}/docker-buildx" "https://github.com/docker/buildx/releases/download/v0.38.1/buildx-v0.38.1.linux-${TARGETARCH}"; \
+    printf '%s  %s\n' \
+      "${engine_sha}" /tmp/docker.tgz \
+      "${compose_sha}" "${plugins}/docker-compose" \
+      "${buildx_sha}" "${plugins}/docker-buildx" | sha256sum -c -; \
+    tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1; \
+    rm /tmp/docker.tgz; \
+    chmod +x "${plugins}/docker-compose" "${plugins}/docker-buildx"
+
 RUN mkdir -p /workspace /opt/opencode /opt/agents
 WORKDIR /workspace
 
@@ -98,10 +127,11 @@ RUN chmod -R a-w /opt/opsiforce/opencode-plugins
 
 COPY agent-config/scripts/guard.sh /usr/local/bin/guard
 COPY agent-config/scripts/process-logs.sh /usr/local/bin/process-logs
+COPY agent-config/scripts/app-url.sh /usr/local/bin/app-url
 COPY agent-config/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY agent-config/scripts/agent-workspace-migrate.mjs /usr/local/bin/agent-workspace-migrate
 COPY agent-config/datasette-metadata.yml /opt/opencode/datasette-metadata.yml
-RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
+RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/app-url /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep file \

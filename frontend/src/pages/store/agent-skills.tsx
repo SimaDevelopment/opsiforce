@@ -1,11 +1,19 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { For, Show, createMemo, createSignal, type Accessor, type Component } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { Link } from '@tanstack/solid-router';
 import { toast } from 'solid-sonner';
-import { useRemoveAgentSkill, useSetAgentSkill, type AgentDetail, type AgentProfileSkill } from '~/api/agents';
+import {
+  useRemoveAgentSkill,
+  useSetAgentSkill,
+  type AgentDetail,
+  type AgentProfileSkill,
+  type ShippedSkill,
+} from '~/api/agents';
 import { ApiError } from '~/api/client';
+import { useEnvironments } from '~/api/environments';
 import { useSkills, type Skill } from '~/api/skills';
-import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import {
   Dialog,
   DialogContent,
@@ -16,15 +24,22 @@ import {
 } from '~/components/ui/dialog';
 import {
   DisabledBadge,
+  FilterChips,
   FOCUS_RING,
+  KIND_ICONS,
   OriginBadge,
+  PackageBadge,
   RetiredBadge,
   RowList,
   SearchInput,
   ServiceMark,
+  VersionTag,
+  VersionUpdateBadge,
   VisibilityBadge,
+  type FilterChipOption,
 } from '~/components/store/store-list';
-import { ArrowUp, Check, Files, Lock, Plus } from '~/components/icons';
+import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
+import { Check, CircleArrowUp, Files, Plus, SlidersHorizontal, Trash2 } from '~/components/icons';
 import { cn } from '~/lib/cn';
 import { ServiceSettingsDialog, serviceSettingsSummary } from './agent-service-settings-dialog';
 import { DEFAULT_SKILL_FILE } from './skill-page';
@@ -33,25 +48,253 @@ function refusalMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : 'The change could not be saved.';
 }
 
-function UpdateBadge(props: { from: number; to: number }) {
+type SkillKind = 'shipped' | 'built_in' | 'custom' | 'service';
+type SkillKindFilter = 'all' | 'addons' | SkillKind;
+
+interface Kinded {
+  name: string;
+  displayName: string | null;
+  origin: string;
+  externalServiceId: string | null;
+  shipped?: boolean;
+}
+
+interface ShippedRow extends Kinded {
+  shipped: true;
+  skillId: string | null;
+  version: number | null;
+}
+
+type ListedSkill = AgentProfileSkill | ShippedRow;
+
+const SKILL_KINDS: { id: Exclude<SkillKind, 'shipped'>; label: string }[] = [
+  { id: 'built_in', label: 'Built-in' },
+  { id: 'custom', label: 'Custom' },
+  { id: 'service', label: 'Service' },
+];
+
+const LIST_FILTER_FROM = 6;
+
+function skillKindOf(skill: Kinded): SkillKind {
+  if (skill.shipped) return 'shipped';
+  if (skill.externalServiceId !== null) return 'service';
+  return skill.origin === 'built_in' ? 'built_in' : 'custom';
+}
+
+function matchesKind(skill: Kinded, kind: SkillKindFilter): boolean {
+  if (kind === 'all') return true;
+  if (kind === 'addons') return !skill.shipped;
+  return skillKindOf(skill) === kind;
+}
+
+function nameMatches(skill: Kinded, needle: string): boolean {
+  return skill.name.toLowerCase().includes(needle) || (skill.displayName ?? '').toLowerCase().includes(needle);
+}
+
+interface SkillFilter<T> {
+  query: Accessor<string>;
+  setQuery: (query: string) => void;
+  kind: Accessor<SkillKindFilter>;
+  setKind: (kind: SkillKindFilter) => void;
+  options: Accessor<FilterChipOption<SkillKindFilter>[]>;
+  visible: Accessor<T[]>;
+  reset: () => void;
+}
+
+function useSkillFilter<T extends Kinded>(
+  skills: () => T[],
+  matches: (skill: T, needle: string) => boolean
+): SkillFilter<T> {
+  const [query, setQuery] = createSignal('');
+  const [kind, setKind] = createSignal<SkillKindFilter>('all');
+  const options = createMemo(() => {
+    const counts = new Map<SkillKind, number>();
+    for (const skill of skills()) counts.set(skillKindOf(skill), (counts.get(skillKindOf(skill)) ?? 0) + 1);
+    const shipped = counts.get('shipped') ?? 0;
+    const addons = skills().length - shipped;
+    return [
+      { id: 'all' as SkillKindFilter, label: 'All', icon: KIND_ICONS.all, count: skills().length },
+      ...(shipped > 0
+        ? [{ id: 'shipped' as SkillKindFilter, label: 'Package', icon: KIND_ICONS.shipped, count: shipped }]
+        : []),
+      ...(shipped > 0 && addons > 0
+        ? [{ id: 'addons' as SkillKindFilter, label: 'Add-ons', icon: KIND_ICONS.addons, count: addons }]
+        : []),
+      ...SKILL_KINDS.flatMap(({ id, label }) => {
+        const count = counts.get(id);
+        return count ? [{ id: id as SkillKindFilter, label, icon: KIND_ICONS[id], count }] : [];
+      }),
+    ];
+  });
+  const activeKind = () => (options().some((option) => option.id === kind()) ? kind() : 'all');
+  const visible = createMemo(() => {
+    const needle = query().trim().toLowerCase();
+    return skills().filter((skill) => matchesKind(skill, activeKind()) && (!needle || matches(skill, needle)));
+  });
+  const reset = () => {
+    setQuery('');
+    setKind('all');
+  };
+  return { query, setQuery, kind: activeKind, setKind, options, visible, reset };
+}
+
+function SkillFilterBar<T>(props: { filter: SkillFilter<T>; class?: string }) {
   return (
-    <Badge variant="warning" class="gap-1 font-medium tabular-nums">
-      <ArrowUp class="h-3 w-3" aria-hidden="true" />v{props.from} → v{props.to}
-    </Badge>
+    <div class={cn('space-y-2', props.class)}>
+      <SearchInput value={props.filter.query()} onInput={props.filter.setQuery} label="Search skills" />
+      <FilterChips
+        label="Kind of skill"
+        options={props.filter.options()}
+        value={props.filter.kind()}
+        onChange={props.filter.setKind}
+      />
+    </div>
   );
 }
+
+function IconAction(props: {
+  label: string;
+  icon: Component<{ class?: string }>;
+  onClick: () => void;
+  disabled?: boolean;
+  class?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        as={Button}
+        variant="ghost"
+        size="icon"
+        class={cn('h-7 w-7 text-muted-foreground hover:text-foreground', props.class)}
+        aria-label={props.label}
+        disabled={props.disabled}
+        onClick={props.onClick}
+      >
+        <Dynamic component={props.icon} class="h-3.5 w-3.5" aria-hidden="true" />
+      </TooltipTrigger>
+      <TooltipContent>{props.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function UpgradeButton(props: { from: number; to: number; disabled: boolean; onUpgrade: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        as="button"
+        type="button"
+        disabled={props.disabled}
+        onClick={props.onUpgrade}
+        aria-label={`Upgrade to v${props.to}`}
+        class={cn(
+          'of-tone of-tone-needs-you of-hair inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs font-medium shadow-sm transition-colors hover:[--tone-hair:60%] disabled:cursor-default disabled:opacity-60',
+          FOCUS_RING
+        )}
+      >
+        <CircleArrowUp class="h-3.5 w-3.5" aria-hidden="true" />
+        Upgrade
+        <span class="font-mono text-[0.6875rem] tabular-nums opacity-80">
+          v{props.from} → <strong class="font-semibold">v{props.to}</strong>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Upgrade to v{props.to}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SkillName(props: { name: string; displayName: string | null }) {
+  return (
+    <Show
+      when={props.displayName}
+      fallback={<span class="truncate font-mono text-sm text-foreground">{props.name}</span>}
+    >
+      {(displayName) => (
+        <>
+          <span class="truncate text-sm text-foreground">{displayName()}</span>
+          <span class="shrink-0 font-mono text-[0.6875rem] text-muted-foreground">{props.name}</span>
+        </>
+      )}
+    </Show>
+  );
+}
+
+const ROW_CLASS =
+  'relative flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/40 has-[a:focus-visible]:ring-1 has-[a:focus-visible]:ring-ring';
+
+const ROW_LINK_CLASS = 'flex min-w-0 flex-1 items-center gap-2 after:absolute after:inset-0 focus-visible:outline-none';
+
+function ShippedSkillRow(props: { agentId: string; skill: ShippedRow }) {
+  const content = () => (
+    <>
+      <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <SkillName name={props.skill.name} displayName={props.skill.displayName} />
+        <Show when={props.skill.version}>{(version) => <VersionTag version={version()} />}</Show>
+        <PackageBadge />
+      </span>
+    </>
+  );
+  return (
+    <div class={ROW_CLASS}>
+      <Show
+        when={props.skill.skillId}
+        fallback={<span class="flex min-w-0 flex-1 items-center gap-2">{content()}</span>}
+      >
+        {(skillId) => (
+          <Link
+            to="/store/skills/$id"
+            params={{ id: skillId() }}
+            search={{ file: DEFAULT_SKILL_FILE, agent: props.agentId }}
+            class={ROW_LINK_CLASS}
+          >
+            {content()}
+          </Link>
+        )}
+      </Show>
+    </div>
+  );
+}
+
+type PendingChange = { action: 'upgrade' | 'remove'; skill: AgentProfileSkill };
 
 export function AgentSkillList(props: {
   agent: AgentDetail;
   skills: AgentProfileSkill[];
+  shipped?: ShippedSkill[];
   editable: boolean;
   onAdd?: () => void;
 }) {
   const setSkill = useSetAgentSkill(() => props.agent.id);
   const removeSkill = useRemoveAgentSkill(() => props.agent.id);
   const [settingsOf, setSettingsOf] = createSignal<AgentProfileSkill | null>(null);
-  const carriesServiceSettings = (skill: AgentProfileSkill) =>
-    props.agent.origin === 'custom' && skill.externalServiceId !== null;
+  const [pending, setPending] = createSignal<PendingChange | null>(null);
+  const shownChange = createMemo<PendingChange | null>((last) => pending() ?? last, null);
+  const listed = createMemo<ListedSkill[]>(() =>
+    [
+      ...props.skills,
+      ...(props.shipped ?? []).map(
+        (skill): ShippedRow => ({
+          skillId: skill.skillId,
+          name: skill.name,
+          displayName: skill.displayName,
+          version: skill.version,
+          origin: 'built_in',
+          externalServiceId: null,
+          shipped: true,
+        })
+      ),
+    ].toSorted((left, right) => left.name.localeCompare(right.name))
+  );
+  const filter = useSkillFilter(() => listed(), nameMatches);
+  const environments = useEnvironments();
+  const agentName = () => props.agent.displayName ?? props.agent.name;
+  const newProjectsEnvironment = () => {
+    if (props.agent.origin !== 'custom') return undefined;
+    const start = environments.data?.find(
+      (environment) => environment.id === props.agent.settings.defaultEnvironmentId
+    );
+    return start && !start.isDefault ? start.name : undefined;
+  };
 
   const upgrade = async (row: AgentProfileSkill) => {
     const skill = { name: row.name, skillId: row.skillId, latestVersion: row.latestVersion };
@@ -83,9 +326,15 @@ export function AgentSkillList(props: {
     });
   };
 
+  const confirmPending = () => {
+    const change = pending();
+    if (!change) return;
+    void (change.action === 'upgrade' ? upgrade(change.skill) : remove(change.skill));
+  };
+
   return (
     <Show
-      when={props.skills.length > 0}
+      when={listed().length > 0}
       fallback={
         <div class="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           No skills yet.
@@ -103,82 +352,112 @@ export function AgentSkillList(props: {
         </div>
       }
     >
-      <RowList>
-        <For each={props.skills}>
-          {(skill) => (
-            <div class="relative flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/40 has-[a:focus-visible]:ring-1 has-[a:focus-visible]:ring-ring">
-              <Link
-                to="/store/skills/$id"
-                params={{ id: skill.skillId }}
-                search={{ v: skill.pinnedVersion, file: DEFAULT_SKILL_FILE, agent: props.agent.id }}
-                class="flex min-w-0 flex-1 items-center gap-2 after:absolute after:inset-0 focus-visible:outline-none"
+      <Show when={listed().length >= LIST_FILTER_FROM || filter.options().length > 2}>
+        <SkillFilterBar filter={filter} class="mb-3" />
+      </Show>
+      <Show
+        when={filter.visible().length > 0}
+        fallback={<p class="px-2 py-6 text-center text-sm text-muted-foreground">No skills match.</p>}
+      >
+        <RowList>
+          <For each={filter.visible()}>
+            {(row) => (
+              <Show
+                when={'pinnedVersion' in row ? row : null}
+                fallback={<ShippedSkillRow agentId={props.agent.id} skill={row as ShippedRow} />}
               >
-                <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span class="min-w-0 flex-1 space-y-0.5">
-                  <span class="flex min-w-0 items-center gap-2">
-                    <Show
-                      when={skill.displayName}
-                      fallback={<span class="truncate font-mono text-sm text-foreground">{skill.name}</span>}
-                    >
-                      {(displayName) => (
-                        <>
-                          <span class="truncate text-sm text-foreground">{displayName()}</span>
-                          <span class="shrink-0 font-mono text-[11px] text-muted-foreground">{skill.name}</span>
-                        </>
-                      )}
-                    </Show>
-                    <span class="shrink-0 text-xs tabular-nums text-muted-foreground">v{skill.pinnedVersion}</span>
-                    <ServiceMark externalServiceId={skill.externalServiceId} available />
-                    <Show when={skill.retired}>
-                      <RetiredBadge />
-                    </Show>
-                    <Show when={skill.visibility === 'private'}>
-                      <Lock class="h-3 w-3 shrink-0 text-amber-600" role="img" aria-label="Private" />
-                    </Show>
-                  </span>
-                  <Show when={carriesServiceSettings(skill)}>
-                    <span class="block truncate text-xs text-muted-foreground">
-                      {serviceSettingsSummary(skill.serviceSettings)}
-                    </span>
-                  </Show>
-                </span>
-              </Link>
-              <div class="relative flex shrink-0 items-center gap-2">
-                <Show when={carriesServiceSettings(skill) && props.editable}>
-                  <Button size="sm" variant="outline" class="h-7" onClick={() => setSettingsOf(skill)}>
-                    Service settings
-                  </Button>
-                </Show>
-                <Show when={skill.updateAvailable ? skill.latestVersion : null}>
-                  {(latest) => (
-                    <>
-                      <UpdateBadge from={skill.pinnedVersion} to={latest()} />
-                      <Show when={props.editable}>
-                        <Button size="sm" variant="outline" class="h-7" onClick={() => void upgrade(skill)}>
-                          Upgrade
-                        </Button>
-                      </Show>
-                    </>
-                  )}
-                </Show>
-                <Show when={props.editable}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    class="h-7 text-muted-foreground"
-                    onClick={() => void remove(skill)}
-                  >
-                    Remove
-                  </Button>
-                </Show>
-              </div>
-            </div>
-          )}
-        </For>
-      </RowList>
+                {(carried) => {
+                  const skill = carried();
+                  return (
+                    <div class={ROW_CLASS}>
+                      <Link
+                        to="/store/skills/$id"
+                        params={{ id: skill.skillId }}
+                        search={{ v: skill.pinnedVersion, file: DEFAULT_SKILL_FILE, agent: props.agent.id }}
+                        class={ROW_LINK_CLASS}
+                      >
+                        <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span class="min-w-0 flex-1 space-y-0.5">
+                          <span class="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <SkillName name={skill.name} displayName={skill.displayName} />
+                            <VersionTag version={skill.pinnedVersion} />
+                            <OriginBadge origin={skill.origin} />
+                            <ServiceMark externalServiceId={skill.externalServiceId} available />
+                            <Show when={skill.visibility === 'private'}>
+                              <VisibilityBadge visibility="private" />
+                            </Show>
+                            <Show when={skill.retired}>
+                              <RetiredBadge />
+                            </Show>
+                          </span>
+                          <Show when={skill.externalServiceId !== null}>
+                            <span class="block truncate text-xs text-muted-foreground">
+                              {serviceSettingsSummary(skill)}
+                            </span>
+                          </Show>
+                        </span>
+                      </Link>
+                      <div class="relative flex shrink-0 items-center gap-1">
+                        <Show when={skill.updateAvailable ? skill.latestVersion : null}>
+                          {(latest) => (
+                            <Show
+                              when={props.editable}
+                              fallback={<VersionUpdateBadge from={skill.pinnedVersion} to={latest()} />}
+                            >
+                              <UpgradeButton
+                                from={skill.pinnedVersion}
+                                to={latest()}
+                                disabled={setSkill.isPending}
+                                onUpgrade={() => setPending({ action: 'upgrade', skill })}
+                              />
+                            </Show>
+                          )}
+                        </Show>
+                        <Show when={skill.externalServiceId !== null && props.editable}>
+                          <IconAction
+                            label="Service settings"
+                            icon={SlidersHorizontal}
+                            onClick={() => setSettingsOf(skill)}
+                          />
+                        </Show>
+                        <Show when={props.editable}>
+                          <IconAction
+                            label="Remove from this agent"
+                            icon={Trash2}
+                            class="hover:text-destructive"
+                            onClick={() => setPending({ action: 'remove', skill })}
+                          />
+                        </Show>
+                      </div>
+                    </div>
+                  );
+                }}
+              </Show>
+            )}
+          </For>
+        </RowList>
+      </Show>
+      <ConfirmDialog
+        open={pending() !== null}
+        onOpenChange={(open) => !open && setPending(null)}
+        title={
+          shownChange()?.action === 'upgrade'
+            ? `Upgrade ${shownChange()?.skill.name} to v${shownChange()?.skill.latestVersion}?`
+            : `Remove ${shownChange()?.skill.name}?`
+        }
+        description={
+          shownChange()?.action === 'upgrade'
+            ? `${agentName()} moves from v${shownChange()?.skill.pinnedVersion} to v${shownChange()?.skill.latestVersion}.`
+            : `${agentName()} stops carrying it. You can undo this right after.`
+        }
+        confirmLabel={shownChange()?.action === 'upgrade' ? 'Upgrade' : 'Remove'}
+        variant={shownChange()?.action === 'upgrade' ? 'default' : 'destructive'}
+        onConfirm={confirmPending}
+      />
       <ServiceSettingsDialog
         agentId={props.agent.id}
         skillId={settingsOf()?.skillId ?? null}
+        newProjectsEnvironment={newProjectsEnvironment()}
         onClose={() => setSettingsOf(null)}
       />
     </Show>
@@ -213,7 +492,6 @@ export function AddSkillsDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [query, setQuery] = createSignal('');
   const [picked, setPicked] = createSignal<string[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const setSkill = useSetAgentSkill(() => props.agent.id);
@@ -222,22 +500,15 @@ export function AddSkillsDialog(props: {
     () => ''
   );
 
-  const candidates = createMemo(() => {
-    const needle = query().trim().toLowerCase();
-    return (skills.data ?? []).filter(
-      (skill) =>
-        !(skill.externalServiceId && !skill.available) &&
-        (!needle ||
-          skill.name.toLowerCase().includes(needle) ||
-          (skill.displayName ?? '').toLowerCase().includes(needle) ||
-          (skill.description ?? '').toLowerCase().includes(needle))
-    );
-  });
+  const filter = useSkillFilter(
+    () => (skills.data ?? []).filter((skill) => !(skill.externalServiceId && !skill.available)),
+    (skill, needle) => nameMatches(skill, needle) || (skill.description ?? '').toLowerCase().includes(needle)
+  );
 
   const close = () => {
     props.onOpenChange(false);
     setPicked([]);
-    setQuery('');
+    filter.reset();
     setError(null);
   };
 
@@ -268,17 +539,17 @@ export function AddSkillsDialog(props: {
         </DialogHeader>
 
         <div class="mt-4 space-y-3">
-          <SearchInput value={query()} onInput={setQuery} label="Search skills" />
+          <SkillFilterBar filter={filter} />
           <div
             class="-mx-1 max-h-[45vh] space-y-1 overflow-y-auto overscroll-contain px-1 py-1"
             role="group"
             aria-label="Skills to add"
           >
             <Show
-              when={candidates().length > 0}
+              when={filter.visible().length > 0}
               fallback={<p class="px-2 py-6 text-center text-sm text-muted-foreground">No skills match.</p>}
             >
-              <For each={candidates()}>
+              <For each={filter.visible()}>
                 {(skill) => {
                   const verdict = () => skillAddable(props.agent, props.carried, skill);
                   const on = () => picked().includes(skill.id);
@@ -314,14 +585,12 @@ export function AddSkillsDialog(props: {
                             {(displayName) => (
                               <>
                                 <span class="text-sm">{displayName()}</span>
-                                <span class="font-mono text-[11px] text-muted-foreground">{skill.name}</span>
+                                <span class="font-mono text-[0.6875rem] text-muted-foreground">{skill.name}</span>
                               </>
                             )}
                           </Show>
                           <Show when={skill.latestVersion}>
-                            {(version) => (
-                              <span class="text-xs tabular-nums text-muted-foreground">v{version().version}</span>
-                            )}
+                            {(version) => <VersionTag version={version().version} />}
                           </Show>
                           <OriginBadge origin={skill.origin} />
                           <ServiceMark externalServiceId={skill.externalServiceId} available={skill.available} />

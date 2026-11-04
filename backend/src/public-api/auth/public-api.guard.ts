@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ForwardedIdentityService } from '../../identity/forwarded-identity.service';
+import { PERMISSIONS } from '../../permission/permission.constants';
 import { parsePermissions } from '../../permission/permission.utils';
 import { IS_PUBLIC_KEY, TENANT_NAME_HEADER, type TenantContext } from '../../tenant/tenant.decorator';
 import { TenantService } from '../../tenant/tenant.service';
@@ -14,6 +15,8 @@ import { SERVICE_ROUTE_KEY } from './service-route.decorator';
 import { ProjectProvenanceRepository } from '../../project/project-provenance.repository';
 import type { Caller, CallerRequest } from './caller';
 import { podCredentialOf, type PodCredential } from './gateway-bearer';
+
+const EVERY_PERMISSION: ReadonlySet<string> = new Set(PERMISSIONS);
 
 function toRef({ tenantId, tenantName }: TenantContext): TenantRef {
   return { id: tenantId, name: tenantName };
@@ -52,8 +55,9 @@ export class PublicApiGuard implements CanActivate {
     const { tenantContext } = request;
     if (!forwarded || !tenantContext) throw Errors.unauthenticated();
 
-    const permissions = new Set(parsePermissions(forwarded.groups));
-    if (!permissions.has('can_use_public_api')) throw Errors.permissionDenied('can_use_public_api');
+    if (!parsePermissions(forwarded.groups).includes('can_use_public_api')) {
+      throw Errors.permissionDenied('can_use_public_api');
+    }
 
     const tenants = await this.resolveTenants(forwarded.groups, tenantContext);
     if (tenants.length > 1 && !request.headers[TENANT_NAME_HEADER]) {
@@ -74,7 +78,7 @@ export class PublicApiGuard implements CanActivate {
       },
       tenant: toRef(tenantContext),
       tenants,
-      permissions,
+      permissions: EVERY_PERMISSION,
     };
   }
 

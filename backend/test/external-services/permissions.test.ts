@@ -1,7 +1,7 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, createTenant } from '../support/project-fixtures';
-import { createExternalServicesTestApp, type ExternalServicesTestApp } from './support/app';
+import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
 
 describe('who may administer the platform External Services', () => {
   let harness: ExternalServicesTestApp;
