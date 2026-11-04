@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -17,11 +16,7 @@ var previewReporterSource string
 
 const reporterSearchLimit = 64 << 10
 
-var (
-	openingHeadTag = regexp.MustCompile(`(?i)<head(?:\s[^>]*)?>`)
-	openingHTMLTag = regexp.MustCompile(`(?i)<html(?:\s[^>]*)?>`)
-	doctype        = regexp.MustCompile(`(?i)<!doctype[^>]*>`)
-)
+var prologueOpenings = []string{"<!--", "<!doctype", "<html", "<head"}
 
 func loadsIntoAFrame(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Dest") == "iframe"
@@ -42,7 +37,7 @@ func previewFrameOf(r *http.Request, platformOrigin string) previewFrame {
 }
 
 func withPreviewReporter(page []byte, frame previewFrame) []byte {
-	at, _ := reporterInsertionPoint(page)
+	at, _ := reporterInsertionPoint(page, true)
 	return spliced(page, at, reporterScript(frame))
 }
 
@@ -52,8 +47,8 @@ func streamWithPreviewReporter(page io.ReadCloser, frame previewFrame) (io.ReadC
 	for {
 		n, err := page.Read(chunk)
 		prefix = append(prefix, chunk[:n]...)
-		at, found := reporterInsertionPoint(prefix)
-		if found || errors.Is(err, io.EOF) || len(prefix) >= reporterSearchLimit {
+		final := errors.Is(err, io.EOF) || len(prefix) >= reporterSearchLimit
+		if at, decided := reporterInsertionPoint(prefix, final); decided {
 			head := spliced(prefix, at, reporterScript(frame))
 			return struct {
 				io.Reader
@@ -67,13 +62,72 @@ func streamWithPreviewReporter(page io.ReadCloser, frame previewFrame) (io.ReadC
 	}
 }
 
-func reporterInsertionPoint(page []byte) (int, bool) {
-	for _, tag := range []*regexp.Regexp{openingHeadTag, openingHTMLTag, doctype} {
-		if loc := tag.FindIndex(page); loc != nil {
-			return loc[1], true
+func reporterInsertionPoint(page []byte, whole bool) (int, bool) {
+	at := 0
+	if bytes.HasPrefix(page, []byte("\uFEFF")) {
+		at = len("\uFEFF")
+	}
+	for {
+		rest := bytes.TrimLeft(page[at:], " \t\r\n\f")
+		at = len(page) - len(rest)
+		if len(rest) == 0 || (!whole && couldStillOpenThePrologue(rest)) {
+			return at, whole
+		}
+		var end int
+		switch {
+		case hasPrefixFold(rest, "<!--"):
+			end = bytes.Index(rest, []byte("-->"))
+			if end >= 0 {
+				end += len("-->")
+			}
+		case hasPrefixFold(rest, "<!doctype"), opensElement(rest, "html"):
+			end = tagEnd(rest)
+		case opensElement(rest, "head"):
+			if end = tagEnd(rest); end >= 0 {
+				return at + end, true
+			}
+		default:
+			return at, true
+		}
+		if end < 0 {
+			return at, whole
+		}
+		at += end
+	}
+}
+
+func couldStillOpenThePrologue(rest []byte) bool {
+	for _, opening := range prologueOpenings {
+		if len(rest) <= len(opening) && hasPrefixFold([]byte(opening), string(rest)) {
+			return true
 		}
 	}
-	return 0, false
+	return false
+}
+
+func hasPrefixFold(b []byte, prefix string) bool {
+	return len(b) >= len(prefix) && strings.EqualFold(string(b[:len(prefix)]), prefix)
+}
+
+func opensElement(b []byte, name string) bool {
+	return hasPrefixFold(b, "<"+name) && len(b) > len(name)+1 && strings.IndexByte(" \t\r\n\f/>", b[len(name)+1]) >= 0
+}
+
+func tagEnd(tag []byte) int {
+	var quote byte
+	for i, c := range tag {
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '>':
+			return i + 1
+		}
+	}
+	return -1
 }
 
 func reporterScript(frame previewFrame) []byte {

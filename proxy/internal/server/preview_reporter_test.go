@@ -181,3 +181,32 @@ func TestOnlyAPostedPageAsksToBeReloadedWithoutResubmitting(t *testing.T) {
 		t.Error("a linked page lost its ordinary reload")
 	}
 }
+
+func TestTheReporterLandsInThePagesOpeningAndNeverInsideItsScriptsOrComments(t *testing.T) {
+	cases := []struct {
+		name, page, before string
+	}{
+		{"after the head tag", `<!doctype html><html lang="en"><head data-x='a>b'><title>`, `<!doctype html><html lang="en"><head data-x='a>b'>`},
+		{"before a headless page's first script", `<script>const template = "<head>";</script>`, ``},
+		{"past a commented-out head", "<!doctype html>\n<!-- <head> -->\n<body>", "<!doctype html>\n<!-- <head> -->\n"},
+		{"before a header element", `<html><header>`, `<html>`},
+		{"after a byte order mark", "\uFEFF<title>", "\uFEFF"},
+	}
+	for _, c := range cases {
+		at, decided := reporterInsertionPoint([]byte(c.page), false)
+		if !decided || c.page[:at] != c.before {
+			t.Errorf("%s: inserted after %q (decided %v), want after %q", c.name, c.page[:at], decided, c.before)
+		}
+	}
+}
+
+func TestAStreamWaitsWhileItsOpeningIsStillArriving(t *testing.T) {
+	for _, partial := range []string{"", "  <", "<!doc", "<!doctype html><htm", "<!doctype html><html>", "<!-- <head> ", "<html><head data-x='a>"} {
+		if _, decided := reporterInsertionPoint([]byte(partial), false); decided {
+			t.Errorf("decided on %q before the opening finished arriving", partial)
+		}
+		if _, decided := reporterInsertionPoint([]byte(partial), true); !decided {
+			t.Errorf("a whole page %q left undecided", partial)
+		}
+	}
+}
