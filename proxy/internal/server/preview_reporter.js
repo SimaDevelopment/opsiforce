@@ -40,6 +40,8 @@
 
   window.addEventListener('message', function (event) {
     if (event.source !== window.parent || event.origin !== platformOrigin || !event.data) return;
+    if (['opsiforce-preview:reload', 'opsiforce-preview:back', 'opsiforce-preview:forward'].indexOf(event.data.type) === -1) return;
+    window.parent.postMessage({ type: 'opsiforce-preview:acknowledged' }, platformOrigin);
     if (event.data.type === 'opsiforce-preview:reload') location.reload();
     if (event.data.type === 'opsiforce-preview:back') traverse('back');
     if (event.data.type === 'opsiforce-preview:forward') traverse('forward');

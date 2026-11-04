@@ -18,12 +18,14 @@ import { readableAppUrl } from '~/lib/app-url';
 import { EditAppDialog } from '../edit-app-dialog';
 import { EditAppUrlDialog } from '../edit-app-url-dialog';
 import {
-  previewLocationFrom,
+  previewMessageFrom,
   previewOrigin,
   sendPreviewCommand,
   typedPath,
   type PreviewLocation,
 } from './preview-address';
+
+const RELOAD_ACKNOWLEDGEMENT_TIMEOUT_MS = 1000;
 
 export interface AppPreviewPaneProps {
   projectId: string;
@@ -59,17 +61,15 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
   const [draft, setDraft] = createSignal<string | null>(null);
   const currentPath = () => location()?.path ?? framePath();
   const publicHost = () => (props.publicUrl ? new URL(props.publicUrl).host : null);
-  const publicAddress = () => (props.publicUrl ? new URL(currentPath(), props.publicUrl).href : null);
+  const publicAddress = () => (props.publicUrl ? `${new URL(props.publicUrl).origin}${currentPath()}` : null);
 
   let iframeRef: HTMLIFrameElement | undefined;
-  let reportsSinceLoad = 0;
-  let frameReports = false;
+  let unacknowledgedReload: ReturnType<typeof setTimeout> | undefined;
 
   createEffect(
     on(
       () => props.environmentId,
       () => {
-        frameReports = false;
         setDraft(null);
         load('/');
       },
@@ -79,21 +79,15 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
 
   function onMessage(event: MessageEvent) {
     const frame = iframeRef;
-    const reported = frame && previewLocationFrom(event, frame, origin());
-    if (!reported) return;
-    reportsSinceLoad += 1;
-    frameReports = true;
-    setLocation(reported);
-  }
-
-  function onFrameLoad() {
-    frameReports = reportsSinceLoad > 0;
-    reportsSinceLoad = 0;
-    setIframeLoading(false);
+    const message = frame && previewMessageFrom(event, frame, origin());
+    if (!message) return;
+    if (message.type === 'acknowledged') clearTimeout(unacknowledgedReload);
+    else setLocation(message.location);
   }
 
   function load(path: string) {
     if (!iframeRef) return;
+    clearTimeout(unacknowledgedReload);
     setIframeLoading(true);
     setLocation(null);
     setFramePath(path);
@@ -103,12 +97,10 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
   function reload() {
     const frame = iframeRef;
     if (!frame) return;
-    if (frameReports) {
-      setIframeLoading(true);
-      sendPreviewCommand(frame, origin(), 'reload');
-    } else {
-      load(currentPath());
-    }
+    setIframeLoading(true);
+    clearTimeout(unacknowledgedReload);
+    unacknowledgedReload = setTimeout(() => load(currentPath()), RELOAD_ACKNOWLEDGEMENT_TIMEOUT_MS);
+    sendPreviewCommand(frame, origin(), 'reload');
   }
 
   function traverse(direction: 'back' | 'forward') {
@@ -132,7 +124,10 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
     window.addEventListener('message', onMessage);
     props.onReloadRef?.(reload);
   });
-  onCleanup(() => window.removeEventListener('message', onMessage));
+  onCleanup(() => {
+    window.removeEventListener('message', onMessage);
+    clearTimeout(unacknowledgedReload);
+  });
 
   return (
     <>
@@ -238,7 +233,7 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
           title="App preview"
           class="w-full h-full border-0"
           allow="microphone; camera; clipboard-read; clipboard-write; geolocation; fullscreen; autoplay; display-capture; web-share"
-          onLoad={onFrameLoad}
+          onLoad={() => setIframeLoading(false)}
           onError={() => setIframeLoading(false)}
         />
       </div>
