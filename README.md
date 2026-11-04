@@ -223,4 +223,3 @@ The Quickstart targets local development. A production deployment uses the same 
 - RWX persistent storage: project workspaces need ReadWriteMany volumes that survive pod replacement; back them with a shared-storage system such as Ceph (for example Rook-Ceph or CephFS) or another RWX-capable provisioner.
 - Container registry: build and host the Opsiforce images (agent, backend, runtime-proxy, linked-account-proxy, frontend) in your own registry instead of building into minikube.
 - Helm values, adjusted for your environment: image references and tags, ingress hosts and TLS, storage classes, replica counts, resource requests and limits, PostgreSQL/Redis, and the Bifrost admin, encryption and provider-key secrets. The Bifrost values declare the built-in `openai` and `anthropic`; every other Model provider is added on Settings → Model providers.
-

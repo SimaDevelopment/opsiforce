@@ -5,6 +5,7 @@ import { usePermissions } from '~/api/permissions';
 import { Bot, Cable, Files } from '~/components/icons';
 import { cn } from '~/lib/cn';
 import { canSeeExternalServices } from '~/components/external-service/service-access';
+import type { HasPermission } from '~/constants/permissions';
 
 const SECTIONS = [
   { to: '/store/agents', label: 'Agents', icon: Bot },
@@ -14,6 +15,12 @@ const SECTIONS = [
 
 export function storeSectionForPath(pathname: string) {
   return SECTIONS.find((section) => pathname === section.to || pathname.startsWith(`${section.to}/`));
+}
+
+export function canOpenStore(hasPermission: HasPermission) {
+  return (
+    hasPermission('can_manage_agents') || hasPermission('can_manage_skills') || canSeeExternalServices(hasPermission)
+  );
 }
 
 export function StoreNav() {

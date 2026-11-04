@@ -1,4 +1,11 @@
-.oc-chat-only header[data-slot='titlebar-v2'],
+.oc-chat-only [data-slot='home-panel'] aside:has([data-action='home-add-project']),
+.oc-chat-only [data-slot='home-panel'] > div:has([data-component='home-projects-dropdown']),
+.oc-chat-only [data-slot='home-panel'] > div:last-child,
+.oc-chat-only [data-component='home-session-project-name'],
+.oc-chat-only [data-component='new-session-wordmark'],
+.oc-chat-only [data-component='new-session'] [data-action='prompt-project'],
+.oc-chat-only [data-component='new-session'] div:has(> [data-action='prompt-project']):not(:has([data-component='composer-editor'])),
+.oc-chat-only [data-component='new-session-tip'],
 .oc-chat-only button[aria-label='More options'],
 .oc-chat-only button[aria-label='Session details'],
 .oc-chat-only div[data-session-title] h1,
@@ -13,8 +20,15 @@
 .oc-chat-only [data-component='composer-suggestions'] [data-suggestion-id='provider.connect'],
 .oc-chat-only aside[aria-label='Development performance diagnostics'],
 .oc-chat-only aside[aria-label='Provider performance diagnostics'],
+[data-slot='mobile-tabs-drawer'] [data-action='mobile-tabs-settings'],
+[data-slot='mobile-tabs-drawer'] [data-action='mobile-tabs-help'],
 [data-option-key='action:manage'] {
   display: none !important;
+}
+
+.oc-chat-only [data-slot='home-panel'] div:has(> aside [data-action='home-add-project']) {
+  grid-template-columns: minmax(0, 720px);
+  justify-content: center;
 }
 
 .oc-chat-only [data-slot='session-chat-panel'] {

@@ -2,6 +2,7 @@ import { createEffect, createSignal, onCleanup, type Accessor, type Component } 
 import type { BaseRouterProps } from '@solidjs/router';
 import { api, apiRelative, ApiError, type ProjectStatus } from '~/api/client';
 import { useConnectEnvironment, type ProjectEnvironmentStatus } from '~/api/environments';
+import { createPersistedSignal } from '~/lib/persisted-signal';
 import { createSessionRouter } from './platform';
 
 type ConnectionStatus = ProjectStatus | ProjectEnvironmentStatus;
@@ -9,6 +10,12 @@ type ConnectionStatus = ProjectStatus | ProjectEnvironmentStatus;
 export type ConnectionProblem = 'unreachable' | 'unconfirmed-prompt';
 
 const STARTING_RETRY_MS = 2_000;
+
+const OPEN_CHATS_KEY = 'opsiforce:project-chat:open-session';
+
+interface RuntimeSession {
+  data: { id: string; time: { archived?: number } };
+}
 
 export interface InitialPrompt {
   id: string;
@@ -28,6 +35,7 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
   const connectEnvironment = useConnectEnvironment();
 
   const [problem, setProblem] = createSignal<ConnectionProblem | null>(null);
+  const [openChats, setOpenChats] = createPersistedSignal<Record<string, string>>(OPEN_CHATS_KEY, {});
   let controller = new AbortController();
   let disposed = false;
   let connecting = false;
@@ -41,9 +49,9 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
     sessionId: string,
     isCurrent: () => boolean,
     signal: AbortSignal
-  ): Promise<void> {
+  ): Promise<boolean> {
     const intent = options.initialPrompt();
-    if (!intent || environmentId !== options.projectId) return;
+    if (!intent || environmentId !== options.projectId) return false;
 
     await api.post(
       `${runtimePath}/api/session/${sessionId}/prompt`,
@@ -54,6 +62,22 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
       { signal }
     );
     if (isCurrent()) options.onInitialPromptAdmitted();
+    return true;
+  }
+
+  async function chatToReopen(environmentId: string, runtimePath: string, primarySessionId: string): Promise<string> {
+    const remembered = openChats()[environmentId];
+    if (!remembered || remembered === primarySessionId) return primarySessionId;
+    try {
+      const { data } = await api.get<RuntimeSession>(`${runtimePath}/api/session/${remembered}`);
+      return data.time.archived ? primarySessionId : data.id;
+    } catch {
+      return primarySessionId;
+    }
+  }
+
+  function rememberOpenChat(environmentId: string, sessionId: string) {
+    setOpenChats((chats) => (chats[environmentId] === sessionId ? chats : { ...chats, [environmentId]: sessionId }));
   }
 
   async function connect(environmentId: string) {
@@ -81,8 +105,15 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
     const serverUrl = new URL(connection.baseUrl, window.location.origin).href;
     const runtimePath = apiRelative(connection.baseUrl);
 
+    let admitted: boolean;
     try {
-      await admitInitialPrompt(environmentId, runtimePath, connection.sessionId, isCurrent, controller.signal);
+      admitted = await admitInitialPrompt(
+        environmentId,
+        runtimePath,
+        connection.sessionId,
+        isCurrent,
+        controller.signal
+      );
     } catch {
       if (isCurrent()) {
         connecting = false;
@@ -92,7 +123,12 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
     }
     if (!isCurrent()) return;
 
-    setRouter(() => createSessionRouter(serverUrl, connection.sessionId));
+    const sessionId = admitted
+      ? connection.sessionId
+      : await chatToReopen(environmentId, runtimePath, connection.sessionId);
+    if (!isCurrent()) return;
+
+    setRouter(() => createSessionRouter(serverUrl, sessionId, (shown) => rememberOpenChat(environmentId, shown)));
   }
 
   function reset() {

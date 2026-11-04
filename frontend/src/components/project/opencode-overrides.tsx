@@ -63,6 +63,16 @@ function pinModelVisibilityToCatalog(server: ServerConnection.Any, reachableMode
   });
 }
 
+function openWorkspaceAsProject(server: ServerConnection.Any) {
+  const ctx = useGlobal().ensureServerCtx(server);
+
+  onMount(() => void ctx.data.location.syncInfo().catch(() => undefined));
+  createEffect(() => {
+    const workspace = ctx.data.location.default()?.directory;
+    if (workspace) ctx.projects.open(workspace);
+  });
+}
+
 export function OpencodeOverrides(props: { server: ServerConnection.Any; reachableModels: () => ReachableModels }) {
   const theme = useTheme();
   const settings = useSettings();
@@ -72,12 +82,14 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
   onMount(() => {
     if (theme.themeId() !== OPENCODE_DEFAULT_THEME_ID) theme.setTheme(OPENCODE_DEFAULT_THEME_ID);
     settings.appearance.setTabLayout('horizontal');
+    settings.general.setMobileTitlebarPosition('top');
     settings.general.setShowFileTree(false);
     settings.general.setShowCustomAgents(true);
     settings.general.setTimelineDetail(activityTimeline);
-    // The embed never registers opencode's palette, yet its capture-phase
-    // listener would still swallow Cmd/Ctrl K before the shell palette sees it.
+    // opencode's capture-phase listener would swallow these before the shell
+    // sees them: Cmd/Ctrl K opens the shell palette, Cmd/Ctrl B its sidebar.
     settings.keybinds.set('command.palette', 'none');
+    settings.keybinds.set('home.toggle', 'none');
   });
 
   // The chat renders from opencode's own theme system. Re-registering the
@@ -95,6 +107,7 @@ export function OpencodeOverrides(props: { server: ServerConnection.Any; reachab
     untrack(() => props.server),
     () => props.reachableModels()
   );
+  openWorkspaceAsProject(untrack(() => props.server));
 
   return null;
 }

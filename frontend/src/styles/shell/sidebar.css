@@ -98,6 +98,19 @@
 
   .of-sb-filter {
     position: relative;
+    container-type: inline-size;
+  }
+
+  .of-sb-filter-hint {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    @container (min-width: 9rem) {
+      .of-sb-filter-hint {
+        display: block;
+      }
+    }
   }
 
   .of-sb-filter input {
