@@ -521,6 +521,9 @@ func (s *Server) roundTripAppRequest(
 	}
 
 	headers := filterResponseHeaders(resp.Header, false)
+	if previewFrameOrigin != "" && strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		varyByFrameDestination(headers)
+	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		defer resp.Body.Close()

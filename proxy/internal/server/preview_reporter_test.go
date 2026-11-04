@@ -210,3 +210,22 @@ func TestAStreamWaitsWhileItsOpeningIsStillArriving(t *testing.T) {
 		}
 	}
 }
+
+func TestACacheablePreviewPageIsKeptApartPerFrameDestination(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		w.Header().Set("Vary", "Accept-Encoding")
+		_, _ = w.Write([]byte(appPage))
+	}))
+	t.Cleanup(upstream.Close)
+	server := newAppServer(t, previewAnswer(upstream.URL))
+
+	for _, destination := range []string{"iframe", "empty"} {
+		rec := visit(server, "https://"+testEnvironmentID+".preview.apps.test/", http.Header{"Sec-Fetch-Dest": {destination}})
+
+		if got := strings.Join(rec.Header().Values("Vary"), ", "); got != "Accept-Encoding, Sec-Fetch-Dest" {
+			t.Errorf("%s: Vary %q, want the App's own plus Sec-Fetch-Dest", destination, got)
+		}
+	}
+}

@@ -22,6 +22,18 @@ func loadsIntoAFrame(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Dest") == "iframe"
 }
 
+func varyByFrameDestination(headers http.Header) {
+	for _, value := range headers.Values("Vary") {
+		for _, field := range strings.Split(value, ",") {
+			name := strings.TrimSpace(field)
+			if name == "*" || strings.EqualFold(name, "Sec-Fetch-Dest") {
+				return
+			}
+		}
+	}
+	headers.Add("Vary", "Sec-Fetch-Dest")
+}
+
 func askForAWholePage(headers http.Header) {
 	headers.Del("If-None-Match")
 	headers.Del("If-Modified-Since")
