@@ -2,6 +2,7 @@ import { For, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useLocation, useNavigate } from '@tanstack/solid-router';
 import { ArrowLeft } from '~/components/icons';
+import { useSidebar } from '~/components/ui/sidebar';
 import type { RailTab } from '~/constants/section-rail';
 
 export const COLLAPSED_ROW =
@@ -18,17 +19,18 @@ export const COLLAPSED_HIDDEN = 'group-data-[collapsible=icon]/sidebar:hidden';
 export function SidebarSectionNav(props: { title: string; tabs: RailTab[]; groupOrder: readonly string[] }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { open } = useSidebar();
   const isActive = (to: string) => {
     const path = location().pathname;
     return path === to || path.startsWith(`${to}/`);
   };
 
   return (
-    <nav class="flex flex-col gap-1 px-2 pb-2" aria-label={props.title}>
+    <nav class="flex flex-col gap-1 px-2 pt-1 pb-2" aria-label={props.title}>
       <button
         type="button"
         class={`of-row fr-panel ${COLLAPSED_ROW}`}
-        title="Back to projects"
+        title={open() ? undefined : 'Back to projects'}
         aria-label="Back to projects"
         onClick={() => navigate({ to: '/' })}
       >
