@@ -1,5 +1,15 @@
-import { Show, createEffect, createSignal, on, onMount, type JSX } from 'solid-js';
-import { Check, Copy, ExternalLink, LoaderCircle, PanelRightClose, Pencil, RefreshCw } from '~/components/icons';
+import { Show, createEffect, createSignal, on, onCleanup, onMount, untrack, type JSX } from 'solid-js';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Copy,
+  ExternalLink,
+  LoaderCircle,
+  PanelRightClose,
+  Pencil,
+  RotateCw,
+} from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { ToolbarButton } from '~/components/ui/toolbar-button';
 import { usePermissions } from '~/api/permissions';
@@ -7,6 +17,13 @@ import { useProjectEnvironments } from '~/api/environments';
 import { readableAppUrl } from '~/lib/app-url';
 import { EditAppDialog } from '../edit-app-dialog';
 import { EditAppUrlDialog } from '../edit-app-url-dialog';
+import {
+  previewLocationFrom,
+  previewOrigin,
+  sendPreviewCommand,
+  typedPath,
+  type PreviewLocation,
+} from './preview-address';
 
 export interface AppPreviewPaneProps {
   projectId: string;
@@ -36,33 +53,86 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
       : null;
   };
 
-  const previewDomain = import.meta.env.VITE_WEBAPP_PREVIEW_DOMAIN;
-  const previewUrl = () => `https://${props.environmentId}.${previewDomain}/`;
+  const origin = () => previewOrigin(props.environmentId);
+  const [framePath, setFramePath] = createSignal('/');
+  const [location, setLocation] = createSignal<PreviewLocation | null>(null);
+  const [draft, setDraft] = createSignal<string | null>(null);
+  const currentPath = () => location()?.path ?? framePath();
+  const publicHost = () => (props.publicUrl ? new URL(props.publicUrl).host : null);
+  const publicAddress = () => (props.publicUrl ? new URL(currentPath(), props.publicUrl).href : null);
+
+  let iframeRef: HTMLIFrameElement | undefined;
+  let reportsSinceLoad = 0;
+  let frameReports = false;
 
   createEffect(
     on(
       () => props.environmentId,
-      () => setIframeLoading(true)
+      () => {
+        frameReports = false;
+        setDraft(null);
+        load('/');
+      },
+      { defer: true }
     )
   );
 
-  let iframeRef: HTMLIFrameElement | undefined;
-
-  function reload() {
-    const iframe = iframeRef;
-    if (!iframe) return;
-    setIframeLoading(true);
-    // oxlint-disable-next-line no-self-assign -- reassigning src forces the iframe to reload
-    iframe.src = iframe.src;
+  function onMessage(event: MessageEvent) {
+    const frame = iframeRef;
+    const reported = frame && previewLocationFrom(event, frame, origin());
+    if (!reported) return;
+    reportsSinceLoad += 1;
+    frameReports = true;
+    setLocation(reported);
   }
 
-  function copyUrl(publicUrl: string) {
-    navigator.clipboard.writeText(publicUrl);
+  function onFrameLoad() {
+    frameReports = reportsSinceLoad > 0;
+    reportsSinceLoad = 0;
+    setIframeLoading(false);
+  }
+
+  function load(path: string) {
+    if (!iframeRef) return;
+    setIframeLoading(true);
+    setLocation(null);
+    setFramePath(path);
+    iframeRef.src = `${origin()}${path}`;
+  }
+
+  function reload() {
+    const frame = iframeRef;
+    if (!frame) return;
+    if (frameReports) {
+      setIframeLoading(true);
+      sendPreviewCommand(frame, origin(), 'reload');
+    } else {
+      load(currentPath());
+    }
+  }
+
+  function traverse(direction: 'back' | 'forward') {
+    if (iframeRef) sendPreviewCommand(iframeRef, origin(), direction);
+  }
+
+  function submitAddress(input: HTMLInputElement) {
+    const knownHosts = [new URL(origin()).host, publicHost()].filter((host) => host !== null);
+    load(typedPath(input.value, knownHosts));
+    setDraft(null);
+    input.blur();
+  }
+
+  function copyAddress(address: string) {
+    navigator.clipboard.writeText(address);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
 
-  onMount(() => props.onReloadRef?.(reload));
+  onMount(() => {
+    window.addEventListener('message', onMessage);
+    props.onReloadRef?.(reload);
+  });
+  onCleanup(() => window.removeEventListener('message', onMessage));
 
   return (
     <>
@@ -83,61 +153,72 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
               <Pencil class="w-3 h-3" />
             </ToolbarButton>
           </Show>
-          <Show when={iframeLoading()}>
-            <LoaderCircle class="w-3 h-3 text-muted-foreground animate-spin shrink-0" />
-          </Show>
         </div>
         {props.switcher}
-        <div class="flex items-center gap-1 shrink-0">
-          <Show when={props.publicUrl}>
-            {(publicUrl) => (
+        <div class="flex flex-1 items-center justify-end gap-0.5">
+          <Show when={publicAddress()}>
+            {(address) => (
               <>
-                <a
-                  href={publicUrl()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <ExternalLink class="w-3.5 h-3.5" />
-                  Open app
-                </a>
-                <ToolbarButton onClick={() => copyUrl(publicUrl())} tooltip={copied() ? 'Copied!' : 'Copy URL'}>
+                <ToolbarButton onClick={() => copyAddress(address())} tooltip={copied() ? 'Copied!' : 'Copy URL'}>
                   {copied() ? <Check class="w-3.5 h-3.5 text-green-500" /> : <Copy class="w-3.5 h-3.5" />}
                 </ToolbarButton>
+                <a
+                  href={address()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open app in a new tab"
+                  title="Open app in a new tab"
+                  class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <ExternalLink class="w-3.5 h-3.5" />
+                </a>
+                <Show when={showEditAction() && !readableAddressOnOffer()}>
+                  <ToolbarButton onClick={() => setEditUrlOpen(true)} tooltip="Edit URL">
+                    <Pencil class="w-3 h-3" />
+                  </ToolbarButton>
+                </Show>
               </>
             )}
           </Show>
-          <ToolbarButton onClick={reload} tooltip="Reload app">
-            <RefreshCw class="w-3.5 h-3.5" />
-          </ToolbarButton>
         </div>
       </div>
-      <Show when={props.publicUrl}>
-        {(publicUrl) => (
-          <div class="flex items-center gap-2 px-2 py-1.5 bg-sidebar border-b border-border shrink-0">
-            <span class="shrink-0 text-xs text-muted-foreground">Public URL</span>
-            <input
-              aria-label="Public URL"
-              type="text"
-              readonly
-              value={publicUrl()}
-              onFocus={(event) => event.currentTarget.select()}
-              class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <Show when={showEditAction() && !readableAddressOnOffer()}>
-              <Button
-                size="sm"
-                variant="ghost"
-                class="h-6 shrink-0 gap-1 px-2 text-xs"
-                onClick={() => setEditUrlOpen(true)}
-              >
-                <Pencil class="w-3 h-3" />
-                Edit
-              </Button>
-            </Show>
-          </div>
-        )}
-      </Show>
+      <div class="flex items-center gap-0.5 px-1.5 py-1 bg-sidebar border-b border-border shrink-0">
+        <ToolbarButton onClick={() => traverse('back')} disabled={!location()?.canGoBack} tooltip="Back">
+          <ArrowLeft class="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton onClick={() => traverse('forward')} disabled={!location()?.canGoForward} tooltip="Forward">
+          <ArrowRight class="w-3.5 h-3.5" />
+        </ToolbarButton>
+        <ToolbarButton onClick={reload} tooltip="Reload app">
+          <Show when={iframeLoading()} fallback={<RotateCw class="w-3.5 h-3.5" />}>
+            <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+          </Show>
+        </ToolbarButton>
+        <label class="mx-1 flex h-6 min-w-0 flex-1 items-center rounded-md border border-input bg-background px-2 text-xs focus-within:ring-1 focus-within:ring-ring">
+          <Show when={draft() === null && publicHost()}>
+            {(host) => <span class="min-w-0 shrink-[4] truncate text-muted-foreground">{host()}</span>}
+          </Show>
+          <input
+            aria-label="App address"
+            type="text"
+            spellcheck={false}
+            autocomplete="off"
+            value={draft() ?? currentPath()}
+            title={publicAddress() ?? currentPath()}
+            onFocus={(event) => {
+              setDraft(publicAddress() ?? currentPath());
+              event.currentTarget.select();
+            }}
+            onInput={(event) => setDraft(event.currentTarget.value)}
+            onBlur={() => setDraft(null)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submitAddress(event.currentTarget);
+              if (event.key === 'Escape') event.currentTarget.blur();
+            }}
+            class="min-w-20 flex-auto bg-transparent text-foreground outline-none [field-sizing:content]"
+          />
+        </label>
+      </div>
       <Show when={readableAddressOnOffer()}>
         {(address) => (
           <div class="flex items-center gap-2 px-2 py-1.5 bg-sidebar border-b border-border shrink-0 text-xs">
@@ -153,11 +234,11 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
       <div class="flex-1 min-h-0">
         <iframe
           ref={iframeRef}
-          src={previewUrl()}
+          src={untrack(() => `${origin()}/`)}
           title="App preview"
           class="w-full h-full border-0"
           allow="microphone; camera; clipboard-read; clipboard-write; geolocation; fullscreen; autoplay; display-capture; web-share"
-          onLoad={() => setIframeLoading(false)}
+          onLoad={onFrameLoad}
           onError={() => setIframeLoading(false)}
         />
       </div>

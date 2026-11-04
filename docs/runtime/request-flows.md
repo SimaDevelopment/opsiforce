@@ -56,6 +56,7 @@ flowchart LR
 
 - Chat reaches OpenCode on 4096 through the agent proxy, and VS Code and the DB viewer reach 8080 and 8081 through their subdomain proxies; all three touch agent activity, and code-server's WebSocket holds the pod while the page is open.
 - The in-product App preview frames `{environmentId}` on the preview apps domain, which the backend serves by id without [App Auth](../../GLOSSARY.md); the public App uses its [Public URL](../../GLOSSARY.md) on the apps domain, or either legacy host, where App Auth attaches its middleware ([Environments](../projects/environments.md)). Both touch app activity and lose the edge's session cookies, which the browser sends to every host under the platform's parent domain: `_opsiforce_` is a cookie prefix reserved for the platform on App hosts, so the edge's `oauth2Proxy.cookieName` starts with it, and the app proxy deletes every cookie whose name does (its split and CSRF cookies included) before App code sees the request, over HTTP and WebSocket alike.
+- On a preview host the backend's ensure answer names the platform origin from `OPSIFORCE_PUBLIC_URL` as `previewFrameOrigin`, and the app proxy puts a small script first in the `<head>` of every HTML page the browser loads into a frame there (`Sec-Fetch-Dest: iframe`). The script posts the page's location to that origin alone after every navigation, and reloads or moves through the App's history when that origin asks, so the App pane's address bar follows the App ([App](../projects/app.md)). HTML the App fetches for itself and every page on the apps domain reach the browser untouched.
 - Uploading, listing, deleting and reading workspace files are backend filesystem paths on the shared volume that never wake a pod ([Files](../projects/files.md), [File preview](../projects/file-preview.md)).
 
 ## Edge cases
@@ -73,7 +74,7 @@ flowchart LR
 
 - `backend/src/proxy/` — the ensure, activity and failure endpoints the proxies call, App address resolution by host, and the Apps-host refusal for an External Service's Projects.
 - `backend/src/timeout/` — the two keep-alive keys and the idle-timeout floor.
-- `proxy/internal/server/` — the Go runtime proxy: routing modes, following the backend's App address answer, decision cache, WebSocket keep-alive, failure reporting, removing the platform's session cookies on the App surface, the browser error pages.
+- `proxy/internal/server/` — the Go runtime proxy: routing modes, following the backend's App address answer, decision cache, WebSocket keep-alive, failure reporting, removing the platform's session cookies on the App surface, the browser error pages, the preview location reporter.
 - `proxy/cmd/agent-control/` — the in-pod control port and the OpenCode front proxy.
 - `helm/opsiforce-proxy/` — the edge: oauth2-proxy, static auth mode, and the catch-all apps route with its unprotected-route marker.
 

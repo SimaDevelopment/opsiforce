@@ -25,7 +25,7 @@ adrs: [0020]
 - The same stream carries per-environment events, named `environment`, as `{projectId, environmentId, agentStatus}`: on connect one `working` event for each environment Working at that moment, then one event each time an environment turns Working or Idle. An Idle event follows only a Working event sent on the same connection, and a sub-agent still running keeps its environment from turning Idle.
 - It also carries App serving events, named `app`, as `{projectId, environmentId, serving}`: nothing on connect, then one event each time an environment's App starts or stops serving ([App Readiness](../projects/app-readiness.md)), so a `serving: true` event always follows a moment the connection saw the App not serving.
 - The frontend seeds a `projectId → agentStatus` store from the projects-list payload on every list load, then applies the stream's Project-level messages to it, and the project row reads it.
-- The project page reloads the App preview when the environment it shows goes from Working to Idle, or when its App starts serving, as reported by the stream's environment and app events. A reseed from the projects list never counts as either change, and another environment's event never reloads it.
+- The project page reloads the App preview, at the page it is on, when the environment it shows goes from Working to Idle, or when its App starts serving, as reported by the stream's environment and app events. A reseed from the projects list never counts as either change, and another environment's event never reloads it.
 
 ## Edge cases
 

@@ -296,7 +296,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit)
+	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit, ensured.PreviewFrameOrigin)
 	if err != nil {
 		s.sendFailureResponse(w, r, environmentID)
 		return
@@ -495,6 +495,7 @@ func (s *Server) roundTripAppRequest(
 	requestBody []byte,
 	captureBody bool,
 	bodyLimit int,
+	previewFrameOrigin string,
 ) (appProxyResult, error) {
 	outgoing := r.Clone(r.Context())
 	outgoing.URL = targetURL
@@ -502,6 +503,10 @@ func (s *Server) roundTripAppRequest(
 	outgoing.RequestURI = ""
 	outgoing.Header = copyRequestHeaders(r.Header, true)
 	stripAuthProxyHeaders(outgoing.Header)
+	framedPreview := previewFrameOrigin != "" && loadsIntoAFrame(r)
+	if framedPreview {
+		askForAWholePage(outgoing.Header)
+	}
 
 	if len(requestBody) > 0 {
 		outgoing.Body = io.NopCloser(bytes.NewReader(requestBody))
@@ -542,15 +547,23 @@ func (s *Server) roundTripAppRequest(
 
 	contentType := resp.Header.Get("Content-Type")
 	upstreamPath := targetURL.Path
+	rewritesUpstreamPath := upstreamPath != "/" && strings.Contains(contentType, "text/html")
+	reportsPreviewLocation := framedPreview && strings.Contains(contentType, "text/html")
 
-	if upstreamPath != "/" && strings.Contains(contentType, "text/html") {
+	if rewritesUpstreamPath || reportsPreviewLocation {
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return appProxyResult{}, err
 		}
 
-		rewritten := bytes.ReplaceAll(body, []byte(upstreamPath), nil)
+		rewritten := body
+		if rewritesUpstreamPath {
+			rewritten = bytes.ReplaceAll(rewritten, []byte(upstreamPath), nil)
+		}
+		if reportsPreviewLocation {
+			rewritten = withPreviewReporter(rewritten, previewFrameOrigin)
+		}
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,
 			headers:      headers,

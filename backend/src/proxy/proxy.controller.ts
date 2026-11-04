@@ -59,6 +59,7 @@ interface AppAddressAnswer {
   environmentId: string;
   canonicalHost: string;
   protected: boolean;
+  previewFrameOrigin?: string;
 }
 
 type AppEnsureResponse =
@@ -70,6 +71,7 @@ type AppEnsureResponse =
 export class ProxyController {
   private readonly proxyControlToken: string;
   private readonly appDomains: AppDomains;
+  private readonly platformOrigin: string | null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -88,6 +90,7 @@ export class ProxyController {
       appsHostname: this.configService.getOrThrow<string>('appsHostname'),
       previewAppsHostname: this.configService.getOrThrow<string>('previewAppsHostname'),
     };
+    this.platformOrigin = originOf(this.configService.get<string>('opsiforcePublicUrl', ''));
   }
 
   @Post('projects/:environmentId/ensure')
@@ -162,8 +165,18 @@ export class ProxyController {
     await this.projectService.touchEnvironmentActivity(environmentId, activityForSurface(surface));
   }
 
-  private async answerAppAddress({ env, action, canonicalHost }: ResolvedAppAddress): Promise<AppEnsureResponse> {
-    const answer: AppAddressAnswer = { environmentId: env.id, canonicalHost, protected: env.authMode !== 'public' };
+  private async answerAppAddress({
+    env,
+    action,
+    canonicalHost,
+    previewed,
+  }: ResolvedAppAddress): Promise<AppEnsureResponse> {
+    const answer: AppAddressAnswer = {
+      environmentId: env.id,
+      canonicalHost,
+      protected: env.authMode !== 'public',
+      ...(previewed && this.platformOrigin ? { previewFrameOrigin: this.platformOrigin } : {}),
+    };
     if (action === 'redirect') return { action, ...answer };
 
     const ensured = await this.projectService.ensureEnvironment(env, 'app');
@@ -288,4 +301,8 @@ function activityForSurface(surface: ProxySurface): ProjectActivityKind {
 
 function isProxySurface(value: string): value is ProxySurface {
   return value === 'agent' || value === 'app' || value === 'vscode' || value === 'db';
+}
+
+function originOf(url: string): string | null {
+  return URL.canParse(url.trim()) ? new URL(url.trim()).origin : null;
 }
