@@ -6,8 +6,7 @@ import { usePermissions } from '~/api/permissions';
 import { projectKeys, useProject, useRenameProject } from '~/api/projects';
 import { projectTitleOf } from '~/lib/project-title';
 import { useWorkspaces, useWorkspaceFolders } from '~/api/workspaces';
-import { ChevronRight, Code as CodeIcon, Command, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
-import { PALETTE_SHORTCUT, openCommandPalette } from '~/components/command-palette';
+import { ChevronRight, Code as CodeIcon, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
 import { useAppearance } from '~/lib/appearance';
 import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
@@ -104,23 +103,12 @@ export function ProjectHeader(props: ProjectHeaderProps) {
             onEnvironmentDeleted={handleEnvironmentDeleted}
           />
         </Show>
-        {/* The two controls the band keeps in every screen of the design: one
-            way into everything, and the light/dark switch. On a phone they
-            give way to the tabs and Publish; both remain reachable through the
-            shortcut and Settings > Appearance. */}
+        {/* The light/dark switch the band keeps in every screen of the design.
+            On a phone it gives way to the tabs and Publish and stays reachable
+            through Settings > Appearance. */}
         <button
           type="button"
-          class="of-btn of-btn-icon of-btn-ghost fr hidden sm:inline-flex"
-          onClick={openCommandPalette}
-          aria-label="Go to"
-          aria-keyshortcuts="Meta+K Control+K"
-          title={`Go to (${PALETTE_SHORTCUT})`}
-        >
-          <Command class="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          class="of-btn of-btn-icon of-btn-ghost fr hidden sm:inline-flex"
+          class="of-btn of-btn-icon of-btn-ghost fr max-sm:hidden"
           onClick={() => appearance.setMode(appearance.scheme() === 'dark' ? 'light' : 'dark')}
           aria-label={appearance.scheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           title={appearance.scheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -162,7 +150,7 @@ function ProjectTabTrigger(props: {
       onClick={() => props.onPress(props.value)}
     >
       <props.icon class="w-3.5 h-3.5" />
-      <span class="hidden sm:inline">{label()}</span>
+      <span class="max-sm:hidden">{label()}</span>
     </TabsTrigger>
   );
 }

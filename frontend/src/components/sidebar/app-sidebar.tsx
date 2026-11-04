@@ -28,6 +28,8 @@ import {
   DropdownMenuSeparator,
 } from '~/components/ui/dropdown-menu';
 import { TenantSelector } from '~/components/tenant-selector';
+import { PaletteShortcut } from '~/components/command-palette';
+import { canOpenStore } from '~/components/store/store-nav';
 import { BrandMark } from './brand-mark';
 import { ProjectSidebar } from './project-sidebar';
 import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
@@ -45,7 +47,6 @@ import {
   Calendar,
   ChevronsUpDown,
   FolderKanban,
-  House,
   LogOut,
   Plus,
   Search,
@@ -63,11 +64,12 @@ function NavRow(props: {
   active: boolean;
   onNavigate: ReturnType<typeof useNavigate>;
 }) {
+  const { open } = useSidebar();
   return (
     <button
       type="button"
       class={`of-row fr-panel ${COLLAPSED_ROW}`}
-      title={props.label}
+      title={open() ? undefined : props.label}
       aria-label={props.label}
       aria-current={props.active ? 'page' : undefined}
       onClick={() => props.onNavigate({ to: props.to })}
@@ -161,8 +163,8 @@ export function AppSidebar() {
             <input
               ref={(el) => (searchRef = el)}
               type="text"
-              placeholder="Filter projects"
-              aria-label="Filter projects"
+              placeholder="Search"
+              aria-label="Search projects"
               onInput={(e) => setSearch(e.currentTarget.value)}
               onBlur={(e) => {
                 if (!e.relatedTarget) {
@@ -188,6 +190,14 @@ export function AppSidebar() {
               >
                 <X class="w-3 h-3" />
               </button>
+            </Show>
+            <Show when={!search()}>
+              <span
+                aria-hidden="true"
+                class="of-sb-filter-hint pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2"
+              >
+                <PaletteShortcut />
+              </span>
             </Show>
           </div>
           <ProjectFilters
@@ -254,8 +264,10 @@ export function AppSidebar() {
       {/* Destinations sit above the tree, so the sidebar reads as one list of
           places rather than a project tree with a hidden menu under the avatar. */}
       <Show when={!inSection()}>
-        <nav class="px-2 pb-1" aria-label="Main">
-          <NavRow icon={House} label="Home" to="/" active={path() === '/'} onNavigate={navigate} />
+        <nav class="flex flex-col gap-1 px-2 pt-1 pb-2" aria-label="Main">
+          <Show when={canOpenStore(hasPermission)}>
+            <NavRow icon={Store} label="Store" to="/store" active={path().startsWith('/store')} onNavigate={navigate} />
+          </Show>
           <Show when={hasPermission('can_manage_schedules')}>
             <NavRow
               icon={Calendar}
@@ -275,9 +287,8 @@ export function AppSidebar() {
             />
           </Show>
         </nav>
+        <SidebarSeparator />
       </Show>
-
-      <SidebarSeparator />
 
       <SidebarContent>
         {/* On /settings and /admin the sidebar becomes that section's navigation
@@ -350,10 +361,6 @@ export function AppSidebar() {
                   <p class="text-sm font-medium truncate">{userName()}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => navigate({ to: '/store' })}>
-                  <Store class="w-4 h-4 text-muted-foreground" />
-                  Skill & Agent Store
-                </DropdownMenuItem>
                 <Show when={canOpenAdmin()}>
                   <DropdownMenuItem onSelect={() => navigate({ to: '/admin' })}>
                     <Server class="w-4 h-4 text-muted-foreground" />

@@ -7,20 +7,20 @@ import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
 import { useAppearance } from '~/lib/appearance';
 import { projectDisplayTitle } from '~/lib/project-display';
+import { modKeys } from '~/lib/shortcut';
+import { canOpenStore } from '~/components/store/store-nav';
 import { Calendar, FolderKanban, House, Moon, Search, Server, Settings, Store, Sun } from '~/components/icons';
 
 /**
  * Go to — one list of projects, destinations and actions behind
- * Cmd/Ctrl K. Module-level state so the band button and the shortcut drive
- * the same dialog without a provider.
+ * Cmd/Ctrl K. Module-level state so the shortcut and any caller drive the
+ * same dialog without a provider.
  */
 const [open, setOpen] = createSignal(false);
 
-const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-const SHORTCUT_KEYS = isApple ? ['⌘', 'K'] : ['Ctrl', 'K'];
-export const PALETTE_SHORTCUT = isApple ? '⌘K' : 'Ctrl+K';
+const SHORTCUT_KEYS = modKeys('K');
 
-function PaletteShortcut(props: { class?: string }) {
+export function PaletteShortcut(props: { class?: string }) {
   return (
     <span class={`inline-flex items-center gap-0.5 ${props.class ?? ''}`}>
       <For each={SHORTCUT_KEYS}>{(key) => <kbd class="of-kbd">{key}</kbd>}</For>
@@ -29,7 +29,6 @@ function PaletteShortcut(props: { class?: string }) {
 }
 
 export const commandPaletteOpen = open;
-export const openCommandPalette = () => setOpen(true);
 export const closeCommandPalette = () => setOpen(false);
 export const toggleCommandPalette = () => setOpen((v) => !v);
 
@@ -86,13 +85,9 @@ export function CommandPalette() {
         run: () => navigate({ to: '/schedules' }),
       });
     }
-    out.push({
-      id: 'go:store',
-      group: 'Go to',
-      label: 'Skill & Agent Store',
-      icon: Store,
-      run: () => navigate({ to: '/store' }),
-    });
+    if (canOpenStore(hasPermission)) {
+      out.push({ id: 'go:store', group: 'Go to', label: 'Store', icon: Store, run: () => navigate({ to: '/store' }) });
+    }
     if (firstPermittedSettingsTab(hasPermission)) {
       out.push({
         id: 'go:settings',
