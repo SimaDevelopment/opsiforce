@@ -15,7 +15,6 @@ export function SidebarWorkspaceGroup(props: {
   workspace: Workspace;
   index: number;
   folded: boolean;
-  search: string;
   filtering: boolean;
   projects: Project[];
   activeProjectId: string | undefined;
@@ -62,10 +61,6 @@ export function SidebarWorkspaceGroup(props: {
     },
   });
 
-  const query = () => props.search.toLowerCase().trim();
-  const searchActive = () => query().length > 0;
-  const matchesQuery = (text: string | null | undefined) => (text ?? '').toLowerCase().includes(query());
-
   const view = createMemo(() => {
     const folderList = folders.data ?? [];
     const folderIds = new Set(folderList.map((f) => f.id));
@@ -81,34 +76,10 @@ export function SidebarWorkspaceGroup(props: {
       }
     }
 
-    if (!searchActive()) {
-      const folderView = folderList
-        .filter((folder) => !props.filtering || byFolder.has(folder.id))
-        .map((folder) => ({
-          folder,
-          projects: byFolder.get(folder.id) ?? [],
-          autoExpanded: false,
-        }));
-      return { folders: folderView, loose, expanded: !props.folded };
-    }
-
     const folderView = folderList
-      .map((folder) => {
-        const folderProjects = byFolder.get(folder.id) ?? [];
-        const nameMatch = matchesQuery(folder.name);
-        const matching = folderProjects.filter((p) => matchesQuery(p.title));
-        return {
-          folder,
-          projects: nameMatch ? folderProjects : matching,
-          visible: (nameMatch && (!props.filtering || folderProjects.length > 0)) || matching.length > 0,
-        };
-      })
-      .filter((entry) => entry.visible)
-      .map(({ folder, projects }) => ({ folder, projects, autoExpanded: true }));
-
-    const visibleLoose = loose.filter((p) => matchesQuery(p.title));
-    const hasMatch = folderView.length > 0 || visibleLoose.length > 0;
-    return { folders: folderView, loose: visibleLoose, expanded: hasMatch || !props.folded };
+      .filter((folder) => !props.filtering || byFolder.has(folder.id))
+      .map((folder) => ({ folder, projects: byFolder.get(folder.id) ?? [] }));
+    return { folders: folderView, loose, expanded: !props.folded };
   });
 
   return (
@@ -168,7 +139,7 @@ export function SidebarWorkspaceGroup(props: {
           {(entry) => (
             <SidebarFolderGroup
               folder={entry.folder}
-              expanded={entry.autoExpanded || props.isFolderExpanded(entry.folder.id)}
+              expanded={props.isFolderExpanded(entry.folder.id)}
               projects={entry.projects}
               activeProjectId={props.activeProjectId}
               onToggleExpanded={() => props.onToggleFolder(entry.folder.id)}

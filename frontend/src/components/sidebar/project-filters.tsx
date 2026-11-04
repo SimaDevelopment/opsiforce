@@ -14,8 +14,8 @@ import {
 } from '~/lib/project-filters';
 
 /**
- * Narrowing lives beside the text search, because they are the same act: the
- * field narrows by name, this narrows by scope, status and recency. Keeping it in a
+ * Narrowing lives beside Search, which finds a project by name; this narrows the
+ * tree by scope, status and recency. Keeping it in a
  * popover costs the tree no height — the sidebar's vertical space belongs to
  * the projects, not to the controls that hide them.
  *
