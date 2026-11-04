@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,7 +17,20 @@ var previewReporterSource string
 
 const reporterSearchLimit = 64 << 10
 
+const untouched = -1
+
+var wideByteOrderMarks = [][]byte{{0xFF, 0xFE}, {0xFE, 0xFF}}
+
 var prologueOpenings = []string{"<!--", "<!doctype", "<html", "<head"}
+
+func takesTheReporter(contentType string) bool {
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "text/html" {
+		return false
+	}
+	charset := strings.ToLower(params["charset"])
+	return !strings.HasPrefix(charset, "utf-16") && !strings.HasPrefix(charset, "utf-32")
+}
 
 func loadsIntoAFrame(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Dest") == "iframe"
@@ -50,6 +64,9 @@ func previewFrameOf(r *http.Request, platformOrigin string) previewFrame {
 
 func withPreviewReporter(page []byte, frame previewFrame) []byte {
 	at, _ := reporterInsertionPoint(page, true)
+	if at == untouched {
+		return page
+	}
 	return spliced(page, at, reporterScript(frame))
 }
 
@@ -61,7 +78,10 @@ func streamWithPreviewReporter(page io.ReadCloser, frame previewFrame) (io.ReadC
 		prefix = append(prefix, chunk[:n]...)
 		final := errors.Is(err, io.EOF) || len(prefix) >= reporterSearchLimit
 		if at, decided := reporterInsertionPoint(prefix, final); decided {
-			head := spliced(prefix, at, reporterScript(frame))
+			head := prefix
+			if at != untouched {
+				head = spliced(prefix, at, reporterScript(frame))
+			}
 			return struct {
 				io.Reader
 				io.Closer
@@ -75,6 +95,14 @@ func streamWithPreviewReporter(page io.ReadCloser, frame previewFrame) (io.ReadC
 }
 
 func reporterInsertionPoint(page []byte, whole bool) (int, bool) {
+	for _, mark := range wideByteOrderMarks {
+		if bytes.HasPrefix(page, mark) {
+			return untouched, true
+		}
+		if !whole && len(page) < len(mark) && bytes.HasPrefix(mark, page) {
+			return 0, false
+		}
+	}
 	at := 0
 	if bytes.HasPrefix(page, []byte("\uFEFF")) {
 		at = len("\uFEFF")

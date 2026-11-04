@@ -229,3 +229,26 @@ func TestACacheablePreviewPageIsKeptApartPerFrameDestination(t *testing.T) {
 		}
 	}
 }
+
+func TestAUTF16PageReachesTheFrameUntouched(t *testing.T) {
+	utf16Page := string([]byte{0xFF, 0xFE, '<', 0, 'p', 0, '>', 0})
+	for name, upstream := range map[string]struct{ contentType, page string }{
+		"byte order mark":  {"text/html", utf16Page},
+		"declared charset": {"text/html; charset=UTF-16", appPage},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", upstream.contentType)
+			_, _ = w.Write([]byte(upstream.page))
+		}))
+		t.Cleanup(server.Close)
+
+		rec := visit(newAppServer(t, previewAnswer(server.URL)), "https://"+testEnvironmentID+".preview.apps.test/", loadedIntoTheFrame())
+
+		if rec.Body.String() != upstream.page {
+			t.Errorf("%s: the page changed: %q", name, rec.Body.String())
+		}
+	}
+	if _, decided := reporterInsertionPoint([]byte{0xFF}, false); decided {
+		t.Error("decided on a stream whose byte order mark is still arriving")
+	}
+}

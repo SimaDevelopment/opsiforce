@@ -536,7 +536,7 @@ func (s *Server) roundTripAppRequest(
 			return appProxyResult{restart: true}, nil
 		}
 		served := body
-		if framedPreview && strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		if framedPreview && takesTheReporter(resp.Header.Get("Content-Type")) {
 			served = withPreviewReporter(body, previewFrameOf(r, previewFrameOrigin))
 		}
 
@@ -555,7 +555,7 @@ func (s *Server) roundTripAppRequest(
 	contentType := resp.Header.Get("Content-Type")
 	upstreamPath := targetURL.Path
 	rewritesUpstreamPath := upstreamPath != "/" && strings.Contains(contentType, "text/html")
-	reportsPreviewLocation := framedPreview && strings.Contains(contentType, "text/html")
+	reportsPreviewLocation := framedPreview && takesTheReporter(contentType)
 
 	if reportsPreviewLocation && !rewritesUpstreamPath {
 		stream, err := streamWithPreviewReporter(resp.Body, previewFrameOf(r, previewFrameOrigin))
