@@ -28,8 +28,9 @@ import {
   DropdownMenuSeparator,
 } from '~/components/ui/dropdown-menu';
 import { TenantSelector } from '~/components/tenant-selector';
-import { PaletteShortcut } from '~/components/command-palette';
+import { PaletteShortcut, openCommandPalette } from '~/components/command-palette';
 import { canOpenStore } from '~/components/store/store-nav';
+import { modShortcut } from '~/lib/shortcut';
 import { BrandMark } from './brand-mark';
 import { ProjectSidebar } from './project-sidebar';
 import { CreateWorkspaceDialog } from '~/components/create-workspace-dialog';
@@ -53,7 +54,6 @@ import {
   Server,
   Settings,
   Store,
-  X,
 } from '~/components/icons';
 
 /** One destination in the sidebar's nav block — the shared row geometry. */
@@ -93,7 +93,6 @@ export function AppSidebar() {
   const agents = useAgents();
   const createDefaultProject = useCreateDefaultProject();
 
-  const [search, setSearch] = createSignal('');
   // the same persisted signals ProjectSidebar reads, kept in step by the
   // storage event rather than by a shared provider
   const filters = createProjectFilters();
@@ -109,7 +108,6 @@ export function AppSidebar() {
     ).length;
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = createSignal(false);
   const [importOpen, setImportOpen] = createSignal(false);
-  let searchRef: HTMLInputElement | undefined;
 
   const canOpenSettings = () => !!firstPermittedSettingsTab(hasPermission);
   const canOpenAdmin = () => !!firstPermittedAdminTab(hasPermission);
@@ -155,51 +153,18 @@ export function AppSidebar() {
         <TenantSelector />
 
         <div class="group-data-[collapsible=icon]/sidebar:hidden flex items-center gap-1.5 pb-1">
-          <div class="of-sb-filter flex-1 min-w-0">
-            <Search
-              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
-              style={{ color: 'var(--ink-subtle)' }}
-            />
-            <input
-              ref={(el) => (searchRef = el)}
-              type="text"
-              placeholder="Search"
-              aria-label="Search projects"
-              onInput={(e) => setSearch(e.currentTarget.value)}
-              onBlur={(e) => {
-                if (!e.relatedTarget) {
-                  requestAnimationFrame(() => {
-                    if (document.activeElement === document.body) {
-                      searchRef?.focus();
-                    }
-                  });
-                }
-              }}
-            />
-            <Show when={search()}>
-              <button
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setSearch('');
-                  if (searchRef) {
-                    searchRef.value = '';
-                    searchRef.focus();
-                  }
-                }}
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X class="w-3 h-3" />
-              </button>
-            </Show>
-            <Show when={!search()}>
-              <span
-                aria-hidden="true"
-                class="of-sb-filter-hint pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2"
-              >
-                <PaletteShortcut />
-              </span>
-            </Show>
-          </div>
+          <button
+            type="button"
+            class="of-sb-search fr-panel flex-1 min-w-0"
+            onClick={openCommandPalette}
+            aria-keyshortcuts="Meta+K Control+K"
+          >
+            <Search class="w-3.5 h-3.5 shrink-0" />
+            <span class="truncate">Search</span>
+            <span aria-hidden="true" class="of-sb-search-hint">
+              <PaletteShortcut />
+            </span>
+          </button>
           <ProjectFilters
             open={filtersOpen()}
             onOpenChange={setFiltersOpen}
@@ -238,7 +203,17 @@ export function AppSidebar() {
             )}
           />
         </div>
-        <div class="hidden group-data-[collapsible=icon]/sidebar:flex justify-center pb-2">
+        <div class="hidden group-data-[collapsible=icon]/sidebar:flex flex-col items-center gap-1 pb-2">
+          <button
+            type="button"
+            class="w-7 h-7 rounded-md flex items-center justify-center text-sidebar-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+            onClick={openCommandPalette}
+            aria-label="Search"
+            aria-keyshortcuts="Meta+K Control+K"
+            title={`Search (${modShortcut('K')})`}
+          >
+            <Search class="w-4 h-4" />
+          </button>
           <CreateMenu
             disabled={projectCreateDisabled()}
             canCreateWorkspace={hasPermission('can_manage_workspaces')}
@@ -325,7 +300,7 @@ export function AppSidebar() {
         </Show>
         <Show when={!inSection()}>
           <div class="group-data-[collapsible=icon]/sidebar:hidden px-2 py-1">
-            <ProjectSidebar search={search()} />
+            <ProjectSidebar />
           </div>
         </Show>
       </SidebarContent>

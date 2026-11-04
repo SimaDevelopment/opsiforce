@@ -102,6 +102,7 @@ export { default as ChartLine } from 'lucide-solid/icons/chart-line';
 export { default as Target } from 'lucide-solid/icons/target';
 export { default as Droplet } from 'lucide-solid/icons/droplet';
 export { default as ArrowLeft } from 'lucide-solid/icons/arrow-left';
+export { default as ArrowRight } from 'lucide-solid/icons/arrow-right';
 export { default as ListFilter } from 'lucide-solid/icons/list-filter';
 export { default as UserRound } from 'lucide-solid/icons/user-round';
 export { default as Wrench } from 'lucide-solid/icons/wrench';

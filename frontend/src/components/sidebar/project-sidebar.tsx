@@ -88,7 +88,7 @@ const onDragStart = (event: DragStartEvent) => {
   setActiveDragType(typeof type === 'string' ? (type as DndType) : null);
 };
 
-export function ProjectSidebar(props: { search: string }) {
+export function ProjectSidebar() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -176,14 +176,6 @@ export function ProjectSidebar(props: { search: string }) {
   );
   const showPublicGroup = () => !filters.active() || groupedProjects().publicProjects.length > 0;
   const nothingMatches = () => filters.active() && visibleProjects().length === 0;
-
-  const searchQuery = () => props.search.toLowerCase().trim();
-
-  const filterByQuery = (list: Project[]) => {
-    const q = searchQuery();
-    if (!q) return list;
-    return list.filter((p) => (p.title ?? '').toLowerCase().includes(q));
-  };
 
   const workspaceLabel = (id: string | null): string => {
     if (id === null) return PUBLIC_LABEL;
@@ -361,7 +353,6 @@ export function ProjectSidebar(props: { search: string }) {
                   workspace={ws}
                   index={idx()}
                   folded={isFolded(ws.id)}
-                  search={props.search}
                   filtering={filters.active()}
                   projects={groupedProjects().byWs.get(ws.id) ?? []}
                   activeProjectId={activeProjectId()}
@@ -407,7 +398,7 @@ export function ProjectSidebar(props: { search: string }) {
             <Show when={showPublicGroup()}>
               <SidebarPublicGroup
                 expanded={!isFolded(PUBLIC_ID)}
-                projects={filterByQuery(groupedProjects().publicProjects)}
+                projects={groupedProjects().publicProjects}
                 activeProjectId={activeProjectId()}
                 onToggleFold={() => toggleFold(PUBLIC_ID)}
                 renderCreate={

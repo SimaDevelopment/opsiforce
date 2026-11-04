@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, 
 import { useNavigate } from '@tanstack/solid-router';
 import fuzzysort from 'fuzzysort';
 import { useProjects } from '~/api/projects';
+import { PUBLIC_LABEL, useWorkspaces } from '~/api/workspaces';
 import { usePermissions } from '~/api/permissions';
 import { firstPermittedSettingsTab } from '~/constants/settings-tabs';
 import { firstPermittedAdminTab } from '~/constants/admin-tabs';
@@ -29,6 +30,7 @@ export function PaletteShortcut(props: { class?: string }) {
 }
 
 export const commandPaletteOpen = open;
+export const openCommandPalette = () => setOpen(true);
 export const closeCommandPalette = () => setOpen(false);
 export const toggleCommandPalette = () => setOpen((v) => !v);
 
@@ -44,6 +46,7 @@ interface Item {
 export function CommandPalette() {
   const navigate = useNavigate();
   const projects = useProjects();
+  const workspaces = useWorkspaces();
   const { hasPermission } = usePermissions();
   const appearance = useAppearance();
 
@@ -59,12 +62,14 @@ export function CommandPalette() {
 
   const items = createMemo<Item[]>(() => {
     const out: Item[] = [];
+    const workspaceNames = new Map((workspaces.data ?? []).map((w) => [w.id, w.name]));
 
     for (const project of projects.data ?? []) {
       out.push({
         id: `project:${project.id}`,
         group: 'Projects',
         label: projectDisplayTitle(project),
+        hint: project.workspaceId === null ? PUBLIC_LABEL : workspaceNames.get(project.workspaceId),
         icon: FolderKanban,
         run: () =>
           navigate({
@@ -117,7 +122,7 @@ export function CommandPalette() {
   const filtered = createMemo<Item[]>(() => {
     const q = query().trim();
     if (!q) return items();
-    const results = fuzzysort.go(q, items(), { key: 'label', limit: 40 });
+    const results = fuzzysort.go(q, items(), { keys: ['label', 'hint'], limit: 40 });
     return results.map((r) => r.obj);
   });
 
@@ -301,7 +306,7 @@ export function CommandPalette() {
                           <item.icon class="w-4 h-4 shrink-0" />
                           <span class="lbl">{item.label}</span>
                           <Show when={item.hint}>
-                            <span class="t-meta t-sub">{item.hint}</span>
+                            <span class="t-meta t-sub max-w-[40%] shrink-0 truncate">{item.hint}</span>
                           </Show>
                         </button>
                       );

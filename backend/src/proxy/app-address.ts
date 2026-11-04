@@ -21,6 +21,7 @@ export interface ResolvedAppAddress {
   env: ProjectEnvironmentContext;
   action: 'serve' | 'redirect';
   canonicalHost: string;
+  previewed: boolean;
 }
 
 export async function resolveAppAddress(
@@ -33,7 +34,7 @@ export async function resolveAppAddress(
 
   if ('previewedEnvironmentId' in appHost) {
     const env = answering(await environments.findByIdOrNull(appHost.previewedEnvironmentId));
-    return env && { env, action: 'serve', canonicalHost: appCanonicalHost(env, appsHostname) };
+    return env && { env, action: 'serve', canonicalHost: appCanonicalHost(env, appsHostname), previewed: true };
   }
 
   const { label } = appHost;
@@ -44,13 +45,15 @@ export async function resolveAppAddress(
       env: byId,
       action: isLegacyLabel ? 'serve' : 'redirect',
       canonicalHost: appCanonicalHost(byId, appsHostname),
+      previewed: false,
     };
   }
 
   const env = answering(await environmentEndingIn(label, environments));
   if (!env) return null;
   const canonicalHost = appCanonicalHost(env, appsHostname);
-  return { env, action: `${label}.${appsHostname}` === canonicalHost ? 'serve' : 'redirect', canonicalHost };
+  const action = `${label}.${appsHostname}` === canonicalHost ? 'serve' : 'redirect';
+  return { env, action, canonicalHost, previewed: false };
 }
 
 function parseAppHost(host: string, appsHostname: string, previewAppsHostname: string): AppHost | null {

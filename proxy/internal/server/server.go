@@ -296,7 +296,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit)
+	responseResult, err := s.roundTripAppRequest(r, targetURL, requestBody, captureBody, logCfg.bodyLimit, ensured.PreviewFrameOrigin)
 	if err != nil {
 		s.sendFailureResponse(w, r, environmentID)
 		return
@@ -495,6 +495,7 @@ func (s *Server) roundTripAppRequest(
 	requestBody []byte,
 	captureBody bool,
 	bodyLimit int,
+	previewFrameOrigin string,
 ) (appProxyResult, error) {
 	outgoing := r.Clone(r.Context())
 	outgoing.URL = targetURL
@@ -502,6 +503,10 @@ func (s *Server) roundTripAppRequest(
 	outgoing.RequestURI = ""
 	outgoing.Header = copyRequestHeaders(r.Header, true)
 	stripAuthProxyHeaders(outgoing.Header)
+	framedPreview := previewFrameOrigin != "" && loadsIntoAFrame(r)
+	if framedPreview && r.Method == http.MethodGet {
+		askForAWholePage(outgoing.Header)
+	}
 
 	if len(requestBody) > 0 {
 		outgoing.Body = io.NopCloser(bytes.NewReader(requestBody))
@@ -516,6 +521,9 @@ func (s *Server) roundTripAppRequest(
 	}
 
 	headers := filterResponseHeaders(resp.Header, false)
+	if previewFrameOrigin != "" && strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		varyByFrameDestination(headers)
+	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		defer resp.Body.Close()
@@ -527,12 +535,16 @@ func (s *Server) roundTripAppRequest(
 		if isK8sPodError(body) {
 			return appProxyResult{restart: true}, nil
 		}
+		served := body
+		if framedPreview && takesTheReporter(resp.Header.Get("Content-Type")) {
+			served = withPreviewReporter(body, previewFrameOf(r, previewFrameOrigin))
+		}
 
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,
 			headers:      headers,
-			body:         body,
-			responseSize: int64(len(body)),
+			body:         served,
+			responseSize: int64(len(served)),
 		}
 		if captureBody {
 			result.responseBody = truncate(string(body), bodyLimit)
@@ -542,15 +554,36 @@ func (s *Server) roundTripAppRequest(
 
 	contentType := resp.Header.Get("Content-Type")
 	upstreamPath := targetURL.Path
+	rewritesUpstreamPath := upstreamPath != "/" && strings.Contains(contentType, "text/html")
+	reportsPreviewLocation := framedPreview && takesTheReporter(contentType)
 
-	if upstreamPath != "/" && strings.Contains(contentType, "text/html") {
+	if reportsPreviewLocation && !rewritesUpstreamPath {
+		stream, err := streamWithPreviewReporter(resp.Body, previewFrameOf(r, previewFrameOrigin))
+		if err != nil {
+			return appProxyResult{}, err
+		}
+		return appProxyResult{
+			statusCode:  resp.StatusCode,
+			headers:     headers,
+			stream:      stream,
+			contentType: contentType,
+		}, nil
+	}
+
+	if rewritesUpstreamPath {
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return appProxyResult{}, err
 		}
 
-		rewritten := bytes.ReplaceAll(body, []byte(upstreamPath), nil)
+		rewritten := body
+		if rewritesUpstreamPath {
+			rewritten = bytes.ReplaceAll(rewritten, []byte(upstreamPath), nil)
+		}
+		if reportsPreviewLocation {
+			rewritten = withPreviewReporter(rewritten, previewFrameOf(r, previewFrameOrigin))
+		}
 		result := appProxyResult{
 			statusCode:   resp.StatusCode,
 			headers:      headers,
