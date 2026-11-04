@@ -17,10 +17,37 @@
     );
   }
 
+  var HASH_KEY = 'opsiforce-preview:hash';
+
   function reload() {
     if (!postedDocument) return location.reload();
-    location.replace(location.hash ? location.href.slice(0, -location.hash.length) : location.href);
+    var hash = location.hash;
+    var address = hash ? location.href.slice(0, -hash.length) : location.href;
+    try {
+      if (hash) sessionStorage.setItem(HASH_KEY, JSON.stringify({ address: address, hash: hash }));
+    } catch (error) {}
+    location.replace(address);
   }
+
+  function restoreHash() {
+    var saved;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(HASH_KEY));
+      sessionStorage.removeItem(HASH_KEY);
+    } catch (error) {
+      return;
+    }
+    if (!saved || saved.address !== location.href) return;
+    history.replaceState(history.state, '', saved.address + saved.hash);
+    window.addEventListener('load', function () {
+      try {
+        var target = document.getElementById(decodeURIComponent(saved.hash.slice(1)));
+        if (target) target.scrollIntoView();
+      } catch (error) {}
+    });
+  }
+
+  restoreHash();
 
   function traverse(direction) {
     if (!navigation || !(direction === 'back' ? navigation.canGoBack : navigation.canGoForward)) return;
