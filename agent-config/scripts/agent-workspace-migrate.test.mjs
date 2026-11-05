@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -653,3 +653,36 @@ test("a Built-in lay is unchanged: the package template, the platform .gitignore
   assert.deepEqual(commitSubjects(roots.workspace), ["Initial template"])
   assert.deepEqual(committedPaths(roots.workspace), [".gitignore", "app/startup.sh"])
 })
+
+async function invokeScript(...args) {
+  const workspace = await mkdtemp(path.join(tmpdir(), "migrate-args-"))
+  try {
+    const { status, stdout, stderr } = spawnSync(
+      process.execPath,
+      [path.join(import.meta.dirname, "agent-workspace-migrate.mjs"), ...args],
+      { env: { ...process.env, WORKSPACE: workspace }, encoding: "utf8", timeout: 10000 },
+    )
+    return { status, stdout, stderr, written: await readdir(workspace) }
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+}
+
+for (const flag of ["--help", "-h"]) {
+  test(`${flag} prints the usage and leaves the workspace alone`, async () => {
+    const { status, stdout, written } = await invokeScript(flag)
+    assert.equal(status, 0)
+    assert.match(stdout, /agent-workspace-migrate --reconcile-content/)
+    assert.deepEqual(written, [])
+  })
+}
+
+for (const args of [[], ["--migrate"], ["--reconcile-content", "--dry-run"], ["--sync-agent-files", "--migrate"]]) {
+  test(`${args.join(" ") || "no arguments"} is refused without touching the workspace`, async () => {
+    const { status, stdout, stderr, written } = await invokeScript(...args)
+    assert.equal(status, 2)
+    assert.equal(stdout, "")
+    assert.match(stderr, /agent-workspace-migrate --reconcile-content/)
+    assert.deepEqual(written, [])
+  })
+}

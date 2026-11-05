@@ -74,7 +74,7 @@ guard <server> <run server on $APP_PORT in the foreground> &
 wait -n
 ```
 
-Installing or starting something in chat to try it is fine. The moment the App depends on it, it moves into `startup.sh`, or the App breaks on the next restart. An edit to `startup.sh` takes effect the next time it runs, not now, so nothing proves it but a restart. Before relying on an install or prepare line you added — anything above the `guard` lines — run that line on its own twice: the first run does the work, the second must succeed and change nothing. Never run a `guard` line or the whole script by hand in the running container, which starts a second copy of what is already running, and never stop a service the App is using to see whether it comes back; the restart is that test.
+Installing or starting something in chat to try it is fine. The moment the App depends on it, it moves into `startup.sh`, or the App breaks on the next restart. An edit to `startup.sh` takes effect the next time it runs, not now: after every edit to it, run `app-restart`, which runs it again from the top, then `process-logs --events --since 1m` to see what started. Before relying on an install or prepare line you added — anything above the `guard` lines — run that line on its own twice: the first run does the work, the second must succeed and change nothing. Never run a `guard` line or the whole script by hand in the running container, which starts a second copy of what is already running, and never stop a service the App is using to see whether it comes back; `app-restart` is that test.
 
 **What Publish carries.** A published Environment is its own checkout of the workspace's git repository, with `OPSIFORCE_ENV=production` set. `startup.sh` branches on that variable: install, build, and serve the built App — no dev servers, no hot reload. The checkout holds the code and nothing git ignores: no `data/`, no installed dependencies, no `opsiforce.env.json` (Publish writes production's own). Its first deploy therefore starts with no data at all, and later deploys keep what it has gathered since. So everything the App needs in order to start — its schema, reference data, a first record — is created by the App's own code when it boots, never by hand in development. Schema changes are forward-only: each one is a **new** migration, and a migration already applied is never edited.
 
@@ -143,17 +143,9 @@ Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call. `OPENAI_API_K
 
 The platform records what every process prints and every request the App serves. Use both to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits. Both are the platform's and read-only to you, and both keep only the last few days.
 
-### Process logs — `process-logs`, files under `/workspace/data/logs/`
+### Process logs — `process-logs`
 
-Every supervised process writes its stdout/stderr and its lifecycle events (`started`, `crashed`, `stopped`, `signal`, `gave_up`, with `exit_code`, `uptime_seconds` and `restart_count`) to `/workspace/data/logs/<process>.log`, rotated as it grows. Read them with `process-logs`, which merges the rotated files and every process by time:
-
-```bash
-process-logs --list                # every process, its last write and size
-process-logs -n 100 <process>      # the last 100 lines of one process
-process-logs --follow <process>    # stream while you reproduce something
-```
-
-`--since`, `--events` and `--grep` narrow any of these; `process-logs --help` has the rest. Process names come from whatever `startup.sh` supervises, plus the platform's own: `webapp` is the supervisor's own meta-lines, `opencode` is you, `vscode` is the editor, `dbviewer` the database viewer.
+Every process `guard` supervises writes its output and its lifecycle events (`started`, `crashed`, `stopped`, `signal`, `gave_up`, with `exit_code`, `uptime_seconds` and `restart_count`) to `/workspace/data/logs/<process>.log`. Read them with `process-logs`; `process-logs --help` lists its options, examples and the platform's own process names.
 
 ### The request log — `/workspace/data/database.db`
 

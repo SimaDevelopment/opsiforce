@@ -128,10 +128,11 @@ RUN chmod -R a-w /opt/opsiforce/opencode-plugins
 COPY agent-config/scripts/guard.sh /usr/local/bin/guard
 COPY agent-config/scripts/process-logs.sh /usr/local/bin/process-logs
 COPY agent-config/scripts/app-url.sh /usr/local/bin/app-url
+COPY agent-config/scripts/app-restart.sh /usr/local/bin/app-restart
 COPY agent-config/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY agent-config/scripts/agent-workspace-migrate.mjs /usr/local/bin/agent-workspace-migrate
 COPY agent-config/datasette-metadata.yml /opt/opencode/datasette-metadata.yml
-RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/app-url /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
+RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/app-url /usr/local/bin/app-restart /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep file \

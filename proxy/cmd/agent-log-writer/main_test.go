@@ -193,3 +193,30 @@ func collectStream(input string) (string, []string) {
 	}
 	return output.String(), lines
 }
+
+func TestHelpPrintsUsageAndStops(t *testing.T) {
+	for _, flag := range []string{"-h", "--help"} {
+		var stdout, stderr strings.Builder
+		_, code, done := parseOptions([]string{flag}, &stdout, &stderr)
+		if !done || code != 0 || !strings.Contains(stdout.String(), "Usage:") {
+			t.Fatalf("%s: done %v, code %d, stdout %q", flag, done, code, stdout.String())
+		}
+	}
+}
+
+func TestWrongUsageIsRefusedWithTheUsage(t *testing.T) {
+	for _, args := range [][]string{{}, {"--line", "x"}, {"--name", "server", "extra"}, {"--nme", "server"}} {
+		var stdout, stderr strings.Builder
+		_, code, done := parseOptions(args, &stdout, &stderr)
+		if !done || code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "Usage:") {
+			t.Fatalf("%v: done %v, code %d, stdout %q, stderr %q", args, done, code, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestAProcessNameIsEnoughToRun(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if _, _, exitNow := parseOptions([]string{"--name", "server", "--event", "started", "--restart", "2"}, &stdout, &stderr); exitNow {
+		t.Fatalf("refused a valid call: stderr %q", stderr.String())
+	}
+}
