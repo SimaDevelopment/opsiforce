@@ -107,6 +107,11 @@ export interface UpdateAgentSettingsDto {
 export interface AgentDetail extends StoreAgent {
   settings: AgentSettings;
   podSettings: PodSettings;
+  /** own: set on this Agent here; platform: a Built-in Agent's platform choice; default: the default preset. */
+  podSettingsSource: 'own' | 'platform' | 'default';
+  inheritedPodSettings: PodSettings;
+  /** A Built-in Agent's platform choice: a preset id, or null when it follows the default preset. */
+  platformPresetId: string | null;
   profiles: AgentProfile[];
   shippedSkills: ShippedSkill[];
   projectCount: number;
@@ -349,6 +354,16 @@ export function useUpdateAgentPodClass(id: () => string) {
   );
 }
 
+export function useResetAgentPodClass(id: () => string) {
+  return useAgentMutation(id, (agentId, _: void) => api.delete<AgentDetail>(`/agents/${agentId}/pod-class`));
+}
+
+export function useSetAgentPlatformPreset(id: () => string) {
+  return useAgentMutation(id, (agentId, presetId: string | null) =>
+    api.put<unknown>(`/resource-presets/platform/agents/${agentId}`, { presetId })
+  );
+}
+
 export function useSetAgentVisibility(id: () => string) {
   return useAgentMutation(id, (agentId, visibility: string) =>
     api.post<AgentDetail>(`/agents/${agentId}/visibility`, { visibility })
@@ -368,6 +383,7 @@ export interface AgentDuplicateResult {
 
 export interface AgentProjectSettings {
   resources: PodSettings;
+  followsDefault?: boolean;
   warmPoolSize: number;
 }
 

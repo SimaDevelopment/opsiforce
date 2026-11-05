@@ -30,24 +30,29 @@ export function formatGib(mib: number): string {
   return `${trimNumber(mibToGib(mib))} GiB`;
 }
 
-const POD_CLASS_TITLES: Record<string, string> = {
-  small: 'Small',
-  medium: 'Medium',
-  large: 'Large',
-  custom: 'Custom',
-};
-
-export function podClassTitle(podClass: string): string {
-  return POD_CLASS_TITLES[podClass] ?? podClass;
-}
-
-export function describePodSettings(settings: {
-  podClass: string;
+export function describeResources(resources: {
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
 }): string {
-  return `${podClassTitle(settings.podClass)} · ${formatCores(settings.cpuMillicores)} · ${formatGib(settings.memoryRequestMib)} / ${formatGib(settings.memoryLimitMib)}`;
+  const memory =
+    resources.memoryRequestMib === resources.memoryLimitMib
+      ? formatGib(resources.memoryLimitMib)
+      : `${trimNumber(mibToGib(resources.memoryRequestMib))}–${formatGib(resources.memoryLimitMib)}`;
+  return `${formatCores(resources.cpuMillicores)} · ${memory} memory`;
+}
+
+export function presetTitle(settings: { presetName: string | null }): string {
+  return settings.presetName ?? 'Custom';
+}
+
+export function describePodSettings(settings: {
+  presetName: string | null;
+  cpuMillicores: number;
+  memoryRequestMib: number;
+  memoryLimitMib: number;
+}): string {
+  return `${presetTitle(settings)} · ${describeResources(settings)}`;
 }
 
 export function describeReadyProjects(size: number): string {

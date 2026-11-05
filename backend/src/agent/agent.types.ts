@@ -5,6 +5,7 @@ import type { ServiceConfigurationOptions, SettableService } from '../store/serv
 import type { AgentImportNote } from './agent-import';
 import type { PodClassSelection, PodSettings } from '../pod/pod-classes';
 import type { AgentProjectSettingsChoice } from './agent-copy-settings';
+import type { AgentResourcesSource } from './agent-pod-settings';
 export type { AgentRow } from './agent-visibility';
 
 export interface AgentResponse {
@@ -92,6 +93,9 @@ export interface ShippedSkillResponse {
 export interface AgentDetail extends AgentSummary {
   settings: AgentSettingsResponse;
   podSettings: PodSettings;
+  podSettingsSource: AgentResourcesSource;
+  inheritedPodSettings: PodSettings;
+  platformPresetId: string | null;
   profiles: AgentProfileResponse[];
   shippedSkills: ShippedSkillResponse[];
   projectCount: number;

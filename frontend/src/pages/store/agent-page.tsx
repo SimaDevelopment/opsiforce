@@ -312,6 +312,7 @@ function AgentHeader(props: {
             readyProjects={props.agent.settings.warmPoolSize}
             imageOwned={props.agent.origin === 'built_in'}
             onEdit={editable() ? () => setEditingSettings(true) : undefined}
+            onEditResources={props.canManage ? () => setEditingSettings(true) : undefined}
           />
         </div>
         <Show when={props.canManage}>
@@ -384,11 +385,9 @@ function AgentActionsMenu(props: {
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
-        <Show when={props.agent.origin === 'custom'}>
-          <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
-            Settings
-          </ActionsMenuItem>
-        </Show>
+        <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
+          Settings
+        </ActionsMenuItem>
         <Show when={props.agent.duplicable}>
           <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate

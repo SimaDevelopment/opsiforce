@@ -8,8 +8,7 @@
       "version": "0.15.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
-      "poolSize": 3,
-      "podClass": "small"
+      "poolSize": 3
     },
     "skill-agent-builder": {
       "name": "Skill & Agent Builder",
@@ -19,8 +18,7 @@
       "version": "1.13.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
-      "poolSize": 0,
-      "podClass": "small"
+      "poolSize": 0
     },
     "external-service-builder": {
       "name": "External Service Builder",
@@ -30,8 +28,7 @@
       "version": "1.10.0",
       "model": "openai/gpt-6.1-sol",
       "variant": "high",
-      "poolSize": 0,
-      "podClass": "small"
+      "poolSize": 0
     }
   }
 }

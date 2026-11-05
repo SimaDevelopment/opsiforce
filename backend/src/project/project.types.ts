@@ -1,5 +1,5 @@
 import type { ProjectKindValue } from '../../db/schema';
-import type { PodClass } from '../pod/pod-classes';
+import type { PodClassSelection } from '../pod/pod-classes';
 import type { CreatedProjectsCap } from './project-limit';
 
 export const ProjectStatus = {
@@ -73,12 +73,7 @@ export interface ProjectLoggingResponse {
   bodyLimit: number;
 }
 
-export interface UpdateProjectPodClassDto {
-  podClass: PodClass;
-  cpuMillicores?: number;
-  memoryRequestMib?: number;
-  memoryLimitMib?: number;
-}
+export type UpdateProjectPodClassDto = PodClassSelection;
 
 export type ProjectKind = ProjectKindValue;
 
@@ -127,7 +122,8 @@ export interface ProjectResponse {
   timezone: string;
   requestLogMode: RequestLogMode;
   requestLogBodyLimit: number;
-  podClass: PodClass;
+  presetId: string | null;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;

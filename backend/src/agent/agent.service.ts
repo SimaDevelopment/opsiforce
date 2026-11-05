@@ -20,11 +20,14 @@ import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
 import { ProjectPoolService } from '../pool/project-pool.service';
 import { isPostgresError, PG_FOREIGN_KEY_VIOLATION } from '../common/postgres-errors';
 import { podSettingsFromRequest } from '../pod/pod-class-request';
-import { DEFAULT_AGENT_PROJECT_SETTINGS, settingsForCopy } from './agent-copy-settings';
+import { readPresetCatalog } from '../pod/resource-presets';
+import type { PodSettings } from '../pod/pod-classes';
+import { defaultAgentProjectSettings, settingsForCopy } from './agent-copy-settings';
 import {
-  readAgentPodSettings,
+  readAgentResources,
   validWarmPoolSize,
   writeAgentPodSettings,
+  writeTenantAgentPodSettings,
   writeWarmPoolSize,
 } from './agent-pod-settings';
 import { SkillDeliveryRepository } from '../delivery/skill-delivery.repository';
@@ -176,6 +179,7 @@ export class AgentService {
 
     const profiles = await this.readProfiles(agent, caller.tenantId);
     const settings = await this.repository.settings(agent.id);
+    const resources = await readAgentResources(agent.id, caller.tenantId);
     return {
       ...toSummary(
         agent,
@@ -185,7 +189,10 @@ export class AgentService {
         settings.defaultEnvironmentId
       ),
       settings,
-      podSettings: await readAgentPodSettings(agent.id),
+      podSettings: resources.resources,
+      podSettingsSource: resources.source,
+      inheritedPodSettings: resources.inherited,
+      platformPresetId: resources.platformPresetId,
       profiles,
       shippedSkills:
         agent.origin === 'built_in'
@@ -215,7 +222,7 @@ export class AgentService {
         profile: { promptBody: '', model, variant },
         skills: [],
         template: null,
-        projectSettings: DEFAULT_AGENT_PROJECT_SETTINGS,
+        projectSettings: defaultAgentProjectSettings(await readPresetCatalog(caller.tenantId)),
       },
       pins: [],
       createdAgentsCap,
@@ -273,10 +280,32 @@ export class AgentService {
   }
 
   async updatePodClass(caller: AgentCaller, agentId: string, dto: UpdateAgentPodClassDto): Promise<AgentDetail> {
-    const agent = await this.assertEditable(caller, agentId);
-    await writeAgentPodSettings(db, agent.id, podSettingsFromRequest(dto));
-    await this.reconcilePool(agent.id);
+    const agent = await this.assertResourcesEditable(caller, agentId);
+    await this.writeResources(caller, agent, podSettingsFromRequest(dto, await readPresetCatalog(caller.tenantId)));
     return this.findOne(caller, agentId);
+  }
+
+  /** A Built-in Agent goes back to the platform's choice here, a Custom Agent to the default preset. */
+  async resetPodClass(caller: AgentCaller, agentId: string): Promise<AgentDetail> {
+    const agent = await this.assertResourcesEditable(caller, agentId);
+    await this.writeResources(caller, agent, null);
+    return this.findOne(caller, agentId);
+  }
+
+  private async writeResources(caller: AgentCaller, agent: AgentRow, settings: PodSettings | null): Promise<void> {
+    if (agent.origin === 'built_in') {
+      await writeTenantAgentPodSettings(db, caller.tenantId, agent.id, settings);
+      return;
+    }
+    await writeAgentPodSettings(db, agent.id, settings);
+    await this.reconcilePool(agent.id);
+  }
+
+  private async assertResourcesEditable(caller: AgentCaller, agentId: string): Promise<AgentRow> {
+    const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
+    if (agent.origin === 'custom') return this.assertEditable(caller, agentId);
+    if (!caller.canManageAgents) throw new MissingPermissionException('can_manage_agents');
+    return agent;
   }
 
   async reconcilePool(agentId: string): Promise<void> {
@@ -311,7 +340,10 @@ export class AgentService {
     const { displayName } = await this.bundles.availableName(caller.tenantId, dto.displayName ?? '');
 
     const read = await this.bundleReader.read(source, caller.tenantId);
-    const bundle = { ...read, projectSettings: settingsForCopy(read.projectSettings, dto) };
+    const bundle = {
+      ...read,
+      projectSettings: settingsForCopy(read.projectSettings, dto, await readPresetCatalog(caller.tenantId)),
+    };
     const { pins, notes } = await this.profiles.pinsWithinGrants(caller.tenantId, bundle.skills, grants);
     const copyId = await this.bundles.write(caller, { displayName, bundle, pins });
     if (bundle.projectSettings.warmPoolSize > 0) await this.reconcilePool(copyId);

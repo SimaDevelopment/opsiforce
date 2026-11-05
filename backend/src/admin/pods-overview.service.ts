@@ -17,7 +17,6 @@ import { AgentUpdateStatus } from '../agent-update/agent-update.types';
 import { SkillDeliveryRepository, type DeliveryStateRow } from '../delivery/skill-delivery.repository';
 import { PodService } from '../pod/pod.service';
 import { TimeoutService, type EnvironmentKeepAlive } from '../timeout/timeout.service';
-import type { PodClass } from '../pod/pod-classes';
 import type { ProjectStatus } from '../project/project.types';
 import { podSettingsColumns } from '../pod/pod-settings-columns';
 import type {
@@ -33,7 +32,6 @@ import type {
 } from './pods-overview.types';
 import { agentDisabledIn, customAgentHasDefaultProfile } from '../agent/agent-visibility';
 import { MAX_WARM_POOL_SIZE, readAgentPodSettingsFor } from '../agent/agent-pod-settings';
-import { resolvePodSettings } from '../pod/pod-classes';
 
 const AGENT_POD_SELECTOR = 'app=opsiforce-agent';
 const ENVIRONMENT_ID_LABEL = 'opsiforce.io/environment-id';
@@ -57,7 +55,7 @@ interface TenantEnvRow {
   projectTitle: string | null;
   timeoutIdle: number;
   appTimeoutIdle: number;
-  podClass: PodClass;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
@@ -171,10 +169,10 @@ export class PodsOverviewService {
         )
       )
       .orderBy(asc(projects.createdAt));
-    const podSettingsByAgent = await readAgentPodSettingsFor(agentRows.map((row) => row.id));
+    const podSettings = await readAgentPodSettingsFor(agentRows.map((row) => ({ id: row.id, tenantId })));
 
     return agentRows
-      .map((agent) => {
+      .map((agent, index) => {
         const paused: WarmPoolPause | null = agent.disabled ? 'disabled' : agent.published ? null : 'not_published';
         const capped = Math.min(agent.warmPoolSize, MAX_WARM_POOL_SIZE, this.poolSizeOverride ?? Infinity);
         const slots = slotRows
@@ -196,7 +194,7 @@ export class PodsOverviewService {
           warmPoolSize: agent.warmPoolSize,
           effectiveSize: paused ? 0 : capped,
           paused,
-          resources: podSettingsByAgent.get(agent.id) ?? resolvePodSettings(),
+          resources: podSettings[index],
           slots,
         };
       })
@@ -261,7 +259,7 @@ export class PodsOverviewService {
       status: this.deriveStatus(pod),
       ageMs: this.podService.podAgeMs(pod, now),
       resources: {
-        podClass: pe.podClass,
+        presetName: pe.presetName,
         cpuMillicores: pe.cpuMillicores,
         memoryRequestMib: pe.memoryRequestMib,
         memoryLimitMib: pe.memoryLimitMib,

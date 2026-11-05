@@ -111,6 +111,9 @@ export const tenantSettings = pgTable("tenant_settings", {
     .primaryKey()
     .references(() => tenants.id, { onDelete: "cascade" }),
   privateWorkspaceEnabled: boolean("private_workspace_enabled").notNull().default(true),
+  defaultResourcePresetId: text("default_resource_preset_id").references((): AnyPgColumn => resourcePresets.id, {
+    onDelete: "set null",
+  }),
 })
 
 export const agents = pgTable(
@@ -360,7 +363,9 @@ export const projectPodSettings = pgTable("project_pod_settings", {
   projectId: text("project_id")
     .primaryKey()
     .references(() => projects.id, { onDelete: "cascade" }),
+  // TODO: remove in the release after resource presets ship: unread; kept so backends of the previous release keep working during the rollout
   podClass: podClassEnum("pod_class").notNull().default("small"),
+  presetId: text("preset_id").references((): AnyPgColumn => resourcePresets.id, { onDelete: "set null" }),
   cpuMillicores: integer("cpu_millicores").notNull(),
   memoryRequestMib: integer("memory_request_mib").notNull(),
   memoryLimitMib: integer("memory_limit_mib").notNull(),
@@ -994,11 +999,73 @@ export const agentPodSettings = pgTable("agent_pod_settings", {
   agentId: text("agent_id")
     .primaryKey()
     .references(() => agents.id, { onDelete: "cascade" }),
+  // TODO: remove in the release after resource presets ship: unread; kept so backends of the previous release keep working during the rollout
   podClass: podClassEnum("pod_class").notNull().default("small"),
+  presetId: text("preset_id").references((): AnyPgColumn => resourcePresets.id, { onDelete: "set null" }),
   cpuMillicores: integer("cpu_millicores").notNull(),
   memoryRequestMib: integer("memory_request_mib").notNull(),
   memoryLimitMib: integer("memory_limit_mib").notNull(),
 })
+
+export const resourcePresets = pgTable(
+  "resource_presets",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    cpuMillicores: integer("cpu_millicores").notNull(),
+    memoryRequestMib: integer("memory_request_mib").notNull(),
+    memoryLimitMib: integer("memory_limit_mib").notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("resource_presets_tenant_name_unique")
+      .on(table.tenantId, sql`lower(${table.name})`)
+      .where(sql`${table.tenantId} is not null`),
+    uniqueIndex("resource_presets_platform_name_unique")
+      .on(sql`lower(${table.name})`)
+      .where(sql`${table.tenantId} is null`),
+    uniqueIndex("resource_presets_one_platform_default").on(table.isDefault).where(sql`${table.isDefault}`),
+    check("resource_presets_default_is_platform", sql`not ${table.isDefault} or ${table.tenantId} is null`),
+  ],
+)
+
+export const tenantResourcePresetOverrides = pgTable(
+  "tenant_resource_preset_overrides",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    presetId: text("preset_id")
+      .references(() => resourcePresets.id, { onDelete: "cascade" })
+      .notNull(),
+    cpuMillicores: integer("cpu_millicores").notNull(),
+    memoryRequestMib: integer("memory_request_mib").notNull(),
+    memoryLimitMib: integer("memory_limit_mib").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.presetId] })],
+)
+
+export const tenantAgentPodSettings = pgTable(
+  "tenant_agent_pod_settings",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    agentId: text("agent_id")
+      .references(() => agents.id, { onDelete: "cascade" })
+      .notNull(),
+    presetId: text("preset_id").references(() => resourcePresets.id, { onDelete: "set null" }),
+    cpuMillicores: integer("cpu_millicores").notNull(),
+    memoryRequestMib: integer("memory_request_mib").notNull(),
+    memoryLimitMib: integer("memory_limit_mib").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.agentId] })],
+)
 
 export const agentProfiles = pgTable(
   "agent_profiles",

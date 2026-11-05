@@ -87,7 +87,11 @@ export class AgentBundleWriter {
           createdByProjectId: caller.callingProjectId ?? null,
         });
         await tx.insert(agentSettings).values({ agentId, defaultEnvironmentId: productionId });
-        await writeAgentPodSettings(tx, agentId, draft.bundle.projectSettings.resources);
+        await writeAgentPodSettings(
+          tx,
+          agentId,
+          draft.bundle.projectSettings.followsDefault ? null : draft.bundle.projectSettings.resources
+        );
         await writeWarmPoolSize(tx, caller.tenantId, agentId, draft.bundle.projectSettings.warmPoolSize);
 
         const profileId = crypto.randomUUID();

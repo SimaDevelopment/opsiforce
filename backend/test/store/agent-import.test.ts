@@ -298,7 +298,7 @@ describe('importing an Agent export into another Organization', () => {
     });
     const [row] = await db.select().from(agents).where(eq(agents.id, agent.id));
     expect(row).toMatchObject({ tenantId: target.tenantId, createdBy: target.userId });
-    expect(agent).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { podClass: 'small' } });
+    expect(agent).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { presetId: 'small' } });
 
     const [profile] = await db
       .select()
@@ -435,7 +435,7 @@ describe('importing an Agent export into another Organization', () => {
 describe('the Resources and Ready Projects an import starts with', () => {
   async function sizedSource(): Promise<string> {
     const agent = await harness.agents.create(author, { displayName: uniqueName('Analyst') });
-    await harness.agents.updatePodClass(author, agent.id, { podClass: 'medium' });
+    await harness.agents.updatePodClass(author, agent.id, { presetId: 'medium' });
     await harness.agents.updateSettings(author, agent.id, { warmPoolSize: 2 });
     return agent.id;
   }
@@ -451,21 +451,27 @@ describe('the Resources and Ready Projects an import starts with', () => {
   it('carries them in the export, reports them on inspection and keeps them by default', async () => {
     const archive = await archiveFile(await exportOf(await sizedSource()));
 
-    expect((await importer.inspect(archive)).projectSettings).toEqual({
-      resources: { podClass: 'medium', cpuMillicores: 1000, memoryRequestMib: 4096, memoryLimitMib: 8192 },
+    expect((await importer.inspect(archive, author.tenantId)).projectSettings).toEqual({
+      resources: {
+        presetId: 'medium',
+        presetName: 'Medium',
+        cpuMillicores: 1000,
+        memoryRequestMib: 4096,
+        memoryLimitMib: 8192,
+      },
       warmPoolSize: 2,
     });
     const { agent } = await importAs(await newTenant(), archive, {});
 
-    expect(agent).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+    expect(agent).toMatchObject({ podSettings: { presetId: 'medium' }, settings: { warmPoolSize: 2 } });
   });
 
   it('applies what the importer chose instead', async () => {
     const archive = await archiveFile(await exportOf(await sizedSource()));
 
-    const { agent } = await importAs(await newTenant(), archive, { resources: { podClass: 'large' }, warmPoolSize: 0 });
+    const { agent } = await importAs(await newTenant(), archive, { resources: { presetId: 'large' }, warmPoolSize: 0 });
 
-    expect(agent).toMatchObject({ podSettings: { podClass: 'large' }, settings: { warmPoolSize: 0 } });
+    expect(agent).toMatchObject({ podSettings: { presetId: 'large' }, settings: { warmPoolSize: 0 } });
   });
 
   it('starts an export that predates them at Small with no Ready Projects', async () => {
@@ -477,7 +483,7 @@ describe('the Resources and Ready Projects an import starts with', () => {
 
     const { agent } = await importAs(await newTenant(), archive, {});
 
-    expect(agent).toMatchObject({ podSettings: { podClass: 'small' }, settings: { warmPoolSize: 0 } });
+    expect(agent).toMatchObject({ podSettings: { presetId: 'small' }, settings: { warmPoolSize: 0 } });
   });
 
   it('refuses Ready Projects beyond the importing Organization’s limit and writes nothing', async () => {

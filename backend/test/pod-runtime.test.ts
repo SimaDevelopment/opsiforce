@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPodSpec, type PodTemplateOptions } from '../src/pod/pod.template';
-import { resolvePreset, resolveStoredPodResources, toK8sResources } from '../src/pod/pod-classes';
+import { JOB_POD_RESOURCES, resourceBoundsFrom, toK8sResources } from '../src/pod/pod-classes';
+import { podSettingsOn, type PresetCatalog } from '../src/pod/resource-presets';
 
 const options: PodTemplateOptions = {
   podName: 'app-test',
@@ -12,7 +13,7 @@ const options: PodTemplateOptions = {
   storageMountPath: '/workspace-data',
   subPath: 'projects/example',
   imagePullPolicy: 'IfNotPresent',
-  resources: toK8sResources(resolvePreset('small')),
+  resources: toK8sResources(JOB_POD_RESOURCES),
   nodeSelector: { 'topology.kubernetes.io/region': 'hel1' },
 };
 
@@ -130,18 +131,50 @@ describe('small class CPU reservation', () => {
     });
   });
 
-  it('uses the new preset when recreating a project with saved 500m settings', () => {
+  it("reads a stored choice at the Organization's current numbers, keeps Custom and falls back to the default", () => {
+    const tiny = { cpuMillicores: 50, memoryRequestMib: 512, memoryLimitMib: 1024 };
+    const catalog: PresetCatalog = {
+      presets: [
+        { id: 'tiny', name: 'Tiny', tenantId: null, resources: tiny, platformResources: tiny, overridden: false },
+      ],
+      defaultPresetId: 'tiny',
+      platformDefaultPresetId: 'tiny',
+      ownDefault: false,
+    };
+    const custom = {
+      presetId: null,
+      presetName: null,
+      cpuMillicores: 500,
+      memoryRequestMib: 2048,
+      memoryLimitMib: 4096,
+    };
+    const onTiny = { presetId: 'tiny', presetName: 'Tiny', ...tiny };
+
+    expect(podSettingsOn({ ...custom, presetId: 'tiny', presetName: 'Tiny' }, catalog)).toEqual(onTiny);
+    expect(podSettingsOn(custom, catalog)).toEqual(custom);
+    expect(podSettingsOn(undefined, catalog)).toEqual(onTiny);
+    expect(podSettingsOn({ ...custom, presetId: 'deleted', presetName: null }, catalog)).toEqual(onTiny);
+  });
+});
+
+describe('Resources maximum', () => {
+  it("takes the cluster's maximum from its deployment and today's numbers otherwise", () => {
+    expect(resourceBoundsFrom({}).max).toEqual({ cpuMillicores: 4000, memoryRequestMib: 16384, memoryLimitMib: 24576 });
     expect(
-      resolveStoredPodResources({ podClass: 'small', cpuMillicores: 500, memoryRequestMib: 2048, memoryLimitMib: 4096 })
-    ).toEqual(resolvePreset('small'));
+      resourceBoundsFrom({
+        AGENT_MAX_CPU_MILLICORES: '7000',
+        AGENT_MAX_MEMORY_REQUEST_MIB: '12288',
+        AGENT_MAX_MEMORY_LIMIT_MIB: ' 16384 ',
+      }).max
+    ).toEqual({ cpuMillicores: 7000, memoryRequestMib: 12288, memoryLimitMib: 16384 });
   });
 
-  it('preserves custom settings and the larger class reservations', () => {
-    const custom = { podClass: 'custom' as const, cpuMillicores: 500, memoryRequestMib: 2048, memoryLimitMib: 4096 };
-    expect(resolveStoredPodResources(custom)).toEqual(custom);
-    expect(resolvePreset('medium').cpuMillicores).toBe(1000);
-    expect(resolvePreset('large').cpuMillicores).toBe(2000);
-    expect(resolveStoredPodResources()).toEqual(resolvePreset('small'));
+  it('refuses to start on a maximum no preset could meet', () => {
+    expect(() => resourceBoundsFrom({ AGENT_MAX_CPU_MILLICORES: '4 vCPU' })).toThrow(/AGENT_MAX_CPU_MILLICORES/);
+    expect(() => resourceBoundsFrom({ AGENT_MAX_MEMORY_REQUEST_MIB: '256' })).toThrow(/at least 512/);
+    expect(() =>
+      resourceBoundsFrom({ AGENT_MAX_MEMORY_REQUEST_MIB: '8192', AGENT_MAX_MEMORY_LIMIT_MIB: '4096' })
+    ).toThrow(/AGENT_MAX_MEMORY_LIMIT_MIB/);
   });
 });
 

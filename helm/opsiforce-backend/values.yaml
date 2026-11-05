@@ -71,6 +71,10 @@ config:
   # The regular deployment workflow explicitly selects the Kata RuntimeClass.
   agentRuntimeClassName: ""
   agentPrivileged: false
+  agentMaxResources:
+    cpuMillicores: 4000
+    memoryRequestMib: 16384
+    memoryLimitMib: 24576
   agentAffinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

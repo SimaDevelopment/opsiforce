@@ -331,7 +331,7 @@ export function ProjectSettings(props: {
   function resourcesTab() {
     return (
       <div class="space-y-3">
-        <ResourcesSelector catalog={podClasses.data} draft={podDraft} disabled={saving()} />
+        <ResourcesSelector catalog={podClasses.data} draft={podDraft} disabled={saving()} current={project.data} />
         <Show
           when={podNeedsRestart()}
           fallback={

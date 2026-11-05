@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as k8s from '@kubernetes/client-node';
 import { agentSecurityContext } from '../pod/agent-security-context';
 import { loadKubeConfig } from '../common/k8s-client';
-import { resolvePreset, toK8sResources } from '../pod/pod-classes';
+import { JOB_POD_RESOURCES, toK8sResources } from '../pod/pod-classes';
 import type { AgentUpdateMode } from './agent-update.types';
 import { AGENT_UPDATE_JOB_COMPLETION_GRACE_MS } from './agent-update.reaper';
 
@@ -114,7 +114,7 @@ export class AgentUpdateK8sService {
                     subPath: options.directory,
                   },
                 ],
-                resources: toK8sResources(resolvePreset('small')),
+                resources: toK8sResources(JOB_POD_RESOURCES),
               },
             ],
             volumes: [this.workspaceVolume()],

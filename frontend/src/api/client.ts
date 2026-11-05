@@ -109,8 +109,6 @@ export type AgentStatus = 'working' | 'idle';
 
 export type RequestLogMode = 'off' | 'metadata' | 'full';
 
-export type PodClass = 'small' | 'medium' | 'large' | 'custom';
-
 export interface PodResources {
   cpuMillicores: number;
   memoryRequestMib: number;
@@ -118,19 +116,23 @@ export interface PodResources {
 }
 
 export interface PodClassPreset {
-  podClass: 'small' | 'medium' | 'large';
+  id: string;
+  name: string;
   resources: PodResources;
+  organization: boolean;
 }
 
 export interface PodClassCatalog {
   presets: PodClassPreset[];
+  defaultPresetId: string | null;
   customBounds: { min: PodResources; max: PodResources };
 }
 
-export type PodSettings = PodResources & { podClass: PodClass };
+/** No preset means Custom. */
+export type PodSettings = PodResources & { presetId: string | null; presetName: string | null };
 
 export interface UpdatePodClassDto {
-  podClass: PodClass;
+  presetId: string | null;
   cpuMillicores?: number;
   memoryRequestMib?: number;
   memoryLimitMib?: number;
@@ -156,7 +158,8 @@ export interface Project {
   timezone: string;
   requestLogMode: RequestLogMode;
   requestLogBodyLimit: number;
-  podClass: PodClass;
+  presetId: string | null;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;

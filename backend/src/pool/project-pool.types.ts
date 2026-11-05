@@ -18,7 +18,7 @@ export interface RecycleJobData {
 }
 
 export interface IntegrityJobData {
-  triggeredBy: 'boot' | 'interval' | 'agent-change';
+  triggeredBy: 'boot' | 'interval' | 'agent-change' | 'presets-change';
 }
 
 export interface TeardownJobData {

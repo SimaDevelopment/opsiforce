@@ -188,8 +188,12 @@ An opt-in App Auth setting, available in manual and provider modes, that passes 
 _Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
 
 **Resources**:
-The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources — from the agent image for a Built-in Agent (Small unless it declares otherwise), set per Custom Agent — copied once and the Project's own from then on.
+The CPU/memory size of a Project's agent pod: a Resources preset, or Custom numbers. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources, or the default Resources preset when the Agent has none, copied once and the Project's own from then on.
 _Avoid_: Pod class (the internal identifier — never user-facing); Environment size (collides with Environment); Tier, Machine size, Compute (non-canonical — say Resources)
+
+**Resources preset**:
+A named CPU/memory size, such as Small, that Projects and Agents pick for their Resources. The platform's presets are offered to every Organization, which may add presets of its own and set its own numbers for a platform preset. One preset is the default; an Organization may choose another default.
+_Avoid_: Template, Machine size, Tier, Pod class
 
 ### Agents
 

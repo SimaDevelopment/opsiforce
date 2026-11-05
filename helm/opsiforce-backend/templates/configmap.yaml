@@ -24,6 +24,11 @@ data:
   STORAGE_CLAIM_SIZE: {{ .Values.config.storageClaimSize | default "" | quote }}
   AGENT_PRIVILEGED: {{ .Values.config.agentPrivileged | default false | quote }}
   AGENT_RUNTIME_CLASS_NAME: {{ .Values.config.agentRuntimeClassName | default "" | quote }}
+  {{- with .Values.config.agentMaxResources }}
+  AGENT_MAX_CPU_MILLICORES: {{ .cpuMillicores | quote }}
+  AGENT_MAX_MEMORY_REQUEST_MIB: {{ .memoryRequestMib | quote }}
+  AGENT_MAX_MEMORY_LIMIT_MIB: {{ .memoryLimitMib | quote }}
+  {{- end }}
   AGENT_WORKSPACE_UPDATE_ON_STARTUP: {{ .Values.config.agentWorkspaceUpdateOnStartup | default "true" | quote }}
   AGENT_UPDATE_JOB_TIMEOUT_MS: {{ .Values.config.agentUpdateJobTimeoutMs | default "1800000" | quote }}
   {{- if .Values.config.agentNodeSelector }}

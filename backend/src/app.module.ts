@@ -43,6 +43,7 @@ import { DoorbellQueueModule } from './external-services/doorbell/doorbell-queue
 import { DoorbellModule } from './external-services/doorbell/doorbell.module';
 import { StorageModule } from './storage/storage.module';
 import { LimitModule } from './limit/limit.module';
+import { ResourcePresetModule } from './resource-preset/resource-preset.module';
 import { LinkedAccountsModule } from './linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from './model-provider/model-provider.module';
 import { PublicApiModule } from './public-api/public-api.module';
@@ -111,6 +112,7 @@ function parseRedisUrl(url: string) {
     DoorbellModule,
     StorageModule,
     LimitModule,
+    ResourcePresetModule,
     ModelProvidersModule,
     LinkedAccountsModule,
     PublicApiModule,
