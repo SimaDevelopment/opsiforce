@@ -198,6 +198,15 @@ export class ResourcePresetService {
         memoryRequestMib: sql`coalesce((select ${tenantResourcePresetOverrides.memoryRequestMib} from ${tenantResourcePresetOverrides} where ${tenantResourcePresetOverrides.presetId} = ${preset.id} and ${tenantResourcePresetOverrides.tenantId} = ${tenantColumn}), ${preset.platformResources.memoryRequestMib})`,
         memoryLimitMib: sql`coalesce((select ${tenantResourcePresetOverrides.memoryLimitMib} from ${tenantResourcePresetOverrides} where ${tenantResourcePresetOverrides.presetId} = ${preset.id} and ${tenantResourcePresetOverrides.tenantId} = ${tenantColumn}), ${preset.platformResources.memoryLimitMib})`,
       });
+      await tx.execute(sql`
+        insert into ${tenantAgentPodSettings} (tenant_id, agent_id, preset_id, cpu_millicores, memory_request_mib, memory_limit_mib)
+        select ${tenantResourcePresetOverrides.tenantId}, ${agentPodSettings.agentId}, null,
+          ${tenantResourcePresetOverrides.cpuMillicores}, ${tenantResourcePresetOverrides.memoryRequestMib}, ${tenantResourcePresetOverrides.memoryLimitMib}
+        from ${tenantResourcePresetOverrides}
+        join ${agentPodSettings} on ${agentPodSettings.presetId} = ${tenantResourcePresetOverrides.presetId}
+        join ${agents} on ${agents.id} = ${agentPodSettings.agentId} and ${agents.origin} = 'built_in'
+        where ${tenantResourcePresetOverrides.presetId} = ${preset.id}
+        on conflict do nothing`);
       await tx
         .update(agentPodSettings)
         .set(
@@ -246,18 +255,18 @@ export class ResourcePresetService {
     await this.poolService.reconcileAgent(agent.id);
   }
 
+  /** Restarts are queued before the rows move, so a failure in between leaves the Projects behind and Apply retryable. */
   private async applyToProjects(
     presetId: string,
     resources: PodResources,
     scope: SQL | undefined
   ): Promise<PresetApplied> {
-    const changed = await db
-      .update(projectPodSettings)
-      .set(resources)
-      .from(projects)
+    const behind = await db
+      .select({ projectId: projectPodSettings.projectId })
+      .from(projectPodSettings)
+      .innerJoin(projects, eq(projects.id, projectPodSettings.projectId))
       .where(
         and(
-          eq(projects.id, projectPodSettings.projectId),
           eq(projectPodSettings.presetId, presetId),
           isNotNull(projects.tenantId),
           scope,
@@ -267,9 +276,9 @@ export class ResourcePresetService {
             ne(projectPodSettings.memoryLimitMib, resources.memoryLimitMib)
           )
         )
-      )
-      .returning({ projectId: projectPodSettings.projectId });
-    if (changed.length === 0) return NOTHING_APPLIED;
+      );
+    if (behind.length === 0) return NOTHING_APPLIED;
+    const projectIds = behind.map((row) => row.projectId);
 
     const running = await db
       .select({ id: projectEnvironments.id })
@@ -277,10 +286,7 @@ export class ResourcePresetService {
       .innerJoin(projects, eq(projects.id, projectEnvironments.projectId))
       .where(
         and(
-          inArray(
-            projectEnvironments.projectId,
-            changed.map((row) => row.projectId)
-          ),
+          inArray(projectEnvironments.projectId, projectIds),
           inArray(projectEnvironments.status, RUNNING_STATUSES),
           eq(projects.disabled, false)
         )
@@ -289,10 +295,14 @@ export class ResourcePresetService {
       running.map((env, index) => ({
         name: 'restart',
         data: { projectEnvironmentId: env.id },
-        opts: { delay: index * RESTART_STAGGER_MS, removeOnComplete: true, removeOnFail: 100 },
+        opts: { delay: (index + 1) * RESTART_STAGGER_MS, removeOnComplete: true, removeOnFail: 100 },
       }))
     );
-    return { projects: changed.length, restarting: running.length };
+    await db
+      .update(projectPodSettings)
+      .set(resources)
+      .where(and(inArray(projectPodSettings.projectId, projectIds), eq(projectPodSettings.presetId, presetId)));
+    return { projects: projectIds.length, restarting: running.length };
   }
 }
 

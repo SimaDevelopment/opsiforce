@@ -245,6 +245,8 @@ function AgentHeader(props: {
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.email ??
     null;
   const editable = () => props.canManage && props.agent.origin === 'custom';
+  const editsResources = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_resources'));
   const name = () => props.agent.displayName ?? props.agent.name;
   const [editingSettings, setEditingSettings] = createSignal(false);
 
@@ -312,7 +314,7 @@ function AgentHeader(props: {
             readyProjects={props.agent.settings.warmPoolSize}
             imageOwned={props.agent.origin === 'built_in'}
             onEdit={editable() ? () => setEditingSettings(true) : undefined}
-            onEditResources={props.canManage ? () => setEditingSettings(true) : undefined}
+            onEditResources={editsResources() ? () => setEditingSettings(true) : undefined}
           />
         </div>
         <Show when={props.canManage}>

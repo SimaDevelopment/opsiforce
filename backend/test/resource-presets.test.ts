@@ -101,6 +101,21 @@ describe("an Organization's own preset", () => {
     expect(await behindOf()).toBe(0);
   });
 
+  it('keeps its Projects behind when the restarts cannot be queued, so applying again finishes the job', async () => {
+    const tenantId = await newTenant();
+    await presets.createPreset(tenantId, 'Tiny', TINY);
+    const tiny = await presetNamed(tenantId, 'Tiny');
+    const existing = await projectOn(tenantId, tiny);
+    await presets.updatePreset(tenantId, tiny, { resources: TUNED, apply: 'new' });
+    addBulk.mockRejectedValueOnce(new Error('queue unavailable'));
+
+    await expect(presets.applyPreset(tenantId, tiny)).rejects.toThrow('queue unavailable');
+    expect(await rowOf(existing)).toMatchObject(TINY);
+
+    expect((await presets.applyPreset(tenantId, tiny)).projects).toBe(1);
+    expect(await rowOf(existing)).toMatchObject(TUNED);
+  });
+
   it('leaves its Projects and Agents at the numbers they run at, as Custom, when deleted', async () => {
     const tenantId = await newTenant();
     await presets.createPreset(tenantId, 'Tiny', TINY);
@@ -173,6 +188,27 @@ describe('a platform preset', () => {
 
     await presets.deletePreset(null, id);
     expect(await rowOf(followingProject)).toMatchObject({ presetId: null, cpuMillicores: 75 });
+  });
+
+  it("keeps an Organization's own numbers for a Built-in Agent on it when deleted", async () => {
+    const tenantId = await newTenant();
+    const agentId = await harness.agents.getDefaultAgentId(tenantId);
+    const name = `Platform ${randomUUID().slice(0, 8)}`;
+    await presets.createPreset(null, name, TINY);
+    const id = await presetNamed(null, name);
+    await presets.updatePreset(tenantId, id, { resources: TUNED, apply: 'new' });
+    await presets.setBuiltInAgentPreset(agentId, id);
+    try {
+      await presets.deletePreset(null, id);
+
+      expect(await readAgentResources(agentId, tenantId)).toMatchObject({
+        source: 'own',
+        resources: { presetId: null, ...TUNED },
+        inherited: { presetId: null, ...TINY },
+      });
+    } finally {
+      await presets.setBuiltInAgentPreset(agentId, null);
+    }
   });
 
   it('refuses to delete the platform default', async () => {

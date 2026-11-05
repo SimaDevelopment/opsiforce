@@ -10,6 +10,7 @@ import {
 import { ApiError } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import { usePodClassCatalog } from '~/api/pod-classes';
+import { usePlatformPresets } from '~/api/resource-presets';
 import { OptionSelect } from '~/components/resources/option-select';
 import { createResourcesDraft } from '~/components/resources/resources-draft';
 import { ResourcesSelector } from '~/components/resources/resources-selector';
@@ -26,20 +27,20 @@ export function AgentSettingsDialog(props: {
 }) {
   const [warmPoolSize, setWarmPoolSize] = createSignal(0);
   const podDraft = createResourcesDraft();
-  const catalog = usePodClassCatalog(() => props.open);
   const updatePodClass = useUpdateAgentPodClass(() => props.agent.id);
   const resetPodClass = useResetAgentPodClass(() => props.agent.id);
   const updateSettings = useUpdateAgentSettings(() => props.agent.id);
   const setPlatformPreset = useSetAgentPlatformPreset(() => props.agent.id);
   const { hasPermission } = usePermissions();
   const builtIn = () => props.agent.origin === 'built_in';
+  const editsOrganization = () => hasPermission('can_manage_agents');
   const editsPlatform = () => builtIn() && hasPermission('can_manage_platform_resources');
+  const catalog = usePodClassCatalog(() => props.open && editsOrganization());
+  const platformPresets = usePlatformPresets(() => props.open && editsPlatform());
   const [platformPreset, setPlatformPresetDraft] = createSignal(DEFAULT_PRESET);
   const platformOptions = () => [
     { value: DEFAULT_PRESET, label: 'Default preset' },
-    ...(catalog.data?.presets ?? [])
-      .filter((preset) => !preset.organization)
-      .map((preset) => ({ value: preset.id, label: preset.name })),
+    ...(platformPresets.data?.presets ?? []).map((preset) => ({ value: preset.id, label: preset.name })),
   ];
 
   createEffect(
@@ -87,21 +88,25 @@ export function AgentSettingsDialog(props: {
       <DialogContent align="top" class="flex max-h-[85vh] max-w-xl flex-col">
         <DialogTitle>Agent Settings</DialogTitle>
         <DialogDescription>
-          {builtIn()
-            ? "Applies to this organization's new Projects of this agent. Existing Projects keep their own."
-            : 'Applies to new Projects of this agent. Existing Projects keep their own.'}
+          {!builtIn()
+            ? 'Applies to new Projects of this agent. Existing Projects keep their own.'
+            : editsOrganization()
+              ? "Applies to this organization's new Projects of this agent. Existing Projects keep their own."
+              : 'Applies to new Projects of this agent in every organization without its own choice. Existing Projects keep their own.'}
         </DialogDescription>
 
         <div class="mt-4 min-h-0 space-y-5 overflow-y-auto pr-1">
-          <section class="space-y-2">
-            <span class="block text-xs font-medium text-foreground">
-              {builtIn() ? 'Resources in this organization' : 'Resources'}
-            </span>
-            <ResourcesSelector catalog={catalog.data} draft={podDraft} disabled={saving()} inherited={inherited()} />
-          </section>
+          <Show when={editsOrganization()}>
+            <section class="space-y-2">
+              <span class="block text-xs font-medium text-foreground">
+                {builtIn() ? 'Resources in this organization' : 'Resources'}
+              </span>
+              <ResourcesSelector catalog={catalog.data} draft={podDraft} disabled={saving()} inherited={inherited()} />
+            </section>
+          </Show>
 
           <Show when={editsPlatform()}>
-            <section class="space-y-2 border-t border-border pt-4">
+            <section class={editsOrganization() ? 'space-y-2 border-t border-border pt-4' : 'space-y-2'}>
               <div class="flex items-center justify-between gap-4">
                 <div class="space-y-0.5">
                   <span class="block text-xs font-medium text-foreground">Platform value</span>

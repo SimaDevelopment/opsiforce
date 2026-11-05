@@ -78,10 +78,11 @@ function scopeKey(scope: PresetScope) {
   return ['resource-presets', scope.kind === 'tenant' ? scope.tenantId : scope.kind] as const;
 }
 
-export function usePlatformPresets() {
+export function usePlatformPresets(enabled: () => boolean = () => true) {
   return createAppQuery(() => ({
     queryKey: scopeKey({ kind: 'platform' }),
     queryFn: () => api.get<PlatformPresetsView>(basePath({ kind: 'platform' })),
+    enabled: enabled(),
   }));
 }
 
