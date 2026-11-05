@@ -1,6 +1,6 @@
 {
   "id": "20261105_app_url_public_address",
-  "requiresPodRecreate": false,
+  "requiresPodRecreate": true,
   "operations": [
     {
       "type": "copy",

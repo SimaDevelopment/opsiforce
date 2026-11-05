@@ -1297,7 +1297,7 @@ describe("the template files migration", () => {
     }
   })
 
-  test("brings back a missing file and keeps an edited one as a conflict, which holds back the pod recreate", async (t) => {
+  test("brings back a missing file and keeps an edited one as a conflict, holding back only the migrations it conflicts with", async (t) => {
     const context = provisionedChat(t)
     await provisionWorkspace(context, createSummary(context))
     rmSync(path.join(context.workspace, "scripts", "tp.sh"))
@@ -1310,7 +1310,9 @@ describe("the template files migration", () => {
       { migrationId: migration.id, path: "scripts/api.sh", reason: "checksum mismatch" },
       { migrationId: "20261030_runtime_base_url", path: "scripts/api.sh", reason: "checksum mismatch" },
     ])
-    assert.equal(summary.requiresPodRecreate, false)
+    assert.ok(!summary.appliedMigrations.includes(migration.id))
+    assert.ok(summary.appliedMigrations.includes("20261105_app_url_public_address"))
+    assert.equal(summary.requiresPodRecreate, true)
     assert.equal(readFileSync(path.join(context.workspace, "scripts", "api.sh"), "utf8"), "# edited in this chat\n")
     assert.equal(sha256(path.join(context.workspace, "scripts", "tp.sh")), sha256(path.join(templateDir, "scripts", "tp.sh")))
   })
