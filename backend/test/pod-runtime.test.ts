@@ -45,6 +45,12 @@ describe('agent readiness', () => {
   });
 });
 
+describe('agent pod credentials', () => {
+  it('mounts no Kubernetes API token, since nothing in the pod calls the API', () => {
+    expect(buildPodSpec(options).spec?.automountServiceAccountToken).toBe(false);
+  });
+});
+
 describe('privileged Kata agents', () => {
   it('enables privileged mode for both the app and init containers', () => {
     const pod = buildPodSpec({ ...options, runtimeClassName: 'kata-clh-runtime-rs-opsiforce', privileged: true });
@@ -178,6 +184,15 @@ describe('reaching External Services from a pod', () => {
       readOnly: true,
     });
     expect(pod.spec?.volumes).toContainEqual({ name: 'ca-bundle', configMap: { name: 'opsiforce-local-ca' } });
+  });
+
+  it('lets agent-browser accept any certificate only when the deployment asks for it', () => {
+    expect(envOf(buildPodSpec({ ...calling, browserIgnoresHttpsErrors: true })).AGENT_BROWSER_IGNORE_HTTPS_ERRORS).toBe(
+      '1'
+    );
+    expect(envOf(buildPodSpec({ ...calling, caBundleConfigMap: 'opsiforce-local-ca' }))).not.toHaveProperty(
+      'AGENT_BROWSER_IGNORE_HTTPS_ERRORS'
+    );
   });
 
   it('leaves the image trust store alone otherwise', () => {

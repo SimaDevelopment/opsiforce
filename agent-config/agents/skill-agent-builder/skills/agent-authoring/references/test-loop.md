@@ -223,9 +223,9 @@ Everything through `tp.sh sh` is a **read** (§Who checks what).
 
 ### The page: look at it yourself
 
-The child's App answers on its own address inside the platform, and this Project reaches that address
-directly. Drive `agent-browser` from **here**, so every screenshot lands in your own workspace where you
-can read it:
+Open the child's App at its public address, the way a visitor does: this Project cannot reach the
+child's pod, only the platform's front door. Drive `agent-browser` from **here**, so every screenshot
+lands in your own workspace where you can read it:
 
 ```sh
 APP=$(sh scripts/tp.sh app-url)
@@ -239,6 +239,9 @@ agent-browser --session test close
 ```
 
 These commands are all this loop needs; load `agent-browser` only for one they do not cover.
+
+A sign-in page or a `401` means someone protected the Test Project's App. Say so in your report, and
+check what the page serves from inside the child instead: `sh scripts/tp.sh sh 'curl -s localhost:$APP_PORT'`.
 
 Then **read the screenshot** — it is a file in your workspace and you can see it. The snapshot answers
 how many options a select has, whether an edit control exists and what the headline number reads;

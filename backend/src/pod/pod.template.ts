@@ -36,6 +36,7 @@ export interface PodTemplateOptions {
   externalServicesHost?: string;
   serviceWebhookUrl?: string;
   caBundleConfigMap?: string;
+  browserIgnoresHttpsErrors?: boolean;
   controlToken?: string;
   controlPort?: number;
 }
@@ -88,6 +89,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
     spec: {
       hostname: options.podName,
       subdomain: AGENT_PODS_SERVICE,
+      automountServiceAccountToken: false,
       ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }
@@ -184,6 +186,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                 ]
               : []),
             ...(options.caBundleConfigMap ? CA_BUNDLE_VARIABLES.map((name) => ({ name, value: CA_BUNDLE_FILE })) : []),
+            ...(options.browserIgnoresHttpsErrors ? [{ name: 'AGENT_BROWSER_IGNORE_HTTPS_ERRORS', value: '1' }] : []),
             ...(options.runtimeProxyUrl
               ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),

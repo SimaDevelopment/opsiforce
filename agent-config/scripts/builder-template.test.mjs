@@ -831,10 +831,14 @@ describe("tp.sh", () => {
   })
 
   function runShell(command) {
-    if (command === "hostname -i") return { output: "10.1.2.3 fe80::1\n", exit: 0 }
     const ran = spawnSync("sh", ["-c", command.replaceAll("/workspace", world.child)], {
       encoding: "utf8",
-      env: { ...process.env, APP_PORT: "4321" },
+      env: {
+        ...process.env,
+        PATH: world.childBin ? `${world.childBin}:${process.env.PATH}` : process.env.PATH,
+        APP_PORT: "4321",
+        APP_PUBLIC_URL: "https://1a2b3c4d.apps.example-org.test/",
+      },
     })
     return { output: ran.stdout + ran.stderr, exit: ran.status }
   }
@@ -1079,7 +1083,19 @@ describe("tp.sh", () => {
     assert.equal(result.status, 3)
     assert.equal(result.stdout, "a long line of output\n")
     assert.equal([...world.shells.values()].at(-1).timeout, 60000)
-    assert.equal((await tp(root, "app-url")).stdout.trim(), "http://10.1.2.3:4321")
+  })
+
+  test("app-url prints the child App's public address from the child's own app-url, else its APP_PUBLIC_URL", async () => {
+    world = freshWorld()
+    const root = workspace()
+    world.child = mkdtempSync(path.join(tmpdir(), "tp-child-"))
+    await tp(root, "up")
+
+    assert.equal((await tp(root, "app-url")).stdout.trim(), "https://1a2b3c4d.apps.example-org.test/")
+
+    world.childBin = mkdtempSync(path.join(tmpdir(), "tp-child-bin-"))
+    writeFileSync(path.join(world.childBin, "app-url"), "#!/bin/sh\necho https://shop-dev-1a2b3c4d5e6f.apps.example-org.test/\n", { mode: 0o755 })
+    assert.equal((await tp(root, "app-url")).stdout.trim(), "https://shop-dev-1a2b3c4d5e6f.apps.example-org.test/")
   })
 
   test("touched prints only the files both the child and the save change, and each file the save drops", async () => {

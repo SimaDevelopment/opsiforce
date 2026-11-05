@@ -20,5 +20,5 @@ Applying Environment Variables only matters once the App re-reads `opsiforce.env
 ## Consequences
 
 - The control token is part of the pod contract: known to the backend and never exposed through ingress. Rotating it means recreating the pod.
-- The control port is one more port on the agent pod, guarded only by the token. A network policy for agent pods must scope it to the backend.
+- The control port is one more port on the agent pod, guarded by the token and by the agent pods' NetworkPolicy, which lets only the backend reach it ([ADR-0106](0106-agent-pods-reach-only-the-platform-services-they-call-and-the-internet-and-only-platform-roles-reach-them.md)).
 - An App whose server runs outside `guard` answers `killed: 0`, so applying variables recreates its pod.

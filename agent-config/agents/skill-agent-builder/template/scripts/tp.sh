@@ -10,7 +10,7 @@
 #   sh scripts/tp.sh answer '<json>'     # reply {"<field key>":<value>} to the open Form, then wait
 #   sh scripts/tp.sh evidence            # evidence.sh since the last prompt
 #   sh scripts/tp.sh sh '<command>'      # run it in the Test Project, session-free; its output and exit code
-#   sh scripts/tp.sh app-url             # http://<pod ip>:<APP_PORT>, reachable from this pod
+#   sh scripts/tp.sh app-url             # the child App's public address, the one a visitor opens
 #   sh scripts/tp.sh touched             # before the save: files both the child and the save change
 #   sh scripts/tp.sh restart | update | reset
 #
@@ -258,10 +258,9 @@ run() {
 }
 
 app_url() {
-  address=$(run 'hostname -i' | awk '{print $1; exit}')
-  port=$(run 'printf %s "$APP_PORT"')
-  [ -n "$address" ] && [ -n "$port" ] || die "the Test Project reports no address or no APP_PORT"
-  echo "http://$address:$port"
+  address=$(run 'app-url 2>/dev/null || printf "%s\n" "$APP_PUBLIC_URL"' | grep -m 1 -E '^https?://' || true)
+  [ -n "$address" ] || die "the Test Project reports no public address"
+  echo "$address"
 }
 
 touched() {

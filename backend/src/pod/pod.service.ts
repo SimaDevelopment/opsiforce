@@ -63,6 +63,7 @@ export class PodService {
       storageMountPath: this.configService.getOrThrow<string>('storageMountPath'),
       externalServicesHost: this.configService.get<string>('externalServicesHost') || undefined,
       caBundleConfigMap: this.configService.get<string>('podCaBundleConfigMap') || undefined,
+      browserIgnoresHttpsErrors: this.configService.get<boolean>('podBrowserIgnoresHttpsErrors', false),
       controlPort: this.configService.getOrThrow<number>('agentControlPort'),
       imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
       resources: this.smallResources(),

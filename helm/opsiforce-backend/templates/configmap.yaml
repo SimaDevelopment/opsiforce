@@ -62,6 +62,9 @@ data:
   {{- if .Values.config.podCaBundleConfigMap }}
   POD_CA_BUNDLE_CONFIGMAP: {{ .Values.config.podCaBundleConfigMap | quote }}
   {{- end }}
+  {{- if .Values.config.podBrowserIgnoresHttpsErrors }}
+  POD_BROWSER_IGNORE_HTTPS_ERRORS: "true"
+  {{- end }}
   {{- if ne (toString .Values.config.externalServiceCallLogRetentionDays) "" }}
   EXTERNAL_SERVICE_CALL_LOG_RETENTION_DAYS: {{ .Values.config.externalServiceCallLogRetentionDays | quote }}
   {{- end }}

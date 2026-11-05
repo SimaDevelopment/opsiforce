@@ -10,9 +10,11 @@ const HELM_TIMEOUT = '5m';
 const PLUGIN_PLACEHOLDER = '@@OIDC_PLUGIN_VERSION@@';
 const PLUGIN_PATH = '/plugins-local/src/github.com/sevensolutions/traefik-oidc-auth';
 const EXTERNAL_SERVICES_HOSTNAME = `external-services.${ROOT_HOSTNAME}`;
+const APPS_HOSTNAME = `apps.${ROOT_HOSTNAME}`;
 const TRAEFIK_SERVICE_NAME = `traefik.${TRAEFIK_NAMESPACE}.svc.cluster.local`;
 const COREDNS_REWRITES = [
   `rewrite name regex (.+)\\.${EXTERNAL_SERVICES_HOSTNAME.replaceAll('.', '\\.')} ${TRAEFIK_SERVICE_NAME} answer auto`,
+  `rewrite name regex (.+)\\.${APPS_HOSTNAME.replaceAll('.', '\\.')} ${TRAEFIK_SERVICE_NAME} answer auto`,
   `rewrite name exact ${ROOT_HOSTNAME} ${TRAEFIK_SERVICE_NAME} answer auto`,
 ];
 const POD_CA_CONFIGMAP = 'opsiforce-local-ca';
@@ -182,7 +184,7 @@ function routeServiceHostsToTraefik(ctx) {
   ]);
   const missing = COREDNS_REWRITES.filter((rule) => !corefile.includes(rule));
   if (missing.length === 0) {
-    ctx.note(`CoreDNS already sends ${ROOT_HOSTNAME} and *.${EXTERNAL_SERVICES_HOSTNAME} to Traefik.`);
+    ctx.note(`CoreDNS already sends ${ROOT_HOSTNAME}, *.${EXTERNAL_SERVICES_HOSTNAME} and *.${APPS_HOSTNAME} to Traefik.`);
     return;
   }
   const rewritten = corefile.replace(/^(\s*)ready$/m, (line, indent) => [line, ...missing.map((rule) => `${indent}${rule}`)].join('\n'));
@@ -191,7 +193,7 @@ function routeServiceHostsToTraefik(ctx) {
   const patch = JSON.stringify({ data: { Corefile: rewritten } });
   ctx.run('kubectl', ['patch', 'configmap', 'coredns', '--namespace', 'kube-system', '--type', 'merge', '-p', patch]);
   ctx.note(
-    `CoreDNS now sends ${ROOT_HOSTNAME} and *.${EXTERNAL_SERVICES_HOSTNAME} to Traefik, so pods reach Service hosts and Webhook addresses.`
+    `CoreDNS now sends ${ROOT_HOSTNAME}, *.${EXTERNAL_SERVICES_HOSTNAME} and *.${APPS_HOSTNAME} to Traefik, so pods reach Service hosts, Webhook addresses and Apps' public addresses.`
   );
 }
 

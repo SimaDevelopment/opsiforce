@@ -1,6 +1,6 @@
 ---
 kind: explanation
-adrs: [0050]
+adrs: [0050, 0106]
 ---
 
 # Request Flows
@@ -16,6 +16,7 @@ adrs: [0050]
 - The agent surface is path-routed under `/api/proxy/:id/*`; the App, VS Code and DB surfaces are subdomain-routed because their servers emit absolute asset paths ([Pod Tools](pod-tools.md)). `:id` is always the [ProjectEnvironment](../../GLOSSARY.md) id, which for [Development](../../GLOSSARY.md) equals the [Project](../../GLOSSARY.md) id ([ADR-0002](../adr/0002-development-environment-reuses-project-id.md)).
 - Inside the pod, agent-control listens on the control port (4910) for App restarts and config-change markers and fronts OpenCode on 4096 ([OpenCode Embed](../frontend/opencode-embed.md)); the App serves on 3000, code-server on 8080 and Datasette on 8081.
 - The four runtime proxies and the backend connect to a pod by its DNS name and ask for `Host: localhost:<port>`, so a stack's default host check accepts them; the runtime proxies pass the public address on in `X-Forwarded-Host` and `X-Forwarded-Proto`, and the Gate keeps the caller's `Host` ([ADR-0094](../adr/0094-agent-pods-are-reached-by-dns-name-and-the-database-stores-no-address.md)).
+- Only those callers reach an agent pod, and it reaches little else: the `opsiforce-agents` NetworkPolicy lets the backend reach every port and the runtime proxies only OpenCode (4096), the App, code-server (8080) and Datasette (8081), and lets an agent pod reach only DNS, the backend, the agent runtime proxy, Bifrost, Traefik (Service hosts and every [Public URL](../../GLOSSARY.md)) and the internet outside the private ranges, never another agent pod; the pod mounts no Kubernetes API token, and a [Skill & Agent Builder](../../GLOSSARY.md) opens its [Test Project](../../GLOSSARY.md)'s App at its Public URL like any visitor ([ADR-0106](../adr/0106-agent-pods-reach-only-the-platform-services-they-call-and-the-internet-and-only-platform-roles-reach-them.md)).
 - Hosted deployments put oauth2-proxy at the edge, waiting up to 2 minutes for the backend's first byte so a request the backend holds on purpose (an External Service's Default switch drains for up to 30 s) is not cut into a `502`; local development runs the edge in static auth mode with no identity provider and a fixed identity carrying every permission ([ADR-0050](../adr/0050-local-development-runs-on-tilt-with-a-static-identity-and-no-identity-provider.md), [Local orchestration](../operations/local-orchestration.md)).
 
 ```mermaid
@@ -76,6 +77,7 @@ flowchart LR
 - `backend/src/timeout/` — the two keep-alive keys and the idle-timeout floor.
 - `proxy/internal/server/` — the Go runtime proxy: routing modes, following the backend's App address answer, decision cache, WebSocket keep-alive, failure reporting, removing the platform's session cookies on the App surface, the browser error pages, the preview location reporter.
 - `proxy/cmd/agent-control/` — the in-pod control port and the OpenCode front proxy.
+- `helm/opsiforce/templates/agents-network-policy.yaml` — the agent pods' NetworkPolicy; the role labels it keys on sit on the backend and runtime-proxy charts.
 - `helm/opsiforce-proxy/` — the edge: oauth2-proxy, static auth mode, and the catch-all apps route with its unprotected-route marker.
 
 ## Related

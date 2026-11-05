@@ -16,6 +16,8 @@ spec:
         karpenter.sh/do-not-disrupt: "true"
       labels:
         app: {{ include "opsiforce-backend.fullname" . }}
+        opsiforce.io/controls-agent-pods: "true"
+        opsiforce.io/serves-agent-pods: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
