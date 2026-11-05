@@ -294,6 +294,7 @@ function OrganizationPresets(props: { scope: PresetScope }) {
       edit: {
         name: null,
         label: preset.overridden ? 'Edit own value' : 'Set own value',
+        savesUnchanged: !preset.overridden,
         resources: preset.resources,
         save: (values, apply) => update.mutateAsync({ id: preset.id, resources: values.resources, apply }),
       },
@@ -350,6 +351,8 @@ interface PresetEdit {
   /** null: the name is not editable here. */
   name: string | null;
   label?: string;
+  /** Saving at the same numbers still means something: it creates the Organization's own value. */
+  savesUnchanged?: boolean;
   resources: PodResources;
   save: (
     values: { name?: string; resources?: PodResources },
@@ -512,6 +515,7 @@ function PresetList(props: {
           <PresetDialog
             title={row().edit.name === null ? `${row().edit.label}: ${row().name}` : `Edit ${row().name}`}
             name={row().edit.name}
+            savesUnchanged={row().edit.savesUnchanged}
             resources={row().edit.resources}
             bounds={props.bounds}
             usage={row()}
@@ -622,6 +626,7 @@ function PresetDialog(props: {
   title: string;
   name: string | null;
   isNew?: boolean;
+  savesUnchanged?: boolean;
   resources: PodResources;
   bounds: PresetBounds;
   usage: PresetUsage;
@@ -651,7 +656,10 @@ function PresetDialog(props: {
   const nameMissing = () => props.name !== null && name().trim() === '';
   const numbersChanged = () => !sameResources(resources(), props.resources);
   const changed = () =>
-    props.isNew === true || numbersChanged() || (props.name !== null && name().trim() !== props.name);
+    props.isNew === true ||
+    props.savesUnchanged === true ||
+    numbersChanged() ||
+    (props.name !== null && name().trim() !== props.name);
 
   const save = async (apply: PresetApplyMode) => {
     setSaving(true);
