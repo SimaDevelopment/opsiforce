@@ -4,11 +4,11 @@ import { Job } from 'bullmq';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { ProjectService } from '../project/project.service';
 import { ProjectStatus } from '../project/project.types';
-import { RESOURCE_PRESET_RESTART_QUEUE, type PresetRestartJobData } from './resource-preset.types';
+import { RESOURCE_PRESET_RESTART_QUEUE, RESTART_STAGGER_MS, type PresetRestartJobData } from './resource-preset.types';
 
 const RESTARTABLE = new Set<ProjectStatus>([ProjectStatus.Active, ProjectStatus.Starting]);
 
-@Processor(RESOURCE_PRESET_RESTART_QUEUE, { concurrency: 1 })
+@Processor(RESOURCE_PRESET_RESTART_QUEUE, { concurrency: 1, limiter: { max: 1, duration: RESTART_STAGGER_MS } })
 export class ResourcePresetRestartProcessor extends WorkerHost implements OnApplicationShutdown {
   private readonly logger = new Logger(ResourcePresetRestartProcessor.name);
 

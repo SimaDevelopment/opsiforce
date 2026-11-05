@@ -2,6 +2,9 @@ import type { PodClassBounds, PodResources } from '../pod/pod-classes';
 
 export const RESOURCE_PRESET_RESTART_QUEUE = 'resource-preset-restart';
 
+/** At most one preset restart starts per this interval, across every worker and Apply. */
+export const RESTART_STAGGER_MS = 3_000;
+
 export const PRESET_APPLY_MODES = ['new', 'all'] as const;
 
 export type PresetApplyMode = (typeof PRESET_APPLY_MODES)[number];

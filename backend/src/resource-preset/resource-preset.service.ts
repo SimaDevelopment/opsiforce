@@ -31,6 +31,7 @@ import { ProjectStatus } from '../project/project.types';
 import {
   PRESET_APPLY_MODES,
   RESOURCE_PRESET_RESTART_QUEUE,
+  RESTART_STAGGER_MS,
   type OrganizationPresetsView,
   type PlatformPresetsView,
   type PresetApplied,
@@ -40,7 +41,6 @@ import {
   type UpdatePresetDto,
 } from './resource-preset.types';
 
-const RESTART_STAGGER_MS = 3_000;
 const RUNNING_STATUSES = [ProjectStatus.Active, ProjectStatus.Starting];
 const NOTHING_APPLIED: PresetApplied = { projects: 0, restarting: 0 };
 
@@ -296,10 +296,10 @@ export class ResourcePresetService {
         )
       );
     await this.restartQueue.addBulk(
-      running.map((env, index) => ({
+      running.map((env) => ({
         name: 'restart',
         data: { projectEnvironmentId: env.id },
-        opts: { delay: (index + 1) * RESTART_STAGGER_MS, removeOnComplete: true, removeOnFail: 100 },
+        opts: { delay: RESTART_STAGGER_MS, removeOnComplete: true, removeOnFail: 100 },
       }))
     );
     await db
