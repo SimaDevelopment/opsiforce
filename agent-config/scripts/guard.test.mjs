@@ -54,3 +54,18 @@ for (const args of [[], ["service"], ["--name", "service", "sleep", "1"]]) {
     assert.match(stderr, /guard <name> <command>/)
   })
 }
+
+test("a guard signalled while it waits to restart stops instead of starting its command again", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "guard-"))
+  const runs = path.join(dir, "runs")
+  const guard = spawn("bash", [GUARD, "test-service", "sh", "-c", `echo run >> ${runs}`], { detached: true, stdio: "ignore" })
+  const exited = new Promise((resolve) => guard.on("exit", () => resolve(true)))
+  await new Promise((resolve) => setTimeout(resolve, 1000))
+  process.kill(-guard.pid, "SIGTERM")
+  const stopped = await Promise.race([exited, new Promise((resolve) => setTimeout(() => resolve(false), 3000))])
+  if (!stopped) process.kill(-guard.pid, "SIGKILL")
+  const count = (await readFile(runs, "utf8").catch(() => "")).split("\n").filter(Boolean).length
+  await rm(dir, { recursive: true, force: true })
+  assert.equal(count, 1)
+  assert.ok(stopped)
+})

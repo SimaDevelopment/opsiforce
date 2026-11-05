@@ -113,6 +113,12 @@ while true; do
   fi
   sleep $delay
 
+  if $SHOULD_EXIT; then
+    guard_log "[guard:$NAME] Received signal while waiting to restart, stopping"
+    guard_event "signal" "" "" "$restart_count"
+    break
+  fi
+
   if [ $delay -lt $MAX_DELAY ]; then
     delay=$((delay * 2))
     if [ $delay -gt $MAX_DELAY ]; then
