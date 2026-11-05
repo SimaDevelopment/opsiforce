@@ -27,6 +27,7 @@ adrs: [0005]
 ## Edge cases
 
 - When one Project's Resources changes while other environments are running, each adopts the new size on its own next restart or resume.
+- Until the old `pod_class` column is dropped, every write to `project_pod_settings` and `agent_pod_settings` sets it to `custom`, so a backend of the previous release still running during a rollout sizes pods from the stored numbers rather than its old fixed sizes.
 - Apply to all interrupts chats in progress on the pods it restarts; the confirmation shows the Projects and running pods on the preset first.
 - An Organization with its own numbers for a preset, or its own choice for a Built-in Agent, never claims that Agent's Ready Projects built at the platform's numbers; its new Projects wait for a fresh pod.
 - Presets and Custom share one range, from 0.05 vCPU / 0.5 GiB up to the cluster's maximum, with the memory limit at least the request, so a deleted preset's numbers are always valid Custom numbers. A name is at most 40 characters, unique in its scope, and never "Custom".

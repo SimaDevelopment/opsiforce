@@ -110,8 +110,8 @@ export interface AgentDetail extends StoreAgent {
   /** own: set on this Agent here; platform: a Built-in Agent's platform choice; default: the default preset. */
   podSettingsSource: 'own' | 'platform' | 'default';
   inheritedPodSettings: PodSettings;
-  /** A Built-in Agent's platform choice: a preset id, or null when it follows the default preset. */
-  platformPresetId: string | null;
+  /** A Built-in Agent's platform choice, a preset or Custom numbers; null when it follows the default preset. */
+  platformChoice: PodSettings | null;
   profiles: AgentProfile[];
   shippedSkills: ShippedSkill[];
   projectCount: number;

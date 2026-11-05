@@ -28,7 +28,7 @@ import {
 } from '../../db/schema';
 import { legacyAppHost } from '../common/app-host';
 import { sameResources, toK8sResources, type PodSettings } from '../pod/pod-classes';
-import { hasResources, podSettingsColumns, storedPodSettings } from '../pod/pod-settings-columns';
+import { hasResources, podSettingsColumns, storedLegacyPodSettings } from '../pod/pod-settings-columns';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
 import { assertRoomForCreatedProject, assertRoomForProject, type CreatedProjectsCap } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
@@ -454,7 +454,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
 
       await tx
         .update(projectPodSettings)
-        .set(storedPodSettings(resources))
+        .set(storedLegacyPodSettings(resources))
         .where(eq(projectPodSettings.projectId, row.id));
       await tx
         .update(projects)
@@ -632,7 +632,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         timezone: 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({ projectId: id, ...storedPodSettings(agent.resources) });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(agent.resources) });
 
       await tx.insert(projectEnvironments).values({
         id,

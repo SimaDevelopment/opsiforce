@@ -205,6 +205,7 @@ describe('a platform preset', () => {
         source: 'own',
         resources: { presetId: null, ...TUNED },
         inherited: { presetId: null, ...TINY },
+        platformChoice: { presetId: null, ...TINY },
       });
     } finally {
       await presets.setBuiltInAgentPreset(agentId, null);
@@ -217,6 +218,20 @@ describe('a platform preset', () => {
     await expect(presets.deletePreset(null, catalog.platformDefaultPresetId as string)).rejects.toMatchObject({
       status: 400,
     });
+  });
+});
+
+describe('rows the previous release still reads', () => {
+  it('are marked Custom, so a previous-release backend sizes their pods from the numbers', async () => {
+    const tenantId = await newTenant();
+    const caller = { tenantId, userId: await createUserRow(), canManageAgents: true };
+    const agent = await harness.agents.create(caller, { displayName: `Legacy ${randomUUID()}` });
+    await harness.agents.updatePodClass(caller, agent.id, { presetId: 'medium' });
+    const project = await projectOn(tenantId, 'medium');
+
+    expect(await rowOf(project)).toMatchObject({ podClass: 'custom', presetId: 'medium' });
+    const [agentRow] = await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, agent.id));
+    expect(agentRow).toMatchObject({ podClass: 'custom', presetId: 'medium' });
   });
 });
 

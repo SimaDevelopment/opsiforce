@@ -95,7 +95,7 @@ export interface AgentDetail extends AgentSummary {
   podSettings: PodSettings;
   podSettingsSource: AgentResourcesSource;
   inheritedPodSettings: PodSettings;
-  platformPresetId: string | null;
+  platformChoice: PodSettings | null;
   profiles: AgentProfileResponse[];
   shippedSkills: ShippedSkillResponse[];
   projectCount: number;

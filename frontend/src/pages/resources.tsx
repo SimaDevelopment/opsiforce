@@ -629,16 +629,23 @@ function PresetDialog(props: {
   onClose: () => void;
 }) {
   const [name, setName] = createSignal(props.name ?? '');
-  const [cpu, setCpu] = createSignal(trimNumber(millicoresToCores(props.resources.cpuMillicores)));
-  const [request, setRequest] = createSignal(trimNumber(mibToGib(props.resources.memoryRequestMib)));
-  const [limit, setLimit] = createSignal(trimNumber(mibToGib(props.resources.memoryLimitMib)));
+  const shown = {
+    cpu: trimNumber(millicoresToCores(props.resources.cpuMillicores)),
+    request: trimNumber(mibToGib(props.resources.memoryRequestMib)),
+    limit: trimNumber(mibToGib(props.resources.memoryLimitMib)),
+  };
+  const [cpu, setCpu] = createSignal(shown.cpu);
+  const [request, setRequest] = createSignal(shown.request);
+  const [limit, setLimit] = createSignal(shown.limit);
   const [askingApply, setAskingApply] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
 
+  const exactUnlessEdited = (text: string, initial: string, stored: number, convert: (value: number) => number) =>
+    text === initial ? stored : convert(parseFloat(text) || 0);
   const resources = (): PodResources => ({
-    cpuMillicores: coresToMillicores(parseFloat(cpu()) || 0),
-    memoryRequestMib: gibToMib(parseFloat(request()) || 0),
-    memoryLimitMib: gibToMib(parseFloat(limit()) || 0),
+    cpuMillicores: exactUnlessEdited(cpu(), shown.cpu, props.resources.cpuMillicores, coresToMillicores),
+    memoryRequestMib: exactUnlessEdited(request(), shown.request, props.resources.memoryRequestMib, gibToMib),
+    memoryLimitMib: exactUnlessEdited(limit(), shown.limit, props.resources.memoryLimitMib, gibToMib),
   });
   const error = () => boundsError(resources(), props.bounds);
   const nameMissing = () => props.name !== null && name().trim() === '';

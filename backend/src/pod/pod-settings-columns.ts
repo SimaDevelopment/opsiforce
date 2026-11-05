@@ -37,3 +37,10 @@ export function storedPodSettings(settings: { presetId: string | null } & PodRes
     memoryLimitMib: settings.memoryLimitMib,
   };
 }
+
+// TODO: remove with pod_class in the release after resource presets ship: the previous release sizes a pod from its numbers only when pod_class is custom
+export const PREVIOUS_RELEASE_READS_NUMBERS = { podClass: 'custom' } as const;
+
+export function storedLegacyPodSettings(settings: { presetId: string | null } & PodResources) {
+  return { ...storedPodSettings(settings), ...PREVIOUS_RELEASE_READS_NUMBERS };
+}

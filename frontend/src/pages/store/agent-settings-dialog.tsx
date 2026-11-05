@@ -17,8 +17,10 @@ import { ResourcesSelector } from '~/components/resources/resources-selector';
 import { WarmPoolPicker } from '~/components/resources/warm-pool-picker';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
+import { describeResources } from '~/lib/pod-resources';
 
 const DEFAULT_PRESET = 'default-preset';
+const PLATFORM_CUSTOM = 'platform-custom';
 
 export function AgentSettingsDialog(props: {
   agent: AgentDetail;
@@ -38,8 +40,20 @@ export function AgentSettingsDialog(props: {
   const catalog = usePodClassCatalog(() => props.open && editsOrganization());
   const platformPresets = usePlatformPresets(() => props.open && editsPlatform());
   const [platformPreset, setPlatformPresetDraft] = createSignal(DEFAULT_PRESET);
+  const platformValue = () => {
+    const choice = props.agent.platformChoice;
+    if (!choice) return DEFAULT_PRESET;
+    return choice.presetId ?? PLATFORM_CUSTOM;
+  };
+  const platformCustom = () => {
+    const choice = props.agent.platformChoice;
+    return choice && choice.presetId === null
+      ? [{ value: PLATFORM_CUSTOM, label: `Custom · ${describeResources(choice)}` }]
+      : [];
+  };
   const platformOptions = () => [
     { value: DEFAULT_PRESET, label: 'Default preset' },
+    ...platformCustom(),
     ...(platformPresets.data?.presets ?? []).map((preset) => ({ value: preset.id, label: preset.name })),
   ];
 
@@ -51,7 +65,7 @@ export function AgentSettingsDialog(props: {
         const agent = untrack(() => props.agent);
         podDraft.reset(agent.podSettings, agent.podSettingsSource !== 'own');
         setWarmPoolSize(agent.settings.warmPoolSize);
-        setPlatformPresetDraft(agent.platformPresetId ?? DEFAULT_PRESET);
+        setPlatformPresetDraft(untrack(platformValue));
       }
     )
   );
@@ -63,7 +77,7 @@ export function AgentSettingsDialog(props: {
   const saving = () =>
     updatePodClass.isPending || resetPodClass.isPending || updateSettings.isPending || setPlatformPreset.isPending;
   const warmPoolDirty = () => !builtIn() && warmPoolSize() !== props.agent.settings.warmPoolSize;
-  const platformDirty = () => editsPlatform() && platformPreset() !== (props.agent.platformPresetId ?? DEFAULT_PRESET);
+  const platformDirty = () => editsPlatform() && platformPreset() !== platformValue();
   const canSave = () => (podDraft.dirty() || warmPoolDirty() || platformDirty()) && !podDraft.limitError() && !saving();
 
   async function handleSave() {

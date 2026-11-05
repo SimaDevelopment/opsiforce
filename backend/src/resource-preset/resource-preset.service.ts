@@ -24,6 +24,7 @@ import {
   validPresetResources,
   type PodResources,
 } from '../pod/pod-classes';
+import { PREVIOUS_RELEASE_READS_NUMBERS } from '../pod/pod-settings-columns';
 import { presetPodSettings, readPresetCatalog, type CatalogPreset } from '../pod/resource-presets';
 import { ProjectPoolService } from '../pool/project-pool.service';
 import { ProjectStatus } from '../project/project.types';
@@ -209,9 +210,12 @@ export class ResourcePresetService {
         on conflict do nothing`);
       await tx
         .update(agentPodSettings)
-        .set(
-          effective(sql`(select ${agents.tenantId} from ${agents} where ${agents.id} = ${agentPodSettings.agentId})`)
-        )
+        .set({
+          ...effective(
+            sql`(select ${agents.tenantId} from ${agents} where ${agents.id} = ${agentPodSettings.agentId})`
+          ),
+          ...PREVIOUS_RELEASE_READS_NUMBERS,
+        })
         .where(eq(agentPodSettings.presetId, preset.id));
       await tx
         .update(tenantAgentPodSettings)
@@ -300,7 +304,7 @@ export class ResourcePresetService {
     );
     await db
       .update(projectPodSettings)
-      .set(resources)
+      .set({ ...resources, ...PREVIOUS_RELEASE_READS_NUMBERS })
       .where(and(inArray(projectPodSettings.projectId, projectIds), eq(projectPodSettings.presetId, presetId)));
     return { projects: projectIds.length, restarting: running.length };
   }

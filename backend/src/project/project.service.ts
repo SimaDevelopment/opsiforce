@@ -100,7 +100,11 @@ import {
 import { toK8sResources, type K8sResourceRequirements, type PodSettings } from '../pod/pod-classes';
 import { readAgentPodSettings } from '../agent/agent-pod-settings';
 import { podSettingsFromRequest } from '../pod/pod-class-request';
-import { podSettingsColumns, storedPodSettings } from '../pod/pod-settings-columns';
+import {
+  PREVIOUS_RELEASE_READS_NUMBERS,
+  podSettingsColumns,
+  storedLegacyPodSettings,
+} from '../pod/pod-settings-columns';
 import {
   defaultPodSettings,
   podClassCatalog,
@@ -598,7 +602,7 @@ export class ProjectService implements OnApplicationBootstrap {
         timezone: dto?.timezone || 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({ projectId: id, ...storedPodSettings(podSettings) });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(podSettings) });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -705,6 +709,7 @@ export class ProjectService implements OnApplicationBootstrap {
         cpuMillicores: source.cpuMillicores,
         memoryRequestMib: source.memoryRequestMib,
         memoryLimitMib: source.memoryLimitMib,
+        ...PREVIOUS_RELEASE_READS_NUMBERS,
       });
 
       const [copy] = await tx
@@ -837,7 +842,7 @@ export class ProjectService implements OnApplicationBootstrap {
           : {}),
       });
 
-      await tx.insert(projectPodSettings).values({ projectId: id, ...storedPodSettings(podResources) });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(podResources) });
 
       const [copy] = await tx
         .insert(projectEnvironments)
@@ -1210,7 +1215,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const project = await this.findOne(id, tenantId);
     await db
       .update(projectPodSettings)
-      .set(storedPodSettings(podSettingsFromRequest(dto, await readPresetCatalog(tenantId))))
+      .set(storedLegacyPodSettings(podSettingsFromRequest(dto, await readPresetCatalog(tenantId))))
       .where(eq(projectPodSettings.projectId, project.id));
 
     return this.findOne(id, tenantId);

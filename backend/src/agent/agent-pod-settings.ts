@@ -5,7 +5,7 @@ import { agentPodSettings, agentSettings, agents, tenantAgentPodSettings } from 
 import { lockTenantLimit, type DbExecutor } from '../common/locks';
 import { assertWithinLimit } from '../limit/limits';
 import type { PodSettings } from '../pod/pod-classes';
-import { podSettingsColumns, storedPodSettings } from '../pod/pod-settings-columns';
+import { podSettingsColumns, storedLegacyPodSettings, storedPodSettings } from '../pod/pod-settings-columns';
 import { podSettingsOn, readPresetCatalog, type PresetCatalog } from '../pod/resource-presets';
 import type { AgentProjectSettings } from './agent-copy-settings';
 
@@ -18,8 +18,8 @@ export interface AgentResources {
   resources: PodSettings;
   source: AgentResourcesSource;
   inherited: PodSettings;
-  /** A Built-in Agent's platform choice: a preset id, or null when it follows the default preset. */
-  platformPresetId: string | null;
+  /** A Built-in Agent's platform choice, a preset or Custom numbers; null when it follows the default preset. */
+  platformChoice: PodSettings | null;
 }
 
 export async function readAgentResources(
@@ -46,13 +46,13 @@ export async function readAgentResources(
       .where(and(eq(tenantAgentPodSettings.tenantId, tenantId), eq(tenantAgentPodSettings.agentId, agentId)))
       .limit(1);
     const inherited = row ? podSettingsOn(row, presets) : fallback;
-    const platformPresetId = row?.presetId ?? null;
-    if (own) return { resources: podSettingsOn(own, presets), source: 'own', inherited, platformPresetId };
-    return { resources: inherited, source: row ? 'platform' : 'default', inherited, platformPresetId };
+    const platformChoice = row ? inherited : null;
+    if (own) return { resources: podSettingsOn(own, presets), source: 'own', inherited, platformChoice };
+    return { resources: inherited, source: row ? 'platform' : 'default', inherited, platformChoice };
   }
-  const platformPresetId = builtIn ? (row?.presetId ?? null) : null;
-  if (row) return { resources: podSettingsOn(row, presets), source: 'own', inherited: fallback, platformPresetId };
-  return { resources: fallback, source: 'default', inherited: fallback, platformPresetId };
+  const platformChoice = builtIn && row ? podSettingsOn(row, presets) : null;
+  if (row) return { resources: podSettingsOn(row, presets), source: 'own', inherited: fallback, platformChoice };
+  return { resources: fallback, source: 'default', inherited: fallback, platformChoice };
 }
 
 export async function readAgentPodSettings(
@@ -90,7 +90,7 @@ export async function writeAgentPodSettings(
     await executor.delete(agentPodSettings).where(eq(agentPodSettings.agentId, agentId));
     return;
   }
-  const values = storedPodSettings(settings);
+  const values = storedLegacyPodSettings(settings);
   await executor
     .insert(agentPodSettings)
     .values({ agentId, ...values })

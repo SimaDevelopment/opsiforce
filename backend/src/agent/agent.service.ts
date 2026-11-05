@@ -192,7 +192,7 @@ export class AgentService {
       podSettings: resources.resources,
       podSettingsSource: resources.source,
       inheritedPodSettings: resources.inherited,
-      platformPresetId: resources.platformPresetId,
+      platformChoice: resources.platformChoice,
       profiles,
       shippedSkills:
         agent.origin === 'built_in'
