@@ -22,8 +22,8 @@ const (
 const appRootGuard = "webapp"
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == appURLCommand {
-		os.Exit(runAppURL(os.Getenv("SERVICE_GATEWAY_URL"), os.Getenv("SERVICE_GATEWAY_API_KEY"), os.Stdout, os.Stderr))
+	if len(os.Args) > 1 {
+		os.Exit(runSubcommand(os.Args[1:], os.Getenv("SERVICE_GATEWAY_URL"), os.Getenv("SERVICE_GATEWAY_API_KEY"), os.Stdout, os.Stderr))
 	}
 
 	go runOpencodeAuthProxy()
@@ -79,16 +79,16 @@ type proc struct {
 
 func restartAppProcesses() int {
 	targets := appRestartTargets(listProcs())
+	stop(targets)
+	return len(targets)
+}
 
+func stop(targets map[int]bool) {
 	for pid := range targets {
 		_ = syscall.Kill(pid, syscall.SIGTERM)
 	}
-
 	deadline := time.Now().Add(termGrace)
-	for time.Now().Before(deadline) {
-		if !anyAlive(targets) {
-			break
-		}
+	for time.Now().Before(deadline) && anyAlive(targets) {
 		time.Sleep(termPollEvery)
 	}
 	for pid := range targets {
@@ -96,7 +96,6 @@ func restartAppProcesses() int {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}
-	return len(targets)
 }
 
 func appRestartTargets(procs map[int]*proc) map[int]bool {
