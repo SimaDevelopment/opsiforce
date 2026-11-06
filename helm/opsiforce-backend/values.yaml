@@ -64,6 +64,8 @@ config:
   previewAppsHostname: ""
   webappServiceName: ""
   webappServicePort: "3002"
+  customDomainsClusterIssuer: ""
+  customDomainsRefused: ""
   oidcPluginSecret: ""
   ssoGroupMap: ""
   defaultTenantName: ""

@@ -2,6 +2,8 @@
 ---
 config:
   storageClaimSize: "600Gi"
+  customDomainsClusterIssuer: "letsencrypt-http01"
+  customDomainsRefused: "opsima.com,simaanalytics.co,simaanalytics.com"
   agentAffinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

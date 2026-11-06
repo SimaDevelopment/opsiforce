@@ -161,6 +161,7 @@ export interface ProjectEnvironmentSummary {
   appName: string | null;
   appDescription: string | null;
   publicUrl: string | null;
+  defaultAddress: string | null;
   appSlug: string | null;
   suggestedAppSlug: string | null;
   shortId: string;

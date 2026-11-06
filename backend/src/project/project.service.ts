@@ -64,6 +64,7 @@ import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { PublicUrlService } from '../project-environment/public-url.service';
+import { CustomDomainCluster } from '../custom-domain/custom-domain-cluster';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { hasRunningPod } from '../project-environment/running-pod';
 import type { EnvironmentNotRunningState } from '../agent-session/agent-session.errors';
@@ -313,6 +314,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly publicUrls: PublicUrlService,
     private readonly proxyService: ProxyService,
     private readonly deliveryService: DeliveryService,
+    private readonly customDomainCluster: CustomDomainCluster,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
     private readonly duplicateQueue: Queue<ProjectDuplicateJobData>,
     @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
@@ -1141,6 +1143,7 @@ export class ProjectService implements OnApplicationBootstrap {
           appName: app?.name ?? null,
           appDescription: app?.description ?? null,
           publicUrl: this.publicUrls.publicUrlOnceLive(env),
+          defaultAddress: this.publicUrls.defaultAddressOnceLive(env),
           appSlug: env.appSlug,
           suggestedAppSlug: app && offersAReadableAddress(env) ? toAppSlug(app.name, env) : null,
           shortId: env.shortId,
@@ -1321,6 +1324,7 @@ export class ProjectService implements OnApplicationBootstrap {
       } else {
         await this.projectAuthService.remove(env.id);
       }
+      await this.customDomainCluster.followAppAuth({ id: env.id, authMode: dto.mode });
       await tx
         .update(projectEnvironments)
         .set({ authMode: dto.mode, signInProviderId: provider?.id ?? null, updatedAt: new Date() })
@@ -1340,6 +1344,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .update(projectEnvironments)
       .set({ authMode, signInProviderId, updatedAt: new Date() })
       .where(eq(projectEnvironments.id, to.id));
+    await this.customDomainCluster.followAppAuth({ id: to.id, authMode });
   }
 
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
@@ -1349,6 +1354,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.remove(child.id, tenantId);
     }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
+    for (const env of envs) await this.customDomainCluster.removeEnvironment(env.id);
     for (const env of envs) await this.lifecycle?.environmentRemoving(env.id);
 
     await db
@@ -1383,7 +1389,7 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     for (const env of envs) {
-      await this.projectEnvironmentService.delete(env);
+      await this.customDomainCluster.removeEnvironment(env.id, (tx) => this.projectEnvironmentService.delete(env, tx));
     }
 
     await db.transaction(async (tx) => {
@@ -1541,6 +1547,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (env.isDefault) {
       throw new BadRequestException('The Development environment cannot be deleted');
     }
+    await this.customDomainCluster.removeEnvironment(env.id);
     await this.lifecycle?.environmentRemoving(env.id);
 
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended });
@@ -1567,7 +1574,7 @@ export class ProjectService implements OnApplicationBootstrap {
     this.appReadiness.clear(env.id);
     this.agentStatusService.clear(projectId, env.id);
 
-    await this.projectEnvironmentService.delete(env);
+    await this.customDomainCluster.removeEnvironment(env.id, (tx) => this.projectEnvironmentService.delete(env, tx));
 
     await this.projectEventsService.publish(projectId);
   }

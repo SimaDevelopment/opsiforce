@@ -43,6 +43,7 @@ import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
 import { ModelProvidersModule } from '../model-provider/model-provider.module';
 import { SealingModule } from '../sealing/sealing.module';
+import { CustomDomainModule } from '../custom-domain/custom-domain.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { SealingModule } from '../sealing/sealing.module';
     GitModule,
     SealingModule,
     AppReadinessModule,
+    CustomDomainModule,
   ],
   controllers: [
     ProjectController,

@@ -645,6 +645,20 @@
       "when": 1792200003000,
       "tag": "0091_resource-presets",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792200003001,
+      "tag": "0092_custom-domains",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792200003002,
+      "tag": "0093_custom-domain-redirects",
+      "breakpoints": true
     }
   ]
 }

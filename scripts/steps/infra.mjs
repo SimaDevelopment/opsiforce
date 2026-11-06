@@ -18,6 +18,7 @@ const COREDNS_REWRITES = [
   `rewrite name exact ${ROOT_HOSTNAME} ${TRAEFIK_SERVICE_NAME} answer auto`,
 ];
 const POD_CA_CONFIGMAP = 'opsiforce-local-ca';
+const LOCAL_CA_ISSUER = 'opsiforce-local-ca';
 
 const CERT_DOMAINS = [
   ROOT_HOSTNAME,
@@ -172,6 +173,13 @@ function applyTls(ctx, certFile, keyFile) {
   ctx.note('applied the TLS secret, default TLSStore, and Traefik middlewares (headers, gzip).');
 }
 
+function installCertManager(ctx) {
+  ctx.note(
+    `installing cert-manager (${ctx.versions.exact.charts.certManager}) and the ${LOCAL_CA_ISSUER} ClusterIssuer, which signs with the mkcert CA…`
+  );
+  ctx.run('sh', [join(ctx.paths.packageRoot, 'scripts', 'install-cert-manager.sh')]);
+}
+
 function routeServiceHostsToTraefik(ctx) {
   const corefile = ctx.capture('kubectl', [
     'get',
@@ -229,6 +237,7 @@ export async function run(ctx) {
   installTraefik(ctx);
   await verifyTunnelBound(ctx);
   applyTls(ctx, certFile, keyFile);
+  installCertManager(ctx);
   routeServiceHostsToTraefik(ctx);
   trustLocalCaInPods(ctx);
   verifyOidcPlugin(ctx);

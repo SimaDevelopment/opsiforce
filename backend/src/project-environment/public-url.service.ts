@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { appCanonicalHost, type AppAddress } from '../common/app-host';
 
-type AppUrlSubject = AppAddress & { servesAnExternalService: boolean };
+type AppUrlSubject = AppAddress & { servesAnExternalService: boolean; mainDomain: string | null };
 type PublicUrlSubject = AppUrlSubject & { hasApp: boolean };
 
 @Injectable()
@@ -17,7 +17,12 @@ export class PublicUrlService {
     return env.hasApp ? this.publicUrlLiveOrNot(env) : null;
   }
 
+  defaultAddressOnceLive(env: PublicUrlSubject): string | null {
+    return env.hasApp && !env.servesAnExternalService ? appCanonicalHost(env, this.appsHostname) : null;
+  }
+
   publicUrlLiveOrNot(env: AppUrlSubject): string | null {
-    return env.servesAnExternalService ? null : `https://${appCanonicalHost(env, this.appsHostname)}/`;
+    if (env.servesAnExternalService) return null;
+    return `https://${env.mainDomain ?? appCanonicalHost(env, this.appsHostname)}/`;
   }
 }

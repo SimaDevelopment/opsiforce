@@ -17,6 +17,10 @@
 **Projects** (`projects/`)
 - [Environments](projects/environments.md) — the two-entity model, Environment Slugs, App Auth and the Environments switcher
 - [Public URL](projects/public-url.md) — the address each App answers on, its App Slug, Edit URL and the older addresses that keep serving
+- [Custom domain](projects/custom-domain.md) — adding an address on the customer's own domain to an App, the Domains dialog, the records it shows, each status, and the Limit
+- [DNS check](projects/dns-check.md) — how a domain's record proves its owner chose the App, when Check runs, and taking a domain from another App
+- [Domain routing](projects/domain-routing.md) — each Custom domain's certificate and route, their start-up rewrite, and signing visitors in on the domain
+- [Main domain](projects/main-domain.md) — the one Custom domain that is the Public URL, Make main, and the redirect every other domain carries
 - [Publish](projects/publish.md) — moving an App from Development into an environment, Environment Variables and the publish stages
 - [Duplication](projects/duplication.md) — copying a whole Project with its working state
 - [Export and Import](projects/export-import.md) — carrying a Project to another deployment as a file
@@ -97,6 +101,7 @@
 - [Quickstart](operations/quickstart.md) — stand up the local stack with `yarn dev`
 - [Commands](operations/commands.md) — day-to-day checks, database tasks and local ports
 - [Local orchestration](operations/local-orchestration.md) — the tunnel, Tilt and the static identity
+- [Test Custom domains locally](operations/test-custom-domains-locally.md) — point a domain you own at a local App, and where to look when a status gets stuck
 - [Deployment](operations/deployment.md) — ship to a cluster through CI in dependency order
 - [Deploy to Azure (AKS)](operations/deploy-azure.md) — the platform contract for self-hosting on Azure
 - [Air-Gapped Single-Node Deployment](operations/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
@@ -104,6 +109,7 @@
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
 - [Migrate process logs to files](operations/migrate-process-logs-to-files.md) — move existing workspaces off the `process_logs`/`process_events` tables, from the backend pod
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
+- [Turn on Custom domains](operations/turn-on-custom-domains.md) — the cluster issuer, the backend values, a real-domain issuance test
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps
 - [Add an external service](operations/add-an-external-service.md) — a folder with a Service manifest, its `service.ts` and a Service skill, and one commit
 - [Onboard a WhatsApp number](operations/onboard-a-whatsapp-number.md) — Whapi channel, the number item, QR link, picking chats

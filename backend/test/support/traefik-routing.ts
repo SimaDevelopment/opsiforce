@@ -12,3 +12,12 @@ export function traefikRuleMatches(rule: AppAuthRouteRule, requestHost: string):
   const exactHosts = [...rule.match.matchAll(/\bHost\(`([^`]+)`\)/g)].map(([, exact]) => exact);
   return exactHosts.includes(host.replace(/\.$/, '')) || patterns.some((pattern) => pattern.test(host));
 }
+
+export function traefikRedirect(
+  redirectRegex: { regex: string; replacement: string },
+  requestUrl: string
+): string | null {
+  const regex = new RegExp(redirectRegex.regex);
+  if (!regex.test(requestUrl)) return null;
+  return requestUrl.replace(regex, redirectRegex.replacement.replace(/\$\{(\d+)\}/g, '$$$1'));
+}

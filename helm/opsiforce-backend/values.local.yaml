@@ -63,6 +63,8 @@ config:
   appsHostname: "apps.opsiforce.localtest.me"
   webappServiceName: "proxy-app"
   webappServicePort: "3002"
+  customDomainsClusterIssuer: "opsiforce-local-ca"
+  customDomainsRefused: "opsiforce.localtest.me"
   oidcPluginSecret: "1198c2e7c224237098895d53543b074c"
   appAuthForwardingSigningKey: "local-app-auth-forwarding-signing-key-0123456789abcdef"
 

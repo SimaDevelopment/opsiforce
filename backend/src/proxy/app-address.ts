@@ -1,4 +1,5 @@
 import { appCanonicalHost, LEADING_UUID, legacyAppHostLabel } from '../common/app-host';
+import { redirectTargetOf } from '../custom-domain/custom-domain-objects';
 import type { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { ProjectStatus } from '../project/project.types';
@@ -8,7 +9,10 @@ const DNS_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const SHORT_ID = /^[0-9a-f]{12,32}$/;
 const STILL_IN_THE_WARM_POOL = new Set<ProjectStatus>([ProjectStatus.Pending, ProjectStatus.Claiming]);
 
-type EnvironmentLookup = Pick<ProjectEnvironmentService, 'findByIdOrNull' | 'findByShortIdOrNull'>;
+type EnvironmentLookup = Pick<
+  ProjectEnvironmentService,
+  'findByIdOrNull' | 'findByShortIdOrNull' | 'findByRoutedDomainOrNull'
+>;
 
 export interface AppDomains {
   appsHostname: string;
@@ -29,8 +33,9 @@ export async function resolveAppAddress(
   { appsHostname, previewAppsHostname }: AppDomains,
   environments: EnvironmentLookup
 ): Promise<ResolvedAppAddress | null> {
-  const appHost = parseAppHost(host, appsHostname, previewAppsHostname);
-  if (!appHost) return null;
+  const hostname = host.toLowerCase().replace(/:\d+$/, '');
+  const appHost = parseAppHost(hostname, appsHostname, previewAppsHostname);
+  if (!appHost) return customDomainAddress(hostname, environments);
 
   if ('previewedEnvironmentId' in appHost) {
     const env = answering(await environments.findByIdOrNull(appHost.previewedEnvironmentId));
@@ -56,8 +61,18 @@ export async function resolveAppAddress(
   return { env, action, canonicalHost, previewed: false };
 }
 
-function parseAppHost(host: string, appsHostname: string, previewAppsHostname: string): AppHost | null {
-  const hostname = host.toLowerCase().replace(/:\d+$/, '');
+async function customDomainAddress(
+  hostname: string,
+  environments: EnvironmentLookup
+): Promise<ResolvedAppAddress | null> {
+  const routed = await environments.findByRoutedDomainOrNull(hostname);
+  const env = routed && answering(routed.env);
+  if (!routed || !env) return null;
+  const canonicalHost = redirectTargetOf(hostname, routed.domain, env.mainDomain) ?? hostname;
+  return { env, action: canonicalHost === hostname ? 'serve' : 'redirect', canonicalHost, previewed: false };
+}
+
+function parseAppHost(hostname: string, appsHostname: string, previewAppsHostname: string): AppHost | null {
   const previewed = labelUnder(hostname, previewAppsHostname);
   if (previewed !== null && isEnvironmentId(previewed)) return { previewedEnvironmentId: previewed };
   const label = labelUnder(hostname, appsHostname);

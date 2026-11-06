@@ -2,6 +2,9 @@ import { appCanonicalHost, legacyAppHosts, type AppAddress } from '../common/app
 import type { ProjectAuthMode } from './project.types';
 
 export const OIDC_CALLBACK_PATH = '/oidc/callback';
+export const APP_AUTH_ROUTE_PREFIX = 'opsiforce-project-';
+
+export const appAuthMiddlewareName = (routingId: string) => `${APP_AUTH_ROUTE_PREFIX}${routingId}-oidc`;
 
 const SHORT_ID_PATTERN_PRIORITY = 100;
 const ENVIRONMENT_ID_PATTERN_PRIORITY = 101;

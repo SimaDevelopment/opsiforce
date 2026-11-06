@@ -2,25 +2,30 @@ import { createHmac } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as k8s from '@kubernetes/client-node';
-import { loadKubeConfig } from '../common/k8s-client';
-import { appAuthRouteRules, OIDC_CALLBACK_PATH, type AppAuthRouteTarget } from './app-auth-route';
+import {
+  isConflict,
+  KubeObjectWriter,
+  TRAEFIK_API_VERSION,
+  TRAEFIK_INGRESS_ROUTES,
+  TRAEFIK_MIDDLEWARES,
+} from '../common/kube-object-writer';
+import {
+  APP_AUTH_ROUTE_PREFIX,
+  appAuthMiddlewareName,
+  appAuthRouteRules,
+  OIDC_CALLBACK_PATH,
+  type AppAuthRouteTarget,
+} from './app-auth-route';
 import type { SignInProviderConnection } from '../sign-in-provider/sign-in-provider.types';
 import { ProjectAuthOidcConfig } from './project.types';
 
-const TRAEFIK_GROUP = 'traefik.io';
-const TRAEFIK_VERSION = 'v1alpha1';
-const MIDDLEWARES_PLURAL = 'middlewares';
-const INGRESSROUTES_PLURAL = 'ingressroutes';
-
-const GATE_PREFIX = 'opsiforce-project-';
-const middlewareName = (routingId: string) => `${GATE_PREFIX}${routingId}-oidc`;
-const ingressRouteName = (routingId: string) => `${GATE_PREFIX}${routingId}`;
+const ingressRouteName = (routingId: string) => `${APP_AUTH_ROUTE_PREFIX}${routingId}`;
 const signInResourceName = (providerId: string) => `opsiforce-sign-in-${providerId}`;
 const signInPath = (providerId: string) => `/p/${providerId}`;
 
 const SIGN_IN_HOST_LABEL = 'auth';
 const SIGN_IN_COOKIE_PREFIX = '_opsiforce_sp_';
+const OIDC_PLUGIN = 'traefik-oidc-auth';
 
 interface TraefikOidcAssertClaim {
   Name: string;
@@ -116,10 +121,27 @@ function claimKeys(claimName: string): string[] {
   return NAMESPACED_CLAIM.test(claimName) ? [claimName] : claimName.split('.');
 }
 
+type OidcMiddleware = { spec?: { plugin?: Record<string, TraefikOidcPluginSpec> } } | undefined;
+
+function oidcPluginOf(middleware: unknown): TraefikOidcPluginSpec | undefined {
+  return (middleware as OidcMiddleware)?.spec?.plugin?.[OIDC_PLUGIN];
+}
+
+export function signInOnEachHost(environmentMiddleware: unknown) {
+  const plugin = oidcPluginOf(environmentMiddleware);
+  if (!plugin) return undefined;
+  const onEachHost: TraefikOidcPluginSpec = {
+    ...plugin,
+    CallbackUri: OIDC_CALLBACK_PATH,
+    SessionCookie: { Secure: true },
+  };
+  return { plugin: { [OIDC_PLUGIN]: onEachHost } };
+}
+
 @Injectable()
 export class ProjectAuthService {
   private readonly logger = new Logger(ProjectAuthService.name);
-  private readonly customApi: k8s.CustomObjectsApi;
+  private readonly kube: KubeObjectWriter;
   private readonly namespace: string;
   private readonly appsHostname: string;
   private readonly webappServiceName: string;
@@ -127,9 +149,8 @@ export class ProjectAuthService {
   private readonly pluginSecret: string;
 
   constructor(private readonly configService: ConfigService) {
-    const kc = loadKubeConfig();
-    this.customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     this.namespace = this.configService.getOrThrow<string>('k8sNamespace');
+    this.kube = new KubeObjectWriter(this.namespace);
     this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
     this.webappServiceName = this.configService.getOrThrow<string>('webappServiceName');
     this.webappServicePort = this.configService.getOrThrow<number>('webappServicePort');
@@ -187,10 +208,10 @@ export class ProjectAuthService {
     }
 
     return {
-      apiVersion: `${TRAEFIK_GROUP}/${TRAEFIK_VERSION}`,
+      apiVersion: TRAEFIK_API_VERSION,
       kind: 'Middleware',
       metadata: { name, namespace: this.namespace },
-      spec: { plugin: { 'traefik-oidc-auth': plugin } },
+      spec: { plugin: { [OIDC_PLUGIN]: plugin } },
     };
   }
 
@@ -200,7 +221,7 @@ export class ProjectAuthService {
 
   private ingressRoute(name: string, routes: unknown[]) {
     return {
-      apiVersion: `${TRAEFIK_GROUP}/${TRAEFIK_VERSION}`,
+      apiVersion: TRAEFIK_API_VERSION,
       kind: 'IngressRoute',
       metadata: { name, namespace: this.namespace },
       spec: { entryPoints: ['websecure'], routes },
@@ -222,7 +243,7 @@ export class ProjectAuthService {
   }
 
   private oidcMiddlewareRef(routingId: string) {
-    return { name: middlewareName(routingId), namespace: this.namespace };
+    return { name: appAuthMiddlewareName(routingId), namespace: this.namespace };
   }
 
   async getConfig(routingId: string): Promise<{
@@ -244,10 +265,7 @@ export class ProjectAuthService {
 
   private async readPluginSpec(routingId: string): Promise<TraefikOidcPluginSpec | undefined> {
     try {
-      const middleware = (await this.find(MIDDLEWARES_PLURAL, middlewareName(routingId))) as
-        | { spec?: { plugin?: Record<string, TraefikOidcPluginSpec> } }
-        | undefined;
-      return middleware?.spec?.plugin?.['traefik-oidc-auth'];
+      return oidcPluginOf(await this.kube.find(TRAEFIK_MIDDLEWARES, appAuthMiddlewareName(routingId)));
     } catch (err) {
       this.logger.error(`Failed to read middleware for routing id ${routingId}`, err);
       throw err;
@@ -260,10 +278,10 @@ export class ProjectAuthService {
       headers: this.validatedAppHeaders(env.id, config.forwardAccessToken, bypassAuthPaths),
       bypassAuthPaths,
     };
-    const mw = this.buildMiddleware(middlewareName(env.id), effectiveConfig, extras);
+    const mw = this.buildMiddleware(appAuthMiddlewareName(env.id), effectiveConfig, extras);
     const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.upsert(MIDDLEWARES_PLURAL, mw.metadata.name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, ir.metadata.name, ir);
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, mw.metadata.name, mw);
+    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
   }
 
   async applyProvider(
@@ -272,7 +290,7 @@ export class ProjectAuthService {
     forwardAccessToken: boolean | undefined,
     bypassAuthPaths?: string[]
   ): Promise<void> {
-    const mw = this.buildMiddleware(middlewareName(env.id), this.providerConfig(provider), {
+    const mw = this.buildMiddleware(appAuthMiddlewareName(env.id), this.providerConfig(provider), {
       ...this.providerExtras(provider),
       headers: this.validatedAppHeaders(
         env.id,
@@ -283,8 +301,8 @@ export class ProjectAuthService {
       bypassAuthPaths,
     });
     const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.upsert(MIDDLEWARES_PLURAL, mw.metadata.name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, ir.metadata.name, ir);
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, mw.metadata.name, mw);
+    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
   }
 
   async applySignInHost(provider: SignInProviderConnection): Promise<void> {
@@ -302,13 +320,13 @@ export class ProjectAuthService {
         services: [this.webappService()],
       },
     ]);
-    await this.upsert(MIDDLEWARES_PLURAL, name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, name, ir);
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, name, mw);
+    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, name, ir);
   }
 
   async removeSignInHost(providerId: string): Promise<void> {
-    await this.deleteIfExists(INGRESSROUTES_PLURAL, signInResourceName(providerId));
-    await this.deleteIfExists(MIDDLEWARES_PLURAL, signInResourceName(providerId));
+    await this.kube.deleteIfExists(TRAEFIK_INGRESS_ROUTES, signInResourceName(providerId));
+    await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, signInResourceName(providerId));
   }
 
   signInCallbackUrl(providerId: string): string {
@@ -364,7 +382,7 @@ export class ProjectAuthService {
   async inheritAuth(fromRoutingId: string, to: AppAuthRouteTarget): Promise<string | null> {
     const sourceSpec = await this.readPluginSpec(fromRoutingId);
     if (!sourceSpec) {
-      throw new Error(`Cannot inherit app auth: source middleware ${middlewareName(fromRoutingId)} not found`);
+      throw new Error(`Cannot inherit app auth: source middleware ${appAuthMiddlewareName(fromRoutingId)} not found`);
     }
 
     await this.applyClonedSpec(to, sourceSpec);
@@ -406,14 +424,14 @@ export class ProjectAuthService {
         : OIDC_CALLBACK_PATH,
     };
     const mw = {
-      apiVersion: `${TRAEFIK_GROUP}/${TRAEFIK_VERSION}`,
+      apiVersion: TRAEFIK_API_VERSION,
       kind: 'Middleware',
-      metadata: { name: middlewareName(env.id), namespace: this.namespace },
-      spec: { plugin: { 'traefik-oidc-auth': clonedSpec } },
+      metadata: { name: appAuthMiddlewareName(env.id), namespace: this.namespace },
+      spec: { plugin: { [OIDC_PLUGIN]: clonedSpec } },
     };
     const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.upsert(MIDDLEWARES_PLURAL, mw.metadata.name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, ir.metadata.name, ir);
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, mw.metadata.name, mw);
+    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
   }
 
   private async preserveClientSecret(routingId: string, config: ProjectAuthOidcConfig): Promise<ProjectAuthOidcConfig> {
@@ -427,7 +445,7 @@ export class ProjectAuthService {
 
   async reconcileRoute(env: AppAuthRouteTarget): Promise<void> {
     for (let attempt = 1; ; attempt++) {
-      const route = (await this.find(INGRESSROUTES_PLURAL, ingressRouteName(env.id))) as
+      const route = (await this.kube.find(TRAEFIK_INGRESS_ROUTES, ingressRouteName(env.id))) as
         | TraefikIngressRoute
         | undefined;
       if (!route) return;
@@ -435,102 +453,27 @@ export class ProjectAuthService {
       const expectedRoutes = this.authRoutes(env, middlewares, services);
       if (isDeepStrictEqual(route.spec.routes, expectedRoutes)) return;
       try {
-        await this.customApi.replaceNamespacedCustomObject({
-          group: TRAEFIK_GROUP,
-          version: TRAEFIK_VERSION,
-          namespace: this.namespace,
-          plural: INGRESSROUTES_PLURAL,
-          name: ingressRouteName(env.id),
-          body: { ...route, spec: { ...route.spec, routes: expectedRoutes } },
+        await this.kube.replace(TRAEFIK_INGRESS_ROUTES, ingressRouteName(env.id), {
+          ...route,
+          spec: { ...route.spec, routes: expectedRoutes },
         });
         this.logger.log(`Rewrote the App Auth route of environment ${env.id}`);
         return;
       } catch (err) {
-        const writtenMeanwhile = (err as { code?: number })?.code === 409;
-        if (!writtenMeanwhile || attempt === ROUTE_RECONCILE_ATTEMPTS) throw err;
+        if (!isConflict(err) || attempt === ROUTE_RECONCILE_ATTEMPTS) throw err;
       }
     }
   }
 
   async remove(routingId: string): Promise<void> {
-    await this.deleteIfExists(INGRESSROUTES_PLURAL, ingressRouteName(routingId));
-    await this.deleteIfExists(MIDDLEWARES_PLURAL, middlewareName(routingId));
+    await this.kube.deleteIfExists(TRAEFIK_INGRESS_ROUTES, ingressRouteName(routingId));
+    await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, appAuthMiddlewareName(routingId));
   }
 
   async gatedRoutingIds(): Promise<string[]> {
-    const { items } = (await this.customApi.listNamespacedCustomObject({
-      group: TRAEFIK_GROUP,
-      version: TRAEFIK_VERSION,
-      namespace: this.namespace,
-      plural: INGRESSROUTES_PLURAL,
-    })) as { items: Array<{ metadata: { name: string } }> };
-    return items
+    return (await this.kube.list(TRAEFIK_INGRESS_ROUTES))
       .map(({ metadata }) => metadata.name)
-      .filter((name) => name.startsWith(GATE_PREFIX))
-      .map((name) => name.slice(GATE_PREFIX.length));
-  }
-
-  private async upsert(plural: string, name: string, body: object): Promise<void> {
-    try {
-      await this.customApi.createNamespacedCustomObject({
-        group: TRAEFIK_GROUP,
-        version: TRAEFIK_VERSION,
-        namespace: this.namespace,
-        plural,
-        body,
-      });
-      return;
-    } catch (err) {
-      const status = (err as { code?: number })?.code;
-      if (status !== 409) throw err;
-    }
-
-    const existing = (await this.find(plural, name)) as { metadata?: { resourceVersion?: string } } | undefined;
-
-    const resourceVersion = existing?.metadata?.resourceVersion;
-    const existingMeta = (body as { metadata?: Record<string, unknown> }).metadata ?? {};
-    const bodyWithVersion = {
-      ...body,
-      metadata: { ...existingMeta, resourceVersion },
-    };
-
-    await this.customApi.replaceNamespacedCustomObject({
-      group: TRAEFIK_GROUP,
-      version: TRAEFIK_VERSION,
-      namespace: this.namespace,
-      plural,
-      name,
-      body: bodyWithVersion,
-    });
-  }
-
-  private async find(plural: string, name: string): Promise<unknown> {
-    try {
-      return await this.customApi.getNamespacedCustomObject({
-        group: TRAEFIK_GROUP,
-        version: TRAEFIK_VERSION,
-        namespace: this.namespace,
-        plural,
-        name,
-      });
-    } catch (err) {
-      if ((err as { code?: number })?.code === 404) return undefined;
-      throw err;
-    }
-  }
-
-  private async deleteIfExists(plural: string, name: string): Promise<void> {
-    try {
-      await this.customApi.deleteNamespacedCustomObject({
-        group: TRAEFIK_GROUP,
-        version: TRAEFIK_VERSION,
-        namespace: this.namespace,
-        plural,
-        name,
-      });
-    } catch (err) {
-      const status = (err as { code?: number })?.code;
-      if (status !== 404) throw err;
-    }
+      .filter((name) => name.startsWith(APP_AUTH_ROUTE_PREFIX))
+      .map((name) => name.slice(APP_AUTH_ROUTE_PREFIX.length));
   }
 }

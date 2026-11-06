@@ -36,6 +36,7 @@ export interface ProjectEnvironmentContext {
   environmentIsDefault: boolean;
   hasApp: boolean;
   appSlug: string | null;
+  mainDomain: string | null;
   servesAnExternalService: boolean;
 }
 

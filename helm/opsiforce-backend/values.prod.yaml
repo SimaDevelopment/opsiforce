@@ -1,2 +1,5 @@
-# Production retains the chart defaults, including Ashburn placement.
-{}
+# Production retains the chart defaults, including Ashburn placement, and offers Custom domains.
+---
+config:
+  customDomainsClusterIssuer: "letsencrypt-http01"
+  customDomainsRefused: "opsima.com,simaanalytics.co,simaanalytics.com"

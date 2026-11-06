@@ -84,7 +84,7 @@ A tenant-scoped, named target a Project can run in and a Custom Agent can publis
 _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
-The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
+The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Default address. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
 _Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:
@@ -116,20 +116,36 @@ An App's human-facing identity — its name and description — carried per Proj
 _Avoid_: App metadata (vague); Project title (the Project shell's label — a different thing); project-level identity (retired — App Details belong to each App/environment, not the Project)
 
 **Public URL**:
-The internet address at which an App is served, the one the platform hands out and people share. It reads as the App Slug, the Environment Slug, then the App Short ID — e.g. `equipment-monitor-dev-6713b7a51450` — or, for an App with no App Slug, as the older address built from its environment's id. A Project that serves an External Service has no public App, so no Public URL.
+The internet address at which an App is served, the one the platform hands out and people share: the App's Main domain once it has a connected Custom domain, otherwise its Default address. A Project that serves an External Service has no public App, so no Public URL.
 _Avoid_: App URL, Built-in URL, Link, Domain
 
+**Default address**:
+The address every App has under the apps domain, reading as the App Slug, the Environment Slug, then the App Short ID — e.g. `equipment-monitor-dev-6713b7a51450` — or, for an App with no App Slug, as the older address built from its environment's id. It is the App's Public URL until a Custom domain connects, and keeps reaching the App after one does. A Custom domain's DNS record points at it.
+_Avoid_: Platform address, Apps address, Built-in URL, Default domain
+
 **App Slug**:
-The readable part of an App's Public URL, in front of the Environment Slug — `equipment-monitor` in `equipment-monitor-dev-6713b7a51450`. It comes from the App's name, or from the App Slug of the App it was copied from, and afterwards changes only through Edit URL, never with a rename. It need not be unique: the App Short ID already is.
+The readable part of an App's Default address, in front of the Environment Slug — `equipment-monitor` in `equipment-monitor-dev-6713b7a51450`. It comes from the App's name, or from the App Slug of the App it was copied from, and afterwards changes only through Edit URL, never with a rename. It need not be unique: the App Short ID already is.
 _Avoid_: Subdomain, Vanity URL, Name (the App Details field it derives from)
 
 **App Short ID**:
-The code at the end of an App's Public URL that identifies the App: the first twelve hex characters of its ProjectEnvironment's id with the dashes dropped, two more at a time when another App already holds that prefix. Every App has its own, unique across all Apps of every tenant, and it never changes for the App's lifetime — renames and URL edits leave it alone, which is what keeps old links working.
+The code at the end of an App's Default address that identifies the App: the first twelve hex characters of its ProjectEnvironment's id with the dashes dropped, two more at a time when another App already holds that prefix. Every App has its own, unique across all Apps of every tenant, and it never changes for the App's lifetime — renames and URL edits leave it alone, which is what keeps old links working.
 _Avoid_: Hash (it is not one); Short UUID; Code
 
 **Edit URL**:
-Choosing an App's App Slug by hand, which moves the App's Public URL to the new address while every address it answered on before keeps reaching it. The only way an App Slug changes once it is set.
+Choosing an App's App Slug by hand, which moves the App's Default address to the new address while every address it answered on before keeps reaching it. The only way an App Slug changes once it is set.
 _Avoid_: Rename (renaming the App leaves its address alone); Custom domain (an address outside the apps domain)
+
+**Custom domain**:
+An address on a domain the customer owns, outside the apps domain — e.g. `shop.example-org.com` — that they point at one ProjectEnvironment's App through their own DNS provider. It is connected once their DNS points it at the App's Default address and it is served over https. An App can have several, and Publish, Duplicate and Import never copy them, since a domain reaches one App only.
+_Avoid_: Vanity URL, Custom URL, Alias, Hostname
+
+**Main domain**:
+The one connected Custom domain of an App that is its Public URL. The App's other Custom domains serve it too, each on its own host, unless set to send visitors on to the Main domain. The first to connect becomes it, until another is made main.
+_Avoid_: Primary domain (primary already names an environment's primary Session); Default domain (confusable with the Default address)
+
+**Check**:
+The platform asking public DNS whether a Custom domain's record names its App, when the domain is added, when the owner presses Check, and when Domains is opened.
+_Avoid_: Verify, Validation
 
 **Go-live**:
 The moment an App first exists and is running in a ProjectEnvironment — for Development, when the agent finishes the first feature, it builds and boots, and the agent publishes App Details; for a published environment, when its freshly-deployed pod first serves. Go-live is decoupled from "done": it happens before the agent's feature testing, which follows with the App already live. Each environment goes live independently. Before its App goes live an environment has a pod but no App; that environment's app pane appears only once it happens.

@@ -222,6 +222,7 @@ export interface UpdateProjectAuthDto {
 
 export interface TenantConfig {
   privateWorkspaceEnabled: boolean;
+  customDomainsEnabled: boolean;
 }
 
 export type WorkspaceType = 'private' | 'shared';

@@ -41,6 +41,7 @@ export const PERMISSIONS = [
   'can_use_public_api',
   'can_manage_skills',
   'can_manage_agents',
+  'can_manage_custom_domains',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

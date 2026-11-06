@@ -67,7 +67,7 @@ export function StepProgress(props: StepProgressProps) {
   );
 }
 
-function StepMarker(props: { state: StepState }) {
+export function StepMarker(props: { state: StepState }) {
   return (
     <span
       class={cn(

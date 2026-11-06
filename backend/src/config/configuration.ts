@@ -38,6 +38,13 @@ function parseQuantityEnv(env: string | undefined): number | null {
   return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null;
 }
 
+function parseListEnv(env: string | undefined): string[] {
+  return (env ?? '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry !== '');
+}
+
 function parseIntOrNull(env: string | undefined): number | null {
   if (env === undefined || env === '') return null;
   const parsed = parseInt(env, 10);
@@ -141,5 +148,7 @@ export const configuration = () => {
     webappServiceName: process.env.WEBAPP_SERVICE_NAME || 'proxy-app',
     webappServicePort: parseInt(process.env.WEBAPP_SERVICE_PORT || '3002', 10),
     oidcPluginSecret: process.env.OIDC_PLUGIN_SECRET || '',
+    customDomainsClusterIssuer: process.env.CUSTOM_DOMAINS_CLUSTER_ISSUER?.trim() || '',
+    customDomainsRefused: parseListEnv(process.env.CUSTOM_DOMAINS_REFUSED),
   };
 };

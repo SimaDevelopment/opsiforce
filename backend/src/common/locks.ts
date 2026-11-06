@@ -10,6 +10,7 @@ const AGENT_TEMPLATE_NAMESPACE = 'opsiforce:agent-template';
 const TENANT_LIMIT_NAMESPACE = 'opsiforce:tenant-limit';
 const TENANT_MODEL_PROVIDERS_NAMESPACE = 'opsiforce:tenant-model-providers';
 const PLATFORM_MODEL_PROVIDERS_NAMESPACE = 'opsiforce:platform-model-providers';
+const CUSTOM_DOMAIN_HOSTNAME_NAMESPACE = 'opsiforce:custom-domain-hostname';
 const LOCK_NOT_AVAILABLE = '55P03';
 
 export class LockNotAvailable extends Error {
@@ -54,6 +55,12 @@ export async function lockPlatformModelProviders(executor: DbExecutor): Promise<
 
 export async function lockPlatformModelProvidersShared(executor: DbExecutor): Promise<void> {
   await executor.execute(sql`select pg_advisory_xact_lock_shared(hashtext(${PLATFORM_MODEL_PROVIDERS_NAMESPACE}))`);
+}
+
+export async function lockCustomDomainHostname(executor: DbExecutor, hostname: string): Promise<void> {
+  await executor.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${CUSTOM_DOMAIN_HOSTNAME_NAMESPACE}), hashtext(${hostname}))`
+  );
 }
 
 export async function lockEnvironmentSession(
