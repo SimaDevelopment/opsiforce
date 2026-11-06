@@ -728,14 +728,15 @@ describe('a cluster write that fails', () => {
     const fixture = await newApp();
     const main = subdomainName();
     await connectedDomain(fixture, main);
-    const otherId = await connectedDomain(fixture);
+    const other = subdomainName();
+    const otherId = await connectedDomain(fixture, other);
     await redirectToMain(fixture, otherId);
     kube.failNext('replace', 'ingressroutes');
 
     expect((await setRedirect(fixture, otherId, false)).statusCode).not.toBe(200);
 
     expect(await itemOf(fixture, otherId)).toMatchObject({ redirectsToMain: true });
-    expect(middlewaresOf(otherId)).toEqual({ [(await itemOf(fixture, otherId))!.hostname]: [redirectName(fixture)] });
+    expect(middlewaresOf(otherId)).toEqual({ [other]: [redirectName(fixture)] });
     expect(redirectOf(fixture)).toBeDefined();
 
     await kube.deleteNamespacedCustomObject({ plural: 'middlewares', name: redirectName(fixture) });
