@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { db } from '../../db';
 import { CustomDomainCluster } from '../../src/custom-domain/custom-domain-cluster';
 import { CustomDomainModule } from '../../src/custom-domain/custom-domain.module';
 import { PUBLIC_DNS } from '../../src/custom-domain/public-dns';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
+import { withEnvironmentAuthLock } from '../../src/project/environment-auth-lock';
 import { ProjectController } from '../../src/project/project.controller';
 import { ProxyController } from '../../src/proxy/proxy.controller';
 import { createExternalServicesTestApp, type ExternalServicesTestApp } from '../support/external-services-app';
@@ -18,6 +21,7 @@ import {
   type TenantFixture,
 } from '../support/project-fixtures';
 import { traefikRedirect } from '../support/traefik-routing';
+import { waitFor } from '../support/wait-for';
 import { fakeKube as kube } from './support/fake-kube';
 import { FakePublicDns } from './support/fake-public-dns';
 
@@ -370,6 +374,13 @@ describe('deleting the Project', () => {
   });
 });
 
+async function blocksAnother(pid: number): Promise<boolean> {
+  const [row] = await db.execute<{ blocking: boolean }>(
+    sql`select exists (select 1 from pg_stat_activity where ${pid} = any(pg_blocking_pids(pid))) as blocking`
+  );
+  return row.blocking;
+}
+
 describe('another App passing Check for a domain', () => {
   it("takes it from another Organization's App, deleting that App's domain with its objects", async () => {
     const first = await newApp();
@@ -384,6 +395,41 @@ describe('another App passing Check for a domain', () => {
     expect(await itemOf(first, firstId)).toBeUndefined();
     expect(objectsOf(firstId)).toEqual(NO_OBJECT);
     expect(await publicUrlOf(first)).toBe(`https://${first.defaultAddress}/`);
+  });
+
+  it("waits for a rewrite holding the first App's lock before deleting anything, so nothing that rewrite writes survives", async () => {
+    const first = await newApp();
+    const second = await newApp();
+    const hostname = subdomainName();
+    const firstId = await connectedDomain(first, hostname);
+    pointAt(second, hostname);
+    let holder = 0;
+    let signalHeld = () => undefined as void;
+    const held = new Promise<void>((resolve) => {
+      signalHeld = resolve;
+    });
+    let release = () => undefined as void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rewrite = withEnvironmentAuthLock(first.environmentId, async (tx, auth) => {
+      const [{ pid }] = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
+      holder = pid;
+      signalHeld();
+      await released;
+      await app.get(CustomDomainCluster).routeWithin(tx, first.environmentId, auth);
+    });
+    await held;
+
+    const added = add(second, hostname);
+    await waitFor(() => blocksAnother(holder));
+    release();
+    await rewrite;
+    const secondId = await added;
+
+    expect(await itemOf(second, secondId)).toMatchObject({ status: 'issuing' });
+    expect(await itemOf(first, firstId)).toBeUndefined();
+    expect(objectsOf(firstId)).toEqual(NO_OBJECT);
   });
 
   it('takes it between environments of one Project, deleting an issuing domain with its Certificate', async () => {

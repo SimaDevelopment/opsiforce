@@ -63,7 +63,7 @@ function sharesAHost(one: DomainHostnames, other: DomainHostnames): boolean {
   return hostsOf(other).some((host) => hosts.includes(host));
 }
 
-async function takeFromOtherEnvironments(executor: DbExecutor, taker: CustomDomainRow): Promise<CustomDomainRow[]> {
+async function holdersOf(executor: DbExecutor, taker: CustomDomainRow): Promise<CustomDomainRow[]> {
   const holders = await executor
     .select()
     .from(customDomains)
@@ -74,8 +74,11 @@ async function takeFromOtherEnvironments(executor: DbExecutor, taker: CustomDoma
         inArray(customDomains.hostname, [taker.hostname, wwwOf(taker.hostname), withoutWww(taker.hostname)])
       )
     );
-  const taken = holders.filter((holder) => sharesAHost(holder, taker));
-  if (taken.length === 0) return [];
+  return holders.filter((holder) => sharesAHost(holder, taker));
+}
+
+async function takeFrom(executor: DbExecutor, taken: CustomDomainRow[]): Promise<void> {
+  if (taken.length === 0) return;
   await executor.delete(customDomains).where(
     inArray(
       customDomains.id,
@@ -84,7 +87,10 @@ async function takeFromOtherEnvironments(executor: DbExecutor, taker: CustomDoma
   );
   const losingMain = new Set(taken.filter((domain) => domain.isMain).map((domain) => domain.projectEnvironmentId));
   for (const environmentId of losingMain) await handOverMain(executor, environmentId);
-  return taken;
+}
+
+function environmentsOf(domains: CustomDomainRow[]): string[] {
+  return [...new Set(domains.map((domain) => domain.projectEnvironmentId))];
 }
 
 async function handOverMain(executor: DbExecutor, environmentId: string): Promise<void> {
@@ -423,24 +429,29 @@ export class CustomDomainService {
     return issuing ?? this.update(db, row.id, checked);
   }
 
-  private passOn(row: CustomDomainRow, checked: CustomDomainUpdate): Promise<CustomDomainRow | undefined> {
-    return withEnvironmentAuthLock(row.projectEnvironmentId, async (tx, auth) => {
+  private async passOn(row: CustomDomainRow, checked: CustomDomainUpdate): Promise<CustomDomainRow | undefined> {
+    const environmentIds = [row.projectEnvironmentId, ...environmentsOf(await holdersOf(db, row))].sort((one, other) =>
+      one.localeCompare(other)
+    );
+    return db.transaction(async (tx) => {
+      const auths = new Map<string, LockedEnvironmentAuth | undefined>();
+      for (const environmentId of environmentIds)
+        auths.set(environmentId, await lockEnvironmentAuth(tx, environmentId));
       await lockCustomDomainHostname(tx, withoutWww(row.hostname));
       const [current] = await tx.select().from(customDomains).where(eq(customDomains.id, row.id)).for('update');
       if (!current || !STARTS_ISSUING_ON_A_PASS.has(current.status)) return undefined;
-      await this.unroute(tx, await takeFromOtherEnvironments(tx, current));
+      const taken = await holdersOf(tx, current);
+      if (environmentsOf(taken).some((environmentId) => !auths.has(environmentId))) return undefined;
+      await takeFrom(tx, taken);
+      for (const domain of taken) await this.cluster.remove(domain.id);
+      for (const environmentId of environmentsOf(taken)) {
+        await this.cluster.routeWithin(tx, environmentId, auths.get(environmentId));
+      }
       const issuing = await this.update(tx, row.id, { ...checked, status: 'issuing', failureReason: null });
       await this.cluster.orderCertificate(issuing);
-      await this.cluster.routeWithin(tx, issuing.projectEnvironmentId, auth);
+      await this.cluster.routeWithin(tx, issuing.projectEnvironmentId, auths.get(issuing.projectEnvironmentId));
       return issuing;
     });
-  }
-
-  private async unroute(tx: Transaction, taken: CustomDomainRow[]): Promise<void> {
-    for (const domain of taken) await this.cluster.remove(domain.id);
-    for (const environmentId of new Set(taken.map((domain) => domain.projectEnvironmentId))) {
-      await this.cluster.routeWithin(tx, environmentId, await lockEnvironmentAuth(tx, environmentId));
-    }
   }
 
   private async update(executor: DbExecutor, domainId: string, set: CustomDomainUpdate): Promise<CustomDomainRow> {
