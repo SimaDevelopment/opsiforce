@@ -1354,6 +1354,7 @@ export class ProjectService implements OnApplicationBootstrap {
       await this.remove(child.id, tenantId);
     }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
+    for (const env of envs) await this.customDomainCluster.removeEnvironment(env.id);
     for (const env of envs) await this.lifecycle?.environmentRemoving(env.id);
 
     await db
@@ -1368,7 +1369,6 @@ export class ProjectService implements OnApplicationBootstrap {
           this.logger.warn(`Failed to remove auth middleware for environment ${env.id}: ${(err as Error).message}`);
         })
       ),
-      ...envs.map((env) => this.removeCustomDomainsOf(env.id)),
       this.bifrostService.isEnabled()
         ? this.bifrostService.revokeProjectKeys(id).catch((err) => {
             this.logger.warn(`Failed to revoke Bifrost keys for project ${id}: ${(err as Error).message}`);
@@ -1547,6 +1547,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (env.isDefault) {
       throw new BadRequestException('The Development environment cannot be deleted');
     }
+    await this.customDomainCluster.removeEnvironment(env.id);
     await this.lifecycle?.environmentRemoving(env.id);
 
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended });
@@ -1556,7 +1557,6 @@ export class ProjectService implements OnApplicationBootstrap {
       this.projectAuthService.remove(env.id).catch((err) => {
         this.logger.warn(`Failed to remove auth middleware for environment ${env.id}: ${(err as Error).message}`);
       }),
-      this.removeCustomDomainsOf(env.id),
       this.bifrostService.isEnabled()
         ? this.bifrostService.revokeEnvironmentKeys(env.id).catch((err) => {
             this.logger.warn(`Failed to revoke Bifrost keys for environment ${env.id}: ${(err as Error).message}`);
@@ -1577,14 +1577,6 @@ export class ProjectService implements OnApplicationBootstrap {
     await this.projectEnvironmentService.delete(env);
 
     await this.projectEventsService.publish(projectId);
-  }
-
-  private removeCustomDomainsOf(environmentId: string): Promise<void> {
-    return this.customDomainCluster.removeEnvironment(environmentId).catch((err) => {
-      this.logger.warn(
-        `Failed to remove the custom domains of environment ${environmentId}: ${(err as Error).message}`
-      );
-    });
   }
 
   async updateApp(

@@ -708,4 +708,19 @@ describe('a cluster write that fails', () => {
 
     expect(objectsOf(domainId)).toMatchObject({ certificates: 1 });
   });
+
+  it('orders no certificate again for a domain Remove deleted after a refresh read it', async () => {
+    const fixture = await newApp();
+    const domainId = await issuingDomain(fixture);
+    const cluster = app.get(CustomDomainCluster);
+    const progress = vi.spyOn(cluster, 'certificateProgress').mockImplementationOnce(async () => {
+      expect((await remove(fixture, domainId)).statusCode).toBe(200);
+      return { state: 'missing' };
+    });
+
+    await refresh(fixture);
+    progress.mockRestore();
+
+    expect(objectsOf(domainId)).toEqual(NO_OBJECT);
+  });
 });

@@ -255,8 +255,7 @@ export class CustomDomainService {
     const progress = await this.cluster.certificateProgress(row.id);
     switch (progress.state) {
       case 'missing':
-        await this.cluster.orderCertificate(row);
-        return row;
+        return withEnvironmentAuthLock(row.projectEnvironmentId, (tx) => this.orderAgainIfIssuing(tx, row));
       case 'failed':
         return this.settleIssuing(db, row, { status: 'failed', failureReason: progress.reason });
       case 'ready':
@@ -264,6 +263,16 @@ export class CustomDomainService {
       case 'issuing':
         return row;
     }
+  }
+
+  private async orderAgainIfIssuing(tx: Transaction, row: CustomDomainRow): Promise<CustomDomainRow> {
+    const [current] = await tx
+      .select()
+      .from(customDomains)
+      .where(and(eq(customDomains.id, row.id), eq(customDomains.status, 'issuing')))
+      .for('update');
+    if (current) await this.cluster.orderCertificate(current);
+    return current ?? row;
   }
 
   private async connect(

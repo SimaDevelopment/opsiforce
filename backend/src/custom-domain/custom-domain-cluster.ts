@@ -192,13 +192,15 @@ export class CustomDomainCluster {
   }
 
   async removeEnvironment(environmentId: string): Promise<void> {
-    const domains = await db
-      .select({ id: customDomains.id })
-      .from(customDomains)
-      .where(eq(customDomains.projectEnvironmentId, environmentId));
-    for (const { id } of domains) await this.remove(id);
-    await this.redirectToMain(environmentId, null);
-    await this.redirectWithoutWww(environmentId, false);
-    await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, customDomainSignInName(environmentId));
+    await withEnvironmentAuthLock(environmentId, async (tx) => {
+      const domains = await tx
+        .delete(customDomains)
+        .where(eq(customDomains.projectEnvironmentId, environmentId))
+        .returning({ id: customDomains.id });
+      for (const { id } of domains) await this.remove(id);
+      await this.redirectToMain(environmentId, null);
+      await this.redirectWithoutWww(environmentId, false);
+      await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, customDomainSignInName(environmentId));
+    });
   }
 }

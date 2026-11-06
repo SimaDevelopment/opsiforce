@@ -451,6 +451,25 @@ describe('removing', () => {
     expect(objectsOf(devDomain)).toEqual(EVERY_OBJECT);
   });
 
+  it('an environment whose domain objects cannot be deleted stays, with its domains, so deleting it can be tried again', async () => {
+    const dev = await newApp();
+    const staging = await liveAppIn(dev, await addNamedEnvironment(app, dev.tenant, dev.projectId, 'Staging'));
+    const domainId = await connectedDomain(staging);
+    const deleteStaging = () =>
+      app.inject({
+        method: 'DELETE',
+        url: `/api/projects/${dev.projectId}/environments/${staging.environmentId}`,
+        headers: dev.owner.headers,
+      });
+    kube.failNext('delete', 'certificates');
+
+    expect((await deleteStaging()).statusCode).not.toBe(200);
+    expect(await itemOf(staging, domainId)).toMatchObject({ status: 'connected' });
+
+    expect((await deleteStaging()).statusCode).toBe(200);
+    expect(objectsOf(domainId)).toEqual(NO_OBJECT);
+  });
+
   it('a Project removes the objects of every domain of its environments', async () => {
     const dev = await newApp();
     const staging = await liveAppIn(dev, await addNamedEnvironment(app, dev.tenant, dev.projectId, 'Staging'));
