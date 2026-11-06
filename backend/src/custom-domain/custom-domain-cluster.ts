@@ -90,22 +90,26 @@ export class CustomDomainCluster {
 
   async route(env: RoutedEnvironment, domains: RoutedDomain[]): Promise<void> {
     const mainDomain = domains.find((domain) => domain.isMain)?.hostname ?? null;
-    const sentToMain = domains.some((domain) =>
-      hostsOf(domain).some((host) => mainDomain !== null && redirectTargetOf(host, domain, mainDomain) === mainDomain)
-    );
-    if (domains.length > 0) await this.write(TRAEFIK_MIDDLEWARES, unprotectedMarkerMiddleware(this.cluster.namespace));
-    await this.redirectToMain(env.id, sentToMain ? mainDomain : null);
-    await this.redirectWithoutWww(
-      env.id,
-      domains.some((domain) => domain.bare)
-    );
+    const sentToMain =
+      mainDomain !== null &&
+      domains.some((domain) =>
+        hostsOf(domain).some((host) => redirectTargetOf(host, domain, mainDomain) === mainDomain)
+      );
+    const withWww = domains.some((domain) => domain.bare);
     const signIn =
       env.authMode === 'provider' && domains.length > 0 ? await this.signInOnTheDomains(env.id) : undefined;
+    const namespace = this.cluster.namespace;
+
+    if (domains.length > 0) await this.write(TRAEFIK_MIDDLEWARES, unprotectedMarkerMiddleware(namespace));
+    if (sentToMain) await this.write(TRAEFIK_MIDDLEWARES, redirectToMainMiddleware(env.id, mainDomain, namespace));
+    if (withWww) await this.write(TRAEFIK_MIDDLEWARES, redirectWithoutWwwMiddleware(env.id, namespace));
     if (signIn) await this.write(TRAEFIK_MIDDLEWARES, signIn);
     for (const domain of domains) {
       await this.keepCertificate(domain, env.id);
       await this.write(TRAEFIK_INGRESS_ROUTES, customDomainIngressRoute(domain, { ...env, mainDomain }, this.cluster));
     }
+    if (!sentToMain) await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, redirectToMainName(env.id));
+    if (!withWww) await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, redirectWithoutWwwName(env.id));
     if (!signIn) await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, customDomainSignInName(env.id));
   }
 
@@ -153,25 +157,6 @@ export class CustomDomainCluster {
     return routed.map(({ id }) => id);
   }
 
-  private async redirectToMain(environmentId: string, mainHostname: string | null): Promise<void> {
-    if (mainHostname === null) {
-      await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, redirectToMainName(environmentId));
-      return;
-    }
-    await this.write(
-      TRAEFIK_MIDDLEWARES,
-      redirectToMainMiddleware(environmentId, mainHostname, this.cluster.namespace)
-    );
-  }
-
-  private async redirectWithoutWww(environmentId: string, needed: boolean): Promise<void> {
-    if (!needed) {
-      await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, redirectWithoutWwwName(environmentId));
-      return;
-    }
-    await this.write(TRAEFIK_MIDDLEWARES, redirectWithoutWwwMiddleware(environmentId, this.cluster.namespace));
-  }
-
   private async write(kind: KubeObjectKind, object: RoutingObject): Promise<void> {
     const current = (await this.kube.find(kind, object.metadata.name)) as RoutingObject | undefined;
     const unchanged =
@@ -199,8 +184,8 @@ export class CustomDomainCluster {
         .where(eq(customDomains.projectEnvironmentId, environmentId))
         .returning({ id: customDomains.id });
       for (const { id } of domains) await this.remove(id);
-      await this.redirectToMain(environmentId, null);
-      await this.redirectWithoutWww(environmentId, false);
+      await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, redirectToMainName(environmentId));
+      await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, redirectWithoutWwwName(environmentId));
       await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, customDomainSignInName(environmentId));
       await thenWithin?.(tx);
     });

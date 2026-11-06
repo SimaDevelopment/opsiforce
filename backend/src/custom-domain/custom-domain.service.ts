@@ -29,6 +29,7 @@ import { ProjectEnvironmentService } from '../project-environment/project-enviro
 import { resolveAppAddress, type AppDomains } from '../proxy/app-address';
 import { CustomDomainCluster } from './custom-domain-cluster';
 import { hostsOf, type RoutedEnvironment } from './custom-domain-objects';
+import { ROUTED_DOMAIN_STATUSES } from './main-domain';
 import { checkDns } from './dns-check';
 import { displayHostname, readHostname, withoutWww, wwwOf } from './hostname';
 import { DnsUnreachable, PUBLIC_DNS, type PublicDns } from './public-dns';
@@ -222,7 +223,9 @@ export class CustomDomainService {
   async check(env: AddressedEnvironment, domainId: string): Promise<CustomDomainView> {
     const row = await this.rowOf(db, env, domainId);
     try {
-      return viewOf(await this.step(row, env), env, this.defaultAddressOf(env));
+      const stepped = await this.step(row, env);
+      if (ROUTED_DOMAIN_STATUSES.includes(stepped.status)) await this.cluster.routeEnvironment(env.id);
+      return viewOf(stepped, env, this.defaultAddressOf(env));
     } catch (err) {
       if (err instanceof DnsUnreachable) throw new ServiceUnavailableException(DNS_UNREACHABLE);
       throw err;

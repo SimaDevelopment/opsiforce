@@ -723,4 +723,29 @@ describe('a cluster write that fails', () => {
 
     expect(objectsOf(domainId)).toEqual(NO_OBJECT);
   });
+
+  it('keeps the redirect a route still names when turning it off fails at that route, and Check puts a lost redirect back', async () => {
+    const fixture = await newApp();
+    const main = subdomainName();
+    await connectedDomain(fixture, main);
+    const otherId = await connectedDomain(fixture);
+    await redirectToMain(fixture, otherId);
+    kube.failNext('replace', 'ingressroutes');
+
+    expect((await setRedirect(fixture, otherId, false)).statusCode).not.toBe(200);
+
+    expect(await itemOf(fixture, otherId)).toMatchObject({ redirectsToMain: true });
+    expect(middlewaresOf(otherId)).toEqual({ [(await itemOf(fixture, otherId))!.hostname]: [redirectName(fixture)] });
+    expect(redirectOf(fixture)).toBeDefined();
+
+    await kube.deleteNamespacedCustomObject({ plural: 'middlewares', name: redirectName(fixture) });
+    const checked = await app.inject({
+      method: 'POST',
+      url: `${fixture.url}/${otherId}/check`,
+      headers: fixture.owner.headers,
+    });
+
+    expect(checked.statusCode, checked.body).toBe(201);
+    expect(redirectsTo(fixture, `https://www.example-org.com/a`)).toBe(`https://${main}/a`);
+  });
 });
