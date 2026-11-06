@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
+import type { DbExecutor } from '../common/locks';
 import {
   customDomains,
   deletedProjectEnvironments,
@@ -229,8 +230,11 @@ export class ProjectEnvironmentService {
       .where(eq(projectEnvironments.id, envId));
   }
 
-  async delete(env: { id: string; projectId: string; tenantId: string | null; directory: string }): Promise<void> {
-    await db
+  async delete(
+    env: { id: string; projectId: string; tenantId: string | null; directory: string },
+    executor: DbExecutor = db
+  ): Promise<void> {
+    await executor
       .insert(deletedProjectEnvironments)
       .values({
         id: env.id,
@@ -239,6 +243,6 @@ export class ProjectEnvironmentService {
         directory: env.directory,
       })
       .onConflictDoNothing();
-    await db.delete(projectEnvironments).where(eq(projectEnvironments.id, env.id));
+    await executor.delete(projectEnvironments).where(eq(projectEnvironments.id, env.id));
   }
 }

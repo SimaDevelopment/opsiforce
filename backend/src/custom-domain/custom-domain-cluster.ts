@@ -13,6 +13,7 @@ import {
   type KubeObjectKind,
 } from '../common/kube-object-writer';
 import type { DbExecutor } from '../common/locks';
+import type { Transaction } from '../external-services/configuration/transaction';
 import { appAuthMiddlewareName } from '../project/app-auth-route';
 import { withEnvironmentAuthLock, type LockedEnvironmentAuth } from '../project/environment-auth-lock';
 import { signInOnEachHost } from '../project/project-auth.service';
@@ -191,7 +192,7 @@ export class CustomDomainCluster {
     await this.kube.deleteSecretIfExists(customDomainSecretName(domainId));
   }
 
-  async removeEnvironment(environmentId: string): Promise<void> {
+  async removeEnvironment(environmentId: string, thenWithin?: (tx: Transaction) => Promise<void>): Promise<void> {
     await withEnvironmentAuthLock(environmentId, async (tx) => {
       const domains = await tx
         .delete(customDomains)
@@ -201,6 +202,7 @@ export class CustomDomainCluster {
       await this.redirectToMain(environmentId, null);
       await this.redirectWithoutWww(environmentId, false);
       await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, customDomainSignInName(environmentId));
+      await thenWithin?.(tx);
     });
   }
 }

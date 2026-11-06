@@ -1389,7 +1389,7 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     for (const env of envs) {
-      await this.projectEnvironmentService.delete(env);
+      await this.customDomainCluster.removeEnvironment(env.id, (tx) => this.projectEnvironmentService.delete(env, tx));
     }
 
     await db.transaction(async (tx) => {
@@ -1574,7 +1574,7 @@ export class ProjectService implements OnApplicationBootstrap {
     this.appReadiness.clear(env.id);
     this.agentStatusService.clear(projectId, env.id);
 
-    await this.projectEnvironmentService.delete(env);
+    await this.customDomainCluster.removeEnvironment(env.id, (tx) => this.projectEnvironmentService.delete(env, tx));
 
     await this.projectEventsService.publish(projectId);
   }
