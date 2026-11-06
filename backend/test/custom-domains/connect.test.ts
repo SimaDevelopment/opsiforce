@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { projectEnvironments } from '../../db/schema';
-import { CustomDomainCluster } from '../../src/custom-domain/custom-domain-cluster';
+import { ProjectAuthService } from '../../src/project/project-auth.service';
 import { CustomDomainModule } from '../../src/custom-domain/custom-domain.module';
 import { PUBLIC_DNS } from '../../src/custom-domain/public-dns';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
@@ -480,13 +480,11 @@ describe('removing', () => {
   ])('%s being deleted takes a domain added after its first cleanup with it, objects included', async (_, urlOf) => {
     const dev = await newApp();
     const staging = await liveAppIn(dev, await addNamedEnvironment(app, dev.tenant, dev.projectId, 'Staging'));
-    const cleanUp = CustomDomainCluster.prototype.removeEnvironment;
     let lateId = '';
     const cleanups = vi
-      .spyOn(CustomDomainCluster.prototype, 'removeEnvironment')
-      .mockImplementation(async function (this: CustomDomainCluster, environmentId, thenWithin) {
-        await cleanUp.call(this, environmentId, thenWithin);
-        if (environmentId === staging.environmentId && !thenWithin) lateId = await issuingDomain(staging);
+      .spyOn(app.get(ProjectAuthService, { strict: false }), 'remove')
+      .mockImplementation(async (environmentId: string) => {
+        if (environmentId === staging.environmentId) lateId = await issuingDomain(staging);
       });
 
     const removed = await app.inject({ method: 'DELETE', url: urlOf(dev, staging), headers: dev.owner.headers });
