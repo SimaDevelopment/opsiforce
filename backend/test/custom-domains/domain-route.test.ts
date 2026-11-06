@@ -175,8 +175,11 @@ describe("the environment's redirect to its Main domain", () => {
       apiVersion: 'traefik.io/v1alpha1',
       kind: 'Middleware',
       metadata: { ...REDIRECT, labels: { 'opsiforce.io/environment': ENV_ID } },
-      spec: { redirectRegex: { permanent: true } },
     });
+  });
+
+  it('is temporary, so no browser keeps a destination that Make main or the redirect switch can turn around', () => {
+    expect(middleware.spec.redirectRegex.permanent).toBe(false);
   });
 
   it.each([

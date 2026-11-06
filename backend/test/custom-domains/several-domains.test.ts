@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { CustomDomainCluster } from '../../src/custom-domain/custom-domain-cluster';
 import { CustomDomainModule } from '../../src/custom-domain/custom-domain.module';
 import { PUBLIC_DNS } from '../../src/custom-domain/public-dns';
 import { GatewayKeyService } from '../../src/gateway/gateway-key.service';
@@ -667,16 +668,44 @@ describe('a cluster write that fails', () => {
     expect(middlewaresOf(otherId)).toEqual({ [other]: [redirectName(fixture)] });
   });
 
-  it('keeps a domain whose objects cannot be deleted, so Remove can be pressed again', async () => {
+  it('keeps a domain whose objects cannot be deleted, so Remove can be pressed again, and the next rewrite restores what was deleted', async () => {
     const fixture = await newApp();
     const domainId = await connectedDomain(fixture);
     kube.failNext('delete', 'certificates');
 
     expect((await remove(fixture, domainId)).statusCode).not.toBe(200);
     expect(await itemOf(fixture, domainId)).toMatchObject({ status: 'connected' });
+    expect(objectsOf(domainId)).toMatchObject({ routes: 0, certificates: 1 });
+
+    await app.get(CustomDomainCluster).routeEnvironment(fixture.environmentId);
+
+    expect(objectsOf(domainId)).toMatchObject({ routes: 1, certificates: 1 });
 
     expect((await remove(fixture, domainId)).statusCode).toBe(200);
     expect(await itemOf(fixture, domainId)).toBeUndefined();
     expect(objectsOf(domainId)).toEqual(NO_OBJECT);
+  });
+
+  it('touches none of the objects of a Main domain whose Remove fails while rerouting the others', async () => {
+    const fixture = await newApp();
+    const mainId = await connectedDomain(fixture);
+    const otherId = await connectedDomain(fixture);
+    await redirectToMain(fixture, otherId);
+    kube.failNext('replace', 'ingressroutes');
+
+    expect((await remove(fixture, mainId)).statusCode).not.toBe(200);
+
+    expect(await itemOf(fixture, mainId)).toMatchObject({ status: 'connected', isMain: true });
+    expect(objectsOf(mainId)).toEqual({ routes: 1, certificates: 1, secret: true });
+  });
+
+  it("orders a connected domain's certificate again when it has gone missing, at the next rewrite of its routes", async () => {
+    const fixture = await newApp();
+    const domainId = await connectedDomain(fixture);
+    await kube.deleteNamespacedCustomObject({ plural: 'certificates', name: `opsiforce-domain-${domainId}` });
+
+    await app.get(CustomDomainCluster).routeEnvironment(fixture.environmentId);
+
+    expect(objectsOf(domainId)).toMatchObject({ certificates: 1 });
   });
 });

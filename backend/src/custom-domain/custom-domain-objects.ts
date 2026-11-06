@@ -142,7 +142,7 @@ export function redirectToMainMiddleware(environmentId: string, mainHostname: st
     kind: 'Middleware',
     metadata: { name: redirectToMainName(environmentId), namespace, labels: environmentLabels(environmentId) },
     spec: {
-      redirectRegex: { regex: '^https?://[^/]+(.*)$', replacement: `https://${mainHostname}\${1}`, permanent: true },
+      redirectRegex: { regex: '^https?://[^/]+(.*)$', replacement: `https://${mainHostname}\${1}`, permanent: false },
     },
   };
 }

@@ -346,8 +346,8 @@ export class CustomDomainService {
       const row = await this.rowOf(tx, env, domainId);
       await tx.delete(customDomains).where(eq(customDomains.id, row.id));
       if (row.isMain) await handOverMain(tx, env.id);
-      await this.cluster.remove(row.id);
       await this.cluster.routeWithin(tx, env.id, auth);
+      await this.cluster.remove(row.id);
     });
   }
 

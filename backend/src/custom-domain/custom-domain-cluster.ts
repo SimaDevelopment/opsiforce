@@ -73,6 +73,16 @@ export class CustomDomainCluster {
     await this.kube.upsert(CERT_MANAGER_CERTIFICATES, certificate.metadata.name, certificate);
   }
 
+  private async keepCertificate(domain: DomainHosts, environmentId: string): Promise<void> {
+    const name = customDomainObjectName(domain.id);
+    if (await this.kube.find(CERT_MANAGER_CERTIFICATES, name)) return;
+    const certificate = customDomainCertificate(domain, environmentId, {
+      namespace: this.cluster.namespace,
+      issuer: this.issuer,
+    });
+    await this.kube.upsert(CERT_MANAGER_CERTIFICATES, name, certificate);
+  }
+
   async certificateProgress(domainId: string): Promise<CertificateProgress> {
     return certificateProgress(await this.kube.find(CERT_MANAGER_CERTIFICATES, customDomainObjectName(domainId)));
   }
@@ -92,6 +102,7 @@ export class CustomDomainCluster {
       env.authMode === 'provider' && domains.length > 0 ? await this.signInOnTheDomains(env.id) : undefined;
     if (signIn) await this.write(TRAEFIK_MIDDLEWARES, signIn);
     for (const domain of domains) {
+      await this.keepCertificate(domain, env.id);
       await this.write(TRAEFIK_INGRESS_ROUTES, customDomainIngressRoute(domain, { ...env, mainDomain }, this.cluster));
     }
     if (!signIn) await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, customDomainSignInName(env.id));
