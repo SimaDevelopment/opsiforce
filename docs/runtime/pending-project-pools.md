@@ -16,7 +16,7 @@ adrs: [0041, 0093]
 - Each slot is a `projects` row with no tenant, an [Agent](../../GLOSSARY.md) and a directory; an orphan Bifrost team with chat and backend virtual keys ([LLM Gateway](../gateways/llm-gateway.md)); a service-gateway key row; and a running pod with the workspace seeded and OpenCode reachable.
 - No LLM call happens against a slot before it is claimed, so cost attribution is meaningful from the claim onward.
 - Each agent in `agent-config/agents.json` declares its own `poolSize`, which the boot reconciler mirrors onto `agent_settings.warm_pool_size`. A Custom Agent's [Ready Projects](../../GLOSSARY.md) count is the same column, 0 to 3, set as "Keep N ready" in its Settings and counted only while the Agent is enabled in its Organization and has an Agent Profile at its Default environment (Agent) ([ADR-0093](../adr/0093-an-agent-sets-the-resources-and-ready-projects-of-the-projects-created-from-it.md)). `POOL_SIZE_OVERRIDE` caps every agent's effective size, and `0` in either place disables the pool for that agent or globally.
-- A slot is built at its Agent's [Resources](../../GLOSSARY.md), read from `agent_pod_settings` (no row is Small), and boots the Agent's package (`custom` for every Custom Agent), so the Agent's own files arrive only at the claim.
+- A slot is built at its Agent's [Resources](../../GLOSSARY.md), resolved as for a new Project: a Built-in Agent's Organization or platform choice, a Custom Agent's own row, otherwise the default preset ([Resources](resources.md)), and boots the Agent's package (`custom` for every Custom Agent), so the Agent's own files arrive only at the claim.
 
 ### Boot and claim
 

@@ -97,21 +97,21 @@ import {
   isChatKind,
   SELECTABLE_AUTH_MODES,
 } from './project.types';
-import {
-  buildPodClassCatalog,
-  clampCustom,
-  isPreset,
-  resolvePreset,
-  resolveStoredPodResources,
-  toK8sResources,
-  type K8sResourceRequirements,
-  type PodClass,
-  type PodClassCatalog,
-  type PodResources,
-} from '../pod/pod-classes';
+import { toK8sResources, type K8sResourceRequirements, type PodSettings } from '../pod/pod-classes';
 import { readAgentPodSettings } from '../agent/agent-pod-settings';
 import { podSettingsFromRequest } from '../pod/pod-class-request';
-import { podSettingsColumns } from '../pod/pod-settings-columns';
+import {
+  PREVIOUS_RELEASE_READS_NUMBERS,
+  podSettingsColumns,
+  storedLegacyPodSettings,
+} from '../pod/pod-settings-columns';
+import {
+  defaultPodSettings,
+  podClassCatalog,
+  podSettingsFromBundle,
+  readPresetCatalog,
+  type PodClassCatalog,
+} from '../pod/resource-presets';
 
 const APP_NAME_MIN_LENGTH = 1;
 const APP_NAME_MAX_LENGTH = 80;
@@ -577,7 +577,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
-    const podSettings = await readAgentPodSettings(agentId);
+    const podSettings = await readAgentPodSettings(agentId, tenantId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, kind);
@@ -602,7 +602,7 @@ export class ProjectService implements OnApplicationBootstrap {
         timezone: dto?.timezone || 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({ projectId: id, ...podSettings });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(podSettings) });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -705,10 +705,11 @@ export class ProjectService implements OnApplicationBootstrap {
 
       await tx.insert(projectPodSettings).values({
         projectId: id,
-        podClass: source.podClass,
+        presetId: source.presetId,
         cpuMillicores: source.cpuMillicores,
         memoryRequestMib: source.memoryRequestMib,
         memoryLimitMib: source.memoryLimitMib,
+        ...PREVIOUS_RELEASE_READS_NUMBERS,
       });
 
       const [copy] = await tx
@@ -815,7 +816,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
-    const podResources = await this.resolveImportedResources(resources, agentId);
+    const podResources = await this.resolveImportedResources(resources, agentId, tenantId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId);
@@ -841,11 +842,7 @@ export class ProjectService implements OnApplicationBootstrap {
           : {}),
       });
 
-      await tx.insert(projectPodSettings).values({
-        projectId: id,
-        podClass: podResources.podClass,
-        ...podResources.resources,
-      });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(podResources) });
 
       const [copy] = await tx
         .insert(projectEnvironments)
@@ -905,23 +902,12 @@ export class ProjectService implements OnApplicationBootstrap {
 
   private async resolveImportedResources(
     resources: ExportManifestResources | null,
-    agentId: string
-  ): Promise<{ podClass: PodClass; resources: PodResources }> {
-    if (resources?.podClass === 'custom') {
-      return {
-        podClass: 'custom',
-        resources: clampCustom({
-          cpuMillicores: resources.cpuMillicores,
-          memoryRequestMib: resources.memoryRequestMib,
-          memoryLimitMib: resources.memoryLimitMib,
-        }),
-      };
-    }
-    if (resources && isPreset(resources.podClass)) {
-      return { podClass: resources.podClass, resources: resolvePreset(resources.podClass) };
-    }
-    const { podClass, ...agentResources } = await readAgentPodSettings(agentId);
-    return { podClass, resources: agentResources };
+    agentId: string,
+    tenantId: string
+  ): Promise<PodSettings> {
+    return (
+      podSettingsFromBundle(resources, await readPresetCatalog(tenantId)) ?? readAgentPodSettings(agentId, tenantId)
+    );
   }
 
   async getSchedulesForExport(projectEnvironmentId: string): Promise<ExportManifestSchedule[]> {
@@ -1221,15 +1207,15 @@ export class ProjectService implements OnApplicationBootstrap {
     if (named) await this.projectEventsService.publish(named.id);
   }
 
-  getPodClassCatalog(): PodClassCatalog {
-    return buildPodClassCatalog();
+  async getPodClassCatalog(tenantId: string): Promise<PodClassCatalog> {
+    return podClassCatalog(await readPresetCatalog(tenantId));
   }
 
   async updatePodClass(id: string, dto: UpdateProjectPodClassDto, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
     await db
       .update(projectPodSettings)
-      .set(podSettingsFromRequest(dto))
+      .set(storedLegacyPodSettings(podSettingsFromRequest(dto, await readPresetCatalog(tenantId))))
       .where(eq(projectPodSettings.projectId, project.id));
 
     return this.findOne(id, tenantId);
@@ -1240,7 +1226,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .select(podSettingsColumns(projectPodSettings))
       .from(projectPodSettings)
       .where(eq(projectPodSettings.projectId, projectId));
-    return toK8sResources(resolveStoredPodResources(row));
+    return toK8sResources(row ?? defaultPodSettings(await readPresetCatalog(null)));
   }
 
   async getLogging(id: string, tenantId: string): Promise<ProjectLoggingResponse> {

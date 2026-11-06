@@ -1,50 +1,130 @@
 import { BadRequestException } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../db';
-import { agentPodSettings, agentSettings } from '../../db/schema';
+import { agentPodSettings, agentSettings, agents, tenantAgentPodSettings } from '../../db/schema';
 import { lockTenantLimit, type DbExecutor } from '../common/locks';
 import { assertWithinLimit } from '../limit/limits';
-import { isDefaultPodSettings, resolvePodSettings, type PodSettings } from '../pod/pod-classes';
-import { podSettingsColumns } from '../pod/pod-settings-columns';
+import type { PodSettings } from '../pod/pod-classes';
+import { podSettingsColumns, storedLegacyPodSettings, storedPodSettings } from '../pod/pod-settings-columns';
+import { podSettingsOn, readPresetCatalog, type PresetCatalog } from '../pod/resource-presets';
 import type { AgentProjectSettings } from './agent-copy-settings';
 
 export const MAX_WARM_POOL_SIZE = 3;
 
-export async function readAgentPodSettings(agentId: string, executor: DbExecutor = db): Promise<PodSettings> {
+/** Where an Agent's Resources come from for one Organization: its own choice there, a Built-in Agent's platform choice, or the default preset. */
+export type AgentResourcesSource = 'own' | 'platform' | 'default';
+
+export interface AgentResources {
+  resources: PodSettings;
+  source: AgentResourcesSource;
+  inherited: PodSettings;
+  /** A Built-in Agent's platform choice, a preset or Custom numbers; null when it follows the default preset. */
+  platformChoice: PodSettings | null;
+}
+
+export async function readAgentResources(
+  agentId: string,
+  tenantId: string | null,
+  executor: DbExecutor = db,
+  catalog?: PresetCatalog
+): Promise<AgentResources> {
+  const presets = catalog ?? (await readPresetCatalog(tenantId, executor));
+  const [agent] = await executor.select({ origin: agents.origin }).from(agents).where(eq(agents.id, agentId)).limit(1);
+  const builtIn = agent?.origin === 'built_in';
+
   const [row] = await executor
     .select(podSettingsColumns(agentPodSettings))
     .from(agentPodSettings)
     .where(eq(agentPodSettings.agentId, agentId))
     .limit(1);
-  return resolvePodSettings(row);
+  const fallback = podSettingsOn(undefined, presets);
+
+  if (builtIn && tenantId) {
+    const [own] = await executor
+      .select(podSettingsColumns(tenantAgentPodSettings))
+      .from(tenantAgentPodSettings)
+      .where(and(eq(tenantAgentPodSettings.tenantId, tenantId), eq(tenantAgentPodSettings.agentId, agentId)))
+      .limit(1);
+    const inherited = row ? podSettingsOn(row, presets) : fallback;
+    const platformChoice = row ? inherited : null;
+    if (own) return { resources: podSettingsOn(own, presets), source: 'own', inherited, platformChoice };
+    return { resources: inherited, source: row ? 'platform' : 'default', inherited, platformChoice };
+  }
+  const platformChoice = builtIn && row ? podSettingsOn(row, presets) : null;
+  if (row) return { resources: podSettingsOn(row, presets), source: 'own', inherited: fallback, platformChoice };
+  return { resources: fallback, source: 'default', inherited: fallback, platformChoice };
 }
 
-export async function readAgentPodSettingsFor(agentIds: string[]): Promise<Map<string, PodSettings>> {
-  if (agentIds.length === 0) return new Map();
-  const rows = await db
-    .select({ agentId: agentPodSettings.agentId, ...podSettingsColumns(agentPodSettings) })
-    .from(agentPodSettings)
-    .where(inArray(agentPodSettings.agentId, agentIds));
-  return new Map(rows.map(({ agentId, ...settings }) => [agentId, resolvePodSettings(settings)]));
+export async function readAgentPodSettings(
+  agentId: string,
+  tenantId: string | null,
+  executor: DbExecutor = db
+): Promise<PodSettings> {
+  return (await readAgentResources(agentId, tenantId, executor)).resources;
 }
 
+/** Each Agent's Resources for its own Organization, or the platform's for a Built-in Agent, in the order given. */
+export async function readAgentPodSettingsFor(
+  agentRows: { id: string; tenantId: string | null }[]
+): Promise<PodSettings[]> {
+  const catalogs = new Map<string | null, PresetCatalog>();
+  const settings: PodSettings[] = [];
+  for (const agent of agentRows) {
+    let catalog = catalogs.get(agent.tenantId);
+    if (!catalog) {
+      catalog = await readPresetCatalog(agent.tenantId);
+      catalogs.set(agent.tenantId, catalog);
+    }
+    settings.push((await readAgentResources(agent.id, agent.tenantId, db, catalog)).resources);
+  }
+  return settings;
+}
+
+/** The Agent's own choice, or a Built-in Agent's platform choice; null returns it to the default preset. */
 export async function writeAgentPodSettings(
   executor: DbExecutor,
   agentId: string,
-  settings: PodSettings
+  settings: PodSettings | null
 ): Promise<void> {
-  if (isDefaultPodSettings(settings)) {
+  if (!settings) {
     await executor.delete(agentPodSettings).where(eq(agentPodSettings.agentId, agentId));
     return;
   }
+  const values = storedLegacyPodSettings(settings);
   await executor
     .insert(agentPodSettings)
-    .values({ agentId, ...settings })
-    .onConflictDoUpdate({ target: agentPodSettings.agentId, set: settings });
+    .values({ agentId, ...values })
+    .onConflictDoUpdate({ target: agentPodSettings.agentId, set: values });
 }
 
-export async function readAgentProjectSettings(agentId: string): Promise<AgentProjectSettings> {
-  return { resources: await readAgentPodSettings(agentId), warmPoolSize: await readWarmPoolSize(agentId) };
+/** A Built-in Agent's choice in one Organization; null returns it to the platform's. */
+export async function writeTenantAgentPodSettings(
+  executor: DbExecutor,
+  tenantId: string,
+  agentId: string,
+  settings: PodSettings | null
+): Promise<void> {
+  const target = and(eq(tenantAgentPodSettings.tenantId, tenantId), eq(tenantAgentPodSettings.agentId, agentId));
+  if (!settings) {
+    await executor.delete(tenantAgentPodSettings).where(target);
+    return;
+  }
+  const values = storedPodSettings(settings);
+  await executor
+    .insert(tenantAgentPodSettings)
+    .values({ tenantId, agentId, ...values })
+    .onConflictDoUpdate({
+      target: [tenantAgentPodSettings.tenantId, tenantAgentPodSettings.agentId],
+      set: { ...values, updatedAt: new Date() },
+    });
+}
+
+export async function readAgentProjectSettings(
+  agentId: string,
+  tenantId: string | null
+): Promise<AgentProjectSettings> {
+  const { resources, source } = await readAgentResources(agentId, tenantId);
+  return { resources, followsDefault: source === 'default', warmPoolSize: await readWarmPoolSize(agentId) };
 }
 
 export async function readWarmPoolSize(agentId: string, executor: DbExecutor = db): Promise<number> {

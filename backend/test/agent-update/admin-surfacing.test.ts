@@ -151,7 +151,7 @@ describe('the Ready Projects of the Organization’s Custom Agents', () => {
     await db.update(agentSettings).set({ warmPoolSize: 3 }).where(eq(agentSettings.agentId, unpublished.id));
     await db.insert(agentPodSettings).values({
       agentId: pooled.id,
-      podClass: 'medium',
+      presetId: 'medium',
       cpuMillicores: 1000,
       memoryRequestMib: 4096,
       memoryLimitMib: 8192,
@@ -166,7 +166,7 @@ describe('the Ready Projects of the Organization’s Custom Agents', () => {
       warmPoolSize: 2,
       effectiveSize: 2,
       paused: null,
-      resources: { podClass: 'medium' },
+      resources: { presetId: 'medium', presetName: 'Medium' },
       slots: [
         { projectId: ready, claiming: false, status: { phase: 'running', ready: true } },
         { projectId: claiming, claiming: true, status: null },

@@ -139,7 +139,7 @@ export class AgentController {
     const uploadId = this.importUploadId(req, dto?.uploadId);
     return this.withImportArchive((archivePath) =>
       this.uploadService.peekUpload({ tenantId: tenant.tenantId, uploadId }, archivePath, () =>
-        this.importService.inspect(archivePath)
+        this.importService.inspect(archivePath, tenant.tenantId)
       )
     );
   }
@@ -224,6 +224,16 @@ export class AgentController {
     @CurrentUser() user: UserContext
   ): Promise<AgentDetail> {
     return this.agentService.updatePodClass(await this.caller(req, tenant, user), id, dto);
+  }
+
+  @Delete(':id/pod-class')
+  async resetPodClass(
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentDetail> {
+    return this.agentService.resetPodClass(await this.caller(req, tenant, user), id);
   }
 
   @Put(':id/skills/:skillId')

@@ -641,7 +641,7 @@ describe('what new projects of an agent start with', () => {
 
   async function sizedAgent(caller: AgentCaller = author) {
     const agent = await service.create(caller, { displayName: agentName() });
-    await service.updatePodClass(caller, agent.id, { podClass: 'medium' });
+    await service.updatePodClass(caller, agent.id, { presetId: 'medium' });
     return service.updateSettings(caller, agent.id, { warmPoolSize: 2 });
   }
 
@@ -652,15 +652,15 @@ describe('what new projects of an agent start with', () => {
     const changed = await service.duplicate(
       author,
       source.id,
-      { displayName: agentName(), resources: { podClass: 'small' }, warmPoolSize: 0 },
+      { displayName: agentName(), resources: { presetId: 'small' }, warmPoolSize: 0 },
       copyGrants
     );
 
-    expect(kept.agent).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
-    expect(changed.agent).toMatchObject({ podSettings: { podClass: 'small' }, settings: { warmPoolSize: 0 } });
-    expect(await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, changed.agent.id))).toHaveLength(
-      0
-    );
+    expect(kept.agent).toMatchObject({ podSettings: { presetId: 'medium' }, settings: { warmPoolSize: 2 } });
+    expect(changed.agent).toMatchObject({ podSettings: { presetId: 'small' }, settings: { warmPoolSize: 0 } });
+    expect(
+      await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, changed.agent.id))
+    ).toMatchObject([{ presetId: 'small' }]);
   });
 
   it('holds an Organization’s Ready Projects to its Ready Projects limit across agents', async () => {
@@ -683,7 +683,8 @@ describe('what new projects of an agent start with', () => {
     const agent = await service.create(author, { displayName: agentName() });
 
     expect(agent.podSettings).toEqual({
-      podClass: 'small',
+      presetId: 'small',
+      presetName: 'Small',
       cpuMillicores: 100,
       memoryRequestMib: 2048,
       memoryLimitMib: 4096,
@@ -695,11 +696,12 @@ describe('what new projects of an agent start with', () => {
   it('stores the pod class in agent_pod_settings and the Ready Projects count in agent_settings, reconciling the pool', async () => {
     const agent = await service.create(author, { displayName: agentName() });
 
-    await service.updatePodClass(author, agent.id, { podClass: 'medium' });
+    await service.updatePodClass(author, agent.id, { presetId: 'medium' });
     const updated = await service.updateSettings(author, agent.id, { warmPoolSize: 2 });
 
     expect(updated.podSettings).toEqual({
-      podClass: 'medium',
+      presetId: 'medium',
+      presetName: 'Medium',
       cpuMillicores: 1000,
       memoryRequestMib: 4096,
       memoryLimitMib: 8192,
@@ -716,14 +718,15 @@ describe('what new projects of an agent start with', () => {
     const agent = await service.create(author, { displayName: agentName() });
 
     const custom = await service.updatePodClass(author, agent.id, {
-      podClass: 'custom',
+      presetId: null,
       cpuMillicores: 99_000,
       memoryRequestMib: 4096,
       memoryLimitMib: 1024,
     });
 
     expect(custom.podSettings).toEqual({
-      podClass: 'custom',
+      presetId: null,
+      presetName: null,
       cpuMillicores: 4000,
       memoryRequestMib: 4096,
       memoryLimitMib: 4096,
@@ -738,23 +741,23 @@ describe('what new projects of an agent start with', () => {
     }
     expect(await code(service.updatePodClass(author, agent.id, null as never))).toBe('bad_request');
     expect(await service.findOne(author, agent.id)).toMatchObject({
-      podSettings: { podClass: 'small' },
+      podSettings: { presetId: 'small' },
       settings: { warmPoolSize: 0 },
     });
   });
 
   it('copies the pod settings into a project created from the agent, which keeps them after the agent changes', async () => {
     const agent = await seedLiveAgent(tenantId, author.userId);
-    await service.updatePodClass(author, agent.id, { podClass: 'large' });
+    await service.updatePodClass(author, agent.id, { presetId: 'large' });
 
     const project = await harness.projects.create({ title: 'inherits', agentId: agent.id }, tenantId, {
       createdBy: author.userId,
     });
-    await service.updatePodClass(author, agent.id, { podClass: 'small' });
+    await service.updatePodClass(author, agent.id, { presetId: 'small' });
 
     const [row] = await db.select().from(projectPodSettings).where(eq(projectPodSettings.projectId, project.id));
     expect(row).toMatchObject({
-      podClass: 'large',
+      presetId: 'large',
       cpuMillicores: 2000,
       memoryRequestMib: 8192,
       memoryLimitMib: 16384,

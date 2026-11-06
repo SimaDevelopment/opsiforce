@@ -2,9 +2,7 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { isNull, sql } from 'drizzle-orm';
 import { db } from '../../db';
 import { agentSettings, agents } from '../../db/schema';
-import { isPreset, podSettingsForSelection, POD_CLASS_DEFAULT, type PodClass } from '../pod/pod-classes';
 import { type AgentRegistry, type AgentRegistryEntry, readMergedAgentRegistry } from './agent-config';
-import { writeAgentPodSettings } from './agent-pod-settings';
 
 @Injectable()
 export class AgentReconcilerService implements OnModuleInit {
@@ -43,20 +41,8 @@ export class AgentReconcilerService implements OnModuleInit {
         .insert(agentSettings)
         .values({ agentId: agent.id, warmPoolSize })
         .onConflictDoUpdate({ target: agentSettings.agentId, set: { warmPoolSize, updatedAt: new Date() } });
-      await writeAgentPodSettings(
-        db,
-        agent.id,
-        podSettingsForSelection({ podClass: this.registryPodClass(slug, entry) })
-      );
     }
     this.logger.log(`Reconciled ${entries.length} agent(s) from registry`);
-  }
-
-  private registryPodClass(slug: string, entry: AgentRegistryEntry): PodClass {
-    if (entry.podClass === undefined) return POD_CLASS_DEFAULT;
-    if (isPreset(entry.podClass as PodClass)) return entry.podClass as PodClass;
-    this.logger.warn(`Agent ${slug} has an unknown podClass "${entry.podClass}"; using ${POD_CLASS_DEFAULT}`);
-    return POD_CLASS_DEFAULT;
   }
 }
 

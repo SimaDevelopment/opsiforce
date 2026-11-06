@@ -116,7 +116,7 @@ export class ProjectExportProcessor extends WorkerHost {
           requestLogBodyLimit: project.requestLogBodyLimit,
         },
         resources: {
-          podClass: project.podClass,
+          presetName: project.presetName,
           cpuMillicores: project.cpuMillicores,
           memoryRequestMib: project.memoryRequestMib,
           memoryLimitMib: project.memoryLimitMib,

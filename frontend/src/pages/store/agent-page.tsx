@@ -245,6 +245,8 @@ function AgentHeader(props: {
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.email ??
     null;
   const editable = () => props.canManage && props.agent.origin === 'custom';
+  const editsResources = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_resources'));
   const name = () => props.agent.displayName ?? props.agent.name;
   const [editingSettings, setEditingSettings] = createSignal(false);
 
@@ -312,6 +314,7 @@ function AgentHeader(props: {
             readyProjects={props.agent.settings.warmPoolSize}
             imageOwned={props.agent.origin === 'built_in'}
             onEdit={editable() ? () => setEditingSettings(true) : undefined}
+            onEditResources={editsResources() ? () => setEditingSettings(true) : undefined}
           />
         </div>
         <Show when={props.canManage}>
@@ -384,11 +387,9 @@ function AgentActionsMenu(props: {
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
-        <Show when={props.agent.origin === 'custom'}>
-          <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
-            Settings
-          </ActionsMenuItem>
-        </Show>
+        <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
+          Settings
+        </ActionsMenuItem>
         <Show when={props.agent.duplicable}>
           <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate

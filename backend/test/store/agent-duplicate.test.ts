@@ -9,7 +9,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { agentProfiles, agentSettings, agents, environments } from '../../db/schema';
 import { writeAgentPodSettings } from '../../src/agent/agent-pod-settings';
-import { podSettingsForSelection } from '../../src/pod/pod-classes';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
 import type { AgentCaller, AgentDetail } from '../../src/agent/agent.types';
 import type { BuilderChatCaller } from '../../src/builder/builder.types';
@@ -174,7 +173,7 @@ describe('duplicating a Custom Agent', () => {
       sourcePins.toSorted()
     );
     expect(await productionProfileCount(copy.id)).toBe(0);
-    expect(copy).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { podClass: 'small' } });
+    expect(copy).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { presetId: 'small' } });
   });
 
   it('keeps the source’s platform Version when a newer one has shipped since', async () => {
@@ -292,7 +291,13 @@ describe('duplicating a Built-in Agent', () => {
 
   it('keeps the Resources and Ready Projects the Built-in Agent runs with, which the dialog showed', async () => {
     const builtIn = await ensureBuiltInAgent('app-builder');
-    await writeAgentPodSettings(db, builtIn, podSettingsForSelection({ podClass: 'medium' }));
+    await writeAgentPodSettings(db, builtIn, {
+      presetId: 'medium',
+      presetName: 'Medium',
+      cpuMillicores: 1000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 8192,
+    });
     await db
       .insert(agentSettings)
       .values({ agentId: builtIn, warmPoolSize: 2 })
@@ -305,9 +310,9 @@ describe('duplicating a Built-in Agent', () => {
         { canConfigureProjects: true }
       );
 
-      expect(copy).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+      expect(copy).toMatchObject({ podSettings: { presetId: 'medium' }, settings: { warmPoolSize: 2 } });
     } finally {
-      await writeAgentPodSettings(db, builtIn, podSettingsForSelection({ podClass: 'small' }));
+      await writeAgentPodSettings(db, builtIn, null);
       await db.update(agentSettings).set({ warmPoolSize: 0 }).where(eq(agentSettings.agentId, builtIn));
     }
   });

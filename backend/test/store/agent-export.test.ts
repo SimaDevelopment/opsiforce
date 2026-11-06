@@ -154,7 +154,14 @@ describe('exporting a Custom Agent', () => {
       ].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: { hash },
       projectSettings: {
-        resources: { podClass: 'small', cpuMillicores: 100, memoryRequestMib: 2048, memoryLimitMib: 4096 },
+        resources: {
+          presetId: 'small',
+          presetName: 'Small',
+          cpuMillicores: 100,
+          memoryRequestMib: 2048,
+          memoryLimitMib: 4096,
+        },
+        followsDefault: true,
         warmPoolSize: 0,
       },
     });

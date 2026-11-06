@@ -1,4 +1,4 @@
-import { api, type PodClass } from './client';
+import { api } from './client';
 import { createAppQuery } from '~/lib/create-app-query';
 
 export type KeepAliveSource = 'agent' | 'app';
@@ -27,7 +27,7 @@ export interface PodStatus {
 }
 
 export interface PodResources {
-  podClass: PodClass;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
