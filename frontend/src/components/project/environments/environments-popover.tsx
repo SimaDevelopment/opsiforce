@@ -11,6 +11,7 @@ import {
   type ProjectEnvironment,
 } from '~/api/environments';
 import { usePublishTargets, type PublishTarget } from '~/api/publish';
+import { useCustomDomainsOffered } from '~/api/custom-domains';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
 import { Check, ChevronsUpDown, Layers, LoaderCircle, Upload } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
@@ -23,6 +24,7 @@ import { EnvStatusDot } from './env-status-dot';
 import { PublishDialog } from './publish-dialog';
 import { EnvironmentVariablesDialog } from './environment-variables-dialog';
 import { EditAppUrlDialog } from '../edit-app-url-dialog';
+import { DomainsDialog } from '../custom-domains/domains-dialog';
 
 export interface EnvironmentsPopoverProps {
   projectId: string;
@@ -47,6 +49,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const canManageVariables = () => hasPermission('can_manage_environment_variables');
   const canSchedules = () => hasPermission('can_manage_schedules');
   const canEditAppDetails = () => hasPermission('can_edit_app_details');
+  const customDomainsOffered = useCustomDomainsOffered();
 
   const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);
@@ -81,6 +84,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const [authEnv, setAuthEnv] = createSignal<ProjectEnvironment | null>(null);
   const [variablesEnv, setVariablesEnv] = createSignal<ProjectEnvironment | null>(null);
   const [editUrlEnv, setEditUrlEnv] = createSignal<ProjectEnvironment | null>(null);
+  const [domainsEnv, setDomainsEnv] = createSignal<ProjectEnvironment | null>(null);
   const [publishTarget, setPublishTarget] = createSignal<PublishTarget | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<ProjectEnvironment | null>(null);
   const [pendingRestart, setPendingRestart] = createSignal<ProjectEnvironment | null>(null);
@@ -173,10 +177,12 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     canManageVariables: canManageVariables(),
     canSchedules: canSchedules(),
     canEditAppDetails: canEditAppDetails(),
+    customDomainsOffered: customDomainsOffered(),
     restarting: restartingId() === env.id,
     onAuth: () => setAuthEnv(env),
     onVariables: () => setVariablesEnv(env),
     onEditUrl: () => setEditUrlEnv(env),
+    onDomains: () => setDomainsEnv(env),
     onPublish: () => setPublishTarget(target),
     onSchedules: () => openSchedules(env),
     onRestart: () => setPendingRestart(env),
@@ -295,6 +301,14 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         environment={editUrlEnv()}
         onOpenChange={(value) => {
           if (!value) setEditUrlEnv(null);
+        }}
+      />
+
+      <DomainsDialog
+        projectId={props.projectId}
+        environment={domainsEnv()}
+        onOpenChange={(value) => {
+          if (!value) setDomainsEnv(null);
         }}
       />
 

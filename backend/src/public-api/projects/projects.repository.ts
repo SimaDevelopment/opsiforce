@@ -13,6 +13,7 @@ import {
   workspaceMembers,
   workspaces,
 } from '../../../db/schema';
+import { connectedMainDomain } from '../../custom-domain/main-domain';
 import { servesAnExternalService } from '../../external-services/gate/service-projects';
 import { reachedByCallingProjectWhere, type CallingProjectReach } from '../../project/calling-project-reach';
 import {
@@ -85,6 +86,7 @@ export interface EnvironmentRow {
   hasApp: boolean;
   appName: string | null;
   appSlug: string | null;
+  mainDomain: string | null;
   servesAnExternalService: boolean;
 }
 
@@ -168,6 +170,7 @@ export class PublicProjectsRepository {
         hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`.as('has_app'),
         appName: projectApps.name,
         appSlug: projectApps.slug,
+        mainDomain: connectedMainDomain,
         servesAnExternalService,
       })
       .from(projectEnvironments)

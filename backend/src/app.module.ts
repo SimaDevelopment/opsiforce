@@ -48,6 +48,7 @@ import { LinkedAccountsModule } from './linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from './model-provider/model-provider.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { SignInProvidersModule } from './sign-in-provider/sign-in-provider.module';
+import { CustomDomainModule } from './custom-domain/custom-domain.module';
 
 function parseRedisUrl(url: string) {
   const parsed = new URL(url);
@@ -117,6 +118,7 @@ function parseRedisUrl(url: string) {
     LinkedAccountsModule,
     PublicApiModule,
     SignInProvidersModule,
+    CustomDomainModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: TenantGuard }],

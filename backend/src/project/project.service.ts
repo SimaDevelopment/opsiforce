@@ -64,6 +64,7 @@ import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { PublicUrlService } from '../project-environment/public-url.service';
+import { CustomDomainCluster } from '../custom-domain/custom-domain-cluster';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { hasRunningPod } from '../project-environment/running-pod';
 import type { EnvironmentNotRunningState } from '../agent-session/agent-session.errors';
@@ -313,6 +314,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly publicUrls: PublicUrlService,
     private readonly proxyService: ProxyService,
     private readonly deliveryService: DeliveryService,
+    private readonly customDomainCluster: CustomDomainCluster,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
     private readonly duplicateQueue: Queue<ProjectDuplicateJobData>,
     @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
@@ -1141,6 +1143,7 @@ export class ProjectService implements OnApplicationBootstrap {
           appName: app?.name ?? null,
           appDescription: app?.description ?? null,
           publicUrl: this.publicUrls.publicUrlOnceLive(env),
+          defaultAddress: this.publicUrls.defaultAddressOnceLive(env),
           appSlug: env.appSlug,
           suggestedAppSlug: app && offersAReadableAddress(env) ? toAppSlug(app.name, env) : null,
           shortId: env.shortId,
@@ -1321,6 +1324,7 @@ export class ProjectService implements OnApplicationBootstrap {
       } else {
         await this.projectAuthService.remove(env.id);
       }
+      await this.customDomainCluster.followAppAuth({ id: env.id, authMode: dto.mode });
       await tx
         .update(projectEnvironments)
         .set({ authMode: dto.mode, signInProviderId: provider?.id ?? null, updatedAt: new Date() })
@@ -1340,6 +1344,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .update(projectEnvironments)
       .set({ authMode, signInProviderId, updatedAt: new Date() })
       .where(eq(projectEnvironments.id, to.id));
+    await this.customDomainCluster.followAppAuth({ id: to.id, authMode });
   }
 
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
@@ -1363,6 +1368,7 @@ export class ProjectService implements OnApplicationBootstrap {
           this.logger.warn(`Failed to remove auth middleware for environment ${env.id}: ${(err as Error).message}`);
         })
       ),
+      ...envs.map((env) => this.removeCustomDomainsOf(env.id)),
       this.bifrostService.isEnabled()
         ? this.bifrostService.revokeProjectKeys(id).catch((err) => {
             this.logger.warn(`Failed to revoke Bifrost keys for project ${id}: ${(err as Error).message}`);
@@ -1550,6 +1556,7 @@ export class ProjectService implements OnApplicationBootstrap {
       this.projectAuthService.remove(env.id).catch((err) => {
         this.logger.warn(`Failed to remove auth middleware for environment ${env.id}: ${(err as Error).message}`);
       }),
+      this.removeCustomDomainsOf(env.id),
       this.bifrostService.isEnabled()
         ? this.bifrostService.revokeEnvironmentKeys(env.id).catch((err) => {
             this.logger.warn(`Failed to revoke Bifrost keys for environment ${env.id}: ${(err as Error).message}`);
@@ -1570,6 +1577,14 @@ export class ProjectService implements OnApplicationBootstrap {
     await this.projectEnvironmentService.delete(env);
 
     await this.projectEventsService.publish(projectId);
+  }
+
+  private removeCustomDomainsOf(environmentId: string): Promise<void> {
+    return this.customDomainCluster.removeEnvironment(environmentId).catch((err) => {
+      this.logger.warn(
+        `Failed to remove the custom domains of environment ${environmentId}: ${(err as Error).message}`
+      );
+    });
   }
 
   async updateApp(

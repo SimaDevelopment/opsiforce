@@ -9,16 +9,21 @@ export interface LockedEnvironmentAuth {
   signInProviderId: string | null;
 }
 
+export async function lockEnvironmentAuth(
+  tx: Transaction,
+  environmentId: string
+): Promise<LockedEnvironmentAuth | undefined> {
+  const [current] = await tx
+    .select({ authMode: projectEnvironments.authMode, signInProviderId: projectEnvironments.signInProviderId })
+    .from(projectEnvironments)
+    .where(eq(projectEnvironments.id, environmentId))
+    .for('update');
+  return current;
+}
+
 export function withEnvironmentAuthLock<T>(
   environmentId: string,
   work: (tx: Transaction, current: LockedEnvironmentAuth | undefined) => Promise<T>
 ): Promise<T> {
-  return db.transaction(async (tx) => {
-    const [current] = await tx
-      .select({ authMode: projectEnvironments.authMode, signInProviderId: projectEnvironments.signInProviderId })
-      .from(projectEnvironments)
-      .where(eq(projectEnvironments.id, environmentId))
-      .for('update');
-    return work(tx, current);
-  });
+  return db.transaction(async (tx) => work(tx, await lockEnvironmentAuth(tx, environmentId)));
 }

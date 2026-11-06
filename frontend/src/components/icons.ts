@@ -110,3 +110,4 @@ export { default as CircleDashed } from 'lucide-solid/icons/circle-dashed';
 export { default as CircleArrowUp } from 'lucide-solid/icons/circle-arrow-up';
 export { default as Tag } from 'lucide-solid/icons/tag';
 export { default as CircleCheck } from 'lucide-solid/icons/circle-check';
+export { default as Star } from 'lucide-solid/icons/star';

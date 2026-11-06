@@ -29,6 +29,8 @@ export function EditAppUrlDialog(props: EditAppUrlDialogProps) {
   );
 
   const newAddress = () => (props.environment ? readableAppUrl(appSlug(), props.environment) : '');
+  const defaultAddress = () =>
+    props.environment?.defaultAddress ? `https://${props.environment.defaultAddress}/` : '';
   const hostSuffix = () => (props.environment ? appHostSuffix(props.environment) : '');
   const newSignInCallback = () => `${newAddress()}oidc/callback`;
   const signsInOutside = () => props.environment?.authMode === 'manual';
@@ -99,7 +101,7 @@ export function EditAppUrlDialog(props: EditAppUrlDialogProps) {
               when={refusal()}
               fallback={
                 <p class="mt-1.5 break-all text-xs text-muted-foreground">
-                  <Show when={showsNewAddress()} fallback={props.environment?.publicUrl}>
+                  <Show when={showsNewAddress()} fallback={defaultAddress()}>
                     https://<span class="font-medium text-foreground">{appSlug()}</span>
                     {hostSuffix()}/
                   </Show>
@@ -110,7 +112,7 @@ export function EditAppUrlDialog(props: EditAppUrlDialogProps) {
             </Show>
           </div>
           <Show when={showsNewAddress()}>
-            <p class="break-all text-xs text-muted-foreground">Current address: {props.environment?.publicUrl}</p>
+            <p class="break-all text-xs text-muted-foreground">Current address: {defaultAddress()}</p>
           </Show>
           <Show when={signsInOutside() && showsNewAddress()}>
             <div class="of-note of-tone-needs-you items-start gap-2 text-xs" role="alert">

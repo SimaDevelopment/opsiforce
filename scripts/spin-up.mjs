@@ -69,7 +69,7 @@ const STEPS = [
   {
     id: 'infra',
     title: 'Infra: data stores, ingress, TLS',
-    detail: 'helm postgres/redis/traefik, mkcert wildcard cert',
+    detail: 'helm postgres/redis/traefik/cert-manager, mkcert wildcard cert and CA issuer',
   },
   { id: 'install', title: 'Install workspace dependencies', detail: 'yarn install (virgin PnP)' },
   { id: 'images', title: 'Build images into the cluster', detail: 'agent, runtime-proxy, backend' },

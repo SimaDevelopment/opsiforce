@@ -102,6 +102,12 @@ data:
   {{- if .Values.config.webappServicePort }}
   WEBAPP_SERVICE_PORT: {{ .Values.config.webappServicePort | quote }}
   {{- end }}
+  {{- if .Values.config.customDomainsClusterIssuer }}
+  CUSTOM_DOMAINS_CLUSTER_ISSUER: {{ .Values.config.customDomainsClusterIssuer | quote }}
+  {{- end }}
+  {{- if .Values.config.customDomainsRefused }}
+  CUSTOM_DOMAINS_REFUSED: {{ .Values.config.customDomainsRefused | quote }}
+  {{- end }}
   {{- if .Values.config.ssoGroupMap }}
   SSO_GROUP_MAP: {{ .Values.config.ssoGroupMap | quote }}
   {{- end }}

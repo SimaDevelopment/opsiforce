@@ -21,6 +21,7 @@ import { AgentUpdateK8sService } from '../../src/agent-update/agent-update.k8s.s
 import { AgentUpdateService } from '../../src/agent-update/agent-update.service';
 import { BuilderChatRepository } from '../../src/builder/builder-chat.repository';
 import { BuilderChatService } from '../../src/builder/builder-chat.service';
+import { CustomDomainCluster } from '../../src/custom-domain/custom-domain-cluster';
 import { AGENT_WORKSPACE_UPDATE_QUEUE } from '../../src/agent-update/agent-update.types';
 import { DefaultsService } from '../../src/defaults/defaults.service';
 import { DeliveryRepository } from '../../src/delivery/delivery.repository';
@@ -101,6 +102,7 @@ const REAL_SERVICES = [
   AppService,
   BuilderChatRepository,
   BuilderChatService,
+  CustomDomainCluster,
   DefaultsService,
   DeliveryRepository,
   DeliveryService,

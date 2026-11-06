@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { errorMessage } from '../common/error-message';
+import { CustomDomainCluster } from '../custom-domain/custom-domain-cluster';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { ProjectAuthService } from './project-auth.service';
 
@@ -12,7 +13,8 @@ export class AppAuthRouteReconciler implements OnApplicationBootstrap, OnModuleD
 
   constructor(
     private readonly projectEnvironments: ProjectEnvironmentService,
-    private readonly projectAuth: ProjectAuthService
+    private readonly projectAuth: ProjectAuthService,
+    private readonly customDomains: CustomDomainCluster
   ) {}
 
   onApplicationBootstrap(): void {
@@ -41,6 +43,15 @@ export class AppAuthRouteReconciler implements OnApplicationBootstrap, OnModuleD
         await this.removeGateOfPublicEnvironment(routingId);
       } catch (error) {
         this.logger.warn(`Failed to remove the App Auth gate of environment ${routingId}: ${errorMessage(error)}`);
+      }
+    }
+    for (const environmentId of await this.customDomains.routedEnvironmentIds()) {
+      try {
+        await this.customDomains.routeEnvironment(environmentId);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to reconcile the custom domain routes of environment ${environmentId}: ${errorMessage(error)}`
+        );
       }
     }
   }

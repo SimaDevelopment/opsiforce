@@ -9,6 +9,7 @@ import {
 import { and, asc, count, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectEnvironments, signInProviders } from '../../db/schema';
+import { CustomDomainCluster } from '../custom-domain/custom-domain-cluster';
 import type { AppAuthRouteTarget } from '../project/app-auth-route';
 import { ProjectAuthService } from '../project/project-auth.service';
 import { SecretSealer } from '../sealing/secret-sealer';
@@ -31,7 +32,8 @@ export class SignInProvidersService {
 
   constructor(
     private readonly sealer: SecretSealer,
-    private readonly projectAuthService: ProjectAuthService
+    private readonly projectAuthService: ProjectAuthService,
+    private readonly customDomains: CustomDomainCluster
   ) {}
 
   async list(tenantId: string): Promise<SignInProviderView[]> {
@@ -95,6 +97,7 @@ export class SignInProvidersService {
           if (current?.authMode !== 'provider' || current.signInProviderId !== providerId) return;
           const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
           await this.projectAuthService.applyProvider(env, provider, config?.forwardAccessToken, bypassAuthPaths);
+          await this.customDomains.followAppAuth({ id: env.id, authMode: 'provider' });
         });
       } catch (err) {
         stale += 1;

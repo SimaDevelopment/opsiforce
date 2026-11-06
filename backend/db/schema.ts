@@ -33,7 +33,9 @@ const bytea = customType<{ data: Buffer; default: false }>({
 
 export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "external_service_builder_chat" | "test"
 
-export type LimitKeyValue = "projects" | "warm_pool"
+export type LimitKeyValue = "projects" | "warm_pool" | "custom_domains"
+
+export type CustomDomainStatusValue = "waiting" | "issuing" | "connected" | "failed"
 
 export const projectStatusEnum = pgEnum("project_status", [
   "starting",
@@ -387,6 +389,43 @@ export const projectApps = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("idx_project_app_project").on(table.projectId)],
+)
+
+export const customDomains = pgTable(
+  "custom_domains",
+  {
+    id: text("id").primaryKey(),
+    tenantId: tenantIdField,
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    hostname: text("hostname").notNull(),
+    bare: boolean("bare").notNull(),
+    zoneStart: text("zone_start").notNull(),
+    status: text("status").$type<CustomDomainStatusValue>().notNull().default("waiting"),
+    isMain: boolean("is_main").notNull().default(false),
+    redirectsToMain: boolean("redirects_to_main").notNull().default(false),
+    dnsAnswer: text("dns_answer"),
+    failureReason: text("failure_reason"),
+    checkedAt: timestamp("checked_at"),
+    connectedAt: timestamp("connected_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("custom_domains_project_environment_id_hostname_unique").on(table.projectEnvironmentId, table.hostname),
+    uniqueIndex("custom_domains_one_holder_per_hostname")
+      .on(table.hostname)
+      .where(sql`${table.status} in ('issuing', 'connected', 'failed')`),
+    uniqueIndex("custom_domains_one_main_per_environment")
+      .on(table.projectEnvironmentId)
+      .where(sql`${table.isMain}`),
+    index("idx_custom_domains_tenant").on(table.tenantId),
+    check(
+      "custom_domains_status_check",
+      sql`${table.status} in ('waiting', 'issuing', 'connected', 'failed')`,
+    ),
+  ],
 )
 
 export const projectAgentUpdates = pgTable(
@@ -960,7 +999,7 @@ export const globalLimits = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
+    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool', 'custom_domains')`),
     check("global_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -977,7 +1016,7 @@ export const tenantLimits = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.limitKey] }),
-    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
+    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool', 'custom_domains')`),
     check("tenant_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
