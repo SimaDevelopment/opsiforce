@@ -9,6 +9,8 @@ import { EnvironmentService } from '../../src/environment/environment.service';
 import { ProjectAuthService } from '../../src/project/project-auth.service';
 import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { PublishService } from '../../src/publish/publish.service';
+import { PublishCancellations } from '../../src/publish/publish-cancellations';
+import { ProjectEventsService } from '../../src/project/project-events.service';
 import { PublicUrlService } from '../../src/project-environment/public-url.service';
 import { ProjectService } from '../../src/project/project.service';
 import { SignInProvidersModule } from '../../src/sign-in-provider/sign-in-provider.module';
@@ -343,6 +345,8 @@ describe('Organization sign-in providers', () => {
       app.get(PublicUrlService),
       app.get(ProjectService),
       {} as never,
+      app.get(ProjectEventsService),
+      new PublishCancellations(),
       new FakeQueue() as never
     );
 

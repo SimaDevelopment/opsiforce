@@ -106,6 +106,10 @@ export function usePublishForm(
   }));
 }
 
+export function cancelPublish(projectId: string, environmentId: string) {
+  return api.post<PublishJob>(`/projects/${projectId}/publish/environments/${environmentId}/cancel`);
+}
+
 export function usePublish() {
   const qc = useQueryClient();
   return createMutation(() => ({

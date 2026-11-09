@@ -10,6 +10,8 @@ import { PublicUrlService } from '../src/project-environment/public-url.service'
 import { ProjectService } from '../src/project/project.service';
 import { ProjectStatus } from '../src/project/project.types';
 import { PublishService } from '../src/publish/publish.service';
+import { PublishCancellations } from '../src/publish/publish-cancellations';
+import { ProjectEventsService } from '../src/project/project-events.service';
 import { FakeQueue } from './support/infra-fakes';
 import { createProject, createTenant, type TenantFixture } from './support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from './public-api/support/app';
@@ -31,6 +33,8 @@ describe('Publish with data refusals', () => {
       app.get(PublicUrlService),
       app.get(ProjectService),
       { choices: async () => [] } as never,
+      app.get(ProjectEventsService),
+      new PublishCancellations(),
       new FakeQueue() as never
     );
     tenant = await createTenant(app);

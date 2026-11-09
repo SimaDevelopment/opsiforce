@@ -35,6 +35,11 @@ import {
   PublishTarget,
 } from './publish.types';
 import { holdsAppData } from './app-data';
+import { PublishCancellations } from './publish-cancellations';
+import { ProjectEventsService } from '../project/project-events.service';
+
+const PUBLISH_IN_PROGRESS =
+  'A publish is already in progress for this environment. To publish again now, open its progress card and cancel it.';
 
 @Injectable()
 export class PublishService implements OnApplicationBootstrap {
@@ -49,6 +54,8 @@ export class PublishService implements OnApplicationBootstrap {
     private readonly publicUrls: PublicUrlService,
     private readonly projectService: ProjectService,
     private readonly projectConfigurationCarry: ProjectConfigurationCarry,
+    private readonly projectEvents: ProjectEventsService,
+    private readonly cancellations: PublishCancellations,
     @InjectQueue(PROJECT_PUBLISH_QUEUE)
     private readonly queue: Queue<PublishJobData>
   ) {
@@ -176,7 +183,7 @@ export class PublishService implements OnApplicationBootstrap {
     }
 
     if (await this.hasActiveJob(projectId, dto.environmentId)) {
-      throw new ConflictException('A publish is already in progress for this environment');
+      throw new ConflictException(PUBLISH_IN_PROGRESS);
     }
 
     if (await this.hasActiveDuplicate(projectId)) {
@@ -206,7 +213,7 @@ export class PublishService implements OnApplicationBootstrap {
         });
       } catch (err) {
         if (isProjectEnvironmentConflict(err)) {
-          throw new ConflictException('A publish is already in progress for this environment');
+          throw new ConflictException(PUBLISH_IN_PROGRESS);
         }
         throw err;
       }
@@ -230,7 +237,7 @@ export class PublishService implements OnApplicationBootstrap {
       });
     } catch (err) {
       if (isActivePublishConflict(err)) {
-        throw new ConflictException('A publish is already in progress for this environment');
+        throw new ConflictException(PUBLISH_IN_PROGRESS);
       }
       throw err;
     }
@@ -292,9 +299,43 @@ export class PublishService implements OnApplicationBootstrap {
     }
   }
 
+  async cancel(projectId: string, environmentId: string): Promise<PublishJobResponse> {
+    const job = await this.activeJob(projectId, environmentId);
+    if (!job) throw new ConflictException('No publish is in progress for this environment');
+    if (job.status === PublishStatus.Queued) {
+      const [dropped] = await db
+        .update(projectPublishJobs)
+        .set({
+          status: PublishStatus.Failed,
+          error: 'Publish cancelled.',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(projectPublishJobs.id, job.id), eq(projectPublishJobs.status, PublishStatus.Queued)))
+        .returning({ id: projectPublishJobs.id });
+      if (dropped) {
+        await this.projectService.failPublishDeploy(job.projectEnvironmentId);
+        await this.projectEvents.publish(projectId);
+        return this.toJobResponse(job.id);
+      }
+    }
+    if (!this.cancellations.cancel(job.id)) {
+      throw new ConflictException("This publish can't be cancelled while it copies files; try again in a moment");
+    }
+    return this.toJobResponse(job.id);
+  }
+
   private async hasActiveJob(projectId: string, environmentId: string): Promise<boolean> {
+    return (await this.activeJob(projectId, environmentId)) !== null;
+  }
+
+  private async activeJob(projectId: string, environmentId: string) {
     const [row] = await db
-      .select({ id: projectPublishJobs.id })
+      .select({
+        id: projectPublishJobs.id,
+        status: projectPublishJobs.status,
+        projectEnvironmentId: projectPublishJobs.projectEnvironmentId,
+      })
       .from(projectPublishJobs)
       .where(
         and(
@@ -304,7 +345,7 @@ export class PublishService implements OnApplicationBootstrap {
         )
       )
       .limit(1);
-    return !!row;
+    return row ?? null;
   }
 
   private async hasActiveDuplicate(projectId: string, executor: DbExecutor = db): Promise<boolean> {

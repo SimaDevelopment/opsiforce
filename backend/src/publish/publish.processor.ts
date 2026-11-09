@@ -27,14 +27,18 @@ import { CHAT_FILE_FOLDERS } from '../delivery/platform-ignores';
 import { discardReplacedAppData, holdsAppData, replaceAppData, restoreReplacedAppData } from './app-data';
 import { publishJobDone } from './publish-job-done';
 import { keepingAppDetails } from './app-details-file';
+import { PublishCancellations, PublishCancelledError, unlessCancelled } from './publish-cancellations';
+import { ProjectTurns } from './project-turns';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
 const APP_READY_TIMEOUT_MS = 10 * 60 * 1000;
+const CONCURRENT_PUBLISHES = 4;
 
-@Processor(PROJECT_PUBLISH_QUEUE)
+@Processor(PROJECT_PUBLISH_QUEUE, { concurrency: CONCURRENT_PUBLISHES })
 export class PublishProcessor extends WorkerHost {
   private readonly logger = new Logger(PublishProcessor.name);
   private readonly storageMountPath: string;
+  private readonly projectTurns = new ProjectTurns();
 
   constructor(
     private readonly configService: ConfigService,
@@ -50,14 +54,18 @@ export class PublishProcessor extends WorkerHost {
     private readonly serviceDefaults: ServiceDefaultEnvironments,
     private readonly deliveryService: DeliveryService,
     private readonly workspaceWriter: WorkspaceWriter,
-    private readonly environmentSkills: EnvironmentSkillsService
+    private readonly environmentSkills: EnvironmentSkillsService,
+    private readonly cancellations: PublishCancellations
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
   }
 
   async process(job: Job<PublishJobData>): Promise<void> {
-    const data = job.data;
+    await this.projectTurns.run(job.data.projectId, () => this.publish(job.data));
+  }
+
+  private async publish(data: PublishJobData): Promise<void> {
     let prodDir: string | null = null;
     let prodDirectory: string | null = null;
     let previousSha: string | null = null;
@@ -72,6 +80,7 @@ export class PublishProcessor extends WorkerHost {
       return;
     }
 
+    const cancelled = this.cancellations.begin(data.publishJobId);
     try {
       phase = PublishStatus.Committing;
       await this.setStatus(data.publishJobId, PublishStatus.Committing, { startedAt: new Date() });
@@ -134,7 +143,10 @@ export class PublishProcessor extends WorkerHost {
 
       phase = PublishStatus.Migrating;
       await this.setStatus(data.publishJobId, PublishStatus.Migrating);
-      const appReady = await this.appReadiness.awaitReady(data.projectEnvironmentId, APP_READY_TIMEOUT_MS);
+      const appReady = await unlessCancelled(
+        cancelled,
+        this.appReadiness.awaitReady(data.projectEnvironmentId, APP_READY_TIMEOUT_MS)
+      );
       if (!appReady) {
         throw new Error('Production app did not become ready within the deploy window');
       }
@@ -207,6 +219,8 @@ export class PublishProcessor extends WorkerHost {
         error: userFacingPublishError(err, phase),
         completedAt: new Date(),
       });
+    } finally {
+      this.cancellations.end(data.publishJobId);
     }
   }
 
@@ -325,6 +339,7 @@ const PHASE_FAILURE_MESSAGE: Partial<Record<PublishStatus, string>> = {
 };
 
 function userFacingPublishError(err: unknown, phase: PublishStatus): string {
+  if (err instanceof PublishCancelledError) return 'Publish cancelled.';
   if (err instanceof ConflictException) {
     const refusal = err.getResponse();
     if (typeof refusal === 'object' && 'message' in refusal && typeof refusal.message === 'string')
