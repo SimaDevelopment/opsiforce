@@ -134,6 +134,24 @@ describe("A target's App Details", () => {
     expect(await readFile(file, 'utf8')).toBe('{"name":"Book Club"}');
     await rm(workspace, { recursive: true, force: true });
   });
+
+  it('survive a restart between the reset and putting them back', async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), 'app-details-'));
+    const file = path.join(workspace, 'app', 'app.meta.json');
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, '{"name":"Book Club"}');
+    const resetToDevelopment = () => writeFile(file, '{"name":"Book Club Tracker"}');
+
+    void keepingAppDetails(workspace, async () => {
+      await resetToDevelopment();
+      await new Promise(() => undefined);
+    });
+    await expect.poll(() => readFile(file, 'utf8')).toBe('{"name":"Book Club Tracker"}');
+    await keepingAppDetails(workspace, resetToDevelopment);
+
+    expect(await readFile(file, 'utf8')).toBe('{"name":"Book Club"}');
+    await rm(workspace, { recursive: true, force: true });
+  });
 });
 
 async function writeData(workspace: string, files: Record<string, string>, mode?: number): Promise<void> {
