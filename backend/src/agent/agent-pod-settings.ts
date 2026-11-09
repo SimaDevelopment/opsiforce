@@ -8,6 +8,7 @@ import type { PodSettings } from '../pod/pod-classes';
 import { podSettingsColumns, storedLegacyPodSettings, storedPodSettings } from '../pod/pod-settings-columns';
 import { podSettingsOn, readPresetCatalog, type PresetCatalog } from '../pod/resource-presets';
 import type { AgentProjectSettings } from './agent-copy-settings';
+import { carriedInactivityCleanup } from '../project/inactivity-cleanup';
 
 export const MAX_WARM_POOL_SIZE = 3;
 
@@ -124,7 +125,12 @@ export async function readAgentProjectSettings(
   tenantId: string | null
 ): Promise<AgentProjectSettings> {
   const { resources, source } = await readAgentResources(agentId, tenantId);
-  return { resources, followsDefault: source === 'default', warmPoolSize: await readWarmPoolSize(agentId) };
+  return {
+    resources,
+    followsDefault: source === 'default',
+    warmPoolSize: await readWarmPoolSize(agentId),
+    inactivityCleanup: await carriedInactivityCleanup(agentId, tenantId),
+  };
 }
 
 export async function readWarmPoolSize(agentId: string, executor: DbExecutor = db): Promise<number> {

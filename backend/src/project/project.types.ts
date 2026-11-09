@@ -56,6 +56,8 @@ export interface UpdateProjectDto {
   description?: string;
   timeoutIdle?: number;
   appTimeoutIdle?: number;
+  disableAfter?: number | null;
+  deleteAfter?: number | null;
   timezone?: string;
 }
 
@@ -119,6 +121,8 @@ export interface ProjectResponse {
   authMode: ProjectAuthMode;
   timeoutIdle: number;
   appTimeoutIdle: number;
+  disableAfter: number | null;
+  deleteAfter: number | null;
   timezone: string;
   requestLogMode: RequestLogMode;
   requestLogBodyLimit: number;
@@ -134,6 +138,7 @@ export interface ProjectResponse {
   agentStatus?: AgentStatus;
   waitingForInput?: boolean;
   lastPromptAt: Date | null;
+  lastActivityAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }

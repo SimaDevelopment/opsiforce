@@ -103,6 +103,15 @@ import {
 } from './project.types';
 import { toK8sResources, type K8sResourceRequirements, type PodSettings } from '../pod/pod-classes';
 import { readAgentPodSettings } from '../agent/agent-pod-settings';
+import { tenantInactivityCleanup } from '../defaults/defaults.service';
+import {
+  inactivityCleanupColumns,
+  inactivityCleanupForNewProject,
+  inactivityCleanupOf,
+  patchedInactivityCleanup,
+  projectLastActivityAt,
+  type InactivityCleanup,
+} from './inactivity-cleanup';
 import { podSettingsFromRequest } from '../pod/pod-class-request';
 import {
   PREVIOUS_RELEASE_READS_NUMBERS,
@@ -262,6 +271,7 @@ const projectSelectFields = {
   authMode: projectEnvironments.authMode,
   timeoutIdle: projectSettings.timeoutIdle,
   appTimeoutIdle: projectSettings.appTimeoutIdle,
+  ...inactivityCleanupColumns(projectSettings),
   timezone: projectSettings.timezone,
   requestLogMode: projectSettings.requestLogMode,
   requestLogBodyLimit: projectSettings.requestLogBodyLimit,
@@ -278,6 +288,7 @@ const projectSelectFields = {
       AND ${projectEnvAll.environmentId} IS NOT NULL
   )`.as('environment_ids'),
   lastPromptAt: projects.lastPromptAt,
+  lastActivityAt: projectLastActivityAt.as('last_activity_at'),
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 };
@@ -524,6 +535,11 @@ export class ProjectService implements OnApplicationBootstrap {
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
     const timeouts = await this.creationTimeouts(tenantId, kind);
+    const inactivityCleanup = await inactivityCleanupForNewProject(
+      agentId,
+      tenantId,
+      tenantInactivityCleanup(timeouts)
+    );
 
     const claimedId = await this.projectPoolService
       .claimPending(agentId, {
@@ -539,6 +555,7 @@ export class ProjectService implements OnApplicationBootstrap {
         createdProjectsCap,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
+        inactivityCleanup,
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
@@ -553,7 +570,7 @@ export class ProjectService implements OnApplicationBootstrap {
       return project;
     }
 
-    return this.createDirect(dto, tenantId, agentId, timeouts, {
+    return this.createDirect(dto, tenantId, agentId, timeouts, inactivityCleanup, {
       workspaceId,
       folderId,
       createdBy,
@@ -576,6 +593,7 @@ export class ProjectService implements OnApplicationBootstrap {
     tenantId: string,
     agentId: string,
     timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
+    inactivityCleanup: InactivityCleanup,
     context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
     const {
@@ -614,6 +632,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
+        ...inactivityCleanup,
         timezone: dto?.timezone || 'UTC',
       });
 
@@ -713,6 +732,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: source.timeoutIdle,
         appTimeoutIdle: source.appTimeoutIdle,
+        ...inactivityCleanupOf(source),
         timezone: source.timezone,
         requestLogMode: source.requestLogMode,
         requestLogBodyLimit: source.requestLogBodyLimit,
@@ -829,6 +849,11 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    const inactivityCleanup = await inactivityCleanupForNewProject(
+      agentId,
+      tenantId,
+      tenantInactivityCleanup(timeouts)
+    );
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
     const podResources = await this.resolveImportedResources(resources, agentId, tenantId);
@@ -851,6 +876,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: settings?.timeoutIdle ?? timeouts.defaultTimeoutIdle,
         appTimeoutIdle: settings?.appTimeoutIdle ?? timeouts.defaultAppTimeoutIdle,
+        ...inactivityCleanup,
         timezone: tz,
         ...(settings
           ? { requestLogMode: settings.requestLogMode, requestLogBodyLimit: settings.requestLogBodyLimit }
@@ -1178,6 +1204,8 @@ export class ProjectService implements OnApplicationBootstrap {
     if (dto.appTimeoutIdle !== undefined)
       settingsUpdates.appTimeoutIdle = assertIdleTimeoutMs(dto.appTimeoutIdle, 'appTimeoutIdle');
     if (dto.timezone !== undefined) settingsUpdates.timezone = dto.timezone;
+    const inactivityCleanup = patchedInactivityCleanup(project, dto);
+    if (inactivityCleanup) Object.assign(settingsUpdates, inactivityCleanup);
 
     await db.transaction(async (tx) => {
       if (Object.keys(projectUpdates).length > 0) {
@@ -1474,8 +1502,11 @@ export class ProjectService implements OnApplicationBootstrap {
       await assertRoomForProject(tx, tenantId, project.kind);
       await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
     });
+    const enabledAt = new Date();
     await Promise.all(
-      envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting }))
+      envs.map((env) =>
+        this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting, lastActiveAt: enabledAt })
+      )
     );
 
     envs.forEach((env) => this.spawnStartupWorker(env.id));

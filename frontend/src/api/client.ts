@@ -155,6 +155,8 @@ export interface Project {
   bifrostProjectId: string | null;
   timeoutIdle: number;
   appTimeoutIdle: number;
+  disableAfter: number | null;
+  deleteAfter: number | null;
   timezone: string;
   requestLogMode: RequestLogMode;
   requestLogBodyLimit: number;
@@ -172,6 +174,7 @@ export interface Project {
   /** A chat in this Project is waiting for an answer or a permission. */
   waitingForInput?: boolean;
   lastPromptAt: string | null;
+  lastActivityAt: string;
   createdAt: string;
   disabled: boolean;
 }
@@ -338,6 +341,13 @@ export const scheduleApi = {
 export interface TimeoutDefaults {
   defaultTimeoutIdle: number;
   defaultAppTimeoutIdle: number;
+  defaultDisableAfter: number | null;
+  defaultDeleteAfter: number | null;
+}
+
+export interface InactivityCleanup {
+  disableAfter: number | null;
+  deleteAfter: number | null;
 }
 
 export interface BudgetDefaults {

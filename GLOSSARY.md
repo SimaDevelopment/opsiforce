@@ -191,6 +191,10 @@ _Avoid_: Reboot; conflating with App restart
 Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a Test Project, whose pods stop, a Custom External Service, whose pods stop and which leaves its Organization's Project forms, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
 _Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
 
+**Inactivity cleanup**:
+A Project's two optional durations, **Disable after** and **Delete after** (hours or days, from 1 hour), each counted from the Project's last Keep-alive activity on any of its environments (or from its creation or its last Enable, whichever is later): past the first the Project is disabled, past the second it is deleted, the same Disable (Project) and delete a user can do by hand. Delete after is always longer than Disable after when both are set. A new Project copies them once, as a pair, from its Agent's own pair (for a Built-in Agent, its Organization's choice or else the platform's), otherwise from its Organization's default, and keeps its own from then on; empty means never. Only ordinary Projects are cleaned up, never a Builder chat, Test Project or pool slot.
+_Avoid_: TTL, Retention, Expiry, Auto-archive (non-canonical; say Inactivity cleanup, Disable after, Delete after)
+
 **App Auth**:
 Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **provider** (one of the Organization's Sign-in providers). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
 _Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)

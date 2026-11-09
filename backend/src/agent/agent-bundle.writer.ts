@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { db } from '../../db';
 import type { DbExecutor } from '../common/locks';
 import { agentProfileSkills, agentProfiles, agentSettings, agents } from '../../db/schema';
+import { writeAgentInactivityCleanup } from '../project/inactivity-cleanup';
 import { templateChanged } from '../agent-template/agent-template.errors';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { developmentEnvironmentId, productionEnvironmentId } from '../store/agent-profile.repository';
@@ -93,6 +94,7 @@ export class AgentBundleWriter {
           draft.bundle.projectSettings.followsDefault ? null : draft.bundle.projectSettings.resources
         );
         await writeWarmPoolSize(tx, caller.tenantId, agentId, draft.bundle.projectSettings.warmPoolSize);
+        await writeAgentInactivityCleanup(agentId, draft.bundle.projectSettings.inactivityCleanup ?? null, tx);
 
         const profileId = crypto.randomUUID();
         await tx.insert(agentProfiles).values({

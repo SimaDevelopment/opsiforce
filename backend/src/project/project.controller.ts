@@ -35,6 +35,7 @@ import { RequirePermission } from '../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
 import { isServiceAccountRequest } from '../identity/forwarded-identity.service';
 import { ProjectEventsService } from './project-events.service';
+import { assertInactivityCleanupPermitted, inactivityCleanupGrants } from './inactivity-cleanup';
 import { AgentConnectionService } from '../agent-session/agent-connection.service';
 import { mappingConnectionRefusals } from '../agent-session/connection-refusals';
 import type { AgentConnection } from '../agent-session/agent-session.types';
@@ -170,6 +171,7 @@ export class ProjectController {
     @CurrentUser() user: UserContext
   ) {
     await this.gate(id, tenant, user);
+    assertInactivityCleanupPermitted(dto, inactivityCleanupGrants(user.groups));
     return this.projectService.update(id, dto, tenant.tenantId);
   }
 

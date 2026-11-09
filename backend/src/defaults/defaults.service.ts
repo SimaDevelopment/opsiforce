@@ -1,13 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../db';
 import {
+  agents,
   globalTimeoutDefaults,
   globalBudgetDefaults,
   tenantTimeoutDefaults,
   tenantBudgetDefaults,
 } from '../../db/schema';
 import { assertIdleTimeoutMs } from '../common/validation';
+import {
+  INACTIVITY_CLEANUP_STEPS,
+  patchedInactivityCleanup,
+  perStep,
+  readAgentInactivityCleanup,
+  writeAgentInactivityCleanup,
+  type InactivityCleanup,
+} from '../project/inactivity-cleanup';
 import type {
   TimeoutDefaults,
   BudgetDefaults,
@@ -36,10 +45,20 @@ export class DefaultsService {
   async getGlobalTimeouts(): Promise<TimeoutDefaults> {
     const [row] = await db.select().from(globalTimeoutDefaults).where(eq(globalTimeoutDefaults.id, GLOBAL_ID));
     if (!row) throw new NotFoundException('Global timeout defaults not initialized');
-    return {
-      defaultTimeoutIdle: row.defaultTimeoutIdle,
-      defaultAppTimeoutIdle: row.defaultAppTimeoutIdle,
-    };
+    return pickTimeoutFields(row);
+  }
+
+  async updateBuiltInAgentInactivityCleanup(agentId: string, patch: Partial<InactivityCleanup>): Promise<void> {
+    await assertBuiltInAgent(agentId);
+    const platformDefault = tenantInactivityCleanup(await this.getGlobalTimeouts());
+    const current = await readAgentInactivityCleanup(agentId, null, platformDefault);
+    const cleanup = patchedInactivityCleanup(current.cleanup, patch);
+    if (cleanup) await writeAgentInactivityCleanup(agentId, cleanup);
+  }
+
+  async resetBuiltInAgentInactivityCleanup(agentId: string): Promise<void> {
+    await assertBuiltInAgent(agentId);
+    await writeAgentInactivityCleanup(agentId, null);
   }
 
   async getGlobalBudgets(): Promise<BudgetDefaults> {
@@ -49,7 +68,7 @@ export class DefaultsService {
   }
 
   async updateGlobalTimeouts(patch: UpdateTimeoutDefaultsDto): Promise<TimeoutDefaults> {
-    const updates = cleanTimeoutPatch(patch);
+    const updates = cleanTimeoutPatch(patch, await this.getGlobalTimeouts());
     if (Object.keys(updates).length > 0) {
       await db
         .update(globalTimeoutDefaults)
@@ -72,12 +91,7 @@ export class DefaultsService {
 
   async getTenantTimeouts(tenantId: string): Promise<TimeoutDefaults> {
     const [row] = await db.select().from(tenantTimeoutDefaults).where(eq(tenantTimeoutDefaults.tenantId, tenantId));
-    if (row) {
-      return {
-        defaultTimeoutIdle: row.defaultTimeoutIdle,
-        defaultAppTimeoutIdle: row.defaultAppTimeoutIdle,
-      };
-    }
+    if (row) return pickTimeoutFields(row);
     return this.getGlobalTimeouts();
   }
 
@@ -88,7 +102,7 @@ export class DefaultsService {
   }
 
   async updateTenantTimeouts(tenantId: string, patch: UpdateTimeoutDefaultsDto): Promise<TimeoutDefaults> {
-    const updates = cleanTimeoutPatch(patch);
+    const updates = cleanTimeoutPatch(patch, await this.getTenantTimeouts(tenantId));
     if (Object.keys(updates).length > 0) {
       await db
         .update(tenantTimeoutDefaults)
@@ -138,8 +152,28 @@ function pickBudgetFields(row: BudgetDefaults): BudgetDefaults {
   };
 }
 
-function cleanTimeoutPatch(patch: UpdateTimeoutDefaultsDto): Partial<TimeoutDefaults> {
+export function tenantInactivityCleanup(defaults: TimeoutDefaults): InactivityCleanup {
+  return perStep((step) => defaults[step.defaultField]);
+}
+
+function pickTimeoutFields(row: TimeoutDefaults): TimeoutDefaults {
+  return {
+    defaultTimeoutIdle: row.defaultTimeoutIdle,
+    defaultAppTimeoutIdle: row.defaultAppTimeoutIdle,
+    defaultDisableAfter: row.defaultDisableAfter,
+    defaultDeleteAfter: row.defaultDeleteAfter,
+  };
+}
+
+function cleanTimeoutPatch(patch: UpdateTimeoutDefaultsDto, current: TimeoutDefaults): Partial<TimeoutDefaults> {
   const updates: Partial<TimeoutDefaults> = {};
+  const cleanup = patchedInactivityCleanup(
+    tenantInactivityCleanup(current),
+    perStep((step) => patch[step.defaultField])
+  );
+  if (cleanup) {
+    for (const step of INACTIVITY_CLEANUP_STEPS) updates[step.defaultField] = cleanup[step.field];
+  }
   if (patch.defaultTimeoutIdle !== undefined) {
     updates.defaultTimeoutIdle = assertIdleTimeoutMs(patch.defaultTimeoutIdle, 'defaultTimeoutIdle');
   }
@@ -168,4 +202,12 @@ function cleanBudgetPatch(patch: UpdateBudgetDefaultsDto): Partial<BudgetDefault
     updates[key] = val;
   }
   return updates;
+}
+
+async function assertBuiltInAgent(agentId: string): Promise<void> {
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.origin, 'built_in'), isNull(agents.tenantId)));
+  if (!agent) throw new NotFoundException(`Built-in Agent ${agentId} not found`);
 }

@@ -163,6 +163,7 @@ describe('exporting a Custom Agent', () => {
         },
         followsDefault: true,
         warmPoolSize: 0,
+        inactivityCleanup: null,
       },
     });
 

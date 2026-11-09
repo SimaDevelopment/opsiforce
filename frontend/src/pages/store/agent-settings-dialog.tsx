@@ -1,8 +1,11 @@
 import { Show, createEffect, createSignal, on, untrack } from 'solid-js';
 import { toast } from 'solid-sonner';
 import {
+  useResetAgentInactivityCleanup,
   useResetAgentPodClass,
+  useSetAgentPlatformInactivityCleanup,
   useSetAgentPlatformPreset,
+  useUpdateAgentInactivityCleanup,
   useUpdateAgentPodClass,
   useUpdateAgentSettings,
   type AgentDetail,
@@ -15,6 +18,8 @@ import { OptionSelect } from '~/components/resources/option-select';
 import { createResourcesDraft } from '~/components/resources/resources-draft';
 import { ResourcesSelector } from '~/components/resources/resources-selector';
 import { WarmPoolPicker } from '~/components/resources/warm-pool-picker';
+import { InactivityCleanupChoiceField, createInactivityCleanupChoice } from '~/components/inactivity-cleanup-fields';
+import { CLEANUP_STEPS, describeCleanup, type CleanupStep } from '~/lib/inactivity-cleanup';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { describeResources } from '~/lib/pod-resources';
@@ -33,10 +38,17 @@ export function AgentSettingsDialog(props: {
   const resetPodClass = useResetAgentPodClass(() => props.agent.id);
   const updateSettings = useUpdateAgentSettings(() => props.agent.id);
   const setPlatformPreset = useSetAgentPlatformPreset(() => props.agent.id);
+  const updateCleanup = useUpdateAgentInactivityCleanup(() => props.agent.id);
+  const resetCleanup = useResetAgentInactivityCleanup(() => props.agent.id);
+  const setPlatformCleanup = useSetAgentPlatformInactivityCleanup(() => props.agent.id);
+  const cleanupChoice = createInactivityCleanupChoice();
+  const platformCleanupChoice = createInactivityCleanupChoice();
   const { hasPermission } = usePermissions();
   const builtIn = () => props.agent.origin === 'built_in';
   const editsOrganization = () => hasPermission('can_manage_agents');
   const editsPlatform = () => builtIn() && hasPermission('can_manage_platform_resources');
+  const editsPlatformCleanup = () => builtIn() && hasPermission('can_manage_platform_defaults');
+  const canSetCleanup = (step: CleanupStep) => hasPermission(step.permission);
   const catalog = usePodClassCatalog(() => props.open && editsOrganization());
   const platformPresets = usePlatformPresets(() => props.open && editsPlatform());
   const [platformPreset, setPlatformPresetDraft] = createSignal(DEFAULT_PRESET);
@@ -66,6 +78,9 @@ export function AgentSettingsDialog(props: {
         podDraft.reset(agent.podSettings, agent.podSettingsSource !== 'own');
         setWarmPoolSize(agent.settings.warmPoolSize);
         setPlatformPresetDraft(untrack(platformValue));
+        const cleanup = agent.inactivityCleanup;
+        cleanupChoice.reset(cleanup.source === 'own' ? cleanup.cleanup : null);
+        platformCleanupChoice.reset(cleanup.platformChoice);
       }
     )
   );
@@ -75,10 +90,34 @@ export function AgentSettingsDialog(props: {
     settings: props.agent.inheritedPodSettings,
   });
   const saving = () =>
-    updatePodClass.isPending || resetPodClass.isPending || updateSettings.isPending || setPlatformPreset.isPending;
+    updatePodClass.isPending ||
+    resetPodClass.isPending ||
+    updateSettings.isPending ||
+    setPlatformPreset.isPending ||
+    updateCleanup.isPending ||
+    resetCleanup.isPending ||
+    setPlatformCleanup.isPending;
+  const cleanupDirty = () => editsOrganization() && cleanupChoice.dirty();
+  const platformCleanupDirty = () => editsPlatformCleanup() && platformCleanupChoice.dirty();
+  const cleanupInvalid = () => cleanupChoice.invalid() || platformCleanupChoice.invalid();
   const warmPoolDirty = () => !builtIn() && warmPoolSize() !== props.agent.settings.warmPoolSize;
   const platformDirty = () => editsPlatform() && platformPreset() !== platformValue();
-  const canSave = () => (podDraft.dirty() || warmPoolDirty() || platformDirty()) && !podDraft.limitError() && !saving();
+  const canSave = () =>
+    (podDraft.dirty() || warmPoolDirty() || platformDirty() || cleanupDirty() || platformCleanupDirty()) &&
+    !podDraft.limitError() &&
+    !cleanupInvalid() &&
+    !saving();
+
+  async function saveCleanup() {
+    const own = cleanupChoice.value();
+    if (!own) {
+      await resetCleanup.mutateAsync();
+      return;
+    }
+    await updateCleanup.mutateAsync(
+      Object.fromEntries(CLEANUP_STEPS.filter(canSetCleanup).map((step) => [step.field, own[step.field]]))
+    );
+  }
 
   async function handleSave() {
     try {
@@ -90,6 +129,8 @@ export function AgentSettingsDialog(props: {
         await setPlatformPreset.mutateAsync(platformPreset() === DEFAULT_PRESET ? null : platformPreset());
       }
       if (warmPoolDirty()) await updateSettings.mutateAsync({ warmPoolSize: warmPoolSize() });
+      if (cleanupDirty()) await saveCleanup();
+      if (platformCleanupDirty()) await setPlatformCleanup.mutateAsync(platformCleanupChoice.value());
       toast.success('Agent settings saved');
       props.onOpenChange(false);
     } catch (error) {
@@ -138,6 +179,50 @@ export function AgentSettingsDialog(props: {
                   />
                 </div>
               </div>
+            </section>
+          </Show>
+
+          <Show when={editsOrganization()}>
+            <section class="space-y-2 border-t border-border pt-4">
+              <div class="space-y-0.5">
+                <span class="block text-xs font-medium text-foreground">
+                  {builtIn() ? 'Inactivity cleanup in this organization' : 'Inactivity cleanup'}
+                </span>
+                <p class="text-xs text-muted-foreground/70 text-pretty">
+                  What happens to this agent’s new Projects when nobody uses them.
+                </p>
+              </div>
+              <InactivityCleanupChoiceField
+                choice={cleanupChoice}
+                label="Inactivity cleanup"
+                inheritedLabel="Inherited"
+                inherited={props.agent.inactivityCleanup.inherited}
+                inheritedDescription={`${props.agent.inactivityCleanup.platformChoice ? 'Set for all organizations' : 'Organization default'} · ${describeCleanup(props.agent.inactivityCleanup.inherited)}`}
+                customDescription="Own rules for this agent’s Projects. Both off means never."
+                disabled={saving()}
+                modeLocked={!CLEANUP_STEPS.every(canSetCleanup)}
+                locked={(step) => !canSetCleanup(step)}
+              />
+            </section>
+          </Show>
+
+          <Show when={editsPlatformCleanup()}>
+            <section class="space-y-2 border-t border-border pt-4">
+              <div class="space-y-0.5">
+                <span class="block text-xs font-medium text-foreground">Inactivity cleanup for all organizations</span>
+                <p class="text-xs text-muted-foreground/70">
+                  Applies in every organization that has no choice of its own for this agent.
+                </p>
+              </div>
+              <InactivityCleanupChoiceField
+                choice={platformCleanupChoice}
+                label="Inactivity cleanup for all organizations"
+                inheritedLabel="None"
+                inherited={props.agent.inactivityCleanup.inherited}
+                inheritedDescription="Each organization uses its own default"
+                customDescription="The same rules in every organization. Both off means never."
+                disabled={saving()}
+              />
             </section>
           </Show>
 

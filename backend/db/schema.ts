@@ -356,6 +356,8 @@ export const projectSettings = pgTable("project_settings", {
     .references(() => projects.id, { onDelete: "cascade" }),
   timeoutIdle: bigint("timeout_idle", { mode: "number" }).notNull(),
   appTimeoutIdle: bigint("app_timeout_idle", { mode: "number" }).notNull(),
+  disableAfter: bigint("disable_after", { mode: "number" }),
+  deleteAfter: bigint("delete_after", { mode: "number" }),
   timezone: text("timezone").notNull().default("UTC"),
   requestLogMode: requestLogModeEnum("request_log_mode").notNull().default("full"),
   requestLogBodyLimit: integer("request_log_body_limit").notNull().default(256 * 1024),
@@ -931,6 +933,8 @@ export const globalTimeoutDefaults = pgTable("global_timeout_defaults", {
   defaultAppTimeoutIdle: bigint("default_app_timeout_idle", {
     mode: "number",
   }).notNull(),
+  defaultDisableAfter: bigint("default_disable_after", { mode: "number" }),
+  defaultDeleteAfter: bigint("default_delete_after", { mode: "number" }),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
@@ -965,6 +969,8 @@ export const tenantTimeoutDefaults = pgTable("tenant_timeout_defaults", {
   defaultAppTimeoutIdle: bigint("default_app_timeout_idle", {
     mode: "number",
   }).notNull(),
+  defaultDisableAfter: bigint("default_disable_after", { mode: "number" }),
+  defaultDeleteAfter: bigint("default_delete_after", { mode: "number" }),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
@@ -1101,6 +1107,31 @@ export const tenantAgentPodSettings = pgTable(
     cpuMillicores: integer("cpu_millicores").notNull(),
     memoryRequestMib: integer("memory_request_mib").notNull(),
     memoryLimitMib: integer("memory_limit_mib").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.agentId] })],
+)
+
+export const agentInactivityCleanup = pgTable("agent_inactivity_cleanup", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  disableAfter: bigint("disable_after", { mode: "number" }),
+  deleteAfter: bigint("delete_after", { mode: "number" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const tenantAgentInactivityCleanup = pgTable(
+  "tenant_agent_inactivity_cleanup",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    agentId: text("agent_id")
+      .references(() => agents.id, { onDelete: "cascade" })
+      .notNull(),
+    disableAfter: bigint("disable_after", { mode: "number" }),
+    deleteAfter: bigint("delete_after", { mode: "number" }),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.agentId] })],

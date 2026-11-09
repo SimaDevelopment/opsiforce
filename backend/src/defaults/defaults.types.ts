@@ -1,6 +1,8 @@
 export interface TimeoutDefaults {
   defaultTimeoutIdle: number;
   defaultAppTimeoutIdle: number;
+  defaultDisableAfter: number | null;
+  defaultDeleteAfter: number | null;
 }
 
 export interface BudgetDefaults {
