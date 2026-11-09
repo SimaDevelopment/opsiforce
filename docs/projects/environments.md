@@ -43,7 +43,7 @@ Project ── ProjectEnvironment(Development)   ProjectEnvironment(Production)
 ### In the workspace
 
 - One Environments switcher next to the workspace tabs lists Development and every registry target, published or not; choosing one makes it the [Active environment](../../GLOSSARY.md).
-- On a phone the switcher's button shows the active environment's short name (Dev, Prod, or the one set in Settings, capitalised) with its status dot, so the Project's title keeps its room on the band; the full name stays in the button's tooltip and in the list it opens.
+- On a phone the switcher's button shows the active environment's [Badge Label](../../GLOSSARY.md) capitalised (Dev, Prod, or the one set in Settings) with its status dot, so the Project's title keeps its room on the band; the full name stays in the button's tooltip and in the list it opens.
 - The row menu holds App Auth, Environment Variables, Schedules, Restart, and delete; the project menu holds only project-level actions.
 - A banner on any non-Development Active environment warns that edits there are overwritten by the next Publish.
 - Gated by `can_manage_environments` and `can_delete_environment` ([Permissions](../organization/permissions.md)).

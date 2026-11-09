@@ -110,14 +110,14 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const loading = () => environments.isPending || (canPublish() && targets.isPending);
 
   const activeEnvironment = createMemo(() => props.environments.find((e) => e.id === props.activeEnvironmentId));
-  // On a phone the band has room for the environment's short name (Dev, Prod),
-  // not its full one: the name would push the project's title off the band.
+  // On a phone the band has room for the environment's Badge Label (Dev, Prod),
+  // not its name: the name would push the project's title off the band.
   const sidebar = useSidebar();
   const registry = useEnvironments({ enabled: () => sidebar.isMobile() });
   const triggerLabel = (env: ProjectEnvironment) => {
     if (!sidebar.isMobile()) return env.name;
     const registered = registry.data?.find((e) => e.id === env.environmentId);
-    // Dev, Prod: a word, not a badge, since here it stands in for the name
+    // capitalised, not uppercased: here the Badge Label stands in for the name
     const short = registered?.shortName?.trim() || deriveEnvironmentShortName(env.slug ?? registered?.slug ?? env.name);
     return short.charAt(0).toUpperCase() + short.slice(1).toLowerCase();
   };
