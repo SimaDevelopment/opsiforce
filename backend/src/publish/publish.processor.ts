@@ -196,8 +196,8 @@ export class PublishProcessor extends WorkerHost {
         );
       });
       await clearEnvJsonBackup(this.storageMountPath, prodEnv.directory).catch(() => undefined);
-      if (appDataReplaced) await discardReplacedAppData(prodDir, data.publishJobId).catch(() => undefined);
       await this.setStatus(data.publishJobId, PublishStatus.Done, { completedAt: new Date() });
+      if (appDataReplaced) await discardReplacedAppData(prodDir, data.publishJobId).catch(() => undefined);
       this.logger.log(
         `Published ${data.projectId} to environment ${data.environmentId} (${data.projectEnvironmentId})`
       );
