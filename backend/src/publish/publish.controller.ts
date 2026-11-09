@@ -61,6 +61,18 @@ export class PublishController {
     return this.publishService.publish(projectId, tenant.tenantId, dto);
   }
 
+  @Post('environments/:environmentId/cancel')
+  @RequirePermission('can_publish_project')
+  async cancel(
+    @Param('projectId') projectId: string,
+    @Param('environmentId') environmentId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ) {
+    await this.gate(projectId, tenant.tenantId, user);
+    return this.publishService.cancel(projectId, environmentId);
+  }
+
   @Get('environments/:environmentId/job')
   @RequirePermission('can_publish_project')
   async latestJob(

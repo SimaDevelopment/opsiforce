@@ -25,6 +25,7 @@ import { configurePublicApi, createHttpAdapter } from '../../src/public-api/publ
 import { PublicApiModule } from '../../src/public-api/public-api.module';
 import { PublishModule } from '../../src/publish/publish.module';
 import { PublishService } from '../../src/publish/publish.service';
+import { PublishCancellations } from '../../src/publish/publish-cancellations';
 import { PROJECT_PUBLISH_QUEUE } from '../../src/publish/publish.types';
 import { TenantGuard } from '../../src/tenant/tenant.guard';
 import { WorkspaceModule } from '../../src/workspace/workspace.module';
@@ -53,7 +54,11 @@ class StubPodModule {}
 class StubProjectEventsModule {}
 
 @Module({
-  providers: [PublishService, { provide: getQueueToken(PROJECT_PUBLISH_QUEUE), useClass: FakeQueue }],
+  providers: [
+    PublishService,
+    PublishCancellations,
+    { provide: getQueueToken(PROJECT_PUBLISH_QUEUE), useClass: FakeQueue },
+  ],
   exports: [PublishService, getQueueToken(PROJECT_PUBLISH_QUEUE)],
 })
 export class StubPublishModule {}

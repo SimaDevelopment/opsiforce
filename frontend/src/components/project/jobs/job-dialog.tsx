@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from 'solid-js';
+import { createMemo, For, Index, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Button } from '~/components/ui/button';
@@ -80,20 +80,19 @@ export function JobDialog(props: JobDialogProps) {
               {dismissLabel()}
             </Button>
           </Show>
-          <Show when={!isRunning()}>
-            <For each={actions()}>
-              {(action) => (
-                <Button
-                  size="sm"
-                  variant={action.variant === 'outline' ? 'outline' : 'default'}
-                  onClick={() => runAction(action)}
-                >
-                  <Dynamic component={action.icon} class="h-3.5 w-3.5" />
-                  {action.label}
-                </Button>
-              )}
-            </For>
-          </Show>
+          <Index each={actions()}>
+            {(action) => (
+              <Button
+                size="sm"
+                variant={action().variant === 'outline' ? 'outline' : 'default'}
+                disabled={action().disabled}
+                onClick={() => runAction(action())}
+              >
+                <Dynamic component={action().icon} class="h-3.5 w-3.5" />
+                {action().label}
+              </Button>
+            )}
+          </Index>
         </div>
       </DialogContent>
     </Dialog>

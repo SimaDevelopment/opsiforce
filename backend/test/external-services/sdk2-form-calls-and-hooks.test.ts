@@ -507,7 +507,9 @@ describe('form calls and save hooks of an SDK 2 service', () => {
       await saveProject({ boardIds: ['b1'] });
       const production = await productionCaller(app, project);
 
-      await app.get(ProjectConfigurationCarry).carry(project.projectEnvironmentId, production.projectEnvironmentId);
+      await app
+        .get(ProjectConfigurationCarry)
+        .carry(project.projectEnvironmentId, production.projectEnvironmentId, null);
 
       expect(projectHooks().at(-1)).toMatchObject({
         previous: null,

@@ -5,7 +5,7 @@ A ProjectEnvironment is connected to an External Service only while it holds a P
 **A Service manifest that sets `"connectedByDefault": true` connects every new Project of the service's Organization while the service is Available: the Project starts with a Project configuration made from the Project form's defaults and generated values, as if a person had saved the form untouched.** Concretely:
 
 - **Any Agent.** Built-in and Custom Agents alike; the Agent's Service settings (Agent) for the service overlay the defaults, and its Test Projects and Builder chats are new Projects too.
-- **Every way a new Project comes to exist:** create (UI, Public API, Workspace, a pool claim), Project Duplicate and Import, written and announced at the same moments as Service settings (Agent). Publish carries Development's configuration forward with fresh generated values, so each published environment has its own.
+- **Every way a new Project comes to exist:** create (UI, Public API, Workspace, a pool claim), Project Duplicate and Import, written and announced at the same moments as Service settings (Agent). A Publish carries Development's configuration, with fresh generated values, for each service chosen in its form, which starts chosen only where the target has none of its own; an unchosen service keeps the target's configuration.
 - **New Projects only.** An existing Project is never connected afterwards, and a Disconnect stays.
 - **The author decides.** Only a service whose Project form needs no person's choice sets it; Incoming email does, WhatsApp (a linked account per Project) and the Public API built-in (deliberate switches) do not.
 

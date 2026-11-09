@@ -51,6 +51,9 @@ import { ModelProvidersService } from '../model-provider/model-provider.service'
 import { appSlugBrokenRule, toAppSlug } from '../common/app-slug';
 import { assertIdleTimeoutMs } from '../common/validation';
 import { restoreEnvJsonBackup } from '../common/env-file';
+import { settleReplacedAppData } from '../publish/app-data';
+import { publishJobDone } from '../publish/publish-job-done';
+import { keepingAppDetails } from '../publish/app-details-file';
 import { writeJsonAtomic } from '../common/fs';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { DefaultsService } from '../defaults/defaults.service';
@@ -279,6 +282,11 @@ const projectSelectFields = {
   updatedAt: projects.updatedAt,
 };
 
+const DATA_COPY_HOLDABLE_STATUSES: ProjectStatus[] = [
+  ProjectStatus.Active,
+  ProjectStatus.Suspended,
+  ProjectStatus.Failed,
+];
 @Injectable()
 export class ProjectService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ProjectService.name);
@@ -370,10 +378,15 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   private async rollBackStrandedPublish(env: ProjectEnvironmentContext): Promise<ProjectStatus> {
+    if (env.isDefault) return ProjectStatus.Starting;
     if (env.deployedCommitSha === null) return ProjectStatus.Failed;
     const storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     try {
-      await this.gitService.resetHard(path.join(storageMountPath, env.directory), env.deployedCommitSha);
+      const workspace = path.join(storageMountPath, env.directory);
+      const deployedCommitSha = env.deployedCommitSha;
+      await this.stopPodForDeploy(env.id);
+      await keepingAppDetails(workspace, () => this.gitService.resetHard(workspace, deployedCommitSha));
+      await settleReplacedAppData(workspace, publishJobDone);
       await restoreEnvJsonBackup(storageMountPath, env.directory);
       return ProjectStatus.Starting;
     } catch (err) {
@@ -1662,6 +1675,57 @@ export class ProjectService implements OnApplicationBootstrap {
       this.agentStatusService.clear(updated.projectId, envId);
       await this.projectEventsService.publish(updated.projectId).catch(() => undefined);
     }
+  }
+
+  async assertCanHoldForDataCopy(envId: string): Promise<ProjectEnvironmentContext> {
+    const env = await this.projectEnvironmentService.findById(envId);
+    if (!DATA_COPY_HOLDABLE_STATUSES.includes(env.status)) {
+      throw new ConflictException({
+        code: 'development-busy',
+        message: `Development is ${env.status}; publish with data once it is running`,
+      });
+    }
+    if (this.agentStatusService.workingEnvironmentsOf(env.projectId).has(envId)) {
+      throw new ConflictException({
+        code: 'development-agent-working',
+        message: "Development's agent is working; publish with data once it has finished",
+      });
+    }
+    return env;
+  }
+
+  async whileHeldForDataCopy(envId: string, copy: () => Promise<void>): Promise<void> {
+    const env = await this.assertCanHoldForDataCopy(envId);
+    const held = await this.projectEnvironmentService.patch(
+      envId,
+      { status: ProjectStatus.Publishing },
+      DATA_COPY_HOLDABLE_STATUSES
+    );
+    if (!held) {
+      throw new ConflictException({ code: 'development-busy', message: 'Development changed state; try again' });
+    }
+    try {
+      this.agentStatusService.clear(env.projectId, envId);
+      await this.stopPodForDeploy(envId);
+      await this.projectEventsService.publish(env.projectId).catch(() => undefined);
+      await copy();
+    } finally {
+      await this.releaseAfterDataCopy(env, env.status).catch((err) => {
+        this.logger.warn(`Releasing Development ${envId} after its data copy failed: ${(err as Error).message}`);
+      });
+    }
+  }
+
+  private async releaseAfterDataCopy(env: ProjectEnvironmentContext, previous: ProjectStatus): Promise<void> {
+    const resting = previous === ProjectStatus.Failed ? ProjectStatus.Failed : ProjectStatus.Suspended;
+    await this.projectEnvironmentService.patch(env.id, { status: resting }, ProjectStatus.Publishing);
+    if (previous === ProjectStatus.Active) await this.requestStartupForId(env.id);
+    else await this.projectEventsService.publish(env.projectId);
+  }
+
+  async stopPodForDeploy(envId: string): Promise<void> {
+    this.appReadiness.markDown(envId);
+    await this.podService.deletePodAndWait(this.podService.assignedPodName(envId));
   }
 
   async recreatePodForDeploy(envId: string, timeoutMs: number): Promise<void> {

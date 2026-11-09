@@ -95,7 +95,7 @@ describe('the platform skill', () => {
     expect(section).toMatch(/never retry/i);
     expect(section).toContain("configure this Project's External Services");
     expect(section).toContain('`data`');
-    expect(section).toContain('Development changes go live on Publish');
+    expect(section).toContain('only for the services the user chooses in the Publish dialog');
   });
 
   it('leaves the Operation-era calls and refusal codes behind', () => {
