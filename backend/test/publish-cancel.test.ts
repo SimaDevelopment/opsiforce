@@ -14,7 +14,6 @@ import { ProjectStatus } from '../src/project/project.types';
 import { PublishCancellations, PublishCancelledError, unlessCancelled } from '../src/publish/publish-cancellations';
 import { PublishService } from '../src/publish/publish.service';
 import { PublishStatus } from '../src/publish/publish.types';
-import { ProjectTurns } from '../src/publish/project-turns';
 import { FakeQueue } from './support/infra-fakes';
 import { createProject, createTenant, type TenantFixture } from './support/project-fixtures';
 import { createPublicApiTestApp, type PublicApiTestApp } from './public-api/support/app';
@@ -87,10 +86,19 @@ describe('Cancelling a publish', () => {
     cancellations.end(job.id);
   });
 
-  it('refuses while a publish copies files', async () => {
+  it('never lets the worker start a publish cancelled while queued', async () => {
     const projectId = await createProject(app, tenant);
     const job = await publisher.publish(projectId, tenant.tenantId, { environmentId: production });
-    await moveJobTo(job.id, PublishStatus.Swapping);
+
+    await publisher.cancel(projectId, production);
+
+    await expect(publisher.claim(job.id)).resolves.toBe(false);
+  });
+
+  it('refuses once the worker has started a publish and before it waits for the app', async () => {
+    const projectId = await createProject(app, tenant);
+    const job = await publisher.publish(projectId, tenant.tenantId, { environmentId: production });
+    await publisher.claim(job.id);
 
     await expect(publisher.cancel(projectId, production)).rejects.toMatchObject({ status: 409 });
   });
@@ -99,32 +107,5 @@ describe('Cancelling a publish', () => {
     const projectId = await createProject(app, tenant);
 
     await expect(publisher.cancel(projectId, production)).rejects.toMatchObject({ status: 409 });
-  });
-});
-
-describe('Publishes of different Projects', () => {
-  it("run side by side while one Project's publishes take turns", async () => {
-    const turns = new ProjectTurns();
-    const order: string[] = [];
-    let releaseFirst!: () => void;
-    const firstHolds = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-
-    const first = turns.run('project-a', async () => {
-      order.push('a1 start');
-      await firstHolds;
-      order.push('a1 end');
-    });
-    const second = turns.run('project-a', async () => {
-      order.push('a2 start');
-    });
-    await turns.run('project-b', async () => {
-      order.push('b1 start');
-    });
-    releaseFirst();
-    await Promise.all([first, second]);
-
-    expect(order).toEqual(['a1 start', 'b1 start', 'a1 end', 'a2 start']);
   });
 });

@@ -320,7 +320,7 @@ export class PublishService implements OnApplicationBootstrap {
       }
     }
     if (!this.cancellations.cancel(job.id)) {
-      throw new ConflictException("This publish can't be cancelled while it copies files; try again in a moment");
+      throw new ConflictException("This publish can't be cancelled at this step");
     }
     return this.toJobResponse(job.id);
   }
@@ -372,8 +372,14 @@ export class PublishService implements OnApplicationBootstrap {
     return row ? this.toResponse(row) : null;
   }
 
-  async getJob(jobId: string): Promise<PublishJobResponse> {
-    return this.toJobResponse(jobId);
+  async claim(jobId: string): Promise<boolean> {
+    const [claimed] = await db
+      .update(projectPublishJobs)
+      .set({ status: PublishStatus.Committing, startedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(projectPublishJobs.id, jobId), eq(projectPublishJobs.status, PublishStatus.Queued)))
+      .returning({ projectId: projectPublishJobs.projectId });
+    if (claimed) await this.projectEvents.publish(claimed.projectId);
+    return !!claimed;
   }
 
   private async toJobResponse(jobId: string): Promise<PublishJobResponse> {

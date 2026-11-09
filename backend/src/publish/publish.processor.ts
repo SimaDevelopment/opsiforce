@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Job } from 'bullmq';
+import { DelayedError, Job } from 'bullmq';
 import path from 'node:path';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -28,17 +28,17 @@ import { discardReplacedAppData, holdsAppData, replaceAppData, restoreReplacedAp
 import { publishJobDone } from './publish-job-done';
 import { keepingAppDetails } from './app-details-file';
 import { PublishCancellations, PublishCancelledError, unlessCancelled } from './publish-cancellations';
-import { ProjectTurns } from './project-turns';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
 const APP_READY_TIMEOUT_MS = 10 * 60 * 1000;
 const CONCURRENT_PUBLISHES = 4;
+const BUSY_PROJECT_RETRY_MS = 5000;
 
 @Processor(PROJECT_PUBLISH_QUEUE, { concurrency: CONCURRENT_PUBLISHES })
 export class PublishProcessor extends WorkerHost {
   private readonly logger = new Logger(PublishProcessor.name);
   private readonly storageMountPath: string;
-  private readonly projectTurns = new ProjectTurns();
+  private readonly busyProjects = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -61,8 +61,18 @@ export class PublishProcessor extends WorkerHost {
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
   }
 
-  async process(job: Job<PublishJobData>): Promise<void> {
-    await this.projectTurns.run(job.data.projectId, () => this.publish(job.data));
+  async process(job: Job<PublishJobData>, token?: string): Promise<void> {
+    const { projectId } = job.data;
+    if (this.busyProjects.has(projectId)) {
+      await job.moveToDelayed(Date.now() + BUSY_PROJECT_RETRY_MS, token);
+      throw new DelayedError();
+    }
+    this.busyProjects.add(projectId);
+    try {
+      await this.publish(job.data);
+    } finally {
+      this.busyProjects.delete(projectId);
+    }
   }
 
   private async publish(data: PublishJobData): Promise<void> {
@@ -74,16 +84,13 @@ export class PublishProcessor extends WorkerHost {
     let appDataReplaced = false;
     let phase: PublishStatus = PublishStatus.Queued;
 
-    const existing = await this.publishService.getJob(data.publishJobId).catch(() => null);
-    if (!existing || existing.status === PublishStatus.Done || existing.status === PublishStatus.Failed) {
-      this.logger.warn(`Skipping publish ${data.publishJobId}: already ${existing?.status ?? 'missing'}`);
+    if (!(await this.publishService.claim(data.publishJobId))) {
+      this.logger.warn(`Skipping publish ${data.publishJobId}: it is no longer queued`);
       return;
     }
 
-    const cancelled = this.cancellations.begin(data.publishJobId);
     try {
       phase = PublishStatus.Committing;
-      await this.setStatus(data.publishJobId, PublishStatus.Committing, { startedAt: new Date() });
 
       const devEnv = await this.projectEnvironmentService.findDefaultByProjectId(data.projectId);
       const devDir = path.join(this.storageMountPath, devEnv.directory);
@@ -138,15 +145,21 @@ export class PublishProcessor extends WorkerHost {
       }
 
       phase = PublishStatus.Building;
-      await this.setStatus(data.publishJobId, PublishStatus.Building);
-      await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
+      const cancelled = this.cancellations.begin(data.publishJobId);
+      let appReady: boolean;
+      try {
+        await this.setStatus(data.publishJobId, PublishStatus.Building);
+        await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
 
-      phase = PublishStatus.Migrating;
-      await this.setStatus(data.publishJobId, PublishStatus.Migrating);
-      const appReady = await unlessCancelled(
-        cancelled,
-        this.appReadiness.awaitReady(data.projectEnvironmentId, APP_READY_TIMEOUT_MS)
-      );
+        phase = PublishStatus.Migrating;
+        await this.setStatus(data.publishJobId, PublishStatus.Migrating);
+        appReady = await unlessCancelled(
+          cancelled,
+          this.appReadiness.awaitReady(data.projectEnvironmentId, APP_READY_TIMEOUT_MS)
+        );
+      } finally {
+        this.cancellations.end(data.publishJobId);
+      }
       if (!appReady) {
         throw new Error('Production app did not become ready within the deploy window');
       }
@@ -219,8 +232,6 @@ export class PublishProcessor extends WorkerHost {
         error: userFacingPublishError(err, phase),
         completedAt: new Date(),
       });
-    } finally {
-      this.cancellations.end(data.publishJobId);
     }
   }
 
