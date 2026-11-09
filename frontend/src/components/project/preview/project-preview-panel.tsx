@@ -25,7 +25,13 @@ export interface ProjectPreviewPanelProps {
   onClosePreview: () => void;
   onReloadRef?: (reload: () => void) => void;
   onCloseOverlayRef?: (close: () => void) => void;
+  /** Lets the phone's bottom bar open the overlay, the way a tab is opened. */
+  onOpenOverlayRef?: (open: () => void) => void;
+  /** Reports the overlay's state, so the bottom bar can mark Preview as current. */
+  onOverlayChange?: (open: boolean) => void;
   overlayBackLabel: string;
+  /** On a phone the bottom bar is the way in and out: no side rail, no Back row. */
+  mobile?: boolean;
   column?: PreviewColumn;
 }
 
@@ -77,6 +83,12 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
 
   createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
   onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
+  // Between 640 and 767px (a large phone, a small tablet) the panel docks
+  // beside the content even though the bottom bar is the way in, so the bar
+  // opens whichever form the width allows, and the docked panel's own Close
+  // is never a dead end.
+  onMount(() => props.onOpenOverlayRef?.(() => setOpen(true)));
+  createEffect(() => props.onOverlayChange?.(overlaid()));
 
   createEffect(
     on(
@@ -106,7 +118,7 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     <DialogProvider>
       <MarkedProvider>
         <span ref={anchor} hidden />
-        <Show when={!open()}>
+        <Show when={!open() && !props.mobile}>
           <button
             onClick={() => setOpen(true)}
             class={cn(
@@ -138,14 +150,16 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
             <Show
               when={fitsBesideContent()}
               fallback={
-                <button
-                  type="button"
-                  onClick={() => setOverlaid(false)}
-                  class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <ChevronLeft class="h-4 w-4" />
-                  {props.overlayBackLabel}
-                </button>
+                <Show when={!props.mobile}>
+                  <button
+                    type="button"
+                    onClick={() => setOverlaid(false)}
+                    class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <ChevronLeft class="h-4 w-4" />
+                    {props.overlayBackLabel}
+                  </button>
+                </Show>
               }
             >
               <ResizeHandle

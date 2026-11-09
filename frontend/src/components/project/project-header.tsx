@@ -53,6 +53,9 @@ export function ProjectHeader(props: ProjectHeaderProps) {
   const projectQuery = useProject(() => props.projectId);
   const project = () => projectQuery.data;
   const appearance = useAppearance();
+  // On a phone the tabs live in the bottom bar (ProjectMobileNav); the band
+  // keeps the title, the environment and Publish.
+  const sidebar = useSidebar();
 
   const handleEnvironmentDeleted = (environmentId: string) => {
     if (props.activeEnvironmentId === environmentId) {
@@ -64,22 +67,24 @@ export function ProjectHeader(props: ProjectHeaderProps) {
     <div class="of-band justify-between sm:pr-4">
       <div class="of-band-lead">
         {props.headerLabel}
-        <Tabs
-          value={props.activeTab}
-          onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
-          class="w-auto shrink-0 self-stretch flex"
-        >
-          <TabsList variant="folder" class="w-auto">
-            <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
-            <ProjectTabTrigger value="files" icon={Files} onPress={props.onActiveTabChange} />
-            <Show when={props.showAgentTabs && canViewCode()}>
-              <ProjectTabTrigger value="code" icon={CodeIcon} onPress={props.onActiveTabChange} />
-            </Show>
-            <Show when={props.showAgentTabs && canViewDb()}>
-              <ProjectTabTrigger value="db" icon={Database} onPress={props.onActiveTabChange} />
-            </Show>
-          </TabsList>
-        </Tabs>
+        <Show when={!sidebar.isMobile()}>
+          <Tabs
+            value={props.activeTab}
+            onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
+            class="w-auto shrink-0 self-stretch flex"
+          >
+            <TabsList variant="folder" class="w-auto">
+              <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
+              <ProjectTabTrigger value="files" icon={Files} onPress={props.onActiveTabChange} />
+              <Show when={props.showAgentTabs && canViewCode()}>
+                <ProjectTabTrigger value="code" icon={CodeIcon} onPress={props.onActiveTabChange} />
+              </Show>
+              <Show when={props.showAgentTabs && canViewDb()}>
+                <ProjectTabTrigger value="db" icon={Database} onPress={props.onActiveTabChange} />
+              </Show>
+            </TabsList>
+          </Tabs>
+        </Show>
         <Show when={project()?.importedAgent}>
           {(slug) => (
             <Badge variant="info" class="shrink-0 font-normal">
