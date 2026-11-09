@@ -92,7 +92,7 @@ The color an Organization gives an Environment as its visual identity — the on
 _Avoid_: Status color (the orthogonal running-state axis, not identity); Label color; Theme; Tag
 
 **Badge Label**:
-The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased.
+The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased. On a phone the Environments switcher shows it, capitalised (Dev, Prod), in place of the Environment's name, which stays in the switcher's tooltip and list.
 _Avoid_: Short name (the stored identifier, not user-facing copy); Abbreviation; Tag
 
 **ProjectEnvironment**:
@@ -105,7 +105,7 @@ _Avoid_: Dev env, working copy
 
 **Production**:
 The second protected Environment present in every tenant — the conventional target for publishing the App's live version. Beyond being guaranteed to exist and protected from rename/delete, it behaves like any other publish target.
-_Avoid_: Prod (non-canonical in user-facing copy); Live
+_Avoid_: Prod (non-canonical in user-facing copy, except as the Badge Label the phone's Environments switcher shows); Live
 
 **App**:
 The application the agent builds inside a ProjectEnvironment, served at that environment's Public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).

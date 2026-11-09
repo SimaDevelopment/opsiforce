@@ -4,6 +4,7 @@ import { toast } from 'solid-sonner';
 import { usePermissions } from '~/api/permissions';
 import { useProjects } from '~/api/projects';
 import {
+  useEnvironments,
   useDeleteProjectEnvironment,
   useProjectEnvironments,
   useRestartProjectEnvironment,
@@ -13,6 +14,8 @@ import {
 import { usePublishTargets, type PublishTarget } from '~/api/publish';
 import { useCustomDomainsOffered } from '~/api/custom-domains';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
+import { useSidebar } from '~/components/ui/sidebar';
+import { deriveEnvironmentShortName } from '~/lib/environment-label';
 import { Check, ChevronsUpDown, Layers, LoaderCircle, Upload } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Skeleton } from '~/components/ui/skeleton';
@@ -107,6 +110,17 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const loading = () => environments.isPending || (canPublish() && targets.isPending);
 
   const activeEnvironment = createMemo(() => props.environments.find((e) => e.id === props.activeEnvironmentId));
+  // On a phone the band has room for the environment's Badge Label (Dev, Prod),
+  // not its name: the name would push the project's title off the band.
+  const sidebar = useSidebar();
+  const registry = useEnvironments({ enabled: () => sidebar.isMobile() });
+  const triggerLabel = (env: ProjectEnvironment) => {
+    if (!sidebar.isMobile()) return env.name;
+    const registered = registry.data?.find((e) => e.id === env.environmentId);
+    // capitalised, not uppercased: here the Badge Label stands in for the name
+    const short = registered?.shortName?.trim() || deriveEnvironmentShortName(env.slug ?? registered?.slug ?? env.name);
+    return short.charAt(0).toUpperCase() + short.slice(1).toLowerCase();
+  };
 
   const description = () => {
     const tail = canSchedules() ? ', or open schedules' : '';
@@ -205,7 +219,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
       <Popover open={open()} onOpenChange={setOpen} placement="bottom-start">
         {/* a pill with its status dot, not a bordered select */}
         <PopoverTrigger class="of-chip of-chip-btn fr" aria-label="Environments">
-          <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}>
+          <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground max-md:hidden" />}>
             <Match when={publishIndicator() === 'running'}>
               <LoaderCircle class="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
             </Match>
@@ -220,7 +234,9 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
             {(env) => (
               <span class="flex min-w-0 items-center gap-2">
                 <EnvStatusDot status={env().status} />
-                <span class="truncate font-medium text-foreground">{env().name}</span>
+                <span class="truncate font-medium text-foreground" title={env().name}>
+                  {triggerLabel(env())}
+                </span>
               </span>
             )}
           </Show>

@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, on, onMount, type Accessor } from 'solid-js';
+import { Show, createEffect, createSignal, on, onCleanup, onMount, type Accessor } from 'solid-js';
 import { DialogProvider } from '@opencode/ui/context/dialog';
 import { MarkedProvider } from '@opencode/ui/context/marked';
 import { ChevronLeft, PanelRightOpen } from '~/components/icons';
@@ -25,7 +25,13 @@ export interface ProjectPreviewPanelProps {
   onClosePreview: () => void;
   onReloadRef?: (reload: () => void) => void;
   onCloseOverlayRef?: (close: () => void) => void;
+  /** Lets the phone's bottom bar open the overlay, the way a tab is opened. */
+  onOpenOverlayRef?: (open: () => void) => void;
+  /** Reports the overlay's state, so the bottom bar can mark Preview as current. */
+  onOverlayChange?: (open: boolean) => void;
   overlayBackLabel: string;
+  /** On a phone the bottom bar is the way in and out: no side rail, no Back row. */
+  mobile?: boolean;
   column?: PreviewColumn;
 }
 
@@ -69,7 +75,10 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
 
   const previewPath = () => props.previewRequest?.path ?? null;
 
-  const fitsBesideContent = () => column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH;
+  // On a phone the preview is always the overlay the bottom bar opens and
+  // closes, whatever the width or the pane strip would allow: a docked column
+  // at 640-767px, or in a Builder's strip, is one the bar cannot mark or close.
+  const fitsBesideContent = () => !props.mobile && (column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH);
   const open = () => (fitsBesideContent() ? docked() : overlaid());
   const setOpen = (next: boolean) => (fitsBesideContent() ? setDocked(next) : setOverlaid(next));
   const [opened, setOpened] = createSignal(false);
@@ -77,6 +86,11 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
 
   createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
   onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
+  onMount(() => props.onOpenOverlayRef?.(() => setOverlaid(true)));
+  createEffect(() => props.onOverlayChange?.(overlaid()));
+  // The panel unmounts when nothing is left to show (a closed file in a project
+  // with no App yet); the bar must not keep marking Preview as current.
+  onCleanup(() => props.onOverlayChange?.(false));
 
   createEffect(
     on(
@@ -106,7 +120,7 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     <DialogProvider>
       <MarkedProvider>
         <span ref={anchor} hidden />
-        <Show when={!open()}>
+        <Show when={!open() && !props.mobile}>
           <button
             onClick={() => setOpen(true)}
             class={cn(
@@ -138,14 +152,16 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
             <Show
               when={fitsBesideContent()}
               fallback={
-                <button
-                  type="button"
-                  onClick={() => setOverlaid(false)}
-                  class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <ChevronLeft class="h-4 w-4" />
-                  {props.overlayBackLabel}
-                </button>
+                <Show when={!props.mobile}>
+                  <button
+                    type="button"
+                    onClick={() => setOverlaid(false)}
+                    class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <ChevronLeft class="h-4 w-4" />
+                    {props.overlayBackLabel}
+                  </button>
+                </Show>
               }
             >
               <ResizeHandle

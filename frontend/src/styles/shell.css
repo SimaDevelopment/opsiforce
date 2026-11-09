@@ -16,7 +16,7 @@
                    Appearance controls (contrast, density, scheme, motion)
      base        — Tailwind's base layer
      primitives  — .of-btn .of-chip .of-row, the tone recipe … the shared shapes
-     sidebar, band, home, command-palette, runs-dock, settings — one per surface
+     sidebar, band, mobile-nav, home, command-palette, runs-dock, settings — one per surface
    ========================================================================== */
 
 @import './shell/tokens.css';
@@ -24,6 +24,7 @@
 @import './shell/primitives.css';
 @import './shell/sidebar.css';
 @import './shell/band.css';
+@import './shell/mobile-nav.css';
 @import './shell/home.css';
 @import './shell/command-palette.css';
 @import './shell/runs-dock.css';

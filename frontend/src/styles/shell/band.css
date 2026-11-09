@@ -95,6 +95,22 @@
     background: var(--border-default);
   }
 
+  /* On a phone the tabs leave the band for the bottom bar, so the trail is
+     the band's whole left side: the project's name, nothing to climb to. The
+     workspace and folder stay one tap away in the drawer. */
+  @media (max-width: 767px) {
+    .of-crumbs > button,
+    .of-crumbs > .sep,
+    .of-crumbs::after {
+      display: none;
+    }
+
+    .of-crumbs .last {
+      max-width: none;
+      padding-left: 4px;
+    }
+  }
+
   /* Folder tabs: the active tab's background EQUALS the content tone and its
      ::after covers the band's bottom hairline, so the tab and the panel below
      are one surface. Inactive tabs stay on the band. No shadow trick, no

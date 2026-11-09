@@ -16,6 +16,7 @@ import { ProjectChatTab } from '~/components/project/project-chat-tab';
 import { ProjectCodeTab } from '~/components/project/project-code-tab';
 import { ProjectDbTab } from '~/components/project/project-db-tab';
 import { ProjectFilesTab } from '~/components/project/files';
+import { ProjectMobileNav, type ProjectMobileDestination } from '~/components/project/project-mobile-nav';
 import { ProjectPreviewPanel, type FilePreviewRequest } from '~/components/project/preview';
 import {
   ProjectConnecting,
@@ -27,6 +28,7 @@ import { EnvProdBanner } from '~/components/project/environments/env-prod-banner
 import { useJobDock } from '~/components/project/jobs/job-dock-context';
 import { useOpenCodeConnection, type InitialPrompt } from '~/components/project/use-opencode-connection';
 import { usePaneStripSlot } from '~/components/ui/pane-strip';
+import { useSidebar } from '~/components/ui/sidebar';
 import { ResizeHandle } from '~/components/ui/resize-handle';
 import { createResizablePanel } from '~/lib/create-resizable-panel';
 import { CHAT_COLUMN } from '~/lib/pane-widths';
@@ -67,11 +69,23 @@ export function ProjectView(props: ProjectViewProps) {
   const onCloseOverlayRef = (fn: () => void) => {
     closePreviewOverlay = fn;
   };
+  let openPreviewOverlay: () => void = () => {};
+  const onOpenOverlayRef = (fn: () => void) => {
+    openPreviewOverlay = fn;
+  };
+  // On a phone the preview is a full-screen overlay reached from the bottom
+  // bar, and the bar marks it as the current place while it is open.
+  const { isMobile } = useSidebar();
+  const [previewOverlayOpen, setPreviewOverlayOpen] = createSignal(false);
 
   const selectTab = (tab: ProjectTab) => {
     closePreviewOverlay();
     setActiveTab(tab);
     setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+  };
+  const selectMobileDestination = (destination: ProjectMobileDestination) => {
+    if (destination === 'preview') openPreviewOverlay();
+    else selectTab(destination);
   };
 
   const projectId = () => props.projectId;
@@ -124,6 +138,12 @@ export function ProjectView(props: ProjectViewProps) {
   });
   const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
   const previewVisible = () => app()?.exists === true || previewRequest() !== null;
+  const mobileTabs = (): ProjectTab[] => {
+    const tabs: ProjectTab[] = ['chat', 'files'];
+    if (connection.router() && canViewCode()) tabs.push('code');
+    if (connection.router() && canViewDb()) tabs.push('db');
+    return tabs;
+  };
 
   createEffect(
     on([() => statusQuery.data !== undefined, previewVisible], ([loaded, visible], previous) => {
@@ -305,7 +325,10 @@ export function ProjectView(props: ProjectViewProps) {
             onClosePreview={closePreview}
             onReloadRef={onReloadRef}
             onCloseOverlayRef={onCloseOverlayRef}
+            onOpenOverlayRef={onOpenOverlayRef}
+            onOverlayChange={setPreviewOverlayOpen}
             overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
+            mobile={isMobile()}
             column={
               strip && {
                 storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,
@@ -315,6 +338,15 @@ export function ProjectView(props: ProjectViewProps) {
           />
         </Show>
       </div>
+
+      <Show when={isMobile() && statusQuery.data}>
+        <ProjectMobileNav
+          active={previewOverlayOpen() && previewVisible() ? 'preview' : activeTab()}
+          tabs={mobileTabs()}
+          showPreview={previewVisible()}
+          onSelect={selectMobileDestination}
+        />
+      </Show>
     </div>
   );
 }

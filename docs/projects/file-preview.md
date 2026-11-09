@@ -16,7 +16,8 @@ adrs: [0048, 0049]
 - The App iframe is never unmounted while a file shows; it is hidden with `display: none`, so the App's in-progress state survives the detour ([App](app.md)).
 - The panel is keyed on each request to show a file, so clicking the same file again after switching back to the App reopens it.
 - A preview is single-file: opening another replaces it, and switching the [Active environment](../../GLOSSARY.md) closes it.
-- Where the content area is too narrow to hold the panel beside the chat (a phone, or a tablet with the sidebar open), the collapsed rail opens the panel as an overlay covering that content; a request to show a file opens the overlay too. The overlay closes from its Back bar, which names the Project tab underneath, from a tap on any Project tab, or by closing the file it opened for.
+- Where the content area is too narrow to hold the panel beside the chat (a tablet with the sidebar open), the collapsed rail opens the panel as an overlay covering that content; a request to show a file opens the overlay too. The overlay closes from its Back bar, which names the Project tab underneath, from a tap on any Project tab, or by closing the file it opened for.
+- On a phone (under 768px) there is no rail and no Back bar: the Project's bottom bar holds the tabs and a Preview destination, which opens the same overlay, marks itself current while it is open, and closes it when any other destination is tapped; a request to show a file opens the overlay the same way.
 
 ### Two ways in
 
