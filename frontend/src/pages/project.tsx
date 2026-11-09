@@ -341,7 +341,7 @@ export function ProjectView(props: ProjectViewProps) {
 
       <Show when={isMobile() && statusQuery.data}>
         <ProjectMobileNav
-          active={previewOverlayOpen() ? 'preview' : activeTab()}
+          active={previewOverlayOpen() && previewVisible() ? 'preview' : activeTab()}
           tabs={mobileTabs()}
           showPreview={previewVisible()}
           onSelect={selectMobileDestination}

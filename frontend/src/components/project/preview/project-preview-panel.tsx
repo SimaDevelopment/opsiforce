@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, on, onMount, type Accessor } from 'solid-js';
+import { Show, createEffect, createSignal, on, onCleanup, onMount, type Accessor } from 'solid-js';
 import { DialogProvider } from '@opencode/ui/context/dialog';
 import { MarkedProvider } from '@opencode/ui/context/marked';
 import { ChevronLeft, PanelRightOpen } from '~/components/icons';
@@ -75,7 +75,10 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
 
   const previewPath = () => props.previewRequest?.path ?? null;
 
-  const fitsBesideContent = () => column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH;
+  // On a phone the preview is always the overlay the bottom bar opens and
+  // closes, whatever the width or the pane strip would allow: a docked column
+  // at 640-767px, or in a Builder's strip, is one the bar cannot mark or close.
+  const fitsBesideContent = () => !props.mobile && (column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH);
   const open = () => (fitsBesideContent() ? docked() : overlaid());
   const setOpen = (next: boolean) => (fitsBesideContent() ? setDocked(next) : setOverlaid(next));
   const [opened, setOpened] = createSignal(false);
@@ -83,12 +86,11 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
 
   createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
   onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
-  // Between 640 and 767px (a large phone, a small tablet) the panel docks
-  // beside the content even though the bottom bar is the way in, so the bar
-  // opens whichever form the width allows, and the docked panel's own Close
-  // is never a dead end.
-  onMount(() => props.onOpenOverlayRef?.(() => setOpen(true)));
+  onMount(() => props.onOpenOverlayRef?.(() => setOverlaid(true)));
   createEffect(() => props.onOverlayChange?.(overlaid()));
+  // The panel unmounts when nothing is left to show (a closed file in a project
+  // with no App yet); the bar must not keep marking Preview as current.
+  onCleanup(() => props.onOverlayChange?.(false));
 
   createEffect(
     on(
