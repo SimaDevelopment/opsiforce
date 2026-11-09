@@ -2,13 +2,23 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { discardReplacedAppData, holdsAppData, replaceAppData, restoreReplacedAppData } from '../src/publish/app-data';
+import {
+  discardReplacedAppData,
+  holdsAppData,
+  replaceAppData,
+  restoreReplacedAppData,
+  settleReplacedAppData,
+} from '../src/publish/app-data';
 import { keepingAppDetails } from '../src/publish/app-details-file';
 
 describe('Publish with data', () => {
   let root: string;
   let development: string;
   let production: string;
+  const donePublishes = new Set<string>();
+  const publishCommitted = async (publishJobId: string) => donePublishes.has(publishJobId);
+  const publishWithData = (publishJobId: string) =>
+    replaceAppData(development, production, publishJobId, publishCommitted);
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'app-data-'));
@@ -19,11 +29,12 @@ describe('Publish with data', () => {
   });
 
   afterEach(async () => {
+    donePublishes.clear();
     await rm(root, { recursive: true, force: true });
   });
 
   it("leaves the target holding exactly Development's App data, none of its own", async () => {
-    await replaceAppData(development, production);
+    await publishWithData('publish-1');
 
     expect(await listData(production)).toEqual(['app.db', 'uploads', 'uploads/roster.csv']);
     expect(await readData(production, 'app.db')).toBe('development rows');
@@ -32,15 +43,15 @@ describe('Publish with data', () => {
   it("keeps each copied file's mode", async () => {
     await writeData(development, { 'run.sh': '#!/bin/sh' }, 0o750);
 
-    await replaceAppData(development, production);
+    await publishWithData('publish-1');
 
     expect((await stat(path.join(production, 'app', 'data', 'run.sh'))).mode & 0o777).toBe(0o750);
   });
 
   it('gives the target its own data back when the Publish fails', async () => {
-    await replaceAppData(development, production);
+    await publishWithData('publish-1');
 
-    await restoreReplacedAppData(production);
+    await restoreReplacedAppData(production, 'publish-1');
 
     expect(await listData(production)).toEqual(['app.db', 'app.db-journal']);
     expect(await readData(production, 'app.db')).toBe('production rows');
@@ -48,34 +59,55 @@ describe('Publish with data', () => {
 
   it('leaves a first-published target empty again when that Publish fails', async () => {
     await rm(path.join(production, 'app', 'data'), { recursive: true });
-    await replaceAppData(development, production);
+    await publishWithData('publish-1');
 
-    await restoreReplacedAppData(production);
+    await restoreReplacedAppData(production, 'publish-1');
 
     expect(await holdsAppData(production)).toBe(false);
   });
 
-  it('gives a target whose earlier restore never ran its own data back before copying again', async () => {
-    await replaceAppData(development, production);
+  it('gives a target whose failed Publish never restored its data back that data before copying again', async () => {
+    await publishWithData('publish-1');
     await writeData(development, { 'app.db': 'newer development rows' });
 
-    await replaceAppData(development, production);
-    await restoreReplacedAppData(production);
+    await publishWithData('publish-2');
+    await restoreReplacedAppData(production, 'publish-2');
+
+    expect(await readData(production, 'app.db')).toBe('production rows');
+  });
+
+  it('never brings back the data a finished Publish replaced', async () => {
+    await publishWithData('publish-1');
+    donePublishes.add('publish-1');
+    await writeData(production, { 'app.db': 'rows written after the Publish' });
+
+    await settleReplacedAppData(production, publishCommitted);
+    await publishWithData('publish-2');
+    await restoreReplacedAppData(production, 'publish-2');
+
+    expect(await readData(production, 'app.db')).toBe('rows written after the Publish');
+  });
+
+  it('gives a target stranded by a restart mid-Publish its own data back', async () => {
+    await publishWithData('publish-1');
+
+    await settleReplacedAppData(production, publishCommitted);
 
     expect(await readData(production, 'app.db')).toBe('production rows');
   });
 
   it('leaves the target alone when there is nothing to restore', async () => {
-    await restoreReplacedAppData(production);
+    await restoreReplacedAppData(production, 'publish-1');
+    await settleReplacedAppData(production, publishCommitted);
 
     expect(await readData(production, 'app.db')).toBe('production rows');
   });
 
   it('keeps the copied data once the replaced data is discarded', async () => {
-    await replaceAppData(development, production);
+    await publishWithData('publish-1');
 
-    await discardReplacedAppData(production);
-    await restoreReplacedAppData(production);
+    await discardReplacedAppData(production, 'publish-1');
+    await restoreReplacedAppData(production, 'publish-1');
 
     expect(await readData(production, 'app.db')).toBe('development rows');
   });

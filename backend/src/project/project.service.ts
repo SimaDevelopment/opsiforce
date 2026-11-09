@@ -51,7 +51,8 @@ import { ModelProvidersService } from '../model-provider/model-provider.service'
 import { appSlugBrokenRule, toAppSlug } from '../common/app-slug';
 import { assertIdleTimeoutMs } from '../common/validation';
 import { restoreEnvJsonBackup } from '../common/env-file';
-import { restoreReplacedAppData } from '../publish/app-data';
+import { settleReplacedAppData } from '../publish/app-data';
+import { publishJobDone } from '../publish/publish-job-done';
 import { keepingAppDetails } from '../publish/app-details-file';
 import { writeJsonAtomic } from '../common/fs';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
@@ -383,8 +384,9 @@ export class ProjectService implements OnApplicationBootstrap {
     try {
       const workspace = path.join(storageMountPath, env.directory);
       const deployedCommitSha = env.deployedCommitSha;
+      await this.stopPodForDeploy(env.id);
       await keepingAppDetails(workspace, () => this.gitService.resetHard(workspace, deployedCommitSha));
-      await restoreReplacedAppData(workspace);
+      await settleReplacedAppData(workspace, publishJobDone);
       await restoreEnvJsonBackup(storageMountPath, env.directory);
       return ProjectStatus.Starting;
     } catch (err) {

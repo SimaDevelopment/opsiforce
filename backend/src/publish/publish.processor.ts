@@ -24,7 +24,8 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { EnvironmentSkillsService } from '../delivery/environment-skills';
 import { WorkspaceWriter } from '../delivery/workspace-writer';
 import { CHAT_FILE_FOLDERS } from '../delivery/platform-ignores';
-import { discardReplacedAppData, replaceAppData, restoreReplacedAppData } from './app-data';
+import { discardReplacedAppData, holdsAppData, replaceAppData, restoreReplacedAppData } from './app-data';
+import { publishJobDone } from './publish-job-done';
 import { keepingAppDetails } from './app-details-file';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
@@ -109,8 +110,11 @@ export class PublishProcessor extends WorkerHost {
         await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
         const targetDir = prodDir;
         await this.projectService.whileHeldForDataCopy(devEnv.id, async () => {
+          if (!(await holdsAppData(devDir))) {
+            throw new ConflictException({ code: 'no-development-data', message: 'Development has no data to copy' });
+          }
           appDataReplaced = true;
-          await replaceAppData(devDir, targetDir);
+          await replaceAppData(devDir, targetDir, data.publishJobId, publishJobDone);
         });
       }
 
@@ -157,7 +161,7 @@ export class PublishProcessor extends WorkerHost {
         );
       });
       await clearEnvJsonBackup(this.storageMountPath, prodEnv.directory).catch(() => undefined);
-      if (appDataReplaced) await discardReplacedAppData(prodDir).catch(() => undefined);
+      if (appDataReplaced) await discardReplacedAppData(prodDir, data.publishJobId).catch(() => undefined);
       await this.setStatus(data.publishJobId, PublishStatus.Done, { completedAt: new Date() });
       this.logger.log(
         `Published ${data.projectId} to environment ${data.environmentId} (${data.projectEnvironmentId})`
@@ -170,7 +174,7 @@ export class PublishProcessor extends WorkerHost {
         try {
           if (appDataReplaced) {
             await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
-            await restoreReplacedAppData(prodDir);
+            await restoreReplacedAppData(prodDir, data.publishJobId);
           }
           const targetDir = prodDir;
           const restoredSha = previousSha;
