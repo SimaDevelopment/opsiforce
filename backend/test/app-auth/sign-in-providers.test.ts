@@ -341,6 +341,8 @@ describe('Organization sign-in providers', () => {
       app.get(EnvironmentService),
       app.get(ProjectEnvironmentService),
       app.get(PublicUrlService),
+      app.get(ProjectService),
+      {} as never,
       new FakeQueue() as never
     );
 

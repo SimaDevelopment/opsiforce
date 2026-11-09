@@ -22,7 +22,7 @@ adrs: [0010, 0016]
 
 ## Edge cases
 
-- When a published environment's Details are curated, the next Publish recopies Development's `app.meta.json` over them.
+- When a published environment's Details are curated, a later Publish update keeps them: only a first Publish carries Development's `app.meta.json` ([ADR-0107](../adr/0107-a-publish-carries-the-apps-data-only-when-asked-by-mirroring-developments-data-folder-and-replaces-nothing-the-target-owns-unless-chosen.md)).
 - When a Project predates the runtime-identity template, its App keeps a hardcoded title until regenerated.
 - When the preview shows a page that does not report its location (the proxy's starting page, or an App whose Content-Security-Policy blocks inline scripts), the address bar keeps the last path it knew, Back and Forward stay disabled, and Reload loads that path again.
 - When the browser has no Navigation API, Back and Forward stay disabled while the address bar still follows the App.

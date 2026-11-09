@@ -7,6 +7,8 @@ const PLATFORM_IGNORES = [
   '.xdg/',
   'node_modules/',
   'data/',
+  '/user_uploaded_files/',
+  '/generated_files/',
   '**/.yarn/cache',
   '**/.yarn/unplugged',
   '**/.yarn/build-state.yml',
@@ -14,6 +16,7 @@ const PLATFORM_IGNORES = [
   '**/.yarn/sdks',
   '**/.pnp.*',
 ];
+export const CHAT_FILE_FOLDERS = ['user_uploaded_files', 'generated_files'];
 const PLATFORM_IGNORES_MARKER = '# platform';
 
 export const WORKSPACE_GITIGNORE = '.gitignore';

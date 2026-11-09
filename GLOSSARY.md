@@ -112,7 +112,7 @@ The application the agent builds inside a ProjectEnvironment, served at that env
 _Avoid_: Project (when you mean the built application); "one App per Project" (retired — each ProjectEnvironment is its own App)
 
 **App Details**:
-An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at publish and evolve independently afterwards.
+An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at its first Publish and evolve independently afterwards: a Publish update never overwrites them.
 _Avoid_: App metadata (vague); Project title (the Project shell's label — a different thing); project-level identity (retired — App Details belong to each App/environment, not the Project)
 
 **Public URL**:
@@ -155,9 +155,13 @@ _Avoid_: Detection (the platform's inward-facing name for noticing the same mome
 The act of materializing or updating a non-Development ProjectEnvironment from the Development one's files, so the App runs in a chosen Environment. Publishing over an already-running environment is a **Publish update**.
 _Avoid_: Deploy, Release, Promote, Redeploy; conflating with Publish (Skill) or Publish (Agent), disambiguated by object: Apps and Agent Profiles publish to Environments, Skills publish to the Store
 
+**Publish with data**:
+A Publish that also replaces the target ProjectEnvironment's App data — the databases and files the App keeps as its state — with Development's, so the target ends holding exactly Development's data and none of its own. Chosen for one Publish at a time; it never carries the platform's own per-environment records, the Environment Variables, or the agent conversation.
+_Avoid_: Copy as-is, Full copy, Clone, Sync (non-canonical); Data migration (a schema change, a different thing); conflating with Duplicate, which copies a whole Project, conversation included, into a new Project
+
 **Duplicate**:
 Creating a new Project in the same tenant and workspace from an existing one, preserving its working state in full — App source and history, the agent conversation, the App's databases, Environment Variables, settings, Resources, and App Details. The duplicate is independent: it gets its own keys, and its Schedules arrive **paused** so no automation fires twice. Only the Development ProjectEnvironment is duplicated — published environments are re-created by publishing from the duplicate.
-_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source only, never working state); Duplicate (Agent) (the Agent sense)
+_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source, and App data only as a Publish with data, never the conversation or the rest of the working state); Duplicate (Agent) (the Agent sense)
 
 **Export**:
 Producing a Project export from a Project's Development working state, to carry it to a *different* Opsiforce deployment. The cross-deployment sibling of Duplicate — same bundle and carry-rules — but the destination is another instance reached through a file rather than a local copy. Only the Development ProjectEnvironment is exported.
@@ -308,11 +312,11 @@ The project workspace tab where a user sees and manages the Active environment's
 _Avoid_: File browser, File manager (dev-tool connotation — it is a curated view, not the filesystem); Workspace (the Org-level Project grouping — a different thing)
 
 **User uploads**:
-Files a user added to a ProjectEnvironment — attached in chat or uploaded from the Files tab — kept durably in the environment's upload area with their original folder layout preserved.
+Files a user added to a ProjectEnvironment — attached in chat or uploaded from the Files tab — kept durably in the environment's upload area with their original folder layout preserved. They stay in the environment they were added to: a Publish never carries them, and a file the App needs at runtime belongs in the App itself.
 _Avoid_: Attachments (implies message-scoped; uploads are durable workspace files, not parts of a Prompt)
 
 **Generated files**:
-The Agent's finished deliverables — documents, reports, exports — saved by convention into the environment's designated output folder, which the Files tab surfaces as its own section. The folder comes into existence on first write; deliverables the Agent drops elsewhere still surface in the tab as other files.
+The Agent's finished deliverables — documents, reports, exports — saved by convention into the environment's designated output folder, which the Files tab surfaces as its own section. The folder comes into existence on first write; deliverables the Agent drops elsewhere still surface in the tab as other files. Like User uploads, they stay in the environment where they were made: a Publish never carries them.
 _Avoid_: Artifacts (claude.ai's concept — different mechanics); Outputs (vague); Generated app (the App source — a different thing entirely)
 
 **File preview**:
@@ -436,7 +440,7 @@ The values filled into an External Service's Service form, one per service and o
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project. A Publish carries Development's for the services chosen in its form, which start chosen only where the target has none of its own, so a target's own configuration is replaced only on request.
 _Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
 **Disconnect (External Service)**:

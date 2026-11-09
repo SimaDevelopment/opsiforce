@@ -48,6 +48,10 @@ export class GitService {
     return this.currentSha(dir);
   }
 
+  async untrack(dir: string, paths: string[]): Promise<void> {
+    await this.git(dir, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...paths]);
+  }
+
   /** Commits only `paths`, leaving whatever else the working tree or index holds untouched. */
   async commitPaths(dir: string, paths: string[], message: string): Promise<string> {
     const tracked = await this.withoutIgnored(dir, paths);

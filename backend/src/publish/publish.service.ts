@@ -11,9 +11,12 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import crypto from 'crypto';
+import path from 'node:path';
 import { db } from '../../db';
 import { projectDuplicateJobs, projectEnvironments, projectPublishJobs, projectSchedules } from '../../db/schema';
 import { readEnvJson } from '../common/env-file';
+import { ProjectConfigurationCarry } from '../external-services';
+import { ProjectService } from '../project/project.service';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { EnvironmentService } from '../environment/environment.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
@@ -31,6 +34,7 @@ import {
   PublishStatus,
   PublishTarget,
 } from './publish.types';
+import { holdsAppData } from './app-data';
 
 @Injectable()
 export class PublishService implements OnApplicationBootstrap {
@@ -43,6 +47,8 @@ export class PublishService implements OnApplicationBootstrap {
     private readonly environmentService: EnvironmentService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly publicUrls: PublicUrlService,
+    private readonly projectService: ProjectService,
+    private readonly projectConfigurationCarry: ProjectConfigurationCarry,
     @InjectQueue(PROJECT_PUBLISH_QUEUE)
     private readonly queue: Queue<PublishJobData>
   ) {
@@ -141,12 +147,21 @@ export class PublishService implements OnApplicationBootstrap {
 
     const schedules = devSchedules.map((s) => ({ id: s.id, name: s.name, selected: true }));
 
+    const services = (await this.projectConfigurationCarry.choices(devEnv.id, instance?.id ?? null)).map((choice) => ({
+      id: choice.id,
+      name: choice.name,
+      targetHasOwn: choice.targetHasOwn,
+      selected: !choice.targetHasOwn,
+    }));
+
     return {
       environmentId,
       environmentName: registryEnv.name,
       isFirstPublish,
+      developmentHasData: await holdsAppData(this.workspacePath(devEnv.directory)),
       variables,
       schedules,
+      services,
     };
   }
 
@@ -167,6 +182,8 @@ export class PublishService implements OnApplicationBootstrap {
     if (await this.hasActiveDuplicate(projectId)) {
       throw new ConflictException('Cannot publish while a duplicate is in progress for this project');
     }
+
+    if (dto.withData) await this.assertDataCanMove(projectId);
 
     const instances = await this.projectEnvironmentService.listByProjectId(projectId);
     const existing = instances.find((i) => i.environmentId === dto.environmentId);
@@ -230,6 +247,8 @@ export class PublishService implements OnApplicationBootstrap {
           isFirstPublish,
           variables: dto.variables ?? {},
           scheduleIds: dto.scheduleIds ?? [],
+          serviceIds: dto.serviceIds ?? null,
+          withData: dto.withData === true,
         },
         { jobId: publishJobId, attempts: 1, removeOnComplete: true, removeOnFail: 1000 }
       );
@@ -239,6 +258,18 @@ export class PublishService implements OnApplicationBootstrap {
     }
 
     return this.toJobResponse(publishJobId);
+  }
+
+  private async assertDataCanMove(projectId: string): Promise<void> {
+    const devEnv = await this.projectEnvironmentService.findDefaultByProjectId(projectId);
+    if (!(await holdsAppData(this.workspacePath(devEnv.directory)))) {
+      throw new BadRequestException({ code: 'no-development-data', message: 'Development has no data to copy' });
+    }
+    await this.projectService.assertCanHoldForDataCopy(devEnv.id);
+  }
+
+  private workspacePath(directory: string): string {
+    return path.join(this.storageMountPath, directory);
   }
 
   private async abandonJob(jobId: string, createdEnvironmentId: string | null): Promise<void> {

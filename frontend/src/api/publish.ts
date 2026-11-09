@@ -30,24 +30,36 @@ export interface PublishFormSchedule {
   selected: boolean;
 }
 
+export interface PublishFormService {
+  id: string;
+  name: string;
+  selected: boolean;
+  targetHasOwn: boolean;
+}
+
 export interface PublishForm {
   environmentId: string;
   environmentName: string;
   isFirstPublish: boolean;
+  developmentHasData: boolean;
   variables: PublishFormVariable[];
   schedules: PublishFormSchedule[];
+  services: PublishFormService[];
 }
 
 export interface PublishDto {
   environmentId: string;
   variables: Record<string, string>;
   scheduleIds: string[];
+  serviceIds: string[];
+  withData: boolean;
 }
 
 export type PublishReportLine =
   | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'carried' }
   | { kind: 'project-configuration'; service: string; displayName: string; outcome: 'failed'; code: string }
-  | { kind: 'skills-off'; switchedOff: string[]; switchedOn: string[] };
+  | { kind: 'skills-off'; switchedOff: string[]; switchedOn: string[] }
+  | { kind: 'app-data'; outcome: 'replaced' };
 
 export interface PublishJob {
   id: string;

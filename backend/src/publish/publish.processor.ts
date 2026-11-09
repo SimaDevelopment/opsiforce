@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import path from 'node:path';
@@ -23,6 +23,9 @@ import { ProjectConfigurationCarry, ServiceDefaultEnvironments } from '../extern
 import { DeliveryService } from '../delivery/delivery.service';
 import { EnvironmentSkillsService } from '../delivery/environment-skills';
 import { WorkspaceWriter } from '../delivery/workspace-writer';
+import { CHAT_FILE_FOLDERS } from '../delivery/platform-ignores';
+import { discardReplacedAppData, replaceAppData, restoreReplacedAppData } from './app-data';
+import { keepingAppDetails } from './app-details-file';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
 const APP_READY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -59,6 +62,7 @@ export class PublishProcessor extends WorkerHost {
     let previousSha: string | null = null;
     let previousEnvVars: Record<string, string> | null = null;
     let deployStarted = false;
+    let appDataReplaced = false;
     let phase: PublishStatus = PublishStatus.Queued;
 
     const existing = await this.publishService.getJob(data.publishJobId).catch(() => null);
@@ -73,6 +77,8 @@ export class PublishProcessor extends WorkerHost {
 
       const devEnv = await this.projectEnvironmentService.findDefaultByProjectId(data.projectId);
       const devDir = path.join(this.storageMountPath, devEnv.directory);
+      await this.workspaceWriter.keepPlatformIgnores(devEnv.directory);
+      await this.git.untrack(devDir, CHAT_FILE_FOLDERS);
       const sha = await this.git.commitWorkingTree(devDir, `Publish ${data.environmentId}`);
       await this.setStatus(data.publishJobId, PublishStatus.Committing, { commitSha: sha });
 
@@ -93,9 +99,19 @@ export class PublishProcessor extends WorkerHost {
         await this.git.resetHard(prodDir, sha);
         await this.gatewayKeyService.createKey(data.projectId, data.projectEnvironmentId, data.tenantId);
       } else {
-        await this.syncIncremental(devDir, prodDir, sha);
+        const targetDir = prodDir;
+        await keepingAppDetails(targetDir, () => this.syncIncremental(devDir, targetDir, sha));
         previousEnvVars = await this.publishService.readEnvFile(prodEnv.directory);
         await writeEnvJsonBackup(this.storageMountPath, prodEnv.directory, previousEnvVars);
+      }
+
+      if (data.withData) {
+        await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
+        const targetDir = prodDir;
+        await this.projectService.whileHeldForDataCopy(devEnv.id, async () => {
+          appDataReplaced = true;
+          await replaceAppData(devDir, targetDir);
+        });
       }
 
       if (!(await this.workspaceWriter.hasOpencodeDir(prodEnv.directory))) {
@@ -120,7 +136,8 @@ export class PublishProcessor extends WorkerHost {
       }
 
       const report: PublishReportLine[] = [
-        ...(await this.projectConfigurationCarry.carry(devEnv.id, data.projectEnvironmentId)),
+        ...(appDataReplaced ? [{ kind: 'app-data', outcome: 'replaced' } as const] : []),
+        ...(await this.projectConfigurationCarry.carry(devEnv.id, data.projectEnvironmentId, data.serviceIds)),
         ...(await this.environmentSkills.carry(devEnv.id, data.projectEnvironmentId)),
       ];
       await this.setStatus(data.publishJobId, PublishStatus.Migrating, { report });
@@ -140,6 +157,7 @@ export class PublishProcessor extends WorkerHost {
         );
       });
       await clearEnvJsonBackup(this.storageMountPath, prodEnv.directory).catch(() => undefined);
+      if (appDataReplaced) await discardReplacedAppData(prodDir).catch(() => undefined);
       await this.setStatus(data.publishJobId, PublishStatus.Done, { completedAt: new Date() });
       this.logger.log(
         `Published ${data.projectId} to environment ${data.environmentId} (${data.projectEnvironmentId})`
@@ -150,7 +168,13 @@ export class PublishProcessor extends WorkerHost {
 
       if (!data.isFirstPublish && prodDir && prodDirectory && previousSha) {
         try {
-          await this.git.resetHard(prodDir, previousSha);
+          if (appDataReplaced) {
+            await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
+            await restoreReplacedAppData(prodDir);
+          }
+          const targetDir = prodDir;
+          const restoredSha = previousSha;
+          await keepingAppDetails(targetDir, () => this.git.resetHard(targetDir, restoredSha));
           if (previousEnvVars) {
             await this.restoreEnvFile(prodDir, previousEnvVars);
           }
@@ -297,6 +321,11 @@ const PHASE_FAILURE_MESSAGE: Partial<Record<PublishStatus, string>> = {
 };
 
 function userFacingPublishError(err: unknown, phase: PublishStatus): string {
+  if (err instanceof ConflictException) {
+    const refusal = err.getResponse();
+    if (typeof refusal === 'object' && 'message' in refusal && typeof refusal.message === 'string')
+      return refusal.message;
+  }
   if (err instanceof PodStartupFailedError) {
     if (err.reason === 'Unschedulable') {
       return 'Not enough capacity to start the app right now. Please try again in a few minutes.';

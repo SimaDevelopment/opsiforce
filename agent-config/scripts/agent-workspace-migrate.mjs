@@ -14,6 +14,8 @@ const PLATFORM_IGNORES = [
   ".xdg/",
   "node_modules/",
   "data/",
+  "/user_uploaded_files/",
+  "/generated_files/",
   "**/.yarn/cache",
   "**/.yarn/unplugged",
   "**/.yarn/build-state.yml",

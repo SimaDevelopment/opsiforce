@@ -107,6 +107,9 @@ function runningStepLabel(steps: { label: string }[], index: number): string {
 }
 
 function publishReportText(line: PublishReportLine, environmentName: string): string {
+  if (line.kind === 'app-data') {
+    return `Replaced ${environmentName}'s data with Development's.`;
+  }
   if (line.kind === 'skills-off') {
     const changes = [
       line.switchedOff.length > 0 ? `switched off ${line.switchedOff.join(', ')}` : '',
