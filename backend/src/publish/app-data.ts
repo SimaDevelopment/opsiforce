@@ -10,6 +10,11 @@ export async function holdsAppData(workspace: string): Promise<boolean> {
   return entries.length > 0;
 }
 
+export async function holdsReplacedAppData(workspace: string): Promise<boolean> {
+  const owners = await readdir(path.join(workspace, REPLACED_APP_DATA)).catch(() => []);
+  return owners.length > 0;
+}
+
 export async function replaceAppData(
   sourceWorkspace: string,
   targetWorkspace: string,

@@ -59,6 +59,7 @@ Publish job stages in order, during which the target ProjectEnvironment holds st
 - Schedule recreation failing after a healthy Publish is logged and does not fail the Publish.
 - A Project configuration that cannot be carried, such as one whose secret no longer opens at Development's place, gets a report line instead of failing the Publish; the target keeps its own configuration and Development keeps receiving.
 - The worker starts a Publish only by moving its job from `queued` to `committing`, so a job cancelled, finished or failed before then is skipped.
+- Moved-aside `app/data/` that a failed rollback left behind is settled by the next Publish update, with or without data, after the target's pod has stopped.
 - A cancel sent while a Publish is `building` takes effect once the pod is up; cancelling pod creation midway would race the rollback's own pod.
 - A Publish with data is refused with `400 no-development-data` when Development's `app/data/` is empty, and with `409` while Development is starting or publishing (`development-busy`) or its agent is working (`development-agent-working`).
 - Publish and Duplication cannot run against the same [Project](../../GLOSSARY.md) at once, since both begin by committing the same working tree.

@@ -24,7 +24,14 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { EnvironmentSkillsService } from '../delivery/environment-skills';
 import { WorkspaceWriter } from '../delivery/workspace-writer';
 import { CHAT_FILE_FOLDERS } from '../delivery/platform-ignores';
-import { discardReplacedAppData, holdsAppData, replaceAppData, restoreReplacedAppData } from './app-data';
+import {
+  discardReplacedAppData,
+  holdsAppData,
+  holdsReplacedAppData,
+  replaceAppData,
+  restoreReplacedAppData,
+  settleReplacedAppData,
+} from './app-data';
 import { publishJobDone } from './publish-job-done';
 import { keepingAppDetails } from './app-details-file';
 import { PublishCancellations, PublishCancelledError, unlessCancelled } from './publish-cancellations';
@@ -122,8 +129,11 @@ export class PublishProcessor extends WorkerHost {
         await writeEnvJsonBackup(this.storageMountPath, prodEnv.directory, previousEnvVars);
       }
 
+      const leftoverAppData = await holdsReplacedAppData(prodDir);
+      if (data.withData || leftoverAppData) await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
+      if (leftoverAppData) await settleReplacedAppData(prodDir, publishJobDone);
+
       if (data.withData) {
-        await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
         const targetDir = prodDir;
         await this.projectService.whileHeldForDataCopy(devEnv.id, async () => {
           if (!(await holdsAppData(devDir))) {

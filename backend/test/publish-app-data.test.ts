@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   discardReplacedAppData,
   holdsAppData,
+  holdsReplacedAppData,
   replaceAppData,
   restoreReplacedAppData,
   settleReplacedAppData,
@@ -93,6 +94,16 @@ describe('Publish with data', () => {
 
     await settleReplacedAppData(production, publishCommitted);
 
+    expect(await readData(production, 'app.db')).toBe('production rows');
+  });
+
+  it('shows data a failed rollback left moved aside until it is settled', async () => {
+    await publishWithData('publish-1');
+
+    expect(await holdsReplacedAppData(production)).toBe(true);
+    await settleReplacedAppData(production, publishCommitted);
+
+    expect(await holdsReplacedAppData(production)).toBe(false);
     expect(await readData(production, 'app.db')).toBe('production rows');
   });
 
