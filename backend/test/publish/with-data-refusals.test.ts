@@ -4,17 +4,17 @@ import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { ConfigService } from '@nestjs/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { EnvironmentService } from '../src/environment/environment.service';
-import { ProjectEnvironmentService } from '../src/project-environment/project-environment.service';
-import { PublicUrlService } from '../src/project-environment/public-url.service';
-import { ProjectService } from '../src/project/project.service';
-import { ProjectStatus } from '../src/project/project.types';
-import { PublishService } from '../src/publish/publish.service';
-import { PublishCancellations } from '../src/publish/publish-cancellations';
-import { ProjectEventsService } from '../src/project/project-events.service';
-import { FakeQueue } from './support/infra-fakes';
-import { createProject, createTenant, type TenantFixture } from './support/project-fixtures';
-import { createPublicApiTestApp, type PublicApiTestApp } from './public-api/support/app';
+import { EnvironmentService } from '../../src/environment/environment.service';
+import { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
+import { PublicUrlService } from '../../src/project-environment/public-url.service';
+import { ProjectService } from '../../src/project/project.service';
+import { ProjectStatus } from '../../src/project/project.types';
+import { PublishService } from '../../src/publish/publish.service';
+import { PublishCancellations } from '../../src/publish/publish-cancellations';
+import { ProjectEventsService } from '../../src/project/project-events.service';
+import { FakeQueue } from '../support/infra-fakes';
+import { createProject, createTenant, type TenantFixture } from '../support/project-fixtures';
+import { createPublicApiTestApp, type PublicApiTestApp } from '../public-api/support/app';
 
 describe('Publish with data refusals', () => {
   let harness: PublicApiTestApp;

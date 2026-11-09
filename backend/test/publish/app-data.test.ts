@@ -9,8 +9,8 @@ import {
   replaceAppData,
   restoreReplacedAppData,
   settleReplacedAppData,
-} from '../src/publish/app-data';
-import { keepingAppDetails } from '../src/publish/app-details-file';
+} from '../../src/publish/app-data';
+import { keepingAppDetails } from '../../src/publish/app-details-file';
 
 describe('Publish with data', () => {
   let root: string;

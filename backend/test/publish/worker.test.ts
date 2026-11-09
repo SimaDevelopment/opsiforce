@@ -1,7 +1,7 @@
 import { DelayedError } from 'bullmq';
 import { describe, expect, it, vi } from 'vitest';
-import { PublishCancellations } from '../src/publish/publish-cancellations';
-import { PublishProcessor } from '../src/publish/publish.processor';
+import { PublishCancellations } from '../../src/publish/publish-cancellations';
+import { PublishProcessor } from '../../src/publish/publish.processor';
 
 function job(publishJobId: string, projectId: string) {
   return { data: { publishJobId, projectId }, moveToDelayed: vi.fn(async () => undefined) };
