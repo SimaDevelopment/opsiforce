@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Body, Controller, Get, Headers, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Logger, Post, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { timingSafeStringEqual } from '../common/secret-crypto';
 import { Public } from '../tenant/tenant.decorator';
@@ -43,6 +43,8 @@ const stringField = (value: unknown) => (typeof value === 'string' ? value : '')
 @Public()
 @Controller('app-auth')
 export class AppUsersProviderController {
+  private readonly logger = new Logger(AppUsersProviderController.name);
+
   constructor(
     private readonly provider: AppUsersProviderService,
     private readonly appUsers: AppUsersService,
@@ -134,13 +136,19 @@ export class AppUsersProviderController {
     }
     const { client } = check.request;
     const email = stringField(body.email).trim();
-    const user = this.mailer.enabled ? await this.appUsers.findByEmail(client.projectId, email) : null;
-    if (user && user.disabledAt === null) {
-      await this.links
-        .sendSelfServiceReset(user.id, client.environmentId, this.authorizeUrl(rawRequest))
-        .catch(() => undefined);
+    if (this.mailer.enabled) {
+      void this.sendResetIfAccount(client.projectId, client.environmentId, email, this.authorizeUrl(rawRequest));
     }
     return this.showForgot(reply, client.appName, rawRequest, cookies, email);
+  }
+
+  private async sendResetIfAccount(projectId: string, environmentId: string, email: string, returnUrl: string) {
+    try {
+      const user = await this.appUsers.findByEmail(projectId, email);
+      if (user && user.disabledAt === null) await this.links.sendSelfServiceReset(user.id, environmentId, returnUrl);
+    } catch (err) {
+      this.logger.warn(`Self-service reset for an App User of Project ${projectId} failed: ${(err as Error).message}`);
+    }
   }
 
   @Get('set-password')

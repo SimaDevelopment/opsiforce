@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppUsersService } from '../../src/app-users/app-users.service';
 import {
   ISSUER,
@@ -26,6 +26,7 @@ let app: NestFastifyApplication;
 let mailgun: Server;
 let sent: SentMail[] = [];
 let failSending = false;
+let sendDelayMs = 0;
 
 function field(body: string, name: string): string {
   const match = new RegExp(`name="${name}"\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--`).exec(body);
@@ -36,7 +37,8 @@ beforeAll(async () => {
   mailgun = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk: Buffer) => (body += chunk.toString()));
-    req.on('end', () => {
+    req.on('end', async () => {
+      if (sendDelayMs) await new Promise((resolve) => setTimeout(resolve, sendDelayMs));
       if (failSending) {
         res.writeHead(500, { 'content-type': 'application/json' }).end('{"message":"mail is down"}');
         return;
@@ -57,7 +59,11 @@ beforeAll(async () => {
 beforeEach(() => {
   sent = [];
   failSending = false;
+  sendDelayMs = 0;
 });
+
+const delivered = (count: number) => vi.waitFor(() => expect(sent).toHaveLength(count));
+const settled = () => new Promise((resolve) => setTimeout(resolve, 300));
 
 afterAll(async () => {
   await app.close();
@@ -147,7 +153,7 @@ describe('App User emails through Mailgun', () => {
 
     const asked = await askForReset(project, 'Ada@Example-org.com');
     expect(asked.body).toContain('Check your email');
-    expect(sent).toHaveLength(1);
+    await delivered(1);
     expect(sent[0]).toMatchObject({ to: 'ada@example-org.com', subject: 'Reset your password for Equipment Monitor' });
 
     const saved = await choosePassword(linkIn(sent[0]), 'a brand new password');
@@ -164,10 +170,13 @@ describe('App User emails through Mailgun', () => {
     const unknown = await askForReset(project, 'nobody@example-org.com');
     expect(unknown.statusCode).toBe(200);
     expect(unknown.body).toContain('Check your email');
+    await settled();
     expect(sent).toHaveLength(0);
 
     await askForReset(project, 'ada@example-org.com');
+    await delivered(1);
     await askForReset(project, 'ada@example-org.com');
+    await settled();
     expect(sent).toHaveLength(1);
   });
 
@@ -178,8 +187,25 @@ describe('App User emails through Mailgun', () => {
     const answers = await Promise.all(Array.from({ length: 5 }, () => askForReset(project, 'ada@example-org.com')));
 
     expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200, 200, 200, 200]);
+    await delivered(1);
+    await settled();
     expect(sent).toHaveLength(1);
     expect((await choosePassword(linkIn(sent[0]), 'a brand new password')).statusCode).toBe(200);
+  });
+
+  it('answers a known email as fast as an unknown one while Mailgun is slow', async () => {
+    const project = await projectUsingAppUsers(app);
+    await ownerCall(project, 'POST', '/app-users', { email: 'ada@example-org.com', password: 'the old password' });
+    sendDelayMs = 3000;
+
+    const started = Date.now();
+    const asked = await askForReset(project, 'ada@example-org.com');
+    const answeredAfterMs = Date.now() - started;
+
+    expect(asked.body).toContain('Check your email');
+    expect(answeredAfterMs).toBeLessThan(1500);
+    expect(sent).toHaveLength(0);
+    await vi.waitFor(() => expect(sent).toHaveLength(1), { timeout: 6000 });
   });
 
   it('hands the owner the working link when Mailgun refuses an email, and keeps the visitor’s answer unchanged', async () => {

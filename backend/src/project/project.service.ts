@@ -1390,16 +1390,19 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async inheritAuth(from: { id: string }, to: AppAuthRouteTarget): Promise<void> {
-    const source = await this.projectEnvironmentService.findById(from.id);
-    let signInProviderId: string | null = null;
-    if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
-    else if (source.authMode === 'app_users') await this.projectAuthService.inheritAppUsers(source.id, to);
-    else signInProviderId = await this.projectAuthService.inheritAuth(source.id, to);
-    const authMode = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
-    await db
-      .update(projectEnvironments)
-      .set({ authMode, signInProviderId, updatedAt: new Date() })
-      .where(eq(projectEnvironments.id, to.id));
+    const authMode = await withEnvironmentAuthLock(from.id, async (tx, source) => {
+      if (!source) throw new NotFoundException(`Environment ${from.id} not found`);
+      let signInProviderId: string | null = null;
+      if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
+      else if (source.authMode === 'app_users') await this.projectAuthService.inheritAppUsers(from.id, to);
+      else signInProviderId = await this.projectAuthService.inheritAuth(from.id, to);
+      const seeded = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
+      await tx
+        .update(projectEnvironments)
+        .set({ authMode: seeded, signInProviderId, updatedAt: new Date() })
+        .where(eq(projectEnvironments.id, to.id));
+      return seeded;
+    });
     await this.customDomainCluster.followAppAuth({ id: to.id, authMode });
   }
 

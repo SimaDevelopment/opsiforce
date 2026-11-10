@@ -307,6 +307,12 @@ export class FakeProjectAuthService extends RecordingFake {
 
   async inheritAuth(fromEnvironmentId: string, to: AppAuthRouteTarget): Promise<string | null> {
     this.record('inheritAuth', { fromEnvironmentId, ...addressesOf(to) });
+    const hold = this.held.get(to.id);
+    if (hold) {
+      this.held.delete(to.id);
+      hold.reached();
+      await hold.released;
+    }
     const source = this.gates.get(fromEnvironmentId);
     if (!source) throw new Error(`Cannot inherit app auth: source middleware for ${fromEnvironmentId} not found`);
     this.gates.set(to.id, source);
