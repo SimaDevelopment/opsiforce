@@ -22,6 +22,9 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type AppUserRow = typeof appUsers.$inferSelect;
 type Executor = Pick<typeof db, 'select' | 'insert' | 'delete'>;
+type Writer = Pick<typeof db, 'update' | 'delete'>;
+
+export type PasswordChange = Partial<typeof appUsers.$inferInsert>;
 
 function toResponse(row: AppUserRow, roles: string[]): AppUserResponse {
   return {
@@ -161,11 +164,17 @@ export class AppUsersService {
   }
 
   async setPassword(userId: string, password: string): Promise<void> {
-    const changes = { ...(await this.passwordChange(password, new Date())), updatedAt: new Date() };
-    await db.transaction(async (tx) => {
-      await tx.update(appUsers).set(changes).where(eq(appUsers.id, userId));
-      await tx.delete(appUserLinks).where(eq(appUserLinks.appUserId, userId));
-    });
+    const change = await this.preparePasswordChange(password);
+    await db.transaction((tx) => this.writePasswordChange(tx, userId, change));
+  }
+
+  async preparePasswordChange(password: unknown): Promise<PasswordChange> {
+    return { ...(await this.passwordChange(password, new Date())), updatedAt: new Date() };
+  }
+
+  async writePasswordChange(writer: Writer, userId: string, change: PasswordChange): Promise<void> {
+    await writer.update(appUsers).set(change).where(eq(appUsers.id, userId));
+    await writer.delete(appUserLinks).where(eq(appUserLinks.appUserId, userId));
   }
 
   async remove(projectId: string, userId: string): Promise<void> {

@@ -92,6 +92,13 @@ describe('the App Users gate', () => {
     expect(plugin().BypassAuthenticationRule).toBe("PathPrefix('/public')");
   });
 
+  it('refuses to seed a published environment when Development has lost its gate', async () => {
+    kube.getNamespacedCustomObject.mockRejectedValue({ code: 404 });
+
+    await expect(service().inheritAppUsers(DEV.id, PROD)).rejects.toThrow('source middleware');
+    expect(kube.createNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
   it.each([['oidcPluginSecret'], ['opsiforcePublicUrl']])('is refused without %s', async (missing) => {
     await expect(service({ [missing]: '' }).applyAppUsers(DEV)).rejects.toThrow(
       'App Users need OPSIFORCE_PUBLIC_URL and OIDC_PLUGIN_SECRET'

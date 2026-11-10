@@ -344,7 +344,11 @@ export class ProjectAuthService {
   }
 
   async inheritAppUsers(fromRoutingId: string, to: AppAuthRouteTarget): Promise<void> {
-    await this.applyAppUsers(to, (await this.getConfig(fromRoutingId)).bypassAuthPaths);
+    const sourceSpec = await this.readPluginSpec(fromRoutingId);
+    if (!sourceSpec) {
+      throw new Error(`Cannot inherit app auth: source middleware ${appAuthMiddlewareName(fromRoutingId)} not found`);
+    }
+    await this.applyAppUsers(to, pathsFromBypassRule(sourceSpec.BypassAuthenticationRule));
   }
 
   async applySignInHost(provider: SignInProviderConnection): Promise<void> {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { customDomains } from '../../db/schema';
 import { appUsersClientSecret } from '../../src/app-users/app-users-client';
@@ -450,5 +450,23 @@ describe('the App Users provider', () => {
     expect((await setPassword('another password')).statusCode).toBe(410);
     const signIn = await submitSignIn(project, pkce().challenge, 'new@example.test', PASSWORD);
     expect(signIn.res.statusCode).toBe(302);
+  });
+
+  it('keeps the link usable when saving the chosen password fails', async () => {
+    const project = await projectUsingAppUsers(app);
+    const invitee = await appUsers.create(project.projectId, { email: 'retry@example.test' });
+    const links = app.get(AppUserLinksService);
+    const link = await links.createForOwner(project.projectId, invitee.id, 'invite', project.projectId, false);
+    const token = new URL(link.url).searchParams.get('token') ?? '';
+    const failingWrite = vi
+      .spyOn(appUsers, 'writePasswordChange')
+      .mockRejectedValueOnce(new Error('database went away'));
+
+    await expect(links.redeem(token, PASSWORD)).rejects.toThrow('database went away');
+    failingWrite.mockRestore();
+
+    expect(await links.open(token)).not.toBeNull();
+    expect((await links.redeem(token, PASSWORD)).outcome).toBe('done');
+    expect((await appUsers.signIn(project.projectId, 'retry@example.test', PASSWORD)).outcome).toBe('signed-in');
   });
 });

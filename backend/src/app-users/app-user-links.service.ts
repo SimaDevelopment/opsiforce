@@ -115,18 +115,17 @@ export class AppUserLinksService {
     const chosen = validPassword(password);
     const link = await this.open(token);
     if (!link) return { outcome: 'invalid' };
+    const change = await this.users.preparePasswordChange(chosen);
     const claimed = await db.transaction(async (tx) => {
       const [row] = await tx
         .delete(appUserLinks)
         .where(and(eq(appUserLinks.tokenHash, hashToken(token)), gt(appUserLinks.expiresAt, new Date())))
         .returning({ appUserId: appUserLinks.appUserId });
-      if (!row) return null;
-      await tx.delete(appUserLinks).where(eq(appUserLinks.appUserId, row.appUserId));
-      return row.appUserId;
+      if (!row) return false;
+      await this.users.writePasswordChange(tx, row.appUserId, change);
+      return true;
     });
-    if (!claimed) return { outcome: 'invalid' };
-    await this.users.setPassword(claimed, chosen);
-    return { outcome: 'done', link };
+    return claimed ? { outcome: 'done', link } : { outcome: 'invalid' };
   }
 
   private async email(token: string, link: { url: string; expiresAt: Date }): Promise<void> {
