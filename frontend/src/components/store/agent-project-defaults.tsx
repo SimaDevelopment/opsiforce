@@ -1,7 +1,9 @@
 import { Dynamic } from 'solid-js/web';
 import type { Component, ParentProps } from 'solid-js';
+import type { AgentInactivityCleanup } from '~/api/agents';
 import type { PodSettings } from '~/api/client';
-import { Cpu, Layers } from '~/components/icons';
+import { Archive, Cpu, Layers } from '~/components/icons';
+import { CLEANUP_STEPS, capitalized, describeCleanup, formatDuration } from '~/lib/inactivity-cleanup';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import { cn } from '~/lib/cn';
 import { formatCores, formatGib, presetTitle } from '~/lib/pod-resources';
@@ -10,9 +12,23 @@ export function AgentProjectDefaults(props: {
   podSettings: PodSettings;
   readyProjects: number;
   imageOwned: boolean;
+  inactivityCleanup: AgentInactivityCleanup;
   onEdit?: () => void;
   onEditResources?: () => void;
+  onEditCleanup?: () => void;
 }) {
+  const cleanupParts = () =>
+    CLEANUP_STEPS.flatMap((step) => {
+      const after = props.inactivityCleanup.cleanup[step.field];
+      return after === null ? [] : [`${capitalized(step.action)} ${formatDuration(after)}`];
+    });
+  const cleanupSource = () =>
+    ({
+      own: props.imageOwned ? 'Set for this organization.' : 'Set for this agent.',
+      platform: 'Set for all organizations.',
+      default: 'From the organization default.',
+    })[props.inactivityCleanup.source];
+  const cleanupHint = () => `${describeCleanup(props.inactivityCleanup.cleanup)}. ${cleanupSource()}`;
   const resourcesHint = () =>
     `Each new Project starts at ${formatCores(props.podSettings.cpuMillicores)}, ${formatGib(props.podSettings.memoryRequestMib)} memory, up to ${formatGib(props.podSettings.memoryLimitMib)}.`;
   const readyHint = () =>
@@ -38,6 +54,9 @@ export function AgentProjectDefaults(props: {
       >
         <span class="font-medium tabular-nums">{props.readyProjects === 0 ? 'None' : props.readyProjects}</span>
         <span class="text-muted-foreground">ready</span>
+      </DefaultChip>
+      <DefaultChip icon={Archive} hint={cleanupHint()} onEdit={props.onEditCleanup} muted={cleanupParts().length === 0}>
+        <span class="font-medium">{cleanupParts().length === 0 ? 'Never cleaned up' : cleanupParts().join(' · ')}</span>
       </DefaultChip>
     </div>
   );

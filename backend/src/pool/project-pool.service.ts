@@ -29,6 +29,7 @@ import {
 import { legacyAppHost } from '../common/app-host';
 import { sameResources, toK8sResources, type PodSettings } from '../pod/pod-classes';
 import { hasResources, podSettingsColumns, storedLegacyPodSettings } from '../pod/pod-settings-columns';
+import type { InactivityCleanup } from '../project/inactivity-cleanup';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
 import { assertRoomForCreatedProject, assertRoomForProject, type CreatedProjectsCap } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
@@ -71,6 +72,7 @@ export interface PoolClaim {
   description: string | null;
   timeoutIdle: number;
   appTimeoutIdle: number;
+  inactivityCleanup: InactivityCleanup;
   timezone: string;
   createdBy: string | null;
   createdByProjectId: string | null;
@@ -483,6 +485,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .set({
           timeoutIdle: claim.timeoutIdle,
           appTimeoutIdle: claim.appTimeoutIdle,
+          ...claim.inactivityCleanup,
           timezone: claim.timezone,
         })
         .where(eq(projectSettings.projectId, row.id));
@@ -515,6 +518,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .set({
           timeoutIdle: claim.timeoutIdle,
           appTimeoutIdle: claim.appTimeoutIdle,
+          ...claim.inactivityCleanup,
           timezone: claim.timezone,
         })
         .where(eq(projectSettings.projectId, projectId));

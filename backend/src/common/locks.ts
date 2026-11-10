@@ -5,6 +5,7 @@ import type { LimitKey } from '../limit/limit.types';
 export type DbExecutor = DrizzleDB | Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 const PROJECT_GIT_NAMESPACE = 'opsiforce:project-git';
+const AGENT_INACTIVITY_CLEANUP_NAMESPACE = 'opsiforce:agent-inactivity-cleanup';
 const ENVIRONMENT_SESSION_NAMESPACE = 'opsiforce:environment-session';
 const AGENT_TEMPLATE_NAMESPACE = 'opsiforce:agent-template';
 const TENANT_LIMIT_NAMESPACE = 'opsiforce:tenant-limit';
@@ -22,6 +23,16 @@ export class LockNotAvailable extends Error {
 
 export async function lockProjectGit(executor: DbExecutor, projectId: string): Promise<void> {
   await executor.execute(sql`select pg_advisory_xact_lock(hashtext(${PROJECT_GIT_NAMESPACE}), hashtext(${projectId}))`);
+}
+
+export async function lockAgentInactivityCleanup(
+  executor: DbExecutor,
+  agentId: string,
+  tenantId: string | null
+): Promise<void> {
+  await executor.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${AGENT_INACTIVITY_CLEANUP_NAMESPACE}), hashtext(${`${agentId}:${tenantId ?? 'platform'}`}))`
+  );
 }
 
 export async function lockAgentTemplate(executor: DbExecutor, agentId: string): Promise<void> {

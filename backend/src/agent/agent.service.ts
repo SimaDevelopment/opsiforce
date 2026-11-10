@@ -14,7 +14,7 @@ import { agentSettings, agents, environments, projectEnvironments } from '../../
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
-import { lockAgentTemplate } from '../common/locks';
+import { lockAgentInactivityCleanup, lockAgentTemplate, type DbExecutor } from '../common/locks';
 import type { TemplateSaveResult } from '../agent-template/agent-template.types';
 import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
 import { ProjectPoolService } from '../pool/project-pool.service';
@@ -55,6 +55,15 @@ import {
 import { AgentBundleReader } from './agent-bundle.reader';
 import { AgentBundleWriter } from './agent-bundle.writer';
 import { isChatKind, type ProjectKind } from '../project/project.types';
+import {
+  patchedInactivityCleanup,
+  readAgentInactivityCleanup,
+  writeAgentInactivityCleanup,
+  writeTenantAgentInactivityCleanup,
+  type AgentInactivityCleanup,
+  type InactivityCleanup,
+} from '../project/inactivity-cleanup';
+import { DefaultsService, tenantInactivityCleanup } from '../defaults/defaults.service';
 import { assertModelSelection } from './agent-models';
 import { AgentProfileService, assertAgentCarriesNoPrivateSkill } from './agent-profile.service';
 import { AgentRepository } from './agent.repository';
@@ -96,6 +105,7 @@ import {
   type UpdateAgentDto,
   type UpdateAgentProfileDto,
   type AgentCopyGrants,
+  type UpdateAgentInactivityCleanupDto,
   type UpdateAgentPodClassDto,
   type UpdateAgentSettingsDto,
 } from './agent.types';
@@ -132,7 +142,8 @@ export class AgentService {
     private readonly bundles: AgentBundleWriter,
     private readonly configService: ConfigService,
     private readonly pool: ProjectPoolService,
-    private readonly skillAvailability: SkillAvailability
+    private readonly skillAvailability: SkillAvailability,
+    private readonly defaults: DefaultsService
   ) {}
 
   async findAll(caller: AgentCaller): Promise<AgentResponse[]> {
@@ -199,6 +210,7 @@ export class AgentService {
           ? await this.repository.shippedSkills(this.skillAvailability.packageSkillNames(agent.name))
           : [],
       projectCount: await this.repository.projectCount(agent.id, caller.tenantId),
+      inactivityCleanup: await this.agentInactivityCleanup(agent.id, caller.tenantId),
     };
   }
 
@@ -280,14 +292,14 @@ export class AgentService {
   }
 
   async updatePodClass(caller: AgentCaller, agentId: string, dto: UpdateAgentPodClassDto): Promise<AgentDetail> {
-    const agent = await this.assertResourcesEditable(caller, agentId);
+    const agent = await this.assertProjectSettingsEditable(caller, agentId);
     await this.writeResources(caller, agent, podSettingsFromRequest(dto, await readPresetCatalog(caller.tenantId)));
     return this.findOne(caller, agentId);
   }
 
   /** A Built-in Agent goes back to the platform's choice here, a Custom Agent to the default preset. */
   async resetPodClass(caller: AgentCaller, agentId: string): Promise<AgentDetail> {
-    const agent = await this.assertResourcesEditable(caller, agentId);
+    const agent = await this.assertProjectSettingsEditable(caller, agentId);
     await this.writeResources(caller, agent, null);
     return this.findOne(caller, agentId);
   }
@@ -301,7 +313,50 @@ export class AgentService {
     await this.reconcilePool(agent.id);
   }
 
-  private async assertResourcesEditable(caller: AgentCaller, agentId: string): Promise<AgentRow> {
+  async updateInactivityCleanup(
+    caller: AgentCaller,
+    agentId: string,
+    dto: UpdateAgentInactivityCleanupDto
+  ): Promise<AgentDetail> {
+    const agent = await this.assertProjectSettingsEditable(caller, agentId);
+    const tenantDefault = tenantInactivityCleanup(await this.defaults.getTenantTimeouts(caller.tenantId));
+    await db.transaction(async (tx) => {
+      await lockAgentInactivityCleanup(tx, agent.id, agent.origin === 'built_in' ? caller.tenantId : null);
+      const current = await readAgentInactivityCleanup(agent.id, caller.tenantId, tenantDefault, tx);
+      const cleanup = patchedInactivityCleanup(current.cleanup, dto);
+      if (cleanup) await this.writeInactivityCleanup(caller, agent, cleanup, tx);
+    });
+    return this.findOne(caller, agentId);
+  }
+
+  async resetInactivityCleanup(caller: AgentCaller, agentId: string): Promise<AgentDetail> {
+    const agent = await this.assertProjectSettingsEditable(caller, agentId);
+    await db.transaction(async (tx) => {
+      await lockAgentInactivityCleanup(tx, agent.id, agent.origin === 'built_in' ? caller.tenantId : null);
+      await this.writeInactivityCleanup(caller, agent, null, tx);
+    });
+    return this.findOne(caller, agentId);
+  }
+
+  private async writeInactivityCleanup(
+    caller: AgentCaller,
+    agent: AgentRow,
+    cleanup: InactivityCleanup | null,
+    executor: DbExecutor
+  ): Promise<void> {
+    if (agent.origin === 'built_in') {
+      await writeTenantAgentInactivityCleanup(caller.tenantId, agent.id, cleanup, executor);
+    } else {
+      await writeAgentInactivityCleanup(agent.id, cleanup, executor);
+    }
+  }
+
+  private async agentInactivityCleanup(agentId: string, tenantId: string): Promise<AgentInactivityCleanup> {
+    const tenantDefault = tenantInactivityCleanup(await this.defaults.getTenantTimeouts(tenantId));
+    return readAgentInactivityCleanup(agentId, tenantId, tenantDefault);
+  }
+
+  private async assertProjectSettingsEditable(caller: AgentCaller, agentId: string): Promise<AgentRow> {
     const agent = await assertAgentVisibleToUser(caller.tenantId, caller.userId, agentId);
     if (agent.origin === 'custom') return this.assertEditable(caller, agentId);
     if (!caller.canManageAgents) throw new MissingPermissionException('can_manage_agents');
@@ -342,7 +397,7 @@ export class AgentService {
     const read = await this.bundleReader.read(source, caller.tenantId);
     const bundle = {
       ...read,
-      projectSettings: settingsForCopy(read.projectSettings, dto, await readPresetCatalog(caller.tenantId)),
+      projectSettings: settingsForCopy(read.projectSettings, dto, await readPresetCatalog(caller.tenantId), grants),
     };
     const { pins, notes } = await this.profiles.pinsWithinGrants(caller.tenantId, bundle.skills, grants);
     const copyId = await this.bundles.write(caller, { displayName, bundle, pins });

@@ -34,6 +34,7 @@ import {
 import { ActionsMenu, ActionsMenuItem } from './actions-menu';
 import { ProjectSettings } from './project-settings';
 import { ConfirmDialog } from './ui/confirm-dialog';
+import { CLEANUP_STEPS } from '~/lib/inactivity-cleanup';
 
 interface PendingMove {
   toWorkspaceId: string | null;
@@ -64,7 +65,8 @@ export function ProjectActionsMenu(props: {
     hasPermission('can_manage_project_budget_settings') ||
     hasPermission('can_manage_project_timeout_settings') ||
     hasPermission('can_manage_project_logging_settings') ||
-    hasPermission('can_manage_project_pod_settings');
+    hasPermission('can_manage_project_pod_settings') ||
+    CLEANUP_STEPS.some((step) => hasPermission(step.permission));
   const canDisable = () => hasPermission('can_disable_project');
   const canRestart = () => hasPermission('can_restart_project');
   const canDuplicate = () => hasPermission('can_duplicate_project');

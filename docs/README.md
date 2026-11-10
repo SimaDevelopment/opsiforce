@@ -23,6 +23,7 @@
 - [Main domain](projects/main-domain.md) — the one Custom domain that is the Public URL, Make main, and the redirect every other domain carries
 - [Publish](projects/publish.md) — moving an App from Development into an environment, Environment Variables and the publish stages
 - [Duplication](projects/duplication.md) — copying a whole Project with its working state
+- [Inactivity cleanup](projects/inactivity-cleanup.md) — disabling and deleting Projects nobody has used for a set number of days
 - [Export and Import](projects/export-import.md) — carrying a Project to another deployment as a file
 - [App](projects/app.md) — per-environment App Details and runtime identity
 - [App Readiness](projects/app-readiness.md) — how Go-live and serving are pushed from the pod

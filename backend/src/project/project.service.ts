@@ -103,6 +103,17 @@ import {
 } from './project.types';
 import { toK8sResources, type K8sResourceRequirements, type PodSettings } from '../pod/pod-classes';
 import { readAgentPodSettings } from '../agent/agent-pod-settings';
+import { tenantInactivityCleanup } from '../defaults/defaults.service';
+import {
+  INACTIVITY_CLEANUP_STEPS,
+  NO_INACTIVITY_CLEANUP,
+  inactivityCleanupColumns,
+  inactivityCleanupForNewProject,
+  inactivityCleanupOf,
+  patchedInactivityCleanup,
+  projectLastActivityAt,
+  type InactivityCleanup,
+} from './inactivity-cleanup';
 import { podSettingsFromRequest } from '../pod/pod-class-request';
 import {
   PREVIOUS_RELEASE_READS_NUMBERS,
@@ -262,6 +273,7 @@ const projectSelectFields = {
   authMode: projectEnvironments.authMode,
   timeoutIdle: projectSettings.timeoutIdle,
   appTimeoutIdle: projectSettings.appTimeoutIdle,
+  ...inactivityCleanupColumns(projectSettings),
   timezone: projectSettings.timezone,
   requestLogMode: projectSettings.requestLogMode,
   requestLogBodyLimit: projectSettings.requestLogBodyLimit,
@@ -278,6 +290,7 @@ const projectSelectFields = {
       AND ${projectEnvAll.environmentId} IS NOT NULL
   )`.as('environment_ids'),
   lastPromptAt: projects.lastPromptAt,
+  lastActivityAt: projectLastActivityAt.as('last_activity_at'),
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 };
@@ -524,6 +537,11 @@ export class ProjectService implements OnApplicationBootstrap {
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
     const timeouts = await this.creationTimeouts(tenantId, kind);
+    const inactivityCleanup = await inactivityCleanupForNewProject(
+      agentId,
+      tenantId,
+      tenantInactivityCleanup(timeouts)
+    );
 
     const claimedId = await this.projectPoolService
       .claimPending(agentId, {
@@ -539,6 +557,7 @@ export class ProjectService implements OnApplicationBootstrap {
         createdProjectsCap,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
+        inactivityCleanup,
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
@@ -553,7 +572,7 @@ export class ProjectService implements OnApplicationBootstrap {
       return project;
     }
 
-    return this.createDirect(dto, tenantId, agentId, timeouts, {
+    return this.createDirect(dto, tenantId, agentId, timeouts, inactivityCleanup, {
       workspaceId,
       folderId,
       createdBy,
@@ -576,6 +595,7 @@ export class ProjectService implements OnApplicationBootstrap {
     tenantId: string,
     agentId: string,
     timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
+    inactivityCleanup: InactivityCleanup,
     context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
     const {
@@ -614,6 +634,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
+        ...inactivityCleanup,
         timezone: dto?.timezone || 'UTC',
       });
 
@@ -713,6 +734,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: source.timeoutIdle,
         appTimeoutIdle: source.appTimeoutIdle,
+        ...inactivityCleanupOf(source),
         timezone: source.timezone,
         requestLogMode: source.requestLogMode,
         requestLogBodyLimit: source.requestLogBodyLimit,
@@ -829,6 +851,11 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    const inactivityCleanup = await inactivityCleanupForNewProject(
+      agentId,
+      tenantId,
+      tenantInactivityCleanup(timeouts)
+    );
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
     const podResources = await this.resolveImportedResources(resources, agentId, tenantId);
@@ -851,6 +878,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: settings?.timeoutIdle ?? timeouts.defaultTimeoutIdle,
         appTimeoutIdle: settings?.appTimeoutIdle ?? timeouts.defaultAppTimeoutIdle,
+        ...inactivityCleanup,
         timezone: tz,
         ...(settings
           ? { requestLogMode: settings.requestLogMode, requestLogBodyLimit: settings.requestLogBodyLimit }
@@ -1178,8 +1206,19 @@ export class ProjectService implements OnApplicationBootstrap {
     if (dto.appTimeoutIdle !== undefined)
       settingsUpdates.appTimeoutIdle = assertIdleTimeoutMs(dto.appTimeoutIdle, 'appTimeoutIdle');
     if (dto.timezone !== undefined) settingsUpdates.timezone = dto.timezone;
+    const touchesCleanup = INACTIVITY_CLEANUP_STEPS.some((step) => dto[step.field] !== undefined);
 
     await db.transaction(async (tx) => {
+      if (touchesCleanup) {
+        const [current] = await tx
+          .select(inactivityCleanupColumns(projectSettings))
+          .from(projectSettings)
+          .where(eq(projectSettings.projectId, project.id))
+          .for('update');
+        const inactivityCleanup = patchedInactivityCleanup(current ?? NO_INACTIVITY_CLEANUP, dto);
+        if (inactivityCleanup) Object.assign(settingsUpdates, inactivityCleanup);
+      }
+
       if (Object.keys(projectUpdates).length > 0) {
         await tx
           .update(projects)
@@ -1363,6 +1402,22 @@ export class ProjectService implements OnApplicationBootstrap {
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
   async remove(id: string, tenantId: string): Promise<void> {
     await this.findOne(id, tenantId);
+    await db.update(projects).set({ deleting: true, updatedAt: new Date() }).where(eq(projects.id, id));
+    await this.removeClaimed(id, tenantId);
+  }
+
+  async removeIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
+    const claimed = await db
+      .update(projects)
+      .set({ disabled: true, deleting: true, updatedAt: new Date() })
+      .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), condition))
+      .returning({ id: projects.id });
+    if (claimed.length === 0) return false;
+    await this.removeClaimed(id, tenantId);
+    return true;
+  }
+
+  private async removeClaimed(id: string, tenantId: string): Promise<void> {
     for (const child of await this.testProjectsCreatedBy(id, tenantId)) {
       await this.remove(child.id, tenantId);
     }
@@ -1430,11 +1485,24 @@ export class ProjectService implements OnApplicationBootstrap {
     if (project.disabled) {
       throw new BadRequestException('Project is already disabled');
     }
+    await this.disableWhere(id, tenantId);
+    return this.findOne(id, tenantId);
+  }
 
+  disableIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
+    return this.disableWhere(id, tenantId, condition);
+  }
+
+  private async disableWhere(id: string, tenantId: string, condition?: SQL): Promise<boolean> {
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
-    await db.transaction(async (tx) => {
-      await tx.update(projects).set({ disabled: true, updatedAt: new Date() }).where(eq(projects.id, id));
+    const claimed = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(projects)
+        .set({ disabled: true, updatedAt: new Date() })
+        .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), eq(projects.disabled, false), condition))
+        .returning({ id: projects.id });
+      if (rows.length === 0) return false;
       await tx
         .update(projectEnvironments)
         .set({ status: ProjectStatus.Suspended, updatedAt: new Date() })
@@ -1444,7 +1512,9 @@ export class ProjectService implements OnApplicationBootstrap {
             inArray(projectEnvironments.status, [ProjectStatus.Active, ProjectStatus.Starting])
           )
         );
+      return true;
     });
+    if (!claimed) return false;
 
     await Promise.allSettled([
       ...envs.map((env) => this.safeDeletePod(this.podService.assignedPodName(env.id), `disabling project ${id}`)),
@@ -1458,8 +1528,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.lifecycle?.disabled(id);
     await this.projectEventsService.publish(id);
-
-    return this.findOne(id, tenantId);
+    return true;
   }
 
   async enable(id: string, tenantId: string): Promise<ProjectResponse> {
@@ -1472,10 +1541,18 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, project.kind);
-      await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+      const enabled = await tx
+        .update(projects)
+        .set({ disabled: false, updatedAt: new Date() })
+        .where(and(eq(projects.id, id), eq(projects.disabled, true), eq(projects.deleting, false)))
+        .returning({ id: projects.id });
+      if (enabled.length === 0) throw new ConflictException('Project is being deleted');
     });
+    const enabledAt = new Date();
     await Promise.all(
-      envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting }))
+      envs.map((env) =>
+        this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting, lastActiveAt: enabledAt })
+      )
     );
 
     envs.forEach((env) => this.spawnStartupWorker(env.id));

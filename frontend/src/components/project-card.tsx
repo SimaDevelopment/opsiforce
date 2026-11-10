@@ -6,6 +6,15 @@ import { projectDisplayTitle } from '~/lib/project-display';
 import { EnvironmentBadges } from './project/environment-badges';
 import { ProjectActionsMenu } from './project-actions-menu';
 import { Spinner } from '~/components/ui/spinner';
+import {
+  capitalized,
+  formatMoment,
+  formatRelative,
+  isDue,
+  isSoon,
+  nextCleanup,
+  type ScheduledCleanup,
+} from '~/lib/inactivity-cleanup';
 
 export function ProjectCard(props: {
   project: Project;
@@ -18,6 +27,10 @@ export function ProjectCard(props: {
   const isDisabled = () => props.project.status === 'disabled';
   const isFailed = () => props.project.status === 'failed';
   const isWaiting = () => isAgentWaiting(props.project.id);
+  const upcomingCleanup = () => {
+    const step = nextCleanup(props.project);
+    return step && isSoon(step.at) ? step : null;
+  };
 
   const [editing, setEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal('');
@@ -110,6 +123,9 @@ export function ProjectCard(props: {
               <Show when={isFailed()}>
                 <span class="text-xs of-ink of-tone-failed">Failed</span>
               </Show>
+              <Show when={upcomingCleanup()}>
+                {(cleanup) => <CleanupCountdown cleanup={cleanup()} projectDisabled={isDisabled()} />}
+              </Show>
               <EnvironmentBadges environmentIds={props.project.environmentIds} dimmed={isDisabled()} size="sm" />
             </div>
           </Show>
@@ -136,5 +152,23 @@ export function ProjectCard(props: {
         </Show>
       </div>
     </div>
+  );
+}
+
+function CleanupCountdown(props: { cleanup: ScheduledCleanup; projectDisabled: boolean }) {
+  const label = () =>
+    isDue(props.cleanup.at)
+      ? props.cleanup.step.soon
+      : `${props.cleanup.step.upcoming} ${formatRelative(props.cleanup.at)}`;
+  return (
+    <span
+      class={cn(
+        'text-xs of-ink whitespace-nowrap',
+        props.cleanup.step.destructive ? 'of-tone-failed' : 'of-tone-needs-you'
+      )}
+      title={`${capitalized(props.cleanup.step.done)} on ${formatMoment(props.cleanup.at)} unless ${props.projectDisabled ? 'someone enables it' : 'it’s used before then'}`}
+    >
+      {label()}
+    </span>
   );
 }

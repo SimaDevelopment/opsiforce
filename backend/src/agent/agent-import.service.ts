@@ -23,6 +23,7 @@ import { scanTemplateSource } from '../agent-template/template-source';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { importsRootPath } from '../project/project-import.types';
 import type { AgentServiceSettings } from '../../db/schema';
+import { INACTIVITY_CLEANUP_STEPS, inactivityCleanupFrom } from '../project/inactivity-cleanup';
 import type { DbExecutor } from '../common/locks';
 import {
   collectEntries,
@@ -175,7 +176,12 @@ export class AgentImportService {
         profile: manifest.profile,
         skills: [],
         template: null,
-        projectSettings: settingsForCopy(manifestProjectSettings(manifest, presets), request.projectSettings, presets),
+        projectSettings: settingsForCopy(
+          manifestProjectSettings(manifest, presets),
+          request.projectSettings,
+          presets,
+          grants
+        ),
       },
       pins: [],
       skillWrites: [],
@@ -510,8 +516,12 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
 function isAgentProjectSettings(value: unknown): boolean {
   const settings = value as Partial<AgentProjectSettings> | null;
   const resources = settings?.resources;
+  const cleanup = settings?.inactivityCleanup;
   return (
     typeof settings?.warmPoolSize === 'number' &&
+    (cleanup === undefined ||
+      cleanup === null ||
+      INACTIVITY_CLEANUP_STEPS.every((step) => isOptionalDuration(cleanup[step.field]))) &&
     typeof resources === 'object' &&
     resources !== null &&
     typeof resources.cpuMillicores === 'number' &&
@@ -522,13 +532,19 @@ function isAgentProjectSettings(value: unknown): boolean {
 
 function manifestProjectSettings(manifest: AgentExportManifest, catalog: PresetCatalog): AgentProjectSettings {
   const carried = manifest.projectSettings;
+  const inactivityCleanup = carried?.inactivityCleanup ? inactivityCleanupFrom(carried.inactivityCleanup) : null;
   if (!carried || carried.followsDefault) {
-    return { ...defaultAgentProjectSettings(catalog), warmPoolSize: importedWarmPoolSize(carried) };
+    return { ...defaultAgentProjectSettings(catalog), warmPoolSize: importedWarmPoolSize(carried), inactivityCleanup };
   }
   return {
     resources: podSettingsFromBundle(carried.resources, catalog) ?? defaultPodSettings(catalog),
     warmPoolSize: importedWarmPoolSize(carried),
+    inactivityCleanup,
   };
+}
+
+function isOptionalDuration(value: unknown): boolean {
+  return value === null || typeof value === 'number';
 }
 
 function importedWarmPoolSize(carried: AgentProjectSettings | undefined): number {

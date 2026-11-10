@@ -24,6 +24,7 @@ import {
   ProjectImportUploadCleanupProcessor,
   PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE,
 } from './project-import-upload-cleanup.processor';
+import { InactivityCleanupProcessor, INACTIVITY_CLEANUP_QUEUE } from './inactivity-cleanup.processor';
 import { ProjectEventsModule } from './project-events.module';
 import { AppService } from './app.service';
 import { AppReadinessModule } from './app-readiness.module';
@@ -50,6 +51,7 @@ import { CustomDomainModule } from '../custom-domain/custom-domain.module';
     BullModule.registerQueue({ name: PROJECT_DUPLICATE_QUEUE }),
     BullModule.registerQueue({ name: PROJECT_IMPORT_QUEUE }),
     BullModule.registerQueue({ name: PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE }),
+    BullModule.registerQueue({ name: INACTIVITY_CLEANUP_QUEUE }),
     BullBoardModule.forFeature({
       name: PROJECT_DUPLICATE_QUEUE,
       adapter: BullMQAdapter,
@@ -60,6 +62,10 @@ import { CustomDomainModule } from '../custom-domain/custom-domain.module';
     }),
     BullBoardModule.forFeature({
       name: PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE,
+      adapter: BullMQAdapter,
+    }),
+    BullBoardModule.forFeature({
+      name: INACTIVITY_CLEANUP_QUEUE,
       adapter: BullMQAdapter,
     }),
     PodModule,
@@ -100,6 +106,7 @@ import { CustomDomainModule } from '../custom-domain/custom-domain.module';
     ProjectImportUploadService,
     ProjectImportProcessor,
     ProjectImportUploadCleanupProcessor,
+    InactivityCleanupProcessor,
     ProxyService,
     AppService,
     AgentObservationsService,
@@ -115,12 +122,20 @@ import { CustomDomainModule } from '../custom-domain/custom-domain.module';
   ],
 })
 export class ProjectModule implements OnApplicationBootstrap {
-  constructor(@InjectQueue(PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE) private readonly importUploadCleanupQueue: Queue) {}
+  constructor(
+    @InjectQueue(PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE) private readonly importUploadCleanupQueue: Queue,
+    @InjectQueue(INACTIVITY_CLEANUP_QUEUE) private readonly inactivityCleanupQueue: Queue
+  ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     await this.importUploadCleanupQueue.upsertJobScheduler(
       'project-import-upload-cleanup-daily',
       { pattern: '0 3 * * *' },
+      { name: 'cleanup' }
+    );
+    await this.inactivityCleanupQueue.upsertJobScheduler(
+      'project-inactivity-cleanup-hourly',
+      { pattern: '17 * * * *', tz: 'UTC' },
       { name: 'cleanup' }
     );
   }
