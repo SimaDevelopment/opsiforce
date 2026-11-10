@@ -15,14 +15,14 @@ terms: [Main domain]
 - The `www` of every bare domain is sent on to that bare domain by `opsiforce-project-<envId>-without-www`, which exists while the environment has a bare domain; the bare domain then serves or redirects as its own setting says.
 - While the environment has no Main domain, every domain serves on its own host whatever its setting, so a domain that passed Check before any connected works at once. When the first connects and becomes main, the domains set to redirect switch to it.
 - Make main, `POST /api/projects/<id>/environments/<envId>/domains/<domainId>/main` gated by `can_manage_custom_domains`, works only on a connected domain and answers 409 on any other. It moves the role, rewrites the redirect and every domain route of the environment, and the Public URL follows.
-- The dialog's Make main asks for confirmation only when [App Auth](../../GLOSSARY.md) is on, naming the new Main domain's sign-in callback to register, since visitors then sign in there.
+- The dialog's Make main asks for confirmation only when [App Auth](../../GLOSSARY.md) signs visitors in through an outside provider (Manual or a Sign-in provider), naming the new Main domain's sign-in callback to register, since visitors then sign in there. With App Users it changes the Main domain at once: the backend's own sign-in accepts any domain that serves the App ([App User](app-user.md)).
 - Removing the Main domain, or another App taking it ([DNS check](dns-check.md)), hands the role to the environment's oldest other connected domain and rewrites the redirect and the routes, or, with none, deletes the redirect and the Public URL goes back to the [Default address](../../GLOSSARY.md). Remove's confirmation says which.
 - The App address lookup answers as the routes do, through the same rule, `redirectTargetOf`: a `www` is redirected to its bare domain, a domain set to redirect to the Main domain while the App has one, and every other host is served, which catches a route that has drifted.
 
 ## Edge cases
 
 - When a domain set to redirect becomes the Main domain, it serves, since the Main domain never redirects; if it later loses the role, it redirects again.
-- When a domain serves on its own host with App Auth on, visitors sign in there separately, and its own callback must be registered ([Domain routing](domain-routing.md)).
+- When a domain serves on its own host with App Auth on, visitors sign in there separately; with Manual or a Sign-in provider its own callback must be registered with that provider, and with App Users nothing needs registering ([Domain routing](domain-routing.md)).
 
 ## Code
 
