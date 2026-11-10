@@ -320,6 +320,14 @@ describe('a copied Agent', () => {
   });
 });
 
+it('refuses to enable a Project that is being deleted', async () => {
+  const tenant = await tenantWithCleanup(null, null);
+  const project = await harness.projects.create({ title: 'Going away' }, tenant.id);
+  await db.update(projects).set({ disabled: true, deleting: true }).where(eq(projects.id, project.id));
+
+  await expect(harness.projects.enable(project.id, tenant.id)).rejects.toThrow('Project is being deleted');
+});
+
 it('refuses Delete after that is not later than Disable after', async () => {
   const tenant = await tenantWithCleanup(null, null);
   const project = await harness.projects.create({ title: 'Invalid' }, tenant.id);

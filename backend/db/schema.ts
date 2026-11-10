@@ -245,6 +245,7 @@ export const projects = pgTable(
     title: text("title"),
     description: text("description"),
     disabled: boolean("disabled").notNull().default(false),
+    deleting: boolean("deleting").notNull().default(false),
     bifrostProjectId: text("bifrost_project_id"),
     lastPromptAt: timestamp("last_prompt_at"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),

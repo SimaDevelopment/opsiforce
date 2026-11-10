@@ -4611,6 +4611,13 @@
           "notNull": true,
           "default": false
         },
+        "deleting": {
+          "name": "deleting",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "bifrost_project_id": {
           "name": "bifrost_project_id",
           "type": "text",

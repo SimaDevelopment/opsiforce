@@ -55,7 +55,7 @@ import { settleReplacedAppData } from '../publish/app-data';
 import { publishJobDone } from '../publish/publish-job-done';
 import { keepingAppDetails } from '../publish/app-details-file';
 import { writeJsonAtomic } from '../common/fs';
-import { lockProjectGit, lockProjectLifecycle, type DbExecutor } from '../common/locks';
+import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { DefaultsService } from '../defaults/defaults.service';
 import type { TimeoutDefaults } from '../defaults/defaults.types';
 import { GatewayKeyService } from '../gateway/gateway-key.service';
@@ -1192,10 +1192,6 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async update(id: string, dto: UpdateProjectDto, tenantId: string): Promise<ProjectResponse> {
-    return this.withLifecycleLock(id, () => this.updateUnlocked(id, dto, tenantId));
-  }
-
-  private async updateUnlocked(id: string, dto: UpdateProjectDto, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
     const now = new Date();
     const projectUpdates: Partial<typeof projects.$inferInsert> = {};
@@ -1394,31 +1390,23 @@ export class ProjectService implements OnApplicationBootstrap {
 
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
   async remove(id: string, tenantId: string): Promise<void> {
-    await this.withLifecycleLock(id, () => this.removeUnlocked(id, tenantId));
+    await this.findOne(id, tenantId);
+    await db.update(projects).set({ deleting: true, updatedAt: new Date() }).where(eq(projects.id, id));
+    await this.removeClaimed(id, tenantId);
   }
 
   async removeIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
-    return this.withLifecycleLock(id, async () => {
-      const claimed = await db
-        .update(projects)
-        .set({ disabled: true, updatedAt: new Date() })
-        .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), condition))
-        .returning({ id: projects.id });
-      if (claimed.length === 0) return false;
-      await this.removeUnlocked(id, tenantId);
-      return true;
-    });
+    const claimed = await db
+      .update(projects)
+      .set({ disabled: true, deleting: true, updatedAt: new Date() })
+      .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), condition))
+      .returning({ id: projects.id });
+    if (claimed.length === 0) return false;
+    await this.removeClaimed(id, tenantId);
+    return true;
   }
 
-  private async withLifecycleLock<T>(projectId: string, run: () => Promise<T>): Promise<T> {
-    return db.transaction(async (tx) => {
-      await lockProjectLifecycle(tx, projectId);
-      return run();
-    });
-  }
-
-  private async removeUnlocked(id: string, tenantId: string): Promise<void> {
-    await this.findOne(id, tenantId);
+  private async removeClaimed(id: string, tenantId: string): Promise<void> {
     for (const child of await this.testProjectsCreatedBy(id, tenantId)) {
       await this.remove(child.id, tenantId);
     }
@@ -1482,31 +1470,26 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async disable(id: string, tenantId: string): Promise<ProjectResponse> {
-    return this.withLifecycleLock(id, async () => {
-      const project = await this.findOne(id, tenantId);
-      if (project.disabled) {
-        throw new BadRequestException('Project is already disabled');
-      }
-      await this.disableUnlocked(id);
-      return this.findOne(id, tenantId);
-    });
+    const project = await this.findOne(id, tenantId);
+    if (project.disabled) {
+      throw new BadRequestException('Project is already disabled');
+    }
+    await this.disableWhere(id, tenantId);
+    return this.findOne(id, tenantId);
   }
 
-  async disableIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
-    return this.withLifecycleLock(id, async () => {
-      await this.findOne(id, tenantId);
-      return this.disableUnlocked(id, condition);
-    });
+  disableIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
+    return this.disableWhere(id, tenantId, condition);
   }
 
-  private async disableUnlocked(id: string, condition?: SQL): Promise<boolean> {
+  private async disableWhere(id: string, tenantId: string, condition?: SQL): Promise<boolean> {
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
     const claimed = await db.transaction(async (tx) => {
       const rows = await tx
         .update(projects)
         .set({ disabled: true, updatedAt: new Date() })
-        .where(and(eq(projects.id, id), eq(projects.disabled, false), condition))
+        .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), eq(projects.disabled, false), condition))
         .returning({ id: projects.id });
       if (rows.length === 0) return false;
       await tx
@@ -1538,10 +1521,6 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async enable(id: string, tenantId: string): Promise<ProjectResponse> {
-    return this.withLifecycleLock(id, () => this.enableUnlocked(id, tenantId));
-  }
-
-  private async enableUnlocked(id: string, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
     if (!project.disabled) {
       throw new BadRequestException('Project is not disabled');
@@ -1551,7 +1530,12 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, project.kind);
-      await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+      const enabled = await tx
+        .update(projects)
+        .set({ disabled: false, updatedAt: new Date() })
+        .where(and(eq(projects.id, id), eq(projects.disabled, true), eq(projects.deleting, false)))
+        .returning({ id: projects.id });
+      if (enabled.length === 0) throw new ConflictException('Project is being deleted');
     });
     const enabledAt = new Date();
     await Promise.all(

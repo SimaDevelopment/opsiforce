@@ -2,6 +2,7 @@ ALTER TABLE "global_timeout_defaults" ADD COLUMN "default_disable_after" bigint;
 ALTER TABLE "global_timeout_defaults" ADD COLUMN "default_delete_after" bigint;--> statement-breakpoint
 ALTER TABLE "tenant_timeout_defaults" ADD COLUMN "default_disable_after" bigint;--> statement-breakpoint
 ALTER TABLE "tenant_timeout_defaults" ADD COLUMN "default_delete_after" bigint;--> statement-breakpoint
+ALTER TABLE "projects" ADD COLUMN "deleting" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "project_settings" ADD COLUMN "disable_after" bigint;--> statement-breakpoint
 ALTER TABLE "project_settings" ADD COLUMN "delete_after" bigint;--> statement-breakpoint
 CREATE TABLE "agent_inactivity_cleanup" (

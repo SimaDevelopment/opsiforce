@@ -135,7 +135,7 @@ export class ProjectModule implements OnApplicationBootstrap {
     );
     await this.inactivityCleanupQueue.upsertJobScheduler(
       'project-inactivity-cleanup-hourly',
-      { pattern: '17 * * * *' },
+      { pattern: '17 * * * *', tz: 'UTC' },
       { name: 'cleanup' }
     );
   }

@@ -76,8 +76,17 @@ export function cleanupDate(lastActivityAt: string, after: number | null): Date 
   return after === null ? null : new Date(new Date(lastActivityAt).getTime() + after);
 }
 
+const SWEEP_MINUTE_UTC = 17;
+
+export function nextSweepAt(now = Date.now()): number {
+  const sweep = new Date(now);
+  sweep.setUTCMinutes(SWEEP_MINUTE_UTC, 0, 0);
+  if (sweep.getTime() <= now) sweep.setUTCHours(sweep.getUTCHours() + 1);
+  return sweep.getTime();
+}
+
 export function isDue(at: Date, now = Date.now()): boolean {
-  return at.getTime() <= now;
+  return at.getTime() <= nextSweepAt(now);
 }
 
 export function isSoon(at: Date, now = Date.now()): boolean {
