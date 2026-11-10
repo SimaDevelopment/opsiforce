@@ -144,7 +144,7 @@ describe('App User emails through Mailgun', () => {
     ).toBe('signed-in');
   });
 
-  it('offers Forgot password and emails a reset link that leads back to the sign-in', async () => {
+  it('offers Forgot password and emails a reset link that returns to the App for a fresh sign-in on any device', async () => {
     const project = await projectUsingAppUsers(app);
     await ownerCall(project, 'POST', '/app-users', { email: 'ada@example-org.com', password: 'the old password' });
 
@@ -157,7 +157,8 @@ describe('App User emails through Mailgun', () => {
     expect(sent[0]).toMatchObject({ to: 'ada@example-org.com', subject: 'Reset your password for Equipment Monitor' });
 
     const saved = await choosePassword(linkIn(sent[0]), 'a brand new password');
-    expect(saved.body).toContain(`${ISSUER}/authorize?`);
+    expect(saved.body).toContain(`href="${new URL(project.callbackUrl).origin}/"`);
+    expect(saved.body).not.toContain(`${ISSUER}/authorize?`);
     expect(
       (await app.get(AppUsersService).signIn(project.projectId, 'ada@example-org.com', 'a brand new password')).outcome
     ).toBe('signed-in');

@@ -28,7 +28,7 @@ adrs: [0099]
 ### Resetting a password
 
 - Emails go through the platform's Mailgun account (`MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_SENDER` and, locally, `MAILGUN_URL` pointing at the mock), the same one Makara uses. Without it nothing is emailed and the owner copies every link.
-- With Mailgun the sign-in page links to "Forgot password?": the visitor enters their email and receives a reset link that works for 1 hour and returns them to the sign-in they started. The answer never says whether the email has an account, a failed send looks the same to the visitor, and an account gets at most one email a minute.
+- With Mailgun the sign-in page links to "Forgot password?": the visitor enters their email and receives a reset link that works for 1 hour; after they choose a new password it sends them to the App's address, which starts a fresh sign-in, so the link works on another device too. The answer never says whether the email has an account, a failed send looks the same to the visitor, and an account gets at most one email a minute.
 - Without Mailgun the sign-in page tells a visitor to ask the App's owner for a reset link.
 - When Mailgun refuses an owner's email, the link still exists: the Users tab says the email failed and shows the link to copy.
 - A link's page asks for the new password twice. A used, replaced or expired link, or one for a disabled account, shows that the link has expired.

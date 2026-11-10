@@ -137,7 +137,8 @@ export class AppUsersProviderController {
     const { client } = check.request;
     const email = stringField(body.email).trim();
     if (this.mailer.enabled) {
-      void this.sendResetIfAccount(client.projectId, client.environmentId, email, this.authorizeUrl(rawRequest));
+      const appHome = `${new URL(check.request.redirectUri).origin}/`;
+      void this.sendResetIfAccount(client.projectId, client.environmentId, email, appHome);
     }
     return this.showForgot(reply, client.appName, rawRequest, cookies, email);
   }
