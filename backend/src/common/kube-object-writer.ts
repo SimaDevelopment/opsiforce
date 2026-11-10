@@ -24,6 +24,8 @@ const statusOf = (err: unknown) => (err as { code?: number } | undefined)?.code;
 const isNotFound = (err: unknown) => statusOf(err) === 404;
 export const isConflict = (err: unknown) => statusOf(err) === 409;
 
+const REPLACE_ATTEMPTS = 3;
+
 const labelSelector = (labels: KubeLabels) =>
   Object.entries(labels)
     .map(([key, value]) => `${key}=${value}`)
@@ -47,12 +49,19 @@ export class KubeObjectWriter {
       if (!isConflict(err)) throw err;
     }
 
-    const existing = (await this.find(kind, name)) as { metadata?: { resourceVersion?: string } } | undefined;
     const metadata = (body as { metadata?: Record<string, unknown> }).metadata ?? {};
-    await this.replace(kind, name, {
-      ...body,
-      metadata: { ...metadata, resourceVersion: existing?.metadata?.resourceVersion },
-    });
+    for (let attempt = 1; ; attempt++) {
+      const existing = (await this.find(kind, name)) as { metadata?: { resourceVersion?: string } } | undefined;
+      try {
+        await this.replace(kind, name, {
+          ...body,
+          metadata: { ...metadata, resourceVersion: existing?.metadata?.resourceVersion },
+        });
+        return;
+      } catch (err) {
+        if (!isConflict(err) || attempt >= REPLACE_ATTEMPTS) throw err;
+      }
+    }
   }
 
   async replace(kind: KubeObjectKind, name: string, body: object): Promise<void> {

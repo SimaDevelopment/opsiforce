@@ -482,13 +482,18 @@ export class ProjectAuthService {
   }
 
   async writeIdentityHeaderStrip(): Promise<void> {
+    const spec = {
+      headers: { customRequestHeaders: Object.fromEntries(GATE_IDENTITY_HEADER_NAMES.map((name) => [name, ''])) },
+    };
+    const existing = (await this.kube.find(TRAEFIK_MIDDLEWARES, IDENTITY_STRIP_MIDDLEWARE)) as
+      | { spec?: unknown }
+      | undefined;
+    if (isDeepStrictEqual(existing?.spec, spec)) return;
     await this.kube.upsert(TRAEFIK_MIDDLEWARES, IDENTITY_STRIP_MIDDLEWARE, {
       apiVersion: TRAEFIK_API_VERSION,
       kind: 'Middleware',
       metadata: { name: IDENTITY_STRIP_MIDDLEWARE, namespace: this.namespace },
-      spec: {
-        headers: { customRequestHeaders: Object.fromEntries(GATE_IDENTITY_HEADER_NAMES.map((name) => [name, ''])) },
-      },
+      spec,
     });
   }
 

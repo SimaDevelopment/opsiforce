@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db } from '../../db';
-import { appUserRoleMembers, appUserRoles, appUsers } from '../../db/schema';
+import { appUserLinks, appUserRoleMembers, appUserRoles, appUsers } from '../../db/schema';
 import { isPostgresError, PG_UNIQUE_VIOLATION } from '../common/postgres-errors';
 import { hashPassword, verifyAgainstNobody, verifyPassword } from './app-user-passwords';
 import {
@@ -149,9 +149,11 @@ export class AppUsersService {
       if (!dto.disabled) changes.disabledAt = null;
     }
     const roles = dto.roles === undefined ? undefined : roleNames(dto.roles);
+    const credentialsChange = changes.passwordHash !== undefined || (changes.email ?? current.email) !== current.email;
     await this.uniqueEmail(() =>
       db.transaction(async (tx) => {
         await tx.update(appUsers).set(changes).where(eq(appUsers.id, current.id));
+        if (credentialsChange) await tx.delete(appUserLinks).where(eq(appUserLinks.appUserId, current.id));
         if (roles !== undefined) await assignRoles(tx, projectId, current.id, roles);
       })
     );
@@ -159,10 +161,11 @@ export class AppUsersService {
   }
 
   async setPassword(userId: string, password: string): Promise<void> {
-    await db
-      .update(appUsers)
-      .set({ ...(await this.passwordChange(password, new Date())), updatedAt: new Date() })
-      .where(eq(appUsers.id, userId));
+    const changes = { ...(await this.passwordChange(password, new Date())), updatedAt: new Date() };
+    await db.transaction(async (tx) => {
+      await tx.update(appUsers).set(changes).where(eq(appUsers.id, userId));
+      await tx.delete(appUserLinks).where(eq(appUserLinks.appUserId, userId));
+    });
   }
 
   async remove(projectId: string, userId: string): Promise<void> {

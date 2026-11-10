@@ -55,9 +55,20 @@ describe('a caller cannot forge the identity an App Auth gate forwards', () => {
       'X-Oidc-Subject': '',
       'X-Oidc-Email': '',
       'X-Oidc-Name': '',
-      'X-Oidc-Role': '',
+      'X-Oidc-Roles': '',
       'X-Oidc-Username': '',
       'X-Oidc-Groups': '',
     });
+  });
+
+  it('leaves the shared strip alone when it already blanks every identity header', async () => {
+    await service().writeIdentityHeaderStrip();
+    const [strip] = writtenBodies();
+    vi.resetAllMocks();
+    kube.getNamespacedCustomObject.mockResolvedValue(strip);
+
+    await service().writeIdentityHeaderStrip();
+
+    expect(kube.createNamespacedCustomObject).not.toHaveBeenCalled();
   });
 });

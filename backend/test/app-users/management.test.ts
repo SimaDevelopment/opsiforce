@@ -40,7 +40,7 @@ describe('managing a Project’s App Users', () => {
 
     const created = await call(project, 'POST', '/app-users', { ...NEW_USER, roles: ['editor', 'admin'] });
     expect(created.statusCode).toBe(201);
-    const user = created.json() as Record<string, unknown>;
+    const user = created.json() as { id: string } & Record<string, unknown>;
     expect(user).toMatchObject({
       email: 'grace@example.test',
       name: 'Grace',
@@ -115,6 +115,31 @@ describe('managing a Project’s App Users', () => {
     expect((await new AppUsersService().signIn(project.projectId, 'grace@example.test', '')).outcome).toBe(
       'wrong-credentials'
     );
+  });
+
+  it('voids outstanding links when the owner corrects the email or sets the password', async () => {
+    const project = await projectUsingAppUsers(app);
+    const { password: _password, ...invitee } = NEW_USER;
+    const user = (await call(project, 'POST', '/app-users', invitee)).json() as { id: string };
+    const linkFor = async (purpose: 'invite' | 'reset') => {
+      const { url } = (await call(project, 'POST', `/app-users/${user.id}/links`, { purpose })).json() as {
+        url: string;
+      };
+      const { pathname, search } = new URL(url);
+      return () => app.inject({ method: 'GET', url: `${pathname}${search}` });
+    };
+
+    const invite = await linkFor('invite');
+    expect((await invite()).statusCode).toBe(200);
+    await call(project, 'PATCH', `/app-users/${user.id}`, { name: 'Grace H.' });
+    expect((await invite()).statusCode).toBe(200);
+    await call(project, 'PATCH', `/app-users/${user.id}`, { email: 'grace.hopper@example.test' });
+    expect((await invite()).statusCode).toBe(410);
+
+    const reset = await linkFor('reset');
+    expect((await reset()).statusCode).toBe(200);
+    await call(project, 'PATCH', `/app-users/${user.id}`, { password: 'a password the owner set' });
+    expect((await reset()).statusCode).toBe(410);
   });
 
   it('shows the owner an account locked by wrong passwords until they set a new one', async () => {
