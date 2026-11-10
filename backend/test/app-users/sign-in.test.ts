@@ -358,6 +358,30 @@ describe('the App Users provider', () => {
     codeFrom(again.res.headers.location);
   });
 
+  it('keeps its cookies host-only, so another App on a parent domain cannot plant a session', async () => {
+    const project = await projectUsingAppUsers(app);
+    const user = await withUser(project);
+    const { verifier, challenge } = pkce();
+    const signIn = await submitSignIn(project, challenge, user.email, PASSWORD);
+    await exchange(project, codeFrom(signIn.res.headers.location), verifier);
+
+    const setCookies = [signIn.res.headers['set-cookie']].flat().filter((line): line is string => Boolean(line));
+    expect(setCookies.length).toBeGreaterThan(0);
+    for (const line of setCookies) {
+      expect(line).toMatch(/^__Host-/);
+      expect(line).toContain('; Path=/;');
+      expect(line).toContain('; Secure');
+      expect(line.toLowerCase()).not.toContain('domain=');
+    }
+
+    const planted = Object.fromEntries(
+      Object.entries(signIn.cookies).map(([name, value]) => [name.replace(/^__Host-/, ''), value])
+    );
+    const page = await openSignIn(project, pkce().challenge, planted);
+    expect(page.res.statusCode).toBe(200);
+    expect(page.res.body).toContain('Sign in to');
+  });
+
   it('renews tokens until the owner disables the visitor', async () => {
     const project = await projectUsingAppUsers(app);
     const user = await withUser(project);

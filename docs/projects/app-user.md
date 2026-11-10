@@ -37,7 +37,7 @@ adrs: [0099]
 
 - Choosing App Users points the environment's App Auth Middleware at the backend's own OIDC provider, with the environment id as its client ([Environments](environments.md)).
 - A visitor without a session is sent to the provider's sign-in page on the Opsiforce origin, titled with the App's name, and comes back signed in to the App's URL.
-- A provider session per Project, kept for 7 days in a cookie on `/api/app-auth`, signs the visitor straight back in after the App's own session ends.
+- A provider session per Project, kept for 7 days in a host-only `__Host-` cookie on the platform's host, signs the visitor straight back in after the App's own session ends. The prefix makes browsers refuse a copy an App on a parent domain tries to plant, and the sign-in form's anti-forgery cookie is host-only the same way.
 - The App receives the visitor in `X-Oidc-Subject` (the App User's id), `X-Oidc-Email`, `X-Oidc-Name` and `X-Oidc-Roles`, a JSON array of role names such as `["admin","editor"]` (`[]` without roles). A visitor signs out at the App's `/oidc/logout`, which also ends the provider session.
 - ID tokens last 5 minutes and the gate renews them with a refresh token, which re-reads the account on every renewal.
 

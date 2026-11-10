@@ -15,7 +15,7 @@ import { AppUsersService } from './app-users.service';
 import { APP_USER_LOCK_MINUTES, APP_USER_PASSWORD_MIN_LENGTH } from './app-users.types';
 import { forgotPasswordPage, messagePage, setPasswordPage, signInPage } from './sign-in-page';
 
-const SIGN_IN_CSRF_COOKIE = 'opsiforce_app_user_csrf';
+const SIGN_IN_CSRF_COOKIE = '__Host-opsiforce_app_user_csrf';
 const CSRF_MAX_AGE_SECONDS = 60 * 60;
 
 const SIGN_IN_ERRORS = {
@@ -36,7 +36,7 @@ function cookiesOf(header: string | undefined): Record<string, string> {
   return cookies;
 }
 
-const sessionCookieName = (projectId: string) => `opsiforce_app_user_${projectId.replaceAll('-', '')}`;
+const sessionCookieName = (projectId: string) => `__Host-opsiforce_app_user_${projectId.replaceAll('-', '')}`;
 
 const stringField = (value: unknown) => (typeof value === 'string' ? value : '');
 
@@ -290,7 +290,7 @@ export class AppUsersProviderController {
   private setCookie(reply: FastifyReply, name: string, value: string, maxAgeSeconds: number) {
     const attributes = [
       `${name}=${encodeURIComponent(value)}`,
-      `Path=${this.provider.issuerPath}`,
+      'Path=/',
       `Max-Age=${maxAgeSeconds}`,
       'HttpOnly',
       'Secure',
