@@ -247,6 +247,8 @@ function AgentHeader(props: {
   const editable = () => props.canManage && props.agent.origin === 'custom';
   const editsResources = () =>
     props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_resources'));
+  const editsCleanup = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_defaults'));
   const name = () => props.agent.displayName ?? props.agent.name;
   const [editingSettings, setEditingSettings] = createSignal(false);
 
@@ -315,6 +317,8 @@ function AgentHeader(props: {
             imageOwned={props.agent.origin === 'built_in'}
             onEdit={editable() ? () => setEditingSettings(true) : undefined}
             onEditResources={editsResources() ? () => setEditingSettings(true) : undefined}
+            inactivityCleanup={props.agent.inactivityCleanup}
+            onEditCleanup={editsCleanup() ? () => setEditingSettings(true) : undefined}
           />
         </div>
         <Show when={props.canManage}>
