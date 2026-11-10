@@ -18,6 +18,11 @@ const LINK_TTL_MS: Record<AppUserLinkPurpose, number> = {
 const SELF_SERVICE_RESET_TTL_MS = 60 * 60 * 1000;
 const SELF_SERVICE_RESET_COOLDOWN_MS = 60 * 1000;
 
+interface CreatedLink {
+  token: string;
+  link: { url: string; expiresAt: Date };
+}
+
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 export interface OpenLink {
@@ -67,24 +72,14 @@ export class AppUserLinksService {
   }
 
   async sendSelfServiceReset(userId: string, environmentId: string, returnUrl: string): Promise<void> {
-    const [recent] = await db
-      .select({ createdAt: appUserLinks.createdAt })
-      .from(appUserLinks)
-      .where(
-        and(
-          eq(appUserLinks.appUserId, userId),
-          eq(appUserLinks.purpose, 'reset'),
-          gt(appUserLinks.createdAt, new Date(Date.now() - SELF_SERVICE_RESET_COOLDOWN_MS))
-        )
-      );
-    if (recent) return;
-    const { token, link } = await this.create(
+    const created = await this.create(
       userId,
       'reset',
       { environmentId, url: returnUrl },
-      SELF_SERVICE_RESET_TTL_MS
+      SELF_SERVICE_RESET_TTL_MS,
+      new Date(Date.now() - SELF_SERVICE_RESET_COOLDOWN_MS)
     );
-    await this.email(token, link);
+    if (created) await this.email(created.token, created.link);
   }
 
   async open(token: string): Promise<OpenLink | null> {
@@ -140,24 +135,41 @@ export class AppUserLinksService {
     await this.mailer.sendLink(opened.email, { ...link, purpose: opened.purpose, appName: opened.appName });
   }
 
-  private async create(
+  private create(
     userId: string,
     purpose: AppUserLinkPurpose,
     app: { environmentId: string; url: string | null } | null,
     ttlMs: number
-  ): Promise<{ token: string; link: { url: string; expiresAt: Date } }> {
+  ): Promise<CreatedLink>;
+  private create(
+    userId: string,
+    purpose: AppUserLinkPurpose,
+    app: { environmentId: string; url: string | null } | null,
+    ttlMs: number,
+    replaceOnlyIfCreatedBefore: Date
+  ): Promise<CreatedLink | null>;
+  private async create(
+    userId: string,
+    purpose: AppUserLinkPurpose,
+    app: { environmentId: string; url: string | null } | null,
+    ttlMs: number,
+    replaceOnlyIfCreatedBefore?: Date
+  ): Promise<CreatedLink | null> {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + ttlMs);
     const projectEnvironmentId = app?.environmentId ?? null;
     const returnUrl = app?.url ?? null;
     await db.delete(appUserLinks).where(lt(appUserLinks.expiresAt, new Date()));
-    await db
+    const written = await db
       .insert(appUserLinks)
       .values({ tokenHash: hashToken(token), appUserId: userId, purpose, projectEnvironmentId, returnUrl, expiresAt })
       .onConflictDoUpdate({
         target: [appUserLinks.appUserId, appUserLinks.purpose],
         set: { tokenHash: hashToken(token), projectEnvironmentId, returnUrl, expiresAt, createdAt: new Date() },
-      });
+        ...(replaceOnlyIfCreatedBefore ? { setWhere: lt(appUserLinks.createdAt, replaceOnlyIfCreatedBefore) } : {}),
+      })
+      .returning({ tokenHash: appUserLinks.tokenHash });
+    if (written.length === 0) return null;
     const url = new URL(`${this.issuer}/set-password`);
     url.searchParams.set('token', token);
     return { token, link: { url: url.toString(), expiresAt } };

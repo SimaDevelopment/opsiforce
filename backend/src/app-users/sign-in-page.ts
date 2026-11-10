@@ -46,8 +46,12 @@ function page(title: string, body: string): string {
 </html>`;
 }
 
-const mark = (appName: string) =>
-  `<div class="mark" aria-hidden="true">${escapeHtml([...appName.trim()][0]?.toUpperCase() ?? '?')}</div>`;
+export function letterMarkOf(appName: string): string {
+  const first = appName.trim().codePointAt(0);
+  return first === undefined ? '?' : String.fromCodePoint(first).toUpperCase();
+}
+
+const mark = (appName: string) => `<div class="mark" aria-hidden="true">${escapeHtml(letterMarkOf(appName))}</div>`;
 
 const errorOf = (error: string | undefined) =>
   error ? `<p class="error" id="form-error" role="alert">${escapeHtml(error)}</p>` : '';

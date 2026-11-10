@@ -69,6 +69,7 @@ export interface AppUserIdentity {
   email: string;
   name: string | null;
   roles: string[];
+  credentialsValidAfterMs: number;
 }
 
 export type SignInResult =

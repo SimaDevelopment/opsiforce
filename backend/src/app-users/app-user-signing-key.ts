@@ -42,9 +42,11 @@ export class AppUserSigningKey {
     const row = (await this.row()) ?? (await this.createOnce());
     if (!row) throw new Error('The App Users signing key could not be created');
     const jwk = row.publicJwk as JsonWebKey;
+    const privatePem = this.sealer.open(row.sealedPrivateKey, sealPlace(row.kid));
+    if (typeof privatePem !== 'string') throw new Error('The App Users signing key is not a PEM string');
     return {
       kid: row.kid,
-      privateKey: createPrivateKey(String(this.sealer.open(row.sealedPrivateKey, sealPlace(row.kid)))),
+      privateKey: createPrivateKey(privatePem),
       publicKey: createPublicKey({ key: jwk, format: 'jwk' }),
       jwk: { ...jwk, kid: row.kid, use: 'sig', alg: 'RS256' },
     };

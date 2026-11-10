@@ -482,6 +482,7 @@ export const appUserAuthorizationCodes = pgTable(
     redirectUri: text("redirect_uri").notNull(),
     codeChallenge: text("code_challenge").notNull(),
     scope: text("scope").notNull(),
+    credentialsValidAfter: timestamp("credentials_valid_after").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
   },
   (table) => [index("idx_app_user_authorization_codes_expires").on(table.expiresAt)],

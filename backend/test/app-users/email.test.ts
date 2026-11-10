@@ -171,6 +171,17 @@ describe('App User emails through Mailgun', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('sends one email for reset requests submitted at the same time, with a link that still works', async () => {
+    const project = await projectUsingAppUsers(app);
+    await ownerCall(project, 'POST', '/app-users', { email: 'ada@example-org.com', password: 'the old password' });
+
+    const answers = await Promise.all(Array.from({ length: 5 }, () => askForReset(project, 'ada@example-org.com')));
+
+    expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200, 200, 200, 200]);
+    expect(sent).toHaveLength(1);
+    expect((await choosePassword(linkIn(sent[0]), 'a brand new password')).statusCode).toBe(200);
+  });
+
   it('hands the owner the working link when Mailgun refuses an email, and keeps the visitor’s answer unchanged', async () => {
     const project = await projectUsingAppUsers(app);
     const user = (

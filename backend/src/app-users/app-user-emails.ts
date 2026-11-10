@@ -1,4 +1,5 @@
 import type { AppUserLinkPurpose } from './app-users.types';
+import { letterMarkOf } from './sign-in-page';
 
 export interface AppUserLinkEmail {
   purpose: AppUserLinkPurpose;
@@ -42,7 +43,7 @@ const COPY: Record<AppUserLinkPurpose, (appName: string) => Copy> = {
   }),
 };
 
-const letterMark = (appName: string) => escapeHtml([...appName.trim()][0]?.toUpperCase() ?? '?');
+const letterMark = (appName: string) => escapeHtml(letterMarkOf(appName));
 
 export function appUserLinkEmail(email: AppUserLinkEmail): { subject: string; text: string; html: string } {
   const copy = COPY[email.purpose](email.appName);

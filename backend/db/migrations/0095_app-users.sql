@@ -47,6 +47,7 @@ CREATE TABLE "app_user_authorization_codes" (
 	"redirect_uri" text NOT NULL,
 	"code_challenge" text NOT NULL,
 	"scope" text NOT NULL,
+	"credentials_valid_after" timestamp NOT NULL,
 	"expires_at" timestamp NOT NULL
 );
 --> statement-breakpoint

@@ -195,6 +195,7 @@ export class AppUsersProviderService {
       redirectUri: request.redirectUri,
       codeChallenge: request.codeChallenge,
       scope: request.scope,
+      credentialsValidAfter: new Date(user.credentialsValidAfterMs),
       expiresAt: new Date(now + CODE_TTL_MS),
     });
     return withQuery(request.redirectUri, { code, state: request.state });
@@ -209,7 +210,7 @@ export class AppUsersProviderService {
 
   async newSession(user: AppUserIdentity): Promise<{ value: string; maxAgeSeconds: number }> {
     const value = await this.sign(
-      { sub: user.id, aud: this.issuer, pid: user.projectId },
+      { sub: user.id, aud: this.issuer, pid: user.projectId, cva: user.credentialsValidAfterMs },
       'session',
       SESSION_TTL_SECONDS
     );
@@ -270,8 +271,11 @@ export class AppUsersProviderService {
       throw invalid;
     }
     if (createHash('sha256').update(verifier).digest('base64url') !== stored.codeChallenge) throw invalid;
-    const issuedAtMs = stored.expiresAt.getTime() - CODE_TTL_MS;
-    const user = await this.appUsers.activeUser(client.projectId, stored.appUserId, issuedAtMs);
+    const user = await this.appUsers.activeUser(
+      client.projectId,
+      stored.appUserId,
+      stored.credentialsValidAfter.getTime()
+    );
     if (!user) throw invalid;
     return this.tokensFor(client, user, stored.scope);
   }
@@ -283,7 +287,7 @@ export class AppUsersProviderService {
     if (!claims || claims.cid !== client.environmentId) throw invalid;
     const user = await this.stillActive(client.projectId, claims);
     if (!user) throw invalid;
-    return this.tokensFor(client, user, String(claims.scope ?? 'openid'));
+    return this.tokensFor(client, user, typeof claims.scope === 'string' ? claims.scope : 'openid');
   }
 
   private async tokensFor(client: AppUsersClient, user: AppUserIdentity, scope: string): Promise<TokenResponse> {
@@ -291,7 +295,11 @@ export class AppUsersProviderService {
     const [idToken, accessToken, refreshToken] = await Promise.all([
       this.sign({ sub: user.id, aud: client.environmentId, ...profile }, 'id', TOKEN_TTL_SECONDS),
       this.sign({ sub: user.id, aud: client.environmentId, scope, roles: user.roles }, 'access', TOKEN_TTL_SECONDS),
-      this.sign({ sub: user.id, aud: this.issuer, cid: client.environmentId, scope }, 'refresh', REFRESH_TTL_SECONDS),
+      this.sign(
+        { sub: user.id, aud: this.issuer, cid: client.environmentId, scope, cva: user.credentialsValidAfterMs },
+        'refresh',
+        REFRESH_TTL_SECONDS
+      ),
     ]);
     return {
       access_token: accessToken,
@@ -308,13 +316,11 @@ export class AppUsersProviderService {
     use: TokenUse,
     ttlSeconds: number
   ): Promise<string> {
-    const nowMs = Date.now();
-    const iat = Math.floor(nowMs / 1000);
+    const iat = Math.floor(Date.now() / 1000);
     const full: JwtClaims = {
       ...claims,
       iss: this.issuer,
       iat,
-      iat_ms: nowMs,
       exp: iat + ttlSeconds,
       jti: randomBytes(12).toString('base64url'),
       token_use: use,
@@ -323,7 +329,7 @@ export class AppUsersProviderService {
   }
 
   private stillActive(projectId: string, claims: JwtClaims): Promise<AppUserIdentity | null> {
-    return this.appUsers.activeUser(projectId, claims.sub, Number(claims.iat_ms));
+    return this.appUsers.activeUser(projectId, claims.sub, Number(claims.cva));
   }
 
   private async verify(token: string, audience: string, use: TokenUse): Promise<JwtClaims | null> {

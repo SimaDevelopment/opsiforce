@@ -213,18 +213,29 @@ export class AppUsersService {
     return { outcome: 'signed-in', user: await this.identity(row) };
   }
 
-  async activeUser(projectId: string, userId: string, issuedAtMs: number): Promise<AppUserIdentity | null> {
+  async activeUser(
+    projectId: string,
+    userId: string,
+    credentialsValidAfterMs: number
+  ): Promise<AppUserIdentity | null> {
     const [row] = await db
       .select()
       .from(appUsers)
       .where(and(eq(appUsers.id, userId), eq(appUsers.projectId, projectId), isNull(appUsers.disabledAt)));
-    if (!row || issuedAtMs < row.tokensValidAfter.getTime()) return null;
+    if (!row || row.tokensValidAfter.getTime() !== credentialsValidAfterMs) return null;
     return this.identity(row);
   }
 
   private async identity(row: AppUserRow): Promise<AppUserIdentity> {
     const roles = await rolesByUser(db, [row.id]);
-    return { id: row.id, projectId: row.projectId, email: row.email, name: row.name, roles: roles.get(row.id) ?? [] };
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      email: row.email,
+      name: row.name,
+      roles: roles.get(row.id) ?? [],
+      credentialsValidAfterMs: row.tokensValidAfter.getTime(),
+    };
   }
 
   private async passwordChange(password: unknown, now: Date): Promise<Partial<typeof appUsers.$inferInsert>> {

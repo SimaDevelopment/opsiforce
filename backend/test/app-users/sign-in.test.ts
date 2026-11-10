@@ -6,6 +6,7 @@ import { customDomains } from '../../db/schema';
 import { appUsersClientSecret } from '../../src/app-users/app-users-client';
 import { AppUserLinksService } from '../../src/app-users/app-user-links.service';
 import { AppUserRolesService } from '../../src/app-users/app-user-roles.service';
+import { AppUsersProviderService } from '../../src/app-users/app-users-provider.service';
 import { AppUsersService } from '../../src/app-users/app-users.service';
 import { ProjectService } from '../../src/project/project.service';
 import {
@@ -374,6 +375,29 @@ describe('the App Users provider', () => {
     const signIn = await submitSignIn(project, pkce().challenge, user.email, PASSWORD);
     expect(signIn.res.statusCode).toBe(200);
     expect(signIn.res.body).toContain('disabled');
+  });
+
+  it('issues nothing usable from a check that raced a password reset', async () => {
+    const project = await projectUsingAppUsers(app);
+    const user = await withUser(project);
+    const { tokens } = await signedIn(project, user.email);
+    const validated = await appUsers.signIn(project.projectId, user.email, PASSWORD);
+    if (validated.outcome !== 'signed-in') throw new Error(`expected a sign-in, got ${validated.outcome}`);
+
+    await appUsers.update(project.projectId, user.id, { password: 'a password the owner set' });
+
+    const provider = app.get(AppUsersProviderService);
+    const { verifier, challenge } = pkce();
+    const check = await provider.checkAuthorizationRequest(
+      Object.fromEntries(new URLSearchParams(authorizeQuery(project, challenge)))
+    );
+    if (check.outcome !== 'valid') throw new Error(`expected a valid request, got ${check.outcome}`);
+    const late = new URL(await provider.issueCode(check.request, validated.user)).searchParams.get('code') ?? '';
+    expect((await exchange(project, late, verifier)).json()).toMatchObject({ error: 'invalid_grant' });
+
+    const session = await provider.newSession(validated.user);
+    expect(await provider.session(project.projectId, session.value)).toBeNull();
+    expect((await refresh(project, tokens.refresh_token)).json()).toMatchObject({ error: 'invalid_grant' });
   });
 
   it('ends the provider session on sign-out and returns to the App', async () => {

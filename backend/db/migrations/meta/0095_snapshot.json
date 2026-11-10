@@ -7006,6 +7006,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "credentials_valid_after": {
+          "name": "credentials_valid_after",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp",
