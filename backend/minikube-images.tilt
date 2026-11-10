@@ -32,7 +32,7 @@ ENTRYPOINT %s
 
     custom_build(
         ref,
-        command='docker tag "$TILT_IMAGE_0" "$EXPECTED_REF" && minikube -p %s image load --daemon "$EXPECTED_REF"' % shlex.quote(profile),
+        command='docker tag "$TILT_IMAGE_0" "$EXPECTED_REF" && MINIKUBE_PROFILE=%s sh ../scripts/minikube-load-image.sh "$EXPECTED_REF"' % shlex.quote(profile),
         deps=[os.path.join(context, path) for path in only] + [dockerfile],
         image_deps=[build_ref],
         disable_push=True,

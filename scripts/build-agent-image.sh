@@ -16,4 +16,4 @@ fi
 
 docker build -t "$tag" -f "$package_dir/docker/Dockerfile.agent" \
   --build-arg OPENCODE_CONFIG=agent-config/opencode.local.json "$package_dir"
-minikube -p "$profile" image load --daemon "$tag"
+MINIKUBE_PROFILE=$profile sh "$package_dir/scripts/minikube-load-image.sh" "$tag"
