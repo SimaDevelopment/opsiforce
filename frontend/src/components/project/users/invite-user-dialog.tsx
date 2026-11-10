@@ -40,6 +40,7 @@ export function InviteUserDialog(props: {
   const [result, setResult] = createSignal<Result | null>(null);
   const [sendEmail, setSendEmail] = createSignal(true);
   const [emailFailure, setEmailFailure] = createSignal<string | null>(null);
+  const [created, setCreated] = createSignal<{ id: string; email: string } | null>(null);
   let emailInput: HTMLInputElement | undefined;
   let passwordInput: HTMLInputElement | undefined;
 
@@ -54,6 +55,7 @@ export function InviteUserDialog(props: {
     setResult(null);
     setSendEmail(true);
     setEmailFailure(null);
+    setCreated(null);
   };
 
   createEffect(() => {
@@ -82,6 +84,7 @@ export function InviteUserDialog(props: {
   };
 
   const saving = () => create.isPending || createLink.isPending;
+  const locked = () => saving() || created() !== null;
 
   const emailError = () => {
     const server = failure();
@@ -100,21 +103,33 @@ export function InviteUserDialog(props: {
     if (newPasswordError()) return passwordInput?.focus();
     const chosen = method() === 'password' ? password() : undefined;
     try {
-      const user = await create.mutateAsync({
-        email: email().trim(),
-        name: name().trim() || null,
-        roles: roles(),
-        password: chosen,
-      });
+      const user =
+        created() ??
+        (await create.mutateAsync({
+          email: email().trim(),
+          name: name().trim() || null,
+          roles: roles(),
+          password: chosen,
+        }));
       if (chosen) return setResult({ kind: 'password', email: user.email, password: chosen });
-      const request = { id: user.id, purpose: 'invite' as const, environmentId: props.linkEnvironmentId };
+      setCreated({ id: user.id, email: user.email });
       const send = props.canEmail && sendEmail();
-      const link = await createLink.mutateAsync({ ...request, send });
+      const link = await createLink.mutateAsync({
+        id: user.id,
+        purpose: 'invite',
+        environmentId: props.linkEnvironmentId,
+        send,
+      });
       setEmailFailure(link.emailError ?? null);
       setResult({ kind: 'link', id: user.id, email: user.email, link });
     } catch (e) {
       const message = (e as Error).message;
-      if (e instanceof ApiError && e.status === HTTP_CONFLICT) {
+      if (created()) {
+        setFailure({
+          field: 'form',
+          message: `${created()?.email} was added, but the invite link couldn’t be made (${message}). Try again to make it.`,
+        });
+      } else if (e instanceof ApiError && e.status === HTTP_CONFLICT) {
         setFailure({ field: 'email', message });
         emailInput?.focus();
       } else setFailure({ field: 'form', message });
@@ -134,7 +149,7 @@ export function InviteUserDialog(props: {
         value={value}
         checked={method() === value}
         onChange={() => setMethod(value)}
-        disabled={saving()}
+        disabled={locked()}
         class="mt-0.5 accent-[var(--primary)]"
       />
       <span class="min-w-0">
@@ -173,7 +188,7 @@ export function InviteUserDialog(props: {
                   setEmail(e.currentTarget.value);
                   if (failure()?.field === 'email') setFailure(null);
                 }}
-                disabled={saving()}
+                disabled={locked()}
                 aria-invalid={control.invalid()}
                 aria-describedby={control.describedBy()}
                 class={INPUT_CLASS}
@@ -188,7 +203,7 @@ export function InviteUserDialog(props: {
                 autocomplete="off"
                 value={name()}
                 onInput={(e) => setName(e.currentTarget.value)}
-                disabled={saving()}
+                disabled={locked()}
                 aria-describedby={control.describedBy()}
                 class={INPUT_CLASS}
               />
@@ -204,7 +219,7 @@ export function InviteUserDialog(props: {
             roles={props.roles}
             value={roles()}
             onChange={setRoles}
-            disabled={saving()}
+            disabled={locked()}
             labelledBy={rolesLabel}
           />
         </div>
