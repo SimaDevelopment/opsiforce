@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { eq, type SQL } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../db';
 import { agentInactivityCleanup, projectEnvironments, projects } from '../db/schema';
 import { DefaultsService } from '../src/defaults/defaults.service';
 import { InactivityCleanupProcessor } from '../src/project/inactivity-cleanup.processor';
 import type { ProjectService } from '../src/project/project.service';
+import { AgentStatusService } from '../src/project/agent-status.service';
 import { writeAgentInactivityCleanup, type InactivityCleanup } from '../src/project/inactivity-cleanup';
 import { createDomainTestingModule, type DomainTestHarness } from './support/domain';
 import { createUserRow } from './support/org-fixtures';
@@ -198,16 +199,56 @@ describe('the Inactivity cleanup sweep', () => {
     await lastActive(second.id, 30);
     let usedMeanwhile: string | null = null;
     const usedMidSweep: ProjectService = Object.assign(Object.create(harness.projects), {
-      async remove(id: string, tenantId: string) {
+      async removeIfStill(id: string, tenantId: string, condition: SQL) {
         usedMeanwhile ??= id === first.id ? second.id : first.id;
         if (usedMeanwhile !== id) await harness.projects.touchEnvironmentActivity(usedMeanwhile, 'app');
-        return harness.projects.remove(id, tenantId);
+        return harness.projects.removeIfStill(id, tenantId, condition);
       },
     });
 
     await new InactivityCleanupProcessor(usedMidSweep).process();
 
     expect([await stateOf(first.id), await stateOf(second.id)].toSorted()).toEqual(['deleted', 'enabled']);
+  });
+
+  it('leaves a Project whose Delete after is cleared after the sweep picked it', async () => {
+    const tenant = await tenantWithCleanup(null, 28);
+    const project = await harness.projects.create({ title: 'Reprieved' }, tenant.id);
+    await lastActive(project.id, 30);
+    const clearedMidSweep: ProjectService = Object.assign(Object.create(harness.projects), {
+      async removeIfStill(id: string, tenantId: string, condition: SQL) {
+        await harness.projects.update(id, { deleteAfter: null }, tenantId);
+        return harness.projects.removeIfStill(id, tenantId, condition);
+      },
+    });
+
+    await new InactivityCleanupProcessor(clearedMidSweep).process();
+
+    expect(await stateOf(project.id)).toBe('enabled');
+  });
+
+  it('counts a Working Agent as activity, so an unattended run longer than Delete after survives', async () => {
+    const tenant = await tenantWithCleanup(null, 1);
+    const project = await harness.projects.create({ title: 'Long run' }, tenant.id);
+    await lastActive(project.id, 2);
+    const [env] = await db
+      .select({ id: projectEnvironments.id })
+      .from(projectEnvironments)
+      .where(eq(projectEnvironments.projectId, project.id));
+    const agentStatus = harness.moduleRef.get(AgentStatusService);
+
+    agentStatus.runStarted(project.id, env.id, 'unattended-run');
+    await vi.waitFor(async () => {
+      const [row] = await db
+        .select({ lastActiveAt: projectEnvironments.lastActiveAt })
+        .from(projectEnvironments)
+        .where(eq(projectEnvironments.id, env.id));
+      expect(row.lastActiveAt?.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    });
+    await sweep();
+    agentStatus.runEnded(project.id, env.id, 'unattended-run');
+
+    expect(await stateOf(project.id)).toBe('enabled');
   });
 
   it('never touches a Project without days of its own', async () => {

@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
 import { hasPermission } from '../permission/permission.utils';
 import type { Permission } from '../permission/permission.constants';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../db';
 import {
@@ -48,7 +48,7 @@ export interface InactivityCleanupStep {
   permission: Permission;
   grant: keyof InactivityCleanupGrants;
   onlyEnabledProjects: boolean;
-  run(projectService: ProjectService, projectId: string, tenantId: string): Promise<unknown>;
+  runIfStill(projectService: ProjectService, projectId: string, tenantId: string, condition: SQL): Promise<boolean>;
 }
 
 export const INACTIVITY_CLEANUP_STEPS: readonly InactivityCleanupStep[] = [
@@ -60,7 +60,8 @@ export const INACTIVITY_CLEANUP_STEPS: readonly InactivityCleanupStep[] = [
     permission: 'can_delete_project',
     grant: 'canDeleteProjects',
     onlyEnabledProjects: false,
-    run: (projectService, projectId, tenantId) => projectService.remove(projectId, tenantId),
+    runIfStill: (projectService, projectId, tenantId, condition) =>
+      projectService.removeIfStill(projectId, tenantId, condition),
   },
   {
     action: 'disable',
@@ -70,7 +71,8 @@ export const INACTIVITY_CLEANUP_STEPS: readonly InactivityCleanupStep[] = [
     permission: 'can_disable_project',
     grant: 'canDisableProjects',
     onlyEnabledProjects: true,
-    run: (projectService, projectId, tenantId) => projectService.disable(projectId, tenantId),
+    runIfStill: (projectService, projectId, tenantId, condition) =>
+      projectService.disableIfStill(projectId, tenantId, condition),
   },
 ];
 

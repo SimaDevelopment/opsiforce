@@ -158,7 +158,7 @@ async function sourceAgent(): Promise<SourceAgent> {
 }
 
 async function exportOf(agentId: string): Promise<Buffer> {
-  return (await exports.export(author, agentId)).archive;
+  return (await exports.export(author, agentId, { canDisableProjects: true, canDeleteProjects: true })).archive;
 }
 
 async function rewrite(

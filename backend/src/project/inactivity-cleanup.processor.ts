@@ -1,6 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { and, eq, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
+import { and, eq, exists, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectSettings, projects } from '../../db/schema';
 import { INACTIVITY_CLEANUP_STEPS, projectLastActivityAt, type InactivityCleanupStep } from './inactivity-cleanup';
@@ -43,13 +43,19 @@ export class InactivityCleanupProcessor extends WorkerHost {
     const after = projectSettings[step.field];
     const inactive = and(isNotNull(after), lt(projectLastActivityAt, sql`now() - ${after} * interval '1 millisecond'`));
     const condition = (step.onlyEnabledProjects ? and(eq(projects.disabled, false), inactive) : inactive) as SQL;
+    const stillInactive = and(
+      isNull(projects.kind),
+      exists(
+        db
+          .select({ projectId: projectSettings.projectId })
+          .from(projectSettings)
+          .where(and(eq(projectSettings.projectId, projects.id), inactive))
+      )
+    ) as SQL;
     let done = 0;
     for (const candidate of await this.inactiveProjects(condition)) {
       try {
-        const [project] = await this.inactiveProjects(and(eq(projects.id, candidate.id), condition) as SQL);
-        if (!project) continue;
-        await step.run(this.projectService, project.id, project.tenantId);
-        done++;
+        if (await step.runIfStill(this.projectService, candidate.id, candidate.tenantId, stillInactive)) done++;
       } catch (err) {
         this.logger.warn(
           `Inactivity cleanup could not ${step.action} Project ${candidate.id}: ${(err as Error).message}`

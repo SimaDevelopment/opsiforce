@@ -379,7 +379,7 @@ export class AgentController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<void> {
-    const exported = await this.exportService.export(await this.caller(req, tenant, user), id);
+    const exported = await this.exportService.export(await this.caller(req, tenant, user), id, this.copyGrants(req));
     await reply
       .header('Content-Type', 'application/zip')
       .header('Content-Length', exported.archive.byteLength)
