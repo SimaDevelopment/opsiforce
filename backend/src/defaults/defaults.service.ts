@@ -9,6 +9,7 @@ import {
   tenantBudgetDefaults,
 } from '../../db/schema';
 import { assertIdleTimeoutMs } from '../common/validation';
+import { lockAgentInactivityCleanup } from '../common/locks';
 import {
   INACTIVITY_CLEANUP_STEPS,
   patchedInactivityCleanup,
@@ -51,14 +52,20 @@ export class DefaultsService {
   async updateBuiltInAgentInactivityCleanup(agentId: string, patch: Partial<InactivityCleanup>): Promise<void> {
     await assertBuiltInAgent(agentId);
     const platformDefault = tenantInactivityCleanup(await this.getGlobalTimeouts());
-    const current = await readAgentInactivityCleanup(agentId, null, platformDefault);
-    const cleanup = patchedInactivityCleanup(current.cleanup, patch);
-    if (cleanup) await writeAgentInactivityCleanup(agentId, cleanup);
+    await db.transaction(async (tx) => {
+      await lockAgentInactivityCleanup(tx, agentId, null);
+      const current = await readAgentInactivityCleanup(agentId, null, platformDefault, tx);
+      const cleanup = patchedInactivityCleanup(current.cleanup, patch);
+      if (cleanup) await writeAgentInactivityCleanup(agentId, cleanup, tx);
+    });
   }
 
   async resetBuiltInAgentInactivityCleanup(agentId: string): Promise<void> {
     await assertBuiltInAgent(agentId);
-    await writeAgentInactivityCleanup(agentId, null);
+    await db.transaction(async (tx) => {
+      await lockAgentInactivityCleanup(tx, agentId, null);
+      await writeAgentInactivityCleanup(agentId, null, tx);
+    });
   }
 
   async getGlobalBudgets(): Promise<BudgetDefaults> {

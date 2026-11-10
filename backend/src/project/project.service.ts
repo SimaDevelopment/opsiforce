@@ -105,6 +105,8 @@ import { toK8sResources, type K8sResourceRequirements, type PodSettings } from '
 import { readAgentPodSettings } from '../agent/agent-pod-settings';
 import { tenantInactivityCleanup } from '../defaults/defaults.service';
 import {
+  INACTIVITY_CLEANUP_STEPS,
+  NO_INACTIVITY_CLEANUP,
   inactivityCleanupColumns,
   inactivityCleanupForNewProject,
   inactivityCleanupOf,
@@ -1204,10 +1206,19 @@ export class ProjectService implements OnApplicationBootstrap {
     if (dto.appTimeoutIdle !== undefined)
       settingsUpdates.appTimeoutIdle = assertIdleTimeoutMs(dto.appTimeoutIdle, 'appTimeoutIdle');
     if (dto.timezone !== undefined) settingsUpdates.timezone = dto.timezone;
-    const inactivityCleanup = patchedInactivityCleanup(project, dto);
-    if (inactivityCleanup) Object.assign(settingsUpdates, inactivityCleanup);
+    const touchesCleanup = INACTIVITY_CLEANUP_STEPS.some((step) => dto[step.field] !== undefined);
 
     await db.transaction(async (tx) => {
+      if (touchesCleanup) {
+        const [current] = await tx
+          .select(inactivityCleanupColumns(projectSettings))
+          .from(projectSettings)
+          .where(eq(projectSettings.projectId, project.id))
+          .for('update');
+        const inactivityCleanup = patchedInactivityCleanup(current ?? NO_INACTIVITY_CLEANUP, dto);
+        if (inactivityCleanup) Object.assign(settingsUpdates, inactivityCleanup);
+      }
+
       if (Object.keys(projectUpdates).length > 0) {
         await tx
           .update(projects)

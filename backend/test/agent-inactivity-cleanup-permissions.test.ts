@@ -54,6 +54,17 @@ describe('an Agent’s Inactivity cleanup days', () => {
     expect([deleteAfter.statusCode, disableAfter.statusCode, reset.statusCode]).toEqual([403, 403, 403]);
   });
 
+  it('let an author who may only disable Projects set Disable after over the inherited pair', async () => {
+    const { author, agentId } = await authoredAgent(['can_disable_project']);
+
+    const res = await saveCleanup(author, agentId, { disableAfter: 14 * DAY_MS });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      inactivityCleanup: { source: 'own', cleanup: { disableAfter: 14 * DAY_MS, deleteAfter: null } },
+    });
+  });
+
   it('are saved as the Agent’s own pair for an author who may disable and delete Projects', async () => {
     const { author, agentId } = await authoredAgent(['can_disable_project', 'can_delete_project']);
 

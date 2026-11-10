@@ -14,7 +14,7 @@ import { agentSettings, agents, environments, projectEnvironments } from '../../
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
-import { lockAgentTemplate } from '../common/locks';
+import { lockAgentInactivityCleanup, lockAgentTemplate, type DbExecutor } from '../common/locks';
 import type { TemplateSaveResult } from '../agent-template/agent-template.types';
 import { CUSTOM_AGENT_PACKAGE } from '../delivery/delivery.types';
 import { ProjectPoolService } from '../pool/project-pool.service';
@@ -319,25 +319,36 @@ export class AgentService {
     dto: UpdateAgentInactivityCleanupDto
   ): Promise<AgentDetail> {
     const agent = await this.assertProjectSettingsEditable(caller, agentId);
-    const current = await this.agentInactivityCleanup(agent.id, caller.tenantId);
-    const cleanup = patchedInactivityCleanup(current.cleanup, dto);
-    if (cleanup) await this.writeInactivityCleanup(caller, agent, cleanup);
+    const tenantDefault = tenantInactivityCleanup(await this.defaults.getTenantTimeouts(caller.tenantId));
+    await db.transaction(async (tx) => {
+      await lockAgentInactivityCleanup(tx, agent.id, agent.origin === 'built_in' ? caller.tenantId : null);
+      const current = await readAgentInactivityCleanup(agent.id, caller.tenantId, tenantDefault, tx);
+      const cleanup = patchedInactivityCleanup(current.cleanup, dto);
+      if (cleanup) await this.writeInactivityCleanup(caller, agent, cleanup, tx);
+    });
     return this.findOne(caller, agentId);
   }
 
   async resetInactivityCleanup(caller: AgentCaller, agentId: string): Promise<AgentDetail> {
     const agent = await this.assertProjectSettingsEditable(caller, agentId);
-    await this.writeInactivityCleanup(caller, agent, null);
+    await db.transaction(async (tx) => {
+      await lockAgentInactivityCleanup(tx, agent.id, agent.origin === 'built_in' ? caller.tenantId : null);
+      await this.writeInactivityCleanup(caller, agent, null, tx);
+    });
     return this.findOne(caller, agentId);
   }
 
   private async writeInactivityCleanup(
     caller: AgentCaller,
     agent: AgentRow,
-    cleanup: InactivityCleanup | null
+    cleanup: InactivityCleanup | null,
+    executor: DbExecutor
   ): Promise<void> {
-    if (agent.origin === 'built_in') await writeTenantAgentInactivityCleanup(caller.tenantId, agent.id, cleanup);
-    else await writeAgentInactivityCleanup(agent.id, cleanup);
+    if (agent.origin === 'built_in') {
+      await writeTenantAgentInactivityCleanup(caller.tenantId, agent.id, cleanup, executor);
+    } else {
+      await writeAgentInactivityCleanup(agent.id, cleanup, executor);
+    }
   }
 
   private async agentInactivityCleanup(agentId: string, tenantId: string): Promise<AgentInactivityCleanup> {

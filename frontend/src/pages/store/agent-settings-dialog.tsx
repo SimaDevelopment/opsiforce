@@ -200,7 +200,8 @@ export function AgentSettingsDialog(props: {
                 inheritedDescription={`${props.agent.inactivityCleanup.platformChoice ? 'Set for all organizations' : 'Organization default'} · ${describeCleanup(props.agent.inactivityCleanup.inherited)}`}
                 customDescription="Own rules for this agent’s Projects. Both off means never."
                 disabled={saving()}
-                modeLocked={!CLEANUP_STEPS.every(canSetCleanup)}
+                inheritLocked={cleanupChoice.savedCustom() && !CLEANUP_STEPS.every(canSetCleanup)}
+                customLocked={!CLEANUP_STEPS.some(canSetCleanup)}
                 locked={(step) => !canSetCleanup(step)}
               />
             </section>

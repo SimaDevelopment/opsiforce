@@ -125,6 +125,7 @@ export function createInactivityCleanupChoice() {
   return {
     draft,
     custom,
+    savedCustom,
     value: (): InactivityCleanup | null => (custom() ? draft.toCleanup() : null),
     dirty: () => custom() !== savedCustom() || (custom() && draft.dirty()),
     invalid: () => custom() && draft.invalid(),
@@ -149,7 +150,8 @@ export function InactivityCleanupChoiceField(props: {
   inheritedDescription?: string;
   customDescription: string;
   disabled?: boolean;
-  modeLocked?: boolean;
+  inheritLocked?: boolean;
+  customLocked?: boolean;
   locked?: (step: CleanupStep) => boolean;
 }) {
   return (
@@ -158,7 +160,7 @@ export function InactivityCleanupChoiceField(props: {
         <OptionCard
           selected={!props.choice.custom()}
           onSelect={props.choice.chooseInherited}
-          disabled={props.disabled || props.modeLocked}
+          disabled={props.disabled || props.inheritLocked}
         >
           <span class="text-xs font-medium text-foreground">{props.inheritedLabel}</span>
           <span class="text-xs text-muted-foreground text-pretty">
@@ -168,7 +170,7 @@ export function InactivityCleanupChoiceField(props: {
         <OptionCard
           selected={props.choice.custom()}
           onSelect={() => props.choice.chooseCustom(props.inherited)}
-          disabled={props.disabled || props.modeLocked}
+          disabled={props.disabled || props.customLocked}
         >
           <span class="text-xs font-medium text-foreground">Custom</span>
           <span class="text-xs text-muted-foreground text-pretty">{props.customDescription}</span>

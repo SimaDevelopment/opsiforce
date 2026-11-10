@@ -320,6 +320,32 @@ describe('a copied Agent', () => {
   });
 });
 
+it('keeps both of two concurrent edits that each change one count, on a Project and on an Agent', async () => {
+  const tenant = await tenantWithCleanup(14, 30);
+  const project = await harness.projects.create({ title: 'Two editors' }, tenant.id);
+  const caller = { tenantId: tenant.id, userId: await createUserRow(), canManageAgents: true };
+  const agent = await harness.agents.create(caller, { displayName: `Two editors ${crypto.randomUUID().slice(0, 8)}` });
+  await harness.agents.updateInactivityCleanup(caller, agent.id, {
+    disableAfter: 14 * DAY_MS,
+    deleteAfter: 30 * DAY_MS,
+  });
+
+  await Promise.all([
+    harness.projects.update(project.id, { disableAfter: 7 * DAY_MS }, tenant.id),
+    harness.projects.update(project.id, { deleteAfter: null }, tenant.id),
+    harness.agents.updateInactivityCleanup(caller, agent.id, { disableAfter: 7 * DAY_MS }),
+    harness.agents.updateInactivityCleanup(caller, agent.id, { deleteAfter: null }),
+  ]);
+
+  expect({
+    project: await harness.projects.findOne(project.id, tenant.id),
+    agent: (await harness.agents.findOne(caller, agent.id)).inactivityCleanup.cleanup,
+  }).toMatchObject({
+    project: { disableAfter: 7 * DAY_MS, deleteAfter: null },
+    agent: { disableAfter: 7 * DAY_MS, deleteAfter: null },
+  });
+});
+
 it('refuses to enable a Project that is being deleted', async () => {
   const tenant = await tenantWithCleanup(null, null);
   const project = await harness.projects.create({ title: 'Going away' }, tenant.id);
