@@ -15,7 +15,8 @@ import { AppUsersService } from './app-users.service';
 import { APP_USER_LOCK_MINUTES, APP_USER_PASSWORD_MIN_LENGTH } from './app-users.types';
 import { forgotPasswordPage, messagePage, setPasswordPage, signInPage } from './sign-in-page';
 
-const SIGN_IN_CSRF_COOKIE = '__Host-opsiforce_app_user_csrf';
+const PROVIDER_COOKIE_PREFIX = '__Host-opsiforce_app_user_';
+const SIGN_IN_CSRF_COOKIE = `${PROVIDER_COOKIE_PREFIX}csrf`;
 const CSRF_MAX_AGE_SECONDS = 60 * 60;
 
 const SIGN_IN_ERRORS = {
@@ -27,16 +28,25 @@ const SIGN_IN_ERRORS = {
 const EXPIRED_LINK =
   'This link has expired, was already used, or was replaced by a newer one. Ask the App’s owner for a new one.';
 
+function decodedOrRaw(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function cookiesOf(header: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
   for (const part of (header ?? '').split(';')) {
     const at = part.indexOf('=');
-    if (at > 0) cookies[part.slice(0, at).trim()] = decodeURIComponent(part.slice(at + 1).trim());
+    const name = part.slice(0, Math.max(at, 0)).trim();
+    if (at > 0 && name.startsWith(PROVIDER_COOKIE_PREFIX)) cookies[name] = decodedOrRaw(part.slice(at + 1).trim());
   }
   return cookies;
 }
 
-const sessionCookieName = (projectId: string) => `__Host-opsiforce_app_user_${projectId.replaceAll('-', '')}`;
+const sessionCookieName = (projectId: string) => `${PROVIDER_COOKIE_PREFIX}${projectId.replaceAll('-', '')}`;
 
 const stringField = (value: unknown) => (typeof value === 'string' ? value : '');
 

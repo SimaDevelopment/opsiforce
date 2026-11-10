@@ -382,6 +382,23 @@ describe('the App Users provider', () => {
     expect(page.res.body).toContain('Sign in to');
   });
 
+  it('signs a visitor in, and offers a reset, while the browser carries an unrelated cookie that is not URI-encoded', async () => {
+    const project = await projectUsingAppUsers(app);
+    const user = await withUser(project);
+    const { verifier, challenge } = pkce();
+
+    const signIn = await submitSignIn(project, challenge, user.email, PASSWORD, { campaign: '100%' });
+    expect(signIn.res.statusCode).toBe(302);
+    expect((await exchange(project, codeFrom(signIn.res.headers.location), verifier)).statusCode).toBe(200);
+
+    const forgot = await app.inject({
+      method: 'GET',
+      url: `/api/app-auth/forgot?${form({ request: authorizeQuery(project, pkce().challenge) })}`,
+      headers: { cookie: 'campaign=100%; theme=dark%' },
+    });
+    expect(forgot.statusCode).not.toBe(500);
+  });
+
   it('renews tokens until the owner disables the visitor', async () => {
     const project = await projectUsingAppUsers(app);
     const user = await withUser(project);
