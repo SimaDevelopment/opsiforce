@@ -27,7 +27,8 @@ case "${MINIKUBE_HOME:-}" in
   */.minikube) minikube_dir=$MINIKUBE_HOME ;;
   *) minikube_dir=$MINIKUBE_HOME/.minikube ;;
 esac
-rm -f "$minikube_dir"/cache/images/*/"$cache_file"
+rm -f "$minikube_dir"/cache/images/*/"$cache_file" ||
+  echo "warning: could not delete the cached image tarball in $minikube_dir/cache/images" >&2
 
 minikube -p "$profile" ssh -- sudo rm -f "/var/lib/minikube/images/$(basename "$cache_file")" >/dev/null ||
   echo "warning: could not delete the image tarball inside minikube" >&2
@@ -40,16 +41,21 @@ esac
 docker rmi "$ref" >/dev/null 2>&1 || true
 
 # Tags end in a build timestamp, so a numeric sort puts the newest first.
+# containerd names images in full (docker.io/library/<name>:<tag>).
 old_refs=$(
   minikube -p "$profile" image ls |
     grep -E "^(docker\.io/library/)?$name:tilt-build-[0-9]+\$" |
+    sed 's#^\([^/]*\)$#docker.io/library/\1#' |
     sed 's/.*:tilt-build-\([0-9]*\)$/\1 &/' |
     sort -rn |
     cut -d' ' -f2 |
     tail -n +"$((keep + 1))"
 ) || true
 if [ -n "$old_refs" ]; then
+  # Rebuilds with unchanged sources give a new tag the same image ID as an old one.
+  # `minikube image rm` (crictl rmi) deletes every tag of that ID, including the one
+  # just loaded; `ctr images rm` deletes only the named tags.
   # shellcheck disable=SC2086 # one argument per image reference
-  minikube -p "$profile" image rm $old_refs >/dev/null ||
+  minikube -p "$profile" ssh -- sudo ctr -n k8s.io images rm $old_refs >/dev/null ||
     echo "warning: could not remove old $name builds from minikube" >&2
 fi
