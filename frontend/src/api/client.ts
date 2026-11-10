@@ -198,7 +198,7 @@ export interface ProjectAppMeta {
   description: string | null;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'provider';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider' | 'app_users';
 
 export interface ProjectAuthOidcConfig {
   forwardAccessToken?: boolean;

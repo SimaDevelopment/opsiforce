@@ -196,16 +196,20 @@ A Project's two optional durations, **Disable after** and **Delete after** (hour
 _Avoid_: TTL, Retention, Expiry, Auto-archive (non-canonical; say Inactivity cleanup, Disable after, Delete after)
 
 **App Auth**:
-Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **provider** (one of the Organization's Sign-in providers). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
+Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), **provider** (one of the Organization's Sign-in providers), or **app users** (the Project's own App Users, signed in by Opsiforce itself). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
 _Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)
 
 **Auth mode**:
-The chosen App Auth setting for one ProjectEnvironment — `public`, `manual` or `provider` (the stored identifier is `auth_mode`).
+The chosen App Auth setting for one ProjectEnvironment — `public`, `manual`, `provider` or `app_users` (the stored identifier is `auth_mode`).
 _Avoid_: Auth type, Auth provider
 
 **Sign-in provider**:
 An OIDC app an Organization admin registers once — issuer, client ID, client secret, scopes and an optional required claim — so that the Organization's members sign in to its Apps with it. It is shared by every App whose Auth mode is `provider` and names it.
 _Avoid_: Organization provider, Identity provider (the vendor product, not this record), Custom auth, SSO app
+
+**App User**:
+A sign-in account that belongs to one Project and lets a visitor into that Project's Apps when an environment's Auth mode is `app_users`: an email, a password they choose from an invite link (or one the owner sets), an optional name and any number of the Project's own roles, which the App receives as `X-Oidc-Roles`. Not a member of the Organization: an App User never signs in to Opsiforce itself.
+_Avoid_: End user, Visitor account, Customer (non-canonical); User (that is an Organization member)
 
 **Token forwarding**:
 An opt-in App Auth setting, available in manual and provider modes, that passes the signed-in visitor's access token from the App's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.

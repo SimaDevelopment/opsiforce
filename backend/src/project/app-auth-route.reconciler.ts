@@ -28,6 +28,7 @@ export class AppAuthRouteReconciler implements OnApplicationBootstrap, OnModuleD
   }
 
   async reconcileAll(): Promise<void> {
+    await this.projectAuth.writeIdentityHeaderStrip();
     const gated = await this.projectAuth.gatedRoutingIds();
     const protectedEnvironments = await this.projectEnvironments.listProtected();
     for (const env of protectedEnvironments) {

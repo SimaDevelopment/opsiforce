@@ -2,7 +2,7 @@ import { For, Show, type JSX } from 'solid-js';
 import type { ProjectAuthMode } from '~/api/client';
 import type { SignInProviderOption } from '~/api/sign-in-providers';
 import { OptionCard, OptionCardGroup } from '~/components/ui/option-card';
-import { Globe, KeyRound, Lock } from '~/components/icons';
+import { Globe, KeyRound, Lock, Users } from '~/components/icons';
 
 export interface AuthSelection {
   mode: ProjectAuthMode;
@@ -25,6 +25,13 @@ function accessOptions(providers: SignInProviderOption[]): AccessOption[] {
       title: 'Public',
       description: "Anyone can access this project's preview URL without signing in.",
       icon: Globe,
+    },
+    {
+      key: 'app_users',
+      selection: { mode: 'app_users', signInProviderId: null },
+      title: 'App Users',
+      description: 'Visitors sign in with an email and password you give them in this project.',
+      icon: Users,
     },
     ...providers.map(
       (provider): AccessOption => ({
@@ -61,7 +68,7 @@ export function AuthModeSelector(props: AuthModeSelectorProps) {
   const options = () => accessOptions(props.providers);
   return (
     <div class="space-y-2">
-      <OptionCardGroup label="Access" class={options().length === 2 ? 'grid-cols-2' : 'grid-cols-3'}>
+      <OptionCardGroup label="Access" class="grid-cols-1 sm:grid-cols-3">
         <For each={options()}>
           {(opt) => (
             <OptionCard
@@ -70,7 +77,7 @@ export function AuthModeSelector(props: AuthModeSelectorProps) {
               onSelect={() => props.onChange(opt.selection)}
             >
               <div class="flex items-center gap-1.5 min-w-0">
-                <opt.icon class="w-3.5 h-3.5 shrink-0" />
+                <opt.icon class="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 <span class="text-xs font-medium truncate">{opt.title}</span>
               </div>
               <p class="text-xs text-muted-foreground leading-snug">{opt.description}</p>

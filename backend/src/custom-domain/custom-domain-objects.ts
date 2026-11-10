@@ -1,5 +1,5 @@
 import { CERT_MANAGER_API_VERSION, TRAEFIK_API_VERSION, type KubeLabels } from '../common/kube-object-writer';
-import { appAuthMiddlewareName } from '../project/app-auth-route';
+import { appAuthMiddlewareName, IDENTITY_STRIP_MIDDLEWARE } from '../project/app-auth-route';
 import type { ProjectAuthMode } from '../project/project.types';
 import { wwwOf } from './hostname';
 
@@ -84,22 +84,23 @@ export function customDomainCertificate(
   };
 }
 
-function gateOf(env: RoutedEnvironment): string {
+function gateOf(env: RoutedEnvironment): string[] {
   switch (env.authMode) {
     case 'public':
-      return UNPROTECTED_MARKER;
+      return [UNPROTECTED_MARKER];
     case 'manual':
-      return appAuthMiddlewareName(env.id);
+    case 'app_users':
+      return [IDENTITY_STRIP_MIDDLEWARE, appAuthMiddlewareName(env.id)];
     case 'provider':
-      return customDomainSignInName(env.id);
+      return [IDENTITY_STRIP_MIDDLEWARE, customDomainSignInName(env.id)];
   }
 }
 
 export function customDomainIngressRoute(domain: RoutedDomain, env: DomainRouting, cluster: DomainCluster) {
-  const middlewareOf = (host: string) => {
+  const middlewaresOf = (host: string) => {
     const target = redirectTargetOf(host, domain, env.mainDomain);
     if (target === null) return gateOf(env);
-    return target === domain.hostname ? redirectWithoutWwwName(env.id) : redirectToMainName(env.id);
+    return [target === domain.hostname ? redirectWithoutWwwName(env.id) : redirectToMainName(env.id)];
   };
   return {
     apiVersion: TRAEFIK_API_VERSION,
@@ -110,7 +111,7 @@ export function customDomainIngressRoute(domain: RoutedDomain, env: DomainRoutin
       routes: hostsOf(domain).map((host) => ({
         kind: 'Rule',
         match: `Host(\`${host}\`)`,
-        middlewares: [{ name: middlewareOf(host), namespace: cluster.namespace }],
+        middlewares: middlewaresOf(host).map((name) => ({ name, namespace: cluster.namespace })),
         services: [{ name: cluster.webappServiceName, namespace: cluster.namespace, port: cluster.webappServicePort }],
       })),
       tls: { secretName: customDomainSecretName(domain.id) },

@@ -1330,6 +1330,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const callbackUrls = appSignInCallbackUrls(env, this.configService.getOrThrow<string>('appsHostname'));
     if (env.authMode === 'public') return { mode: 'public', callbackUrls };
     const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
+    if (env.authMode === 'app_users') return { mode: 'app_users', bypassAuthPaths, callbackUrls: [] };
     if (env.authMode === 'provider') {
       return {
         mode: 'provider',
@@ -1366,6 +1367,8 @@ export class ProjectService implements OnApplicationBootstrap {
       }
       if (dto.mode === 'manual') {
         await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
+      } else if (dto.mode === 'app_users') {
+        await this.projectAuthService.applyAppUsers(env, dto.bypassAuthPaths);
       } else if (provider) {
         await this.projectAuthService.applyProvider(
           env,
@@ -1390,6 +1393,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const source = await this.projectEnvironmentService.findById(from.id);
     let signInProviderId: string | null = null;
     if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
+    else if (source.authMode === 'app_users') await this.projectAuthService.inheritAppUsers(source.id, to);
     else signInProviderId = await this.projectAuthService.inheritAuth(source.id, to);
     const authMode = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
     await db

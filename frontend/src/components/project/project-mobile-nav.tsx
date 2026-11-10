@@ -1,5 +1,5 @@
 import { For, type Component } from 'solid-js';
-import { AppWindow, Code as CodeIcon, Database, Files, MessageSquare } from '~/components/icons';
+import { AppWindow, Code as CodeIcon, Database, Files, MessageSquare, Users } from '~/components/icons';
 import { PROJECT_TAB_LABELS, type ProjectTab } from '~/components/project/project-header';
 
 /**
@@ -24,6 +24,7 @@ const ICONS: Record<ProjectMobileDestination, Component<{ class?: string }>> = {
   files: Files,
   code: CodeIcon,
   db: Database,
+  users: Users,
   preview: AppWindow,
 };
 

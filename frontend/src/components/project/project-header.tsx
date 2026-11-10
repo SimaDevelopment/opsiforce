@@ -6,7 +6,7 @@ import { usePermissions } from '~/api/permissions';
 import { projectKeys, useProject, useRenameProject } from '~/api/projects';
 import { projectTitleOf } from '~/lib/project-title';
 import { useWorkspaces, useWorkspaceFolders } from '~/api/workspaces';
-import { ChevronRight, Code as CodeIcon, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
+import { ChevronRight, Code as CodeIcon, Database, Files, MessageSquare, Moon, Sun, Users } from '~/components/icons';
 import { useAppearance } from '~/lib/appearance';
 import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
@@ -15,13 +15,14 @@ import { EnvironmentsPopover } from '~/components/project/environments/environme
 import type { ProjectStatus } from '~/api/client';
 import type { ProjectEnvironment } from '~/api/environments';
 
-export type ProjectTab = 'chat' | 'files' | 'code' | 'db';
+export type ProjectTab = 'chat' | 'files' | 'code' | 'db' | 'users';
 
 export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
   chat: 'Chat',
   files: 'Files',
   code: 'Code',
   db: 'DB',
+  users: 'Users',
 };
 
 export interface ProjectSurfaceSlots {
@@ -38,6 +39,7 @@ export interface ProjectHeaderProps extends ProjectSurfaceSlots {
   workspaceId: string | null;
   appExists: boolean;
   showAgentTabs: boolean;
+  showUsersTab: boolean;
   activeTab: ProjectTab;
   onActiveTabChange: (tab: ProjectTab) => void;
   environments: ProjectEnvironment[];
@@ -81,6 +83,9 @@ export function ProjectHeader(props: ProjectHeaderProps) {
               </Show>
               <Show when={props.showAgentTabs && canViewDb()}>
                 <ProjectTabTrigger value="db" icon={Database} onPress={props.onActiveTabChange} />
+              </Show>
+              <Show when={props.showUsersTab}>
+                <ProjectTabTrigger value="users" icon={Users} onPress={props.onActiveTabChange} />
               </Show>
             </TabsList>
           </Tabs>

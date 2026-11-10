@@ -49,6 +49,7 @@ describe('App Auth routes are reconciled at backend start', () => {
       { mode: 'manual', config: oidc },
       protectedApp.tenantId
     );
+    const callsBeforeStart = appAuth.calls.length;
 
     await new AppAuthRouteReconciler(
       harness.projectEnvironments,
@@ -57,6 +58,7 @@ describe('App Auth routes are reconciled at backend start', () => {
     ).reconcileAll();
 
     const reconciled = appAuth.callsTo('reconcileRoute').map((call) => call.args);
+    expect(appAuth.calls[callsBeforeStart].method).toBe('writeIdentityHeaderStrip');
     expect(reconciled).toContainEqual(await addressesOf(protectedApp.projectId));
     expect(reconciled.map((args) => args.environmentId)).not.toContain(publicApp.projectId);
   });

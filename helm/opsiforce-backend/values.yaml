@@ -51,12 +51,13 @@ config:
   podBrowserIgnoresHttpsErrors: false
   # Days a Call log row is kept; empty = the backend default (30). Usage counters are kept forever.
   externalServiceCallLogRetentionDays: ""
-  # TODO: remove in the release after External Services v2 ships: every mailgun* key and whapiApiUrl (dead /api/gateway email provider + one-time v1 importers)
+  # mailgunApiKey, mailgunDomain, mailgunSender and mailgunUrl send App User emails (invites and password resets); empty sends none.
   mailgunApiKey: ""
   mailgunDomain: ""
   mailgunReceiveDomain: ""
   mailgunWebhookSigningKey: ""
   mailgunSender: ""
+  mailgunUrl: ""
   whapiApiUrl: ""
   opsiforcePublicUrl: ""
   externalServicesEncryptionKey: ""
@@ -67,6 +68,8 @@ config:
   customDomainsClusterIssuer: ""
   customDomainsRefused: ""
   oidcPluginSecret: ""
+  # The address Traefik reaches the App Users provider at; empty derives the backend Service's in-cluster address.
+  appUsersProviderInternalUrl: ""
   ssoGroupMap: ""
   defaultTenantName: ""
   # Empty uses the cluster default runtime (Azure and local development).

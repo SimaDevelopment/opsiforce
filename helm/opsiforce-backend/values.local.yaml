@@ -50,7 +50,7 @@ config:
   externalServiceProxyControl: "proxy-external-service-control.local.svc.cluster.local:3007"
   podCaBundleConfigMap: "opsiforce-local-ca"
   podBrowserIgnoresHttpsErrors: true
-  # TODO: remove in the release after External Services v2 ships: every mailgun* key and whapiApiUrl (dead /api/gateway email provider + one-time v1 importers)
+  # mailgunApiKey, mailgunDomain, mailgunSender and mailgunUrl send App User emails (invites and password resets); empty sends none.
   mailgunApiKey: "key-example"
   mailgunDomain: "sima"
   mailgunReceiveDomain: ""

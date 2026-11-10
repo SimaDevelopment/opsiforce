@@ -246,7 +246,8 @@ export function fakeTimer(): FakeTimer {
 
 export type FakeAppAuthGate =
   | { mode: 'manual'; config: ProjectAuthOidcConfig; bypassAuthPaths: string[] }
-  | { mode: 'provider'; providerId: string; forwardAccessToken: boolean; bypassAuthPaths: string[] };
+  | { mode: 'provider'; providerId: string; forwardAccessToken: boolean; bypassAuthPaths: string[] }
+  | { mode: 'app_users'; bypassAuthPaths: string[] };
 
 export class FakeProjectAuthService extends RecordingFake {
   private readonly unreachable = new Set<string>();
@@ -332,6 +333,19 @@ export class FakeProjectAuthService extends RecordingFake {
   async reconcileRoute(env: AppAuthRouteTarget): Promise<void> {
     this.record('reconcileRoute', addressesOf(env));
     if (this.unreconcilable.has(env.id)) throw new Error(`route of ${env.id} cannot be read`);
+  }
+
+  async applyAppUsers(env: AppAuthRouteTarget, bypassAuthPaths: string[] = []): Promise<void> {
+    this.record('applyAppUsers', { ...addressesOf(env), bypassAuthPaths });
+    this.gates.set(env.id, { mode: 'app_users', bypassAuthPaths });
+  }
+
+  async inheritAppUsers(fromEnvironmentId: string, to: AppAuthRouteTarget): Promise<void> {
+    await this.applyAppUsers(to, (await this.getConfig(fromEnvironmentId)).bypassAuthPaths);
+  }
+
+  async writeIdentityHeaderStrip(): Promise<void> {
+    this.record('writeIdentityHeaderStrip', {});
   }
 
   async remove(environmentId: string): Promise<void> {

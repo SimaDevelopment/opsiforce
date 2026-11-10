@@ -50,7 +50,7 @@ export const projectStatusEnum = pgEnum("project_status", [
 
 export const keyTypeEnum = pgEnum("key_type", ["chat", "backend"])
 
-export const projectAuthModeEnum = pgEnum("project_auth_mode", ["public", "manual", "provider"])
+export const projectAuthModeEnum = pgEnum("project_auth_mode", ["public", "manual", "provider", "app_users"])
 
 export const requestLogModeEnum = pgEnum("request_log_mode", ["off", "metadata", "full"])
 
@@ -393,6 +393,106 @@ export const projectApps = pgTable(
   },
   (table) => [index("idx_project_app_project").on(table.projectId)],
 )
+
+export const appUsers = pgTable(
+  "app_users",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    email: text("email").notNull(),
+    name: text("name"),
+    passwordHash: text("password_hash"),
+    disabledAt: timestamp("disabled_at"),
+    tokensValidAfter: timestamp("tokens_valid_after").defaultNow().notNull(),
+    failedSignIns: integer("failed_sign_ins").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
+    lastSignInAt: timestamp("last_sign_in_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("app_users_project_id_email_unique").on(table.projectId, table.email)],
+)
+
+export const appUserRoles = pgTable(
+  "app_user_roles",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("app_user_roles_project_id_name_unique").on(table.projectId, table.name)],
+)
+
+export const appUserRoleMembers = pgTable(
+  "app_user_role_members",
+  {
+    appUserId: text("app_user_id")
+      .references(() => appUsers.id, { onDelete: "cascade" })
+      .notNull(),
+    roleId: text("role_id")
+      .references(() => appUserRoles.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.appUserId, table.roleId] }),
+    index("idx_app_user_role_members_role").on(table.roleId),
+  ],
+)
+
+export type AppUserLinkPurpose = "invite" | "reset"
+
+export const appUserLinks = pgTable(
+  "app_user_links",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    appUserId: text("app_user_id")
+      .references(() => appUsers.id, { onDelete: "cascade" })
+      .notNull(),
+    purpose: text("purpose").$type<AppUserLinkPurpose>().notNull(),
+    projectEnvironmentId: text("project_environment_id").references(() => projectEnvironments.id, {
+      onDelete: "set null",
+    }),
+    returnUrl: text("return_url"),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("app_user_links_app_user_id_purpose_unique").on(table.appUserId, table.purpose),
+    index("idx_app_user_links_expires").on(table.expiresAt),
+    check("app_user_links_purpose_check", sql`${table.purpose} in ('invite', 'reset')`),
+  ],
+)
+
+export const appUserAuthorizationCodes = pgTable(
+  "app_user_authorization_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    appUserId: text("app_user_id")
+      .references(() => appUsers.id, { onDelete: "cascade" })
+      .notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => [index("idx_app_user_authorization_codes_expires").on(table.expiresAt)],
+)
+
+export const appUserSigningKeys = pgTable("app_user_signing_keys", {
+  kid: text("kid").primaryKey(),
+  publicJwk: jsonb("public_jwk").$type<JsonValue>().notNull(),
+  sealedPrivateKey: jsonb("sealed_private_key").$type<JsonValue>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
 
 export const customDomains = pgTable(
   "custom_domains",

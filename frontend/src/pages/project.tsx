@@ -17,6 +17,8 @@ import { ProjectCodeTab } from '~/components/project/project-code-tab';
 import { ProjectDbTab } from '~/components/project/project-db-tab';
 import { ProjectFilesTab } from '~/components/project/files';
 import { ProjectMobileNav, type ProjectMobileDestination } from '~/components/project/project-mobile-nav';
+import { ProjectTabsContext } from '~/components/project/project-tabs-context';
+import { ProjectUsersTab } from '~/components/project/users/project-users-tab';
 import { ProjectPreviewPanel, type FilePreviewRequest } from '~/components/project/preview';
 import {
   ProjectConnecting,
@@ -52,6 +54,7 @@ export function ProjectView(props: ProjectViewProps) {
   const { hasPermission } = usePermissions();
   const canViewCode = () => hasPermission('can_view_code_tab');
   const canViewDb = () => hasPermission('can_view_db_tab');
+  const canManageUsers = () => props.servesApp !== false && hasPermission('can_manage_project_auth_settings');
 
   const [activeTab, setActiveTab] = createSignal<ProjectTab>('chat');
   const [visitedTabs, setVisitedTabs] = createSignal<Set<ProjectTab>>(new Set<ProjectTab>(['chat']));
@@ -138,10 +141,12 @@ export function ProjectView(props: ProjectViewProps) {
   });
   const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
   const previewVisible = () => app()?.exists === true || previewRequest() !== null;
+  const fullWidthTab = () => activeTab() === 'users';
   const mobileTabs = (): ProjectTab[] => {
     const tabs: ProjectTab[] = ['chat', 'files'];
     if (connection.router() && canViewCode()) tabs.push('code');
     if (connection.router() && canViewDb()) tabs.push('db');
+    if (canManageUsers()) tabs.push('users');
     return tabs;
   };
 
@@ -162,7 +167,7 @@ export function ProjectView(props: ProjectViewProps) {
         direction: 'right',
       })
     : undefined;
-  const contentFills = () => !strip || (strip.alone() && !previewVisible());
+  const contentFills = () => !strip || (strip.alone() && (!previewVisible() || fullWidthTab()));
 
   const [agentIdleToken, setAgentIdleToken] = createSignal(0);
 
@@ -189,164 +194,175 @@ export function ProjectView(props: ProjectViewProps) {
   });
 
   return (
-    <div class={cn('h-full flex flex-col overflow-hidden', !strip && 'w-full')}>
-      <div class={cn('flex shrink-0 flex-col', strip && 'w-0 min-w-full')}>
-        <Show when={statusQuery.data}>
-          {(data) => (
-            <ProjectHeader
-              projectId={props.projectId}
-              status={data().status}
-              workspaceId={data().workspaceId}
-              appExists={!!data().app?.exists}
-              showAgentTabs={!!connection.router()}
-              activeTab={activeTab()}
-              onActiveTabChange={selectTab}
-              environments={environmentList()}
-              activeEnvironmentId={activeEnvironmentId()}
-              onActiveEnvironmentChange={setActiveEnvironmentId}
-              onDeleted={() => (props.onGone ? props.onGone() : navigate({ to: '/' }))}
-              headerLabel={props.headerLabel}
-              menuItems={props.menuItems}
-              deleteDescription={props.deleteDescription}
-              deleteEscapeHatch={props.deleteEscapeHatch}
-              onRename={props.onRename}
-            />
-          )}
-        </Show>
-
-        <Show when={!isDevelopmentActive()}>
-          <EnvProdBanner
-            environmentName={activeEnvironment()?.name ?? 'this'}
-            onSwitchToDevelopment={() => setActiveEnvironmentId(props.projectId)}
-          />
-        </Show>
-      </div>
-
-      {/* The content surface starts right under the band so the selected tab
-          merges into it rather than floating on the canvas. */}
-      <div class="relative flex-1 min-h-0 flex" style={{ background: 'var(--bg-content)' }}>
-        <div
-          class={cn('relative flex min-h-0', contentFills() ? 'flex-1 min-w-0' : 'shrink-0', strip && 'snap-start')}
-          style={contentFills() || !chatColumn ? undefined : { width: `${chatColumn.width()}px` }}
-        >
-          <div
-            class="flex-1 min-w-0 flex flex-col oc-chat-only"
-            style={{ display: activeTab() === 'chat' ? 'flex' : 'none' }}
-          >
-            <Show when={connectionStatus() !== 'disabled'} fallback={<ProjectDisabled projectId={props.projectId} />}>
-              <Show
-                when={connectionStatus() !== 'failed'}
-                fallback={<ProjectFailed projectId={props.projectId} environmentId={activeEnvironmentId()} />}
-              >
-                <Show
-                  when={connection.router()}
-                  fallback={
-                    <Show
-                      when={connection.problem()}
-                      fallback={
-                        <ProjectConnecting
-                          starting={connectionStatus() === 'starting' || connectionStatus() === 'suspended'}
-                        />
-                      }
-                    >
-                      {(problem) => (
-                        <ProjectConnectionProblem
-                          projectId={props.projectId}
-                          environmentId={activeEnvironmentId()}
-                          problem={problem()}
-                          onRetry={connection.retry}
-                        />
-                      )}
-                    </Show>
-                  }
-                >
-                  {(router) => (
-                    <ProjectChatTab
-                      projectId={props.projectId}
-                      environmentId={activeEnvironmentId()}
-                      environmentName={activeEnvironment()?.name ?? 'Development'}
-                      showSkillsAndServices={props.showSkillsAndServices ?? true}
-                      router={router()}
-                      onPreviewFile={previewFile}
-                    />
-                  )}
-                </Show>
-              </Show>
-            </Show>
-            {props.footer}
-          </div>
-
-          <Show when={visitedTabs().has('files')}>
-            <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'files' ? 'flex' : 'none' }}>
-              <ProjectFilesTab
+    <ProjectTabsContext.Provider value={{ openTab: selectTab }}>
+      <div class={cn('h-full flex flex-col overflow-hidden', !strip && 'w-full')}>
+        <div class={cn('flex shrink-0 flex-col', strip && 'w-0 min-w-full')}>
+          <Show when={statusQuery.data}>
+            {(data) => (
+              <ProjectHeader
                 projectId={props.projectId}
-                environmentId={activeEnvironmentId()}
-                active={activeTab() === 'files'}
-                refreshToken={agentIdleToken()}
-                onPreviewFile={previewFile}
-                onFileDeleted={closePreviewOfDeleted}
-              />
-            </div>
-          </Show>
-
-          <Show when={visitedTabs().has('code') && canViewCode()}>
-            <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'code' ? 'flex' : 'none' }}>
-              <ProjectCodeTab environmentId={activeEnvironmentId()} />
-            </div>
-          </Show>
-
-          <Show when={visitedTabs().has('db') && canViewDb()}>
-            <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'db' ? 'flex' : 'none' }}>
-              <ProjectDbTab environmentId={activeEnvironmentId()} />
-            </div>
-          </Show>
-
-          <Show when={!contentFills() && chatColumn}>
-            {(column) => (
-              <ResizeHandle
-                onPointerDown={column().startResize}
-                resizing={column().resizing()}
-                position="right"
-                panel={column()}
-                label="Resize this chat"
+                status={data().status}
+                workspaceId={data().workspaceId}
+                appExists={!!data().app?.exists}
+                showAgentTabs={!!connection.router()}
+                showUsersTab={canManageUsers()}
+                activeTab={activeTab()}
+                onActiveTabChange={selectTab}
+                environments={environmentList()}
+                activeEnvironmentId={activeEnvironmentId()}
+                onActiveEnvironmentChange={setActiveEnvironmentId}
+                onDeleted={() => (props.onGone ? props.onGone() : navigate({ to: '/' }))}
+                headerLabel={props.headerLabel}
+                menuItems={props.menuItems}
+                deleteDescription={props.deleteDescription}
+                deleteEscapeHatch={props.deleteEscapeHatch}
+                onRename={props.onRename}
               />
             )}
           </Show>
+
+          <Show when={!isDevelopmentActive()}>
+            <EnvProdBanner
+              environmentName={activeEnvironment()?.name ?? 'this'}
+              onSwitchToDevelopment={() => setActiveEnvironmentId(props.projectId)}
+            />
+          </Show>
         </div>
 
-        <Show when={previewVisible()}>
-          <ProjectPreviewPanel
-            projectId={props.projectId}
-            environmentId={activeEnvironmentId()}
-            publicUrl={activeEnvironment()?.publicUrl ?? null}
-            hasApp={app()?.exists === true}
-            appName={app()?.name ?? undefined}
-            previewRequest={previewRequest()}
-            onClosePreview={closePreview}
-            onReloadRef={onReloadRef}
-            onCloseOverlayRef={onCloseOverlayRef}
-            onOpenOverlayRef={onOpenOverlayRef}
-            onOverlayChange={setPreviewOverlayOpen}
-            overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
-            mobile={isMobile()}
-            column={
-              strip && {
-                storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,
-                stripWidth: strip.width,
-              }
-            }
+        {/* The content surface starts right under the band so the selected tab
+          merges into it rather than floating on the canvas. */}
+        <div class="relative flex-1 min-h-0 flex" style={{ background: 'var(--bg-content)' }}>
+          <div
+            class={cn('relative flex min-h-0', contentFills() ? 'flex-1 min-w-0' : 'shrink-0', strip && 'snap-start')}
+            style={contentFills() || !chatColumn ? undefined : { width: `${chatColumn.width()}px` }}
+          >
+            <div
+              class="flex-1 min-w-0 flex flex-col oc-chat-only"
+              style={{ display: activeTab() === 'chat' ? 'flex' : 'none' }}
+            >
+              <Show when={connectionStatus() !== 'disabled'} fallback={<ProjectDisabled projectId={props.projectId} />}>
+                <Show
+                  when={connectionStatus() !== 'failed'}
+                  fallback={<ProjectFailed projectId={props.projectId} environmentId={activeEnvironmentId()} />}
+                >
+                  <Show
+                    when={connection.router()}
+                    fallback={
+                      <Show
+                        when={connection.problem()}
+                        fallback={
+                          <ProjectConnecting
+                            starting={connectionStatus() === 'starting' || connectionStatus() === 'suspended'}
+                          />
+                        }
+                      >
+                        {(problem) => (
+                          <ProjectConnectionProblem
+                            projectId={props.projectId}
+                            environmentId={activeEnvironmentId()}
+                            problem={problem()}
+                            onRetry={connection.retry}
+                          />
+                        )}
+                      </Show>
+                    }
+                  >
+                    {(router) => (
+                      <ProjectChatTab
+                        projectId={props.projectId}
+                        environmentId={activeEnvironmentId()}
+                        environmentName={activeEnvironment()?.name ?? 'Development'}
+                        showSkillsAndServices={props.showSkillsAndServices ?? true}
+                        router={router()}
+                        onPreviewFile={previewFile}
+                      />
+                    )}
+                  </Show>
+                </Show>
+              </Show>
+              {props.footer}
+            </div>
+
+            <Show when={visitedTabs().has('files')}>
+              <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'files' ? 'flex' : 'none' }}>
+                <ProjectFilesTab
+                  projectId={props.projectId}
+                  environmentId={activeEnvironmentId()}
+                  active={activeTab() === 'files'}
+                  refreshToken={agentIdleToken()}
+                  onPreviewFile={previewFile}
+                  onFileDeleted={closePreviewOfDeleted}
+                />
+              </div>
+            </Show>
+
+            <Show when={visitedTabs().has('code') && canViewCode()}>
+              <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'code' ? 'flex' : 'none' }}>
+                <ProjectCodeTab environmentId={activeEnvironmentId()} />
+              </div>
+            </Show>
+
+            <Show when={visitedTabs().has('db') && canViewDb()}>
+              <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'db' ? 'flex' : 'none' }}>
+                <ProjectDbTab environmentId={activeEnvironmentId()} />
+              </div>
+            </Show>
+
+            <Show when={visitedTabs().has('users') && canManageUsers()}>
+              <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'users' ? 'flex' : 'none' }}>
+                <ProjectUsersTab projectId={props.projectId} />
+              </div>
+            </Show>
+
+            <Show when={!contentFills() && chatColumn}>
+              {(column) => (
+                <ResizeHandle
+                  onPointerDown={column().startResize}
+                  resizing={column().resizing()}
+                  position="right"
+                  panel={column()}
+                  label="Resize this chat"
+                />
+              )}
+            </Show>
+          </div>
+
+          <Show when={previewVisible()}>
+            <div class="contents" style={{ display: fullWidthTab() && !isMobile() ? 'none' : 'contents' }}>
+              <ProjectPreviewPanel
+                projectId={props.projectId}
+                environmentId={activeEnvironmentId()}
+                publicUrl={activeEnvironment()?.publicUrl ?? null}
+                hasApp={app()?.exists === true}
+                appName={app()?.name ?? undefined}
+                previewRequest={previewRequest()}
+                onClosePreview={closePreview}
+                onReloadRef={onReloadRef}
+                onCloseOverlayRef={onCloseOverlayRef}
+                onOpenOverlayRef={onOpenOverlayRef}
+                onOverlayChange={setPreviewOverlayOpen}
+                overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
+                mobile={isMobile()}
+                column={
+                  strip && {
+                    storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,
+                    stripWidth: strip.width,
+                  }
+                }
+              />
+            </div>
+          </Show>
+        </div>
+
+        <Show when={isMobile() && statusQuery.data}>
+          <ProjectMobileNav
+            active={previewOverlayOpen() && previewVisible() ? 'preview' : activeTab()}
+            tabs={mobileTabs()}
+            showPreview={previewVisible()}
+            onSelect={selectMobileDestination}
           />
         </Show>
       </div>
-
-      <Show when={isMobile() && statusQuery.data}>
-        <ProjectMobileNav
-          active={previewOverlayOpen() && previewVisible() ? 'preview' : activeTab()}
-          tabs={mobileTabs()}
-          showPreview={previewVisible()}
-          onSelect={selectMobileDestination}
-        />
-      </Show>
-    </div>
+    </ProjectTabsContext.Provider>
   );
 }

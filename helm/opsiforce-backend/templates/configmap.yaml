@@ -73,7 +73,6 @@ data:
   {{- if ne (toString .Values.config.externalServiceCallLogRetentionDays) "" }}
   EXTERNAL_SERVICE_CALL_LOG_RETENTION_DAYS: {{ .Values.config.externalServiceCallLogRetentionDays | quote }}
   {{- end }}
-  {{- /* TODO: remove in the release after External Services v2 ships: MAILGUN_* and WHAPI_API_URL below (dead /api/gateway email provider + one-time v1 importers) */}}
   {{- if .Values.config.mailgunDomain }}
   MAILGUN_DOMAIN: {{ .Values.config.mailgunDomain | quote }}
   {{- end }}
@@ -102,6 +101,7 @@ data:
   {{- if .Values.config.webappServicePort }}
   WEBAPP_SERVICE_PORT: {{ .Values.config.webappServicePort | quote }}
   {{- end }}
+  APP_USERS_PROVIDER_INTERNAL_URL: {{ .Values.config.appUsersProviderInternalUrl | default (printf "http://%s.%s.svc.cluster.local:%v" (include "opsiforce-backend.serviceName" .) .Release.Namespace .Values.backend.containerPort) | quote }}
   {{- if .Values.config.customDomainsClusterIssuer }}
   CUSTOM_DOMAINS_CLUSTER_ISSUER: {{ .Values.config.customDomainsClusterIssuer | quote }}
   {{- end }}

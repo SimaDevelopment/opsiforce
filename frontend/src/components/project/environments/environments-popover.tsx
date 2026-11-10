@@ -298,6 +298,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         projectId={props.projectId}
         environmentId={authEnv()?.id ?? ''}
         environmentName={authEnv()?.name}
+        appUrl={authEnv()?.publicUrl ?? undefined}
         open={authEnv() !== null}
         onOpenChange={(value) => {
           if (!value) setAuthEnv(null);

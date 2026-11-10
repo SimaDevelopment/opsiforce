@@ -13,6 +13,7 @@ const DOMAIN_ID = '9b1d2c3e-4f50-4617-8a9b-0c1d2e3f4a5b';
 const CLUSTER = { namespace: 'opsiforce', webappServiceName: 'proxy-app', webappServicePort: 3002 };
 const GATE = { name: `opsiforce-project-${ENV_ID}-oidc`, namespace: 'opsiforce' };
 const SIGN_IN_ON_THE_DOMAIN = { name: `opsiforce-project-${ENV_ID}-oidc-domains`, namespace: 'opsiforce' };
+const STRIP = { name: 'opsiforce-strip-identity-headers', namespace: 'opsiforce' };
 const MARKER = { name: 'opsiforce-custom-domain-unprotected', namespace: 'opsiforce' };
 const REDIRECT = { name: `opsiforce-project-${ENV_ID}-to-main`, namespace: 'opsiforce' };
 const WITHOUT_WWW = { name: `opsiforce-project-${ENV_ID}-without-www`, namespace: 'opsiforce' };
@@ -49,27 +50,28 @@ function middlewaresByHost(domain: Domain, authMode: ProjectAuthMode, mainDomain
 
 describe('the route of a Custom domain', () => {
   describe.each([
-    ['public', MARKER],
-    ['manual', GATE],
-    ['provider', SIGN_IN_ON_THE_DOMAIN],
+    ['public', [MARKER]],
+    ['manual', [STRIP, GATE]],
+    ['provider', [STRIP, SIGN_IN_ON_THE_DOMAIN]],
+    ['app_users', [STRIP, GATE]],
   ] as const)('for %s App Auth', (authMode, signIn) => {
     it('lets the Main domain reach the App through its sign-in or the marker', () => {
-      expect(middlewaresByHost(SUBDOMAIN, authMode)).toEqual({ 'shop.example-org.com': [signIn] });
+      expect(middlewaresByHost(SUBDOMAIN, authMode)).toEqual({ 'shop.example-org.com': signIn });
     });
 
     it('sends the www of a bare Main domain on to the bare domain, its apex reaching the App', () => {
       expect(middlewaresByHost(BARE, authMode)).toEqual({
-        'example-org.com': [signIn],
+        'example-org.com': signIn,
         'www.example-org.com': [WITHOUT_WWW],
       });
     });
 
     it('lets another domain reach the App on its own host by default', () => {
       expect(middlewaresByHost(SUBDOMAIN, authMode, ANOTHER_MAIN_DOMAIN)).toEqual({
-        'shop.example-org.com': [signIn],
+        'shop.example-org.com': signIn,
       });
       expect(middlewaresByHost(BARE, authMode, ANOTHER_MAIN_DOMAIN)).toEqual({
-        'example-org.com': [signIn],
+        'example-org.com': signIn,
         'www.example-org.com': [WITHOUT_WWW],
       });
     });
@@ -85,12 +87,12 @@ describe('the route of a Custom domain', () => {
     });
 
     it('ignores the redirect on the Main domain itself and while the App has no Main domain', () => {
-      expect(middlewaresByHost(REDIRECTED_SUBDOMAIN, authMode)).toEqual({ 'shop.example-org.com': [signIn] });
+      expect(middlewaresByHost(REDIRECTED_SUBDOMAIN, authMode)).toEqual({ 'shop.example-org.com': signIn });
       expect(middlewaresByHost(REDIRECTED_SUBDOMAIN, authMode, NO_MAIN_DOMAIN)).toEqual({
-        'shop.example-org.com': [signIn],
+        'shop.example-org.com': signIn,
       });
       expect(middlewaresByHost(BARE, authMode, NO_MAIN_DOMAIN)).toEqual({
-        'example-org.com': [signIn],
+        'example-org.com': signIn,
         'www.example-org.com': [WITHOUT_WWW],
       });
     });
@@ -104,7 +106,7 @@ describe('the route of a Custom domain', () => {
 
   it("sets no priority on any rule, so cert-manager's longer HTTP-01 solver rule for the same host wins at issuance and every renewal", () => {
     const everyRoute = [SUBDOMAIN, BARE].flatMap((domain) =>
-      (['public', 'manual', 'provider'] as const).flatMap((authMode) =>
+      (['public', 'manual', 'provider', 'app_users'] as const).flatMap((authMode) =>
         [domain.hostname, ANOTHER_MAIN_DOMAIN, NO_MAIN_DOMAIN].flatMap((mainDomain) =>
           routesOf(domain, authMode, mainDomain)
         )
