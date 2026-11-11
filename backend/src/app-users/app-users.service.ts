@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '../../db';
 import { appUserLinks, appUserRoleMembers, appUserRoles, appUsers } from '../../db/schema';
 import { isPostgresError, PG_UNIQUE_VIOLATION } from '../common/postgres-errors';
@@ -17,6 +18,8 @@ import {
 
 const EMAIL_UNIQUE = 'app_users_project_id_email_unique';
 const MAX_FAILED_SIGN_INS = 5;
+const ATTEMPT_WAIT_MS = 100;
+const ATTEMPT_WAITS = 30;
 const LOCK_MS = APP_USER_LOCK_MINUTES * 60 * 1000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -204,13 +207,8 @@ export class AppUsersService {
       return { outcome: 'wrong-credentials' };
     }
     const now = new Date();
-    const [attempt] = await db
-      .update(appUsers)
-      .set({ failedSignIns: sql`${appUsers.failedSignIns} + 1` })
-      .where(and(eq(appUsers.id, row.id), or(isNull(appUsers.lockedUntil), lte(appUsers.lockedUntil, now))))
-      .returning({ count: appUsers.failedSignIns });
+    const attempt = await this.reserveAttempt(row.id, now);
     if (!attempt) return { outcome: 'locked' };
-    if (attempt.count > MAX_FAILED_SIGN_INS) return this.lock(row.id, now);
 
     if (!(await verifyPassword(password, row.passwordHash))) {
       return attempt.count === MAX_FAILED_SIGN_INS ? this.lock(row.id, now) : { outcome: 'wrong-credentials' };
@@ -255,6 +253,31 @@ export class AppUsersService {
       failedSignIns: 0,
       lockedUntil: null,
     };
+  }
+
+  private async reserveAttempt(userId: string, now: Date): Promise<{ count: number } | null> {
+    for (let wait = 0; wait < ATTEMPT_WAITS; wait++) {
+      const [attempt] = await db
+        .update(appUsers)
+        .set({ failedSignIns: sql`${appUsers.failedSignIns} + 1` })
+        .where(
+          and(
+            eq(appUsers.id, userId),
+            lt(appUsers.failedSignIns, MAX_FAILED_SIGN_INS),
+            or(isNull(appUsers.lockedUntil), lte(appUsers.lockedUntil, now))
+          )
+        )
+        .returning({ count: appUsers.failedSignIns });
+      if (attempt) return attempt;
+      const [current] = await db
+        .select({ lockedUntil: appUsers.lockedUntil })
+        .from(appUsers)
+        .where(eq(appUsers.id, userId));
+      if (!current || (current.lockedUntil && current.lockedUntil > now)) return null;
+      await sleep(ATTEMPT_WAIT_MS);
+    }
+    await this.lock(userId, new Date());
+    return null;
   }
 
   private async lock(userId: string, now: Date): Promise<SignInResult> {

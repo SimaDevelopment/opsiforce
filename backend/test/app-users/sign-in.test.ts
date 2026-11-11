@@ -315,6 +315,18 @@ describe('the App Users provider', () => {
     expect((await appUsers.signIn(project.projectId, user.email, PASSWORD)).outcome).toBe('locked');
   });
 
+  it('never counts a correct password towards the lock, however many arrive at once', async () => {
+    const project = await projectUsingAppUsers(app);
+    const user = await withUser(project);
+    for (let attempt = 0; attempt < 4; attempt++) await appUsers.signIn(project.projectId, user.email, 'wrong');
+
+    const together = await Promise.all(
+      Array.from({ length: 6 }, () => appUsers.signIn(project.projectId, user.email, PASSWORD))
+    );
+
+    expect(together.map((attempt) => attempt.outcome)).toEqual(Array(6).fill('signed-in'));
+  });
+
   it('keeps one Project’s visitors out of another Project’s App', async () => {
     const mine = await projectUsingAppUsers(app);
     const theirs = await projectUsingAppUsers(app);
