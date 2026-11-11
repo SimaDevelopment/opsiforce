@@ -54,7 +54,10 @@ export function ProjectView(props: ProjectViewProps) {
   const { hasPermission } = usePermissions();
   const canViewCode = () => hasPermission('can_view_code_tab');
   const canViewDb = () => hasPermission('can_view_db_tab');
-  const canManageUsers = () => props.servesApp !== false && hasPermission('can_manage_project_auth_settings');
+  const showUsersTab = () =>
+    props.servesApp !== false &&
+    hasPermission('can_manage_project_auth_settings') &&
+    environmentList().some((env) => env.authMode === 'app_users');
 
   const [activeTab, setActiveTab] = createSignal<ProjectTab>('chat');
   const [visitedTabs, setVisitedTabs] = createSignal<Set<ProjectTab>>(new Set<ProjectTab>(['chat']));
@@ -118,6 +121,22 @@ export function ProjectView(props: ProjectViewProps) {
     if (!exists) untrack(() => setActiveEnvironmentId(props.projectId));
   });
 
+  createEffect(() => {
+    if (!environments.data || environments.isFetching) return;
+    if (activeTab() === 'users' && !showUsersTab()) untrack(() => selectTab('chat'));
+  });
+
+  const [usersTabRequested, setUsersTabRequested] = createSignal(false);
+  const openTab = (tab: ProjectTab) => {
+    if (tab === 'users' && !showUsersTab()) setUsersTabRequested(true);
+    else selectTab(tab);
+  };
+  createEffect(() => {
+    if (!usersTabRequested() || !showUsersTab()) return;
+    setUsersTabRequested(false);
+    untrack(() => selectTab('users'));
+  });
+
   createEffect(on(activeEnvironmentId, () => closePreview(), { defer: true }));
 
   createEffect(() => {
@@ -146,7 +165,7 @@ export function ProjectView(props: ProjectViewProps) {
     const tabs: ProjectTab[] = ['chat', 'files'];
     if (connection.router() && canViewCode()) tabs.push('code');
     if (connection.router() && canViewDb()) tabs.push('db');
-    if (canManageUsers()) tabs.push('users');
+    if (showUsersTab()) tabs.push('users');
     return tabs;
   };
 
@@ -194,7 +213,7 @@ export function ProjectView(props: ProjectViewProps) {
   });
 
   return (
-    <ProjectTabsContext.Provider value={{ openTab: selectTab }}>
+    <ProjectTabsContext.Provider value={{ openTab }}>
       <div class={cn('h-full flex flex-col overflow-hidden', !strip && 'w-full')}>
         <div class={cn('flex shrink-0 flex-col', strip && 'w-0 min-w-full')}>
           <Show when={statusQuery.data}>
@@ -205,7 +224,7 @@ export function ProjectView(props: ProjectViewProps) {
                 workspaceId={data().workspaceId}
                 appExists={!!data().app?.exists}
                 showAgentTabs={!!connection.router()}
-                showUsersTab={canManageUsers()}
+                showUsersTab={showUsersTab()}
                 activeTab={activeTab()}
                 onActiveTabChange={selectTab}
                 environments={environmentList()}
@@ -308,7 +327,7 @@ export function ProjectView(props: ProjectViewProps) {
               </div>
             </Show>
 
-            <Show when={visitedTabs().has('users') && canManageUsers()}>
+            <Show when={visitedTabs().has('users') && showUsersTab()}>
               <div class="flex-1 min-w-0 flex flex-col" style={{ display: activeTab() === 'users' ? 'flex' : 'none' }}>
                 <ProjectUsersTab projectId={props.projectId} />
               </div>

@@ -139,8 +139,22 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
     setConfirmOpen(true);
   };
 
+  const announceSaved = (turnedOnAppUsers: boolean) => {
+    if (!turnedOnAppUsers) {
+      toast.success('Auth settings saved');
+      return;
+    }
+    toast.success('App Users is on', {
+      description: tabs
+        ? 'Invite the people who can sign in.'
+        : 'Visitors now sign in with accounts you add on the Users tab.',
+    });
+    tabs?.openTab('users');
+  };
+
   const confirmSave = () => {
     const mode = draftMode();
+    const turnedOnAppUsers = mode === 'app_users' && serverMode() !== 'app_users';
     mutation.mutate(
       {
         mode,
@@ -155,7 +169,7 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
       },
       {
         onSuccess: () => {
-          toast.success('Auth settings saved');
+          announceSaved(turnedOnAppUsers);
           props.onSaved?.();
         },
         onError: (e) => toast.error(`Failed to save: ${(e as Error).message}`),
@@ -243,10 +257,10 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
                 <p class="text-muted-foreground">
                   {serverMode() === 'app_users'
                     ? 'Invite people, set their roles and send reset links on the Users tab.'
-                    : 'Save to require sign-in. Invite people and set their roles on the Users tab.'}
+                    : 'Save to require sign-in. The Users tab then opens next to Chat, where you invite people and set their roles.'}
                 </p>
               </div>
-              <Show when={tabs}>
+              <Show when={tabs && serverMode() === 'app_users'}>
                 <Button
                   size="sm"
                   variant="outline"

@@ -17,8 +17,6 @@ function SignInAccess(props: { environments: ProjectEnvironment[]; onOpenAuth: (
   const tenantEnvironments = useEnvironments();
   const badgeOf = (env: ProjectEnvironment) =>
     tenantEnvironments.data?.find((tenantEnv) => tenantEnv.id === env.environmentId);
-  const using = () => props.environments.filter((env) => env.authMode === 'app_users').length;
-
   return (
     <section class="mb-6" aria-labelledby="sign-in-access">
       <SectionTitle>
@@ -27,11 +25,6 @@ function SignInAccess(props: { environments: ProjectEnvironment[]; onOpenAuth: (
           Where visitors sign in
         </span>
       </SectionTitle>
-      <Show when={using() === 0}>
-        <p class="of-note of-tone-needs-you mb-2 text-xs leading-snug">
-          No environment asks visitors to sign in with these accounts yet. Turn on App Users for one below.
-        </p>
-      </Show>
       <RowList>
         <For each={props.environments}>
           {(env) => {
