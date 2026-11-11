@@ -25,6 +25,8 @@ const SIGN_IN_ERRORS = {
   disabled: 'This account has been disabled. Ask the App’s owner to enable it.',
 } as const;
 
+const FOREIGN_FORM = 'This form can only be sent from its own page. Go back to the App and try again.';
+
 const EXPIRED_LINK =
   'This link has expired, was already used, or was replaced by a newer one. Ask the App’s owner for a new one.';
 
@@ -93,7 +95,13 @@ export class AppUsersProviderController {
   }
 
   @Post('authorize')
-  async signIn(@Body() body: OAuthParams, @Headers('cookie') cookie: string | undefined, @Res() reply: FastifyReply) {
+  async signIn(
+    @Body() body: OAuthParams,
+    @Headers('cookie') cookie: string | undefined,
+    @Headers('origin') origin: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    if (!this.fromOwnPage(origin)) return this.refuse(reply, FOREIGN_FORM);
     const raw = stringField(body?.request);
     const check = await this.provider.checkAuthorizationRequest(Object.fromEntries(new URLSearchParams(raw)));
     if (check.outcome === 'refused') return this.refuse(reply, check.message);
@@ -134,8 +142,10 @@ export class AppUsersProviderController {
   async sendReset(
     @Body() body: OAuthParams,
     @Headers('cookie') cookie: string | undefined,
+    @Headers('origin') origin: string | undefined,
     @Res() reply: FastifyReply
   ) {
+    if (!this.fromOwnPage(origin)) return this.refuse(reply, FOREIGN_FORM);
     const rawRequest = stringField(body?.request);
     const check = await this.provider.checkAuthorizationRequest(Object.fromEntries(new URLSearchParams(rawRequest)));
     if (check.outcome === 'refused') return this.refuse(reply, check.message);
@@ -174,7 +184,12 @@ export class AppUsersProviderController {
   }
 
   @Post('set-password')
-  async savePassword(@Body() body: OAuthParams, @Res() reply: FastifyReply) {
+  async savePassword(
+    @Body() body: OAuthParams,
+    @Headers('origin') origin: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    if (!this.fromOwnPage(origin)) return this.refuse(reply, FOREIGN_FORM);
     const token = stringField(body?.token);
     const password = stringField(body.password);
     const link = await this.links.open(token);
@@ -249,6 +264,10 @@ export class AppUsersProviderController {
     );
   }
 
+  private fromOwnPage(origin: string | undefined): boolean {
+    return origin === undefined || origin === new URL(this.provider.issuer).origin;
+  }
+
   private validCsrf(cookies: Record<string, string>, submitted: unknown): boolean {
     const expected = cookies[SIGN_IN_CSRF_COOKIE];
     return !!expected && timingSafeStringEqual(expected, stringField(submitted));
@@ -292,7 +311,7 @@ export class AppUsersProviderController {
       .status(status)
       .header('content-type', 'text/html; charset=utf-8')
       .header('cache-control', 'no-store')
-      .header('referrer-policy', 'no-referrer')
+      .header('referrer-policy', 'same-origin')
       .header('x-frame-options', 'DENY')
       .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
       .send(body);

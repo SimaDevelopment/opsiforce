@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { AppUsersModule } from '../../../src/app-users/app-users.module';
+import { enablePlatformCors } from '../../../src/common/platform-cors';
 import { configuration } from '../../../src/config/configuration';
 import { PermissionGuard } from '../../../src/permission/permission.guard';
 import { appSignInCallbackUrls } from '../../../src/project/app-auth-route';
@@ -53,6 +54,7 @@ export async function createAppUsersTestApp(options: { mailgunUrl?: string } = {
 
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
   app.setGlobalPrefix('api');
+  enablePlatformCors(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;

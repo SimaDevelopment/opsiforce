@@ -347,6 +347,52 @@ describe('the App Users provider', () => {
     expect(res.headers.location).toBeUndefined();
   });
 
+  it('shares no page with a sibling App’s script and takes its forms only from its own pages', async () => {
+    const project = await projectUsingAppUsers(app);
+    const user = await withUser(project);
+    const sibling = 'https://other-app.apps.opsiforce.test';
+    const preflight = (url: string) =>
+      app.inject({
+        method: 'OPTIONS',
+        url,
+        headers: { origin: sibling, 'access-control-request-method': 'POST' },
+      });
+
+    const page = await app.inject({
+      method: 'GET',
+      url: `/api/app-auth/authorize?${authorizeQuery(project, pkce().challenge, { prompt: 'login' })}`,
+      headers: { origin: sibling },
+    });
+    expect(page.headers['access-control-allow-origin']).toBeUndefined();
+    expect((await preflight('/api/app-auth/authorize')).headers['access-control-allow-origin']).toBeUndefined();
+    expect(
+      (await preflight(`/api/projects/${project.projectId}/app-users`)).headers['access-control-allow-origin']
+    ).toBe(sibling);
+
+    const cookies = cookiesFrom(page.headers['set-cookie']);
+    const post = (origin: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/app-auth/authorize',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader(cookies), origin },
+        payload: form({
+          email: user.email,
+          password: PASSWORD,
+          csrf: hiddenField(page.body, 'csrf'),
+          request: hiddenField(page.body, 'request'),
+        }),
+      });
+
+    const forged = await post(sibling);
+    expect(forged.statusCode).toBe(400);
+    expect(forged.headers.location).toBeUndefined();
+    expect(forged.headers['set-cookie']).toBeUndefined();
+
+    const own = await post(new URL(ISSUER).origin);
+    expect(own.statusCode).toBe(302);
+    codeFrom(own.headers.location);
+  });
+
   it('skips the form while the visitor’s provider session lasts', async () => {
     const project = await projectUsingAppUsers(app);
     const user = await withUser(project);
