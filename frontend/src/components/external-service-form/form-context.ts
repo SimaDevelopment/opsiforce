@@ -1,4 +1,5 @@
 import { serviceConfigurationSourceOf, type Field } from '@opsiforce/external-service-sdk/forms';
+import type { ServiceConfigurationOptions } from '~/api/project-external-services';
 import type { FormDraft } from './form-draft';
 import type { FormValues } from './form-values';
 
@@ -56,4 +57,11 @@ export function fixedOptionsOf(
   if (Array.isArray(listed)) return listed;
   const source = serviceConfigurationSourceOf(field);
   return source ? ctx.serviceConfigurationOptions(source.serviceConfiguration, source.labelKey) : null;
+}
+
+export function serviceConfigurationOptionsIn(
+  sources: () => readonly ServiceConfigurationOptions[]
+): FormContext['serviceConfigurationOptions'] {
+  return (listKey, labelKey) =>
+    sources().find((source) => source.list === listKey && source.labelKey === labelKey)?.options ?? [];
 }

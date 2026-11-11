@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { reservedProjectConfigurationKeys } from '@opsiforce/external-service-sdk/platform';
+import {
+  isWellFormedLabels,
+  labelsKey,
+  reservedProjectConfigurationKeys,
+  wellFormedLabelsRule,
+  type ValueLabels,
+} from '@opsiforce/external-service-sdk/platform';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../../db';
 import { externalServiceProjectConfigs } from '../../../db/schema';
@@ -15,8 +21,6 @@ import { removedItemsNoticeOf, withoutRemovedItems, type RemovedItems, type Remo
 import { readTolerantly } from './tolerant-read';
 import type { Transaction } from './transaction';
 import { savedKeepingValuesUnique } from './unique-values';
-
-export type ValueLabels = Record<string, Record<string, string>>;
 
 export interface ProjectConfigurationChange {
   previous: ProjectConfiguration | null;
@@ -40,20 +44,17 @@ export interface ProjectConfiguration {
   labels: ValueLabels;
 }
 
-const maxLabelLength = 200;
-
-const LABELS_KEY = '_labels';
-
 export function projectPlaceOf(service: { id: string }, projectEnvironmentId: string): SealingPlaceOf {
   return (path) => `${service.id}|environment:${projectEnvironmentId}|${path}`;
 }
 
 export interface ProjectConfigurationStart {
   values?: ConfigurationValues;
+  labels?: ValueLabels;
 }
 
 function reservedValues(labels: ValueLabels): ConfigurationValues {
-  return { [LABELS_KEY]: labels };
+  return { [labelsKey]: labels };
 }
 
 export function storedShapeOf(configuration: ProjectConfiguration): ConfigurationValues {
@@ -81,27 +82,17 @@ export function projectConfigurationFromStored(
     saved: stored !== undefined,
     values: read.values,
     missing: read.missing,
-    labels: storedLabels(stored?.[LABELS_KEY]),
+    labels: storedLabels(stored?.[labelsKey]),
   };
 }
 
 function submittedLabels(submitted: unknown, issues: ConfigurationIssue[]): ValueLabels | undefined {
   if (submitted === undefined) return undefined;
-  const wellFormed =
-    isPlainValues(submitted) &&
-    Object.values(submitted).every(
-      (byValue) =>
-        isPlainValues(byValue) &&
-        Object.values(byValue).every((label) => typeof label === 'string' && label.length <= maxLabelLength)
-    );
-  if (!wellFormed) {
-    issues.push({
-      pointer: `/${LABELS_KEY}`,
-      message: `must map fields to {value: label} with labels of at most ${maxLabelLength} characters`,
-    });
+  if (!isWellFormedLabels(submitted)) {
+    issues.push({ pointer: `/${labelsKey}`, message: wellFormedLabelsRule });
     return undefined;
   }
-  return submitted as ValueLabels;
+  return submitted;
 }
 
 export interface ProjectConfigurationSave extends ProjectConfigurationChange {
@@ -155,7 +146,7 @@ export class ProjectConfigurationStore {
     projectEnvironmentId: string,
     start: ProjectConfigurationStart = {}
   ): Promise<void> {
-    const reserved = reservedValues({});
+    const reserved = reservedValues(start.labels ?? {});
     const started = { ...start.values, ...reserved } as JsonObject;
     const form = service.manifest.projectForm ?? [];
     const placeOf = projectPlaceOf(service, projectEnvironmentId);
@@ -209,7 +200,7 @@ export class ProjectConfigurationStore {
       throw new InvalidConfigurationError([{ pointer: '/', message: 'must be an object of field values' }]);
     }
     const issues: ConfigurationIssue[] = [];
-    const labels = submittedLabels(submitted[LABELS_KEY], issues);
+    const labels = submittedLabels(submitted[labelsKey], issues);
     if (issues.length > 0) throw new InvalidConfigurationError(issues);
 
     const form = service.manifest.projectForm ?? [];
@@ -217,7 +208,7 @@ export class ProjectConfigurationStore {
     return db.transaction(async (tx) => {
       const stored = await this.storedForUpdate(tx, service, projectEnvironmentId);
       const keptLabels = options.keepLabels && stored ? undefined : labels;
-      const reserved = reservedValues(keptLabels ?? storedLabels(stored?.[LABELS_KEY]));
+      const reserved = reservedValues(keptLabels ?? storedLabels(stored?.[labelsKey]));
       const itemIds = repeatableItemIds();
       const saved = await savedKeepingValuesUnique(tx, {
         serviceId: service.id,
@@ -276,7 +267,7 @@ export class ProjectConfigurationStore {
       if (stripped.removed.length === 0) continue;
       const values = {
         ...stripped.values,
-        [LABELS_KEY]: withoutLabelsOf(storedLabels(row.values[LABELS_KEY]), removedIds),
+        [labelsKey]: withoutLabelsOf(storedLabels(row.values[labelsKey]), removedIds),
       } as JsonObject;
       const notice: RemovedItemsNotice = {
         removed: [...(removedItemsNoticeOf(row.notice)?.removed ?? []), ...stripped.removed],
@@ -330,7 +321,7 @@ export class ProjectConfigurationStore {
       const source = await this.storedForUpdate(tx, service, sourceEnvironmentId);
       if (!source) return null;
       const target = await this.storedForUpdate(tx, service, targetEnvironmentId);
-      const { [LABELS_KEY]: labels, ...formValues } = source;
+      const { [labelsKey]: labels, ...formValues } = source;
       const form = service.manifest.projectForm ?? [];
       const targetPlaceOf = projectPlaceOf(service, targetEnvironmentId);
       const copied = resealed(this.sealer, formValues, projectPlaceOf(service, sourceEnvironmentId), targetPlaceOf);

@@ -90,7 +90,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
 
   return (
     <div class="relative flex-1 min-h-0 flex flex-col">
-      <div ref={embedHost} class="contents" />
+      <div ref={embedHost} class="contents" data-embedded-chat />
       <DictationButton projectId={props.projectId} environmentId={props.environmentId} host={host} />
       <FileUpload
         projectId={props.projectId}
@@ -98,11 +98,7 @@ export function ProjectChatTab(props: ProjectChatTabProps) {
         host={host}
         stripItems={
           <Show when={props.showSkillsAndServices}>
-            <SkillsButton
-              projectId={props.projectId}
-              projectEnvironmentId={props.environmentId}
-              environmentName={props.environmentName}
-            />
+            <SkillsButton projectId={props.projectId} projectEnvironmentId={props.environmentId} />
             <ExternalServicesButton
               projectId={props.projectId}
               projectEnvironmentId={props.environmentId}

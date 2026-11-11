@@ -1,5 +1,5 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { agentSettings, agents, projects } from '../../db/schema';
+import { agentSettings, agents, customDomains, projects } from '../../db/schema';
 import type { DbExecutor } from '../common/locks';
 import type { LimitKey } from './limit.types';
 
@@ -25,9 +25,18 @@ async function countWarmPoolSlots(executor: DbExecutor, tenantId: string): Promi
   return row?.count ?? 0;
 }
 
+async function countCustomDomains(executor: DbExecutor, tenantId: string): Promise<number> {
+  const [row] = await executor
+    .select({ count: sql<number>`count(*)::int` })
+    .from(customDomains)
+    .where(eq(customDomains.tenantId, tenantId));
+  return row?.count ?? 0;
+}
+
 export const LIMITS: Record<LimitKey, LimitDefinition> = {
   projects: { noun: 'projects', count: countEnabledOrdinaryProjects },
   warm_pool: { noun: 'Ready Projects across its agents', count: countWarmPoolSlots },
+  custom_domains: { noun: 'custom domains', count: countCustomDomains },
 };
 
 export const LIMIT_KEYS = Object.keys(LIMITS) as LimitKey[];

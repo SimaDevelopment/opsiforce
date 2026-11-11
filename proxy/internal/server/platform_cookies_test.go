@@ -184,3 +184,19 @@ func TestAWebSocketUpgradeNeverCarriesThePlatformSessionCookie(t *testing.T) {
 		t.Fatalf("App got Cookie %q on the upgrade, want only ws_token", got)
 	}
 }
+
+func TestAppsCannotSetPlatformCookies(t *testing.T) {
+	response := func() http.Header {
+		h := http.Header{}
+		h.Add("Set-Cookie", "theme=dark; Path=/")
+		h.Add("Set-Cookie", "_opsiforce_sp_7d1c.Session=forged; Domain=.apps.example; Path=/")
+		return h
+	}
+	streamed := response()
+	sanitizeReverseProxyHeaders(streamed, false)
+	for name, headers := range map[string]http.Header{"buffered": filterResponseHeaders(response(), false), "streamed": streamed} {
+		if got := headers.Values("Set-Cookie"); len(got) != 1 || got[0] != "theme=dark; Path=/" {
+			t.Fatalf("%s: unexpected Set-Cookie %q", name, got)
+		}
+	}
+}

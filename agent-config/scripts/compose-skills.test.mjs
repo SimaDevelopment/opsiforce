@@ -31,6 +31,13 @@ describe("sharedSkillsForPackage", () => {
     assert.deepEqual(sharedSkillsForPackage("external-service-builder", pool).toSorted(), ["platform", "sqlite"])
   })
 
+  it("composes docker into the packages that build Apps and into no other", async () => {
+    const pool = await readdir(new URL("../skills", import.meta.url))
+    const carriers = ["app-builder", "makara-app-builder", "skill-agent-builder", "external-service-builder", "custom"]
+      .filter((packageName) => sharedSkillsForPackage(packageName, pool).includes("docker"))
+    assert.deepEqual(carriers, ["app-builder", "makara-app-builder"])
+  })
+
   it("gives the custom package the platform skill and nothing else", () => {
     assert.deepEqual(sharedSkillsForPackage("custom", shared), ["platform"])
   })

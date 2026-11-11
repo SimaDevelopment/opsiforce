@@ -33,12 +33,16 @@ export interface PublishJobData {
   isFirstPublish: boolean;
   variables: Record<string, string>;
   scheduleIds: string[];
+  serviceIds: string[] | null;
+  withData: boolean;
 }
 
 export interface PublishDto {
   environmentId: string;
   variables?: Record<string, string>;
   scheduleIds?: string[];
+  serviceIds?: string[];
+  withData?: boolean;
 }
 
 export interface PublishTarget {
@@ -64,15 +68,26 @@ export interface PublishFormScheduleOption {
   selected: boolean;
 }
 
+export interface PublishFormServiceOption {
+  id: string;
+  name: string;
+  selected: boolean;
+  targetHasOwn: boolean;
+}
+
 export interface PublishFormResponse {
   environmentId: string;
   environmentName: string;
   isFirstPublish: boolean;
+  developmentHasData: boolean;
   variables: PublishFormVariable[];
   schedules: PublishFormScheduleOption[];
+  services: PublishFormServiceOption[];
 }
 
-export type PublishReportLine = ProjectConfigurationCarryLine | SkillsOffCarryLine;
+export type AppDataCarryLine = { kind: 'app-data'; outcome: 'replaced' };
+
+export type PublishReportLine = ProjectConfigurationCarryLine | SkillsOffCarryLine | AppDataCarryLine;
 
 export interface PublishJobResponse {
   id: string;

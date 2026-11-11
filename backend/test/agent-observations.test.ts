@@ -95,6 +95,7 @@ describe('Agent Status from run observations', () => {
     expect(stream.events.find((event) => event.projectId === project.projectId)).toEqual({
       projectId: project.projectId,
       agentStatus: 'idle',
+      waitingForInput: false,
     });
     stream.close();
   });

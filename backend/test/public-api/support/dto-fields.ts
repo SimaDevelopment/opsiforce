@@ -12,6 +12,7 @@ export const PROJECT_FIELDS = [
   'importedAgent',
   'timezone',
   'agentStatus',
+  'waitingForInput',
   'lastPromptAt',
   'createdAt',
   'updatedAt',

@@ -17,7 +17,7 @@ Agent's id goes in the path, the fields in the JSON body.
 | `DELETE /agents/<id>/skills/<skillId>` | | remove |
 
 Reads reach every Agent the author can see; writes reach only the Agent this chat authors and Agents
-this chat created. Writes need *Edit Agents and Skills*, which a new chat has on.
+this chat created. Writes need *Edit Skills and Agents*, which a new chat has on.
 
 ## The calls
 

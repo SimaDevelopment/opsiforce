@@ -15,11 +15,10 @@ export function EventDeliveryStatusLines(props: { environment: ProjectEnvironmen
   return (
     <Show when={status.data}>
       {(shown) => (
-        <section class="mt-4 flex flex-col gap-1.5 border-t border-border pt-3 text-xs">
-          <p class="font-medium text-foreground">Events</p>
+        <section class="flex flex-col gap-1.5 text-xs">
           <p class="text-muted-foreground">{eventsWaiting(shown().notYetTaken)}</p>
           <Show when={shown().appNotWired}>
-            <p class="flex items-start gap-1.5 text-amber-700">
+            <p class="of-ink of-tone-needs-you flex items-start gap-1.5">
               <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span>
                 App not wired: the App has no route for this service's Events doorbell yet. Events wait here until the

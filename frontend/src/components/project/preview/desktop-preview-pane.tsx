@@ -1,16 +1,70 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import type RFB from '@novnc/novnc';
 import { desktopBase, type DesktopSession } from '~/api/desktops';
+import { ClipboardPaste, Maximize2, Minimize2, PanelRightClose } from '~/components/icons';
 import { Button } from '~/components/ui/button';
+import { ToolbarButton } from '~/components/ui/toolbar-button';
 
-export function DesktopPreviewPane(props: {
+const MAX_RECONNECTS = 8;
+const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'AltGraph', 'Meta', 'CapsLock']);
+const NAMED_KEYSYMS: Record<string, number> = {
+  Tab: 0xff09,
+  Enter: 0xff0d,
+  Escape: 0xff1b,
+  Backspace: 0xff08,
+  Delete: 0xffff,
+  Insert: 0xff63,
+  Home: 0xff50,
+  End: 0xff57,
+  PageUp: 0xff55,
+  PageDown: 0xff56,
+  ArrowLeft: 0xff51,
+  ArrowUp: 0xff52,
+  ArrowRight: 0xff53,
+  ArrowDown: 0xff54,
+  ' ': 0x20,
+};
+
+function keysymOf(event: KeyboardEvent): number | undefined {
+  const named = NAMED_KEYSYMS[event.key];
+  if (named !== undefined) return named;
+  const fn = /^F([1-9]|1[0-2])$/.exec(event.key);
+  if (fn) return 0xffbe + Number(fn[1]) - 1;
+  if (/^Key[A-Z]$/.test(event.code)) return event.code.charCodeAt(3) + 32;
+  if (/^Digit[0-9]$/.test(event.code)) return event.code.charCodeAt(5);
+  const point = [...event.key].length === 1 ? event.key.toLowerCase().codePointAt(0) : undefined;
+  if (point === undefined) return undefined;
+  return point <= 0xff ? point : 0x01000000 + point;
+}
+
+function letterOf(event: KeyboardEvent) {
+  return /^Key[A-Z]$/.test(event.code) ? event.code.slice(3).toLowerCase() : event.key.toLowerCase();
+}
+
+function typesACharacter(event: KeyboardEvent) {
+  if (event.getModifierState('AltGraph')) return true;
+  return event.altKey && !event.ctrlKey && !event.metaKey && /Mac|iPhone|iPad/.test(navigator.platform);
+}
+
+export interface DesktopPreviewPaneProps {
   environmentId: string;
   session: DesktopSession;
   visible: boolean;
+  /** The window to show on its own, or '' for the whole desktop. */
   windowId: string;
-  onOpenWindow: (window: string) => void;
-}) {
-  const [selectedWindow, setSelectedWindow] = createSignal('');
+  onSelectWindow: (window: string) => void;
+  switcher?: JSX.Element;
+  onCollapse?: () => void;
+  /** A phone cannot show the screen at a usable size. */
+  mobile: boolean;
+  /** The Project's Agent is running, so it may be using this screen at the same time. */
+  agentWorking: boolean;
+  onStopAgent: () => Promise<void>;
+}
+
+export function DesktopPreviewPane(props: DesktopPreviewPaneProps) {
+  const selectedWindow = () =>
+    props.windowId && props.session.windows.some((window) => window.id === props.windowId) ? props.windowId : '';
   const [control, setControl] = createSignal(false);
   const [status, setStatus] = createSignal('Connecting…');
   const [retry, setRetry] = createSignal(0);
@@ -18,9 +72,35 @@ export function DesktopPreviewPane(props: {
   const [clipboardText, setClipboardText] = createSignal('');
   const [clipboardStatus, setClipboardStatus] = createSignal('');
   const [connected, setConnected] = createSignal(false);
+  const [gaveUp, setGaveUp] = createSignal(false);
+  const [stopping, setStopping] = createSignal(false);
+  const [stopFailed, setStopFailed] = createSignal(false);
+  async function stopAgent() {
+    setStopping(true);
+    setStopFailed(false);
+    try {
+      await props.onStopAgent();
+    } catch {
+      setStopFailed(true);
+    } finally {
+      setStopping(false);
+    }
+  }
+  const [fullscreen, setFullscreen] = createSignal(false);
+  const onFullscreenChange = () => setFullscreen(document.fullscreenElement === container);
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  onCleanup(() => document.removeEventListener('fullscreenchange', onFullscreenChange));
+  function tryAgain() {
+    failures = 0;
+    setGaveUp(false);
+    setRetry((value) => value + 1);
+  }
+  function toggleFullscreen() {
+    if (fullscreen()) void document.exitFullscreen().catch(() => {});
+    else void container?.requestFullscreen().catch(() => {});
+  }
   let pasteTarget: HTMLTextAreaElement | undefined;
   let pasteWithShift = false;
-  let lastClipboardText: string | undefined;
   let copyTimer: ReturnType<typeof setTimeout> | undefined;
   let clipboardRead: AbortController | undefined;
   onCleanup(() => {
@@ -36,7 +116,6 @@ export function DesktopPreviewPane(props: {
     on(
       () => props.environmentId,
       () => {
-        lastClipboardText = undefined;
         setClipboardText('');
         setClipboardStatus('');
         setClipboardOpen(false);
@@ -45,18 +124,24 @@ export function DesktopPreviewPane(props: {
       }
     )
   );
+  function sendCombo(keysym: number, code: string, modifiers: { control: boolean; shift: boolean; alt: boolean }) {
+    if (!client) return;
+    // The remote desktop is Linux, including when the viewer is on macOS.
+    client.sendKey(0xffeb, 'MetaLeft', false);
+    client.sendKey(0xffec, 'MetaRight', false);
+    if (modifiers.control) client.sendKey(0xffe3, 'ControlLeft', true);
+    if (modifiers.alt) client.sendKey(0xffe9, 'AltLeft', true);
+    if (modifiers.shift) client.sendKey(0xffe1, 'ShiftLeft', true);
+    client.sendKey(keysym, code);
+    if (modifiers.shift) client.sendKey(0xffe1, 'ShiftLeft', false);
+    if (modifiers.alt) client.sendKey(0xffe9, 'AltLeft', false);
+    if (modifiers.control) client.sendKey(0xffe3, 'ControlLeft', false);
+  }
   function shortcut(key: string, shift = false) {
     if (!client || !connected()) return;
     client.viewOnly = false;
     setControl(true);
-    // The remote desktop is Linux, including when the viewer is on macOS.
-    client.sendKey(0xffeb, 'MetaLeft', false);
-    client.sendKey(0xffec, 'MetaRight', false);
-    client.sendKey(0xffe3, 'ControlLeft', true);
-    if (shift) client.sendKey(0xffe1, 'ShiftLeft', true);
-    client.sendKey(key.charCodeAt(0), `Key${key.toUpperCase()}`);
-    if (shift) client.sendKey(0xffe1, 'ShiftLeft', false);
-    client.sendKey(0xffe3, 'ControlLeft', false);
+    sendCombo(key.charCodeAt(0), `Key${key.toUpperCase()}`, { control: true, shift, alt: false });
     if (key === 'c' || key === 'x') {
       const activeClient = client;
       clearTimeout(copyTimer);
@@ -65,7 +150,7 @@ export function DesktopPreviewPane(props: {
       copyTimer = setTimeout(() => void copyRemoteClipboard(activeClient), 150);
     }
   }
-  async function copyRemoteClipboard(activeClient: RFB, force = true) {
+  async function copyRemoteClipboard(activeClient: RFB) {
     clipboardRead?.abort();
     const request = new AbortController();
     clipboardRead = request;
@@ -77,19 +162,9 @@ export function DesktopPreviewPane(props: {
         request.signal.aborted ||
         client !== activeClient ||
         !props.visible ||
-        (!force && !document.hasFocus()) ||
         !screen?.contains(document.activeElement)
       )
         return;
-      if (!force && lastClipboardText === undefined) {
-        // Establish a baseline without overwriting something just copied on
-        // the host when the user first clicks into the desktop.
-        lastClipboardText = text;
-        setClipboardText(text);
-        return;
-      }
-      if (!force && text === lastClipboardText) return;
-      lastClipboardText = text;
       setClipboardText(text);
       try {
         await navigator.clipboard.writeText(text);
@@ -99,8 +174,7 @@ export function DesktopPreviewPane(props: {
         setClipboardStatus('Browser blocked clipboard access. Choose Copy to computer.');
       }
     } catch {
-      if (force && !request.signal.aborted)
-        setClipboardStatus('Could not read the desktop clipboard. Try copying again.');
+      if (!request.signal.aborted) setClipboardStatus("Could not read the screen's clipboard. Try copying again.");
     } finally {
       if (clipboardRead === request) clipboardRead = undefined;
     }
@@ -117,18 +191,19 @@ export function DesktopPreviewPane(props: {
         body: JSON.stringify({ text }),
       });
       if (response.status === 413) {
+        activeClient.focus();
         setClipboardOpen(true);
         setClipboardStatus('Clipboard text must be smaller than 1 MiB.');
         return;
       }
       if (!response.ok) throw new Error('Clipboard transfer failed');
       if (client !== activeClient || !props.visible) return;
-      lastClipboardText = text;
       setClipboardText(text);
       shortcut('v', shift);
       activeClient.focus();
-      setClipboardStatus('Pasted into desktop');
+      setClipboardStatus('Pasted into the screen');
     } catch {
+      activeClient.focus();
       setClipboardOpen(true);
       setClipboardStatus('Could not send clipboard text. Reconnect or try again.');
     }
@@ -144,6 +219,12 @@ export function DesktopPreviewPane(props: {
   }
   async function copyToComputer() {
     try {
+      const response = await fetch(`${desktopBase(props.environmentId)}/clipboard`);
+      if (response.ok) setClipboardText(((await response.json()) as { text: string }).text);
+    } catch {
+      // The text already in the box is still offered.
+    }
+    try {
       await navigator.clipboard.writeText(clipboardText());
       setClipboardStatus('Copied to your clipboard');
     } catch {
@@ -158,7 +239,7 @@ export function DesktopPreviewPane(props: {
       if (client === activeClient && props.visible) await pasteText(text);
     } catch {
       setClipboardOpen(true);
-      setClipboardStatus('Paste into the text box, then choose Paste into desktop.');
+      setClipboardStatus('Paste into the text box, then choose Paste into screen.');
     }
   }
   createEffect(() => {
@@ -166,28 +247,17 @@ export function DesktopPreviewPane(props: {
     if (client) client.viewOnly = !interactive;
   });
 
-  createEffect(
-    on(
-      () => props.windowId,
-      (window) => {
-        setSelectedWindow(window);
-        setControl(false);
-      }
-    )
-  );
-  createEffect(() => {
-    if (selectedWindow() && !props.session.windows.some((window) => window.id === selectedWindow())) {
-      setSelectedWindow('');
-    }
-  });
+  createEffect(on(selectedWindow, () => setControl(false), { defer: true }));
 
   createEffect(() => {
     const visible = props.visible;
     const environmentId = props.environmentId;
     const id = sessionId();
-    const window = selectedWindow();
+    const windowId = selectedWindow();
     retry();
     if (!visible) {
+      failures = 0;
+      setGaveUp(false);
       setConnected(false);
       setControl(false);
       return;
@@ -199,6 +269,10 @@ export function DesktopPreviewPane(props: {
       if (disposed || reconnectTimer) return;
       setControl(false);
       setConnected(false);
+      if (failures >= MAX_RECONNECTS) {
+        setGaveUp(true);
+        return;
+      }
       setStatus('Reconnecting…');
       const delay = Math.min(5000, 500 * 2 ** Math.min(failures++, 4));
       reconnectTimer = setTimeout(() => setRetry((value) => value + 1), delay);
@@ -209,34 +283,50 @@ export function DesktopPreviewPane(props: {
       connection.viewOnly = false;
       setControl(true);
     };
+    // Window capture runs before the chat's shortcut listener on the document.
+    const handledKeyUps = new Set<string>();
+    const inDesktop = (event: Event) => event.target instanceof Node && !!screen?.contains(event.target);
     const keydown = (event: KeyboardEvent) => {
-      if (!connected() || event.altKey) return;
-      const key = event.key.toLowerCase();
+      if (!connected() || !inDesktop(event)) return;
       if (event.key === 'Meta') {
-        event.stopImmediatePropagation();
+        event.stopPropagation();
         return;
       }
-      if (!(event.ctrlKey || event.metaKey) || !['v', 'c', 'x', 'a'].includes(key)) return;
-      event.stopImmediatePropagation();
-      if (event.repeat) {
-        event.preventDefault();
+      if (!(event.ctrlKey || event.metaKey || event.altKey) || MODIFIER_KEYS.has(event.key) || typesACharacter(event)) {
+        handledKeyUps.delete(event.code);
         return;
       }
-      if (key === 'v') {
+      event.stopPropagation();
+      handledKeyUps.add(event.code);
+      const key = letterOf(event);
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && key === 'v') {
         // Let the browser's native paste event provide text, avoiding a
         // clipboard-read permission prompt on every keyboard paste.
         pasteWithShift = event.shiftKey;
         pasteTarget?.focus({ preventScroll: true });
-      } else {
-        event.preventDefault();
-        shortcut(key, event.shiftKey);
+        return;
       }
+      event.preventDefault();
+      if (event.repeat && ['c', 'x', 'a'].includes(key)) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && ['c', 'x', 'a'].includes(key)) {
+        shortcut(key, event.shiftKey);
+        return;
+      }
+      const keysym = keysymOf(event);
+      if (keysym === undefined || !client) return;
+      client.viewOnly = false;
+      setControl(true);
+      sendCombo(keysym, event.code, {
+        control: event.ctrlKey || event.metaKey,
+        shift: event.shiftKey,
+        alt: event.altKey,
+      });
     };
     const keyup = (event: KeyboardEvent) => {
-      if (event.key === 'Meta') event.stopImmediatePropagation();
+      if (handledKeyUps.delete(event.code) || (event.key === 'Meta' && inDesktop(event))) event.stopPropagation();
     };
-    screen?.addEventListener('keydown', keydown, true);
-    screen?.addEventListener('keyup', keyup, true);
+    window.addEventListener('keydown', keydown, true);
+    window.addEventListener('keyup', keyup, true);
     const copy = (event: ClipboardEvent) => {
       if (!connected()) return;
       event.preventDefault();
@@ -256,16 +346,19 @@ export function DesktopPreviewPane(props: {
         if (disposed || !screen) return;
         const url = new URL(`${desktopBase(environmentId)}/sessions/${id}/connect`, location.href);
         url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        if (window) url.searchParams.set('window', window);
+        if (windowId) url.searchParams.set('window', windowId);
         url.searchParams.set('control', '1');
         connection = new Client(screen, url.href);
         connection.scaleViewport = true;
         client = connection;
         connection.viewOnly = !control();
-        connection.background = '#18181b';
+        connection.background = getComputedStyle(screen).backgroundColor;
+        const canvas = screen.querySelector('canvas');
+        if (canvas) canvas.style.margin = '0 auto';
         connection.addEventListener('connect', () => {
           if (!disposed) {
             failures = 0;
+            setGaveUp(false);
             setConnected(true);
             setStatus('Connected');
           }
@@ -284,8 +377,8 @@ export function DesktopPreviewPane(props: {
       disposed = true;
       clipboardRead?.abort();
       clearTimeout(reconnectTimer);
-      screen?.removeEventListener('keydown', keydown, true);
-      screen?.removeEventListener('keyup', keyup, true);
+      window.removeEventListener('keydown', keydown, true);
+      window.removeEventListener('keyup', keyup, true);
       screen?.removeEventListener('copy', copy);
       screen?.removeEventListener('cut', copy);
       screen?.removeEventListener('paste', receivePaste);
@@ -297,74 +390,102 @@ export function DesktopPreviewPane(props: {
     });
   });
 
-  createEffect(() => {
-    if (!props.visible) return;
-    // Only one focused desktop view polls. This also covers Copy from native
-    // app menus, which may not produce a reliable legacy RFB clipboard event.
-    const timer = setInterval(() => {
-      if (
-        client &&
-        connected() &&
-        control() &&
-        !clipboardRead &&
-        document.hasFocus() &&
-        screen?.contains(document.activeElement)
-      ) {
-        void copyRemoteClipboard(client, false);
-      }
-    }, 1000);
-    onCleanup(() => clearInterval(timer));
-  });
-
   return (
     <div ref={container} data-remote-desktop class="flex min-h-0 flex-1 flex-col bg-background">
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-sidebar p-2">
-        <Show
-          when={!props.windowId}
-          fallback={<span class="min-w-0 flex-1 text-xs text-muted-foreground">Window view</span>}
-        >
-          <select
-            aria-label="Desktop or window"
-            class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-xs"
-            value={selectedWindow()}
-            onChange={(event) => {
-              setControl(false);
-              const window = event.currentTarget.value;
-              if (window) props.onOpenWindow(window);
-              event.currentTarget.value = selectedWindow();
-            }}
+      <div class="h-8 flex items-center gap-2 px-1.5 bg-sidebar border-b border-border shrink-0">
+        <div class="flex flex-1 min-w-0 items-center gap-1">
+          <Show when={props.onCollapse}>
+            {(collapse) => (
+              <ToolbarButton onClick={collapse()} tooltip="Close panel">
+                <PanelRightClose class="w-3.5 h-3.5" />
+              </ToolbarButton>
+            )}
+          </Show>
+          <Show when={props.session.windows.length > 1}>
+            <select
+              aria-label="Show all windows or one"
+              class="h-6 min-w-0 max-w-full truncate rounded border border-border bg-background px-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={selectedWindow()}
+              onChange={(event) => props.onSelectWindow(event.currentTarget.value)}
+            >
+              <option value="">All windows</option>
+              <For each={props.session.windows}>
+                {(window) => <option value={window.id}>{window.title || 'Untitled window'}</option>}
+              </For>
+            </select>
+          </Show>
+        </div>
+        {props.switcher}
+        <div class="flex flex-1 items-center justify-end gap-0.5" classList={{ hidden: props.mobile }}>
+          <ToolbarButton
+            aria-expanded={clipboardOpen()}
+            onClick={() => setClipboardOpen(!clipboardOpen())}
+            tooltip="Clipboard"
           >
-            <option value="">Whole desktop · open a window separately…</option>
-            <For each={props.session.windows}>
-              {(window) => <option value={window.id}>{window.title || window.id}</option>}
-            </For>
-          </select>
-        </Show>
-        <Button
-          size="sm"
-          variant="ghost"
-          class="h-7 text-xs"
-          aria-expanded={clipboardOpen()}
-          onClick={() => setClipboardOpen(!clipboardOpen())}
+            <ClipboardPaste class="w-3.5 h-3.5" />
+          </ToolbarButton>
+          <ToolbarButton onClick={toggleFullscreen} tooltip={fullscreen() ? 'Exit full screen' : 'Full screen'}>
+            <Show when={fullscreen()} fallback={<Maximize2 class="w-3.5 h-3.5" />}>
+              <Minimize2 class="w-3.5 h-3.5" />
+            </Show>
+          </ToolbarButton>
+        </div>
+      </div>
+      <Show when={control() && props.agentWorking}>
+        <div role="status" class="of-banner of-tone-needs-you flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
+          <p class="min-w-0 flex-1 text-sm">
+            {stopFailed()
+              ? "Couldn't stop the agent. Use Stop in the chat."
+              : 'The agent is still working and may use this screen at the same time.'}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
+            disabled={stopping()}
+            onClick={() => void stopAgent()}
+          >
+            {stopping() ? 'Stopping…' : 'Stop the agent'}
+          </Button>
+        </div>
+      </Show>
+      <Show when={props.mobile}>
+        <p class="px-3 py-4 text-sm text-muted-foreground">
+          The screen is too small to use on a phone. Open this project on a computer to use it.
+        </p>
+      </Show>
+      <p
+        class="flex shrink-0 items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
+        classList={{ hidden: props.mobile }}
+        aria-live="polite"
+      >
+        <Show
+          when={!gaveUp()}
+          fallback={
+            <>
+              <span>Can't reach the screen. The project may be restarting.</span>
+              <Button size="sm" variant="outline" class="h-6 px-2 text-xs" onClick={tryAgain}>
+                Try again
+              </Button>
+            </>
+          }
         >
-          Clipboard
-        </Button>
-        <Button size="sm" variant="ghost" class="h-7 text-xs" onClick={() => void container?.requestFullscreen()}>
-          Full screen
-        </Button>
-      </div>
-      <div class="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground" aria-live="polite">
-        <span>
-          {status()} · {control() ? 'You can interact' : 'Click desktop to interact'}
-        </span>
-      </div>
+          <span>
+            {connected() ? (control() ? 'You are using the screen' : 'Click the screen to use it') : status()}
+            <Show when={selectedWindow()}> · Dialogs open as separate windows; pick All windows to see them</Show>
+          </span>
+        </Show>
+      </p>
       <Show when={clipboardOpen()}>
         <div class="space-y-2 border-b border-border p-2">
           <p class="text-xs text-muted-foreground">
             Copy and paste text with Ctrl/Cmd+C and Ctrl/Cmd+V, or use these controls.
           </p>
           <textarea
-            aria-label="Desktop clipboard text"
+            aria-label="Screen clipboard text"
+            name="desktop-clipboard"
+            autocomplete="off"
+            spellcheck={false}
             class="h-20 w-full resize-y rounded border border-input bg-background p-2 text-sm"
             value={clipboardText()}
             onInput={(event) => setClipboardText(event.currentTarget.value)}
@@ -374,7 +495,7 @@ export function DesktopPreviewPane(props: {
               Paste from computer
             </Button>
             <Button size="sm" variant="outline" disabled={!connected()} onClick={() => void pasteText(clipboardText())}>
-              Paste into desktop
+              Paste into screen
             </Button>
             <Button size="sm" variant="outline" onClick={() => void copyToComputer()}>
               Copy to computer
@@ -389,16 +510,18 @@ export function DesktopPreviewPane(props: {
         ref={pasteTarget}
         class="sr-only"
         tabIndex={-1}
-        aria-label="Paste into remote desktop"
+        aria-label="Paste into the screen"
         onPaste={receivePaste}
         onBlur={() => {
           if (pasteTarget) pasteTarget.value = '';
         }}
       />
-      <Show when={selectedWindow()}>
-        <p class="px-2 pb-1 text-xs text-muted-foreground">For dialogs or other windows, use the Desktop panel.</p>
-      </Show>
-      <div ref={screen} class="min-h-0 flex-1 overflow-hidden bg-zinc-900" aria-label="Remote desktop" />
+      <div
+        ref={screen}
+        role="application"
+        aria-label="Remote screen"
+        class="min-h-0 flex-1 overflow-hidden bg-background focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring"
+      />
     </div>
   );
 }

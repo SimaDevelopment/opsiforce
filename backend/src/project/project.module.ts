@@ -4,6 +4,8 @@ import { BullBoardModule } from '@bull-board/nestjs';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { Queue } from 'bullmq';
 import { ProjectController } from './project.controller';
+import { ProjectAppUsersController } from './project-app-users.controller';
+import { AppUsersModule } from '../app-users/app-users.module';
 import { AppAgentController } from './app.controller.agent';
 import { AgentObservationsController } from './agent-observations.controller';
 import { AgentObservationsService } from './agent-observations.service';
@@ -24,6 +26,7 @@ import {
   ProjectImportUploadCleanupProcessor,
   PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE,
 } from './project-import-upload-cleanup.processor';
+import { InactivityCleanupProcessor, INACTIVITY_CLEANUP_QUEUE } from './inactivity-cleanup.processor';
 import { ProjectEventsModule } from './project-events.module';
 import { AppService } from './app.service';
 import { AppReadinessModule } from './app-readiness.module';
@@ -42,12 +45,16 @@ import { ProjectEnvironmentModule } from '../project-environment/project-environ
 import { AgentSessionModule } from '../agent-session/agent-session.module';
 import { ExternalServicesModule } from '../external-services';
 import { ModelProvidersModule } from '../model-provider/model-provider.module';
+import { SealingModule } from '../sealing/sealing.module';
+import { CustomDomainModule } from '../custom-domain/custom-domain.module';
 
 @Module({
   imports: [
+    AppUsersModule,
     BullModule.registerQueue({ name: PROJECT_DUPLICATE_QUEUE }),
     BullModule.registerQueue({ name: PROJECT_IMPORT_QUEUE }),
     BullModule.registerQueue({ name: PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE }),
+    BullModule.registerQueue({ name: INACTIVITY_CLEANUP_QUEUE }),
     BullBoardModule.forFeature({
       name: PROJECT_DUPLICATE_QUEUE,
       adapter: BullMQAdapter,
@@ -58,6 +65,10 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     }),
     BullBoardModule.forFeature({
       name: PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE,
+      adapter: BullMQAdapter,
+    }),
+    BullBoardModule.forFeature({
+      name: INACTIVITY_CLEANUP_QUEUE,
       adapter: BullMQAdapter,
     }),
     PodModule,
@@ -73,10 +84,13 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     ExternalServicesModule,
     forwardRef(() => ModelProvidersModule),
     GitModule,
+    SealingModule,
     AppReadinessModule,
+    CustomDomainModule,
   ],
   controllers: [
     ProjectController,
+    ProjectAppUsersController,
     AppAgentController,
     AgentObservationsController,
     AgentStatusStreamController,
@@ -96,6 +110,7 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
     ProjectImportUploadService,
     ProjectImportProcessor,
     ProjectImportUploadCleanupProcessor,
+    InactivityCleanupProcessor,
     ProxyService,
     AppService,
     AgentObservationsService,
@@ -111,12 +126,20 @@ import { ModelProvidersModule } from '../model-provider/model-provider.module';
   ],
 })
 export class ProjectModule implements OnApplicationBootstrap {
-  constructor(@InjectQueue(PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE) private readonly importUploadCleanupQueue: Queue) {}
+  constructor(
+    @InjectQueue(PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE) private readonly importUploadCleanupQueue: Queue,
+    @InjectQueue(INACTIVITY_CLEANUP_QUEUE) private readonly inactivityCleanupQueue: Queue
+  ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     await this.importUploadCleanupQueue.upsertJobScheduler(
       'project-import-upload-cleanup-daily',
       { pattern: '0 3 * * *' },
+      { name: 'cleanup' }
+    );
+    await this.inactivityCleanupQueue.upsertJobScheduler(
+      'project-inactivity-cleanup-hourly',
+      { pattern: '17 * * * *', tz: 'UTC' },
       { name: 'cleanup' }
     );
   }

@@ -1,13 +1,16 @@
 package desktop
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +38,37 @@ func TestViewerCapacity(t *testing.T) {
 	m.Handler().ServeHTTP(w, r)
 	if w.Code != 429 {
 		t.Fatalf("eleventh viewer: %d", w.Code)
+	}
+}
+
+func TestSessionEventsStreamTheCurrentSessions(t *testing.T) {
+	server := httptest.NewServer(New().Handler())
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request, _ := http.NewRequestWithContext(ctx, "GET", server.URL+"/sessions/events", nil)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("content type: %q", got)
+	}
+	line, err := bufio.NewReader(response.Body).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line != "data: []\n" {
+		t.Fatalf("first event: %q", line)
+	}
+}
+
+func TestParseWindowWithSpacesInItsInstance(t *testing.T) {
+	line := "0x00400002  0 372    chromium (/tmp/agent-browser-chrome-b5).Chromium  pod-1 Log in - Wikipedia - Chromium"
+	window, ok := parseWindow(line, "pod-1")
+	if !ok || window.ID != "0x00400002" || window.PID != 372 || window.App != "Chromium" || window.Title != "Log in - Wikipedia - Chromium" {
+		t.Fatalf("parsed %+v", window)
 	}
 }
 
@@ -95,8 +129,11 @@ func TestX11DesktopAndWindowStreaming(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if len(found) != 1 {
+	if len(found) != 1 || found[0].Title != "Desktop integration test" || found[0].App != "XTerm" {
 		t.Fatalf("windows: %+v", found)
+	}
+	if list := m.List(ctx); !list[0].Visible {
+		t.Fatal("a desktop with a window should be visible")
 	}
 	if err := m.Present(ctx, s.ID, found[0].ID); err != nil {
 		t.Fatal(err)
@@ -104,6 +141,7 @@ func TestX11DesktopAndWindowStreaming(t *testing.T) {
 	if err := m.Present(ctx, s.ID, "0xdeadbeef"); err == nil {
 		t.Fatal("accepted foreign window")
 	}
+	testPresentingBringsAWindowToTheFront(t, m, s, found[0].ID)
 	server := httptest.NewServer(m.Handler())
 	defer server.Close()
 	desktopWidth, desktopHeight := readFramebuffer(t, server.URL+"/sessions/default/connect")
@@ -141,6 +179,69 @@ func TestX11DesktopAndWindowStreaming(t *testing.T) {
 	}
 
 	t.Logf("desktop=%dx%d window=%dx%d", desktopWidth, desktopHeight, windowWidth, windowHeight)
+}
+
+func testPresentingBringsAWindowToTheFront(t *testing.T, m *Manager, s Session, first string) {
+	t.Helper()
+	ctx := context.Background()
+	second, err := startProcess(displayEnv(s.Display), "xterm", "-title", "Second window", "-geometry", "60x15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		second.stop()
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+			if list, _ := windows(ctx, s.Display); len(list) == 1 {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatal("the second window did not close")
+	}()
+	var newest string
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if list, _ := windows(ctx, s.Display); len(list) == 2 {
+			newest = list[1].ID
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if newest == "" || newest == first {
+		t.Fatalf("second window not found: %q", newest)
+	}
+	for _, test := range []struct{ present, front string }{{first, first}, {"", newest}, {first, first}} {
+		if err := m.Present(ctx, s.ID, test.present); err != nil {
+			t.Fatal(err)
+		}
+		var top uint64
+		want, _ := strconv.ParseUint(test.front, 0, 64)
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			if top = topWindow(t, s.Display); top == want {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if top != want {
+			t.Fatalf("presenting %q left %#x on top, want %s", test.present, top, test.front)
+		}
+	}
+}
+
+func topWindow(t *testing.T, display string) uint64 {
+	t.Helper()
+	cmd := exec.Command("xprop", "-root", "_NET_CLIENT_LIST_STACKING")
+	cmd.Env = displayEnv(display)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := strings.Split(strings.TrimSpace(string(out)), ", ")
+	last := ids[len(ids)-1]
+	if at := strings.LastIndex(last, "0x"); at >= 0 {
+		last = last[at:]
+	}
+	top, _ := strconv.ParseUint(last, 0, 64)
+	return top
 }
 
 func readFramebuffer(t *testing.T, address string) (uint16, uint16) {

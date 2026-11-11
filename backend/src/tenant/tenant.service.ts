@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
 import { getDefaultTenantName, mapGroupsToTenants } from '../permission/sso-group-map';
 import { tenantSettings, tenants } from '../../db/schema';
 import { BifrostService } from '../bifrost/bifrost.service';
+import { customDomainsOffered } from '../custom-domain/custom-domains-offered';
 import { DefaultsService } from '../defaults/defaults.service';
 import { EnvironmentService } from '../environment/environment.service';
 import { PLATFORM_PROVIDER_PREFIX, isReservedTenantName } from '../model-provider/provider-names';
@@ -28,7 +30,8 @@ export class TenantService {
   constructor(
     private readonly bifrostService: BifrostService,
     private readonly defaultsService: DefaultsService,
-    private readonly environmentService: EnvironmentService
+    private readonly environmentService: EnvironmentService,
+    private readonly config: ConfigService
   ) {}
 
   parseGroupsByPrefix(groupsHeader: string, prefix: string): string[] {
@@ -83,7 +86,7 @@ export class TenantService {
         .onConflictDoNothing()
         .returning();
       if (!inserted) return undefined;
-      await tx.insert(tenantSettings).values({ tenantId: inserted.id, externalTenantName: name }).onConflictDoNothing();
+      await tx.insert(tenantSettings).values({ tenantId: inserted.id }).onConflictDoNothing();
       return inserted;
     });
 
@@ -117,7 +120,10 @@ export class TenantService {
   }
 
   async getTenantConfig(tenantId: string): Promise<TenantConfigResponse> {
-    return { privateWorkspaceEnabled: await this.isPrivateWorkspaceEnabled(tenantId) };
+    return {
+      privateWorkspaceEnabled: await this.isPrivateWorkspaceEnabled(tenantId),
+      customDomainsEnabled: customDomainsOffered(this.config),
+    };
   }
 
   async isPrivateWorkspaceEnabled(tenantId: string): Promise<boolean> {
@@ -139,7 +145,6 @@ export class TenantService {
       .insert(tenantSettings)
       .values({
         tenantId: tenant.tenantId,
-        externalTenantName: tenant.tenantName,
         privateWorkspaceEnabled: dto.privateWorkspaceEnabled,
       })
       .onConflictDoUpdate({
@@ -147,20 +152,5 @@ export class TenantService {
         set: { privateWorkspaceEnabled: dto.privateWorkspaceEnabled },
       });
     return this.getTenantConfig(tenant.tenantId);
-  }
-
-  async getTenantByExternalName(externalTenantName: string) {
-    const [row] = await db
-      .select({
-        id: tenants.id,
-        name: tenants.name,
-        displayName: tenants.displayName,
-        bifrostTenantId: tenants.bifrostTenantId,
-        createdAt: tenants.createdAt,
-      })
-      .from(tenantSettings)
-      .innerJoin(tenants, eq(tenants.id, tenantSettings.tenantId))
-      .where(eq(tenantSettings.externalTenantName, externalTenantName));
-    return row ?? null;
   }
 }

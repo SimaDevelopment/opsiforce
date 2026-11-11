@@ -17,7 +17,7 @@ import {
 } from '~/components/ui/number-field';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '~/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 
 interface TenantBudget {
   tenantBudget: number | null;
@@ -109,7 +109,7 @@ export function BillingPage() {
                     class="h-full rounded-full transition-all"
                     classList={{
                       'bg-primary': pct() < 80,
-                      'bg-yellow-500': pct() >= 80 && pct() < 100,
+                      'of-fill of-tone-needs-you': pct() >= 80 && pct() < 100,
                       'bg-destructive': pct() >= 100,
                     }}
                     style={{ width: `${pct()}%` }}

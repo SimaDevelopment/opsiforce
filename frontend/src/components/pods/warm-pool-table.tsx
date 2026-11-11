@@ -19,9 +19,9 @@ function readyCount(agent: WarmPoolAgent): number {
   return agent.slots.filter((slot) => !slot.claiming && slot.status?.ready).length;
 }
 
-function slotVisual(slot: WarmPoolSlot) {
-  if (slot.claiming) return { dot: 'bg-indigo-500', label: 'Being claimed' };
-  if (!slot.status) return { dot: 'bg-muted-foreground/40', label: 'No pod' };
+function slotVisual(slot: WarmPoolSlot): { tone: string; label: string } {
+  if (slot.claiming) return { tone: 'of-tone-accent', label: 'Being claimed' };
+  if (!slot.status) return { tone: 'of-tone-neutral', label: 'No pod' };
   return statusVisual(slot.status);
 }
 
@@ -31,7 +31,7 @@ export function WarmPoolTable(props: { agents: WarmPoolAgent[] }) {
       <div class="mb-1 flex items-center gap-3">
         <Layers class="h-4 w-4 text-muted-foreground" />
         <h2 class="text-sm font-semibold">Ready Projects</h2>
-        <Badge variant="secondary" class="px-1.5 py-0 text-[10px]">
+        <Badge variant="secondary" class="px-1.5 py-0 text-[0.625rem]">
           {props.agents.reduce((sum, agent) => sum + agent.slots.length, 0)}
         </Badge>
       </div>
@@ -61,14 +61,14 @@ export function WarmPoolTable(props: { agents: WarmPoolAgent[] }) {
                         <span class="text-xs tabular-nums text-muted-foreground">
                           {readyCount(agent)} of {agent.effectiveSize} up
                         </span>
-                        <Badge variant="outline" class="text-[11px] font-normal tabular-nums">
+                        <Badge variant="outline" class="text-[0.6875rem] font-normal tabular-nums">
                           {describePodSettings(agent.resources)}
                         </Badge>
                         <Show when={agent.paused}>
-                          {(paused) => <span class="text-[11px] text-amber-600">{PAUSE_LABELS[paused()]}</span>}
+                          {(paused) => <span class="of-ink of-tone-needs-you t-meta">{PAUSE_LABELS[paused()]}</span>}
                         </Show>
                         <Show when={!agent.paused && agent.effectiveSize < agent.warmPoolSize}>
-                          <span class="text-[11px] text-muted-foreground">
+                          <span class="text-[0.6875rem] text-muted-foreground">
                             Capped at {agent.effectiveSize} of {agent.warmPoolSize} by the platform
                           </span>
                         </Show>
@@ -103,10 +103,12 @@ export function WarmPoolTable(props: { agents: WarmPoolAgent[] }) {
                         const visual = () => slotVisual(slot);
                         return (
                           <TableRow>
-                            <TableCell class="font-mono text-[11px] text-muted-foreground">{slot.podName}</TableCell>
+                            <TableCell class="font-mono text-[0.6875rem] text-muted-foreground">
+                              {slot.podName}
+                            </TableCell>
                             <TableCell>
-                              <span class="inline-flex items-center gap-1.5 text-xs">
-                                <span class={cn('size-1.5 rounded-full', visual().dot)} />
+                              <span class={cn('inline-flex items-center gap-1.5 t-meta', visual().tone)}>
+                                <span class="of-dot size-1.5" />
                                 {visual().label}
                               </span>
                             </TableCell>

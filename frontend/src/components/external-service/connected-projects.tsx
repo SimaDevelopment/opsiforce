@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useDisconnectServiceConsumer, useServiceConsumers, type ServiceConsumer } from '~/api/external-service-views';
 import { Unplug } from '~/components/icons';
 import { Pager, createOffsetPages } from '~/components/pager';

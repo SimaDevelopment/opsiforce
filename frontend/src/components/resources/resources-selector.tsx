@@ -1,7 +1,7 @@
 import { For, Show } from 'solid-js';
-import type { PodClassCatalog, PodResources } from '~/api/client';
+import type { PodClassCatalog, PodResources, PodSettings } from '~/api/client';
 import { OptionCard, OptionCardGroup } from '~/components/ui/option-card';
-import type { ResourcesDraft } from './resources-draft';
+import { CUSTOM, INHERIT, type ResourcesDraft } from './resources-draft';
 import { SlidersHorizontal } from '~/components/icons';
 import {
   NumberField,
@@ -9,19 +9,18 @@ import {
   NumberFieldInput,
   NumberFieldIncrementTrigger,
   NumberFieldDecrementTrigger,
+  NumberFieldLabel,
 } from '~/components/ui/number-field';
-import { formatCores, formatGib, mibToGib, millicoresToCores, trimNumber } from '~/lib/pod-resources';
-
-const PRESET_META: Record<string, { title: string; description: string }> = {
-  small: { title: 'Small', description: 'Light apps and prototypes.' },
-  medium: { title: 'Medium', description: 'Heavier builds and dependencies.' },
-  large: { title: 'Large', description: 'Demanding or memory-hungry workloads.' },
-};
+import { describeResources, mibToGib, millicoresToCores, presetTitle, trimNumber } from '~/lib/pod-resources';
 
 export interface ResourcesSelectorProps {
   catalog: PodClassCatalog | undefined;
   draft: ResourcesDraft;
   disabled?: boolean;
+  /** An extra first option that follows someone else's choice, such as the platform value. */
+  inherited?: { label: string; settings: PodSettings };
+  /** What the pod runs at now, shown when its preset has changed numbers since. */
+  current?: PodSettings;
 }
 
 interface CustomInput {
@@ -69,77 +68,107 @@ export function ResourcesSelector(props: ResourcesSelectorProps) {
     },
   ];
 
+  const staleNumbers = () => {
+    const current = props.current;
+    if (!current?.presetId || props.draft.selected() !== current.presetId || props.draft.dirty()) return null;
+    const preset = props.catalog?.presets.find((entry) => entry.id === current.presetId);
+    if (!preset) return null;
+    const same =
+      preset.resources.cpuMillicores === current.cpuMillicores &&
+      preset.resources.memoryRequestMib === current.memoryRequestMib &&
+      preset.resources.memoryLimitMib === current.memoryLimitMib;
+    return same ? null : current;
+  };
+
   return (
     <div class="space-y-3">
       <OptionCardGroup label="Resources" class="grid-cols-2">
+        <Show when={props.inherited}>
+          {(inherited) => (
+            <OptionCard
+              selected={props.draft.selected() === INHERIT}
+              disabled={props.disabled}
+              onSelect={() => props.draft.select(INHERIT)}
+            >
+              <span class="text-xs font-medium">{inherited().label}</span>
+              <span class="text-xs text-muted-foreground tabular-nums">
+                {presetTitle(inherited().settings)} · {describeResources(inherited().settings)}
+              </span>
+            </OptionCard>
+          )}
+        </Show>
         <For each={props.catalog?.presets ?? []}>
-          {(preset) => {
-            const meta = PRESET_META[preset.podClass];
-            return (
-              <OptionCard
-                selected={props.draft.podClass() === preset.podClass}
-                disabled={props.disabled}
-                onSelect={() => props.draft.selectClass(preset.podClass)}
-              >
-                <span class="text-xs font-medium">{meta?.title ?? preset.podClass}</span>
-                <span class="text-xs text-muted-foreground tabular-nums">
-                  {formatCores(preset.resources.cpuMillicores)} · {formatGib(preset.resources.memoryRequestMib)} /{' '}
-                  {formatGib(preset.resources.memoryLimitMib)}
-                </span>
-                <Show when={meta?.description}>
-                  <p class="text-xs text-muted-foreground/70 leading-snug">{meta?.description}</p>
+          {(preset) => (
+            <OptionCard
+              selected={props.draft.selected() === preset.id}
+              disabled={props.disabled}
+              onSelect={() => props.draft.select(preset.id)}
+            >
+              <span class="flex items-center gap-1.5 text-xs font-medium">
+                {preset.name}
+                <Show when={preset.id === props.catalog?.defaultPresetId}>
+                  <span class="rounded border border-border px-1 text-[0.625rem] font-normal text-muted-foreground">
+                    Default
+                  </span>
                 </Show>
-              </OptionCard>
-            );
-          }}
+              </span>
+              <span class="text-xs text-muted-foreground tabular-nums">{describeResources(preset.resources)}</span>
+            </OptionCard>
+          )}
         </For>
         <OptionCard
-          selected={props.draft.podClass() === 'custom'}
+          selected={props.draft.selected() === CUSTOM}
           disabled={props.disabled}
-          onSelect={() => props.draft.selectClass('custom')}
+          onSelect={() => props.draft.select(CUSTOM)}
         >
           <div class="flex items-center gap-1.5">
-            <SlidersHorizontal class="w-3.5 h-3.5" />
+            <SlidersHorizontal class="w-3.5 h-3.5" aria-hidden="true" />
             <span class="text-xs font-medium">Custom</span>
           </div>
           <p class="text-xs text-muted-foreground/70 leading-snug">Pick exact CPU and memory.</p>
         </OptionCard>
       </OptionCardGroup>
 
-      <Show when={props.draft.podClass() === 'custom' && props.catalog}>
+      <Show when={staleNumbers()}>
+        {(current) => (
+          <p class="text-xs text-muted-foreground">
+            Runs at {describeResources(current())}. Pick {presetTitle(current())} again and save to move it to its
+            current numbers.
+          </p>
+        )}
+      </Show>
+
+      <Show when={props.draft.selected() === CUSTOM && props.catalog}>
         {(catalog) => (
           <div class="rounded-lg border border-border p-3 space-y-2">
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <For each={customInputs(catalog().customBounds)}>
                 {(input) => (
-                  <div class="space-y-1">
-                    <div class="flex items-baseline justify-between gap-1">
-                      <span class="text-xs text-muted-foreground">
-                        {input.label} ({input.unit})
-                      </span>
-                    </div>
-                    <NumberField
-                      minValue={input.minValue}
-                      maxValue={input.maxValue}
-                      step={input.step}
-                      value={input.value}
-                      onChange={(v) => input.onChange(v)}
-                      disabled={props.disabled}
-                    >
-                      <NumberFieldGroup>
-                        <NumberFieldInput />
-                        <NumberFieldIncrementTrigger />
-                        <NumberFieldDecrementTrigger />
-                      </NumberFieldGroup>
-                    </NumberField>
-                    <span class="text-xs text-muted-foreground/60 tabular-nums">{input.range}</span>
-                  </div>
+                  <NumberField
+                    class="space-y-1"
+                    minValue={input.minValue}
+                    maxValue={input.maxValue}
+                    step={input.step}
+                    value={input.value}
+                    onChange={(v) => input.onChange(v)}
+                    disabled={props.disabled}
+                  >
+                    <NumberFieldLabel class="text-xs text-muted-foreground">
+                      {input.label} ({input.unit})
+                    </NumberFieldLabel>
+                    <NumberFieldGroup>
+                      <NumberFieldInput />
+                      <NumberFieldIncrementTrigger />
+                      <NumberFieldDecrementTrigger />
+                    </NumberFieldGroup>
+                    <span class="block text-xs text-muted-foreground/60 tabular-nums">{input.range}</span>
+                  </NumberField>
                 )}
               </For>
             </div>
-            <Show when={props.draft.limitError()}>
-              <p class="text-xs text-destructive">Memory limit must be greater than or equal to memory request.</p>
-            </Show>
+            <p class="text-xs text-destructive" aria-live="polite">
+              {props.draft.limitError() ? 'Memory limit must be at least the request.' : ''}
+            </p>
           </div>
         )}
       </Show>

@@ -65,6 +65,8 @@ export interface PlatformCallTarget {
   environment: string;
 }
 
+export type PlatformCallFor = PlatformCallTarget | Pick<PlatformCallTarget, 'tenantId'>;
+
 export function platformCallTargetOf(caller: PlatformCallTarget): PlatformCallTarget {
   return {
     tenantId: caller.tenantId,
@@ -87,7 +89,7 @@ export interface PodDispatchRequest {
   name: string;
   body: unknown;
   signal?: AbortSignal;
-  for?: PlatformCallTarget;
+  for?: PlatformCallFor;
 }
 
 export interface ServiceResponse {

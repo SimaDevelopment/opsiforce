@@ -33,7 +33,9 @@ const bytea = customType<{ data: Buffer; default: false }>({
 
 export type ProjectKindValue = "skill_builder_chat" | "agent_builder_chat" | "external_service_builder_chat" | "test"
 
-export type LimitKeyValue = "projects" | "warm_pool"
+export type LimitKeyValue = "projects" | "warm_pool" | "custom_domains"
+
+export type CustomDomainStatusValue = "waiting" | "issuing" | "connected" | "failed"
 
 export const projectStatusEnum = pgEnum("project_status", [
   "starting",
@@ -48,7 +50,7 @@ export const projectStatusEnum = pgEnum("project_status", [
 
 export const keyTypeEnum = pgEnum("key_type", ["chat", "backend"])
 
-export const projectAuthModeEnum = pgEnum("project_auth_mode", ["public", "manual", "managed"])
+export const projectAuthModeEnum = pgEnum("project_auth_mode", ["public", "manual", "provider", "app_users"])
 
 export const requestLogModeEnum = pgEnum("request_log_mode", ["off", "metadata", "full"])
 
@@ -110,8 +112,10 @@ export const tenantSettings = pgTable("tenant_settings", {
   tenantId: text("tenant_id")
     .primaryKey()
     .references(() => tenants.id, { onDelete: "cascade" }),
-  externalTenantName: text("external_tenant_name").notNull().unique(),
   privateWorkspaceEnabled: boolean("private_workspace_enabled").notNull().default(true),
+  defaultResourcePresetId: text("default_resource_preset_id").references((): AnyPgColumn => resourcePresets.id, {
+    onDelete: "set null",
+  }),
 })
 
 export const agents = pgTable(
@@ -241,6 +245,7 @@ export const projects = pgTable(
     title: text("title"),
     description: text("description"),
     disabled: boolean("disabled").notNull().default(false),
+    deleting: boolean("deleting").notNull().default(false),
     bifrostProjectId: text("bifrost_project_id"),
     lastPromptAt: timestamp("last_prompt_at"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "restrict" }),
@@ -286,6 +291,27 @@ export const environments = pgTable(
   ],
 )
 
+export const signInProviders = pgTable(
+  "sign_in_providers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    discoveryUrl: text("discovery_url").notNull(),
+    clientId: text("client_id").notNull(),
+    clientSecret: text("client_secret").notNull(),
+    scope: text("scope").notNull().default("openid profile email"),
+    requiredClaimName: text("required_claim_name"),
+    requiredClaimValues: jsonb("required_claim_values").$type<string[]>().notNull().default([]),
+    groupsClaim: text("groups_claim"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("sign_in_providers_tenant_id_name_unique").on(table.tenantId, table.name)],
+)
+
 const assignedByInsertTrigger = () => sql`default`
 
 export const projectEnvironments = pgTable(
@@ -303,6 +329,7 @@ export const projectEnvironments = pgTable(
     sessionId: text("session_id"),
     platformVersion: text("platform_version").notNull(),
     authMode: projectAuthModeEnum("auth_mode").notNull().default("public"),
+    signInProviderId: uuid("sign_in_provider_id").references(() => signInProviders.id),
     deployedCommitSha: text("deployed_commit_sha"),
     lastActiveAt: timestamp("last_active_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -316,6 +343,11 @@ export const projectEnvironments = pgTable(
     index("idx_project_environments_project").on(table.projectId),
     index("idx_project_environments_status").on(table.status),
     index("idx_project_environments_environment").on(table.environmentId),
+    index("idx_project_environments_sign_in_provider").on(table.signInProviderId),
+    check(
+      "project_environments_sign_in_provider_check",
+      sql`(${table.authMode}::text = 'provider') = (${table.signInProviderId} is not null)`,
+    ),
   ],
 )
 
@@ -325,6 +357,8 @@ export const projectSettings = pgTable("project_settings", {
     .references(() => projects.id, { onDelete: "cascade" }),
   timeoutIdle: bigint("timeout_idle", { mode: "number" }).notNull(),
   appTimeoutIdle: bigint("app_timeout_idle", { mode: "number" }).notNull(),
+  disableAfter: bigint("disable_after", { mode: "number" }),
+  deleteAfter: bigint("delete_after", { mode: "number" }),
   timezone: text("timezone").notNull().default("UTC"),
   requestLogMode: requestLogModeEnum("request_log_mode").notNull().default("full"),
   requestLogBodyLimit: integer("request_log_body_limit").notNull().default(256 * 1024),
@@ -334,7 +368,9 @@ export const projectPodSettings = pgTable("project_pod_settings", {
   projectId: text("project_id")
     .primaryKey()
     .references(() => projects.id, { onDelete: "cascade" }),
+  // TODO: remove in the release after resource presets ship: unread; kept so backends of the previous release keep working during the rollout
   podClass: podClassEnum("pod_class").notNull().default("small"),
+  presetId: text("preset_id").references((): AnyPgColumn => resourcePresets.id, { onDelete: "set null" }),
   cpuMillicores: integer("cpu_millicores").notNull(),
   memoryRequestMib: integer("memory_request_mib").notNull(),
   memoryLimitMib: integer("memory_limit_mib").notNull(),
@@ -356,6 +392,144 @@ export const projectApps = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("idx_project_app_project").on(table.projectId)],
+)
+
+export const appUsers = pgTable(
+  "app_users",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    email: text("email").notNull(),
+    name: text("name"),
+    passwordHash: text("password_hash"),
+    disabledAt: timestamp("disabled_at"),
+    tokensValidAfter: timestamp("tokens_valid_after").defaultNow().notNull(),
+    failedSignIns: integer("failed_sign_ins").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
+    lastSignInAt: timestamp("last_sign_in_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("app_users_project_id_email_unique").on(table.projectId, table.email)],
+)
+
+export const appUserRoles = pgTable(
+  "app_user_roles",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("app_user_roles_project_id_name_unique").on(table.projectId, table.name)],
+)
+
+export const appUserRoleMembers = pgTable(
+  "app_user_role_members",
+  {
+    appUserId: text("app_user_id")
+      .references(() => appUsers.id, { onDelete: "cascade" })
+      .notNull(),
+    roleId: text("role_id")
+      .references(() => appUserRoles.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.appUserId, table.roleId] }),
+    index("idx_app_user_role_members_role").on(table.roleId),
+  ],
+)
+
+export type AppUserLinkPurpose = "invite" | "reset"
+
+export const appUserLinks = pgTable(
+  "app_user_links",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    appUserId: text("app_user_id")
+      .references(() => appUsers.id, { onDelete: "cascade" })
+      .notNull(),
+    purpose: text("purpose").$type<AppUserLinkPurpose>().notNull(),
+    projectEnvironmentId: text("project_environment_id").references(() => projectEnvironments.id, {
+      onDelete: "set null",
+    }),
+    returnUrl: text("return_url"),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("app_user_links_app_user_id_purpose_unique").on(table.appUserId, table.purpose),
+    index("idx_app_user_links_expires").on(table.expiresAt),
+    check("app_user_links_purpose_check", sql`${table.purpose} in ('invite', 'reset')`),
+  ],
+)
+
+export const appUserAuthorizationCodes = pgTable(
+  "app_user_authorization_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    appUserId: text("app_user_id")
+      .references(() => appUsers.id, { onDelete: "cascade" })
+      .notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull(),
+    credentialsValidAfter: timestamp("credentials_valid_after").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => [index("idx_app_user_authorization_codes_expires").on(table.expiresAt)],
+)
+
+export const appUserSigningKeys = pgTable("app_user_signing_keys", {
+  kid: text("kid").primaryKey(),
+  publicJwk: jsonb("public_jwk").$type<JsonValue>().notNull(),
+  sealedPrivateKey: jsonb("sealed_private_key").$type<JsonValue>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+})
+
+export const customDomains = pgTable(
+  "custom_domains",
+  {
+    id: text("id").primaryKey(),
+    tenantId: tenantIdField,
+    projectEnvironmentId: text("project_environment_id")
+      .references(() => projectEnvironments.id, { onDelete: "cascade" })
+      .notNull(),
+    hostname: text("hostname").notNull(),
+    bare: boolean("bare").notNull(),
+    zoneStart: text("zone_start").notNull(),
+    status: text("status").$type<CustomDomainStatusValue>().notNull().default("waiting"),
+    isMain: boolean("is_main").notNull().default(false),
+    redirectsToMain: boolean("redirects_to_main").notNull().default(false),
+    dnsAnswer: text("dns_answer"),
+    failureReason: text("failure_reason"),
+    checkedAt: timestamp("checked_at"),
+    connectedAt: timestamp("connected_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("custom_domains_project_environment_id_hostname_unique").on(table.projectEnvironmentId, table.hostname),
+    uniqueIndex("custom_domains_one_holder_per_hostname")
+      .on(table.hostname)
+      .where(sql`${table.status} in ('issuing', 'connected', 'failed')`),
+    uniqueIndex("custom_domains_one_main_per_environment")
+      .on(table.projectEnvironmentId)
+      .where(sql`${table.isMain}`),
+    index("idx_custom_domains_tenant").on(table.tenantId),
+    check(
+      "custom_domains_status_check",
+      sql`${table.status} in ('waiting', 'issuing', 'connected', 'failed')`,
+    ),
+  ],
 )
 
 export const projectAgentUpdates = pgTable(
@@ -861,6 +1035,8 @@ export const globalTimeoutDefaults = pgTable("global_timeout_defaults", {
   defaultAppTimeoutIdle: bigint("default_app_timeout_idle", {
     mode: "number",
   }).notNull(),
+  defaultDisableAfter: bigint("default_disable_after", { mode: "number" }),
+  defaultDeleteAfter: bigint("default_delete_after", { mode: "number" }),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
@@ -895,6 +1071,8 @@ export const tenantTimeoutDefaults = pgTable("tenant_timeout_defaults", {
   defaultAppTimeoutIdle: bigint("default_app_timeout_idle", {
     mode: "number",
   }).notNull(),
+  defaultDisableAfter: bigint("default_disable_after", { mode: "number" }),
+  defaultDeleteAfter: bigint("default_delete_after", { mode: "number" }),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
@@ -929,7 +1107,7 @@ export const globalLimits = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
+    check("global_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool', 'custom_domains')`),
     check("global_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -946,7 +1124,7 @@ export const tenantLimits = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.tenantId, table.limitKey] }),
-    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool')`),
+    check("tenant_limits_limit_key_check", sql`${table.limitKey} in ('projects', 'warm_pool', 'custom_domains')`),
     check("tenant_limits_value_check", sql`${table.value} >= 0`),
   ],
 )
@@ -968,11 +1146,98 @@ export const agentPodSettings = pgTable("agent_pod_settings", {
   agentId: text("agent_id")
     .primaryKey()
     .references(() => agents.id, { onDelete: "cascade" }),
+  // TODO: remove in the release after resource presets ship: unread; kept so backends of the previous release keep working during the rollout
   podClass: podClassEnum("pod_class").notNull().default("small"),
+  presetId: text("preset_id").references((): AnyPgColumn => resourcePresets.id, { onDelete: "set null" }),
   cpuMillicores: integer("cpu_millicores").notNull(),
   memoryRequestMib: integer("memory_request_mib").notNull(),
   memoryLimitMib: integer("memory_limit_mib").notNull(),
 })
+
+export const resourcePresets = pgTable(
+  "resource_presets",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    cpuMillicores: integer("cpu_millicores").notNull(),
+    memoryRequestMib: integer("memory_request_mib").notNull(),
+    memoryLimitMib: integer("memory_limit_mib").notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("resource_presets_tenant_name_unique")
+      .on(table.tenantId, sql`lower(${table.name})`)
+      .where(sql`${table.tenantId} is not null`),
+    uniqueIndex("resource_presets_platform_name_unique")
+      .on(sql`lower(${table.name})`)
+      .where(sql`${table.tenantId} is null`),
+    uniqueIndex("resource_presets_one_platform_default").on(table.isDefault).where(sql`${table.isDefault}`),
+    check("resource_presets_default_is_platform", sql`not ${table.isDefault} or ${table.tenantId} is null`),
+  ],
+)
+
+export const tenantResourcePresetOverrides = pgTable(
+  "tenant_resource_preset_overrides",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    presetId: text("preset_id")
+      .references(() => resourcePresets.id, { onDelete: "cascade" })
+      .notNull(),
+    cpuMillicores: integer("cpu_millicores").notNull(),
+    memoryRequestMib: integer("memory_request_mib").notNull(),
+    memoryLimitMib: integer("memory_limit_mib").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.presetId] })],
+)
+
+export const tenantAgentPodSettings = pgTable(
+  "tenant_agent_pod_settings",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    agentId: text("agent_id")
+      .references(() => agents.id, { onDelete: "cascade" })
+      .notNull(),
+    presetId: text("preset_id").references(() => resourcePresets.id, { onDelete: "set null" }),
+    cpuMillicores: integer("cpu_millicores").notNull(),
+    memoryRequestMib: integer("memory_request_mib").notNull(),
+    memoryLimitMib: integer("memory_limit_mib").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.agentId] })],
+)
+
+export const agentInactivityCleanup = pgTable("agent_inactivity_cleanup", {
+  agentId: text("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  disableAfter: bigint("disable_after", { mode: "number" }),
+  deleteAfter: bigint("delete_after", { mode: "number" }),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+})
+
+export const tenantAgentInactivityCleanup = pgTable(
+  "tenant_agent_inactivity_cleanup",
+  {
+    tenantId: text("tenant_id")
+      .references(() => tenants.id, { onDelete: "cascade" })
+      .notNull(),
+    agentId: text("agent_id")
+      .references(() => agents.id, { onDelete: "cascade" })
+      .notNull(),
+    disableAfter: bigint("disable_after", { mode: "number" }),
+    deleteAfter: bigint("delete_after", { mode: "number" }),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.agentId] })],
+)
 
 export const agentProfiles = pgTable(
   "agent_profiles",

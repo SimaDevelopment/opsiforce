@@ -16,15 +16,15 @@
     "db:studio": "drizzle-kit studio",
     "create-opsiforce-db": "kubectl run -n local psql-client --restart=Never -i --tty --rm --env PGPASSWORD=dbpass1 --image=postgres:16 -- psql -h local-pg-postgresql -d postgres -U admin -c \"CREATE DATABASE opsiforce;\" || :",
     "setup-minikube-storage": "minikube ssh -- 'sudo mkdir -p /workspace-data/projects && sudo chmod 777 /workspace-data /workspace-data/projects'",
-    "build-agent-image": "sh -c 'TAG=opsiforce-agent:$(node -p \"require(\\\"../agent-config/agent-image-version.json\\\").version\") && minikube image ls | grep -q \"$TAG\" && echo \"Image $TAG already exists, skipping build\" || minikube image build -t $TAG -f docker/Dockerfile.agent --build-opt=build-arg=OPENCODE_CONFIG=agent-config/opencode.local.json ..'",
-    "rebuild-agent-image": "minikube image build -t opsiforce-agent:$(node -p \"require('../agent-config/agent-image-version.json').version\") -f docker/Dockerfile.agent --build-opt=build-arg=OPENCODE_CONFIG=agent-config/opencode.local.json ..",
+    "build-agent-image": "sh ../scripts/build-agent-image.sh",
+    "rebuild-agent-image": "sh ../scripts/build-agent-image.sh --force",
     "opsiforce-install-infra": "helm upgrade --install --wait --namespace local opsiforce-infra ../helm/opsiforce --set fullnameOverride=opsiforce --set storage.type=hostPath --set storage.hostPath=/workspace-data --set valkey.enabled=false --set agent.affinity=null",
     "create-bifrost-db": "kubectl run -n local psql-client-bf --restart=Never -i --tty --rm --env PGPASSWORD=dbpass1 --image=postgres:16 -- psql -h local-pg-postgresql -d postgres -U admin -c \"CREATE DATABASE bifrost;\" || :",
     "install-bifrost": "sh ../scripts/install-bifrost.sh",
     "mailgun:mock": "docker run --rm -t -p 8089:80 -e MAILGUN_API_KEY=key-example asedov/mailgun-mock",
     "tilt:up": "tilt up --stream=false --log-source=build --host=0.0.0.0",
     "tilt:down": "tilt down",
-    "minikube-dev": "env-cmd -f ./local-envs.sh --use-shell 'yarn run setup-minikube-storage && yarn run build-agent-image && yarn run opsiforce-install-infra && yarn run create-opsiforce-db && yarn run create-bifrost-db && yarn run db:migrate && yarn run install-bifrost && concurrently -k -n db,mailgun,tilt \"yarn run db:studio\" \"yarn run mailgun:mock\" \"yarn run tilt:up\"'"
+    "minikube-dev": "env-cmd -f ./local-envs.sh --use-shell 'sh ../scripts/check-containerd.sh && yarn run setup-minikube-storage && yarn run build-agent-image && yarn run opsiforce-install-infra && sh ../scripts/apply-pod-ca.sh local && sh ../scripts/install-cert-manager.sh && yarn run create-opsiforce-db && yarn run create-bifrost-db && yarn run db:migrate && yarn run install-bifrost && concurrently -k -n db,mailgun,tilt \"yarn run db:studio\" \"yarn run mailgun:mock\" \"yarn run tilt:up\"'"
   },
   "dependencies": {
     "@bull-board/api": "^9.9.0",

@@ -35,21 +35,6 @@ function imageExists(ctx, tag) {
   return Boolean(listing) && listing.includes(tag);
 }
 
-function minikubeDockerEnv(ctx) {
-  const raw = ctx.tryCapture('minikube', ['docker-env', '--shell', 'none']);
-  const env = {};
-  if (!raw) return env;
-  for (const line of raw.split('\n')) {
-    const eq = line.indexOf('=');
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    if (key.startsWith('DOCKER_') || key === 'MINIKUBE_ACTIVE_DOCKERD') {
-      env[key] = line.slice(eq + 1).trim();
-    }
-  }
-  return env;
-}
-
 function buildImage(ctx, { tag, context, dockerfile, buildArgs, hint, force = false }) {
   if (!force && imageExists(ctx, tag)) {
     ctx.note(`reusing ${tag} — already in the cluster.`);
@@ -63,8 +48,10 @@ function buildImage(ctx, { tag, context, dockerfile, buildArgs, hint, force = fa
   ctx.note(`building ${tag}…${hint ? ` ${hint}` : ''}`);
   ctx.run('docker', args, {
     cwd: context,
-    env: { ...process.env, ...minikubeDockerEnv(ctx), DOCKER_BUILDKIT: '1' },
+    env: { ...process.env, DOCKER_BUILDKIT: '1' },
   });
+  ctx.note(`loading ${tag} into minikube…`);
+  ctx.run('minikube', ['image', 'load', '--daemon', tag]);
 }
 
 export function buildAgentImage(ctx, { force = false } = {}) {

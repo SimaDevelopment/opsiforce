@@ -12,8 +12,10 @@ import { createMediaQuery } from '@solid-primitives/media';
 import { cn } from '~/lib/cn';
 import { createResizablePanel, type ResizablePanel } from '~/lib/create-resizable-panel';
 import { createPersistedSignal } from '~/lib/persisted-signal';
+import { modShortcut } from '~/lib/shortcut';
 import { ResizeHandle } from './resize-handle';
-import { Button } from './button';
+import { buttonVariants } from './button';
+import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
 import { PanelLeft } from '~/components/icons';
 
 type SidebarState = 'expanded' | 'collapsed';
@@ -277,11 +279,23 @@ export function SidebarMenuButton(
 }
 
 export function SidebarTrigger(props: { class?: string }) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, open } = useSidebar();
+  const label = () => (open() ? 'Collapse sidebar' : 'Expand sidebar');
   return (
-    <Button variant="ghost" size="icon" class={cn('h-7 w-7', props.class)} onClick={toggleSidebar}>
-      <PanelLeft class="h-4 w-4" />
-      <span class="sr-only">Toggle sidebar</span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        as="button"
+        type="button"
+        class={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'h-7 w-7', props.class)}
+        onClick={toggleSidebar}
+        aria-label={label()}
+        aria-keyshortcuts="Meta+B Control+B"
+      >
+        <PanelLeft class="h-4 w-4" />
+      </TooltipTrigger>
+      <TooltipContent>
+        {label()} ({modShortcut('B')})
+      </TooltipContent>
+    </Tooltip>
   );
 }

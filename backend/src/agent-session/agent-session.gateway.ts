@@ -47,6 +47,11 @@ export class AgentSessionGateway {
     return { sessionIds, busy: sessionIds.length > 0 };
   }
 
+  async pendingInputRequests(env: PodEnvironmentRef): Promise<string[]> {
+    if (!hasRunningPod(env)) throw new EnvironmentNotRunning('starting');
+    return this.pod.pendingInputRequests(env.id, ACTIVE_PROBE_TIMEOUT_MS);
+  }
+
   private async holdUntilReady(
     ensured: EnsureEnvironmentResult,
     environmentId: string,

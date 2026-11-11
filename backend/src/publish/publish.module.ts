@@ -5,6 +5,7 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { PublishController } from './publish.controller';
 import { PublishService } from './publish.service';
 import { PublishProcessor } from './publish.processor';
+import { PublishCancellations } from './publish-cancellations';
 import { GitModule } from '../git/git.module';
 import { PROJECT_PUBLISH_QUEUE } from './publish.types';
 import { ProjectModule } from '../project/project.module';
@@ -33,7 +34,7 @@ import { ExternalServicesModule } from '../external-services';
     ExternalServicesModule,
   ],
   controllers: [PublishController],
-  providers: [PublishService, PublishProcessor],
+  providers: [PublishService, PublishProcessor, PublishCancellations],
   exports: [PublishService],
 })
 export class PublishModule {}

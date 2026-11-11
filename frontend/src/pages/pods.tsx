@@ -13,12 +13,9 @@ import { KeepAliveCell } from '~/components/pods/keep-alive-cell';
 import { PodStatusCell } from '~/components/pods/pod-status-cell';
 import { WarmPoolTable } from '~/components/pods/warm-pool-table';
 import { AlertTriangle, Boxes, ChevronRight, ExternalLink, FolderKanban, RefreshCw } from '~/components/icons';
+import { EmptyState } from '~/components/ui/empty-state';
 
 const COLUMN_COUNT = 7;
-
-function titleCase(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 export function PodsPage() {
   const now = useNow();
@@ -53,7 +50,7 @@ export function PodsPage() {
         <Boxes class="w-5 h-5 text-muted-foreground" />
         <h1 class="text-xl font-semibold">Pods</h1>
         <Show when={!pods.isPending}>
-          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
+          <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0">
             {totalRunning()}
           </Badge>
         </Show>
@@ -71,13 +68,13 @@ export function PodsPage() {
         Running environment pods across this organization, grouped by project. Refreshes automatically.
       </p>
 
-      <div class="sm:ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+      <div class="sm:ml-8 mb-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.6875rem] text-muted-foreground">
         <span class="inline-flex items-center gap-1.5">
-          <span class="size-1.5 rounded-full bg-indigo-500" />
+          <span class="of-dot of-series-1 size-1.5" />
           Agent activity
         </span>
         <span class="inline-flex items-center gap-1.5">
-          <span class="size-1.5 rounded-full bg-emerald-500" />
+          <span class="of-dot of-series-2 size-1.5" />
           App activity
         </span>
         <span class="text-muted-foreground/70">A pod stays alive until both have been idle past their timeout.</span>
@@ -92,7 +89,11 @@ export function PodsPage() {
       </Show>
 
       <Show when={!pods.isPending && !pods.isError && groups().length === 0 && warmPool().length === 0}>
-        <EmptyState />
+        <EmptyState
+          icon={Boxes}
+          title="No running pods"
+          description="Environments spin up when someone opens a project or its app receives traffic."
+        />
       </Show>
 
       <Show when={!pods.isPending && !pods.isError && groups().length > 0}>
@@ -132,7 +133,7 @@ export function PodsPage() {
                             <span class="font-medium text-sm truncate">
                               {group.projectTitle?.trim() || 'Untitled project'}
                             </span>
-                            <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+                            <Badge variant="secondary" class="text-[0.625rem] px-1.5 py-0 shrink-0">
                               {group.environments.length}
                             </Badge>
                           </button>
@@ -151,7 +152,7 @@ export function PodsPage() {
                             <TooltipContent>Open project</TooltipContent>
                           </Tooltip>
                           <Show when={group.ghostCount > 0}>
-                            <span class="inline-flex items-center gap-1 text-[11px] text-amber-600 shrink-0">
+                            <span class="of-ink of-tone-needs-you inline-flex items-center gap-1 text-[0.6875rem] shrink-0">
                               <AlertTriangle class="w-3 h-3" />
                               {group.ghostCount} active{' '}
                               {group.ghostCount === 1 ? 'environment has' : 'environments have'} no pod
@@ -204,7 +205,7 @@ function PodEnvRow(props: {
         <TableCell>
           <div class="font-medium text-sm">{props.row.environmentName}</div>
           <Show when={props.row.environmentSlug}>
-            {(slug) => <span class="font-mono text-[11px] text-muted-foreground">{slug()}</span>}
+            {(slug) => <span class="font-mono text-[0.6875rem] text-muted-foreground">{slug()}</span>}
           </Show>
         </TableCell>
 
@@ -234,8 +235,8 @@ function PodEnvRow(props: {
         <TableCell label="Resources">
           <Tooltip>
             <TooltipTrigger as="span">
-              <Badge variant="outline" class="text-[11px] font-normal">
-                {titleCase(props.row.resources.podClass)}
+              <Badge variant="outline" class="text-[0.6875rem] font-normal">
+                {props.row.resources.presetName ?? 'Custom'}
               </Badge>
             </TooltipTrigger>
             <TooltipContent>
@@ -297,7 +298,7 @@ function PodEnvRow(props: {
 function DetailField(props: { label: string; value: string; mono?: boolean }) {
   return (
     <div class="min-w-0">
-      <div class="text-[10px] uppercase tracking-wide text-muted-foreground/70">{props.label}</div>
+      <div class="text-[0.625rem] uppercase tracking-wide text-muted-foreground/70">{props.label}</div>
       <div class={cn('text-xs truncate', props.mono ? 'font-mono' : '')}>{props.value}</div>
     </div>
   );
@@ -318,8 +319,8 @@ function LiveIndicator(props: {
   return (
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
       <span class="relative flex size-2">
-        <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping motion-reduce:hidden" />
-        <span class="relative inline-flex size-2 rounded-full bg-emerald-500" />
+        <span class="of-dot of-tone-done absolute inline-flex h-full w-full opacity-60 animate-ping motion-reduce:hidden" />
+        <span class="of-dot of-tone-done relative inline-flex size-2" />
       </span>
       <Show when={ago()}>{(text) => <span class="tabular-nums">Updated {text()}</span>}</Show>
       <button
@@ -354,7 +355,7 @@ function LoadingState() {
 function ErrorState(props: { onRetry: () => void }): JSX.Element {
   return (
     <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <AlertTriangle class="w-10 h-10 mx-auto mb-3 text-amber-500 opacity-70" />
+      <AlertTriangle class="of-ink of-tone-needs-you w-10 h-10 mx-auto mb-3 opacity-70" />
       <p class="text-sm font-medium text-foreground">Couldn't load pods</p>
       <p class="text-xs mt-1">The pod list is temporarily unavailable.</p>
       <button
@@ -365,16 +366,6 @@ function ErrorState(props: { onRetry: () => void }): JSX.Element {
         <RefreshCw class="w-3.5 h-3.5" />
         Try again
       </button>
-    </div>
-  );
-}
-
-function EmptyState(): JSX.Element {
-  return (
-    <div class="rounded-lg border border-dashed border-border text-center py-16 text-muted-foreground">
-      <Boxes class="w-10 h-10 mx-auto mb-3 opacity-40" />
-      <p class="text-sm font-medium">No running pods</p>
-      <p class="text-xs mt-1">Environments spin up when someone opens a project or its app receives traffic.</p>
     </div>
   );
 }

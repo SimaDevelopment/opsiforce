@@ -24,6 +24,7 @@
       "source": "../../template/scripts/api.sh",
       "target": "scripts/api.sh",
       "managedChecksums": [
+        "7e3b66b5663c063dcdecb99454f57336a9b12f8cbeb16230f299ca88c073ae50",
         "8ec16491949289f96faa2a2bc446d1a1a9c6ca918e6b30b03147426a5985505d",
         "a086ee29d99eaf0e1e6a746f945003bfd2c16d454731f85ceb52ccabe93015ea",
         "a9fdae225e8e1d8301803c6dce150e6058ed3f737a4745e57e41e7c7bce2a552",
@@ -86,6 +87,7 @@
       "target": "scripts/tp.sh",
       "managedChecksums": [
         "26250f538e899e55b1714d0d6a67f2473579da9ba05b83dbb56065c1818fcbbe",
+        "287c8638f89e8dac8c9afa140362fe0a84eaa2ff8e9d9fcec29847cb045cdbd6",
         "6ded32cf425f55a5c9aed0c330ad7ba690b2d62c77fd2c4378157cffa1f4f007",
         "7b08d9f855cccefc8e77c6356e89e95f9db4d5da11c49156ef0f92c9764cb177"
       ]

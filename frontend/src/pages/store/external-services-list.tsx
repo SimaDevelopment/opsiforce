@@ -27,10 +27,12 @@ import {
   RowList,
   SearchInput,
   SortSelect,
+  KIND_ICONS,
+  type FilterChipOption,
 } from '~/components/store/store-list';
 import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
-import { Cable, ChevronRight, Plus, Upload } from '~/components/icons';
+import { Ban, Cable, ChevronRight, CircleDashed, Plus, Upload, UserRound, Wrench } from '~/components/icons';
 import { SORT_OPTIONS, createSearchDraft, sortStoreRows, validateSort, type StoreSort } from './store-filters';
 
 export const EXTERNAL_SERVICE_FILTERS = [
@@ -60,14 +62,14 @@ export function validateExternalServicesSearch(
 
 type Audience = 'everyone' | 'operators' | 'tenantAdmins';
 
-const FILTER_OPTIONS: { id: ExternalServiceFilter; label: string; audience: Audience }[] = [
-  { id: 'all', label: 'All', audience: 'everyone' },
-  { id: 'mine', label: 'Created by me', audience: 'tenantAdmins' },
-  { id: 'built_in', label: 'Built-in', audience: 'everyone' },
-  { id: 'custom', label: 'Custom', audience: 'everyone' },
-  { id: 'not_published', label: 'Not published', audience: 'tenantAdmins' },
-  { id: 'needs_setup', label: 'Needs setup', audience: 'operators' },
-  { id: 'disabled', label: 'Disabled', audience: 'tenantAdmins' },
+const FILTER_OPTIONS: (FilterChipOption<ExternalServiceFilter> & { audience: Audience })[] = [
+  { id: 'all', label: 'All', icon: KIND_ICONS.all, audience: 'everyone' },
+  { id: 'mine', label: 'Created by me', icon: UserRound, audience: 'tenantAdmins' },
+  { id: 'built_in', label: 'Built-in', icon: KIND_ICONS.built_in, audience: 'everyone' },
+  { id: 'custom', label: 'Custom', icon: KIND_ICONS.custom, audience: 'everyone' },
+  { id: 'not_published', label: 'Not published', icon: CircleDashed, audience: 'tenantAdmins' },
+  { id: 'needs_setup', label: 'Needs setup', icon: Wrench, audience: 'operators' },
+  { id: 'disabled', label: 'Disabled', icon: Ban, audience: 'tenantAdmins' },
 ];
 
 interface ServiceRow extends ExternalServiceSummary {
@@ -211,7 +213,7 @@ export function ExternalServicesListPage(props: {
           <EmptyState
             icon={Cable}
             title="External Services are managed by platform operators and Organization admins."
-            hint="Ask an admin if you need a service set up."
+            description="Ask an admin if you need a service set up."
           />
         }
       >
@@ -244,7 +246,7 @@ export function ExternalServicesListPage(props: {
                   <EmptyState
                     icon={Cable}
                     title="No External Services match."
-                    hint="Try another filter, or clear the search."
+                    description="Try another filter, or clear the search."
                   />
                 </Show>
               }
@@ -303,7 +305,7 @@ function ServiceListRow(props: { row: ServiceRow; environments: Environment[] })
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span class="text-sm font-medium">{props.row.displayName}</span>
-          <span class="font-mono text-[11px] text-muted-foreground" translate="no">
+          <span class="font-mono text-[0.6875rem] text-muted-foreground" translate="no">
             {props.row.slug}
           </span>
           <OriginBadge origin={props.row.origin} />
@@ -319,7 +321,7 @@ function ServiceListRow(props: { row: ServiceRow; environments: Environment[] })
         </Show>
         <ServiceEnvironments row={props.row} environments={props.environments} />
         <Show when={props.row.hidesBuiltIn}>
-          <div class="mt-1.5 text-xs text-amber-800">
+          <div class="of-ink of-tone-needs-you mt-1.5 text-xs">
             A built-in service now has this name too. It stays hidden in your Organization, so your agents keep reaching
             this one.
           </div>

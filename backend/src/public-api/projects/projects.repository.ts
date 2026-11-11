@@ -13,7 +13,9 @@ import {
   workspaceMembers,
   workspaces,
 } from '../../../db/schema';
+import { connectedMainDomain } from '../../custom-domain/main-domain';
 import { servesAnExternalService } from '../../external-services/gate/service-projects';
+import { reachedByCallingProjectWhere, type CallingProjectReach } from '../../project/calling-project-reach';
 import {
   hiddenProjectReachOf,
   reachableHiddenProjectsWhere,
@@ -84,17 +86,14 @@ export interface EnvironmentRow {
   hasApp: boolean;
   appName: string | null;
   appSlug: string | null;
+  mainDomain: string | null;
   servesAnExternalService: boolean;
 }
 
 export interface ProjectScope {
   tenantId: string;
   userId: string;
-  createdByProjectId?: string;
-}
-
-function createdByCallingProject(scope: ProjectScope) {
-  return scope.createdByProjectId === undefined ? undefined : eq(projects.createdByProjectId, scope.createdByProjectId);
+  callingProject?: CallingProjectReach;
 }
 
 @Injectable()
@@ -108,7 +107,7 @@ export class PublicProjectsRepository {
           visible.where,
           query.workspaceId === undefined ? undefined : eq(projects.workspaceId, query.workspaceId),
           query.agentId === undefined ? undefined : eq(projects.agentId, query.agentId),
-          createdByCallingProject(scope),
+          scope.callingProject && reachedByCallingProjectWhere(scope.callingProject),
           beforeCursor(projects.createdAt, projects.id, query.cursor)
         )
       )
@@ -127,7 +126,13 @@ export class PublicProjectsRepository {
     const visible = visibleProjectsFilter(scope.tenantId, scope.userId);
     const [row] = await this.baseQuery()
       .leftJoin(workspaceMembers, visible.workspaceMemberJoin)
-      .where(and(visible.where, eq(projects.id, projectId), createdByCallingProject(scope)))
+      .where(
+        and(
+          visible.where,
+          eq(projects.id, projectId),
+          scope.callingProject && reachedByCallingProjectWhere(scope.callingProject)
+        )
+      )
       .limit(1);
 
     return row ?? null;
@@ -139,7 +144,7 @@ export class PublicProjectsRepository {
         and(
           eq(projects.id, projectId),
           reachableHiddenProjectsWhere(scope.tenantId, scope.userId, await hiddenProjectReachOf(scope.userId)),
-          createdByCallingProject(scope)
+          scope.callingProject && reachedByCallingProjectWhere(scope.callingProject)
         )
       )
       .limit(1);
@@ -165,6 +170,7 @@ export class PublicProjectsRepository {
         hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`.as('has_app'),
         appName: projectApps.name,
         appSlug: projectApps.slug,
+        mainDomain: connectedMainDomain,
         servesAnExternalService,
       })
       .from(projectEnvironments)

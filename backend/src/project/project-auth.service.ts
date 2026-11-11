@@ -2,18 +2,34 @@ import { createHmac } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as k8s from '@kubernetes/client-node';
-import { loadKubeConfig } from '../common/k8s-client';
-import { appAuthRouteRules, OIDC_CALLBACK_PATH, type AppAuthRouteTarget } from './app-auth-route';
+import { appUsersAddresses, appUsersClientSecret } from '../app-users/app-users-client';
+import {
+  isConflict,
+  KubeObjectWriter,
+  TRAEFIK_API_VERSION,
+  TRAEFIK_INGRESS_ROUTES,
+  TRAEFIK_MIDDLEWARES,
+} from '../common/kube-object-writer';
+import {
+  APP_AUTH_ROUTE_PREFIX,
+  appAuthMiddlewareName,
+  appAuthRouteRules,
+  IDENTITY_STRIP_MIDDLEWARE,
+  OIDC_CALLBACK_PATH,
+  type AppAuthRouteTarget,
+} from './app-auth-route';
+import type { SignInProviderConnection } from '../sign-in-provider/sign-in-provider.types';
 import { ProjectAuthOidcConfig } from './project.types';
 
-const TRAEFIK_GROUP = 'traefik.io';
-const TRAEFIK_VERSION = 'v1alpha1';
-const MIDDLEWARES_PLURAL = 'middlewares';
-const INGRESSROUTES_PLURAL = 'ingressroutes';
+const ingressRouteName = (routingId: string) => `${APP_AUTH_ROUTE_PREFIX}${routingId}`;
+const signInResourceName = (providerId: string) => `opsiforce-sign-in-${providerId}`;
+const signInPath = (providerId: string) => `/p/${providerId}`;
 
-const middlewareName = (routingId: string) => `opsiforce-project-${routingId}-oidc`;
-const ingressRouteName = (routingId: string) => `opsiforce-project-${routingId}`;
+const OIDC_LOGOUT_PATH = '/oidc/logout';
+
+const SIGN_IN_HOST_LABEL = 'auth';
+const SIGN_IN_COOKIE_PREFIX = '_opsiforce_sp_';
+const OIDC_PLUGIN = 'traefik-oidc-auth';
 
 interface TraefikOidcAssertClaim {
   Name: string;
@@ -34,9 +50,12 @@ interface TraefikOidcPluginSpec {
     TokenValidation: string;
   };
   CallbackUri: string;
+  LogoutUri?: string;
+  PostLogoutRedirectUri?: string;
+  CookieNamePrefix?: string;
   Scopes?: string[];
-  Authorization?: { AssertClaims: TraefikOidcAssertClaim[] };
-  SessionCookie?: { Secure: boolean };
+  Authorization?: { AssertClaims: TraefikOidcAssertClaim[]; CheckOnEveryRequest?: boolean };
+  SessionCookie?: { Secure: boolean; Domain?: string };
   Headers?: Array<{ Name: string; Value: string }>;
   BypassAuthenticationRule?: string;
 }
@@ -45,13 +64,43 @@ interface MiddlewareExtras {
   headers?: Array<{ Name: string; Value: string }>;
   assertClaims?: TraefikOidcAssertClaim[];
   bypassAuthPaths?: string[];
-  tokenValidation?: 'IdToken' | 'AccessToken' | 'Introspection';
+  signIn?: { callbackUri: string; cookieNamePrefix: string; cookieDomain: string };
+  signOut?: boolean;
 }
 
-const MANUAL_HEADERS: Array<{ Name: string; Value: string }> = [
+const IDENTITY_HEADERS: Array<{ Name: string; Value: string }> = [
   { Name: 'X-Oidc-Subject', Value: '{{ .claims.sub }}' },
   { Name: 'X-Oidc-Email', Value: '{{ .claims.email }}' },
 ];
+
+const signInIdentityHeaders = (groupsClaim: string | undefined): Array<{ Name: string; Value: string }> => [
+  { Name: 'X-Oidc-Subject', Value: '{{ .claims.sub }}' },
+  {
+    Name: 'X-Oidc-Email',
+    Value: '{{ with .claims.email }}{{ . }}{{ else }}{{ with .claims.preferred_username }}{{ . }}{{ end }}{{ end }}',
+  },
+  { Name: 'X-Oidc-Username', Value: '{{ with .claims.preferred_username }}{{ . }}{{ end }}' },
+  { Name: 'X-Oidc-Groups', Value: groupsClaim ? claimAsJsonArray(groupsClaim) : '[]' },
+];
+
+const APP_USERS_HEADERS: Array<{ Name: string; Value: string }> = [
+  ...IDENTITY_HEADERS,
+  { Name: 'X-Oidc-Name', Value: '{{ with .claims.name }}{{ . }}{{ end }}' },
+  { Name: 'X-Oidc-Roles', Value: '{{ with index .claims "roles" }}{{ . | mapToJsonArray }}{{ else }}[]{{ end }}' },
+];
+
+const GATE_IDENTITY_HEADER_NAMES = [
+  ...new Set([...APP_USERS_HEADERS, ...signInIdentityHeaders(undefined)].map(({ Name }) => Name)),
+];
+
+function claimAsJsonArray(claimName: string): string {
+  const descend = claimKeys(claimName)
+    .map((key, i) => `{{ with index ${i === 0 ? '.claims' : '.'} ${JSON.stringify(key)} }}`)
+    .join('');
+  return `${descend}{{ . | mapToJsonArray }}${'{{ else }}[]{{ end }}'.repeat(claimKeys(claimName).length)}`;
+}
+
+const readsTraefikEnvOrFile = (value: string) => value.startsWith('${') && value.endsWith('}');
 
 function bypassRuleFromPaths(paths: string[] | undefined): string | undefined {
   if (!paths) return undefined;
@@ -79,35 +128,55 @@ interface TraefikIngressRoute {
 
 const ROUTE_RECONCILE_ATTEMPTS = 3;
 
+const NAMESPACED_CLAIM = /[:/]/;
+
+function claimPath(claimName: string): string {
+  return NAMESPACED_CLAIM.test(claimName) ? `['${claimName}']` : claimName;
+}
+
+function claimKeys(claimName: string): string[] {
+  return NAMESPACED_CLAIM.test(claimName) ? [claimName] : claimName.split('.');
+}
+
+type OidcMiddleware = { spec?: { plugin?: Record<string, TraefikOidcPluginSpec> } } | undefined;
+
+function oidcPluginOf(middleware: unknown): TraefikOidcPluginSpec | undefined {
+  return (middleware as OidcMiddleware)?.spec?.plugin?.[OIDC_PLUGIN];
+}
+
+export function signInOnEachHost(environmentMiddleware: unknown) {
+  const plugin = oidcPluginOf(environmentMiddleware);
+  if (!plugin) return undefined;
+  const onEachHost: TraefikOidcPluginSpec = {
+    ...plugin,
+    CallbackUri: OIDC_CALLBACK_PATH,
+    SessionCookie: { Secure: true },
+  };
+  return { plugin: { [OIDC_PLUGIN]: onEachHost } };
+}
+
 @Injectable()
 export class ProjectAuthService {
   private readonly logger = new Logger(ProjectAuthService.name);
-  private readonly customApi: k8s.CustomObjectsApi;
+  private readonly kube: KubeObjectWriter;
   private readonly namespace: string;
   private readonly appsHostname: string;
   private readonly webappServiceName: string;
   private readonly webappServicePort: number;
   private readonly pluginSecret: string;
-  private readonly managedClientId: string;
-  private readonly managedClientSecret: string;
-  private readonly managedIssuerUrl: string;
-  private readonly managedTenantRolePrefix: string;
+  private readonly appUsersProviderUrl: string | undefined;
 
   constructor(private readonly configService: ConfigService) {
-    const kc = loadKubeConfig();
-    this.customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     this.namespace = this.configService.getOrThrow<string>('k8sNamespace');
+    this.kube = new KubeObjectWriter(this.namespace);
     this.appsHostname = this.configService.getOrThrow<string>('appsHostname');
     this.webappServiceName = this.configService.getOrThrow<string>('webappServiceName');
     this.webappServicePort = this.configService.getOrThrow<number>('webappServicePort');
     this.pluginSecret = this.configService.getOrThrow<string>('oidcPluginSecret');
-    this.managedClientId = this.configService.getOrThrow<string>('managedOidcClientId');
-    this.managedClientSecret = this.configService.get<string>('managedOidcClientSecret') ?? '';
-    this.managedIssuerUrl = this.configService.get<string>('managedOidcIssuerUrl') ?? '';
-    this.managedTenantRolePrefix = this.configService.get<string>('managedTenantRolePrefix') ?? '';
+    this.appUsersProviderUrl = appUsersAddresses(this.configService)?.providerUrl;
   }
 
-  private buildMiddleware(routingId: string, config: ProjectAuthOidcConfig, extras: MiddlewareExtras = {}) {
+  private buildMiddleware(name: string, config: ProjectAuthOidcConfig, extras: MiddlewareExtras = {}) {
     if (!config.clientId || !config.clientSecret) {
       throw new Error('clientId and clientSecret are required');
     }
@@ -123,24 +192,38 @@ export class ProjectAuthService {
       UsePkce: true,
       ValidateAudience: true,
       ValidateIssuer: true,
-      TokenValidation: extras.tokenValidation ?? 'IdToken',
+      TokenValidation: 'IdToken',
     };
+    if ([provider.Url, provider.ClientId, provider.ClientSecret].some(readsTraefikEnvOrFile)) {
+      throw new BadRequestException(
+        'Client ID, client secret and discovery URL cannot be ${NAME} or ${file:/path} references'
+      );
+    }
 
     const plugin: TraefikOidcPluginSpec = {
       LogLevel: 'WARN',
       Secret: this.pluginSecret,
       Provider: provider,
-      CallbackUri: OIDC_CALLBACK_PATH,
+      CallbackUri: extras.signIn?.callbackUri ?? OIDC_CALLBACK_PATH,
       Scopes: (config.scope ?? 'openid profile email').split(/\s+/).filter(Boolean),
-      SessionCookie: { Secure: true },
+      SessionCookie: extras.signIn ? { Secure: true, Domain: extras.signIn.cookieDomain } : { Secure: true },
     };
+
+    if (extras.signIn) {
+      plugin.CookieNamePrefix = extras.signIn.cookieNamePrefix;
+    }
+
+    if (extras.signOut) {
+      plugin.LogoutUri = OIDC_LOGOUT_PATH;
+      plugin.PostLogoutRedirectUri = '/';
+    }
 
     if (extras.headers && extras.headers.length > 0) {
       plugin.Headers = extras.headers;
     }
 
     if (extras.assertClaims && extras.assertClaims.length > 0) {
-      plugin.Authorization = { AssertClaims: extras.assertClaims };
+      plugin.Authorization = { AssertClaims: extras.assertClaims, CheckOnEveryRequest: true };
     }
 
     const bypassRule = bypassRuleFromPaths(extras.bypassAuthPaths);
@@ -149,60 +232,31 @@ export class ProjectAuthService {
     }
 
     return {
-      apiVersion: `${TRAEFIK_GROUP}/${TRAEFIK_VERSION}`,
+      apiVersion: TRAEFIK_API_VERSION,
       kind: 'Middleware',
-      metadata: { name: middlewareName(routingId), namespace: this.namespace },
-      spec: { plugin: { 'traefik-oidc-auth': plugin } },
+      metadata: { name, namespace: this.namespace },
+      spec: { plugin: { [OIDC_PLUGIN]: plugin } },
     };
   }
 
-  private keycloakExtras(tenantName: string, clientId: string): MiddlewareExtras {
-    return {
-      headers: [
-        { Name: 'X-Oidc-Username', Value: '{{ .claims.preferred_username }}' },
-        { Name: 'X-Oidc-Subject', Value: '{{ .claims.sub }}' },
-        { Name: 'X-Oidc-Email', Value: '{{ .claims.preferred_username }}' },
-        {
-          Name: 'X-Oidc-Realm-Roles',
-          Value: '{{ index .claims "realm_access" "roles" | mapToJsonArray }}',
-        },
-        {
-          Name: 'X-Oidc-Client-Roles',
-          Value: `{{ index .claims "resource_access" "${clientId}" "roles" | mapToJsonArray }}`,
-        },
-      ],
-      assertClaims: [
-        {
-          Name: 'realm_access.roles[*]',
-          AnyOf: [`${this.managedTenantRolePrefix}${tenantName}`],
-        },
-      ],
-    };
+  private buildIngressRoute(env: AppAuthRouteTarget) {
+    return this.ingressRoute(
+      ingressRouteName(env.id),
+      this.authRoutes(env, this.gateMiddlewares(env.id), [this.webappService()])
+    );
   }
 
-  private buildIngressRoute(env: AppAuthRouteTarget, middlewares: Array<{ name: string; namespace: string }>) {
-    const serviceRef: {
-      name: string;
-      namespace: string;
-      port: number;
-    } = {
-      name: this.webappServiceName,
-      namespace: this.namespace,
-      port: this.webappServicePort,
-    };
-
+  private ingressRoute(name: string, routes: unknown[]) {
     return {
-      apiVersion: `${TRAEFIK_GROUP}/${TRAEFIK_VERSION}`,
+      apiVersion: TRAEFIK_API_VERSION,
       kind: 'IngressRoute',
-      metadata: {
-        name: ingressRouteName(env.id),
-        namespace: this.namespace,
-      },
-      spec: {
-        entryPoints: ['websecure'],
-        routes: this.authRoutes(env, middlewares, [serviceRef]),
-      },
+      metadata: { name, namespace: this.namespace },
+      spec: { entryPoints: ['websecure'], routes },
     };
+  }
+
+  private webappService() {
+    return { name: this.webappServiceName, namespace: this.namespace, port: this.webappServicePort };
   }
 
   private authRoutes(env: AppAuthRouteTarget, middlewares: unknown, services: unknown) {
@@ -215,8 +269,11 @@ export class ProjectAuthService {
     }));
   }
 
-  private oidcMiddlewareRef(routingId: string) {
-    return { name: middlewareName(routingId), namespace: this.namespace };
+  private gateMiddlewares(routingId: string) {
+    return [
+      { name: IDENTITY_STRIP_MIDDLEWARE, namespace: this.namespace },
+      { name: appAuthMiddlewareName(routingId), namespace: this.namespace },
+    ];
   }
 
   async getConfig(routingId: string): Promise<{
@@ -238,10 +295,7 @@ export class ProjectAuthService {
 
   private async readPluginSpec(routingId: string): Promise<TraefikOidcPluginSpec | undefined> {
     try {
-      const middleware = (await this.find(MIDDLEWARES_PLURAL, middlewareName(routingId))) as
-        | { spec?: { plugin?: Record<string, TraefikOidcPluginSpec> } }
-        | undefined;
-      return middleware?.spec?.plugin?.['traefik-oidc-auth'];
+      return oidcPluginOf(await this.kube.find(TRAEFIK_MIDDLEWARES, appAuthMiddlewareName(routingId)));
     } catch (err) {
       this.logger.error(`Failed to read middleware for routing id ${routingId}`, err);
       throw err;
@@ -249,54 +303,137 @@ export class ProjectAuthService {
   }
 
   async apply(env: AppAuthRouteTarget, config: ProjectAuthOidcConfig, bypassAuthPaths?: string[]): Promise<void> {
-    if (config.forwardAccessToken !== undefined && typeof config.forwardAccessToken !== 'boolean') {
-      throw new BadRequestException('forwardAccessToken must be a boolean');
-    }
-    if (config.forwardAccessToken && bypassAuthPaths?.some((p) => p.trim())) {
-      throw new BadRequestException('Token forwarding cannot be combined with authentication bypass paths');
-    }
     const effectiveConfig = await this.preserveClientSecret(env.id, config);
     const extras: MiddlewareExtras = {
-      headers: config.forwardAccessToken ? [...MANUAL_HEADERS, ...this.forwardingHeaders(env.id)] : MANUAL_HEADERS,
+      headers: this.validatedAppHeaders(env.id, config.forwardAccessToken, bypassAuthPaths),
       bypassAuthPaths,
     };
-    const mw = this.buildMiddleware(env.id, effectiveConfig, extras);
-    const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.upsert(MIDDLEWARES_PLURAL, mw.metadata.name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, ir.metadata.name, ir);
+    await this.writeGate(env, this.buildMiddleware(appAuthMiddlewareName(env.id), effectiveConfig, extras));
   }
 
-  async applyManaged(env: AppAuthRouteTarget, tenantName: string, bypassAuthPaths?: string[]): Promise<void> {
-    if (!this.managedClientSecret) {
-      throw new Error('MANAGED_OIDC_CLIENT_SECRET is not set — cannot enable managed auth.');
+  async applyProvider(
+    env: AppAuthRouteTarget,
+    provider: SignInProviderConnection,
+    forwardAccessToken: boolean | undefined,
+    bypassAuthPaths?: string[]
+  ): Promise<void> {
+    const mw = this.buildMiddleware(appAuthMiddlewareName(env.id), this.providerConfig(provider), {
+      ...this.providerExtras(provider),
+      headers: this.validatedAppHeaders(
+        env.id,
+        forwardAccessToken,
+        bypassAuthPaths,
+        signInIdentityHeaders(provider.groupsClaim)
+      ),
+      bypassAuthPaths,
+    });
+    await this.writeGate(env, mw);
+  }
+
+  async applyAppUsers(env: AppAuthRouteTarget, bypassAuthPaths?: string[]): Promise<void> {
+    if (!this.appUsersProviderUrl || !this.pluginSecret) {
+      throw new BadRequestException('App Users need OPSIFORCE_PUBLIC_URL and OIDC_PLUGIN_SECRET to be set');
     }
     const config: ProjectAuthOidcConfig = {
-      clientId: this.managedClientId,
-      clientSecret: this.managedClientSecret,
-      discoveryUrl: `${this.managedIssuerUrl}/.well-known/openid-configuration`,
+      clientId: env.id,
+      clientSecret: appUsersClientSecret(this.pluginSecret, env.id),
+      discoveryUrl: `${this.appUsersProviderUrl}/.well-known/openid-configuration`,
     };
-    const extras: MiddlewareExtras = {
-      ...this.keycloakExtras(tenantName, this.managedClientId),
-      tokenValidation: 'AccessToken',
-      bypassAuthPaths,
-    };
-    const mw = this.buildMiddleware(env.id, config, extras);
-    const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.upsert(MIDDLEWARES_PLURAL, mw.metadata.name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, ir.metadata.name, ir);
+    const extras: MiddlewareExtras = { headers: APP_USERS_HEADERS, bypassAuthPaths, signOut: true };
+    await this.writeGate(env, this.buildMiddleware(appAuthMiddlewareName(env.id), config, extras));
   }
 
-  async inheritAuth(fromRoutingId: string, to: AppAuthRouteTarget, managedFallbackTenantName?: string): Promise<void> {
+  async inheritAppUsers(fromRoutingId: string, to: AppAuthRouteTarget): Promise<void> {
     const sourceSpec = await this.readPluginSpec(fromRoutingId);
     if (!sourceSpec) {
-      if (managedFallbackTenantName) {
-        await this.applyManaged(to, managedFallbackTenantName);
-        return;
-      }
-      throw new Error(`Cannot inherit app auth: source middleware ${middlewareName(fromRoutingId)} not found`);
+      throw new Error(`Cannot inherit app auth: source middleware ${appAuthMiddlewareName(fromRoutingId)} not found`);
+    }
+    await this.applyAppUsers(to, pathsFromBypassRule(sourceSpec.BypassAuthenticationRule));
+  }
+
+  async applySignInHost(provider: SignInProviderConnection): Promise<void> {
+    const name = signInResourceName(provider.id);
+    const mw = this.buildMiddleware(name, this.providerConfig(provider), {
+      ...this.providerExtras(provider),
+      assertClaims: undefined,
+    });
+    const ir = this.ingressRoute(name, [
+      {
+        kind: 'Rule',
+        match: `Host(\`${this.signInHost()}\`) && PathPrefix(\`${signInPath(provider.id)}/\`)`,
+        priority: 100,
+        middlewares: [{ name, namespace: this.namespace }],
+        services: [this.webappService()],
+      },
+    ]);
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, name, mw);
+    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, name, ir);
+  }
+
+  async removeSignInHost(providerId: string): Promise<void> {
+    await this.kube.deleteIfExists(TRAEFIK_INGRESS_ROUTES, signInResourceName(providerId));
+    await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, signInResourceName(providerId));
+  }
+
+  signInCallbackUrl(providerId: string): string {
+    return `https://${this.signInHost()}${signInPath(providerId)}${OIDC_CALLBACK_PATH}`;
+  }
+
+  private signInHost(): string {
+    return `${SIGN_IN_HOST_LABEL}.${this.appsHostname}`;
+  }
+
+  private providerConfig(provider: SignInProviderConnection): ProjectAuthOidcConfig {
+    return {
+      clientId: provider.clientId,
+      clientSecret: provider.clientSecret,
+      discoveryUrl: provider.discoveryUrl,
+      scope: provider.scope,
+    };
+  }
+
+  private providerExtras(provider: SignInProviderConnection): MiddlewareExtras {
+    return {
+      signIn: {
+        callbackUri: this.signInCallbackUrl(provider.id),
+        cookieNamePrefix: `${SIGN_IN_COOKIE_PREFIX}${provider.id}`,
+        cookieDomain: `.${this.appsHostname}`,
+      },
+      assertClaims: provider.requiredClaim
+        ? [
+            {
+              Name: claimPath(provider.requiredClaim.name),
+              ...(provider.requiredClaim.values.length > 0 ? { AnyOf: provider.requiredClaim.values } : {}),
+            },
+          ]
+        : undefined,
+    };
+  }
+
+  private validatedAppHeaders(
+    routingId: string,
+    forwardAccessToken: unknown,
+    bypassAuthPaths: string[] | undefined,
+    identityHeaders = IDENTITY_HEADERS
+  ) {
+    if (forwardAccessToken !== undefined && typeof forwardAccessToken !== 'boolean') {
+      throw new BadRequestException('forwardAccessToken must be a boolean');
+    }
+    if (forwardAccessToken && bypassAuthPaths?.some((p) => p.trim())) {
+      throw new BadRequestException('Token forwarding cannot be combined with authentication bypass paths');
+    }
+    return forwardAccessToken ? [...identityHeaders, ...this.forwardingHeaders(routingId)] : identityHeaders;
+  }
+
+  async inheritAuth(fromRoutingId: string, to: AppAuthRouteTarget): Promise<string | null> {
+    const sourceSpec = await this.readPluginSpec(fromRoutingId);
+    if (!sourceSpec) {
+      throw new Error(`Cannot inherit app auth: source middleware ${appAuthMiddlewareName(fromRoutingId)} not found`);
     }
 
     await this.applyClonedSpec(to, sourceSpec);
+    const cookiePrefix = sourceSpec.CookieNamePrefix ?? '';
+    return cookiePrefix.startsWith(SIGN_IN_COOKIE_PREFIX) ? cookiePrefix.slice(SIGN_IN_COOKIE_PREFIX.length) : null;
   }
 
   private forwardingHeaders(routingId: string) {
@@ -328,22 +465,46 @@ export class ProjectAuthService {
             ],
           }
         : {}),
-      CallbackUri: OIDC_CALLBACK_PATH,
+      CallbackUri: sourceSpec.CallbackUri.startsWith(`https://${this.signInHost()}/`)
+        ? sourceSpec.CallbackUri
+        : OIDC_CALLBACK_PATH,
     };
     const mw = {
-      apiVersion: `${TRAEFIK_GROUP}/${TRAEFIK_VERSION}`,
+      apiVersion: TRAEFIK_API_VERSION,
       kind: 'Middleware',
-      metadata: { name: middlewareName(env.id), namespace: this.namespace },
-      spec: { plugin: { 'traefik-oidc-auth': clonedSpec } },
+      metadata: { name: appAuthMiddlewareName(env.id), namespace: this.namespace },
+      spec: { plugin: { [OIDC_PLUGIN]: clonedSpec } },
     };
-    const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.upsert(MIDDLEWARES_PLURAL, mw.metadata.name, mw);
-    await this.upsert(INGRESSROUTES_PLURAL, ir.metadata.name, ir);
+    await this.writeGate(env, mw);
+  }
+
+  private async writeGate(env: AppAuthRouteTarget, oidcMiddleware: { metadata: { name: string } }): Promise<void> {
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, oidcMiddleware.metadata.name, oidcMiddleware);
+    await this.writeIdentityHeaderStrip();
+    const ir = this.buildIngressRoute(env);
+    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
+  }
+
+  async writeIdentityHeaderStrip(): Promise<void> {
+    const spec = {
+      headers: { customRequestHeaders: Object.fromEntries(GATE_IDENTITY_HEADER_NAMES.map((name) => [name, ''])) },
+    };
+    const existing = (await this.kube.find(TRAEFIK_MIDDLEWARES, IDENTITY_STRIP_MIDDLEWARE)) as
+      | { spec?: unknown }
+      | undefined;
+    if (isDeepStrictEqual(existing?.spec, spec)) return;
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, IDENTITY_STRIP_MIDDLEWARE, {
+      apiVersion: TRAEFIK_API_VERSION,
+      kind: 'Middleware',
+      metadata: { name: IDENTITY_STRIP_MIDDLEWARE, namespace: this.namespace },
+      spec,
+    });
   }
 
   private async preserveClientSecret(routingId: string, config: ProjectAuthOidcConfig): Promise<ProjectAuthOidcConfig> {
     if (config.clientSecret?.trim()) return config;
     const existing = await this.readPluginSpec(routingId);
+    if (existing?.CookieNamePrefix?.startsWith(SIGN_IN_COOKIE_PREFIX)) return config;
     const preserved = existing?.Provider?.ClientSecret;
     if (!preserved) return config;
     return { ...config, clientSecret: preserved };
@@ -351,97 +512,35 @@ export class ProjectAuthService {
 
   async reconcileRoute(env: AppAuthRouteTarget): Promise<void> {
     for (let attempt = 1; ; attempt++) {
-      const route = (await this.find(INGRESSROUTES_PLURAL, ingressRouteName(env.id))) as
+      const route = (await this.kube.find(TRAEFIK_INGRESS_ROUTES, ingressRouteName(env.id))) as
         | TraefikIngressRoute
         | undefined;
       if (!route) return;
-      const [{ middlewares, services }] = route.spec.routes;
-      const expectedRoutes = this.authRoutes(env, middlewares, services);
+      const [{ services }] = route.spec.routes;
+      const expectedRoutes = this.authRoutes(env, this.gateMiddlewares(env.id), services);
       if (isDeepStrictEqual(route.spec.routes, expectedRoutes)) return;
       try {
-        await this.customApi.replaceNamespacedCustomObject({
-          group: TRAEFIK_GROUP,
-          version: TRAEFIK_VERSION,
-          namespace: this.namespace,
-          plural: INGRESSROUTES_PLURAL,
-          name: ingressRouteName(env.id),
-          body: { ...route, spec: { ...route.spec, routes: expectedRoutes } },
+        await this.kube.replace(TRAEFIK_INGRESS_ROUTES, ingressRouteName(env.id), {
+          ...route,
+          spec: { ...route.spec, routes: expectedRoutes },
         });
         this.logger.log(`Rewrote the App Auth route of environment ${env.id}`);
         return;
       } catch (err) {
-        const writtenMeanwhile = (err as { code?: number })?.code === 409;
-        if (!writtenMeanwhile || attempt === ROUTE_RECONCILE_ATTEMPTS) throw err;
+        if (!isConflict(err) || attempt === ROUTE_RECONCILE_ATTEMPTS) throw err;
       }
     }
   }
 
   async remove(routingId: string): Promise<void> {
-    await this.deleteIfExists(INGRESSROUTES_PLURAL, ingressRouteName(routingId));
-    await this.deleteIfExists(MIDDLEWARES_PLURAL, middlewareName(routingId));
+    await this.kube.deleteIfExists(TRAEFIK_INGRESS_ROUTES, ingressRouteName(routingId));
+    await this.kube.deleteIfExists(TRAEFIK_MIDDLEWARES, appAuthMiddlewareName(routingId));
   }
 
-  private async upsert(plural: string, name: string, body: object): Promise<void> {
-    try {
-      await this.customApi.createNamespacedCustomObject({
-        group: TRAEFIK_GROUP,
-        version: TRAEFIK_VERSION,
-        namespace: this.namespace,
-        plural,
-        body,
-      });
-      return;
-    } catch (err) {
-      const status = (err as { code?: number })?.code;
-      if (status !== 409) throw err;
-    }
-
-    const existing = (await this.find(plural, name)) as { metadata?: { resourceVersion?: string } } | undefined;
-
-    const resourceVersion = existing?.metadata?.resourceVersion;
-    const existingMeta = (body as { metadata?: Record<string, unknown> }).metadata ?? {};
-    const bodyWithVersion = {
-      ...body,
-      metadata: { ...existingMeta, resourceVersion },
-    };
-
-    await this.customApi.replaceNamespacedCustomObject({
-      group: TRAEFIK_GROUP,
-      version: TRAEFIK_VERSION,
-      namespace: this.namespace,
-      plural,
-      name,
-      body: bodyWithVersion,
-    });
-  }
-
-  private async find(plural: string, name: string): Promise<unknown> {
-    try {
-      return await this.customApi.getNamespacedCustomObject({
-        group: TRAEFIK_GROUP,
-        version: TRAEFIK_VERSION,
-        namespace: this.namespace,
-        plural,
-        name,
-      });
-    } catch (err) {
-      if ((err as { code?: number })?.code === 404) return undefined;
-      throw err;
-    }
-  }
-
-  private async deleteIfExists(plural: string, name: string): Promise<void> {
-    try {
-      await this.customApi.deleteNamespacedCustomObject({
-        group: TRAEFIK_GROUP,
-        version: TRAEFIK_VERSION,
-        namespace: this.namespace,
-        plural,
-        name,
-      });
-    } catch (err) {
-      const status = (err as { code?: number })?.code;
-      if (status !== 404) throw err;
-    }
+  async gatedRoutingIds(): Promise<string[]> {
+    return (await this.kube.list(TRAEFIK_INGRESS_ROUTES))
+      .map(({ metadata }) => metadata.name)
+      .filter((name) => name.startsWith(APP_AUTH_ROUTE_PREFIX))
+      .map((name) => name.slice(APP_AUTH_ROUTE_PREFIX.length));
   }
 }

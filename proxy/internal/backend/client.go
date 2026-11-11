@@ -23,15 +23,16 @@ const (
 const ActionRedirect = "redirect"
 
 type EnsureResponse struct {
-	Action        string         `json:"action"`
-	EnvironmentID string         `json:"environmentId"`
-	State         string         `json:"state"`
-	CanonicalHost string         `json:"canonicalHost"`
-	Protected     bool           `json:"protected"`
-	Upstream      string         `json:"upstream"`
-	PodName       string         `json:"podName"`
-	Directory     string         `json:"directory"`
-	Logging       *LoggingConfig `json:"logging"`
+	Action             string         `json:"action"`
+	EnvironmentID      string         `json:"environmentId"`
+	State              string         `json:"state"`
+	CanonicalHost      string         `json:"canonicalHost"`
+	Protected          bool           `json:"protected"`
+	PreviewFrameOrigin string         `json:"previewFrameOrigin"`
+	Upstream           string         `json:"upstream"`
+	PodName            string         `json:"podName"`
+	Directory          string         `json:"directory"`
+	Logging            *LoggingConfig `json:"logging"`
 }
 
 // LoggingConfig is the per-project request-logging policy resolved by the

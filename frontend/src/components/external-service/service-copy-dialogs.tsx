@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch, createSignal } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { builderPath } from '~/api/builder';
 import { ApiError } from '~/api/client';
 import {
@@ -144,7 +144,7 @@ export function ExportServiceDialog(props: {
                 <Show
                   when={refused()}
                   fallback={
-                    <p class="text-xs text-amber-900" role="alert">
+                    <p class="of-ink of-tone-needs-you text-xs" role="alert">
                       The file couldn't be checked for keys or secrets. You can still download it; check it before you
                       share it.
                     </p>
@@ -157,7 +157,7 @@ export function ExportServiceDialog(props: {
               }
             >
               <Show when={(preview.data?.hits.length ?? 0) > 0}>
-                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <div class="of-note of-tone-needs-you flex-col text-xs">
                   <div class="flex gap-2 font-medium">
                     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>These look like keys or secrets. Check them before you share the file.</span>
@@ -342,7 +342,7 @@ export function ImportServiceDialog(props: { open: boolean; onOpenChange: (open:
                   <For each={copy().warnings}>
                     {(warning) => (
                       <li class="flex gap-2">
-                        <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+                        <AlertTriangle class="of-ink of-tone-needs-you mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         <span>{warning}</span>
                       </li>
                     )}

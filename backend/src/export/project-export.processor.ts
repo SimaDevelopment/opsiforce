@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { projectApps, projectTransferJobs } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
+import { isForeignOwner } from '../common/fs';
 import { runtimeAgentSlug } from '../delivery/runtime-agent-slug';
 import { GitService } from '../git/git.service';
 import { ProjectService } from '../project/project.service';
@@ -30,7 +31,7 @@ import {
 interface ArchiveEntry {
   source: string;
   relPath: string;
-  type: 'file' | 'symlink';
+  type: 'file' | 'symlink' | 'directory';
   mode: number;
   size: number;
 }
@@ -115,7 +116,7 @@ export class ProjectExportProcessor extends WorkerHost {
           requestLogBodyLimit: project.requestLogBodyLimit,
         },
         resources: {
-          podClass: project.podClass,
+          presetName: project.presetName,
           cpuMillicores: project.cpuMillicores,
           memoryRequestMib: project.memoryRequestMib,
           memoryLimitMib: project.memoryLimitMib,
@@ -124,6 +125,7 @@ export class ProjectExportProcessor extends WorkerHost {
           ? { name: project.appName, description: project.appDescription, appSlug: developmentApp?.appSlug ?? null }
           : null,
         schedules,
+        owners: runtimeEntries.filter(isForeignOwner).map(({ relPath, uid, gid }) => ({ path: relPath, uid, gid })),
         stamp: exportStampOf(this.configService, EXPORT_FORMAT_VERSION),
       };
       await writeFile(path.join(stagingRoot, 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -183,6 +185,7 @@ export class ProjectExportProcessor extends WorkerHost {
         const relPath = relDir ? `${relDir}/${child}` : child;
         const stats = await lstat(source);
         if (stats.isDirectory()) {
+          entries.push({ source, relPath, type: 'directory', mode: stats.mode, size: 0 });
           await walk(source, relPath);
         } else if (stats.isSymbolicLink()) {
           entries.push({ source, relPath, type: 'symlink', mode: stats.mode, size: 0 });
@@ -228,7 +231,9 @@ export class ProjectExportProcessor extends WorkerHost {
     archive.pipe(output);
     for (const entry of entries) {
       const mode = entry.mode & 0o777;
-      if (entry.type === 'symlink') {
+      if (entry.type === 'directory') {
+        archive.append(Buffer.alloc(0), { name: `${entry.relPath}/`, mode });
+      } else if (entry.type === 'symlink') {
         archive.symlink(entry.relPath, await readlink(entry.source), mode);
       } else {
         archive.file(entry.source, { name: entry.relPath, mode });

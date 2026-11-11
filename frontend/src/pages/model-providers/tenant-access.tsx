@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { currentTenant } from '~/api/client';
 import {
   usePlatformModelProviderAccess,
@@ -199,19 +199,19 @@ export function TenantAccessDialog(props: { name: string; open: boolean; onOpenC
               {(tenant) => {
                 const changed = () => hasAccess(tenant) !== hadAccess(tenant);
                 return (
-                  <li class={cn('flex items-center gap-2 px-3 py-2 text-sm', changed() && 'bg-amber-500/5')}>
+                  <li class={cn('flex items-center gap-2 px-3 py-2 text-sm', changed() && 'of-wash of-tone-needs-you')}>
                     <Building2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span class="min-w-0 flex-1 truncate" title={tenant.displayName}>
                       {tenant.displayName}
                     </span>
                     <span
                       class={cn(
-                        'inline-flex items-center gap-1 text-[11px]',
-                        changed() ? 'font-medium text-amber-700' : 'text-muted-foreground'
+                        'inline-flex items-center gap-1 text-[0.6875rem]',
+                        changed() ? 'of-ink of-tone-needs-you font-medium' : 'text-muted-foreground'
                       )}
                     >
                       <Show when={changed()}>
-                        <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                        <span class="of-dot of-tone-needs-you h-1.5 w-1.5" aria-hidden="true" />
                       </Show>
                       {accessLabel(hasAccess(tenant), changed())}
                     </span>
@@ -230,7 +230,7 @@ export function TenantAccessDialog(props: { name: string; open: boolean; onOpenC
             <Pager {...pages.pagerProps()} />
           </Show>
           <Show when={losing() > 0}>
-            <p class="text-xs text-amber-700">
+            <p class="of-ink of-tone-needs-you text-xs">
               When you save, {organizations(losing())} {losing() === 1 ? 'loses' : 'lose'} access at once: their Agents
               and Apps stop using <span translate="no">{props.name}</span>.
             </p>

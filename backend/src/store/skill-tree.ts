@@ -42,11 +42,21 @@ function subdirectories(dir: string): string[] {
 interface PackageSkillsFile {
   customPackageSharedSkills: string[];
   sharedSkillExclusions: Record<string, string[]>;
+  privilegedOnlySkills?: string[];
+}
+
+function packageSkillRules(root: string): PackageSkillsFile {
+  return JSON.parse(readFileSync(join(root, 'package-skills.json'), 'utf8')) as PackageSkillsFile;
+}
+
+/** Built-in Skills that only a deployment with privileged agent pods offers. */
+export function privilegedOnlySkillNames(root: string = agentConfigRoot()): string[] {
+  return packageSkillRules(root).privilegedOnlySkills ?? [];
 }
 
 /** The set `agent-config/scripts/compose-skills.mjs` lays into the package in the agent image. */
 export function packageSkillNames(packageName: string, root: string = agentConfigRoot()): Set<string> {
-  const rules = JSON.parse(readFileSync(join(root, 'package-skills.json'), 'utf8')) as PackageSkillsFile;
+  const rules = packageSkillRules(root);
   const shared = subdirectories(join(root, 'skills'));
   const excluded = rules.sharedSkillExclusions[packageName] ?? [];
   const sharedShipped =

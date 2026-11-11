@@ -32,10 +32,9 @@ func withoutPlatformCookies(value string) string {
 	kept := make([]string, 0, strings.Count(value, ";")+1)
 	for _, pair := range strings.Split(value, ";") {
 		pair = strings.TrimSpace(pair)
-		name, _, _ := strings.Cut(pair, "=")
 		switch {
 		case pair == "":
-		case strings.HasPrefix(strings.TrimSpace(name), platformCookiePrefix):
+		case isPlatformCookie(pair):
 			removed = true
 		default:
 			kept = append(kept, pair)
@@ -46,4 +45,26 @@ func withoutPlatformCookies(value string) string {
 		return value
 	}
 	return strings.Join(kept, "; ")
+}
+
+func dropPlatformSetCookies(headers http.Header) {
+	values := headers.Values("Set-Cookie")
+	kept := make([]string, 0, len(values))
+	for _, value := range values {
+		if !isPlatformCookie(value) {
+			kept = append(kept, value)
+		}
+	}
+	if len(kept) == len(values) {
+		return
+	}
+	headers.Del("Set-Cookie")
+	for _, value := range kept {
+		headers.Add("Set-Cookie", value)
+	}
+}
+
+func isPlatformCookie(pairOrSetCookie string) bool {
+	name, _, _ := strings.Cut(pairOrSetCookie, "=")
+	return strings.HasPrefix(strings.TrimSpace(name), platformCookiePrefix)
 }

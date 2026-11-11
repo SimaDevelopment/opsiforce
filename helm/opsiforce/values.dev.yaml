@@ -1,5 +1,8 @@
 # Development only: Helsinki cloud and dedicated workers; existing exclusions retained.
 ---
+storage:
+  size: 600Gi
+
 agent:
   affinity:
     nodeAffinity:

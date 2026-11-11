@@ -1,0 +1,41 @@
+# Build with the host's Docker, then load the image into minikube's containerd.
+# No image registry is involved, so no Docker login is needed.
+def minikube_build(ref, context, dockerfile, build_args, only, live_update, entrypoint=None):
+    profile = os.getenv('MINIKUBE_PROFILE', 'minikube')
+    if k8s_context() != profile:
+        fail('Local image loading requires Kubernetes context %s (current: %s)' % (profile, k8s_context()))
+    runtime_warning = str(local('sh ../scripts/check-containerd.sh 2>&1', quiet=True)).strip()
+    if runtime_warning:
+        warn(runtime_warning)
+
+    build_ref = ref + '-local-build'
+    docker_build(build_ref, context=context, dockerfile=dockerfile, build_args=build_args, only=only)
+
+    if entrypoint:
+        # Keep the restart_process extension's process-watching behavior on the
+        # final loaded image, where Tilt applies Live Update.
+        restart_ref = ref + '-local-restart'
+        docker_build(
+            restart_ref,
+            context='../docker',
+            dockerfile_contents='''
+FROM tiltdev/restart-helper:2026-10-21 AS restart-helper
+FROM %s
+RUN touch /tmp/.restart-proc && chmod 666 /tmp/.restart-proc
+COPY --from=restart-helper /tilt-restart-wrapper /
+COPY --from=restart-helper /entr /
+ENTRYPOINT %s
+''' % (build_ref, encode_json(['/tilt-restart-wrapper', '--watch_file=/tmp/.restart-proc'] + entrypoint).replace('\n', '')),
+        )
+        build_ref = restart_ref
+        live_update = live_update + [run('date > /tmp/.restart-proc')]
+
+    custom_build(
+        ref,
+        command='docker tag "$TILT_IMAGE_0" "$EXPECTED_REF" && MINIKUBE_PROFILE=%s sh ../scripts/minikube-load-image.sh "$EXPECTED_REF"' % shlex.quote(profile),
+        deps=[os.path.join(context, path) for path in only] + [dockerfile],
+        image_deps=[build_ref],
+        disable_push=True,
+        skips_local_docker=True,
+        live_update=live_update,
+    )

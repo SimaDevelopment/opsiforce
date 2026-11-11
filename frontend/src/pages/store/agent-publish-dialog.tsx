@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   usePublishAgent,
   useUpdateAgentSettings,
@@ -28,7 +28,7 @@ function DiffLine(props: { label: string; changed: boolean; children: unknown })
   return (
     <div class="flex items-start gap-3 px-3 py-2 text-xs">
       <span
-        class={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full', props.changed ? 'bg-amber-500' : 'bg-emerald-500')}
+        class={cn('of-dot mt-1 h-1.5 w-1.5', props.changed ? 'of-tone-needs-you' : 'of-tone-done')}
         aria-hidden="true"
       />
       <span class="w-14 shrink-0 text-muted-foreground">{props.label}</span>
@@ -208,7 +208,7 @@ export function PublishAgentDialog(props: {
 
                   <Show when={replaces() && !changes().empty}>
                     <p class="flex gap-2 text-xs text-muted-foreground">
-                      <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+                      <AlertTriangle class="of-ink of-tone-needs-you mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       No copy of the current {targetName()} definition is kept. To go back, you republish from
                       Development.
                     </p>

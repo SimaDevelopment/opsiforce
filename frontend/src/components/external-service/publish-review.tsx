@@ -37,18 +37,14 @@ function ReviewSection(props: { title: string; children: JSX.Element }) {
 }
 
 function Note(props: { tone: 'warning' | 'info' | 'error'; children: JSX.Element }) {
-  const tones = {
-    warning: 'border-amber-500/40 bg-amber-500/10',
-    info: 'border-border bg-muted/40',
-    error: 'border-destructive/40 bg-destructive/10',
-  } as const;
+  const tones = { warning: 'of-tone-needs-you', info: 'of-tone-neutral', error: 'of-tone-failed' } as const;
   return (
-    <div class={`flex items-start gap-2 rounded-md border px-3 py-2 text-xs ${tones[props.tone]}`}>
+    <div class={`of-note gap-2 text-xs ${tones[props.tone]}`}>
       <Show
         when={props.tone === 'info'}
-        fallback={<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />}
+        fallback={<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
       >
-        <Info class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Info class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       </Show>
       <div class="min-w-0 flex-1">{props.children}</div>
     </div>
@@ -64,7 +60,7 @@ function CheckChange(props: {
       {(change) => (
         <Show
           when={change() !== 'unchanged'}
-          fallback={<span class="text-[11px] text-muted-foreground">Unchanged</span>}
+          fallback={<span class="text-[0.6875rem] text-muted-foreground">Unchanged</span>}
         >
           <ChangeMark change={change()} aspects={props.aspects} />
         </Show>
@@ -187,7 +183,7 @@ export function ImpactSection(props: { impact: ConfigurationImpact | null; calle
                 </For>
                 <For each={impact().needsAttention}>
                   {(entry) => (
-                    <li class="text-amber-800">
+                    <li class="of-ink of-tone-needs-you">
                       Needs attention in {configurationsLabel(entry.configurations)}:{' '}
                       <span class="font-mono">{entry.field}</span>. Their calls answer "configuration incomplete" until
                       someone saves them again.
@@ -241,7 +237,7 @@ function ResultMark(props: { result: 'pass' | 'fail' | 'not-checked' }) {
         </Show>
       }
     >
-      <Check class="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-label="passed" />
+      <Check class="of-ink of-tone-done h-3.5 w-3.5 shrink-0" aria-label="passed" />
     </Show>
   );
 }
@@ -258,7 +254,7 @@ export function TestReportSection(props: { report: TestReport }) {
         {(report) => (
           <Note tone="warning">
             <p class="mb-1">The test report cannot be trusted as written:</p>
-            <ul class="list-disc pl-4 font-mono text-[11px]">
+            <ul class="list-disc pl-4 font-mono text-[0.6875rem]">
               <For each={report().problems}>{(problem) => <li>{problem}</li>}</For>
             </ul>
           </Note>
@@ -303,7 +299,7 @@ export function TestReportSection(props: { report: TestReport }) {
                     <ResultMark result={line.result} />
                     <div class="min-w-0 flex-1">
                       <p>{line.expectation}</p>
-                      <p class="text-[11px] text-muted-foreground">
+                      <p class="text-[0.6875rem] text-muted-foreground">
                         {line.source}
                         <Show when={line.reason}>{(reason) => <> · {reason()}</>}</Show>
                       </p>
@@ -503,10 +499,10 @@ function FieldChangeLine(props: { change: FieldChange }) {
         <span class={props.change.change === 'removed' ? 'text-muted-foreground line-through' : ''}>
           {props.change.label}
         </span>
-        <span class="font-mono text-[11px] text-muted-foreground">{props.change.key}</span>
+        <span class="font-mono text-[0.6875rem] text-muted-foreground">{props.change.key}</span>
         <span class="flex-1" />
-        <span class="text-[11px] text-muted-foreground">{details().join(' · ')}</span>
-        <span class="text-[11px] font-medium">{FIELD_CHANGE_LABEL[props.change.change]}</span>
+        <span class="text-[0.6875rem] text-muted-foreground">{details().join(' · ')}</span>
+        <span class="text-[0.6875rem] font-medium">{FIELD_CHANGE_LABEL[props.change.change]}</span>
       </div>
       <Show when={props.change.itemChanges}>
         {(itemChanges) => (
@@ -557,9 +553,9 @@ export function EventsSection(props: { check: CheckReport; changes: ManifestDiff
 
 function diffLineClass(line: string): string {
   if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')) return 'text-muted-foreground';
-  if (line.startsWith('+')) return 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300';
+  if (line.startsWith('+')) return 'of-wash of-ink of-tone-added';
   if (line.startsWith('-')) return 'bg-destructive/10 text-destructive';
-  if (line.startsWith('@@')) return 'text-sky-700 dark:text-sky-300';
+  if (line.startsWith('@@')) return 'of-ink of-tone-running';
   return '';
 }
 
@@ -580,7 +576,7 @@ export function DiffSection(props: { title: string; diff: FolderDiff; open?: boo
                   ? `Since the Default environment's commit ${present().base?.slice(0, SHORT_COMMIT)}`
                   : 'Everything, as nothing is published yet'}
               </summary>
-              <pre class="mt-2 max-h-96 overflow-auto rounded-md border border-border bg-muted/30 py-2 font-mono text-[11px] leading-4">
+              <pre class="mt-2 max-h-96 overflow-auto rounded-md border border-border bg-muted/30 py-2 font-mono text-[0.6875rem] leading-4">
                 <For each={present().diff.split('\n')}>
                   {(line) => <div class={`whitespace-pre px-3 ${diffLineClass(line)}`}>{line || ' '}</div>}
                 </For>

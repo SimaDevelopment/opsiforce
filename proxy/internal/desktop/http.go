@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ func (m *Manager) Handler() http.Handler {
 	mux.HandleFunc("GET /sessions", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, m.List(r.Context()))
 	})
+	mux.HandleFunc("GET /sessions/events", m.events)
 	mux.HandleFunc("PATCH /sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Window string `json:"window"`
@@ -63,6 +65,49 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+const (
+	eventsCheckInterval = time.Second
+	eventsPingInterval  = 25 * time.Second
+)
+
+func (m *Manager) events(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	check := time.NewTicker(eventsCheckInterval)
+	defer check.Stop()
+	ping := time.NewTicker(eventsPingInterval)
+	defer ping.Stop()
+	last := ""
+	for {
+		body, err := json.Marshal(m.List(r.Context()))
+		if err == nil && string(body) != last {
+			last = string(body)
+			if _, err := io.WriteString(w, "data: "+last+"\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ping.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-check.C:
+		}
+	}
+}
+
 func (m *Manager) connect(w http.ResponseWriter, r *http.Request) {
 	if !websocket.IsWebSocketUpgrade(r) {
 		http.Error(w, "WebSocket required", http.StatusBadRequest)
@@ -72,7 +117,7 @@ func (m *Manager) connect(w http.ResponseWriter, r *http.Request) {
 	case m.viewers <- struct{}{}:
 		defer func() { <-m.viewers }()
 	default:
-		http.Error(w, "maximum of 10 connected viewers reached", http.StatusTooManyRequests)
+		http.Error(w, fmt.Sprintf("maximum of %d connected viewers reached", MaxViewers), http.StatusTooManyRequests)
 		return
 	}
 	m.mu.Lock()

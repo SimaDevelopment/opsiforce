@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FALLBACK_APP_PORT, agentAppPort, sharedAppPort, readMergedAgentRegistry } from '../src/agent/agent-config';
 import { buildPodSpec, type PodTemplateOptions } from '../src/pod/pod.template';
-import { resolvePreset, toK8sResources } from '../src/pod/pod-classes';
+import { JOB_POD_RESOURCES, toK8sResources } from '../src/pod/pod-classes';
 import { packageSkillNames } from '../src/store/skill-tree';
 
 const agentConfig = join(process.cwd(), '..', 'agent-config');
@@ -31,7 +31,7 @@ function baseOptions(overrides: Partial<PodTemplateOptions> = {}): PodTemplateOp
     cephfsPvcName: 'opsiforce-cephfs',
     storageMountPath: '/workspace-data',
     imagePullPolicy: 'IfNotPresent',
-    resources: toK8sResources(resolvePreset('small')),
+    resources: toK8sResources(JOB_POD_RESOURCES),
     ...overrides,
   };
 }
@@ -95,7 +95,7 @@ describe('the platform skill', () => {
     expect(section).toMatch(/never retry/i);
     expect(section).toContain("configure this Project's External Services");
     expect(section).toContain('`data`');
-    expect(section).toContain('Development changes go live on Publish');
+    expect(section).toContain('only for the services the user chooses in the Publish dialog');
   });
 
   it('leaves the Operation-era calls and refusal codes behind', () => {

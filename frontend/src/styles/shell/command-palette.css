@@ -1,0 +1,116 @@
+@layer components {
+  /* ==========================================================================
+     COMMAND PALETTE
+     ========================================================================== */
+  .of-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 180;
+    border: 0;
+    padding: 0;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur) var(--ease-standard);
+  }
+
+  .of-scrim[data-open='true'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .of-cmdk {
+    position: fixed;
+    z-index: 190;
+    left: 50%;
+    top: 14vh;
+    transform: translate(-50%, -8px) scale(0.98);
+    width: min(620px, calc(100vw - 32px));
+    max-height: 66vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-xl-of);
+    box-shadow: var(--shadow-floating), inset 0 0 0 1px var(--border-subtle);
+    opacity: 0;
+    pointer-events: none;
+    /* a closed aria-modal dialog must not expose its search field and its option
+       rows to the tab order, so visibility rides along with the fade */
+    visibility: hidden;
+    transition:
+      opacity var(--dur-slow) var(--ease-standard),
+      transform var(--dur-slow) var(--ease-spring),
+      visibility var(--dur-slow) var(--ease-standard);
+  }
+
+  .of-cmdk[data-open='true'] {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .of-cmdk-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .of-cmdk-top input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    font: var(--text-input);
+    letter-spacing: var(--ls-input);
+    color: var(--ink-strong);
+  }
+
+  .of-cmdk-top input:focus {
+    outline: none;
+  }
+
+  .of-cmdk-top input::placeholder {
+    color: var(--ink-subtle);
+  }
+
+  .of-cmdk-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  .of-cmdk-grp {
+    padding: 8px 8px 3px;
+    color: var(--ink-subtle);
+  }
+
+  .of-cmdk-row {
+    display: flex;
+    align-items: center;
+    gap: var(--row-gap);
+    width: 100%;
+    height: var(--row-h);
+    padding: 0 var(--row-pad);
+    border-radius: var(--control-radius);
+    color: var(--ink-default);
+    text-align: left;
+  }
+
+  .of-cmdk-row .lbl {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .of-cmdk-row[data-cursor='true'] {
+    background: var(--bg-element-selected);
+    color: var(--ink-strong);
+  }
+}

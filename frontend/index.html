@@ -2,13 +2,55 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="__BRAND_THEME_COLOR__" />
     <meta name="description" content="__BRAND_NAME__" />
     <link rel="icon" href="__BRAND_FAVICON__" />
     <link rel="apple-touch-icon" sizes="180x180" href="__BRAND_APPLE_TOUCH_ICON__" />
     <link rel="manifest" href="__BRAND_MANIFEST__" />
     <title>__BRAND_NAME__</title>
+    <script>
+      /* Appearance, applied before first paint so a dark-mode user never sees a
+         white flash. Mirrors src/lib/appearance.ts — keep the keys in sync. */
+      (function () {
+        try {
+          var root = document.documentElement;
+          var ls = window.localStorage;
+          var get = function (key, allowed, fallback) {
+            var v = ls.getItem(key);
+            return allowed.indexOf(v) === -1 ? fallback : v;
+          };
+          var mode = get('opsiforce:appearance:mode', ['light', 'dark', 'system'], 'system');
+          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          root.setAttribute('data-scheme', dark ? 'dark' : 'light');
+          root.setAttribute('data-contrast', get('opsiforce:appearance:contrast', ['softer', 'normal', 'high'], 'normal'));
+          root.setAttribute(
+            'data-density',
+            get('opsiforce:appearance:density', ['comfortable', 'default', 'compact'], 'comfortable')
+          );
+          var scale = { small: '0.92', default: '1', large: '1.08' };
+          root.style.setProperty(
+            '--font-scale',
+            scale[get('opsiforce:appearance:font-size', ['small', 'default', 'large'], 'default')]
+          );
+          var motion = get('opsiforce:appearance:motion', ['system', 'reduced', 'full'], 'system');
+          if (motion !== 'system') root.setAttribute('data-motion', motion);
+          /* Seeds need the OKLCH generator, which only the app has; paint with
+             the last tokens it made for these seeds and this scheme. */
+          var cache = JSON.parse(ls.getItem('opsiforce:appearance:seed-cache') || 'null');
+          var tokens = cache && cache[dark ? 'dark' : 'light'];
+          if (
+            tokens &&
+            cache.base === (ls.getItem('opsiforce:appearance:base-seed') || 'ink') &&
+            cache.accent === (ls.getItem('opsiforce:appearance:accent-seed') || 'brand')
+          ) {
+            for (var name in tokens) root.style.setProperty(name, tokens[name]);
+          }
+        } catch (e) {
+          /* private mode / blocked storage — the stylesheet defaults still apply */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

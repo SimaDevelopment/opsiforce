@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db';
 import { modelProviders, projectEnvironments, projectPodSettings, projects } from '../../db/schema';
 import { writeAgentPodSettings } from '../../src/agent/agent-pod-settings';
-import { resolvePodSettings } from '../../src/pod/pod-classes';
 import { BifrostService } from '../../src/bifrost/bifrost.service';
 import { ModelProvidersService } from '../../src/model-provider/model-provider.service';
 import { PodService } from '../../src/pod/pod.service';
@@ -301,7 +300,8 @@ describe('a pooled Project takes the Organization’s Model providers when it is
   it('records the Agent’s current Resources selection on the claimed Project, not the slot’s', async () => {
     const slotId = await provisionPoolSlot();
     await writeAgentPodSettings(db, agentId, {
-      podClass: 'custom',
+      presetId: null,
+      presetName: null,
       cpuMillicores: 100,
       memoryRequestMib: 2048,
       memoryLimitMib: 4096,
@@ -311,9 +311,9 @@ describe('a pooled Project takes the Organization’s Model providers when it is
 
       expect(projectId).toBe(slotId);
       const [row] = await db.select().from(projectPodSettings).where(eq(projectPodSettings.projectId, slotId));
-      expect(row.podClass).toBe('custom');
+      expect(row.presetId).toBeNull();
     } finally {
-      await writeAgentPodSettings(db, agentId, resolvePodSettings());
+      await writeAgentPodSettings(db, agentId, null);
     }
   });
 

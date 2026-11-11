@@ -17,6 +17,7 @@ spec:
         karpenter.sh/do-not-disrupt: "true"
       labels:
         app: {{ $name }}
+        opsiforce.io/reaches-agent-pods: "true"
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

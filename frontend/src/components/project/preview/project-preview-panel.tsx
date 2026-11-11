@@ -1,32 +1,23 @@
-import {
-  For,
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-  onMount,
-  type Accessor,
-  type JSX,
-} from 'solid-js';
+import { Show, createEffect, createSignal, on, onCleanup, onMount, type Accessor } from 'solid-js';
 import { DialogProvider } from '@opencode/ui/context/dialog';
 import { MarkedProvider } from '@opencode/ui/context/marked';
-import { PanelRightOpen, PanelRightClose, X } from '~/components/icons';
+import { ChevronLeft, PanelRightOpen } from '~/components/icons';
 import { ResizeHandle } from '~/components/ui/resize-handle';
+import { createElementWidth } from '~/lib/create-element-width';
 import { createResizablePanel } from '~/lib/create-resizable-panel';
+import { cn } from '~/lib/cn';
+import { PREVIEW_COLUMN } from '~/lib/pane-widths';
 import { AppPreviewPane } from './app-preview-pane';
 import { FilePreviewPane } from './file-preview-pane';
 import { DesktopPreviewPane } from './desktop-preview-pane';
-import { useDesktops } from '~/api/desktops';
+import { PreviewModeSwitch, type PreviewMode } from './preview-mode-switch';
+import { isAgentWaiting, isAgentWorking } from '~/api/agent-status';
+import { stopAgent, type DesktopSession } from '~/api/desktops';
 
 export interface FilePreviewRequest {
   path: string;
 }
-export interface PreviewColumn {
-  storageKey: string;
-  stripWidth: Accessor<number>;
-}
+
 export interface ProjectPreviewPanelProps {
   projectId: string;
   environmentId: string;
@@ -37,229 +28,248 @@ export interface ProjectPreviewPanelProps {
   onClosePreview: () => void;
   onReloadRef?: (reload: () => void) => void;
   onCloseOverlayRef?: (close: () => void) => void;
+  /** Lets the phone's bottom bar open the overlay, the way a tab is opened. */
+  onOpenOverlayRef?: (open: () => void) => void;
+  /** Reports the overlay's state, so the bottom bar can mark Preview as current. */
+  onOverlayChange?: (open: boolean) => void;
   overlayBackLabel: string;
+  /** On a phone the bottom bar is the way in and out: no side rail, no Back row. */
+  mobile?: boolean;
   column?: PreviewColumn;
-  desktopEnabled: boolean;
-  onContentsChange: (visible: boolean) => void;
+  /** The chat session the person has open, which Stop the agent interrupts. */
+  chatSessionId?: string;
+  /** The pod's desktop, shown as a third mode once it has a window or the agent presents it. */
+  desktop?: DesktopSession;
 }
-export const PROJECT_PANE_MIN_WIDTH = 640;
+
+export interface PreviewColumn {
+  storageKey: string;
+  stripWidth: Accessor<number>;
+}
+
+const BROWSER_APPS = new Set(['chromium', 'chromium-browser', 'google-chrome', 'firefox']);
+const MIN_PREVIEW_WIDTH = 320;
+const MIN_CONTENT_WIDTH = 320;
+
+export const PROJECT_PANE_MIN_WIDTH = MIN_PREVIEW_WIDTH + MIN_CONTENT_WIDTH;
+
+function layoutParent(element: Element | undefined) {
+  let parent = element?.parentElement;
+  while (parent && getComputedStyle(parent).display === 'contents') parent = parent.parentElement;
+  return parent;
+}
 
 export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
-  const [files, setFiles] = createSignal<string[]>([]);
-  const [windowViews, setWindowViews] = createSignal<string[]>([]);
-  const [collapsed, setCollapsed] = createSignal<string[]>([]);
-  const desktops = useDesktops(
-    () => props.environmentId,
-    () => props.desktopEnabled
+  const [docked, setDocked] = createSignal(true);
+  const [overlaid, setOverlaid] = createSignal(false);
+  const [mode, setMode] = createSignal<PreviewMode>('app');
+
+  let anchor: HTMLSpanElement | undefined;
+  const containerWidth = createElementWidth(
+    () => layoutParent(anchor),
+    typeof window === 'undefined' ? PROJECT_PANE_MIN_WIDTH : window.innerWidth
   );
-  const sessions = () => desktops.data ?? [];
-  const sessionFor = (id: string) => sessions().find((s) => s.id === id.slice(8).split('/')[0]);
-  const windowFor = (id: string) => id.slice(8).split('/')[1] || '';
-  const ids = createMemo(() => [
-    ...(props.hasApp ? ['app'] : []),
-    ...files().map((path) => `file:${path}`),
-    ...sessions()
-      .filter((s) => s.visible)
-      .map((s) => `desktop:${s.id}`),
-    ...windowViews().filter((id) => sessionFor(id)?.windows.some((w) => w.id === windowFor(id))),
-  ]);
-  createEffect(() => props.onContentsChange(ids().length > 0));
-  const label = (id: string) =>
-    id === 'app'
-      ? props.appName || 'App'
-      : id.startsWith('file:')
-        ? id.slice(5).split('/').pop() || 'File'
-        : windowFor(id)
-          ? sessionFor(id)?.windows.find((w) => w.id === windowFor(id))?.title || 'Window'
-          : sessionFor(id)?.title || 'Desktop';
-  function expand(id: string) {
-    setCollapsed((current) => current.filter((item) => item !== id));
-  }
-  function openWindow(sessionId: string, window: string) {
-    const id = `desktop:${sessionId}/${window}`;
-    setWindowViews((current) => (current.includes(id) ? current : [...current, id]));
-    expand(id);
-  }
-  function close(id: string) {
-    if (id.startsWith('file:')) {
-      setFiles((current) => current.filter((path) => `file:${path}` !== id));
-      if (props.previewRequest?.path === id.slice(5)) props.onClosePreview();
-    } else setWindowViews((current) => current.filter((item) => item !== id));
-  }
-  let presentations = new Map<string, number>();
-  createEffect(
-    on(
-      () => props.environmentId,
-      () => {
-        presentations = new Map();
-        setFiles([]);
-        setWindowViews([]);
-        setCollapsed([]);
-      }
-    )
-  );
-  createEffect(() => {
-    for (const session of sessions()) {
-      const previous = presentations.get(session.id);
-      presentations.set(session.id, session.presentation);
-      if (session.visible && session.presentation > 0 && previous !== session.presentation) {
-        if (session.preferredWindow) openWindow(session.id, session.preferredWindow);
-        else expand(`desktop:${session.id}`);
-      }
-    }
-  });
+
+  const column = props.column;
+  const panel = column
+    ? createResizablePanel({
+        storageKey: column.storageKey,
+        minWidth: () => Math.min(PREVIEW_COLUMN.min, column.stripWidth()),
+        defaultWidth: () => Math.min(PREVIEW_COLUMN.default, column.stripWidth()),
+        maxWidth: column.stripWidth,
+        direction: 'right',
+      })
+    : createResizablePanel({
+        storageKey: 'opsiforce:preview-width',
+        minWidth: MIN_PREVIEW_WIDTH,
+        defaultWidth: () => Math.round(containerWidth() * 0.4),
+        maxWidth: () => containerWidth() - MIN_CONTENT_WIDTH,
+        direction: 'left',
+      });
+
+  const previewPath = () => props.previewRequest?.path ?? null;
+  const desktop = () => (props.desktop?.visible ? props.desktop : undefined);
+  const [desktopWindow, setDesktopWindow] = createSignal('');
+  const desktopLabel = () =>
+    desktop()?.windows.every((window) => BROWSER_APPS.has(window.app.toLowerCase())) ? 'Browser' : 'Screen';
+
+  const modes = (): PreviewMode[] => [
+    ...(props.hasApp ? (['app'] as const) : []),
+    ...(previewPath() !== null ? (['file'] as const) : []),
+    ...(desktop() ? (['desktop'] as const) : []),
+  ];
+  const current = (): PreviewMode => (modes().includes(mode()) ? mode() : (modes()[0] ?? 'app'));
+
+  // On a phone the preview is always the overlay the bottom bar opens and
+  // closes, whatever the width or the pane strip would allow: a docked column
+  // at 640-767px, or in a Builder's strip, is one the bar cannot mark or close.
+  const fitsBesideContent = () => !props.mobile && (column !== undefined || containerWidth() >= PROJECT_PANE_MIN_WIDTH);
+  const open = () => (fitsBesideContent() ? docked() : overlaid());
+  const setOpen = (next: boolean) => (fitsBesideContent() ? setDocked(next) : setOverlaid(next));
+  const [opened, setOpened] = createSignal(false);
+  createEffect(() => open() && setOpened(true));
+
+  createEffect(on(fitsBesideContent, (fits) => fits && setOverlaid(false), { defer: true }));
+  onMount(() => props.onCloseOverlayRef?.(() => setOverlaid(false)));
+  onMount(() => props.onOpenOverlayRef?.(() => setOverlaid(true)));
+  createEffect(() => props.onOverlayChange?.(overlaid()));
+  // The panel unmounts when nothing is left to show (a closed file in a project
+  // with no App yet); the bar must not keep marking Preview as current.
+  onCleanup(() => props.onOverlayChange?.(false));
+
   createEffect(
     on(
       () => props.previewRequest,
       (request) => {
-        if (!request) return;
-        setFiles((current) => (current.includes(request.path) ? current : [...current, request.path]));
-        expand(`file:${request.path}`);
+        if (request === null) {
+          setMode('app');
+          setOverlaid(false);
+          return;
+        }
+        setMode('file');
+        setOpen(true);
       }
     )
   );
-  // There is no overlay now: each preview occupies an independent column.
-  onMount(() => props.onCloseOverlayRef?.(() => {}));
+
+  let presented: number | undefined;
+  createEffect(
+    on(
+      () => props.desktop?.presentation,
+      (count) => {
+        const session = props.desktop;
+        if (count === undefined || session === undefined) {
+          presented = undefined;
+          return;
+        }
+        const isNew = presented !== undefined && count > presented;
+        presented = count;
+        if (!isNew || !session.visible) return;
+        setDesktopWindow(session.preferredWindow);
+        setMode('desktop');
+        setOpen(true);
+      }
+    )
+  );
+
+  const collapsedLabel = () => (props.hasApp ? 'Show app preview' : 'Open panel');
+
+  const switcher = () => (
+    <Show when={modes().length > 1}>
+      <PreviewModeSwitch modes={modes()} mode={current()} onChange={setMode} labels={{ desktop: desktopLabel() }} />
+    </Show>
+  );
+  const onCollapse = () => (fitsBesideContent() ? () => setDocked(false) : undefined);
 
   return (
     <DialogProvider>
       <MarkedProvider>
-        <For each={ids()}>
-          {(id) => (
-            <PreviewColumnPane
-              title={label(id)}
-              storageKey={`${props.column?.storageKey || 'opsiforce:preview'}:${id}`}
-              maxWidth={() => props.column?.stripWidth() || window.innerWidth}
-              collapsed={collapsed().includes(id)}
-              onCollapse={() => setCollapsed((current) => [...current, id])}
-              onExpand={() => expand(id)}
-              onClose={id.startsWith('file:') || windowFor(id) ? () => close(id) : undefined}
-            >
-              {(visible) => (
-                <>
-                  <Show when={id === 'app'}>
-                    <AppPreviewPane
-                      projectId={props.projectId}
-                      environmentId={props.environmentId}
-                      publicUrl={props.publicUrl}
-                      appName={props.appName}
-                      onReloadRef={props.onReloadRef}
-                    />
-                  </Show>
-                  <Show when={id.startsWith('file:')}>
-                    <FilePreviewPane
-                      projectId={props.projectId}
-                      environmentId={props.environmentId}
-                      path={id.slice(5)}
-                      onClose={() => close(id)}
-                    />
-                  </Show>
-                  <Show when={id.startsWith('desktop:') && sessionFor(id)}>
-                    {(session) => (
-                      <DesktopPreviewPane
-                        environmentId={props.environmentId}
-                        session={session()}
-                        visible={visible()}
-                        windowId={windowFor(id)}
-                        onOpenWindow={(window) => openWindow(session().id, window)}
-                      />
-                    )}
-                  </Show>
-                </>
-              )}
-            </PreviewColumnPane>
-          )}
-        </For>
-      </MarkedProvider>
-    </DialogProvider>
-  );
-}
-
-function PreviewColumnPane(props: {
-  title: string;
-  storageKey: string;
-  maxWidth: () => number;
-  collapsed: boolean;
-  onCollapse: () => void;
-  onExpand: () => void;
-  onClose?: () => void;
-  children: (visible: Accessor<boolean>) => JSX.Element;
-}) {
-  const panel = createResizablePanel({
-    storageKey: props.storageKey,
-    minWidth: () => Math.min(320, props.maxWidth()),
-    defaultWidth: () => Math.min(480, props.maxWidth()),
-    maxWidth: props.maxWidth,
-    direction: 'right',
-  });
-  const [inView, setInView] = createSignal(false);
-  let element: HTMLElement | undefined;
-  onMount(() => {
-    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.01 });
-    if (element) observer.observe(element);
-    const frame = requestAnimationFrame(() => element?.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
-    onCleanup(() => cancelAnimationFrame(frame));
-    onCleanup(() => observer.disconnect());
-  });
-  return (
-    <section
-      ref={element}
-      aria-label={`${props.title} preview`}
-      class="relative flex h-full shrink-0 snap-start flex-col border-l border-border bg-background"
-      style={{ width: props.collapsed ? '36px' : `${panel.width()}px` }}
-    >
-      <Show
-        when={props.collapsed}
-        fallback={
-          <div class="flex h-9 shrink-0 items-center gap-2 border-b border-border bg-sidebar px-2">
-            <span class="min-w-0 flex-1 truncate text-xs font-medium" title={props.title}>
-              {props.title}
+        <span ref={anchor} hidden />
+        <Show when={!open() && !props.mobile}>
+          <button
+            onClick={() => setOpen(true)}
+            class={cn(
+              'shrink-0 w-9 bg-sidebar border-l border-border flex flex-col items-center justify-center gap-2 hover:bg-accent transition-colors',
+              column && 'snap-start'
+            )}
+            title={collapsedLabel()}
+            aria-label={collapsedLabel()}
+          >
+            <PanelRightOpen class="w-4 h-4 text-muted-foreground" />
+            <span class="text-xs text-muted-foreground [writing-mode:vertical-rl]">
+              {props.hasApp ? 'App preview' : 'Open panel'}
             </span>
-            <button
-              type="button"
-              class="rounded p-1 hover:bg-accent"
-              aria-label={`Collapse ${props.title}`}
-              onClick={props.onCollapse}
+          </button>
+        </Show>
+        <Show when={opened()}>
+          <div
+            class={cn(
+              'flex flex-col bg-background',
+              !fitsBesideContent()
+                ? 'absolute inset-0 z-20'
+                : cn('relative shrink-0 border-l border-border', column ? 'snap-start pr-2' : 'pl-2')
+            )}
+            style={{
+              display: open() ? undefined : 'none',
+              width: fitsBesideContent() ? `${panel.width()}px` : undefined,
+            }}
+          >
+            <Show
+              when={fitsBesideContent()}
+              fallback={
+                <Show when={!props.mobile}>
+                  <button
+                    type="button"
+                    onClick={() => setOverlaid(false)}
+                    class="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <ChevronLeft class="h-4 w-4" />
+                    {props.overlayBackLabel}
+                  </button>
+                </Show>
+              }
             >
-              <PanelRightClose class="h-3.5 w-3.5" />
-            </button>
-            <Show when={props.onClose}>
-              {(close) => (
-                <button
-                  type="button"
-                  class="rounded p-1 hover:bg-accent"
-                  aria-label={`Close ${props.title}`}
-                  onClick={close()}
+              <ResizeHandle
+                onPointerDown={panel.startResize}
+                resizing={panel.resizing()}
+                position={column ? 'right' : 'left'}
+                panel={panel}
+                label="Resize the preview"
+              />
+            </Show>
+
+            <Show when={props.hasApp}>
+              <div class="flex-1 min-h-0 flex flex-col" style={{ display: current() === 'app' ? 'flex' : 'none' }}>
+                <AppPreviewPane
+                  projectId={props.projectId}
+                  environmentId={props.environmentId}
+                  publicUrl={props.publicUrl}
+                  appName={props.appName}
+                  switcher={switcher()}
+                  onCollapse={onCollapse()}
+                  onReloadRef={props.onReloadRef}
+                />
+              </div>
+            </Show>
+
+            <Show when={previewPath()}>
+              {(path) => (
+                <div class="flex-1 min-h-0 flex flex-col" style={{ display: current() === 'file' ? 'flex' : 'none' }}>
+                  <FilePreviewPane
+                    projectId={props.projectId}
+                    environmentId={props.environmentId}
+                    path={path()}
+                    switcher={switcher()}
+                    onClose={props.onClosePreview}
+                  />
+                </div>
+              )}
+            </Show>
+
+            <Show when={desktop()}>
+              {(session) => (
+                <div
+                  class="flex-1 min-h-0 flex flex-col"
+                  style={{ display: current() === 'desktop' ? 'flex' : 'none' }}
                 >
-                  <X class="h-3.5 w-3.5" />
-                </button>
+                  <DesktopPreviewPane
+                    environmentId={props.environmentId}
+                    session={session()}
+                    visible={open() && current() === 'desktop' && !props.mobile}
+                    windowId={desktopWindow()}
+                    onSelectWindow={setDesktopWindow}
+                    switcher={switcher()}
+                    onCollapse={onCollapse()}
+                    agentWorking={isAgentWorking(props.projectId) && !isAgentWaiting(props.projectId)}
+                    onStopAgent={() => stopAgent(props.environmentId, props.chatSessionId)}
+                    mobile={props.mobile === true}
+                  />
+                </div>
               )}
             </Show>
           </div>
-        }
-      >
-        <button
-          type="button"
-          class="flex h-full flex-col items-center justify-center gap-2 bg-sidebar hover:bg-accent"
-          aria-label={`Expand ${props.title}`}
-          onClick={props.onExpand}
-        >
-          <PanelRightOpen class="h-4 w-4" />
-          <span class="text-xs [writing-mode:vertical-rl]">{props.title}</span>
-        </button>
-      </Show>
-      <div class="min-h-0 flex-1 flex-col pr-1" style={{ display: props.collapsed ? 'none' : 'flex' }}>
-        {props.children(() => !props.collapsed && inView())}
-      </div>
-      <Show when={!props.collapsed}>
-        <ResizeHandle
-          onPointerDown={panel.startResize}
-          resizing={panel.resizing()}
-          position="right"
-          panel={panel}
-          label={`Resize ${props.title}`}
-        />
-      </Show>
-    </section>
+        </Show>
+      </MarkedProvider>
+    </DialogProvider>
   );
 }

@@ -24,6 +24,11 @@ data:
   STORAGE_CLAIM_SIZE: {{ .Values.config.storageClaimSize | default "" | quote }}
   AGENT_PRIVILEGED: {{ .Values.config.agentPrivileged | default false | quote }}
   AGENT_RUNTIME_CLASS_NAME: {{ .Values.config.agentRuntimeClassName | default "" | quote }}
+  {{- with .Values.config.agentMaxResources }}
+  AGENT_MAX_CPU_MILLICORES: {{ .cpuMillicores | quote }}
+  AGENT_MAX_MEMORY_REQUEST_MIB: {{ .memoryRequestMib | quote }}
+  AGENT_MAX_MEMORY_LIMIT_MIB: {{ .memoryLimitMib | quote }}
+  {{- end }}
   AGENT_WORKSPACE_UPDATE_ON_STARTUP: {{ .Values.config.agentWorkspaceUpdateOnStartup | default "true" | quote }}
   AGENT_UPDATE_JOB_TIMEOUT_MS: {{ .Values.config.agentUpdateJobTimeoutMs | default "1800000" | quote }}
   {{- if .Values.config.agentNodeSelector }}
@@ -62,10 +67,12 @@ data:
   {{- if .Values.config.podCaBundleConfigMap }}
   POD_CA_BUNDLE_CONFIGMAP: {{ .Values.config.podCaBundleConfigMap | quote }}
   {{- end }}
+  {{- if .Values.config.podBrowserIgnoresHttpsErrors }}
+  POD_BROWSER_IGNORE_HTTPS_ERRORS: "true"
+  {{- end }}
   {{- if ne (toString .Values.config.externalServiceCallLogRetentionDays) "" }}
   EXTERNAL_SERVICE_CALL_LOG_RETENTION_DAYS: {{ .Values.config.externalServiceCallLogRetentionDays | quote }}
   {{- end }}
-  {{- /* TODO: remove in the release after External Services v2 ships: MAILGUN_* and WHAPI_API_URL below (dead /api/gateway email provider + one-time v1 importers) */}}
   {{- if .Values.config.mailgunDomain }}
   MAILGUN_DOMAIN: {{ .Values.config.mailgunDomain | quote }}
   {{- end }}
@@ -94,14 +101,12 @@ data:
   {{- if .Values.config.webappServicePort }}
   WEBAPP_SERVICE_PORT: {{ .Values.config.webappServicePort | quote }}
   {{- end }}
-  {{- if .Values.config.managedOidcClientId }}
-  MANAGED_OIDC_CLIENT_ID: {{ .Values.config.managedOidcClientId | quote }}
+  APP_USERS_PROVIDER_INTERNAL_URL: {{ .Values.config.appUsersProviderInternalUrl | default (printf "http://%s.%s.svc.cluster.local:%v" (include "opsiforce-backend.serviceName" .) .Release.Namespace .Values.backend.containerPort) | quote }}
+  {{- if .Values.config.customDomainsClusterIssuer }}
+  CUSTOM_DOMAINS_CLUSTER_ISSUER: {{ .Values.config.customDomainsClusterIssuer | quote }}
   {{- end }}
-  {{- if .Values.config.managedOidcIssuerUrl }}
-  MANAGED_OIDC_ISSUER_URL: {{ .Values.config.managedOidcIssuerUrl | quote }}
-  {{- end }}
-  {{- if .Values.config.managedTenantRolePrefix }}
-  MANAGED_TENANT_ROLE_PREFIX: {{ .Values.config.managedTenantRolePrefix | quote }}
+  {{- if .Values.config.customDomainsRefused }}
+  CUSTOM_DOMAINS_REFUSED: {{ .Values.config.customDomainsRefused | quote }}
   {{- end }}
   {{- if .Values.config.ssoGroupMap }}
   SSO_GROUP_MAP: {{ .Values.config.ssoGroupMap | quote }}

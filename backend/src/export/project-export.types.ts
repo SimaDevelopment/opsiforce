@@ -1,4 +1,3 @@
-import type { PodClass } from '../pod/pod-classes';
 import type { RequestLogMode } from '../project/project.types';
 
 export const PROJECT_EXPORT_QUEUE = 'project-export';
@@ -58,8 +57,10 @@ export interface ExportManifestSettings {
   requestLogBodyLimit: number;
 }
 
+/** Bundles exported before resource presets carry `podClass` instead of `presetName`. */
 export interface ExportManifestResources {
-  podClass: PodClass;
+  presetName?: string | null;
+  podClass?: string;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
@@ -88,6 +89,12 @@ export interface ExportManifestAgent {
   package: string;
 }
 
+export interface ExportManifestOwner {
+  path: string;
+  uid: number;
+  gid: number;
+}
+
 /** Older archives carry no `kind`; a manifest without one is a Project export. */
 export const PROJECT_EXPORT_KIND = 'project';
 
@@ -102,5 +109,7 @@ export interface ExportManifest {
   resources: ExportManifestResources;
   appDetails: ExportManifestAppDetails | null;
   schedules: ExportManifestSchedule[];
+  /** Workspace entries owned by someone other than the exporting backend; zip entries carry modes only. */
+  owners?: ExportManifestOwner[];
   stamp: ExportManifestStamp;
 }

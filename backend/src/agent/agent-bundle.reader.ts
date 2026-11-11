@@ -7,7 +7,8 @@ import { agentProfileSkills, skills } from '../../db/schema';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { parseFrontmatter, splitLines } from '../store/gate/frontmatter';
 import { builtInProfileFor, developmentEnvironmentId } from '../store/agent-profile.repository';
-import { agentConfigRoot, packageSkillNames } from '../store/skill-tree';
+import { SkillAvailability } from '../store/skill-availability';
+import { agentConfigRoot } from '../store/skill-tree';
 import { SkillRepository } from '../store/skill.repository';
 import { defaultProfileModel, readMergedAgentRegistry } from './agent-config';
 import { AgentRepository } from './agent.repository';
@@ -20,7 +21,8 @@ export class AgentBundleReader {
   constructor(
     private readonly repository: AgentRepository,
     private readonly templates: AgentTemplateStore,
-    private readonly skills: SkillRepository
+    private readonly skills: SkillRepository,
+    private readonly skillAvailability: SkillAvailability
   ) {}
 
   async read(agent: AgentRow, tenantId: string): Promise<AgentBundle> {
@@ -45,13 +47,13 @@ export class AgentBundleReader {
       },
       skills: await pinnedSkills(profile.id),
       template: template ? { hash: template.hash, sourceDir: template.directory } : null,
-      projectSettings: await readAgentProjectSettings(agent.id),
+      projectSettings: await readAgentProjectSettings(agent.id, tenantId),
     };
   }
 
   private async readBuiltIn(agent: AgentRow, tenantId: string): Promise<AgentBundle> {
     const parked = await builtInProfileFor(agent.id, tenantId);
-    const shipped = await this.skills.builtInLatestVersions([...packageSkillNames(agent.name)]);
+    const shipped = await this.skills.builtInLatestVersions([...this.skillAvailability.packageSkillNames(agent.name)]);
     const byName = new Map([...shipped, ...(await pinnedSkills(parked.id))].map((skill) => [skill.name, skill]));
 
     return {
@@ -62,7 +64,7 @@ export class AgentBundleReader {
       profile: { promptBody: readPromptBody(agent.name), ...registryModel(agent.name) },
       skills: [...byName.values()].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: await this.packageTemplate(agent.name),
-      projectSettings: await readAgentProjectSettings(agent.id),
+      projectSettings: await readAgentProjectSettings(agent.id, tenantId),
     };
   }
 

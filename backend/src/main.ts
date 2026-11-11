@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { assertModelCatalogShipped } from './agent/agent-models';
 import { AppModule } from './app.module';
+import { enablePlatformCors } from './common/platform-cors';
 import { registerBuiltInsAdapterRoutes } from './external-services/built-ins/built-ins-routes';
 import { requirePermissionHook } from './permission/permission.hook';
 import { configurePublicApi, createHttpAdapter } from './public-api/public-api.bootstrap';
@@ -38,10 +39,7 @@ async function bootstrap() {
 
   fastify.addHook('onRequest', requirePermissionHook('/api/admin/queues', 'can_view_queue_dashboard'));
 
-  app.enableCors({
-    origin: true,
-    credentials: true,
-  });
+  enablePlatformCors(app);
 
   await app.listen(3001, '0.0.0.0');
 }

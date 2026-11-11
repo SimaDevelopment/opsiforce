@@ -20,17 +20,27 @@ export const unrefTimer: StartTimer = (task, delayMs) => {
   return () => clearTimeout(timer);
 };
 
-interface WorkingEnvironment {
+interface WatchedEnvironment {
   projectId: string;
   runningSessions: Set<string>;
+  pendingRequests: Set<string>;
   observations: number;
   cancelReread: (() => void) | null;
+}
+
+interface EnvironmentLevel {
+  working: boolean;
+  waiting: boolean;
+}
+
+function levelOf(watched: WatchedEnvironment | undefined): EnvironmentLevel {
+  return { working: (watched?.runningSessions.size ?? 0) > 0, waiting: (watched?.pendingRequests.size ?? 0) > 0 };
 }
 
 @Injectable()
 export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(AgentStatusService.name);
-  private readonly workingEnvironments = new Map<string, WorkingEnvironment>();
+  private readonly watchedEnvironments = new Map<string, WatchedEnvironment>();
   private readonly reconcileRetries = new Map<string, number>();
   private readonly reconcileTimers = new Map<string, NodeJS.Timeout>();
 
@@ -55,93 +65,127 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
     }
     this.reconcileTimers.clear();
     this.reconcileRetries.clear();
-    for (const working of this.workingEnvironments.values()) {
-      working.cancelReread?.();
+    for (const watched of this.watchedEnvironments.values()) {
+      watched.cancelReread?.();
     }
-    this.workingEnvironments.clear();
+    this.watchedEnvironments.clear();
   }
 
   runStarted(projectId: string, environmentId: string, sessionId: string): void {
     this.holdPod(environmentId);
-    const working = this.workingEnvironments.get(environmentId);
-    if (working) {
-      working.observations += 1;
-      working.runningSessions.add(sessionId);
-      return;
-    }
-    this.replaceRunningSessions(projectId, environmentId, [sessionId]);
+    this.change(projectId, environmentId, (watched) => watched.runningSessions.add(sessionId));
   }
 
   runEnded(projectId: string, environmentId: string, sessionId: string): void {
-    const working = this.workingEnvironments.get(environmentId);
-    if (!working?.runningSessions.has(sessionId)) return;
-    working.observations += 1;
-    working.runningSessions.delete(sessionId);
-    if (working.runningSessions.size > 0) return;
-    this.replaceRunningSessions(projectId, environmentId, []);
-    this.holdPod(environmentId);
+    if (!this.watchedEnvironments.get(environmentId)?.runningSessions.has(sessionId)) return;
+    this.change(projectId, environmentId, (watched) => watched.runningSessions.delete(sessionId));
+    if (!levelOf(this.watchedEnvironments.get(environmentId)).working) this.holdPod(environmentId);
+  }
+
+  inputRequested(projectId: string, environmentId: string, requestId: string): void {
+    this.change(projectId, environmentId, (watched) => watched.pendingRequests.add(requestId));
+  }
+
+  inputResolved(projectId: string, environmentId: string, requestId: string): void {
+    if (!this.watchedEnvironments.get(environmentId)?.pendingRequests.has(requestId)) return;
+    this.change(projectId, environmentId, (watched) => watched.pendingRequests.delete(requestId));
   }
 
   clear(projectId: string, environmentId: string): void {
-    this.replaceRunningSessions(projectId, environmentId, []);
+    this.replace(projectId, environmentId, [], []);
   }
 
   statusOf(projectId: string): AgentStatus {
     return this.workingEnvironmentsOf(projectId).size > 0 ? AgentStatus.Working : AgentStatus.Idle;
   }
 
+  waitingForInput(projectId: string): boolean {
+    for (const watched of this.watchedEnvironments.values()) {
+      if (watched.projectId === projectId && levelOf(watched).waiting) return true;
+    }
+    return false;
+  }
+
   workingEnvironmentsOf(projectId: string): Set<string> {
     const environments = new Set<string>();
-    for (const [environmentId, working] of this.workingEnvironments) {
-      if (working.projectId === projectId) environments.add(environmentId);
+    for (const [environmentId, watched] of this.watchedEnvironments) {
+      if (watched.projectId === projectId && levelOf(watched).working) environments.add(environmentId);
     }
     return environments;
   }
 
-  private replaceRunningSessions(projectId: string, environmentId: string, sessionIds: string[]): void {
-    const previous = this.workingEnvironments.get(environmentId);
-    previous?.cancelReread?.();
-    this.workingEnvironments.delete(environmentId);
+  private change(projectId: string, environmentId: string, edit: (watched: WatchedEnvironment) => void): void {
+    const existing = this.watchedEnvironments.get(environmentId);
+    const before = levelOf(existing);
+    const watched = existing ?? this.watch(projectId, environmentId);
+    watched.observations += 1;
+    edit(watched);
+    const after = levelOf(watched);
+    if (!after.working && !after.waiting) this.unwatch(environmentId);
+    this.publishIfChanged(projectId, before, after);
+  }
 
-    if (sessionIds.length > 0) {
-      const working: WorkingEnvironment = {
-        projectId,
-        runningSessions: new Set(sessionIds),
-        observations: 0,
-        cancelReread: null,
-      };
-      this.workingEnvironments.set(environmentId, working);
-      this.scheduleReread(environmentId, working);
+  private replace(projectId: string, environmentId: string, sessionIds: string[], requestIds: string[]): void {
+    const before = levelOf(this.watchedEnvironments.get(environmentId));
+    this.unwatch(environmentId);
+    if (sessionIds.length > 0 || requestIds.length > 0) {
+      const watched = this.watch(projectId, environmentId);
+      for (const sessionId of sessionIds) watched.runningSessions.add(sessionId);
+      for (const requestId of requestIds) watched.pendingRequests.add(requestId);
     }
+    this.publishIfChanged(projectId, before, levelOf(this.watchedEnvironments.get(environmentId)));
+  }
 
-    const wasWorking = previous !== undefined;
-    const isWorking = sessionIds.length > 0;
-    if (wasWorking !== isWorking) {
+  private watch(projectId: string, environmentId: string): WatchedEnvironment {
+    const watched: WatchedEnvironment = {
+      projectId,
+      runningSessions: new Set(),
+      pendingRequests: new Set(),
+      observations: 0,
+      cancelReread: null,
+    };
+    this.watchedEnvironments.set(environmentId, watched);
+    this.scheduleReread(environmentId, watched);
+    return watched;
+  }
+
+  private unwatch(environmentId: string): void {
+    this.watchedEnvironments.get(environmentId)?.cancelReread?.();
+    this.watchedEnvironments.delete(environmentId);
+  }
+
+  private publishIfChanged(projectId: string, before: EnvironmentLevel, after: EnvironmentLevel): void {
+    if (before.working !== after.working || before.waiting !== after.waiting) {
       void this.projectEvents.publish(projectId);
     }
   }
 
-  private scheduleReread(environmentId: string, working: WorkingEnvironment): void {
-    working.cancelReread = this.startTimer(() => this.reread(environmentId, working), AGENT_STATUS_REREAD_MS);
+  private scheduleReread(environmentId: string, watched: WatchedEnvironment): void {
+    watched.cancelReread = this.startTimer(() => this.reread(environmentId, watched), AGENT_STATUS_REREAD_MS);
   }
 
-  private async reread(environmentId: string, working: WorkingEnvironment): Promise<void> {
-    working.cancelReread = null;
-    const observationsBefore = working.observations;
+  private async reread(environmentId: string, watched: WatchedEnvironment): Promise<void> {
+    watched.cancelReread = null;
+    const observationsBefore = watched.observations;
     const env = await this.projectEnvironmentService.findByIdOrNull(environmentId).catch(() => null);
-    const runningSessions = env ? await this.readRunningSessions(env) : [];
+    const [runningSessions, pendingRequests] = env
+      ? await Promise.all([this.readRunningSessions(env), this.readPendingRequests(env)])
+      : [[], []];
 
-    if (this.workingEnvironments.get(environmentId) !== working) return;
+    if (this.watchedEnvironments.get(environmentId) !== watched) return;
     if (env && hasRunningPod(env)) this.holdPod(environmentId);
-    if (working.observations !== observationsBefore) {
-      this.scheduleReread(environmentId, working);
+    if (watched.observations !== observationsBefore) {
+      this.scheduleReread(environmentId, watched);
       return;
     }
-    this.replaceRunningSessions(working.projectId, environmentId, runningSessions);
+    this.replace(watched.projectId, environmentId, runningSessions, pendingRequests);
   }
 
   private holdPod(environmentId: string): void {
-    this.timeouts.touch(environmentId).catch((err) => {
+    Promise.all([
+      this.timeouts.touch(environmentId),
+      this.projectEnvironmentService.touchActivity(environmentId),
+    ]).catch((err) => {
       this.logger.warn(`Agent keep-alive touch of ${environmentId} failed: ${(err as Error).message}`);
     });
   }
@@ -152,6 +196,16 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
       return (await this.agentSessions.activeSessions(env)).sessionIds;
     } catch (err) {
       this.logger.warn(`Agent status re-read of ${env.id} found no reachable pod: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
+  private async readPendingRequests(env: ProjectEnvironmentContext): Promise<string[]> {
+    if (!hasRunningPod(env)) return [];
+    try {
+      return await this.agentSessions.pendingInputRequests(env);
+    } catch (err) {
+      this.logger.warn(`Agent status re-read of ${env.id} could not list pending input: ${(err as Error).message}`);
       return [];
     }
   }
@@ -172,8 +226,11 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async reconcileEnvironment(env: ProjectEnvironmentContext): Promise<boolean> {
-    const { sessionIds, busy } = await this.agentSessions.activeSessions(env);
-    if (busy) this.replaceRunningSessions(env.projectId, env.id, sessionIds);
+    const [{ sessionIds, busy }, requestIds] = await Promise.all([
+      this.agentSessions.activeSessions(env),
+      this.agentSessions.pendingInputRequests(env),
+    ]);
+    if (busy || requestIds.length > 0) this.replace(env.projectId, env.id, sessionIds, requestIds);
     return busy;
   }
 

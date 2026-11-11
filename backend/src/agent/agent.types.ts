@@ -1,10 +1,12 @@
 import type { EnvironmentTemplate, TemplateComparison } from '../agent-template/agent-template.types';
 import type { AgentServiceSettings } from '../../db/schema';
 import type { SkillFlags } from '../store/gate';
-import type { SwitchableService } from '../store/service-switch-catalog';
+import type { ServiceConfigurationOptions, SettableService } from '../store/service-settings-catalog';
 import type { AgentImportNote } from './agent-import';
 import type { PodClassSelection, PodSettings } from '../pod/pod-classes';
 import type { AgentProjectSettingsChoice } from './agent-copy-settings';
+import type { AgentResourcesSource } from './agent-pod-settings';
+import type { AgentInactivityCleanup, InactivityCleanup, InactivityCleanupGrants } from '../project/inactivity-cleanup';
 export type { AgentRow } from './agent-visibility';
 
 export interface AgentResponse {
@@ -33,6 +35,7 @@ export interface AgentProfileSkillResponse {
   skillId: string;
   name: string;
   displayName: string | null;
+  origin: string;
   /** The Version row the pin points at — what an Undo after Remove re-pins, rather than the latest. */
   pinnedVersionId: string;
   pinnedVersion: number;
@@ -43,7 +46,11 @@ export interface AgentProfileSkillResponse {
   flags: SkillFlags;
   externalServiceId: string | null;
   serviceSettings: AgentServiceSettings | null;
+  /** The service connects every new Project even when `serviceSettings` is null (ADR-0095). */
+  serviceConnectedByDefault: boolean;
 }
+
+export type CarriedSkillRow = Omit<AgentProfileSkillResponse, 'serviceConnectedByDefault'>;
 
 export interface AgentProfileResponse {
   environmentId: string;
@@ -87,9 +94,13 @@ export interface ShippedSkillResponse {
 export interface AgentDetail extends AgentSummary {
   settings: AgentSettingsResponse;
   podSettings: PodSettings;
+  podSettingsSource: AgentResourcesSource;
+  inheritedPodSettings: PodSettings;
+  platformChoice: PodSettings | null;
   profiles: AgentProfileResponse[];
   shippedSkills: ShippedSkillResponse[];
   projectCount: number;
+  inactivityCleanup: AgentInactivityCleanup;
 }
 
 export interface AgentDuplicateResult {
@@ -124,8 +135,9 @@ export interface SetServiceSettingsDto {
 }
 
 export interface AgentServiceSettingsView {
-  service: SwitchableService;
+  service: SettableService;
   settings: AgentServiceSettings | null;
+  serviceConfigurationOptions: ServiceConfigurationOptions[];
 }
 
 export interface PublishAgentDto {
@@ -139,6 +151,8 @@ export interface UpdateAgentSettingsDto {
 
 export type UpdateAgentPodClassDto = PodClassSelection;
 
+export type UpdateAgentInactivityCleanupDto = Partial<InactivityCleanup>;
+
 export interface SetAgentVisibilityDto {
   visibility: string;
 }
@@ -147,7 +161,7 @@ export interface DuplicateAgentDto extends AgentProjectSettingsChoice {
   displayName: string;
 }
 
-export interface AgentCopyGrants {
+export interface AgentCopyGrants extends Partial<InactivityCleanupGrants> {
   canConfigureProjects: boolean;
 }
 

@@ -1,64 +1,64 @@
-# Agent desktops
+---
+kind: explanation
+terms: [Desktop]
+adrs: [0109]
+---
 
-An agent environment has one lightweight Xvfb display (`DISPLAY=:99`) available to the agent and its child processes. Openbox manages its windows on a single virtual workspace. Headed GUI apps appear automatically in the project's preview panels; an empty default desktop remains hidden. There is no separate desktop container and no desktop environment such as GNOME running in the background.
+# Desktop
 
-All GUI apps share this one desktop, including apps launched by child agents. An individual-window panel is another view of that same desktop. Up to 10 VNC viewers can connect at once; no additional X11 desktops can be created. The agent selects a whole-desktop or window view with:
+> How does a person see and use a GUI app running inside an Agent's pod, and how does the Agent hand it to them?
 
-```sh
-desktop list
-desktop show
-desktop show 0x00400003
-```
+## How it works
 
-Use a current window ID from `desktop list`. The desktop and GUI processes are ephemeral and end when the pod stops. Workspace files follow the existing storage lifecycle.
+### The display
 
-## Preview behavior
+- Every agent pod runs one Xvfb display, `:99`, with Openbox on a single workspace, under `guard`; Openbox maximizes every normal window without a title bar, so an app fills the screen; every process in the pod inherits `DISPLAY`, sub-agents and the App included ([ADR-0109](../adr/0109-an-agent-pod-has-one-desktop-streamed-per-viewer-through-the-agent-proxy-and-announced-by-a-held-stream.md)). There is no second display and no desktop environment.
+- `BROWSER` and the XDG defaults point at `desktop-browser`, so any "open in browser" — a CLI login, a link in a GUI app — lands in Chromium on `:99`, and the launcher runs `desktop show` on the window it opened, so a login a command starts comes up for the user. It adds `--no-sandbox` only as root, and skips certificate checks where the pod sets `AGENT_BROWSER_IGNORE_HTTPS_ERRORS=1`, as agent-browser does.
+- Pods mount a memory-backed `/dev/shm` capped at 512 MiB for Chromium and Electron; pages count toward the agent's memory limit and reserve nothing.
+- The Agent runs `desktop list` for the windows and their IDs, and `desktop show [WINDOW_ID]` to bring the whole desktop or one window up for the user.
 
-App, file, desktop and individual-window previews have independent side-by-side panels. Each panel can be resized or collapsed without rearranging the others; the workspace scrolls horizontally when needed. Opening a window from the desktop picker adds a separate view of that window on the same display. Opening another file preserves earlier file panels. Desktop panels offer a whole-desktop/window selector, full screen and automatic reconnection. Input starts when the user clicks inside the viewer; there is no separate control button. Before that click the client suppresses input. The authenticated connection permits interaction, so this is a UX affordance, not an authorization boundary.
+### Streaming
 
-Collapsing or scrolling a desktop panel out of view disconnects its viewer and stops its VNC process; the app continues running. Closing a window preview does not close its app. The shared display stays available for agent children. GUI apps continue consuming their own memory while hidden.
+- A Go manager on `127.0.0.1:6080` lists windows with `wmctrl` and starts one x11vnc per viewer, reverse-connected to a loopback listener it owns; no VNC port ever listens, and x11vnc lives only while its viewer is connected, at most 10 at once.
+- The browser connects to `wss://<opsiforce>/api/proxy/<environment-id>/_desktop/sessions/default/connect` through the agent runtime proxy, which checks project access and, for `/_desktop/`, a same-origin `Origin`; agent-control routes `/_desktop/` to the manager. Inside the cluster only the runtime proxies and the backend reach that port ([ADR-0106](../adr/0106-agent-pods-reach-only-the-platform-services-they-call-and-the-internet-and-only-platform-roles-reach-them.md)).
+- The project page learns about windows from the held stream `GET …/_desktop/sessions/events`, which the manager writes when the window list or a presentation changes; it counts as one activity touch at connect.
 
-The agent-browser skill explains headed mode and handoff: the agent presents a view and pauses automation while the user interacts, then resumes the same browser session. This is a cooperative handoff, not a lock preventing an agent process from sending input.
+### The panel
 
-Selected-window capture uses x11vnc's `-id` mode. Overlapping or minimized windows can produce blank or stale content; keep the target window visible. Separate dialogs, menus and other windows may require the whole-desktop view. It is a viewing choice, not an isolation boundary between apps within one environment.
+- Desktop is a mode of the preview panel beside App and [File preview](file-preview.md), labelled **Browser** while every window on it is a browser and **Screen** otherwise, the words the user sees instead of "desktop"; it exists only while the display has a window. The header's switcher lists the modes that exist, and on a phone the panel is the bottom bar's Preview overlay.
+- `desktop show` opens the panel in Desktop mode on the window named, only for a show that happens while the page is open.
+- With two or more windows the header picks all windows or one, and holds Full screen and the Clipboard controls. A hidden view disconnects its viewer; the apps keep running.
+- Input starts on the first click inside the viewer. Ctrl, Cmd and Alt combinations typed there go to the desktop, never to the chat's shortcuts, with Cmd sent as Ctrl because the desktop is Linux.
+- UTF-8 text crosses through `GET`/`PUT …/_desktop/clipboard`, which agent-control serves with `xclip` on `:99`, capped at 1 MiB; Ctrl/Cmd+C, X and V use it, and the Clipboard box covers browsers that block clipboard access and copies made from an app's own menu. Text reaches the person's clipboard only on their own copy, never on a timer.
 
-## Clipboard
+### Handing over
 
-Text clipboard sharing supports Ctrl/Cmd+C, X and V, including multiline text, Hebrew and emoji. macOS copy/paste shortcuts map to Linux shortcuts; Ctrl+Shift+C/V is preserved for terminals. Only the visible, actively focused desktop view synchronizes remote copies back to the computer. Opening a view establishes a baseline without replacing the host clipboard. The app never polls or uploads the host clipboard; text is sent only when the user pastes.
+- The `platform` skill tells every Agent when a step needs the person — a sign-in, an approval, a verification, or the user asking to see it — and to hand the desktop over by asking with the `question` tool (Done / I couldn't do it), which keeps the turn paused and lists the Project under Waiting for input; the Agent leaves that screen alone until the answer, then continues in the same session.
+- The person answers that question in the chat; the panel shows no copy of it.
+- When someone clicks into the screen while the Agent is still working and not waiting on them, a strip warns that it may use the screen too and offers **Stop the agent**, which interrupts the chat they have open through opencode's interrupt.
+- The `platform` skill also has the Agent ask before any step that commits the person — paying, sending as them, accepting terms, creating an account, deleting or publishing their data — or hand the screen over for it.
+- Control is cooperative: every member who opens the Project, and every chat session in it, can type into the same desktop.
 
-The Clipboard button provides a text box and explicit transfer controls when browser permissions prevent automatic access. Firefox and Safari may require a user gesture for clipboard writes or show a prompt when reading via the button. Native keyboard paste uses the browser's paste event and does not need background clipboard-read access. Images and files are not transferred.
+## Edge cases
 
-UTF-8 clipboard text travels through `GET`/`PUT /api/proxy/<environment-id>/_desktop/clipboard`, using the same project authorization and origin checks as VNC. Agent-control uses `xclip` on `:99`; it limits clipboard text to 1 MiB and times out clipboard operations after two seconds. Legacy VNC selection exchange remains disabled to avoid Latin-1 corruption. The focused view checks for app-menu copies once per second; keyboard Copy/Cut requests a prompt refresh. Clipboard contents are not logged or saved by the proxy.
+- When the display does not come up within ten seconds, the pod logs it and starts the Agent without waiting.
+- When the event stream fails four times in a row, the page stops retrying until the tab becomes visible again or the environment reconnects.
+- When the viewer cannot connect eight times in a row, the panel says the desktop can't be reached and offers Try again.
+- When the page is on a phone, the panel shows a note to use a computer, and does not connect a viewer, because the fixed 1440×900 screen is unreadable at that width.
+- When a pod runs an image without the desktop, the panel shows no Desktop mode, and the skill asks the user to restart the project instead.
+- When a single window is shown, dialogs and popups opened as separate windows show only in the whole-desktop view, and a covered or minimized window can show stale content.
 
-## Transport and authorization
+## Code
 
-Agent pods mount a private, memory-backed `emptyDir` at `/dev/shm`, capped at 512 MiB. This replaces the container runtime's 64 MiB default for Chromium and Electron shared memory. Pages are allocated as used and count toward the existing agent memory limit; the cap does not reserve extra RAM. The same pod configuration applies to the default and Kata runtimes. Existing pods receive the mount when recreated; restarting an app inside an existing pod does not change its mounts. The desktop browser launcher uses this shared memory directly, without `--disable-dev-shm-usage`.
+- `proxy/internal/desktop/` — the manager: display, window list, event stream, viewers and the clipboard handler.
+- `proxy/cmd/agent-desktop/`, `proxy/cmd/agent-control/opencode_proxy.go` — the manager's process and the `/_desktop/` route in the pod.
+- `agent-config/scripts/desktop.mjs`, `desktop-browser.sh`, `entrypoint.sh` — the `desktop` command, the browser launcher and boot.
+- `frontend/src/api/desktops.ts` — the event stream on the page.
+- `frontend/src/components/project/preview/desktop-preview-pane.tsx` — the viewer, keyboard and clipboard.
+- `agent-config/skills/agent-browser/SKILL.md` — the handoff the Agent follows.
 
-The frontend uses noVNC over `wss://<opsiforce>/api/proxy/<environment-id>/_desktop/sessions/<session-id>/connect`. The existing agent runtime proxy performs project authorization and activity tracking, then forwards to the agent's existing HTTP endpoint. An additional origin check rejects cross-site desktop requests and WebSocket upgrades. Agent-control routes `/_desktop/` to the pod-local desktop manager on `127.0.0.1:6080`.
+## Related
 
-Each viewer starts x11vnc with a reverse connection to an ephemeral loopback listener. X11 TCP listening and x11vnc command/file-transfer facilities are not enabled. No public per-session ports, Kubernetes Services, additional ingress hostnames, or registry are needed. VNC traffic is carried on the authenticated Opsiforce HTTPS connection. Do not expose the pod's agent HTTP port directly outside the cluster; it relies on the existing runtime proxy trust boundary.
-
-The manager tracks owned child processes and stops them when a viewer/session ends. Its supervisor restarts it if an X server or window manager fails. Session metadata is held in memory. Installed GUI packages increase image size on disk; the idle runtime consists of Xvfb, Openbox and the small Go manager. VNC encoding runs only while a view is connected.
-
-## Validation
-
-Proxy tests cover cross-project authorization and cross-origin requests. Desktop tests cover single-desktop enforcement, rejected lifecycle requests and the viewer cap. The X11 integration test runs inside the agent image and checks actual window discovery plus RFB handshakes for both a whole desktop and a cropped window:
-
-```sh
-cd packages/opsiforce/proxy
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go test -c -o /tmp/desktop.test ./internal/desktop
-docker run --rm --entrypoint /tmp/desktop.test \
-  -v /tmp/desktop.test:/tmp/desktop.test:ro opsiforce-agent:0.48.0 -test.v
-```
-
-Use the architecture of the agent image when compiling the test binary. Existing agent pods need the new agent image before desktop features become available.
-
-### Claude Desktop smoke test
-
-Claude Desktop can be installed in a disposable agent pod from [Anthropic's official Linux apt repository](https://support.claude.com/en/articles/10065433-install-claude-desktop). It is not included in the base agent image. The local test used the official arm64 package, version 4.29.0, on Debian 12.
-
-Launch on `DISPLAY=:99`, alongside a headed Chromium session. The current agent runs as root, so Electron requires `claude-desktop --no-sandbox` within this test container. On the older test pod with a 64 MiB `/dev/shm`, restarting with `--disable-dev-shm-usage` resolved Electron `ERR_INSUFFICIENT_RESOURCES` failures after sign-in. New pods have the larger mount; Chromium rendering without this workaround has been verified, but authenticated Claude still needs to be retested without it. For browser sign-in callbacks, copy `/usr/share/applications/com.anthropic.Claude.desktop` into `${XDG_DATA_HOME:-$HOME/.local/share}/applications/` and add the same launch flags to its `Exec=claude-desktop` entries. Register it with `xdg-mime default com.anthropic.Claude.desktop x-scheme-handler/claude`. This is needed only for this root-based test installation. Use `desktop list` to find Claude's window and `desktop show WINDOW_ID` to present it. Confirm that the same app appears in the whole-desktop view and the separate window panel, and that clicking Get started reaches sign-in. Leave account authentication to the user. After the user completed sign-in, the authenticated Claude home loaded in both views. No Chat, Code or Cowork task was submitted. The minimal image has no desktop keyring; Claude reports that its OAuth token cache will not persist through safeStorage.
-
-External HTTP/HTTPS links use the desktop Chromium launcher on the same display. It supplies the container-required `--no-sandbox` flag only when running as root; otherwise Chromium retains its sandbox. This also allows desktop apps to open browser-based sign-in flows.
-
-When launching apps with `kubectl exec`, explicitly pass `DISPLAY=:99`: exec does not inherit environment variables exported by the entrypoint. Normal agent children inherit it automatically.
+- [File preview](file-preview.md) — the panel and switcher the Desktop shares.
+- [Request flows](../runtime/request-flows.md) — the ensure gate and activity touches the stream relies on.
+- [Test the desktop in an image](../operations/test-the-desktop.md) — running the X11 tests inside a real display.

@@ -21,6 +21,14 @@ import { ERROR_MEDIA_TYPE } from '../../public-api/errors/error.schema';
 import { SecretSealer } from '../../sealing/secret-sealer';
 import type { PublicApiSwitch } from '../configuration/public-api-settings';
 import { builtInCallerKey } from './built-in-caller-key';
+import {
+  CREATED_PROJECT_AGENT_CHOICES,
+  createdProjectAgentChoicesFor,
+  CREATED_PROJECT_WORKSPACE_CHOICES,
+  createdProjectWorkspaceChoicesFor,
+  OTHER_PROJECT_CHOICES,
+  otherProjectChoicesFor,
+} from './public-api-project-options';
 
 export const PUBLIC_API_SERVICE = 'public-api';
 
@@ -146,6 +154,11 @@ export class PublicApiService {
     this.defined ??= defineService({
       ...folder.definition,
       routes: this.routes(),
+      options: {
+        [OTHER_PROJECT_CHOICES]: (draft, ctx) => otherProjectChoicesFor(ctx.caller, draft.query),
+        [CREATED_PROJECT_AGENT_CHOICES]: (draft, ctx) => createdProjectAgentChoicesFor(ctx.caller, draft.query),
+        [CREATED_PROJECT_WORKSPACE_CHOICES]: (draft, ctx) => createdProjectWorkspaceChoicesFor(ctx.caller, draft.query),
+      },
       counters: PUBLIC_API_COUNTERS,
       refusal: publicApiRefusal,
     });

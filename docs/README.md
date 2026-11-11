@@ -11,20 +11,27 @@
 - [Persistence](runtime/persistence.md) — what survives a pod swap, where it lives, resume and cleanup
 - [Storage](runtime/storage.md) — how disk usage on the shared volume is measured and attributed
 - [Resources](runtime/resources.md) — how a Project's pod size is chosen, stored and applied
-- [Pod Tools](runtime/pod-tools.md) — the five processes in a pod and how VS Code and the DB viewer reach the browser
+- [Pod Tools](runtime/pod-tools.md) — the processes in a pod, Docker on a privileged one, and how VS Code and the DB viewer reach the browser
 - [Process Log](runtime/process-log.md) — where each pod process's output and lifecycle events go, their rotation and how an Agent reads them
 
 **Projects** (`projects/`)
 - [Environments](projects/environments.md) — the two-entity model, Environment Slugs, App Auth and the Environments switcher
 - [Public URL](projects/public-url.md) — the address each App answers on, its App Slug, Edit URL and the older addresses that keep serving
+- [Custom domain](projects/custom-domain.md) — adding an address on the customer's own domain to an App, the Domains dialog, the records it shows, each status, and the Limit
+- [DNS check](projects/dns-check.md) — how a domain's record proves its owner chose the App, when Check runs, and taking a domain from another App
+- [Domain routing](projects/domain-routing.md) — each Custom domain's certificate and route, their start-up rewrite, and signing visitors in on the domain
+- [Main domain](projects/main-domain.md) — the one Custom domain that is the Public URL, Make main, and the redirect every other domain carries
 - [Publish](projects/publish.md) — moving an App from Development into an environment, Environment Variables and the publish stages
 - [Duplication](projects/duplication.md) — copying a whole Project with its working state
+- [Inactivity cleanup](projects/inactivity-cleanup.md) — disabling and deleting Projects nobody has used for a set number of days
 - [Export and Import](projects/export-import.md) — carrying a Project to another deployment as a file
 - [App](projects/app.md) — per-environment App Details and runtime identity
+- [App User](projects/app-user.md) — the Project's own sign-in accounts for its Apps and the provider behind them
 - [App Readiness](projects/app-readiness.md) — how Go-live and serving are pushed from the pod
 - [Schedule](projects/schedule.md) — agent-registered cron jobs owned by one environment
 - [Files](projects/files.md) — the curated view of an environment's workspace files, uploads and deletes
 - [File preview](projects/file-preview.md) — reading a deliverable in the side panel and the inline content endpoint
+- [Desktop](projects/desktops.md) — the pod's one GUI display, how it streams to the preview panel and how the Agent hands it over
 - [File Downloads](projects/file-downloads.md) — how a `/workspace/...` chat link becomes a download
 - [Dictation](projects/dictation.md) — speech into the prompt draft and what decides availability
 
@@ -59,6 +66,7 @@
 - [External Service Builder](external-services/external-service-builder.md) — writing, testing, publishing and retiring a Custom External Service, and its Default environment
 - [Service copies](external-services/service-copies.md) — Duplicate, Export and Import of a Custom External Service as a new service
 - [Public API built-in](external-services/public-api.md) — `/api/v1` as the `public-api` External Service a pod calls on its Service host
+- [Created Projects and Agents](external-services/created-projects-and-agents.md) — which Agents, which Workspace and how many Projects and Agents a pod may create
 - [Incoming Email](external-services/incoming-email.md) — a receiving address per environment
 - [WhatsApp](external-services/whatsapp.md) — numbers in the Service configuration, chats per environment, the v1 import
 
@@ -81,9 +89,10 @@
 - [Linked account](organization/linked-account.md) — signing a ChatGPT account in as a Model provider, and what ends a sign-in
 - [Defaults](organization/defaults.md) — what platform and Organization defaults seed and leave out
 - [Limit](organization/limit.md) — the most an Organization may hold, the platform value it follows and how creates enforce it
-- [Integrations](organization/integrations.md) — mapping an Organization to its managed identity provider tenant
+- [Sign-in provider](organization/sign-in-provider.md) — registering an Organization's OIDC app once so its Apps sign members in with it
 
 **Frontend** (`frontend/`)
+- [Design System](frontend/design-system.md) — where colour, type, metrics and motion are authored, and how Appearance drives them
 - [OpenCode Embed](frontend/opencode-embed.md) — how OpenCode's chat renders inline and reaches the pod
 - [Query Adapter](frontend/query-adapter.md) — why reads use `createAppQuery` and what it changes
 - [Job Dock](frontend/job-dock.md) — one progress surface for publish, duplicate, export and import
@@ -94,7 +103,9 @@
 **Operations** (`operations/`)
 - [Quickstart](operations/quickstart.md) — stand up the local stack with `yarn dev`
 - [Commands](operations/commands.md) — day-to-day checks, database tasks and local ports
+- [Test the desktop in an image](operations/test-the-desktop.md) — the desktop manager's tests against a real X11 display
 - [Local orchestration](operations/local-orchestration.md) — the tunnel, Tilt and the static identity
+- [Test Custom domains locally](operations/test-custom-domains-locally.md) — point a domain you own at a local App, and where to look when a status gets stuck
 - [Deployment](operations/deployment.md) — ship to a cluster through CI in dependency order
 - [Deploy to Azure (AKS)](operations/deploy-azure.md) — the platform contract for self-hosting on Azure
 - [Air-Gapped Single-Node Deployment](operations/air-gapped-single-node.md) — client-provided host packages, container images, repositories, and network access for one disconnected machine
@@ -102,6 +113,7 @@
 - [Upgrade opencode](operations/upgrade-opencode.md) — move the agent image to a new opencode build
 - [Migrate process logs to files](operations/migrate-process-logs-to-files.md) — move existing workspaces off the `process_logs`/`process_events` tables, from the backend pod
 - [Roll out the Agent & Skill Platform](operations/agent-skill-platform-rollout.md) — the per-environment values, the image bump and the checks that prove delivery works
+- [Turn on Custom domains](operations/turn-on-custom-domains.md) — the cluster issuer, the backend values, a real-domain issuance test
 - [Add a permission](operations/add-a-permission.md) — Pulumi, frontend and backend steps
 - [Add an external service](operations/add-an-external-service.md) — a folder with a Service manifest, its `service.ts` and a Service skill, and one commit
 - [Onboard a WhatsApp number](operations/onboard-a-whatsapp-number.md) — Whapi channel, the number item, QR link, picking chats

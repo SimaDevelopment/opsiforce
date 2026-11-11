@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "oxlint --fix src",
     "format": "oxfmt -c ../.oxfmtrc.json src",
-    "ts": "tsc --noEmit 2>&1 | grep -v 'opencode/' | grep 'error TS' && exit 1 || exit 0",
+    "ts": "tsc --noEmit 2>&1 | grep 'error TS' | grep -v '^opencode/' && exit 1 || exit 0",
     "check": "yarn lint && yarn ts",
     "minikube-dev": "env-cmd -f ./local-envs.sh --use-shell 'yarn run dev --host 0.0.0.0'"
   },

@@ -1,7 +1,9 @@
-import type { Component } from 'solid-js';
+import { onCleanup, type Component } from 'solid-js';
 import { MemoryRouter, createMemoryHistory, type BaseRouterProps } from '@solidjs/router';
 import { type Platform, ServerConnection } from '@opencode/app';
 import { base64Encode } from '@opencode/util/encode';
+
+const SESSION_PATH = /^\/server\/[^/]+\/session\/([^/?#]+)/;
 
 const reloadOnExpiredSession: typeof fetch = async (input, init) => {
   const response = await fetch(input, init);
@@ -20,13 +22,23 @@ export function createProxyPlatform(): Platform {
   };
 }
 
-export function createSessionRouter(serverUrl: string, sessionId: string): Component<BaseRouterProps> {
+export function createSessionRouter(
+  serverUrl: string,
+  sessionId: string,
+  onSessionShown: (sessionId: string) => void
+): Component<BaseRouterProps> {
   const serverKey = ServerConnection.Key.make(serverUrl);
   const initialPath = `/server/${base64Encode(serverKey)}/session/${sessionId}`;
 
   return (props) => {
     const history = createMemoryHistory();
-    history.set({ value: initialPath });
+    history.set({ value: initialPath, replace: true });
+    onCleanup(
+      history.listen((path) => {
+        const shown = SESSION_PATH.exec(path)?.[1];
+        if (shown) onSessionShown(shown);
+      })
+    );
 
     return (
       <MemoryRouter root={props.root} history={history}>

@@ -49,7 +49,7 @@ export function SkillContent(props: { files: SkillFile[]; selected: string; onSe
                 aria-pressed={selected()}
                 onClick={() => props.onSelect(file.path)}
                 class={cn(
-                  'rounded-md border px-2 py-1 font-mono text-[11px] transition-colors',
+                  'rounded-md border px-2 py-1 font-mono text-[0.6875rem] transition-colors',
                   FOCUS_RING,
                   selected()
                     ? 'border-primary bg-primary/10 text-foreground'
@@ -98,7 +98,7 @@ function BinaryFile(props: { size: number }) {
 
 function CodeFile(props: { content: string }) {
   return (
-    <pre class="max-h-[32rem] overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground">
+    <pre class="max-h-[32rem] overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-[0.6875rem] leading-relaxed text-foreground">
       {props.content}
     </pre>
   );
@@ -110,7 +110,7 @@ function MarkdownFile(props: { content: string }) {
     <div class="max-h-[32rem] overflow-auto rounded-md border border-border bg-card p-4">
       <Show when={parts().frontmatter}>
         {(frontmatter) => (
-          <pre class="mb-4 overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <pre class="mb-4 overflow-x-auto rounded-md bg-muted/60 p-3 font-mono text-[0.6875rem] leading-relaxed text-muted-foreground">
             {frontmatter()}
           </pre>
         )}

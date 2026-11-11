@@ -17,6 +17,8 @@ import { projectPlaceOf } from '../configuration/project-configuration.store';
 import type { ProjectFormCallTarget } from '../configuration/project-service-views';
 import { ServiceConfigurationStore } from '../configuration/service-configuration.store';
 import { problem } from '../http/problem-reply';
+import { builtOnSdkOlderThan } from '../publishing/sdk-status';
+import { withFormCallRequester } from './form-call-requester';
 import { servableOrNone, type ServiceLane } from '../registry/custom-service-catalog';
 import { ServiceRegistry, type RegisteredService } from '../registry/service-registry';
 import { checkServiceAnswer } from './answer-checks';
@@ -33,7 +35,7 @@ import { cappedFormAnswer } from './form-answer-caps';
 import {
   platformCallTargetOf,
   ServiceDispatcher,
-  type PlatformCallTarget,
+  type PlatformCallFor,
   type ServiceResponse,
 } from './service-dispatcher';
 
@@ -63,6 +65,14 @@ export interface ProjectFormCallRequest extends FormCallRequest {
   target: ProjectFormCallTarget;
 }
 
+export interface ProjectlessOptionsCallRequest {
+  service: RegisteredService;
+  name: string;
+  body: unknown;
+  tenantId: string;
+  askedBy: string;
+}
+
 export interface DevelopmentServiceFormCallRequest extends FormCallRequest {
   development: RegisteredService;
 }
@@ -79,10 +89,14 @@ interface DraftCall {
   stored: ConfigurationValues;
   placeOf: SealingPlaceOf;
   body: FormCallBody;
-  for?: PlatformCallTarget;
+  for?: PlatformCallFor;
 }
 
 const maxQueryLength = 500;
+
+const holdsNoSecrets: SealingPlaceOf = () => {
+  throw new Error('An options call outside any Project carries no stored secret');
+};
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -123,6 +137,14 @@ function formCallAnswer(
     headers: { 'content-type': 'application/json; charset=utf-8' },
     body: encoder.encode(JSON.stringify(capped)),
   };
+}
+
+const projectlessOptionsSdk = '2.2.0';
+
+function isNotSupported(answer: GateAnswer): boolean {
+  if (answer.status !== 404) return false;
+  const body = parsedJson(answer.body);
+  return isPlainValues(body) && body.code === 'not-supported';
 }
 
 function refuseOutOfDate(status: number, code: string): never {
@@ -244,6 +266,37 @@ export class FormCalls {
         for: platformCallTargetOf(target),
       });
     });
+  }
+
+  async callProjectlessOptions(request: ProjectlessOptionsCallRequest): Promise<GateAnswer> {
+    const { service } = request;
+    const call: FormCallRequest = { route: 'options', name: request.name, body: request.body };
+    const callId = randomUUID();
+    const answer = await withFormCallRequester(request.askedBy, () =>
+      answeredOrProblem(this.logger, callId, async () => {
+        const body = parsedBody(request.body);
+        checkCalledField(service, 'projectForm', call, body);
+        return this.dispatched(callId, call, {
+          service,
+          form: 'projectForm',
+          stored: {},
+          placeOf: holdsNoSecrets,
+          body,
+          for: { tenantId: request.tenantId },
+        });
+      })
+    );
+    if (!isNotSupported(answer) || !builtOnSdkOlderThan(service.home?.sdkVersion ?? null, projectlessOptionsSdk)) {
+      return answer;
+    }
+    return problemAnswer(
+      callId,
+      problem({
+        status: 404,
+        code: 'not-supported',
+        detail: `${service.manifest.displayName} can't list these choices outside a Project: it is built on SDK ${service.home?.sdkVersion}, and that needs 2.2. Ask its External Service Builder to upgrade the SDK, then pick them here.`,
+      })
+    );
   }
 
   private async serviceFormOwnedBy(

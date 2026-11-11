@@ -1,6 +1,9 @@
 # Development only: Helsinki cloud and dedicated workers; existing exclusions retained.
 ---
 config:
+  storageClaimSize: "600Gi"
+  customDomainsClusterIssuer: "letsencrypt-http01"
+  customDomainsRefused: "opsima.com,simaanalytics.co,simaanalytics.com"
   agentAffinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:

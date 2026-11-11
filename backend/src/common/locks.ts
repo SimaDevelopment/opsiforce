@@ -5,11 +5,13 @@ import type { LimitKey } from '../limit/limit.types';
 export type DbExecutor = DrizzleDB | Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
 const PROJECT_GIT_NAMESPACE = 'opsiforce:project-git';
+const AGENT_INACTIVITY_CLEANUP_NAMESPACE = 'opsiforce:agent-inactivity-cleanup';
 const ENVIRONMENT_SESSION_NAMESPACE = 'opsiforce:environment-session';
 const AGENT_TEMPLATE_NAMESPACE = 'opsiforce:agent-template';
 const TENANT_LIMIT_NAMESPACE = 'opsiforce:tenant-limit';
 const TENANT_MODEL_PROVIDERS_NAMESPACE = 'opsiforce:tenant-model-providers';
 const PLATFORM_MODEL_PROVIDERS_NAMESPACE = 'opsiforce:platform-model-providers';
+const CUSTOM_DOMAIN_HOSTNAME_NAMESPACE = 'opsiforce:custom-domain-hostname';
 const LOCK_NOT_AVAILABLE = '55P03';
 
 export class LockNotAvailable extends Error {
@@ -21,6 +23,16 @@ export class LockNotAvailable extends Error {
 
 export async function lockProjectGit(executor: DbExecutor, projectId: string): Promise<void> {
   await executor.execute(sql`select pg_advisory_xact_lock(hashtext(${PROJECT_GIT_NAMESPACE}), hashtext(${projectId}))`);
+}
+
+export async function lockAgentInactivityCleanup(
+  executor: DbExecutor,
+  agentId: string,
+  tenantId: string | null
+): Promise<void> {
+  await executor.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${AGENT_INACTIVITY_CLEANUP_NAMESPACE}), hashtext(${`${agentId}:${tenantId ?? 'platform'}`}))`
+  );
 }
 
 export async function lockAgentTemplate(executor: DbExecutor, agentId: string): Promise<void> {
@@ -54,6 +66,12 @@ export async function lockPlatformModelProviders(executor: DbExecutor): Promise<
 
 export async function lockPlatformModelProvidersShared(executor: DbExecutor): Promise<void> {
   await executor.execute(sql`select pg_advisory_xact_lock_shared(hashtext(${PLATFORM_MODEL_PROVIDERS_NAMESPACE}))`);
+}
+
+export async function lockCustomDomainHostname(executor: DbExecutor, hostname: string): Promise<void> {
+  await executor.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${CUSTOM_DOMAIN_HOSTNAME_NAMESPACE}), hashtext(${hostname}))`
+  );
 }
 
 export async function lockEnvironmentSession(

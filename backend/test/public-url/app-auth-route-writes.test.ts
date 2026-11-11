@@ -1,29 +1,24 @@
-import type { Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { db } from '../../db';
-import { tenantSettings } from '../../db/schema';
-import { ManagedAuthSyncProcessor } from '../../src/private/tenant-settings/managed-auth-sync.processor';
-import type { ManagedAuthSyncJobData } from '../../src/private/tenant-settings/tenant-settings.types';
+import type { CustomDomainCluster } from '../../src/custom-domain/custom-domain-cluster';
 import { AppAuthRouteReconciler } from '../../src/project/app-auth-route.reconciler';
 import { ProjectAuthService } from '../../src/project/project-auth.service';
 import type { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import type { FakeProjectAuthService } from '../support/infra-fakes';
 
+const NO_CUSTOM_DOMAINS = {
+  routedEnvironmentIds: () => Promise.resolve([]),
+} as unknown as CustomDomainCluster;
+
 let harness: DomainTestHarness;
 let appAuth: FakeProjectAuthService;
 
 beforeAll(async () => {
-  process.env.MANAGED_OIDC_CLIENT_SECRET = 'managed-secret';
-  process.env.MANAGED_OIDC_ISSUER_URL = 'https://keycloak.example/realms/opsiforce';
   harness = await createDomainTestingModule();
   appAuth = harness.moduleRef.get<typeof ProjectAuthService, FakeProjectAuthService>(ProjectAuthService);
 });
 
 afterAll(async () => {
-  delete process.env.MANAGED_OIDC_CLIENT_SECRET;
-  delete process.env.MANAGED_OIDC_ISSUER_URL;
   await harness.close();
 });
 
@@ -44,24 +39,6 @@ async function addressesOf(environmentId: string) {
 
 const oidc = { clientId: 'client', clientSecret: 'secret', discoveryUrl: 'https://issuer.example' };
 
-describe('the managed-auth fan-out', () => {
-  it("re-applies a renamed tenant's App Auth for every address of the App", async () => {
-    const { tenantId, projectId } = await newProject();
-    await harness.projects.updateAuth(projectId, projectId, { mode: 'managed' }, tenantId);
-    await db
-      .update(tenantSettings)
-      .set({ externalTenantName: 'example-org' })
-      .where(eq(tenantSettings.tenantId, tenantId));
-    appAuth.calls.length = 0;
-
-    await new ManagedAuthSyncProcessor(appAuth as unknown as ProjectAuthService).process({
-      data: { projectId, externalTenantName: 'example-org' },
-    } as Job<ManagedAuthSyncJobData>);
-
-    expect(appAuth.callsTo('applyManaged').map((call) => call.args)).toEqual([await addressesOf(projectId)]);
-  });
-});
-
 describe('App Auth routes are reconciled at backend start', () => {
   it('for every protected environment and no public one', async () => {
     const protectedApp = await newProject();
@@ -72,13 +49,16 @@ describe('App Auth routes are reconciled at backend start', () => {
       { mode: 'manual', config: oidc },
       protectedApp.tenantId
     );
+    const callsBeforeStart = appAuth.calls.length;
 
     await new AppAuthRouteReconciler(
       harness.projectEnvironments,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     ).reconcileAll();
 
     const reconciled = appAuth.callsTo('reconcileRoute').map((call) => call.args);
+    expect(appAuth.calls[callsBeforeStart].method).toBe('writeIdentityHeaderStrip');
     expect(reconciled).toContainEqual(await addressesOf(protectedApp.projectId));
     expect(reconciled.map((args) => args.environmentId)).not.toContain(publicApp.projectId);
   });
@@ -93,11 +73,34 @@ describe('App Auth routes are reconciled at backend start', () => {
 
     await new AppAuthRouteReconciler(
       harness.projectEnvironments,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     ).reconcileAll();
 
     const reconciled = appAuth.callsTo('reconcileRoute').map((call) => call.args.environmentId);
     expect(reconciled).toContain(second.projectId);
+  });
+
+  it('removes a gate left on a public environment and keeps the gate of a protected one', async () => {
+    const leftBehind = await newProject();
+    const gated = await newProject();
+    await harness.projects.updateAuth(
+      gated.projectId,
+      gated.projectId,
+      { mode: 'manual', config: oidc },
+      gated.tenantId
+    );
+    appAuth.setGate(leftBehind.projectId, { mode: 'manual', config: oidc, bypassAuthPaths: [] });
+
+    await new AppAuthRouteReconciler(
+      harness.projectEnvironments,
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
+    ).reconcileAll();
+
+    const removed = appAuth.callsTo('remove').map((call) => call.args.environmentId);
+    expect(removed).toContain(leftBehind.projectId);
+    expect(removed).not.toContain(gated.projectId);
   });
 });
 
@@ -106,10 +109,14 @@ describe('App Auth routes are reconciled again once the replicas a rollout repla
   const protectedEnvironment = { id: '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f', shortId: '3f2a9c1e7b4d' };
 
   function startedReconciler(): AppAuthRouteReconciler {
-    const environments = { listProtected: () => Promise.resolve([protectedEnvironment]) };
+    const environments = {
+      listProtected: () => Promise.resolve([protectedEnvironment]),
+      findByIdOrNull: () => Promise.resolve({ authMode: 'manual' }),
+    };
     const reconciler = new AppAuthRouteReconciler(
       environments as unknown as ProjectEnvironmentService,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     );
     reconciler.onApplicationBootstrap();
     return reconciler;

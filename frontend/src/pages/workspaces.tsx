@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useCreateWorkspace, useWorkspaces } from '~/api/workspaces';
 import { useTenantConfig, useUpdateTenantConfig } from '~/api/tenant-config';
 import { Button } from '~/components/ui/button';

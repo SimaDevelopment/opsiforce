@@ -18,6 +18,7 @@ import { PublicApiSettings } from '../external-services/configuration/public-api
 import { GatewayKeyService } from '../gateway/gateway-key.service';
 import { ForwardedIdentityService } from '../identity/forwarded-identity.service';
 import { gatewayBearerOf } from '../public-api/auth/gateway-bearer';
+import { callingProjectReachOf, isReachedByCallingProject } from '../project/calling-project-reach';
 import { ProjectProvenanceRepository } from '../project/project-provenance.repository';
 import { isHiddenProjectReachable, isProjectAccessible } from '../project/project-visibility';
 import { ProjectService, type EnsureEnvironmentResult, type ProjectActivityKind } from '../project/project.service';
@@ -58,6 +59,7 @@ interface AppAddressAnswer {
   environmentId: string;
   canonicalHost: string;
   protected: boolean;
+  previewFrameOrigin?: string;
 }
 
 type AppEnsureResponse =
@@ -69,6 +71,7 @@ type AppEnsureResponse =
 export class ProxyController {
   private readonly proxyControlToken: string;
   private readonly appDomains: AppDomains;
+  private readonly platformOrigin: string | null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -87,6 +90,7 @@ export class ProxyController {
       appsHostname: this.configService.getOrThrow<string>('appsHostname'),
       previewAppsHostname: this.configService.getOrThrow<string>('previewAppsHostname'),
     };
+    this.platformOrigin = originOf(this.configService.get<string>('opsiforcePublicUrl', ''));
   }
 
   @Post('projects/:environmentId/ensure')
@@ -161,8 +165,18 @@ export class ProxyController {
     await this.projectService.touchEnvironmentActivity(environmentId, activityForSurface(surface));
   }
 
-  private async answerAppAddress({ env, action, canonicalHost }: ResolvedAppAddress): Promise<AppEnsureResponse> {
-    const answer: AppAddressAnswer = { environmentId: env.id, canonicalHost, protected: env.authMode !== 'public' };
+  private async answerAppAddress({
+    env,
+    action,
+    canonicalHost,
+    previewed,
+  }: ResolvedAppAddress): Promise<AppEnsureResponse> {
+    const answer: AppAddressAnswer = {
+      environmentId: env.id,
+      canonicalHost,
+      protected: env.authMode !== 'public',
+      ...(previewed && this.platformOrigin ? { previewFrameOrigin: this.platformOrigin } : {}),
+    };
     if (action === 'redirect') return { action, ...answer };
 
     const ensured = await this.projectService.ensureEnvironment(env, 'app');
@@ -219,8 +233,9 @@ export class ProxyController {
   private async assertGatewayCallerAccess(token: string, tenantId: string, projectId: string): Promise<void> {
     const caller = await this.gatewayKeys.validateToken(token);
     if (!caller?.projectEnvironmentId) throw new UnauthorizedException('Unknown gateway key');
-    if (caller.tenantId !== tenantId) throw new NotFoundException('Project not found');
-    if ((await this.publicApiSettings.of(caller.projectEnvironmentId))?.driveCreatedProjects !== true) {
+    if (caller.tenantId !== tenantId) throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
+    const settings = await this.publicApiSettings.of(caller.projectEnvironmentId);
+    if (settings?.driveCreatedProjects !== true) {
       throw new ForbiddenException(
         `"${this.publicApiSettings.labelOf('driveCreatedProjects')}" is off in the calling Project's configuration. ${WHO_CHANGES_PUBLIC_API_SETTINGS}`
       );
@@ -232,15 +247,14 @@ export class ProxyController {
     const creator = await this.identities.resolveByPlatformId(creatorId);
     const tenant = await this.tenantService.getTenantById(tenantId);
     if (!creator || !tenant || !this.tenantService.resolveAccessibleTenantNames(creator.groups).includes(tenant.name)) {
-      throw new NotFoundException('Project not found');
+      throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
     }
 
-    if (!(await isProjectAccessible(tenantId, creatorId, projectId))) {
-      throw new NotFoundException('Project not found');
-    }
-
-    if (!(await this.provenance.isCreatedByProject(projectId, caller.projectId))) {
-      throw new ForbiddenException('The calling Project did not create this Project');
+    if (
+      !(await isProjectAccessible(tenantId, creatorId, projectId)) ||
+      !(await isReachedByCallingProject(projectId, callingProjectReachOf(caller.projectId, settings)))
+    ) {
+      throw new NotFoundException(this.publicApiSettings.unreachedProjectDetail());
     }
   }
 
@@ -287,4 +301,8 @@ function activityForSurface(surface: ProxySurface): ProjectActivityKind {
 
 function isProxySurface(value: string): value is ProxySurface {
   return value === 'agent' || value === 'app' || value === 'vscode' || value === 'db';
+}
+
+function originOf(url: string): string | null {
+  return URL.canParse(url.trim()) ? new URL(url.trim()).origin : null;
 }

@@ -27,6 +27,7 @@ import { waitFor } from '../support/wait-for';
 
 const CONTROL_TOKEN = 'proxy-control-token-for-app-address-tests';
 const APPS = 'apps.addresses.test';
+const PLATFORM_ORIGIN = 'https://opsiforce.addresses.test';
 
 @Module({
   controllers: [ProxyController],
@@ -44,6 +45,7 @@ beforeAll(async () => {
   process.env.AGENT_PORT = String(pod.port);
   process.env.PROXY_CONTROL_TOKEN = CONTROL_TOKEN;
   process.env.APPS_HOSTNAME = APPS;
+  process.env.OPSIFORCE_PUBLIC_URL = `${PLATFORM_ORIGIN}/`;
 
   const moduleRef = await Test.createTestingModule({
     imports: [
@@ -245,7 +247,7 @@ describe("a protected App's sign-in", () => {
     const tenant = await createTenant(app);
     const projectId = await runningProjectIn(tenant);
     await app.get(AppService).upsertProjectApp(projectId, projectId, { name: 'Warehouse', description: null });
-    await environments.patch(projectId, { authMode: 'managed' });
+    await environments.patch(projectId, { authMode: 'manual' });
     const env = await environments.findById(projectId);
     const rules = appAuthRouteRules(env, APPS);
 
@@ -261,7 +263,6 @@ describe("a protected App's sign-in", () => {
 
   it.each([
     ['public', false],
-    ['managed', true],
     ['manual', true],
   ] as const)('is reported to the proxy for %s App Auth on serve and redirect answers', async (authMode, expected) => {
     const tenant = await createTenant(app);
@@ -285,6 +286,17 @@ describe('the in-product preview host', () => {
 
     expect(res.statusCode, res.body).toBe(201);
     expect(res.json()).toMatchObject({ action: 'serve', environmentId: projectId, state: 'ready' });
+  });
+
+  it('names the platform origin that may frame it, which an App host never does', async () => {
+    const tenant = await createTenant(app);
+    const projectId = await runningProjectIn(tenant);
+
+    const previewed = await ensureApp(`${projectId}.preview.${APPS}`);
+    const visited = await ensureApp(`${projectId}-dev.${APPS}`);
+
+    expect(previewed.json()).toMatchObject({ previewFrameOrigin: PLATFORM_ORIGIN });
+    expect(visited.json()).not.toHaveProperty('previewFrameOrigin');
   });
 
   it.each([

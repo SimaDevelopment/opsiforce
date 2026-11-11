@@ -10,7 +10,7 @@ import { isKeptSecret } from './form-values';
 type GeneratedFieldDefinition = Extract<Field, { type: 'text' | 'secret' }>;
 
 const GENERATED_BOX_CLASS =
-  'inline-flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 font-mono text-[11px] text-muted-foreground';
+  'inline-flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-dashed border-border px-2.5 font-mono text-[0.6875rem] text-muted-foreground';
 
 function RotateButton(props: { field: GeneratedFieldDefinition; itemId?: string; ctx: FormContext }) {
   const [confirming, setConfirming] = createSignal(false);
@@ -50,7 +50,7 @@ function RotateButton(props: { field: GeneratedFieldDefinition; itemId?: string;
       </Button>
       <Show when={failure()}>
         {(message) => (
-          <span class="text-[11px] text-destructive" role="alert">
+          <span class="text-[0.6875rem] text-destructive" role="alert">
             {message()}
           </span>
         )}
@@ -75,11 +75,11 @@ function RotateButton(props: { field: GeneratedFieldDefinition; itemId?: string;
 function RevealedSecret(props: { value: string; label: string }) {
   return (
     <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5">
-        <span class="min-w-0 flex-1 break-all font-mono text-[11px]">{props.value}</span>
+      <div class="of-note of-tone-needs-you items-center gap-1.5 px-2.5 py-1.5">
+        <span class="min-w-0 flex-1 break-all font-mono text-[0.6875rem]">{props.value}</span>
         <CopyButton text={props.value} label={`Copy ${props.label}`} />
       </div>
-      <span class="text-[11px] text-amber-700" role="status">
+      <span class="text-[0.6875rem]" role="status">
         Shown once. Copy it now: afterwards it stays encrypted, and a lost value means Rotate.
       </span>
     </div>
@@ -102,11 +102,11 @@ export function GeneratedField(props: {
     <Show
       when={props.field.type === 'secret'}
       fallback={
-        <Show when={text()} fallback={<span class="text-[11px] italic text-muted-foreground">{pending()}</span>}>
+        <Show when={text()} fallback={<span class="text-[0.6875rem] italic text-muted-foreground">{pending()}</span>}>
           {(generated) => (
             <div class="flex flex-wrap items-center gap-2">
               <div class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-muted/60 px-2.5 py-1.5">
-                <span class="min-w-0 flex-1 truncate font-mono text-[11px]">{generated()}</span>
+                <span class="min-w-0 flex-1 truncate font-mono text-[0.6875rem]">{generated()}</span>
                 <CopyButton text={generated()} label={`Copy ${label()}`} />
               </div>
               <RotateButton field={props.field} itemId={props.itemId} ctx={props.ctx} />
@@ -120,7 +120,7 @@ export function GeneratedField(props: {
         fallback={
           <Show
             when={isKeptSecret(props.value)}
-            fallback={<span class="text-[11px] italic text-muted-foreground">{pending()}</span>}
+            fallback={<span class="text-[0.6875rem] italic text-muted-foreground">{pending()}</span>}
           >
             <div class="flex flex-wrap items-center gap-2">
               <span class={GENERATED_BOX_CLASS}>

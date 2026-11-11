@@ -11,4 +11,4 @@ Everything that runs continuously in local development is a Tilt resource, in-cl
 
 - `minikube tunnel` is the one privileged step; it is primed with a single `sudo` prompt, launched detached, survives the orchestrator exiting and is detected on re-run.
 - Tilt computes the static identity's permissions from the backend's `PERMISSIONS` every time it loads ([ADR-0096](0096-the-frontend-and-the-static-identity-derive-their-permissions-from-the-backends-list.md)), so there are no permission walls locally. `can_manage_users` is not among them, because no User Management runs locally.
-- A NetworkPolicy can never be proven locally: minikube's default CNI enforces none.
+- minikube's kindnet enforces NetworkPolicy for traffic between pods and out of the node, but not for traffic to the node's own address, so a local deny is proven only for those.

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Put } from '@nestjs/common';
+import type { InactivityCleanup } from '../project/inactivity-cleanup';
 import { DefaultsService } from './defaults.service';
 import { RequirePermission } from '../permission/permission.guard';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
@@ -23,6 +24,23 @@ export class DefaultsController {
   @RequirePermission('can_manage_platform_defaults')
   updateGlobalTimeouts(@Body() body: UpdateTimeoutDefaultsDto): Promise<TimeoutDefaults> {
     return this.defaultsService.updateGlobalTimeouts(body);
+  }
+
+  @Put('global/agents/:agentId/inactivity-cleanup')
+  @RequirePermission('can_manage_platform_defaults')
+  @HttpCode(204)
+  updateBuiltInAgentInactivityCleanup(
+    @Param('agentId') agentId: string,
+    @Body() body: Partial<InactivityCleanup>
+  ): Promise<void> {
+    return this.defaultsService.updateBuiltInAgentInactivityCleanup(agentId, body);
+  }
+
+  @Delete('global/agents/:agentId/inactivity-cleanup')
+  @RequirePermission('can_manage_platform_defaults')
+  @HttpCode(204)
+  resetBuiltInAgentInactivityCleanup(@Param('agentId') agentId: string): Promise<void> {
+    return this.defaultsService.resetBuiltInAgentInactivityCleanup(agentId);
   }
 
   @Get('global/budgets')

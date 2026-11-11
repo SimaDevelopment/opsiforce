@@ -185,4 +185,41 @@ describe('App routing of a Project’s backend key', () => {
       ...OPENAI_FAMILY,
     });
   });
+
+  it('allows gateway-only models on chat and backend keys without adding them to the OpenCode picker', async () => {
+    const seeded = await seededTenant();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/model-providers',
+      headers: seeded.admin.headers,
+      payload: { baseFormat: 'openai', kind: 'official-api-key', name: 'gateway', key: 'sk-gateway' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const permissions = () =>
+      [bifrost.chatKeyOf(seeded.projectId), bifrost.backendKeyOf(seeded.projectId)].map(
+        (key) => key.provider_configs.find((row) => row.provider === `${seeded.tenant.name}-gateway`)?.allowed_models
+      );
+    expect(permissions()).toEqual([
+      expect.arrayContaining(['gpt-6-luna', 'gpt-6.1-terra']),
+      expect.arrayContaining(['gpt-6-luna', 'gpt-6.1-terra']),
+    ]);
+
+    const reachable = await app.inject({
+      method: 'GET',
+      url: '/api/model-providers/reachable-models',
+      headers: seeded.admin.headers,
+    });
+    expect(reachable.statusCode, reachable.body).toBe(200);
+    expect(reachable.json()).not.toContain('openai/gpt-6-luna');
+    expect(reachable.json()).not.toContain('openai/gpt-6.1-terra');
+
+    const chosen = await app.inject({
+      method: 'PUT',
+      url: '/api/model-providers/gateway/models',
+      headers: seeded.admin.headers,
+      payload: { models: ['gpt-6-luna'] },
+    });
+    expect(chosen.statusCode, chosen.body).toBe(200);
+    expect(permissions()).toEqual([['gpt-6-luna'], ['gpt-6-luna']]);
+  });
 });

@@ -624,6 +624,55 @@
       "when": 1792200000000,
       "tag": "0088_agent-pods-by-dns-name",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792200001000,
+      "tag": "0089_sign-in-providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1792200002000,
+      "tag": "0090_retire-managed-app-auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792200003000,
+      "tag": "0091_resource-presets",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792200003001,
+      "tag": "0092_custom-domains",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792200003002,
+      "tag": "0093_custom-domain-redirects",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1792200003003,
+      "tag": "0094_inactivity-cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1792200003004,
+      "tag": "0095_app-users",
+      "breakpoints": true
     }
   ]
 }

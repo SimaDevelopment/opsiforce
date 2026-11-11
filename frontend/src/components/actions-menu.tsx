@@ -1,11 +1,13 @@
 import { Show, type Component, type JSX, type ParentProps } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { EllipsisVertical } from '~/components/icons';
+import { Check, EllipsisVertical } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuItemIndicator,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { cn } from '~/lib/cn';
@@ -72,5 +74,24 @@ export function ActionsMenuItem(props: {
       />
       {props.children}
     </DropdownMenuItem>
+  );
+}
+
+export function ActionsMenuCheckItem(props: {
+  icon: Component<{ class?: string }>;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  children: JSX.Element;
+}) {
+  return (
+    <DropdownMenuCheckboxItem checked={props.checked} onChange={(checked) => props.onChange(checked)}>
+      <Dynamic component={props.icon} class="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      {props.children}
+      <span class="ml-auto flex h-3.5 w-3.5 shrink-0 items-center justify-center pl-3">
+        <DropdownMenuItemIndicator>
+          <Check class="h-3.5 w-3.5" aria-hidden="true" />
+        </DropdownMenuItemIndicator>
+      </span>
+    </DropdownMenuCheckboxItem>
   );
 }

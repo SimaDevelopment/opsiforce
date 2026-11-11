@@ -486,8 +486,6 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Remote desktops own their keyboard shortcuts, including clipboard keys.
-      if (event.target instanceof Element && event.target.closest("[data-remote-desktop]")) return
       if (suspended() || dialog.active) return
 
       const sig = signatureFromEvent(event)

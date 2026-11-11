@@ -20,6 +20,7 @@ export interface PodTemplateOptions {
   resources: K8sResourceRequirements;
   runtimeClassName?: string;
   privileged?: boolean;
+  unofferedSkills?: string[];
   nodeSelector?: Record<string, string>;
   tolerations?: Array<Record<string, string>>;
   affinity?: Record<string, unknown>;
@@ -35,6 +36,7 @@ export interface PodTemplateOptions {
   externalServicesHost?: string;
   serviceWebhookUrl?: string;
   caBundleConfigMap?: string;
+  browserIgnoresHttpsErrors?: boolean;
   controlToken?: string;
   controlPort?: number;
 }
@@ -52,9 +54,13 @@ const CA_BUNDLE_VARIABLES = [
   'NODE_EXTRA_CA_CERTS',
   'REQUESTS_CA_BUNDLE',
 ];
+const DOCKER_STORAGE_VOLUME = 'docker-storage';
+const DOCKER_STORAGE_DIRECTORY = '/var/lib/docker-storage';
+const DOCKER_STORAGE_LIMIT = '21Gi';
 
 export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
   const securityContext = agentSecurityContext(options.runtimeClassName, options.privileged);
+  const runsDocker = securityContext?.privileged === true;
   const resolvedAgentName = options.agentName || 'app-builder';
   const appPort = agentAppPort(resolvedAgentName);
 
@@ -84,6 +90,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
     spec: {
       hostname: options.podName,
       subdomain: AGENT_PODS_SERVICE,
+      automountServiceAccountToken: false,
       ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }
@@ -99,7 +106,12 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
           ...(securityContext ? { securityContext } : {}),
           image: options.agentContainerImage,
           imagePullPolicy: options.imagePullPolicy,
-          env: [{ name: 'AGENT_NAME', value: resolvedAgentName }],
+          env: [
+            { name: 'AGENT_NAME', value: resolvedAgentName },
+            ...(options.unofferedSkills?.length
+              ? [{ name: 'SWITCHED_OFF_SKILLS', value: options.unofferedSkills.join(',') }]
+              : []),
+          ],
           command: [
             'sh',
             '-c',
@@ -175,9 +187,11 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                 ]
               : []),
             ...(options.caBundleConfigMap ? CA_BUNDLE_VARIABLES.map((name) => ({ name, value: CA_BUNDLE_FILE })) : []),
+            ...(options.browserIgnoresHttpsErrors ? [{ name: 'AGENT_BROWSER_IGNORE_HTTPS_ERRORS', value: '1' }] : []),
             ...(options.runtimeProxyUrl
               ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),
+            ...(runsDocker ? [{ name: 'OPSIFORCE_DOCKER', value: '1' }] : []),
           ],
           volumeMounts: [
             ...volumeMounts,
@@ -185,6 +199,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
             ...(options.caBundleConfigMap
               ? [{ name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
               : []),
+            ...(runsDocker ? [{ name: DOCKER_STORAGE_VOLUME, mountPath: DOCKER_STORAGE_DIRECTORY }] : []),
           ],
           readinessProbe: {
             httpGet: {
@@ -209,6 +224,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
         ...(options.caBundleConfigMap
           ? [{ name: CA_BUNDLE_VOLUME, configMap: { name: options.caBundleConfigMap } }]
           : []),
+        ...(runsDocker ? [{ name: DOCKER_STORAGE_VOLUME, emptyDir: { sizeLimit: DOCKER_STORAGE_LIMIT } }] : []),
       ],
       restartPolicy: 'Always',
     },

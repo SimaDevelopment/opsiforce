@@ -5,11 +5,12 @@ import { Queue } from 'bullmq';
 import { and, desc, eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import path from 'node:path';
-import { chmod, mkdir, rename, rm, symlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, rename, rm, symlink } from 'node:fs/promises';
 import type yauzl from 'yauzl';
 import { db } from '../../db';
 import { folders, projectTransferJobs, workspaceMembers, workspaces } from '../../db/schema';
 import { AgentService } from '../agent/agent.service';
+import { restoreOwner, type FileOwner } from '../common/fs';
 import {
   collectEntries,
   entryMode,
@@ -22,8 +23,8 @@ import {
 import { TenantService } from '../tenant/tenant.service';
 import { ProjectService } from './project.service';
 import { ProjectEventsService } from './project-events.service';
-import { PROJECT_EXPORT_KIND, type ExportManifest } from '../export/project-export.types';
-import { wrongExportKind } from '../export/export-manifest';
+import { PROJECT_EXPORT_KIND, type ExportManifest, type ExportManifestOwner } from '../export/project-export.types';
+import { EXPORT_MANIFEST_FILE, wrongExportKind } from '../export/export-manifest';
 import {
   importsRootPath,
   PROJECT_IMPORT_QUEUE,
@@ -34,6 +35,7 @@ import {
 } from './project-import.types';
 
 const WORKSPACE_PREFIX = 'workspace/';
+const MAX_OWNER_ID = 0xfffffffe;
 
 @Injectable()
 export class ProjectImportService {
@@ -246,7 +248,7 @@ export class ProjectImportService {
       if (!buffer) throw new BadRequestException('The file is not a valid project export (missing manifest).');
       const manifest = JSON.parse(buffer.toString('utf8')) as ExportManifest;
       if (typeof manifest !== 'object' || manifest === null || !manifest.stamp) {
-        throw new BadRequestException('The project export manifest is malformed.');
+        throw malformedManifest();
       }
       assertProjectExportKind(manifest);
       return manifest;
@@ -260,8 +262,10 @@ export class ProjectImportService {
 
   /**
    * Unpacks the bundle's `workspace/` tree into the target project directory,
-   * restoring file modes and symlinks. Writes are confined to the target
-   * directory: an entry whose path escapes it is rejected.
+   * restoring directories (empty ones included), file and directory modes, the
+   * owners the manifest records, and symlinks. Writes are confined to the target
+   * directory: an entry whose path escapes it, or that would be placed through or
+   * over a symlink, is rejected.
    */
   async unpack(
     archivePath: string,
@@ -272,27 +276,31 @@ export class ProjectImportService {
     const zip = await openZip(archivePath);
     try {
       const entries = await collectEntries(zip);
+      const owners = await recordedOwners(zip, entries, root);
       const bytesTotal = entries.reduce((total, entry) => total + entry.uncompressedSize, 0);
       await report(0, bytesTotal);
 
       await mkdir(root, { recursive: true });
+      const directories = new Set<string>();
       let bytesProcessed = 0;
       let lastReportedAt = 0;
+      const directoryModes: Array<{ target: string; perms: number; owner: FileOwner | undefined }> = [];
 
       for (const entry of entries) {
         if (!entry.fileName.startsWith(WORKSPACE_PREFIX)) continue;
-        const rel = entry.fileName.slice(WORKSPACE_PREFIX.length);
-        if (rel.length === 0) continue;
+        const target = resolveConfined(root, entry.fileName.slice(WORKSPACE_PREFIX.length));
+        if (target === root) continue;
 
-        const target = resolveConfined(root, rel);
         const mode = entryMode(entry);
+        const owner = owners.get(target);
 
         if (entry.fileName.endsWith('/')) {
-          await mkdir(target, { recursive: true });
+          await ensureDirectory(root, target, directories);
+          directoryModes.push({ target, perms: mode & 0o777, owner });
           continue;
         }
 
-        await mkdir(path.dirname(target), { recursive: true });
+        await ensureDirectory(root, path.dirname(target), directories);
 
         if (isSymlinkMode(mode)) {
           const linkBuffer = await readEntry(zip, entry);
@@ -300,11 +308,13 @@ export class ProjectImportService {
           if (!isConfined(root, path.resolve(path.dirname(target), linkTarget))) {
             throw new BadRequestException('The project export contains an unsafe symlink.');
           }
-          await symlink(linkTarget, target);
+          await symlink(linkTarget, target).catch(refuseExisting);
+          if (owner) await restoreOwner(target, owner);
           continue;
         }
 
-        await writeEntryToFile(zip, entry, target);
+        await writeEntryToFile(zip, entry, target).catch(refuseExisting);
+        if (owner) await restoreOwner(target, owner);
         const perms = mode & 0o777;
         if (perms) await chmod(target, perms);
 
@@ -316,11 +326,48 @@ export class ProjectImportService {
         }
       }
 
+      for (const { target, perms, owner } of directoryModes.toSorted((a, b) => depth(b.target) - depth(a.target))) {
+        if (owner) await restoreOwner(target, owner);
+        if (perms) await chmod(target, perms);
+      }
+
       await report(bytesProcessed, bytesTotal);
     } finally {
       zip.close();
     }
   }
+}
+
+async function recordedOwners(
+  zip: yauzl.ZipFile,
+  entries: yauzl.Entry[],
+  root: string
+): Promise<Map<string, FileOwner>> {
+  const manifestEntry = entries.find((entry) => entry.fileName === EXPORT_MANIFEST_FILE);
+  const recorded = manifestEntry
+    ? (JSON.parse((await readEntry(zip, manifestEntry)).toString('utf8')) as ExportManifest).owners
+    : undefined;
+  const owners = new Map<string, FileOwner>();
+  if (recorded === undefined) return owners;
+  if (!Array.isArray(recorded)) throw malformedManifest();
+  for (const owner of recorded as unknown[]) {
+    const { path: rel, uid, gid } = (owner ?? {}) as Partial<Record<keyof ExportManifestOwner, unknown>>;
+    if (typeof rel !== 'string' || !isOwnerId(uid) || !isOwnerId(gid)) throw malformedManifest();
+    owners.set(resolveConfined(root, rel), { uid, gid });
+  }
+  return owners;
+}
+
+function isOwnerId(id: unknown): id is number {
+  return typeof id === 'number' && Number.isInteger(id) && id >= 0 && id <= MAX_OWNER_ID;
+}
+
+function malformedManifest(): BadRequestException {
+  return new BadRequestException('The project export manifest is malformed.');
+}
+
+function depth(target: string): number {
+  return target.split(path.sep).length;
 }
 
 export function assertProjectExportKind(manifest: { kind?: unknown }): void {
@@ -348,8 +395,27 @@ function isConfined(root: string, target: string): boolean {
 
 function resolveConfined(root: string, rel: string): string {
   const target = path.resolve(root, rel);
-  if (!isConfined(root, target)) {
-    throw new BadRequestException('The project export contains an unsafe file path.');
-  }
+  if (!isConfined(root, target)) throw unsafeFilePath();
   return target;
+}
+
+async function ensureDirectory(root: string, dir: string, directories: Set<string>): Promise<void> {
+  if (dir === root || directories.has(dir)) return;
+  if (!isConfined(root, dir)) throw unsafeFilePath();
+  await ensureDirectory(root, path.dirname(dir), directories);
+  try {
+    await mkdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    if (!(await lstat(dir)).isDirectory()) throw unsafeFilePath();
+  }
+  directories.add(dir);
+}
+
+function refuseExisting(err: NodeJS.ErrnoException): never {
+  throw err.code === 'EEXIST' ? unsafeFilePath() : err;
+}
+
+function unsafeFilePath(): BadRequestException {
+  return new BadRequestException('The project export contains an unsafe file path.');
 }

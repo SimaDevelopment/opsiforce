@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import { useImportSkill, useSkills, type Skill } from '~/api/skills';
@@ -21,6 +21,7 @@ import {
   SearchInput,
   SortSelect,
   UpdateBadge,
+  VersionTag,
   VisibilityBadge,
 } from '~/components/store/store-list';
 import { ChevronRight, Files, Plus, Upload } from '~/components/icons';
@@ -110,11 +111,11 @@ function SkillsEmptyState(props: { narrowed: boolean }) {
         <EmptyState
           icon={Files}
           title="No skills yet."
-          hint="New skill writes one with the Builder, or import a .skill archive."
+          description="New skill writes one with the Builder, or import a .skill archive."
         />
       }
     >
-      <EmptyState icon={Files} title="No skills match." hint="Try another filter, or clear the search." />
+      <EmptyState icon={Files} title="No skills match." description="Try another filter, or clear the search." />
     </Show>
   );
 }
@@ -133,7 +134,7 @@ function SkillRow(props: { skill: Skill }) {
             {(displayName) => (
               <>
                 <span class="text-sm font-medium">{displayName()}</span>
-                <span class="font-mono text-[11px] text-muted-foreground">{props.skill.name}</span>
+                <span class="font-mono text-[0.6875rem] text-muted-foreground">{props.skill.name}</span>
               </>
             )}
           </Show>
@@ -141,7 +142,7 @@ function SkillRow(props: { skill: Skill }) {
             when={props.skill.latestVersion}
             fallback={<span class="text-xs text-muted-foreground">No version yet</span>}
           >
-            {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version().version}</span>}
+            {(version) => <VersionTag version={version().version} />}
           </Show>
           <OriginBadge origin={props.skill.origin} />
           <ServiceMark externalServiceId={props.skill.externalServiceId} available={props.skill.available} />

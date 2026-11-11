@@ -11,9 +11,12 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import crypto from 'crypto';
+import path from 'node:path';
 import { db } from '../../db';
 import { projectDuplicateJobs, projectEnvironments, projectPublishJobs, projectSchedules } from '../../db/schema';
 import { readEnvJson } from '../common/env-file';
+import { ProjectConfigurationCarry } from '../external-services';
+import { ProjectService } from '../project/project.service';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { EnvironmentService } from '../environment/environment.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
@@ -31,6 +34,12 @@ import {
   PublishStatus,
   PublishTarget,
 } from './publish.types';
+import { holdsAppData } from './app-data';
+import { PublishCancellations } from './publish-cancellations';
+import { ProjectEventsService } from '../project/project-events.service';
+
+const PUBLISH_IN_PROGRESS =
+  'A publish is already in progress for this environment. To publish again now, open its progress card and cancel it.';
 
 @Injectable()
 export class PublishService implements OnApplicationBootstrap {
@@ -43,6 +52,10 @@ export class PublishService implements OnApplicationBootstrap {
     private readonly environmentService: EnvironmentService,
     private readonly projectEnvironmentService: ProjectEnvironmentService,
     private readonly publicUrls: PublicUrlService,
+    private readonly projectService: ProjectService,
+    private readonly projectConfigurationCarry: ProjectConfigurationCarry,
+    private readonly projectEvents: ProjectEventsService,
+    private readonly cancellations: PublishCancellations,
     @InjectQueue(PROJECT_PUBLISH_QUEUE)
     private readonly queue: Queue<PublishJobData>
   ) {
@@ -141,12 +154,21 @@ export class PublishService implements OnApplicationBootstrap {
 
     const schedules = devSchedules.map((s) => ({ id: s.id, name: s.name, selected: true }));
 
+    const services = (await this.projectConfigurationCarry.choices(devEnv.id, instance?.id ?? null)).map((choice) => ({
+      id: choice.id,
+      name: choice.name,
+      targetHasOwn: choice.targetHasOwn,
+      selected: !choice.targetHasOwn,
+    }));
+
     return {
       environmentId,
       environmentName: registryEnv.name,
       isFirstPublish,
+      developmentHasData: await holdsAppData(this.workspacePath(devEnv.directory)),
       variables,
       schedules,
+      services,
     };
   }
 
@@ -161,12 +183,14 @@ export class PublishService implements OnApplicationBootstrap {
     }
 
     if (await this.hasActiveJob(projectId, dto.environmentId)) {
-      throw new ConflictException('A publish is already in progress for this environment');
+      throw new ConflictException(PUBLISH_IN_PROGRESS);
     }
 
     if (await this.hasActiveDuplicate(projectId)) {
       throw new ConflictException('Cannot publish while a duplicate is in progress for this project');
     }
+
+    if (dto.withData) await this.assertDataCanMove(projectId);
 
     const instances = await this.projectEnvironmentService.listByProjectId(projectId);
     const existing = instances.find((i) => i.environmentId === dto.environmentId);
@@ -185,10 +209,11 @@ export class PublishService implements OnApplicationBootstrap {
           platformVersion: this.platformVersion,
           status: ProjectStatus.Publishing,
           authMode: devEnv.authMode,
+          signInProviderId: devEnv.signInProviderId,
         });
       } catch (err) {
         if (isProjectEnvironmentConflict(err)) {
-          throw new ConflictException('A publish is already in progress for this environment');
+          throw new ConflictException(PUBLISH_IN_PROGRESS);
         }
         throw err;
       }
@@ -212,7 +237,7 @@ export class PublishService implements OnApplicationBootstrap {
       });
     } catch (err) {
       if (isActivePublishConflict(err)) {
-        throw new ConflictException('A publish is already in progress for this environment');
+        throw new ConflictException(PUBLISH_IN_PROGRESS);
       }
       throw err;
     }
@@ -229,6 +254,8 @@ export class PublishService implements OnApplicationBootstrap {
           isFirstPublish,
           variables: dto.variables ?? {},
           scheduleIds: dto.scheduleIds ?? [],
+          serviceIds: dto.serviceIds ?? null,
+          withData: dto.withData === true,
         },
         { jobId: publishJobId, attempts: 1, removeOnComplete: true, removeOnFail: 1000 }
       );
@@ -238,6 +265,18 @@ export class PublishService implements OnApplicationBootstrap {
     }
 
     return this.toJobResponse(publishJobId);
+  }
+
+  private async assertDataCanMove(projectId: string): Promise<void> {
+    const devEnv = await this.projectEnvironmentService.findDefaultByProjectId(projectId);
+    if (!(await holdsAppData(this.workspacePath(devEnv.directory)))) {
+      throw new BadRequestException({ code: 'no-development-data', message: 'Development has no data to copy' });
+    }
+    await this.projectService.assertCanHoldForDataCopy(devEnv.id);
+  }
+
+  private workspacePath(directory: string): string {
+    return path.join(this.storageMountPath, directory);
   }
 
   private async abandonJob(jobId: string, createdEnvironmentId: string | null): Promise<void> {
@@ -260,9 +299,43 @@ export class PublishService implements OnApplicationBootstrap {
     }
   }
 
+  async cancel(projectId: string, environmentId: string): Promise<PublishJobResponse> {
+    const job = await this.activeJob(projectId, environmentId);
+    if (!job) throw new ConflictException('No publish is in progress for this environment');
+    if (job.status === PublishStatus.Queued) {
+      const [dropped] = await db
+        .update(projectPublishJobs)
+        .set({
+          status: PublishStatus.Failed,
+          error: 'Publish cancelled.',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(projectPublishJobs.id, job.id), eq(projectPublishJobs.status, PublishStatus.Queued)))
+        .returning({ id: projectPublishJobs.id });
+      if (dropped) {
+        await this.projectService.failPublishDeploy(job.projectEnvironmentId);
+        await this.projectEvents.publish(projectId);
+        return this.toJobResponse(job.id);
+      }
+    }
+    if (!this.cancellations.cancel(job.id)) {
+      throw new ConflictException("This publish can't be cancelled at this step");
+    }
+    return this.toJobResponse(job.id);
+  }
+
   private async hasActiveJob(projectId: string, environmentId: string): Promise<boolean> {
+    return (await this.activeJob(projectId, environmentId)) !== null;
+  }
+
+  private async activeJob(projectId: string, environmentId: string) {
     const [row] = await db
-      .select({ id: projectPublishJobs.id })
+      .select({
+        id: projectPublishJobs.id,
+        status: projectPublishJobs.status,
+        projectEnvironmentId: projectPublishJobs.projectEnvironmentId,
+      })
       .from(projectPublishJobs)
       .where(
         and(
@@ -272,7 +345,7 @@ export class PublishService implements OnApplicationBootstrap {
         )
       )
       .limit(1);
-    return !!row;
+    return row ?? null;
   }
 
   private async hasActiveDuplicate(projectId: string, executor: DbExecutor = db): Promise<boolean> {
@@ -299,8 +372,14 @@ export class PublishService implements OnApplicationBootstrap {
     return row ? this.toResponse(row) : null;
   }
 
-  async getJob(jobId: string): Promise<PublishJobResponse> {
-    return this.toJobResponse(jobId);
+  async claim(jobId: string): Promise<boolean> {
+    const [claimed] = await db
+      .update(projectPublishJobs)
+      .set({ status: PublishStatus.Committing, startedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(projectPublishJobs.id, jobId), eq(projectPublishJobs.status, PublishStatus.Queued)))
+      .returning({ projectId: projectPublishJobs.projectId });
+    if (claimed) await this.projectEvents.publish(claimed.projectId);
+    return !!claimed;
   }
 
   private async toJobResponse(jobId: string): Promise<PublishJobResponse> {

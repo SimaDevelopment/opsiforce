@@ -24,6 +24,10 @@ spec:
         karpenter.sh/do-not-disrupt: "true"
       labels:
         app: {{ include "opsiforce-runtime-proxies.proxyFullname" (dict "root" $ "name" $proxy.name) }}
+        opsiforce.io/reaches-agent-pods: "true"
+        {{- if eq $proxy.mode "agent" }}
+        opsiforce.io/serves-agent-pods: "true"
+        {{- end }}
     spec:
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:

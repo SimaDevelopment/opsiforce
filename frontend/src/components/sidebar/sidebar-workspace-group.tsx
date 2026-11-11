@@ -9,12 +9,13 @@ import { Boxes, ChevronDown, ChevronRight, GripVertical, Lock, Settings } from '
 import { SidebarDraggableProjectRow } from './sidebar-draggable-project-row';
 import { SidebarFolderGroup } from './sidebar-folder-group';
 import { SidebarCreateButton } from './sidebar-create-button';
+import { FoldedGroupStatus } from './folded-group-status';
 
 export function SidebarWorkspaceGroup(props: {
   workspace: Workspace;
   index: number;
   folded: boolean;
-  search: string;
+  filtering: boolean;
   projects: Project[];
   activeProjectId: string | undefined;
   isFolderExpanded: (folderId: string) => boolean;
@@ -60,10 +61,6 @@ export function SidebarWorkspaceGroup(props: {
     },
   });
 
-  const query = () => props.search.toLowerCase().trim();
-  const searchActive = () => query().length > 0;
-  const matchesQuery = (text: string | null | undefined) => (text ?? '').toLowerCase().includes(query());
-
   const view = createMemo(() => {
     const folderList = folders.data ?? [];
     const folderIds = new Set(folderList.map((f) => f.id));
@@ -79,49 +76,37 @@ export function SidebarWorkspaceGroup(props: {
       }
     }
 
-    if (!searchActive()) {
-      const folderView = folderList.map((folder) => ({
-        folder,
-        projects: byFolder.get(folder.id) ?? [],
-        autoExpanded: false,
-      }));
-      return { folders: folderView, loose, expanded: !props.folded };
-    }
-
     const folderView = folderList
-      .map((folder) => {
-        const folderProjects = byFolder.get(folder.id) ?? [];
-        const nameMatch = matchesQuery(folder.name);
-        const matching = folderProjects.filter((p) => matchesQuery(p.title));
-        return {
-          folder,
-          projects: nameMatch ? folderProjects : matching,
-          visible: nameMatch || matching.length > 0,
-        };
-      })
-      .filter((entry) => entry.visible)
-      .map(({ folder, projects }) => ({ folder, projects, autoExpanded: true }));
-
-    const visibleLoose = loose.filter((p) => matchesQuery(p.title));
-    const hasMatch = folderView.length > 0 || visibleLoose.length > 0;
-    return { folders: folderView, loose: visibleLoose, expanded: hasMatch || !props.folded };
+      .filter((folder) => !props.filtering || byFolder.has(folder.id))
+      .map((folder) => ({ folder, projects: byFolder.get(folder.id) ?? [] }));
+    return { folders: folderView, loose, expanded: !props.folded };
   });
 
   return (
-    <div ref={sortable.ref} class="flex flex-col" style={{ opacity: sortable.isDragging() ? 0.5 : 1 }}>
+    <div
+      ref={sortable.ref}
+      data-sidebar-group={props.workspace.id}
+      class="flex flex-col"
+      style={{ opacity: sortable.isDragging() ? 0.5 : 1 }}
+    >
       <div
         ref={folderDrop.ref}
         class="group/wsrow relative flex items-center gap-1.5 pl-4 pr-1 py-1 rounded-md hover:bg-sidebar-accent/50 cursor-pointer"
         classList={{ 'bg-sidebar-accent/60 ring-1 ring-sidebar-accent': folderDrop.isDropTarget() }}
         onClick={props.onToggleFold}
       >
+        {/* The grip was a 12px target at the sidebar's edge, fully transparent
+            until the row was hovered — reordering worked but nobody could find
+            it. It now keeps a resting opacity, carries a >=24px hit area
+            (WCAG 2.5.8) and stays visible on touch. */}
         <button
           ref={sortable.handleRef}
-          class="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover/wsrow:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+          class="of-grip absolute left-0.5 top-1/2 -translate-y-1/2 opacity-40 group-hover/wsrow:opacity-100 pointer-coarse:opacity-100 focus-visible:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
+          aria-label={`Reorder ${props.workspace.name}`}
           title="Drag to reorder"
         >
-          <GripVertical class="w-3 h-3" />
+          <GripVertical class="w-3.5 h-3.5" />
         </button>
         <span class="text-muted-foreground shrink-0">
           {view().expanded ? <ChevronDown class="w-3 h-3" /> : <ChevronRight class="w-3 h-3" />}
@@ -133,6 +118,7 @@ export function SidebarWorkspaceGroup(props: {
           <Lock class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         </Show>
         <span class="flex-1 min-w-0 text-sm font-medium truncate text-foreground">{props.workspace.name}</span>
+        <FoldedGroupStatus projects={props.projects} folded={!view().expanded} />
         <Show when={props.onOpenSettings}>
           <button
             class="opacity-0 group-hover/wsrow:opacity-100 pointer-coarse:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-accent"
@@ -153,7 +139,7 @@ export function SidebarWorkspaceGroup(props: {
           {(entry) => (
             <SidebarFolderGroup
               folder={entry.folder}
-              expanded={entry.autoExpanded || props.isFolderExpanded(entry.folder.id)}
+              expanded={props.isFolderExpanded(entry.folder.id)}
               projects={entry.projects}
               activeProjectId={props.activeProjectId}
               onToggleExpanded={() => props.onToggleFolder(entry.folder.id)}

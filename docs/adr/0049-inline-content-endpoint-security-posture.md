@@ -9,5 +9,5 @@ File preview serves workspace files inline from the app's origin, so the endpoin
 
 ## Consequences
 
-- A NetworkPolicy blocking agent pods from calling the converter directly was consciously deferred on 2026-08-21: agent pods share the namespace and can submit conversions, the realistic exposure is queue starvation rather than data access, and minikube's default CNI enforces no policy, so an unverifiable object was not shipped. The fix, if abuse appears, is a namespaced NetworkPolicy plus a CNI check.
+- Agent pods cannot call the converter: the agent pods' NetworkPolicy reaches only the services they need, and the converter is not one of them ([ADR-0106](0106-agent-pods-reach-only-the-platform-services-they-call-and-the-internet-and-only-platform-roles-reach-them.md)).
 - The endpoint sends `nosniff`, `no-store` and Range support, and shares the path guards and membership check with download.

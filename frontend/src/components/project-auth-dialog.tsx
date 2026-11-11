@@ -7,6 +7,7 @@ export function ProjectAuthDialog(props: {
   projectId: string;
   environmentId: string;
   environmentName?: string;
+  appUrl?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -28,7 +29,13 @@ export function ProjectAuthDialog(props: {
                 </div>
               }
             >
-              <ProjectAuthTab projectId={props.projectId} environmentId={props.environmentId} />
+              <ProjectAuthTab
+                projectId={props.projectId}
+                environmentId={props.environmentId}
+                appUrl={props.appUrl}
+                onSaved={() => props.onOpenChange(false)}
+                onLeave={() => props.onOpenChange(false)}
+              />
             </Show>
           </Show>
         </div>

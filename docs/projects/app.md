@@ -18,11 +18,14 @@ adrs: [0010, 0016]
 - The rule is latest writer wins: the agent may rewrite the file later, and is instructed to carry an existing name forward verbatim unless asked to rename.
 - The App reads its own identity at runtime: the template frontend queries `/api/app-meta` at startup and sets the tab title, and the favicon is a neutral placeholder the agent overwrites at Go-live ([ADR-0010](../adr/0010-app-identity-read-at-runtime.md)).
 - Gated by `can_edit_app_details`, which also gates Edit URL ([Permissions](../organization/permissions.md)).
+- The App preview's address bar follows the page the App is on: it shows the App's Public URL host, once it has one, beside the current path, query and fragment. Clicking it selects the whole address at that page, as a browser does, to copy or edit and open with Enter. Back and Forward move through the App's own history, Reload and every automatic reload keep the current page, and Copy URL and Open app hand out the Public URL at that page. The pane learns the page from the preview host, which reports every navigation to the platform ([Request Flows](../runtime/request-flows.md)).
 
 ## Edge cases
 
-- When a published environment's Details are curated, the next Publish recopies Development's `app.meta.json` over them.
+- When a published environment's Details are curated, a later Publish update keeps them: only a first Publish carries Development's `app.meta.json` ([ADR-0107](../adr/0107-a-publish-carries-the-apps-data-only-when-asked-by-mirroring-developments-data-folder-and-replaces-nothing-the-target-owns-unless-chosen.md)).
 - When a Project predates the runtime-identity template, its App keeps a hardcoded title until regenerated.
+- When the preview shows a page that does not report its location (the proxy's starting page, or an App whose Content-Security-Policy blocks inline scripts), the address bar keeps the last path it knew, Back and Forward stay disabled, and Reload loads that path again.
+- When the browser has no Navigation API, Back and Forward stay disabled while the address bar still follows the App.
 
 ## Code
 
@@ -30,6 +33,7 @@ adrs: [0010, 0016]
 - `backend/src/project/project.service.ts` — the human edit path that rewrites the metadata file and mirrors it into the row, and the Edit URL path that sets the App Slug.
 - `project_app` in `backend/db/schema.ts` — App Details per ProjectEnvironment.
 - `frontend/src/components/project/` — the app pane, the edit-details UI and the Edit URL dialog.
+- `frontend/src/components/project/preview/preview-address.ts` — the messages the App preview exchanges with the preview host, and reading a typed address.
 
 ## Related
 

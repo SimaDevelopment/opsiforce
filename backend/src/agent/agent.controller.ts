@@ -20,6 +20,11 @@ import { join } from 'node:path';
 import { contentDisposition } from '../files/file-content-types';
 import { RelaxPermission, RequirePermission } from '../permission/permission.guard';
 import { getGroupsHeader, hasPermission } from '../permission/permission.utils';
+import {
+  NO_INACTIVITY_CLEANUP,
+  assertInactivityCleanupPermitted,
+  inactivityCleanupGrants,
+} from '../project/inactivity-cleanup';
 import { CurrentTenant, type TenantContext } from '../tenant/tenant.decorator';
 import { CurrentUser, type UserContext } from '../user/user.decorator';
 import { MissingPermissionException } from '../permission/missing-permission.exception';
@@ -52,6 +57,7 @@ import type {
   UpdateAgentDto,
   UpdateAgentProfileDto,
   AgentCopyGrants,
+  UpdateAgentInactivityCleanupDto,
   UpdateAgentPodClassDto,
   UpdateAgentSettingsDto,
 } from './agent.types';
@@ -139,7 +145,7 @@ export class AgentController {
     const uploadId = this.importUploadId(req, dto?.uploadId);
     return this.withImportArchive((archivePath) =>
       this.uploadService.peekUpload({ tenantId: tenant.tenantId, uploadId }, archivePath, () =>
-        this.importService.inspect(archivePath)
+        this.importService.inspect(archivePath, tenant.tenantId)
       )
     );
   }
@@ -226,6 +232,39 @@ export class AgentController {
     return this.agentService.updatePodClass(await this.caller(req, tenant, user), id, dto);
   }
 
+  @Delete(':id/pod-class')
+  async resetPodClass(
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentDetail> {
+    return this.agentService.resetPodClass(await this.caller(req, tenant, user), id);
+  }
+
+  @Put(':id/inactivity-cleanup')
+  async updateInactivityCleanup(
+    @Param('id') id: string,
+    @Body() dto: UpdateAgentInactivityCleanupDto,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentDetail> {
+    assertInactivityCleanupPermitted(dto, inactivityCleanupGrants(getGroupsHeader(req)));
+    return this.agentService.updateInactivityCleanup(await this.caller(req, tenant, user), id, dto);
+  }
+
+  @Delete(':id/inactivity-cleanup')
+  async resetInactivityCleanup(
+    @Param('id') id: string,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext
+  ): Promise<AgentDetail> {
+    assertInactivityCleanupPermitted(NO_INACTIVITY_CLEANUP, inactivityCleanupGrants(getGroupsHeader(req)));
+    return this.agentService.resetInactivityCleanup(await this.caller(req, tenant, user), id);
+  }
+
   @Put(':id/skills/:skillId')
   async setSkill(
     @Param('id') id: string,
@@ -257,7 +296,9 @@ export class AgentController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<AgentServiceSettingsView> {
-    return this.agentService.serviceSettings(await this.caller(req, tenant, user), id, skillId);
+    return this.agentService.serviceSettings(await this.caller(req, tenant, user), id, skillId, {
+      canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
+    });
   }
 
   @Put(':id/skills/:skillId/service-settings')
@@ -272,6 +313,28 @@ export class AgentController {
     return this.agentService.setServiceSettings(await this.caller(req, tenant, user), id, skillId, dto ?? {}, {
       canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
     });
+  }
+
+  @Post(':id/skills/:skillId/service-settings/options/:name')
+  async serviceSettingsOptions(
+    @Param('id') id: string,
+    @Param('skillId') skillId: string,
+    @Param('name') name: string,
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserContext,
+    @Res() reply: FastifyReply
+  ): Promise<void> {
+    const answer = await this.agentService.serviceSettingsOptions(
+      await this.caller(req, tenant, user),
+      id,
+      skillId,
+      name,
+      body,
+      { canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services') }
+    );
+    await reply.status(answer.status).headers(answer.headers).send(Buffer.from(answer.body));
   }
 
   @Post(':id/publish')
@@ -316,7 +379,7 @@ export class AgentController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserContext
   ): Promise<void> {
-    const exported = await this.exportService.export(await this.caller(req, tenant, user), id);
+    const exported = await this.exportService.export(await this.caller(req, tenant, user), id, this.copyGrants(req));
     await reply
       .header('Content-Type', 'application/zip')
       .header('Content-Length', exported.archive.byteLength)
@@ -372,6 +435,7 @@ export class AgentController {
   private copyGrants(req: FastifyRequest): AgentCopyGrants {
     return {
       canConfigureProjects: hasPermission(getGroupsHeader(req), 'can_configure_project_external_services'),
+      ...inactivityCleanupGrants(getGroupsHeader(req)),
     };
   }
 

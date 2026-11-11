@@ -1,6 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show, Switch, Match } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/tooltip';
 import { LoaderCircle, Mic, X } from '~/components/icons';
 import { useNow } from '~/lib/use-now';

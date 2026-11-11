@@ -8,7 +8,7 @@ import { db } from '../../db';
 import { skillVersionFiles, skillVersions } from '../../db/schema';
 import type { AgentExportManifest } from '../../src/agent/agent-export';
 import type { AgentExportService } from '../../src/agent/agent-export.service';
-import type { AgentCaller } from '../../src/agent/agent.types';
+import type { AgentCaller, AgentCopyGrants } from '../../src/agent/agent.types';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
 import { hashSkillTree, unpackSkill, type SkillTree } from '../../src/store/gate';
 import { agentTemplatesDir, ensureBuiltInAgent, ensureBuiltInSkill, seedBuilderChat } from '../support/agent-fixtures';
@@ -84,9 +84,10 @@ function entries(tree: SkillTree, prefix: string): SkillTree {
 }
 
 async function readExport(
-  agentId: string
+  agentId: string,
+  grants: AgentCopyGrants = { canConfigureProjects: true }
 ): Promise<{ fileName: string; tree: SkillTree; manifest: AgentExportManifest }> {
-  const exported = await exports.export(author, agentId);
+  const exported = await exports.export(author, agentId, grants);
   const tree = await unpackSkill(exported.archive);
   const manifestFile = tree.find((file) => file.path === 'manifest.json');
   if (!manifestFile) throw new Error('expected manifest.json');
@@ -154,8 +155,16 @@ describe('exporting a Custom Agent', () => {
       ].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: { hash },
       projectSettings: {
-        resources: { podClass: 'small', cpuMillicores: 100, memoryRequestMib: 2048, memoryLimitMib: 4096 },
+        resources: {
+          presetId: 'small',
+          presetName: 'Small',
+          cpuMillicores: 100,
+          memoryRequestMib: 2048,
+          memoryLimitMib: 4096,
+        },
+        followsDefault: true,
         warmPoolSize: 0,
+        inactivityCleanup: null,
       },
     });
 
@@ -167,6 +176,24 @@ describe('exporting a Custom Agent', () => {
     const skillTree = await unpackSkill(pack?.content ?? Buffer.alloc(0));
     expect(skillTree.map((file) => file.path)).toEqual(['SKILL.md']);
     expect(hashSkillTree(skillTree)).toBe(extraVersion.contentHash);
+  });
+
+  it('carries the Inactivity cleanup pair only for an exporter who may set both counts', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const agent = await harness.agents.create(author, { displayName: uniqueName('Cleaned') });
+    await harness.agents.updateInactivityCleanup(author, agent.id, { disableAfter: 14 * day, deleteAfter: 30 * day });
+
+    const full = await readExport(agent.id, {
+      canConfigureProjects: true,
+      canDisableProjects: true,
+      canDeleteProjects: true,
+    });
+    const withoutDelete = await readExport(agent.id, { canConfigureProjects: true, canDisableProjects: true });
+
+    expect({
+      full: full.manifest.projectSettings?.inactivityCleanup,
+      withoutDelete: withoutDelete.manifest.projectSettings?.inactivityCleanup,
+    }).toEqual({ full: { disableAfter: 14 * day, deleteAfter: 30 * day }, withoutDelete: null });
   });
 
   it('writes a null template when the Agent has none', async () => {

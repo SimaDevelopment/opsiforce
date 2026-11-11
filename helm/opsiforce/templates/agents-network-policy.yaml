@@ -1,0 +1,57 @@
+{{- with .Values.agent.networkPolicy }}
+{{- if .enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opsiforce-agents
+  labels:
+    {{- include "opsiforce.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: opsiforce-agent
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              opsiforce.io/controls-agent-pods: "true"
+    - from:
+        - podSelector:
+            matchLabels:
+              opsiforce.io/reaches-agent-pods: "true"
+      ports:
+        {{- range (list $.Values.agent.port $.Values.agent.appPort $.Values.agent.codeServerPort $.Values.agent.dbViewerPort) }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              opsiforce.io/serves-agent-pods: "true"
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: bifrost
+      ports:
+        - port: {{ .bifrostPort }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .ingressControllerNamespace }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml .privateRanges | nindent 14 }}
+{{- end }}
+{{- end }}

@@ -1,5 +1,5 @@
 import { Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { Lock, Pencil, Trash2, X } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { ColorPicker } from '~/components/ui/color-picker';
@@ -66,16 +66,16 @@ export function EnvironmentRow(props: EnvironmentRowProps) {
                 />
                 <span class="text-xs font-medium text-foreground">{props.environment.name}</span>
                 <span
-                  class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                  class="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.625rem] text-muted-foreground"
                   title="URL slug — appears in every Public URL of this environment"
                 >
                   {props.environment.slug}
                 </span>
                 <span class="inline-flex items-center" title="Badge shown on project cards">
-                  <EnvironmentBadge environment={props.environment} class="h-5 px-1.5 text-[10px]" />
+                  <EnvironmentBadge environment={props.environment} class="h-5 px-1.5 text-[0.625rem]" />
                 </span>
                 <Show when={isLocked()}>
-                  <span class="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <span class="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground">
                     <Lock class="h-2.5 w-2.5" />
                     Protected
                   </span>

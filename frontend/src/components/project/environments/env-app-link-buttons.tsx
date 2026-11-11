@@ -47,7 +47,7 @@ export function EnvAppLinkButtons(props: EnvAppLinkButtonsProps) {
           aria-label="Copy Public URL"
           onClick={copyUrl}
         >
-          {copied() ? <Check class="h-3.5 w-3.5 text-emerald-500" /> : <Copy class="h-3.5 w-3.5" />}
+          {copied() ? <Check class="of-ink of-tone-done h-3.5 w-3.5" /> : <Copy class="h-3.5 w-3.5" />}
         </TooltipTrigger>
         <TooltipContent>
           {props.enabled ? (copied() ? 'Copied!' : 'Copy Public URL') : props.disabledReason}

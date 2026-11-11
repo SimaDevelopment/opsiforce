@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { db } from '../../db';
 import type { DbExecutor } from '../common/locks';
 import { agentProfileSkills, agentProfiles, agentSettings, agents } from '../../db/schema';
+import { writeAgentInactivityCleanup } from '../project/inactivity-cleanup';
 import { templateChanged } from '../agent-template/agent-template.errors';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { developmentEnvironmentId, productionEnvironmentId } from '../store/agent-profile.repository';
@@ -13,6 +14,7 @@ import { writeAgentPodSettings, writeWarmPoolSize } from './agent-pod-settings';
 import { PLATFORM_SKILL_NAME, type AgentCaller } from './agent.types';
 import { isPostgresError, PG_UNIQUE_VIOLATION } from '../common/postgres-errors';
 import type { AgentBundle, SkillPin } from './agent-bundle';
+import { assertRoomForCreatedAgent, type CreatedAgentsCap } from './created-agents-cap';
 
 const SLUG_MAX_LENGTH = 60;
 const AGENT_NAME_UNIQUE = 'agents_tenant_id_name_unique';
@@ -34,6 +36,7 @@ export interface NewAgent {
   pins: SkillPin[];
   /** Skill writes that commit with the Agent's rows, answering the pins they minted. */
   writeSkills?: (tx: DbExecutor) => Promise<SkillPin[]>;
+  createdAgentsCap?: CreatedAgentsCap | null;
 }
 
 @Injectable()
@@ -71,6 +74,7 @@ export class AgentBundleWriter {
       }
 
       await db.transaction(async (tx) => {
+        await assertRoomForCreatedAgent(tx, draft.createdAgentsCap);
         const mintedPins = draft.writeSkills ? await draft.writeSkills(tx) : [];
         await tx.insert(agents).values({
           id: agentId,
@@ -84,8 +88,13 @@ export class AgentBundleWriter {
           createdByProjectId: caller.callingProjectId ?? null,
         });
         await tx.insert(agentSettings).values({ agentId, defaultEnvironmentId: productionId });
-        await writeAgentPodSettings(tx, agentId, draft.bundle.projectSettings.resources);
+        await writeAgentPodSettings(
+          tx,
+          agentId,
+          draft.bundle.projectSettings.followsDefault ? null : draft.bundle.projectSettings.resources
+        );
         await writeWarmPoolSize(tx, caller.tenantId, agentId, draft.bundle.projectSettings.warmPoolSize);
+        await writeAgentInactivityCleanup(agentId, draft.bundle.projectSettings.inactivityCleanup ?? null, tx);
 
         const profileId = crypto.randomUUID();
         await tx.insert(agentProfiles).values({

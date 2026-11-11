@@ -11,7 +11,7 @@ export function NeedsAttentionBanner(props: {
   return (
     <div
       role="alert"
-      class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900"
+      class="of-note of-tone-needs-you gap-2 text-[0.6875rem]"
     >
       <AlertTriangle class="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span>

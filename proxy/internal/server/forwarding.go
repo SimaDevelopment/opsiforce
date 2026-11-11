@@ -14,6 +14,7 @@ const forwardedTokenHeader = "X-Opsiforce-Access-Token"
 const forwardedUserIDHeader = "X-Opsiforce-User-Id"
 const objectIDHeader = "X-Opsiforce-Object-Id"
 const directoryIDHeader = "X-Opsiforce-Directory-Id"
+const signedInSubjectHeader = "X-Oidc-Subject"
 const unprotectedRouteHeader = "X-Opsiforce-Unprotected-Route"
 
 // The OIDC plugin renders a missing claim as "<no value>".
@@ -27,6 +28,18 @@ func stripReservedHeaders(headers http.Header) {
 			delete(headers, name)
 		}
 	}
+}
+
+func dropCORSHeaders(headers http.Header) {
+	for name := range headers {
+		if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-Allow-") {
+			delete(headers, name)
+		}
+	}
+}
+
+func signedInFromAnotherOrigin(r *http.Request) bool {
+	return r.Header.Get(signedInSubjectHeader) != "" && !sameOriginForwarding(r)
 }
 
 // Authenticate the per-environment transport credential injected by OIDC.

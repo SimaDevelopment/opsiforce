@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError } from '~/api/client';
 import {
   AGENTS_AFFECTED_CODE,
@@ -207,7 +207,7 @@ export function FormatCard(props: FormatCardProps) {
                   </Show>
                   <Show when={row.baseUrl}>
                     {(baseUrl) => (
-                      <p class="mt-0.5 break-all font-mono text-[11px] text-muted-foreground" translate="no">
+                      <p class="mt-0.5 break-all font-mono text-[0.6875rem] text-muted-foreground" translate="no">
                         {baseUrl()}
                       </p>
                     )}
@@ -268,7 +268,7 @@ export function FormatCard(props: FormatCardProps) {
           <Show when={builtInsWithoutAccess().length > 0}>
             <TableRow class="hover:bg-transparent">
               <TableCell colSpan={columnCount()} class="bg-muted/40 py-1.5">
-                <span class="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                <span class="inline-flex items-center gap-1 text-[0.6875rem] font-medium text-muted-foreground">
                   No access in this organization
                   <InfoTip content={TIPS.noAccessHere} label="About model providers without access" />
                 </span>

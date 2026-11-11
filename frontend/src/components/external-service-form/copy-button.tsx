@@ -23,7 +23,7 @@ export function CopyButton(props: { text: string; label?: string }) {
       }}
     >
       <Show when={copied()} fallback={<Copy class="h-3.5 w-3.5" aria-hidden="true" />}>
-        <Check class="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
+        <Check class="of-ink of-tone-done h-3.5 w-3.5" aria-hidden="true" />
       </Show>
     </button>
   );

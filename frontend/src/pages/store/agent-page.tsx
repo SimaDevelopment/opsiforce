@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { Link, useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   downloadAgentExport,
   useAgent,
@@ -14,7 +15,6 @@ import {
   type AgentDeliverySummary,
   type AgentDetail,
   type AgentProfile,
-  type ShippedSkill,
 } from '~/api/agents';
 import { ApiError } from '~/api/client';
 import { useEnvironments, type Environment } from '~/api/environments';
@@ -39,8 +39,8 @@ import {
   EmptyState,
   ErrorState,
   FOCUS_RING,
+  KIND_ICONS,
   OriginBadge,
-  RowLink,
   RowList,
   SectionTitle,
   VisibilityBadge,
@@ -63,7 +63,6 @@ import {
   CirclePlay,
   Copy,
   Download,
-  Files,
   Globe,
   Plus,
   Rocket,
@@ -246,6 +245,10 @@ function AgentHeader(props: {
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.email ??
     null;
   const editable = () => props.canManage && props.agent.origin === 'custom';
+  const editsResources = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_resources'));
+  const editsCleanup = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_defaults'));
   const name = () => props.agent.displayName ?? props.agent.name;
   const [editingSettings, setEditingSettings] = createSignal(false);
 
@@ -313,6 +316,9 @@ function AgentHeader(props: {
             readyProjects={props.agent.settings.warmPoolSize}
             imageOwned={props.agent.origin === 'built_in'}
             onEdit={editable() ? () => setEditingSettings(true) : undefined}
+            onEditResources={editsResources() ? () => setEditingSettings(true) : undefined}
+            inactivityCleanup={props.agent.inactivityCleanup}
+            onEditCleanup={editsCleanup() ? () => setEditingSettings(true) : undefined}
           />
         </div>
         <Show when={props.canManage}>
@@ -385,11 +391,9 @@ function AgentActionsMenu(props: {
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
-        <Show when={props.agent.origin === 'custom'}>
-          <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
-            Settings
-          </ActionsMenuItem>
-        </Show>
+        <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
+          Settings
+        </ActionsMenuItem>
         <Show when={props.agent.duplicable}>
           <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate
@@ -440,7 +444,7 @@ function AgentActionsMenu(props: {
         confirmLabel="Make public"
         onConfirm={() => void makePublic()}
       >
-        <div class="mt-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <div class="of-note of-tone-needs-you mt-4 text-xs">
           <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
             This can't be undone. Public never goes back to private — the way back is a private copy via Duplicate.
@@ -681,7 +685,7 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
                 <Show
                   when={refused()}
                   fallback={
-                    <p class="text-xs text-amber-900" role="alert">
+                    <p class="of-ink of-tone-needs-you text-xs" role="alert">
                       The file couldn't be checked for keys or secrets. You can still download it; check it before you
                       share it.
                     </p>
@@ -694,7 +698,7 @@ function ExportAgentDialog(props: { agent: AgentDetail; open: boolean; onOpenCha
               }
             >
               <Show when={hits().length > 0}>
-                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <div class="of-note of-tone-needs-you flex-col text-xs">
                   <div class="flex gap-2 font-medium">
                     <AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span>These look like keys or secrets. Check them before you share the file.</span>
@@ -740,20 +744,48 @@ function BuiltInBody(props: {
     const summary = delivery.data;
     return summary ? Math.max(summary.total - summary.converged, 0) : null;
   };
-  const omitted = () => delivery.data?.omitted ?? [];
 
   return (
-    <div class="space-y-6">
-      <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-        <div class="font-medium">Ships with the platform</div>
-        <div class="mt-0.5 text-xs text-blue-900/80">
-          Its prompt, template and the skills it ships come from the agent image and update with releases. Skills your
-          organization adds reach <strong>every existing project</strong> on this agent, in every environment, as soon
-          as you change them.
-        </div>
-      </div>
-
-      <section>
+    <EnvironmentSplit
+      title="Where its skills come from"
+      list={
+        <RowList>
+          <div class="flex gap-3 px-4 py-3">
+            <Dynamic
+              component={KIND_ICONS.shipped}
+              class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div class="min-w-0 space-y-0.5">
+              <div class="text-sm font-medium">Package</div>
+              <p class="text-xs text-muted-foreground">
+                Its prompt, template and these skills ship with the platform and update with releases.
+              </p>
+            </div>
+          </div>
+          <div class="flex gap-3 px-4 py-3">
+            <Dynamic
+              component={KIND_ICONS.addons}
+              class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div class="min-w-0 space-y-0.5">
+              <div class="text-sm font-medium">Add-ons</div>
+              <p class="text-xs text-muted-foreground">
+                Added by your organization. They reach every project on this agent as soon as you change them. Service
+                settings shape new projects only.
+              </p>
+              <Show when={notApplied() !== null}>
+                <p class={cn('text-xs', notApplied() === 0 ? 'text-muted-foreground' : 'of-ink of-tone-needs-you')}>
+                  {notApplied() === 0 ? 'Applied to every project.' : `Not applied to ${notApplied()} project(s) yet.`}
+                </p>
+              </Show>
+            </div>
+          </div>
+        </RowList>
+      }
+    >
+      <section class="min-w-0">
         <SectionTitle
           action={
             <Show when={props.canManage}>
@@ -764,83 +796,30 @@ function BuiltInBody(props: {
             </Show>
           }
         >
-          Added by your organization
+          Skills
         </SectionTitle>
         <AgentSkillList
           agent={props.agent}
           skills={props.skills ?? []}
+          shipped={props.agent.shippedSkills}
           editable={props.canManage}
           onAdd={props.onAdd}
         />
-        <Show when={notApplied() !== null}>
-          <p class="mt-2 text-xs text-muted-foreground">
-            {notApplied() === 0
-              ? 'Applied to every project on this agent.'
-              : `Not applied to ${notApplied()} project(s) yet.`}
-          </p>
-        </Show>
-        <OmittedSkills omitted={omitted()} />
+        <OmittedSkills omitted={delivery.data?.omitted ?? []} />
       </section>
-
-      <section>
-        <SectionTitle>Ships with the agent</SectionTitle>
-        <ShippedSkillList agentId={props.agent.id} skills={props.agent.shippedSkills} />
-      </section>
-    </div>
-  );
-}
-
-function ShippedSkillList(props: { agentId: string; skills: ShippedSkill[] }) {
-  return (
-    <Show
-      when={props.skills.length > 0}
-      fallback={
-        <p class="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          This agent's package ships no skills of its own.
-        </p>
-      }
-    >
-      <RowList>
-        <For each={props.skills}>
-          {(skill) => (
-            <Show
-              when={skill.skillId}
-              fallback={
-                <div class="flex items-center gap-3 px-4 py-2.5">
-                  <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span class="font-mono text-sm">{skill.name}</span>
-                </div>
-              }
-            >
-              {(skillId) => (
-                <RowLink
-                  href={`/store/skills/${skillId()}?${new URLSearchParams({ agent: props.agentId })}`}
-                  class="px-4 py-2.5"
-                >
-                  <Files class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span class="min-w-0 flex-1 truncate font-mono text-sm">{skill.name}</span>
-                  <Show when={skill.version}>
-                    {(version) => <span class="text-xs tabular-nums text-muted-foreground">v{version()}</span>}
-                  </Show>
-                </RowLink>
-              )}
-            </Show>
-          )}
-        </For>
-      </RowList>
-    </Show>
+    </EnvironmentSplit>
   );
 }
 
 function OmittedSkills(props: { omitted: AgentDeliverySummary['omitted'] }) {
   return (
     <Show when={props.omitted.length > 0}>
-      <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <div class="of-note of-tone-needs-you mt-2 flex-col text-xs">
         <div class="flex items-center gap-1.5 font-medium">
           <AlertTriangle class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           Dropped for a name the agent image owns
         </div>
-        <ul class="mt-1 space-y-0.5 text-amber-900/80">
+        <ul class="mt-1 space-y-0.5 opacity-80">
           <For each={props.omitted}>
             {(skill) => (
               <li>
@@ -889,7 +868,7 @@ function EnvironmentPanel(props: {
           <EmptyState
             icon={Rocket}
             title={`Nothing published to ${selected()?.name ?? 'this environment'} yet.`}
-            hint={
+            description={
               props.canManage
                 ? 'Publish, at the top of the page, copies Development here and offers it to new projects.'
                 : 'Until Development is published here, new projects cannot start from it.'

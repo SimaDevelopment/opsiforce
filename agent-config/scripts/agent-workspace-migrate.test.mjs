@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -55,12 +55,13 @@ async function makeRoots({ packages = ["app-builder"], skills = { "app-builder":
   return { root, workspace, agentsRoot, opencodeRoot }
 }
 
-function contextFor(roots, agentName) {
+function contextFor(roots, agentName, env = {}) {
   return createContext({
     AGENT_NAME: agentName,
     WORKSPACE: roots.workspace,
     AGENTS_ROOT: roots.agentsRoot,
     OPENCODE_ROOT: roots.opencodeRoot,
+    ...env,
   })
 }
 
@@ -183,6 +184,22 @@ test("planSkills leaves a switched-off Skill unwritten, unowned and removed from
   })
   assert.deepEqual(plan.write, ["ui"])
   assert.deepEqual(plan.remove, ["web-app"])
+})
+
+test("first boot leaves a Skill the deployment does not offer unlaid, and a later update without the skip lays it", async (t) => {
+  const roots = await makeRoots({ skills: { "app-builder": ["docker", "ui"] } })
+  t.after(() => rm(roots.root, { recursive: true, force: true }))
+  const unoffered = contextFor(roots, "app-builder", { SWITCHED_OFF_SKILLS: "docker" })
+  await provisionWorkspace(unoffered, summaryFor(unoffered))
+
+  assert.deepEqual(await readdir(unoffered.skillsDir), ["ui"])
+  assert.deepEqual((await readLedger(unoffered)).ownedSkills, ["ui"])
+
+  const offered = contextFor(roots, "app-builder")
+  await reconcileContent(offered, summaryFor(offered))
+
+  assert.deepEqual(await readdir(offered.skillsDir), ["docker", "ui"])
+  assert.deepEqual((await readLedger(offered)).ownedSkills, ["docker", "ui"])
 })
 
 test("first boot lays every owned file and writes the ledger last", async (t) => {
@@ -527,6 +544,8 @@ const PLATFORM_LINES = [
   ".xdg/",
   "node_modules/",
   "data/",
+  "/user_uploaded_files/",
+  "/generated_files/",
   "**/.yarn/cache",
   "**/.yarn/unplugged",
   "**/.yarn/build-state.yml",
@@ -636,3 +655,36 @@ test("a Built-in lay is unchanged: the package template, the platform .gitignore
   assert.deepEqual(commitSubjects(roots.workspace), ["Initial template"])
   assert.deepEqual(committedPaths(roots.workspace), [".gitignore", "app/startup.sh"])
 })
+
+async function invokeScript(...args) {
+  const workspace = await mkdtemp(path.join(tmpdir(), "migrate-args-"))
+  try {
+    const { status, stdout, stderr } = spawnSync(
+      process.execPath,
+      [path.join(import.meta.dirname, "agent-workspace-migrate.mjs"), ...args],
+      { env: { ...process.env, WORKSPACE: workspace }, encoding: "utf8", timeout: 10000 },
+    )
+    return { status, stdout, stderr, written: await readdir(workspace) }
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
+}
+
+for (const flag of ["--help", "-h"]) {
+  test(`${flag} prints the usage and leaves the workspace alone`, async () => {
+    const { status, stdout, written } = await invokeScript(flag)
+    assert.equal(status, 0)
+    assert.match(stdout, /agent-workspace-migrate --reconcile-content/)
+    assert.deepEqual(written, [])
+  })
+}
+
+for (const args of [[], ["--migrate"], ["--reconcile-content", "--dry-run"], ["--sync-agent-files", "--migrate"]]) {
+  test(`${args.join(" ") || "no arguments"} is refused without touching the workspace`, async () => {
+    const { status, stdout, stderr, written } = await invokeScript(...args)
+    assert.equal(status, 2)
+    assert.equal(stdout, "")
+    assert.match(stderr, /agent-workspace-migrate --reconcile-content/)
+    assert.deepEqual(written, [])
+  })
+}

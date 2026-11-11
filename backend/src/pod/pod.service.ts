@@ -5,7 +5,8 @@ import { loadKubeConfig } from '../common/k8s-client';
 import { AGENT_PODS_SERVICE, buildPodSpec, PodTemplateOptions } from './pod.template';
 import { fetchAsLocalhost, type PodRequestInit } from './pod-fetch';
 import { PodCacheService } from './pod.cache.service';
-import { resolvePreset, toK8sResources, type K8sResourceRequirements } from './pod-classes';
+import { SkillAvailability } from '../store/skill-availability';
+import { JOB_POD_RESOURCES, toK8sResources, type K8sResourceRequirements } from './pod-classes';
 
 export interface TenantPodOptions {
   bifrostApiKey?: string;
@@ -43,7 +44,8 @@ export class PodService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly podCache: PodCacheService
+    private readonly podCache: PodCacheService,
+    private readonly skillAvailability: SkillAvailability
   ) {
     const kc = loadKubeConfig();
     this.coreApi = kc.makeApiClient(k8s.CoreV1Api);
@@ -61,10 +63,12 @@ export class PodService {
       storageMountPath: this.configService.getOrThrow<string>('storageMountPath'),
       externalServicesHost: this.configService.get<string>('externalServicesHost') || undefined,
       caBundleConfigMap: this.configService.get<string>('podCaBundleConfigMap') || undefined,
+      browserIgnoresHttpsErrors: this.configService.get<boolean>('podBrowserIgnoresHttpsErrors', false),
       controlPort: this.configService.getOrThrow<number>('agentControlPort'),
       imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
       resources: this.smallResources(),
       privileged: this.configService.get<boolean>('agentPrivileged', false),
+      unofferedSkills: this.skillAvailability.unofferedSkills(),
       runtimeClassName: this.configService.get<string>('agentRuntimeClassName'),
       nodeSelector: this.configService.get('agentNodeSelector'),
       tolerations: this.configService.get('agentTolerations'),
@@ -75,7 +79,7 @@ export class PodService {
   }
 
   private smallResources(): K8sResourceRequirements {
-    return toK8sResources(resolvePreset('small'));
+    return toK8sResources(JOB_POD_RESOURCES);
   }
 
   assignedPodName(environmentId: string): string {
