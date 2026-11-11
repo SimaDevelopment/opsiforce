@@ -13,7 +13,7 @@ An Organization admin wants every App the Organization builds to sign its member
 - **The row is the source and every middleware is a copy.** Saving a provider rewrites its sign-in host middleware and the middleware of every environment that uses it.
 - **Apps receive identity and groups as headers, the same for every provider:** `X-Oidc-Subject`, `X-Oidc-Email`, `X-Oidc-Username`, and `X-Oidc-Groups`, the values of the claim the provider names as its groups claim as a JSON array, like oauth2-proxy's groups claim. A header whose claim the identity provider doesn't send is empty, or `[]` for groups. Tokens reach the App only through opt-in Token forwarding.
 - **Bypass paths and Token forwarding stay per environment,** inside its middleware, as for `manual`.
-- **A platform-operated identity provider is not an Auth mode an environment can choose.** An Organization that wants one adds it as a Sign-in provider.
+- **An external identity provider is never an Auth mode of its own.** An Organization that wants to sign visitors in through one adds it as a Sign-in provider. The one platform-operated provider an environment can choose is App Users (`app_users`), whose accounts belong to the Project and which the backend runs itself ([ADR-0099](0099-app-users-sign-in-through-an-oidc-provider-the-backend-runs-with-one-client-per-projectenvironment.md)).
 
 ## Considered options
 
