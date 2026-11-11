@@ -1,6 +1,6 @@
 import { For, Show, createSignal, type Component } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useFollowPlatformLimit,
   usePlatformLimits,

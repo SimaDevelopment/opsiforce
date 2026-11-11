@@ -1,5 +1,5 @@
 import { Show, createEffect, createSignal, on, untrack } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useResetAgentInactivityCleanup,
   useResetAgentPodClass,

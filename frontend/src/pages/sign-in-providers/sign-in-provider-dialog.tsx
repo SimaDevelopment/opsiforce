@@ -1,6 +1,6 @@
 import { Show, createEffect, createSignal, type JSX } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useCreateSignInProvider,
   useUpdateSignInProvider,

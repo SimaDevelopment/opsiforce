@@ -1,6 +1,6 @@
 import { Show, createEffect, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   BASE_FORMAT_IDS,
   useModelProviderCreationRules,

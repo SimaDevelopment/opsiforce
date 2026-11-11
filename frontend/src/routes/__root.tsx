@@ -16,6 +16,7 @@ import { createTenantChangeHandler } from '~/lib/tenant-state';
 import { mountAppearance } from '~/lib/appearance';
 import { CommandPalette, commandPaletteOpen } from '~/components/command-palette';
 import { Toaster } from 'solid-sonner';
+import { PLATFORM_TOASTER_ID } from '~/lib/toast';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -106,7 +107,7 @@ function AppContent() {
 
   return (
     <>
-      <Toaster position="bottom-right" richColors />
+      <Toaster id={PLATFORM_TOASTER_ID} position="bottom-right" richColors />
       <For each={PRIVATE_ROOT_COMPONENTS}>{(PrivateRootComponent) => <PrivateRootComponent />}</For>
       <Show when={!isPermissionDenied()} fallback={<Outlet />}>
         <SidebarLayout />

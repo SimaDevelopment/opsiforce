@@ -1,5 +1,5 @@
 import { Show, createEffect, createSignal, on } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import type { ProjectEnvironment } from '~/api/environments';
 import { useUpdateApp } from '~/api/projects';
 import { AlertTriangle } from '~/components/icons';

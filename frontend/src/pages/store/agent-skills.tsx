@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal, type Accessor, type Component } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Link } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useRemoveAgentSkill,
   useSetAgentSkill,

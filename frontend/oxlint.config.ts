@@ -47,5 +47,18 @@ export default {
     '@tanstack/query/no-unstable-deps': 'warn',
     '@tanstack/query/no-void-query-fn': 'warn',
     '@tanstack/query/infinite-query-property-order': 'warn',
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: [
+          {
+            name: 'solid-sonner',
+            importNames: ['toast'],
+            message: "Import toast from '~/lib/toast' so it lands in the platform Toaster, not OpenCode's.",
+          },
+        ],
+      },
+    ],
   },
+  overrides: [...base.overrides, { files: ['src/lib/toast.ts'], rules: { 'no-restricted-imports': 'off' } }],
 }

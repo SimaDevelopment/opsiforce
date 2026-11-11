@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Link, useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   downloadAgentExport,
   useAgent,

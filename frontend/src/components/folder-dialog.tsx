@@ -1,5 +1,5 @@
 import { Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError, type Folder } from '~/api/client';
 import { useCreateFolder, useRenameFolder } from '~/api/workspaces';
 import { Button } from '~/components/ui/button';

@@ -1,7 +1,7 @@
 import { Show, createMemo, createSignal, onMount, type JSX } from 'solid-js';
 import { useQueryClient } from '@tanstack/solid-query';
 import { createAppQuery } from '~/lib/create-app-query';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { api, type TimeoutDefaults, type BudgetDefaults } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import { Archive, Clock, CircleDollarSign, SlidersHorizontal } from '~/components/icons';

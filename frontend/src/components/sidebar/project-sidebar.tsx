@@ -3,7 +3,7 @@ import { useMatch, useNavigate } from '@tanstack/solid-router';
 import { DragDropProvider, type DragDropProviderProps } from '@dnd-kit/solid';
 import { isSortable } from '@dnd-kit/solid/sortable';
 import { useQueryClient } from '@tanstack/solid-query';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { type Folder, type Project } from '~/api/client';
 import { limitRefusalMessage } from '~/api/limits';
 import { usePermissions } from '~/api/permissions';

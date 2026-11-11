@@ -1,5 +1,5 @@
 import { Match, Show, Switch, untrack } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { labelsKey, serviceSettingsFormOf, valueFieldsOf, type Field } from '@opsiforce/external-service-sdk/forms';
 import {
   callAgentServiceSettingsOptions,

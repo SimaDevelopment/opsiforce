@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   ENVIRONMENT_SLUG_MAX_LENGTH,
   ENVIRONMENT_SLUG_PATTERN,

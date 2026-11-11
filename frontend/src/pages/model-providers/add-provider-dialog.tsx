@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, createUniqueId, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useCreateModelProvider,
   useModelProviderCreationRules,

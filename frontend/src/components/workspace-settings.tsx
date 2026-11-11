@@ -1,5 +1,5 @@
 import { Show, createEffect, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { usePermissions } from '~/api/permissions';
 import {
   useDeleteWorkspace,

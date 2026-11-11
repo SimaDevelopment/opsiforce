@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show, type Component, type JSX } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useCleanupTenantStorage,
   usePlatformStorage,

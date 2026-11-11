@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useDeleteSignInProvider, useSignInProviders, type SignInProvider } from '~/api/sign-in-providers';
 import { ActionsMenu, ActionsMenuItem } from '~/components/actions-menu';
 import { KeyRound, Pencil, Plus, Trash2 } from '~/components/icons';
