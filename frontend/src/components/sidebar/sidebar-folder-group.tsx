@@ -1,6 +1,6 @@
 import { For, Show, createSignal, type JSX } from 'solid-js';
 import { useDraggable, useDroppable } from '@dnd-kit/solid';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { type Folder, type Project } from '~/api/client';
 import { FoldedGroupStatus } from './folded-group-status';
 import { useDeleteFolder } from '~/api/workspaces';

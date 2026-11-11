@@ -1,6 +1,6 @@
 import { Show } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { api, type Project } from '~/api/client';
 import { useRestartProjectEnvironment } from '~/api/environments';
 import { limitRefusalMessage } from '~/api/limits';

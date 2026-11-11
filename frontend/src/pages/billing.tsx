@@ -17,7 +17,7 @@ import {
 } from '~/components/ui/number-field';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '~/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 
 interface TenantBudget {
   tenantBudget: number | null;

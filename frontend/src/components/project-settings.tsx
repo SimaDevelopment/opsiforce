@@ -1,5 +1,5 @@
 import { For, Show, createSignal, createEffect, createMemo } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useQueryClient } from '@tanstack/solid-query';
 import { projectKeys } from '~/api/projects';
 import { workspaceKeys } from '~/api/workspaces';

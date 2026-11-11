@@ -1,6 +1,6 @@
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
 import { createAppQuery } from '~/lib/create-app-query';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError, api, type Folder, type Project, type User, type Workspace } from './client';
 import { detectTimezone } from '~/lib/timezone';
 

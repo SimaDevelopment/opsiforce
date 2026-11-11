@@ -1,5 +1,5 @@
 import { For, Match, Show, Switch, createEffect, createSignal, on } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   connectedMainDomain,
   useCustomDomains,

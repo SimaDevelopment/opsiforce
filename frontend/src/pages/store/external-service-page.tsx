@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal, untrack, type Component, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useNavigate } from '@tanstack/solid-router';
 import type { ServiceManifest } from '@opsiforce/external-service-sdk/forms';
 import { useEnvironments, type Environment } from '~/api/environments';

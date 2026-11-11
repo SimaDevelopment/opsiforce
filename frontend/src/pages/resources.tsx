@@ -1,5 +1,5 @@
 import { For, Show, createSignal, type JSX } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError, type PodResources } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import {

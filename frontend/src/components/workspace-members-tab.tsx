@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { type User } from '~/api/client';
 import { useUsers } from '~/api/users';
 import { useAddWorkspaceMember, useRemoveWorkspaceMember } from '~/api/workspaces';

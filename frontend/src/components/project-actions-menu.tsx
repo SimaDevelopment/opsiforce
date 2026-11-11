@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal, type JSX } from 'solid-js';
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { usePermissions } from '~/api/permissions';
 import { api, type Project } from '~/api/client';
 import { limitRefusalMessage } from '~/api/limits';

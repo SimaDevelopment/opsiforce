@@ -1,5 +1,5 @@
 import { createSignal, type Component } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import type { QueryClient } from '@tanstack/solid-query';
 import { Ban, Copy, Download, ExternalLink, Layers, Package, Rocket, RotateCcw } from '~/components/icons';
 import { environmentKeys } from '~/api/environments';

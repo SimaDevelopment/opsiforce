@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError } from '~/api/client';
 import {
   AGENTS_AFFECTED_CODE,

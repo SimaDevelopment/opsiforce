@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/solid-router';
 import { createSignal, For, Show } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { type Project } from '~/api/client';
 import { limitRefusalMessage } from '~/api/limits';
 import { useCreateDefaultProject } from '~/api/default-project-target';
