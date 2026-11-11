@@ -120,8 +120,8 @@ export const useUpdateAppUserRole = (projectId: () => string) =>
 export const useDeleteAppUserRole = (projectId: () => string) =>
   useOverviewMutation(projectId, (path, id: string) => api.delete<void>(`${path}/app-user-roles/${id}`));
 
-export function displayStatus(user: AppUser): AppUserStatus | 'locked' {
-  return user.status === 'active' && user.lockedUntil && new Date(user.lockedUntil) > new Date()
+export function displayStatus(user: AppUser, now: number): AppUserStatus | 'locked' {
+  return user.status === 'active' && user.lockedUntil && new Date(user.lockedUntil).getTime() > now
     ? 'locked'
     : user.status;
 }

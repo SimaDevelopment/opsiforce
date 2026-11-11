@@ -88,18 +88,17 @@ function matches(user: AppUser, query: string): boolean {
   return !q || user.email.includes(q) || (user.name ?? '').toLowerCase().includes(q);
 }
 
-const SIGN_IN_CLOCK_MS = 30_000;
+const CLOCK_MS = 30_000;
 
-function LastSignIn(props: { user: AppUser }) {
-  const now = useNow(SIGN_IN_CLOCK_MS);
+function LastSignIn(props: { user: AppUser; now: number }) {
   return (
     <Show
-      when={displayStatus(props.user) === 'locked' && props.user.lockedUntil}
+      when={displayStatus(props.user, props.now) === 'locked' && props.user.lockedUntil}
       fallback={
         <Show when={props.user.lastSignInAt} fallback={<span class="text-muted-foreground">Never</span>}>
           {(at) => (
             <time datetime={at()} title={DATE_TIME.format(new Date(at()))}>
-              {formatAgo(elapsedSince(now(), new Date(at()).getTime()))}
+              {formatAgo(elapsedSince(props.now, new Date(at()).getTime()))}
             </time>
           )}
         </Show>
@@ -129,13 +128,14 @@ export function UsersView(props: {
   const [deleting, setDeleting] = createSignal<AppUser[]>([]);
   const [deleteOpen, setDeleteOpen] = createSignal(false);
 
+  const now = useNow(CLOCK_MS);
   const users = () => props.overview.users;
   const shown = createMemo(() =>
     users().filter(
       (user) =>
         matches(user, search()) &&
         (!roleFilter() || user.roles.includes(roleFilter())) &&
-        (statusFilter() === 'all' || displayStatus(user) === statusFilter())
+        (statusFilter() === 'all' || displayStatus(user, now()) === statusFilter())
     )
   );
   const filtering = () => !!search().trim() || !!roleFilter() || statusFilter() !== 'all';
@@ -221,7 +221,7 @@ export function UsersView(props: {
                 id: status,
                 label: status === 'all' ? 'All' : STATUS_LABELS[status],
                 icon: STATUS_ICONS[status],
-                count: status === 'all' ? users().length : users().filter((u) => displayStatus(u) === status).length,
+                count: status === 'all' ? users().length : users().filter((u) => displayStatus(u, now()) === status).length,
               }))}
             />
           }
@@ -351,10 +351,10 @@ export function UsersView(props: {
                         <RoleBadges roles={user.roles} />
                       </TableCell>
                       <TableCell label="Status">
-                        <StatusBadge status={displayStatus(user)} />
+                        <StatusBadge status={displayStatus(user, now())} />
                       </TableCell>
                       <TableCell label="Last sign-in" class="whitespace-nowrap text-xs">
-                        <LastSignIn user={user} />
+                        <LastSignIn user={user} now={now()} />
                       </TableCell>
                       <TableCell class="pr-2 text-right">
                         <DropdownMenu>
@@ -408,6 +408,7 @@ export function UsersView(props: {
         linkEnvironmentId={props.linkEnvironmentId}
         appUrl={props.appUrl}
         canEmail={props.overview.email}
+        now={now()}
         open={editorOpen()}
         onOpenChange={setEditorOpen}
       />

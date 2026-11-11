@@ -37,6 +37,7 @@ export function EditUserDialog(props: {
   linkEnvironmentId?: string;
   appUrl?: string;
   canEmail: boolean;
+  now: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -319,7 +320,7 @@ export function EditUserDialog(props: {
                 <span class="truncate" translate="no">
                   {user().name ?? user().email}
                 </span>
-                <StatusBadge status={displayStatus(user())} />
+                <StatusBadge status={displayStatus(user(), props.now)} />
               </DialogTitle>
               <DialogDescription>
                 {user().status === 'disabled'
