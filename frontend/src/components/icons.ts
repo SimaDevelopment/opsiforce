@@ -53,6 +53,7 @@ export { default as SlidersHorizontal } from 'lucide-solid/icons/sliders-horizon
 export { default as Gauge } from 'lucide-solid/icons/gauge';
 export { default as GripVertical } from 'lucide-solid/icons/grip-vertical';
 export { default as Users } from 'lucide-solid/icons/users';
+export { default as UserCheck } from 'lucide-solid/icons/user-check';
 export { default as Info } from 'lucide-solid/icons/info';
 export { default as Inbox } from 'lucide-solid/icons/inbox';
 export { default as AppWindow } from 'lucide-solid/icons/app-window';
@@ -97,6 +98,9 @@ export { default as RotateCw } from 'lucide-solid/icons/rotate-cw';
 export { default as CircleAlert } from 'lucide-solid/icons/circle-alert';
 export { default as TriangleAlert } from 'lucide-solid/icons/triangle-alert';
 export { default as Eye } from 'lucide-solid/icons/eye';
+export { default as EyeOff } from 'lucide-solid/icons/eye-off';
+export { default as Link2 } from 'lucide-solid/icons/link-2';
+export { default as UserPlus } from 'lucide-solid/icons/user-plus';
 export { default as Palette } from 'lucide-solid/icons/palette';
 export { default as ChartLine } from 'lucide-solid/icons/chart-line';
 export { default as Target } from 'lucide-solid/icons/target';

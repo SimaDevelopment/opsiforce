@@ -4,6 +4,8 @@ import { BullBoardModule } from '@bull-board/nestjs';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { Queue } from 'bullmq';
 import { ProjectController } from './project.controller';
+import { ProjectAppUsersController } from './project-app-users.controller';
+import { AppUsersModule } from '../app-users/app-users.module';
 import { AppAgentController } from './app.controller.agent';
 import { AgentObservationsController } from './agent-observations.controller';
 import { AgentObservationsService } from './agent-observations.service';
@@ -48,6 +50,7 @@ import { CustomDomainModule } from '../custom-domain/custom-domain.module';
 
 @Module({
   imports: [
+    AppUsersModule,
     BullModule.registerQueue({ name: PROJECT_DUPLICATE_QUEUE }),
     BullModule.registerQueue({ name: PROJECT_IMPORT_QUEUE }),
     BullModule.registerQueue({ name: PROJECT_IMPORT_UPLOAD_CLEANUP_QUEUE }),
@@ -87,6 +90,7 @@ import { CustomDomainModule } from '../custom-domain/custom-domain.module';
   ],
   controllers: [
     ProjectController,
+    ProjectAppUsersController,
     AppAgentController,
     AgentObservationsController,
     AgentStatusStreamController,

@@ -161,6 +161,8 @@ async function redirectToMain(fixture: AppFixture, domainId: string): Promise<vo
   expect(set.statusCode, set.body).toBe(200);
 }
 
+const STRIP = { name: 'opsiforce-strip-identity-headers', namespace: NAMESPACE };
+
 function middlewaresOnRouteOf(domainId: string): unknown[] {
   const routes = (kube.object('ingressroutes', `opsiforce-domain-${domainId}`)?.spec.routes ?? []) as {
     middlewares: unknown[];
@@ -182,7 +184,7 @@ describe('a Custom domain of an App that signs visitors in through a Sign-in pro
     const domainId = await connectedDomain(fixture);
 
     const signIn = `opsiforce-project-${fixture.environmentId}-oidc-domains`;
-    expect(middlewaresOnRouteOf(domainId)).toEqual([{ name: signIn, namespace: NAMESPACE }]);
+    expect(middlewaresOnRouteOf(domainId)).toEqual([STRIP, { name: signIn, namespace: NAMESPACE }]);
     expect(oidcPluginOf(signIn)).toMatchObject({
       Provider: { Url: ENTRA.discoveryUrl, ClientId: ENTRA.clientId, ClientSecret: ENTRA.clientSecret },
       CallbackUri: '/oidc/callback',
@@ -274,7 +276,7 @@ describe('a Custom domain of an App with manual App Auth', () => {
     const domainId = await connectedDomain(fixture);
 
     const gate = `opsiforce-project-${fixture.environmentId}-oidc`;
-    expect(middlewaresOnRouteOf(domainId)).toEqual([{ name: gate, namespace: NAMESPACE }]);
+    expect(middlewaresOnRouteOf(domainId)).toEqual([STRIP, { name: gate, namespace: NAMESPACE }]);
     expect(oidcPluginOf(gate)?.CallbackUri).toBe('/oidc/callback');
     expect(kube.object('middlewares', `${gate}-domains`)).toBeUndefined();
   });
@@ -286,6 +288,7 @@ describe('a Custom domain of an App with manual App Auth', () => {
     const domainId = await issuingDomain(fixture);
 
     expect(middlewaresOnRouteOf(domainId)).toEqual([
+      STRIP,
       { name: `opsiforce-project-${fixture.environmentId}-oidc`, namespace: NAMESPACE },
     ]);
   });
@@ -362,7 +365,7 @@ describe('changing App Auth', () => {
     expect(middlewares()).toEqual([MARKER, redirectOf(fixture)]);
 
     await setAuth(fixture, { mode: 'manual', config: ENTRA });
-    expect(middlewares()).toEqual([gateOf(fixture), redirectOf(fixture)]);
+    expect(middlewares()).toEqual([STRIP, gateOf(fixture), redirectOf(fixture)]);
 
     await setAuth(fixture, { mode: 'public' });
     expect(middlewares()).toEqual([MARKER, redirectOf(fixture)]);
@@ -372,11 +375,11 @@ describe('changing App Auth', () => {
     const { fixture, middlewares } = await appWithTwoDomains();
 
     await setAuth(fixture, { mode: 'provider', signInProviderId: await addProvider(fixture) });
-    expect(middlewares()).toEqual([signInOf(fixture), redirectOf(fixture)]);
+    expect(middlewares()).toEqual([STRIP, signInOf(fixture), redirectOf(fixture)]);
     expect(oidcPluginOf(signInOf(fixture).name)?.CallbackUri).toBe('/oidc/callback');
 
     await setAuth(fixture, { mode: 'manual', config: ENTRA });
-    expect(middlewares()).toEqual([gateOf(fixture), redirectOf(fixture)]);
+    expect(middlewares()).toEqual([STRIP, gateOf(fixture), redirectOf(fixture)]);
     expect(kube.object('middlewares', signInOf(fixture).name)).toBeUndefined();
   });
 
@@ -392,7 +395,7 @@ describe('changing App Auth', () => {
       );
 
       expect(made.statusCode, made.body).toBe(201);
-      expect(middlewaresOnRouteOf(otherId)).toEqual([gateOf(fixture)]);
+      expect(middlewaresOnRouteOf(otherId)).toEqual([STRIP, gateOf(fixture)]);
     });
 
     it("ends with the new mode's marker on the next Main domain when the App turns public meanwhile", async () => {
@@ -423,7 +426,7 @@ describe('changing App Auth', () => {
         await app.get(ProjectEnvironmentService).findById(fixture.environmentId)
       );
 
-    expect(middlewares()).toEqual([signInOf(fixture), redirectOf(fixture)]);
+    expect(middlewares()).toEqual([STRIP, signInOf(fixture), redirectOf(fixture)]);
     expect(oidcPluginOf(signInOf(fixture).name)?.CallbackUri).toBe('/oidc/callback');
   });
 });
@@ -491,7 +494,7 @@ describe('the start-up rewrite of App Auth routes', () => {
     await rewriteAtStartUp();
 
     const gate = { name: `opsiforce-project-${fixture.environmentId}-oidc`, namespace: NAMESPACE };
-    expect(middlewaresOnRouteOf(drifted)).toEqual([gate]);
+    expect(middlewaresOnRouteOf(drifted)).toEqual([STRIP, gate]);
     expect(kube.object('middlewares', MARKER)?.spec).toEqual({
       headers: { customRequestHeaders: { 'X-Opsiforce-Unprotected-Route': '1' } },
     });
@@ -508,6 +511,7 @@ describe('the start-up rewrite of App Auth routes', () => {
     await rewriteAtStartUp();
 
     expect(middlewaresOnRouteOf(domainId)).toEqual([
+      STRIP,
       { name: `opsiforce-project-${fixture.environmentId}-oidc`, namespace: NAMESPACE },
     ]);
   });
@@ -522,7 +526,10 @@ describe('the start-up rewrite of App Auth routes', () => {
 
     await rewriteAtStartUp();
 
-    expect(middlewaresOnRouteOf(domainId)).toEqual([{ name: `${environmentGate}-domains`, namespace: NAMESPACE }]);
+    expect(middlewaresOnRouteOf(domainId)).toEqual([
+      STRIP,
+      { name: `${environmentGate}-domains`, namespace: NAMESPACE },
+    ]);
     expect(oidcPluginOf(`${environmentGate}-domains`)?.CallbackUri).toBe('/oidc/callback');
   });
 });

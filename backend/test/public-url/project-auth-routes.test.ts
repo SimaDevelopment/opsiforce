@@ -26,6 +26,8 @@ const LEGACY_HOSTS_AT_101 = [
 ];
 const LEGACY_ONLY_RULES = [{ match: LEGACY_HOSTS, priority: 100 }];
 const ONE_RULE_FOR_EVERY_HOST = [{ match: `${SHORT_ID_PATTERN} || ${LEGACY_HOSTS}`, priority: 100 }];
+const OIDC_MIDDLEWARE = { name: `opsiforce-project-${ENV.id}-oidc`, namespace: 'test' };
+const GATE_MIDDLEWARES = [{ name: 'opsiforce-strip-identity-headers', namespace: 'test' }, OIDC_MIDDLEWARE];
 const oidc = {
   clientId: 'client',
   clientSecret: 'secret',
@@ -61,7 +63,7 @@ function writtenRouteRules(): Rules[] {
     );
 }
 
-function existingRoute(rules: Rules) {
+function existingRoute(rules: Rules, middlewares: unknown[] = GATE_MIDDLEWARES) {
   return {
     apiVersion: 'traefik.io/v1alpha1',
     kind: 'IngressRoute',
@@ -72,7 +74,7 @@ function existingRoute(rules: Rules) {
         kind: 'Rule',
         match,
         priority,
-        middlewares: [{ name: `opsiforce-project-${ENV.id}-oidc`, namespace: 'test' }],
+        middlewares,
         services: [{ name: 'proxy', namespace: 'test', port: 3002 }],
       })),
     },
@@ -114,7 +116,7 @@ describe('every App Auth route write matches the App by pattern', () => {
 });
 
 describe('reconciling an App Auth route at startup', () => {
-  it('replaces a route whose rule predates the pattern, keeping its middleware', async () => {
+  it('replaces a route whose rule predates the pattern', async () => {
     kube.getNamespacedCustomObject.mockResolvedValue(existingRoute(LEGACY_ONLY_RULES));
 
     await service().reconcileRoute(ENV);
@@ -137,6 +139,15 @@ describe('reconciling an App Auth route at startup', () => {
 
   it('replaces exact legacy hosts with the environment id pattern, which also covers its redirects', async () => {
     kube.getNamespacedCustomObject.mockResolvedValue(existingRoute(LEGACY_HOSTS_AT_101));
+
+    await service().reconcileRoute(ENV);
+
+    expect(kube.replaceNamespacedCustomObject).toHaveBeenCalledTimes(1);
+    expect(kube.replaceNamespacedCustomObject.mock.calls[0][0].body).toEqual(existingRoute(CURRENT_RULES));
+  });
+
+  it('puts the identity header strip in front of the OIDC Middleware of a route that predates it', async () => {
+    kube.getNamespacedCustomObject.mockResolvedValue(existingRoute(CURRENT_RULES, [OIDC_MIDDLEWARE]));
 
     await service().reconcileRoute(ENV);
 

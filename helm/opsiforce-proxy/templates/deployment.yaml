@@ -116,6 +116,7 @@ spec:
                 - --skip-auth-route=GET=^/api/v1/openapi.json$
                 - --skip-auth-route=GET=^/api/v1/runtime/openapi.json$
                 - --skip-auth-route=GET=^/api/v1/docs(/.*)?$
+                - --skip-auth-route=^/api/app-auth/
                 - --api-route=^/api/(v1|proxy)/
                 - --cookie-refresh=4m
                 - --upstream-timeout=2m

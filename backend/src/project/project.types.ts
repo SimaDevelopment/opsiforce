@@ -187,9 +187,9 @@ export interface ProjectAuthOidcConfig {
   scope?: string;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'provider';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider' | 'app_users';
 
-export const SELECTABLE_AUTH_MODES: ProjectAuthMode[] = ['public', 'manual', 'provider'];
+export const SELECTABLE_AUTH_MODES: ProjectAuthMode[] = ['public', 'manual', 'provider', 'app_users'];
 
 export interface ProjectAuthResponse {
   mode: ProjectAuthMode;

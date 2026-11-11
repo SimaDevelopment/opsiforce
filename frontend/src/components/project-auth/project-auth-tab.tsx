@@ -1,6 +1,8 @@
 import { Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { toast } from '~/lib/toast';
 import { Button } from '~/components/ui/button';
+import { Users } from '~/components/icons';
+import { useProjectTabs } from '~/components/project/project-tabs-context';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Spinner } from '~/components/ui/spinner';
 import type { ProjectAuthMode, ProjectAuthOidcConfig } from '~/api/client';
@@ -8,14 +10,17 @@ import { AuthModeSelector, type AuthSelection } from './auth-mode-selector';
 import { OidcForm } from './oidc-form';
 import { BypassPathsEditor } from './bypass-paths-editor';
 import { ForwardAccessTokenToggle } from './forward-access-token-toggle';
+import { useAppUsers } from '~/api/app-users';
 import { useSignInProviderOptions } from '~/api/sign-in-providers';
 import { useProjectAuth } from './use-project-auth';
 
 export interface ProjectAuthTabProps {
   projectId: string;
   environmentId: string;
+  appUrl?: string;
   disabled?: boolean;
   onSaved?: () => void;
+  onLeave?: () => void;
 }
 
 const EMPTY_CONFIG: ProjectAuthOidcConfig = {
@@ -87,8 +92,28 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
   const serverProviderId = () => query.data?.signInProviderId ?? null;
   const serverProviderForward = () =>
     query.data?.mode === 'provider' && (query.data.config?.forwardAccessToken ?? false);
-  const providerName = () =>
-    providerOptions.data?.find((option) => option.id === draftProviderId())?.name ?? 'the chosen provider';
+  const appUsers = useAppUsers(projectId, () => draftMode() === 'app_users');
+  const tabs = useProjectTabs();
+  const usersWho = (status: string) => appUsers.data?.users.filter((user) => user.status === status).length ?? 0;
+  const accessSummary = () => {
+    const active = usersWho('active');
+    const invited = usersWho('invited');
+    const canSignIn = active === 1 ? '1 user can sign in' : `${active} users can sign in`;
+    return invited > 0 ? `${canSignIn} · ${invited} invited` : canSignIn;
+  };
+
+  const accessName = (mode: ProjectAuthMode, providerId: string | null) => {
+    switch (mode) {
+      case 'public':
+        return 'Public';
+      case 'manual':
+        return 'Manual';
+      case 'app_users':
+        return 'App Users';
+      case 'provider':
+        return providerOptions.data?.find((option) => option.id === providerId)?.name ?? 'the chosen provider';
+    }
+  };
 
   const dirty = createMemo(() => {
     if (draftMode() !== serverMode()) return true;
@@ -114,8 +139,22 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
     setConfirmOpen(true);
   };
 
+  const announceSaved = (turnedOnAppUsers: boolean) => {
+    if (!turnedOnAppUsers) {
+      toast.success('Auth settings saved');
+      return;
+    }
+    toast.success('App Users is on', {
+      description: tabs
+        ? 'Invite the people who can sign in.'
+        : 'Visitors now sign in with accounts you add on the Users tab.',
+    });
+    tabs?.openTab('users');
+  };
+
   const confirmSave = () => {
     const mode = draftMode();
+    const turnedOnAppUsers = mode === 'app_users' && serverMode() !== 'app_users';
     mutation.mutate(
       {
         mode,
@@ -130,7 +169,7 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
       },
       {
         onSuccess: () => {
-          toast.success('Auth settings saved');
+          announceSaved(turnedOnAppUsers);
           props.onSaved?.();
         },
         onError: (e) => toast.error(`Failed to save: ${(e as Error).message}`),
@@ -139,16 +178,21 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
   };
 
   const confirmDescription = createMemo(() => {
-    const from = serverMode();
-    const to = draftMode();
-    const transition = from === to ? `auth mode "${to}"` : `auth mode from "${from}" to "${to}"`;
-    switch (to) {
+    const from = accessName(serverMode(), serverProviderId());
+    const to = accessName(draftMode(), draftProviderId());
+    const change =
+      from === to ? `You're about to save ${to} access.` : `You're about to change access from ${from} to ${to}.`;
+    switch (draftMode()) {
       case 'public':
-        return `You're about to update ${transition}. The app will be accessible to anyone without signing in.`;
+        return `${change} Anyone can open the app without signing in.`;
       case 'manual':
-        return `You're about to update ${transition}. Visitors will be required to sign in via the configured OIDC provider before the app loads.`;
+        return `${change} Visitors must sign in via the configured OIDC provider before the app loads.`;
       case 'provider':
-        return `You're about to update ${transition}. Visitors will be required to sign in with ${providerName()} before the app loads.`;
+        return `${change} Visitors must sign in with ${to} before the app loads.`;
+      case 'app_users':
+        return appUsers.data?.users.length === 0
+          ? `${change} There are no App Users yet, so nobody can open the app until you add one.`
+          : `${change} Visitors must sign in with one of this project's App Users before the app loads.`;
     }
   });
 
@@ -204,7 +248,36 @@ export function ProjectAuthTab(props: ProjectAuthTabProps) {
           </div>
         </Show>
 
-        <Show when={draftMode() === 'manual' || draftMode() === 'provider'}>
+        <Show when={draftMode() === 'app_users'}>
+          <div class="pt-2 border-t border-border">
+            <div class="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+              <Users class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div class="min-w-0 flex-1 text-xs leading-snug">
+                <p class="font-medium text-foreground">{appUsers.isPending ? 'Loading users…' : accessSummary()}</p>
+                <p class="text-muted-foreground">
+                  {serverMode() === 'app_users'
+                    ? 'Invite people, set their roles and send reset links on the Users tab.'
+                    : 'Save to require sign-in. The Users tab then opens next to Chat, where you invite people and set their roles.'}
+                </p>
+              </div>
+              <Show when={tabs && serverMode() === 'app_users'}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="shrink-0"
+                  onClick={() => {
+                    tabs?.openTab('users');
+                    props.onLeave?.();
+                  }}
+                >
+                  Open Users
+                </Button>
+              </Show>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={draftMode() !== 'public'}>
           <div class="pt-2 border-t border-border">
             <BypassPathsEditor
               value={draftBypassPaths()}

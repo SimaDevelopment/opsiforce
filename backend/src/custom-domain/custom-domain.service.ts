@@ -154,7 +154,8 @@ function recordsOf(
 }
 
 function signInCallbackOf(row: CustomDomainRow, env: AddressedEnvironment): string | null {
-  return env.authMode === 'public' ? null : `https://${row.hostname}${OIDC_CALLBACK_PATH}`;
+  const signsInOutside = env.authMode === 'manual' || env.authMode === 'provider';
+  return signsInOutside ? `https://${row.hostname}${OIDC_CALLBACK_PATH}` : null;
 }
 
 function viewOf(row: CustomDomainRow, env: AddressedEnvironment, defaultAddress: string): CustomDomainView {

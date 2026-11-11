@@ -41,7 +41,7 @@ export function TextInput(props: {
   value: string;
   onInput: (v: string) => void;
   placeholder?: string;
-  type?: 'text' | 'password' | 'url';
+  type?: 'text' | 'password' | 'url' | 'email';
   disabled?: boolean;
 }) {
   const autoComplete = () => (props.type === 'password' ? 'new-password' : 'off');

@@ -133,7 +133,6 @@ export const configuration = () => {
     podBrowserIgnoresHttpsErrors: process.env.POD_BROWSER_IGNORE_HTTPS_ERRORS === 'true',
     agentWorkspaceUpdateOnStartup: parseBooleanEnv(process.env.AGENT_WORKSPACE_UPDATE_ON_STARTUP, true),
     agentUpdateJobTimeoutMs: parseInt(process.env.AGENT_UPDATE_JOB_TIMEOUT_MS || '1800000', 10),
-    // TODO: remove in the release after External Services v2 ships: mailgunApiKey, mailgunDomain, mailgunSender, mailgunUrl feed only the dead /api/gateway email provider; mailgunReceiveDomain, mailgunWebhookSigningKey, whapiApiUrl feed only the one-time v1 importers
     mailgunApiKey: process.env.MAILGUN_API_KEY || '',
     mailgunDomain: process.env.MAILGUN_DOMAIN || '',
     mailgunReceiveDomain: process.env.MAILGUN_RECEIVE_DOMAIN || process.env.MAILGUN_DOMAIN || '',
@@ -148,6 +147,7 @@ export const configuration = () => {
     webappServiceName: process.env.WEBAPP_SERVICE_NAME || 'proxy-app',
     webappServicePort: parseInt(process.env.WEBAPP_SERVICE_PORT || '3002', 10),
     oidcPluginSecret: process.env.OIDC_PLUGIN_SECRET || '',
+    appUsersProviderInternalUrl: process.env.APP_USERS_PROVIDER_INTERNAL_URL || '',
     customDomainsClusterIssuer: process.env.CUSTOM_DOMAINS_CLUSTER_ISSUER?.trim() || '',
     customDomainsRefused: parseListEnv(process.env.CUSTOM_DOMAINS_REFUSED),
   };

@@ -155,3 +155,34 @@ describe('finding an object of any kind', () => {
     await expect(new KubeObjectWriter('opsiforce').find(CERTIFICATES, 'opsiforce-domain-1')).resolves.toBeUndefined();
   });
 });
+
+describe('upserting an object another writer is also replacing', () => {
+  it('re-reads the version and retries when a replacement loses the race', async () => {
+    kube.createNamespacedCustomObject.mockRejectedValue({ code: 409 });
+    kube.getNamespacedCustomObject
+      .mockResolvedValueOnce({ metadata: { resourceVersion: '1' } })
+      .mockResolvedValueOnce({ metadata: { resourceVersion: '2' } });
+    kube.replaceNamespacedCustomObject.mockRejectedValueOnce({ code: 409 }).mockResolvedValueOnce({});
+
+    await new KubeObjectWriter('opsiforce').upsert(
+      CERTIFICATES,
+      'opsiforce-domain-1',
+      certificate('opsiforce-domain-1')
+    );
+
+    expect(
+      kube.replaceNamespacedCustomObject.mock.calls.map(([request]) => request.body.metadata.resourceVersion)
+    ).toEqual(['1', '2']);
+  });
+
+  it('gives up after a few lost races', async () => {
+    kube.createNamespacedCustomObject.mockRejectedValue({ code: 409 });
+    kube.getNamespacedCustomObject.mockResolvedValue({ metadata: { resourceVersion: '1' } });
+    kube.replaceNamespacedCustomObject.mockRejectedValue({ code: 409 });
+
+    await expect(
+      new KubeObjectWriter('opsiforce').upsert(CERTIFICATES, 'opsiforce-domain-1', certificate('opsiforce-domain-1'))
+    ).rejects.toEqual({ code: 409 });
+    expect(kube.replaceNamespacedCustomObject).toHaveBeenCalledTimes(3);
+  });
+});

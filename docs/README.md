@@ -26,6 +26,7 @@
 - [Inactivity cleanup](projects/inactivity-cleanup.md) — disabling and deleting Projects nobody has used for a set number of days
 - [Export and Import](projects/export-import.md) — carrying a Project to another deployment as a file
 - [App](projects/app.md) — per-environment App Details and runtime identity
+- [App User](projects/app-user.md) — the Project's own sign-in accounts for its Apps and the provider behind them
 - [App Readiness](projects/app-readiness.md) — how Go-live and serving are pushed from the pod
 - [Schedule](projects/schedule.md) — agent-registered cron jobs owned by one environment
 - [Files](projects/files.md) — the curated view of an environment's workspace files, uploads and deletes

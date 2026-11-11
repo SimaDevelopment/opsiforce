@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { appUsersAddresses, appUsersClientSecret } from '../app-users/app-users-client';
 import {
   isConflict,
   KubeObjectWriter,
@@ -13,6 +14,7 @@ import {
   APP_AUTH_ROUTE_PREFIX,
   appAuthMiddlewareName,
   appAuthRouteRules,
+  IDENTITY_STRIP_MIDDLEWARE,
   OIDC_CALLBACK_PATH,
   type AppAuthRouteTarget,
 } from './app-auth-route';
@@ -22,6 +24,8 @@ import { ProjectAuthOidcConfig } from './project.types';
 const ingressRouteName = (routingId: string) => `${APP_AUTH_ROUTE_PREFIX}${routingId}`;
 const signInResourceName = (providerId: string) => `opsiforce-sign-in-${providerId}`;
 const signInPath = (providerId: string) => `/p/${providerId}`;
+
+const OIDC_LOGOUT_PATH = '/oidc/logout';
 
 const SIGN_IN_HOST_LABEL = 'auth';
 const SIGN_IN_COOKIE_PREFIX = '_opsiforce_sp_';
@@ -46,6 +50,8 @@ interface TraefikOidcPluginSpec {
     TokenValidation: string;
   };
   CallbackUri: string;
+  LogoutUri?: string;
+  PostLogoutRedirectUri?: string;
   CookieNamePrefix?: string;
   Scopes?: string[];
   Authorization?: { AssertClaims: TraefikOidcAssertClaim[]; CheckOnEveryRequest?: boolean };
@@ -59,6 +65,7 @@ interface MiddlewareExtras {
   assertClaims?: TraefikOidcAssertClaim[];
   bypassAuthPaths?: string[];
   signIn?: { callbackUri: string; cookieNamePrefix: string; cookieDomain: string };
+  signOut?: boolean;
 }
 
 const IDENTITY_HEADERS: Array<{ Name: string; Value: string }> = [
@@ -74,6 +81,16 @@ const signInIdentityHeaders = (groupsClaim: string | undefined): Array<{ Name: s
   },
   { Name: 'X-Oidc-Username', Value: '{{ with .claims.preferred_username }}{{ . }}{{ end }}' },
   { Name: 'X-Oidc-Groups', Value: groupsClaim ? claimAsJsonArray(groupsClaim) : '[]' },
+];
+
+const APP_USERS_HEADERS: Array<{ Name: string; Value: string }> = [
+  ...IDENTITY_HEADERS,
+  { Name: 'X-Oidc-Name', Value: '{{ with .claims.name }}{{ . }}{{ end }}' },
+  { Name: 'X-Oidc-Roles', Value: '{{ with index .claims "roles" }}{{ . | mapToJsonArray }}{{ else }}[]{{ end }}' },
+];
+
+const GATE_IDENTITY_HEADER_NAMES = [
+  ...new Set([...APP_USERS_HEADERS, ...signInIdentityHeaders(undefined)].map(({ Name }) => Name)),
 ];
 
 function claimAsJsonArray(claimName: string): string {
@@ -147,6 +164,7 @@ export class ProjectAuthService {
   private readonly webappServiceName: string;
   private readonly webappServicePort: number;
   private readonly pluginSecret: string;
+  private readonly appUsersProviderUrl: string | undefined;
 
   constructor(private readonly configService: ConfigService) {
     this.namespace = this.configService.getOrThrow<string>('k8sNamespace');
@@ -155,6 +173,7 @@ export class ProjectAuthService {
     this.webappServiceName = this.configService.getOrThrow<string>('webappServiceName');
     this.webappServicePort = this.configService.getOrThrow<number>('webappServicePort');
     this.pluginSecret = this.configService.getOrThrow<string>('oidcPluginSecret');
+    this.appUsersProviderUrl = appUsersAddresses(this.configService)?.providerUrl;
   }
 
   private buildMiddleware(name: string, config: ProjectAuthOidcConfig, extras: MiddlewareExtras = {}) {
@@ -194,6 +213,11 @@ export class ProjectAuthService {
       plugin.CookieNamePrefix = extras.signIn.cookieNamePrefix;
     }
 
+    if (extras.signOut) {
+      plugin.LogoutUri = OIDC_LOGOUT_PATH;
+      plugin.PostLogoutRedirectUri = '/';
+    }
+
     if (extras.headers && extras.headers.length > 0) {
       plugin.Headers = extras.headers;
     }
@@ -215,8 +239,11 @@ export class ProjectAuthService {
     };
   }
 
-  private buildIngressRoute(env: AppAuthRouteTarget, middlewares: Array<{ name: string; namespace: string }>) {
-    return this.ingressRoute(ingressRouteName(env.id), this.authRoutes(env, middlewares, [this.webappService()]));
+  private buildIngressRoute(env: AppAuthRouteTarget) {
+    return this.ingressRoute(
+      ingressRouteName(env.id),
+      this.authRoutes(env, this.gateMiddlewares(env.id), [this.webappService()])
+    );
   }
 
   private ingressRoute(name: string, routes: unknown[]) {
@@ -242,8 +269,11 @@ export class ProjectAuthService {
     }));
   }
 
-  private oidcMiddlewareRef(routingId: string) {
-    return { name: appAuthMiddlewareName(routingId), namespace: this.namespace };
+  private gateMiddlewares(routingId: string) {
+    return [
+      { name: IDENTITY_STRIP_MIDDLEWARE, namespace: this.namespace },
+      { name: appAuthMiddlewareName(routingId), namespace: this.namespace },
+    ];
   }
 
   async getConfig(routingId: string): Promise<{
@@ -278,10 +308,7 @@ export class ProjectAuthService {
       headers: this.validatedAppHeaders(env.id, config.forwardAccessToken, bypassAuthPaths),
       bypassAuthPaths,
     };
-    const mw = this.buildMiddleware(appAuthMiddlewareName(env.id), effectiveConfig, extras);
-    const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.kube.upsert(TRAEFIK_MIDDLEWARES, mw.metadata.name, mw);
-    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
+    await this.writeGate(env, this.buildMiddleware(appAuthMiddlewareName(env.id), effectiveConfig, extras));
   }
 
   async applyProvider(
@@ -300,9 +327,28 @@ export class ProjectAuthService {
       ),
       bypassAuthPaths,
     });
-    const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.kube.upsert(TRAEFIK_MIDDLEWARES, mw.metadata.name, mw);
-    await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
+    await this.writeGate(env, mw);
+  }
+
+  async applyAppUsers(env: AppAuthRouteTarget, bypassAuthPaths?: string[]): Promise<void> {
+    if (!this.appUsersProviderUrl || !this.pluginSecret) {
+      throw new BadRequestException('App Users need OPSIFORCE_PUBLIC_URL and OIDC_PLUGIN_SECRET to be set');
+    }
+    const config: ProjectAuthOidcConfig = {
+      clientId: env.id,
+      clientSecret: appUsersClientSecret(this.pluginSecret, env.id),
+      discoveryUrl: `${this.appUsersProviderUrl}/.well-known/openid-configuration`,
+    };
+    const extras: MiddlewareExtras = { headers: APP_USERS_HEADERS, bypassAuthPaths, signOut: true };
+    await this.writeGate(env, this.buildMiddleware(appAuthMiddlewareName(env.id), config, extras));
+  }
+
+  async inheritAppUsers(fromRoutingId: string, to: AppAuthRouteTarget): Promise<void> {
+    const sourceSpec = await this.readPluginSpec(fromRoutingId);
+    if (!sourceSpec) {
+      throw new Error(`Cannot inherit app auth: source middleware ${appAuthMiddlewareName(fromRoutingId)} not found`);
+    }
+    await this.applyAppUsers(to, pathsFromBypassRule(sourceSpec.BypassAuthenticationRule));
   }
 
   async applySignInHost(provider: SignInProviderConnection): Promise<void> {
@@ -429,9 +475,30 @@ export class ProjectAuthService {
       metadata: { name: appAuthMiddlewareName(env.id), namespace: this.namespace },
       spec: { plugin: { [OIDC_PLUGIN]: clonedSpec } },
     };
-    const ir = this.buildIngressRoute(env, [this.oidcMiddlewareRef(env.id)]);
-    await this.kube.upsert(TRAEFIK_MIDDLEWARES, mw.metadata.name, mw);
+    await this.writeGate(env, mw);
+  }
+
+  private async writeGate(env: AppAuthRouteTarget, oidcMiddleware: { metadata: { name: string } }): Promise<void> {
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, oidcMiddleware.metadata.name, oidcMiddleware);
+    await this.writeIdentityHeaderStrip();
+    const ir = this.buildIngressRoute(env);
     await this.kube.upsert(TRAEFIK_INGRESS_ROUTES, ir.metadata.name, ir);
+  }
+
+  async writeIdentityHeaderStrip(): Promise<void> {
+    const spec = {
+      headers: { customRequestHeaders: Object.fromEntries(GATE_IDENTITY_HEADER_NAMES.map((name) => [name, ''])) },
+    };
+    const existing = (await this.kube.find(TRAEFIK_MIDDLEWARES, IDENTITY_STRIP_MIDDLEWARE)) as
+      | { spec?: unknown }
+      | undefined;
+    if (isDeepStrictEqual(existing?.spec, spec)) return;
+    await this.kube.upsert(TRAEFIK_MIDDLEWARES, IDENTITY_STRIP_MIDDLEWARE, {
+      apiVersion: TRAEFIK_API_VERSION,
+      kind: 'Middleware',
+      metadata: { name: IDENTITY_STRIP_MIDDLEWARE, namespace: this.namespace },
+      spec,
+    });
   }
 
   private async preserveClientSecret(routingId: string, config: ProjectAuthOidcConfig): Promise<ProjectAuthOidcConfig> {
@@ -449,8 +516,8 @@ export class ProjectAuthService {
         | TraefikIngressRoute
         | undefined;
       if (!route) return;
-      const [{ middlewares, services }] = route.spec.routes;
-      const expectedRoutes = this.authRoutes(env, middlewares, services);
+      const [{ services }] = route.spec.routes;
+      const expectedRoutes = this.authRoutes(env, this.gateMiddlewares(env.id), services);
       if (isDeepStrictEqual(route.spec.routes, expectedRoutes)) return;
       try {
         await this.kube.replace(TRAEFIK_INGRESS_ROUTES, ingressRouteName(env.id), {

@@ -25,6 +25,7 @@ adrs: [0011]
 
 - When the copy's App Auth cannot be written, such as for a protected source whose gate cannot be read, the Duplicate is refused and no copy is left behind.
 - When the source is `manual`, sign-in on the copy fails until the callback URLs its App Auth dialog lists are registered with the customer's identity provider.
+- When the source is `app_users`, the copy gets its own client but none of the source's [App Users](../../GLOSSARY.md), so no one can sign in until the owner adds some ([App User](app-user.md)).
 
 ## Code
 
