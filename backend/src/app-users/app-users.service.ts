@@ -53,6 +53,7 @@ function normalizeName(name: unknown): string | null {
   if (typeof name !== 'string') throw new BadRequestException('name must be a string');
   const trimmed = name.trim();
   if (trimmed.length > 200) throw new BadRequestException('name must be at most 200 characters');
+  if (/\p{Cc}/u.test(trimmed)) throw new BadRequestException('name must not contain control characters');
   return trimmed || null;
 }
 

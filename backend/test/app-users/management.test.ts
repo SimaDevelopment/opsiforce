@@ -158,11 +158,16 @@ describe('managing a Project’s App Users', () => {
     expect((await appUsers.signIn(project.projectId, user.email, 'a brand new password')).outcome).toBe('signed-in');
   });
 
-  it('rejects a short password and a malformed email', async () => {
+  it('rejects a short password, a malformed email and a name the gate could not forward as a header', async () => {
     const project = await projectUsingAppUsers(app);
 
     expect((await call(project, 'POST', '/app-users', { ...NEW_USER, password: 'short' })).statusCode).toBe(400);
     expect((await call(project, 'POST', '/app-users', { ...NEW_USER, email: 'not-an-email' })).statusCode).toBe(400);
+    expect((await call(project, 'POST', '/app-users', { ...NEW_USER, name: 'Ada\nLovelace' })).statusCode).toBe(400);
+
+    const user = (await call(project, 'POST', '/app-users', { ...NEW_USER, name: 'Ada Lovelace' })).json();
+    expect((await call(project, 'PATCH', `/app-users/${user.id}`, { name: 'Ada\u0000' })).statusCode).toBe(400);
+    expect((await call(project, 'GET', '/app-users')).json().users[0].name).toBe('Ada Lovelace');
   });
 
   it('sends no link to a disabled user, for another Project’s environment, or by email without Mailgun', async () => {
