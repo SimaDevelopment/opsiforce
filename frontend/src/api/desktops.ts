@@ -38,6 +38,8 @@ export function createDesktopSessions(
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     const connect = () => {
+      clearTimeout(retryTimer);
+      source?.close();
       source = new EventSource(`${desktopBase(id)}/sessions/events`);
       source.addEventListener('message', (event) => {
         failures = 0;
