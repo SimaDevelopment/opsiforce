@@ -161,7 +161,8 @@ export function ProjectView(props: ProjectViewProps) {
   });
   const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
   const desktop = createDesktopSessions(activeEnvironmentId, () => connectionStatus() === 'active');
-  const previewVisible = () => app()?.exists === true || previewRequest() !== null || desktop()?.visible === true;
+  const previewVisible = () =>
+    app()?.exists === true || previewRequest() !== null || desktop.session()?.visible === true;
   const fullWidthTab = () => activeTab() === 'users';
   const mobileTabs = (): ProjectTab[] => {
     const tabs: ProjectTab[] = ['chat', 'files'];
@@ -364,7 +365,9 @@ export function ProjectView(props: ProjectViewProps) {
                 onOverlayChange={setPreviewOverlayOpen}
                 overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
                 mobile={isMobile()}
-                desktop={desktop()}
+                desktop={desktop.session()}
+                takeDesktopShow={desktop.takeShow}
+                hidden={fullWidthTab() && !isMobile()}
                 chatSessionId={connection.openChat(activeEnvironmentId())}
                 column={
                   strip && {

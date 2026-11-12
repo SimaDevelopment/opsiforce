@@ -40,6 +40,10 @@ export interface ProjectPreviewPanelProps {
   chatSessionId?: string;
   /** The pod's desktop, shown as a third mode once it has a window or the agent presents it. */
   desktop?: DesktopSession;
+  /** True once for each `desktop show` the panel has not opened for yet. */
+  takeDesktopShow?: () => boolean;
+  /** The page is showing a tab that hides the panel, so nothing in it should stay connected. */
+  hidden?: boolean;
 }
 
 export interface PreviewColumn {
@@ -132,15 +136,12 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     )
   );
 
-  let seenShows = 0;
   createEffect(
     on(
       () => props.desktop?.shows ?? 0,
-      (shows) => {
+      () => {
         const session = props.desktop;
-        const isNew = shows > seenShows;
-        seenShows = shows;
-        if (!isNew || !session?.visible) return;
+        if (!props.takeDesktopShow?.() || !session?.visible) return;
         setDesktopWindow(session.preferredWindow);
         setMode('desktop');
         setOpen(true);
@@ -251,7 +252,7 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
                   <DesktopPreviewPane
                     environmentId={props.environmentId}
                     session={session()}
-                    visible={open() && current() === 'desktop' && !props.mobile}
+                    visible={open() && current() === 'desktop' && !props.mobile && !props.hidden}
                     windowId={desktopWindow()}
                     onSelectWindow={setDesktopWindow}
                     switcher={switcher()}

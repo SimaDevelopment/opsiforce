@@ -24,16 +24,21 @@ export function desktopBase(environmentId: string) {
   return `/api/proxy/${encodeURIComponent(environmentId)}/_desktop`;
 }
 
+export interface DesktopSessions {
+  session: Accessor<DesktopSession | undefined>;
+  /** True once for each show the page has not opened the panel for yet, however often the panel remounts. */
+  takeShow: () => boolean;
+}
+
 const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 15_000];
-export function createDesktopSessions(
-  environmentId: Accessor<string>,
-  enabled: Accessor<boolean>
-): Accessor<DesktopSession | undefined> {
+export function createDesktopSessions(environmentId: Accessor<string>, enabled: Accessor<boolean>): DesktopSessions {
   const [session, setSession] = createSignal<DesktopSession | undefined>();
+  let takenShows = 0;
 
   createEffect(() => {
     const id = environmentId();
     setSession(undefined);
+    takenShows = 0;
     if (!enabled()) return;
 
     let source: EventSource | undefined;
@@ -81,7 +86,15 @@ export function createDesktopSessions(
     });
   });
 
-  return session;
+  return {
+    session,
+    takeShow: () => {
+      const shows = session()?.shows ?? 0;
+      const isNew = shows > takenShows;
+      takenShows = shows;
+      return isNew;
+    },
+  };
 }
 
 function opencodeBase(environmentId: string) {
