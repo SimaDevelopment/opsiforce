@@ -7,10 +7,13 @@ RUN go mod download
 
 COPY proxy/cmd/agent-log-writer ./cmd/agent-log-writer
 COPY proxy/cmd/agent-control ./cmd/agent-control
+COPY proxy/cmd/agent-desktop ./cmd/agent-desktop
+COPY proxy/internal/desktop ./internal/desktop
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/log-writer ./cmd/agent-log-writer
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/agent-control ./cmd/agent-control
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/agent-desktop ./cmd/agent-desktop
 
 FROM node:24.18.0-slim AS external-service-sdk
 
@@ -44,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
     pandoc poppler-utils \
     fontconfig fonts-liberation \
-    chromium \
+    chromium xdg-utils xvfb x11vnc openbox wmctrl x11-utils xterm \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libdrm2 libdbus-1-3 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
@@ -129,17 +132,24 @@ COPY agent-config/scripts/guard.sh /usr/local/bin/guard
 COPY agent-config/scripts/process-logs.sh /usr/local/bin/process-logs
 COPY agent-config/scripts/app-url.sh /usr/local/bin/app-url
 COPY agent-config/scripts/app-restart.sh /usr/local/bin/app-restart
+COPY agent-config/scripts/desktop.mjs /usr/local/bin/desktop
+COPY agent-config/scripts/desktop-browser.sh /usr/local/bin/desktop-browser
+COPY agent-config/desktop/opsiforce-browser.desktop /usr/share/applications/opsiforce-browser.desktop
+COPY agent-config/desktop/mimeapps.list /etc/xdg/mimeapps.list
+COPY agent-config/desktop/openbox-rc.xml /etc/opsiforce/openbox-rc.xml
+ENV BROWSER=/usr/local/bin/desktop-browser
 COPY agent-config/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY agent-config/scripts/agent-workspace-migrate.mjs /usr/local/bin/agent-workspace-migrate
 COPY agent-config/datasette-metadata.yml /opt/opencode/datasette-metadata.yml
-RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/app-url /usr/local/bin/app-restart /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
+RUN chmod +x /usr/local/bin/guard /usr/local/bin/process-logs /usr/local/bin/app-url /usr/local/bin/app-restart /usr/local/bin/desktop /usr/local/bin/desktop-browser /usr/local/bin/entrypoint.sh /usr/local/bin/agent-workspace-migrate
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ripgrep file \
+    ripgrep file xclip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=log-writer-builder /out/log-writer /usr/local/bin/log-writer
 COPY --from=log-writer-builder /out/agent-control /usr/local/bin/agent-control
+COPY --from=log-writer-builder /out/agent-desktop /usr/local/bin/agent-desktop
 RUN chmod +x /usr/local/bin/log-writer /usr/local/bin/agent-control
 
 ARG EXA_API_KEY=""

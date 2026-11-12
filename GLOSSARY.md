@@ -328,8 +328,12 @@ The Agent's finished deliverables — documents, reports, exports — saved by c
 _Avoid_: Artifacts (claude.ai's concept — different mechanics); Outputs (vague); Generated app (the App source — a different thing entirely)
 
 **File preview**:
-Reading a finished workspace file in the project's right side panel instead of downloading it — opened by clicking a file link the Agent posted in chat, or a file in the Files tab. It shares the panel with the App preview through an App | File switcher, shows one file at a time, and never opens or switches modes on its own. Formats outside the supported set are not an error state: they offer a download instead.
+Reading a finished workspace file in the project's right side panel instead of downloading it — opened by clicking a file link the Agent posted in chat, or a file in the Files tab. It shares the panel with the App preview and the Desktop through a switcher, shows one file at a time, and never opens or switches modes on its own. Formats outside the supported set are not an error state: they offer a download instead.
 _Avoid_: Artifact preview (implies claude.ai's streaming artifacts; this is finished files only); Viewer, File viewer (suggests a separate surface — it is the same panel the App preview uses); App preview (the running App in that panel — the other mode, not this one)
+
+**Desktop**:
+The one GUI display inside an Agent's pod, where headed browsers and other windowed apps run, shown to people as the Desktop mode of the project's preview panel. The Agent brings it up with `desktop show` and hands it over by asking a question; whoever has the Project open can see and use it. It lives only as long as the pod.
+_Avoid_: VNC (the transport, not the thing); Virtual machine (it is a display in the same container); Remote desktop (implies the person's own machine)
 
 **Document conversion**:
 Turning a Word or PowerPoint deliverable into a PDF so File preview can render it, on a shared in-cluster converter the Agent cannot reach. It runs as a job — the panel is told a conversion is pending, then shown the PDF — and the result is transient, so reopening the same file converts it again. An unconvertible document offers a download instead of failing.

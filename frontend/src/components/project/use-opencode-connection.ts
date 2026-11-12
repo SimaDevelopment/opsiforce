@@ -128,6 +128,7 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
       : await chatToReopen(environmentId, runtimePath, connection.sessionId);
     if (!isCurrent()) return;
 
+    rememberOpenChat(environmentId, sessionId);
     setRouter(() => createSessionRouter(serverUrl, sessionId, (shown) => rememberOpenChat(environmentId, shown)));
   }
 
@@ -182,5 +183,7 @@ export function useOpenCodeConnection(options: OpenCodeConnectionOptions) {
     void connect(options.environmentId());
   }
 
-  return { router, reset, problem, retry };
+  const openChat = (environmentId: string): string | undefined => openChats()[environmentId];
+
+  return { router, reset, problem, retry, openChat };
 }

@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/gorilla/websocket v1.5.3
 	modernc.org/sqlite v1.40.1
 )
 

@@ -31,6 +31,7 @@
 - [Schedule](projects/schedule.md) — agent-registered cron jobs owned by one environment
 - [Files](projects/files.md) — the curated view of an environment's workspace files, uploads and deletes
 - [File preview](projects/file-preview.md) — reading a deliverable in the side panel and the inline content endpoint
+- [Desktop](projects/desktops.md) — the pod's one GUI display, how it streams to the preview panel and how the Agent hands it over
 - [File Downloads](projects/file-downloads.md) — how a `/workspace/...` chat link becomes a download
 - [Dictation](projects/dictation.md) — speech into the prompt draft and what decides availability
 
@@ -102,6 +103,7 @@
 **Operations** (`operations/`)
 - [Quickstart](operations/quickstart.md) — stand up the local stack with `yarn dev`
 - [Commands](operations/commands.md) — day-to-day checks, database tasks and local ports
+- [Test the desktop in an image](operations/test-the-desktop.md) — the desktop manager's tests against a real X11 display
 - [Local orchestration](operations/local-orchestration.md) — the tunnel, Tilt and the static identity
 - [Test Custom domains locally](operations/test-custom-domains-locally.md) — point a domain you own at a local App, and where to look when a status gets stuck
 - [Deployment](operations/deployment.md) — ship to a cluster through CI in dependency order

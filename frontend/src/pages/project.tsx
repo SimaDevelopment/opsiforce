@@ -2,6 +2,7 @@ import { Show, createEffect, createMemo, createSignal, on, onCleanup, untrack, t
 import { useNavigate } from '@tanstack/solid-router';
 import { usePermissions } from '~/api/permissions';
 import { onAppServing, onEnvironmentIdle } from '~/api/agent-status';
+import { createDesktopSessions } from '~/api/desktops';
 import { ApiError } from '~/api/client';
 import { useProjectStatus } from '~/api/projects';
 import { useProjectEnvironments } from '~/api/environments';
@@ -159,7 +160,9 @@ export function ProjectView(props: ProjectViewProps) {
     onInitialPromptAdmitted: () => props.onInitialPromptAdmitted(),
   });
   const app = () => (props.servesApp === false ? undefined : statusQuery.data?.app);
-  const previewVisible = () => app()?.exists === true || previewRequest() !== null;
+  const desktop = createDesktopSessions(activeEnvironmentId, () => connectionStatus() === 'active');
+  const previewVisible = () =>
+    app()?.exists === true || previewRequest() !== null || desktop.session()?.visible === true;
   const fullWidthTab = () => activeTab() === 'users';
   const mobileTabs = (): ProjectTab[] => {
     const tabs: ProjectTab[] = ['chat', 'files'];
@@ -362,6 +365,10 @@ export function ProjectView(props: ProjectViewProps) {
                 onOverlayChange={setPreviewOverlayOpen}
                 overlayBackLabel={`Back to ${PROJECT_TAB_LABELS[activeTab()]}`}
                 mobile={isMobile()}
+                desktop={desktop.session()}
+                takeDesktopShow={desktop.takeShow}
+                hidden={fullWidthTab() && !isMobile()}
+                chatSessionId={connection.openChat(activeEnvironmentId())}
                 column={
                   strip && {
                     storageKey: `opsiforce:pane-strip:${strip.pane}-preview`,

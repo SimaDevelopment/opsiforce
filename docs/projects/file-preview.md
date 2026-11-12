@@ -12,7 +12,7 @@ adrs: [0048, 0049]
 
 ### The panel
 
-- [File preview](../../GLOSSARY.md) shares the right side panel with the App preview; a centered App | File switcher appears in its header when both exist, and closing the file returns to the App or hides the panel when there is no App.
+- [File preview](../../GLOSSARY.md) shares the right side panel with the App preview; a centered switcher appears in its header when more than one of App, File and [Desktop](desktops.md) exists, and closing the file returns to the App (or the Desktop) or hides the panel when there is neither.
 - The App iframe is never unmounted while a file shows; it is hidden with `display: none`, so the App's in-progress state survives the detour ([App](app.md)).
 - The panel is keyed on each request to show a file, so clicking the same file again after switching back to the App reopens it.
 - A preview is single-file: opening another replaces it, and switching the [Active environment](../../GLOSSARY.md) closes it.
@@ -40,7 +40,7 @@ adrs: [0048, 0049]
 
 ## Edge cases
 
-- The panel changes mode only on a click: opening a preview, using the switcher, or closing the file; the Agent finishing a file never switches it.
+- The panel changes mode only on a click — opening a preview, using the switcher, or closing the file — or when the Agent runs `desktop show`; the Agent finishing a file never switches it.
 - When the previewed file is deleted, or a folder above it, the preview closes.
 - When a format is outside the matrix, the panel shows a download card; a chat link to an unsupported format downloads as before.
 - When a linked file has since been deleted or renamed, the panel says "file not found".

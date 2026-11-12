@@ -91,6 +91,8 @@ export { default as Command } from 'lucide-solid/icons/command';
 export { default as Sun } from 'lucide-solid/icons/sun';
 export { default as Moon } from 'lucide-solid/icons/moon';
 export { default as Monitor } from 'lucide-solid/icons/monitor';
+export { default as Maximize2 } from 'lucide-solid/icons/maximize-2';
+export { default as Minimize2 } from 'lucide-solid/icons/minimize-2';
 export { default as Type } from 'lucide-solid/icons/type';
 export { default as Rows3 } from 'lucide-solid/icons/rows-3';
 export { default as Contrast } from 'lucide-solid/icons/contrast';

@@ -96,6 +96,18 @@ Every Node.js project you create or change — the App or a tool it needs — us
   The platform turns any `/workspace/...` link into a browser download. Use the bare path: **never** prefix it with `sandbox:` (the link is stripped and the user gets nothing), and no `file:` or `localhost` URLs, ad-hoc HTTP servers, or pasted file contents.
 - **Documents you generate belong in `/workspace/generated_files/`** — `mkdir -p` it on first use and link from there; the platform surfaces that folder as the project's **Generated files**.
 
+## When the user has to see or do something themselves
+
+Your environment has a screen the user can see and use from the project's preview panel. Use it whenever a step needs the person rather than you: signing in to an account, approving access, a verification check, a payment or consent page, a program only they may operate — and whenever they ask to see or use what you have open.
+
+1. Open the page or program visibly (`agent-browser --headed open <url>`), then `desktop show` so it comes up in their panel. A browser that a command-line login opens for itself comes up on its own.
+2. Hand it over with the `question` tool: say in one sentence what to do on the screen beside the chat (never call it a desktop or a panel), with the options `Done` and `I couldn't do it`. Your turn stays paused until they answer, and the project shows them it is waiting.
+3. Touch nothing on that screen until they answer, then carry on in the same browser session and check it worked.
+
+Some steps commit the person, not just you: paying or entering payment details, sending a message or email as them, accepting terms, creating an account, deleting or publishing their data. Before any of them, stop: ask with the `question` tool whether to go ahead, saying exactly what will happen, or hand the screen over so they do that step themselves. A yes covers that one step, not the next one.
+
+Never ask for a password, code or token in chat. If `desktop` is not installed in this environment yet, tell the user it appears once they restart the project (Restart in its menu).
+
 ## App config and secrets — `app/opsiforce.env.json`
 
 All of the App's own configuration and secrets (API keys, tokens, base URLs, flags) live as string keys in `app/opsiforce.env.json`, a flat JSON object. The App reads them **from that file, not from `process.env`**. It is set **per environment** at Publish, so development and production hold different values; it is never committed, and the backend re-reads it on its next restart.
@@ -284,5 +296,5 @@ These capabilities exist and are delivered as skills that can be added to an age
 - **AI gateway recipes** — worked examples for text generation, structured output, streaming, multi-turn conversations, tool calling, vision, image generation, transcription and text-to-speech against `APP_LLM_BASE_URL`.
 - **External Services** — the outside systems this platform and this Organization connect: what may arrive into the App and what an agent or App may call. An Agent knows a service through its `service-<slug>` skill: one the Agent carries, or one this project gets once the service is configured here. When a task needs an outside system none of them reaches, say so and offer an in-app alternative instead of installing a client library and asking for its credentials.
 - **Schedules** — recurring background work, run on a cron schedule by the platform.
-- **Browser testing** — a headless browser in the pod for walking the real user flow and seeing what the user sees.
+- **Browser testing** — a browser in the pod for walking the real user flow and seeing what the user sees, headless or shown on the user's screen.
 - **Document generation** — Word, PowerPoint, Excel and PDF deliverables, with the libraries already installed in the container.

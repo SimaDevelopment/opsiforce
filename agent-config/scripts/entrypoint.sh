@@ -6,8 +6,17 @@ export APP_PORT="${APP_PORT:-3000}"
 export VSCODE_PORT="${VSCODE_PORT:-8080}"
 export DB_VIEWER_PORT="${DB_VIEWER_PORT:-8081}"
 export DB_VIEWER_SQL_TIME_LIMIT_MS="${DB_VIEWER_SQL_TIME_LIMIT_MS:-5000}"
+export DISPLAY=:99
 
 mkdir -p /workspace/app/data /workspace/data/logs
+
+guard desktop agent-desktop &
+desktop_ready=""
+for attempt in {1..100}; do
+  if curl -fsS http://127.0.0.1:6080/sessions >/dev/null 2>&1; then desktop_ready=1; break; fi
+  sleep 0.1
+done
+[ -n "${desktop_ready}" ] || echo "entrypoint: the desktop is not ready yet; the agent starts without waiting for it" >&2
 
 EXTERNAL_SERVICES_DB=/workspace/data/external-services.db
 [ -f "${EXTERNAL_SERVICES_DB}" ] || sqlite3 "${EXTERNAL_SERVICES_DB}" "VACUUM;"

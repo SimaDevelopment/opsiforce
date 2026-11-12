@@ -52,6 +52,26 @@ describe('agent pod credentials', () => {
   });
 });
 
+describe('desktop shared memory', () => {
+  it.each([undefined, 'kata-clh-runtime-rs-opsiforce'])(
+    'provides private bounded shared memory without increasing agent memory for runtime %s',
+    (runtimeClassName) => {
+      const pod = buildPodSpec({ ...options, runtimeClassName, caBundleConfigMap: 'local-ca' });
+      const agent = pod.spec!.containers[0];
+      const mount = agent.volumeMounts?.find((volume) => volume.mountPath === '/dev/shm');
+      expect(mount).toBeDefined();
+      expect(mount?.readOnly).not.toBe(true);
+      expect(pod.spec?.volumes?.find((volume) => volume.name === mount?.name)).toEqual({
+        name: mount!.name,
+        emptyDir: { medium: 'Memory', sizeLimit: '512Mi' },
+      });
+      expect(pod.spec?.hostIPC).not.toBe(true);
+      expect(agent.resources).toEqual(options.resources);
+      expect(agent.volumeMounts?.some((volume) => volume.mountPath === '/etc/opsiforce/ca')).toBe(true);
+    }
+  );
+});
+
 describe('privileged Kata agents', () => {
   it('enables privileged mode for both the app and init containers', () => {
     const pod = buildPodSpec({ ...options, runtimeClassName: 'kata-clh-runtime-rs-opsiforce', privileged: true });
@@ -117,8 +137,8 @@ describe('Docker in privileged Kata agents', () => {
       const [agent] = pod.spec?.containers ?? [];
 
       expect(envNames(agent)).not.toContain('OPSIFORCE_DOCKER');
-      expect(agent.volumeMounts?.map(({ name }) => name)).toEqual(['workspace', 'ca-bundle']);
-      expect(pod.spec?.volumes?.map(({ name }) => name)).toEqual(['workspace', 'ca-bundle']);
+      expect(agent.volumeMounts?.map(({ name }) => name)).toEqual(['workspace', 'shared-memory', 'ca-bundle']);
+      expect(pod.spec?.volumes?.map(({ name }) => name)).toEqual(['workspace', 'shared-memory', 'ca-bundle']);
     }
   );
 });
@@ -232,6 +252,6 @@ describe('reaching External Services from a pod', () => {
     const pod = buildPodSpec(calling);
 
     expect(envOf(pod).SSL_CERT_FILE).toBeUndefined();
-    expect(pod.spec?.volumes?.map((volume) => volume.name)).toEqual(['workspace']);
+    expect(pod.spec?.volumes?.some((volume) => volume.name === 'ca-bundle')).toBe(false);
   });
 });
