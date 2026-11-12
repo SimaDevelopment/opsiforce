@@ -16,6 +16,8 @@ export interface DesktopSession {
   visible: boolean;
   preferredWindow: string;
   presentation: number;
+  /** How many times the Agent has shown the screen since this page started listening. */
+  shows: number;
 }
 
 export function desktopBase(environmentId: string) {
@@ -37,6 +39,7 @@ export function createDesktopSessions(
     let source: EventSource | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
+    let presentedBefore: number | undefined;
     const connect = () => {
       clearTimeout(retryTimer);
       source?.close();
@@ -44,7 +47,15 @@ export function createDesktopSessions(
       source.addEventListener('message', (event) => {
         failures = 0;
         try {
-          setSession((JSON.parse(event.data) as DesktopSession[])[0]);
+          const current = (JSON.parse(event.data) as Omit<DesktopSession, 'shows'>[])[0];
+          if (!current) {
+            presentedBefore ??= 0;
+            return setSession(undefined);
+          }
+          if (presentedBefore === undefined || current.presentation < presentedBefore) {
+            presentedBefore = current.presentation;
+          }
+          setSession({ ...current, shows: current.presentation - presentedBefore });
         } catch {
           setSession(undefined);
         }

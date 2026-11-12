@@ -132,19 +132,15 @@ export function ProjectPreviewPanel(props: ProjectPreviewPanelProps) {
     )
   );
 
-  let presented: number | undefined;
+  let seenShows = 0;
   createEffect(
     on(
-      () => props.desktop?.presentation,
-      (count) => {
+      () => props.desktop?.shows ?? 0,
+      (shows) => {
         const session = props.desktop;
-        if (count === undefined || session === undefined) {
-          presented = undefined;
-          return;
-        }
-        const isNew = presented !== undefined && count > presented;
-        presented = count;
-        if (!isNew || !session.visible) return;
+        const isNew = shows > seenShows;
+        seenShows = shows;
+        if (!isNew || !session?.visible) return;
         setDesktopWindow(session.preferredWindow);
         setMode('desktop');
         setOpen(true);

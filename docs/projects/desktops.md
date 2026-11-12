@@ -26,7 +26,7 @@ adrs: [0109]
 ### The panel
 
 - Desktop is a mode of the preview panel beside App and [File preview](file-preview.md), labelled **Browser** while every window on it is a browser and **Screen** otherwise, the words the user sees instead of "desktop"; it exists only while the display has a window. The header's switcher lists the modes that exist, and on a phone the panel is the bottom bar's Preview overlay.
-- `desktop show` opens the panel in Desktop mode on the window named, only for a show that happens while the page is open.
+- `desktop show` brings the window named to the front, or the newest window when none is named, and opens the panel in Desktop mode on it, only for a show that happens while the page is open; the page counts shows from its event stream, so one that lands before the panel mounts still opens it.
 - With two or more windows the header picks all windows or one, and holds Full screen and the Clipboard controls. A hidden view disconnects its viewer; the apps keep running.
 - Input starts on the first click inside the viewer. Ctrl, Cmd and Alt combinations typed there go to the desktop, never to the chat's shortcuts, with Cmd sent as Ctrl because the desktop is Linux.
 - UTF-8 text crosses through `GET`/`PUT …/_desktop/clipboard`, which agent-control serves with `xclip` on `:99`, capped at 1 MiB; Ctrl/Cmd+C, X and V use it, and the Clipboard box covers browsers that block clipboard access and copies made from an app's own menu. Text reaches the person's clipboard only on their own copy, never on a timer.
