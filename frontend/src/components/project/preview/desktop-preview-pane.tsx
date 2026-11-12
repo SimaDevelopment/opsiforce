@@ -63,8 +63,10 @@ export interface DesktopPreviewPaneProps {
 }
 
 export function DesktopPreviewPane(props: DesktopPreviewPaneProps) {
-  const selectedWindow = () =>
-    props.windowId && props.session.windows.some((window) => window.id === props.windowId) ? props.windowId : '';
+  const selectedWindow = createMemo(() =>
+    props.windowId && props.session.windows.some((window) => window.id === props.windowId) ? props.windowId : ''
+  );
+  const visible = createMemo(() => props.visible);
   const [control, setControl] = createSignal(false);
   const [status, setStatus] = createSignal('Connecting…');
   const [retry, setRetry] = createSignal(0);
@@ -250,12 +252,12 @@ export function DesktopPreviewPane(props: DesktopPreviewPaneProps) {
   createEffect(on(selectedWindow, () => setControl(false), { defer: true }));
 
   createEffect(() => {
-    const visible = props.visible;
+    const shown = visible();
     const environmentId = props.environmentId;
     const id = sessionId();
     const windowId = selectedWindow();
     retry();
-    if (!visible) {
+    if (!shown) {
       failures = 0;
       setGaveUp(false);
       setConnected(false);
@@ -410,7 +412,11 @@ export function DesktopPreviewPane(props: DesktopPreviewPaneProps) {
             >
               <option value="">All windows</option>
               <For each={props.session.windows}>
-                {(window) => <option value={window.id}>{window.title || 'Untitled window'}</option>}
+                {(window) => (
+                  <option value={window.id} selected={window.id === selectedWindow()}>
+                    {window.title || 'Untitled window'}
+                  </option>
+                )}
               </For>
             </select>
           </Show>
