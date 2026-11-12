@@ -25,12 +25,21 @@ const NAMED_KEYSYMS: Record<string, number> = {
   ' ': 0x20,
 };
 
+/** The layout's own letter, or the physical key's when the layout types a non-Latin character there. */
+function latinLetterOf(event: KeyboardEvent): string | undefined {
+  const key = event.key.toLowerCase();
+  if (/^[a-z]$/.test(key)) return key;
+  return /^Key[A-Z]$/.test(event.code) ? event.code.slice(3).toLowerCase() : undefined;
+}
+
 function keysymOf(event: KeyboardEvent): number | undefined {
   const named = NAMED_KEYSYMS[event.key];
   if (named !== undefined) return named;
   const fn = /^F([1-9]|1[0-2])$/.exec(event.key);
   if (fn) return 0xffbe + Number(fn[1]) - 1;
-  if (/^Key[A-Z]$/.test(event.code)) return event.code.charCodeAt(3) + 32;
+  const letter = latinLetterOf(event);
+  if (letter) return letter.charCodeAt(0);
+  if (/^[0-9]$/.test(event.key)) return event.key.charCodeAt(0);
   if (/^Digit[0-9]$/.test(event.code)) return event.code.charCodeAt(5);
   const point = [...event.key].length === 1 ? event.key.toLowerCase().codePointAt(0) : undefined;
   if (point === undefined) return undefined;
@@ -38,7 +47,7 @@ function keysymOf(event: KeyboardEvent): number | undefined {
 }
 
 function letterOf(event: KeyboardEvent) {
-  return /^Key[A-Z]$/.test(event.code) ? event.code.slice(3).toLowerCase() : event.key.toLowerCase();
+  return latinLetterOf(event) ?? event.key.toLowerCase();
 }
 
 function typesACharacter(event: KeyboardEvent) {
