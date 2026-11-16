@@ -17,6 +17,7 @@ import (
 
 	"opsiforce/proxy/internal/backend"
 	"opsiforce/proxy/internal/config"
+	"opsiforce/proxy/internal/requestlog"
 )
 
 const readableAppHost = "warehouse-dev-111111112222.apps.test"
@@ -128,6 +129,11 @@ func serveAnswer(upstream string) backend.EnsureResponse {
 
 func newAppServer(t *testing.T, plane *appControlPlane) *Server {
 	t.Helper()
+	return newLoggedAppServer(t, plane, nil)
+}
+
+func newLoggedAppServer(t *testing.T, plane *appControlPlane, logger *requestlog.Logger) *Server {
+	t.Helper()
 	control := httptest.NewServer(http.HandlerFunc(plane.handler))
 	t.Cleanup(control.Close)
 
@@ -141,7 +147,7 @@ func newAppServer(t *testing.T, plane *appControlPlane) *Server {
 			AppAuthForwardingSigningKey: strings.Repeat("k", 32),
 		},
 		backend.New(control.URL, "token", 5*time.Second),
-		nil,
+		logger,
 	)
 }
 
@@ -521,6 +527,32 @@ func TestASignedInUpgradeFromTheAppsOwnOriginReachesThePod(t *testing.T) {
 
 	if len(upstream.received()) != 1 {
 		t.Fatalf("upstream requests: got %d want 1", len(upstream.received()))
+	}
+}
+
+func TestAHeaderTheAppDefinesReachesItUnchangedOverHTTPAndUpgrades(t *testing.T) {
+	upstream, upstreamURL := startUpstream(t)
+	plane := &appControlPlane{answer: serveAnswer(upstreamURL)}
+	server := newAppServer(t, plane)
+
+	plain := http.Header{}
+	plain.Set("X-Warehouse-Region", "eu-north")
+	visit(server, "https://"+readableAppHost+"/orders", plain)
+
+	upgrade := http.Header{}
+	upgrade.Set("Connection", "Upgrade")
+	upgrade.Set("Upgrade", "websocket")
+	upgrade.Set("X-Warehouse-Region", "eu-north")
+	visit(server, "https://"+readableAppHost+"/socket", upgrade)
+
+	received := upstream.received()
+	if len(received) != 2 {
+		t.Fatalf("upstream requests: got %d want 2", len(received))
+	}
+	for _, request := range received {
+		if got := request.Header.Get("X-Warehouse-Region"); got != "eu-north" {
+			t.Errorf("%s: X-Warehouse-Region got %q want eu-north", request.URL.Path, got)
+		}
 	}
 }
 

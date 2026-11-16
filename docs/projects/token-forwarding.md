@@ -10,7 +10,7 @@ The transport credential is a bearer credential between trusted services, not a 
 
 Forwarding is disabled by default and cannot be combined with authentication bypass paths. Requests without a valid per-environment transport credential lose all reserved `X-Opsiforce-*` headers; other runtime surfaces strip them as well. Preview does not perform App Auth and should display a disconnected state. Apps must require a forwarded token for their API routes and must not trust the older generic identity headers alone.
 
-Requests carrying a forwarded token are excluded from runtime request logging, including bodies. Reserved headers are redacted in diagnostics and removed from response headers. The browser should call same-origin backend routes; use per-user storage keys and `Cache-Control: no-store` for personal data.
+Requests carrying a forwarded token are recorded in the request log at the Project's level like any other, with the access token redacted ([Request Logging](../gateways/request-logging.md)); at Full their bodies, which can hold what the App read with the visitor's access, are kept too. Reserved headers are removed from response headers. The browser should call same-origin backend routes; use per-user storage keys and `Cache-Control: no-store` for personal data.
 
 For read-only OneDrive use `openid profile email offline_access https://graph.microsoft.com/User.Read https://graph.microsoft.com/Files.Read`. Keep ID-token issuer/audience validation enabled. The backend can check `/v1.0/me`, then call `/v1.0/me/drive/root/children` with `Authorization: Bearer <token>`. Consent and a provisioned OneDrive are required. Refresh is handled by the OIDC plugin; reauthenticate if it fails.
 
