@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"opsiforce/proxy/internal/backend"
@@ -89,9 +90,11 @@ func (s *Server) logSettings(cfg *backend.LoggingConfig) logConfig {
 // in-memory buffer while passing every byte through to the client untouched.
 // This lets the proxy log a bounded prefix of a response without ever
 // buffering the whole body — preserving streaming (SSE, chunked) and capping
-// per-request memory at limit bytes.
+// per-request memory at limit bytes. A request body is read by the transport's
+// own goroutine, which may outlive RoundTrip, so the capture is guarded.
 type capturingReader struct {
 	src     io.Reader
+	mu      sync.Mutex
 	capture []byte
 	limit   int
 }
@@ -102,6 +105,8 @@ func newCapturingReader(src io.Reader, limit int) *capturingReader {
 
 func (c *capturingReader) Read(p []byte) (int, error) {
 	n, err := c.src.Read(p)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if n > 0 && len(c.capture) < c.limit {
 		remaining := c.limit - len(c.capture)
 		if remaining > n {
@@ -113,7 +118,15 @@ func (c *capturingReader) Read(p []byte) (int, error) {
 }
 
 func (c *capturingReader) captured() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return string(c.capture)
+}
+
+// teedBody streams a request body to the App while capturing its prefix.
+type teedBody struct {
+	*capturingReader
+	io.Closer
 }
 
 type Server struct {
@@ -307,7 +320,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	captureBody := logCfg.captureBody()
 
 	startedAt := time.Now()
-	requestBody, requestBodyText, err := s.readRequestBody(r, captureBody, logCfg.bodyLimit)
+	requestBody, loggedRequestBody, err := s.readRequestBody(r, captureBody, logCfg.bodyLimit)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, badGatewayBody)
 		return
@@ -369,7 +382,7 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 			DurationMillis:  time.Since(startedAt).Milliseconds(),
 			RequestHeaders:  jsonHeader(r.Header),
 			ResponseHeaders: jsonHeader(responseResult.headers),
-			RequestBody:     requestBodyText,
+			RequestBody:     loggedRequestBody(),
 			ResponseBody:    responseBodyText,
 		})
 	}
@@ -705,31 +718,45 @@ func (s *Server) serveReverseProxy(
 	proxy.ServeHTTP(w, r)
 }
 
-func (s *Server) readRequestBody(r *http.Request, captureBody bool, bodyLimit int) ([]byte, string, error) {
+// readRequestBody prepares the request body for the App and returns what the
+// request log keeps of it, read once the exchange is over.
+func (s *Server) readRequestBody(r *http.Request, captureBody bool, bodyLimit int) ([]byte, func() string, error) {
 	if !hasRequestBody(r.Method) {
-		return nil, "", nil
+		return nil, noLoggedBody, nil
 	}
 
 	// When body capture is disabled (logging off or metadata-only) there is no
 	// reason to buffer the request: stream it straight through so large uploads
 	// and long-lived requests never accumulate in proxy memory.
 	if !captureBody {
-		return nil, "", nil
+		return nil, noLoggedBody, nil
 	}
 
 	if !shouldBufferRequest(r.Header, s.cfg.RequestBufferLimit) {
-		return nil, "", nil
+		return nil, noLoggedBody, nil
+	}
+
+	// A body of unknown length (chunked) could be any size and may never end,
+	// so it is never buffered: it streams to the App and the log keeps only
+	// the prefix that passed through, as for responses.
+	if r.Header.Get("Content-Length") == "" {
+		capturer := newCapturingReader(r.Body, bodyLimit)
+		r.Body = teedBody{capturingReader: capturer, Closer: r.Body}
+		return nil, capturer.captured, nil
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, "", err
+		return nil, noLoggedBody, err
 	}
 
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	return body, truncate(string(body), bodyLimit), nil
+	logged := truncate(string(body), bodyLimit)
+	return body, func() string { return logged }, nil
 }
+
+func noLoggedBody() string { return "" }
 
 func extractAgentProject(path string) (string, string, bool) {
 	const prefix = "/api/proxy/"

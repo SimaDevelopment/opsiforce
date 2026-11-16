@@ -1,16 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"opsiforce/proxy/internal/backend"
 	"opsiforce/proxy/internal/requestlog"
@@ -30,6 +33,11 @@ type loggedRequest struct {
 func serveLogged(t *testing.T, logging *backend.LoggingConfig, req *http.Request) []loggedRequest {
 	t.Helper()
 	_, upstreamURL := startUpstream(t)
+	return serveLoggedTo(t, upstreamURL, logging, req)
+}
+
+func serveLoggedTo(t *testing.T, upstreamURL string, logging *backend.LoggingConfig, req *http.Request) []loggedRequest {
+	t.Helper()
 	answer := serveAnswer(upstreamURL)
 	answer.Directory = loggedDirectory
 	answer.Logging = logging
@@ -140,5 +148,55 @@ func TestAnUnprovenForwardedTokenNeverReachesTheLog(t *testing.T) {
 		if strings.HasPrefix(strings.ToLower(name), reservedHeaderPrefix) {
 			t.Errorf("an unproven reserved header %s survived into the log", name)
 		}
+	}
+}
+
+func TestAForwardedChunkedUploadStreamsToTheAppAndLogsOnlyItsPrefix(t *testing.T) {
+	firstChunkArrived := make(chan struct{})
+	var received bytes.Buffer
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		head := make([]byte, 4)
+		if _, err := io.ReadFull(r.Body, head); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		received.Write(head)
+		close(firstChunkArrived)
+		rest, _ := io.ReadAll(r.Body)
+		received.Write(rest)
+		_, _ = w.Write([]byte("stored"))
+	}))
+	t.Cleanup(app.Close)
+
+	upload, uploader := io.Pipe()
+	go func() {
+		_, _ = uploader.Write([]byte("head"))
+		select {
+		case <-firstChunkArrived:
+		case <-time.After(5 * time.Second):
+			uploader.CloseWithError(errors.New("the App never saw the first chunk before the upload ended"))
+			return
+		}
+		_, _ = uploader.Write(bytes.Repeat([]byte("x"), 4096))
+		_ = uploader.Close()
+	}()
+	req := forwardedPost("")
+	req.Body = upload
+	req.ContentLength = -1
+	req.Header.Del("Content-Length")
+
+	logged := serveLoggedTo(t, app.URL, &backend.LoggingConfig{Mode: logModeFull, BodyLimit: 1024}, req)
+
+	if want := "head" + strings.Repeat("x", 4096); received.String() != want {
+		t.Fatalf("the App received %d bytes, want the whole %d-byte upload", received.Len(), len(want))
+	}
+	if len(logged) != 1 {
+		t.Fatalf("logged %d requests, want the upload", len(logged))
+	}
+	if want := "head" + strings.Repeat("x", 1020); logged[0].requestBody != want {
+		t.Errorf("logged a %d-byte request body, want its first 1024 bytes", len(logged[0].requestBody))
+	}
+	if logged[0].responseBody != "stored" {
+		t.Errorf("logged response body %q, want stored", logged[0].responseBody)
 	}
 }
