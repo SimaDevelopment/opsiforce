@@ -1,6 +1,6 @@
 ---
 name: platform
-description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, reaching External Services on their Service hosts and relaying their refusals, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
+description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the headers a signed-in visitor's requests carry (sign-in identity and forwarded access tokens), the LLM gateway and the ban on local models, reaching External Services on their Service hosts and relaying their refusals, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
 ---
 
 # The Opsiforce platform
@@ -128,6 +128,32 @@ The platform's own values below are real environment variables: read those from 
 | `SERVICE_GATEWAY_URL` | Base URL of the platform's service gateway |
 | `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway and for External Services |
 | `EXTERNAL_SERVICES_HOST` | The domain every External Service's host sits under: `<slug>.$EXTERNAL_SERVICES_HOST` (§External Services) |
+
+## Signed-in visitors — the headers the platform adds
+
+When the user turns on sign-in for an environment (App Auth, set on the platform, never by you), visitors sign in before they reach the App and each request carries who they are as request headers. Read them in server code; the names below are the whole contract, so never guess or invent one. There is no `X-Opsiforce-Tenant-Id`.
+
+| Header | Arrives | What it holds |
+|---|---|---|
+| `X-Oidc-Subject`, `X-Oidc-Email` | with any sign-in | the visitor's stable id and email |
+| `X-Oidc-Username`, `X-Oidc-Groups` | with a Sign-in provider | username, and groups as a JSON array (`[]` without) |
+| `X-Oidc-Name`, `X-Oidc-Roles` | with App users | name, and role names as a JSON array (`[]` without) |
+| `X-Opsiforce-Access-Token` | when the user turned on token forwarding | the visitor's own access token for the API they chose, e.g. Microsoft Graph |
+| `X-Opsiforce-User-Id` | with every forwarded token | the ID token's `sub`: an opaque string, not a GUID |
+| `X-Opsiforce-Object-Id` | when the token carries `oid` | the directory's user id, e.g. Microsoft Entra's object id (a GUID) |
+| `X-Opsiforce-Directory-Id` | when the token carries `tid` | the identity provider's tenant, e.g. the Entra tenant id |
+
+- **Forwarded headers are verified for you.** The platform drops any `X-Opsiforce-*` header a browser sends and adds these only after checking them, so an API route that acts as the visitor requires `X-Opsiforce-Access-Token` and `X-Opsiforce-User-Id` and nothing else; treat Object and Directory ids as optional, and never check an id's format.
+- **`X-Oidc-*` count only while sign-in is on.** The sign-in overwrites them on every signed-in request, but an App without sign-in, and the preview pane, receive whatever a caller sends under those names.
+- **The token stays on the server.** Call the API with `Authorization: Bearer <token>` from App code; never return it to the browser, store it, or fall back to another visitor's token. Answer personal data with `Cache-Control: no-store`.
+- **The preview pane is never signed in**, so none of these arrive there: show a signed-out state, not an error.
+- **Every other header reaches the App as sent**, including ones the user's own gateway or client adds, so a header like `X-Forwarded-User` is a hint, never proof of who is calling.
+- **See what actually arrived** before changing any header code: unless the Project's Request Logging is Off, the request log keeps the headers the platform accepted for each request, the access token redacted and the ids in clear (§The request log). A WebSocket handshake is not logged at all.
+
+```bash
+sqlite3 -readonly /workspace/data/database.db \
+  "SELECT created_at, method, url, status, request_headers FROM app_requests ORDER BY id DESC LIMIT 10"
+```
 
 ## AI runs on the gateway — never locally
 

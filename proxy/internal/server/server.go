@@ -304,9 +304,6 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logCfg := s.logSettings(ensured.Logging)
-	if forwarded {
-		logCfg = logConfig{mode: logModeOff}
-	}
 	captureBody := logCfg.captureBody()
 
 	startedAt := time.Now()
@@ -1091,6 +1088,16 @@ var sensitiveLogHeaders = map[string]struct{}{
 	"x-proxy-control-token":       {},
 }
 
+// loggedIdentityHeaders are the reserved headers whose values the request log
+// keeps: the forwarded visitor's ids, debugging signal like X-Oidc-Subject.
+// Only acceptForwarding can have left them on a request, and every other
+// reserved header, the forwarded access token among them, is redacted.
+var loggedIdentityHeaders = map[string]struct{}{
+	strings.ToLower(forwardedUserIDHeader): {},
+	strings.ToLower(objectIDHeader):        {},
+	strings.ToLower(directoryIDHeader):     {},
+}
+
 func jsonHeader(headers http.Header) string {
 	if len(headers) == 0 {
 		return ""
@@ -1098,7 +1105,10 @@ func jsonHeader(headers http.Header) string {
 
 	payload := make(map[string]string, len(headers))
 	for key := range headers {
-		if _, redacted := sensitiveLogHeaders[strings.ToLower(key)]; redacted || strings.HasPrefix(strings.ToLower(key), reservedHeaderPrefix) {
+		lower := strings.ToLower(key)
+		_, sensitive := sensitiveLogHeaders[lower]
+		_, identity := loggedIdentityHeaders[lower]
+		if sensitive || (strings.HasPrefix(lower, reservedHeaderPrefix) && !identity) {
 			payload[key] = "[redacted]"
 			continue
 		}
