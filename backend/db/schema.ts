@@ -709,7 +709,7 @@ export const projectGatewayKeys = pgTable("project_gateway_keys", {
   check("project_gateway_keys_purpose_check", sql`${table.purpose} in ('service', 'platform-api')`),
 ])
 
-// TODO: remove in the release after External Services v2 ships: the dead POST /api/gateway dispatcher (it refuses email, its only provider); written only by it
+// TODO: drop in a later release: written only by the removed POST /api/gateway dispatcher, so backends of the previous release can still insert during rollout
 export const gatewayAuditLogs = pgTable("gateway_audit_logs", {
   id: text("id").primaryKey(),
   projectId: text("project_id")
