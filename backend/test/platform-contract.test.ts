@@ -153,7 +153,14 @@ describe('the inbound skills that became Service skills', () => {
 });
 
 const OBSERVER_DIRECTORY = '/opt/opsiforce/opencode-plugins/observer';
-const GPT_6_MODELS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-sol-fast'];
+const GPT_6_MODELS = [
+  'gpt-6-astra',
+  'gpt-6.1-sol',
+  'gpt-6.1-sol-fast',
+  'gpt-6.2-astra',
+  'gpt-6.2-sol',
+  'gpt-6.2-sol-fast',
+];
 const CLAUDE_EFFORT_OPT_OUTS = ['claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1'];
 
 interface OpencodeProvider {

@@ -256,6 +256,123 @@
               }
             }
           ]
+        },
+        "gpt-6.2-astra": {
+          "limit": {
+            "context": 290400,
+            "output": 32000
+          },
+          "settings": {
+            "reasoningEffort": "high",
+            "textVerbosity": "medium"
+          },
+          "compatibility": {
+            "supportsEffortUpdates": false
+          },
+          "variants": [
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low"
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium"
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high"
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh"
+              }
+            }
+          ]
+        },
+        "gpt-6.2-sol": {
+          "limit": {
+            "context": 290400,
+            "output": 32000
+          },
+          "settings": {
+            "reasoningEffort": "high",
+            "textVerbosity": "medium"
+          },
+          "compatibility": {
+            "supportsEffortUpdates": false
+          },
+          "variants": [
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low"
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium"
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high"
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh"
+              }
+            }
+          ]
+        },
+        "gpt-6.2-sol-fast": {
+          "limit": {
+            "context": 290400,
+            "output": 32000
+          },
+          "settings": {
+            "reasoningEffort": "high",
+            "textVerbosity": "medium"
+          },
+          "compatibility": {
+            "supportsEffortUpdates": false
+          },
+          "variants": [
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low"
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium"
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high"
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh"
+              }
+            }
+          ]
         }
       },
       "settings": {
