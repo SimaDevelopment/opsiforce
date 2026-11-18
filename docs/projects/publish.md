@@ -63,6 +63,7 @@ Publish job stages in order, during which the target ProjectEnvironment holds st
 - A cancel sent while a Publish is `building` takes effect once the pod is up; cancelling pod creation midway would race the rollback's own pod.
 - A Publish with data is refused with `400 no-development-data` when Development's `app/data/` is empty, and with `409` while Development is starting or publishing (`development-busy`) or its agent is working (`development-agent-working`).
 - Publish and Duplication cannot run against the same [Project](../../GLOSSARY.md) at once, since both begin by committing the same working tree.
+- A Publish fails at `committing` with `nested-git-repository`, naming the folder, when Development's working tree holds a folder with a `.git` of its own that git does not ignore: git would commit a pointer to that repository in place of its files, and the target would start without them.
 
 ## Code
 

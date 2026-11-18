@@ -11,7 +11,7 @@ live and fronts the chat. Its commands for you are app-url and app-restart.
 
 Usage:
   agent-control app-url       print the App's public URL (the same as ` + "`app-url`" + `)
-  agent-control app-restart   run startup.sh again now (the same as ` + "`app-restart`" + `)
+  agent-control app-restart   run startup.sh again, or restart one process (the same as ` + "`app-restart`" + `)
   agent-control --help        this help
 
 Wrong usage prints this help to stderr and exits 2 without starting anything.
