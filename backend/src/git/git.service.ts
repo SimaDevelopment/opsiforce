@@ -72,7 +72,9 @@ export class GitService {
       .split('\0')
       .filter((entry) => entry.startsWith(`${NESTED_REPOSITORY_MODE} `))
       .map((entry) => splitOnce(entry, '\t')[1]);
-    if (nested.length > 0) throw nestedRepositoryRefusal(nested);
+    if (nested.length === 0) return;
+    await this.git(dir, ['rm', '--cached', '-f', '-q', '--', ...nested]);
+    throw nestedRepositoryRefusal(nested);
   }
 
   async untrack(dir: string, paths: string[]): Promise<void> {

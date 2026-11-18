@@ -39,6 +39,7 @@ adrs: [0017]
 - When finalize answers 400, the staged bytes can never import and are deleted; any other failure releases the claim so finalize can be retried without re-uploading.
 - When a second finalize hits the same session, it finds nothing to claim and gets 404, so one upload never yields two Projects.
 - Abandoned upload sessions and orphaned claims are swept after 24 hours; abandoned export artifacts after `EXPORT_RETENTION_MINUTES` (default five hours).
+- An Export fails with `nested-git-repository`, naming the folder in its error, when the workspace holds a folder with a `.git` of its own that git does not ignore, for the reason a [Publish](publish.md) does.
 - When the source and target agent images differ in architecture, Import fails on the copied native binaries; the manifest's platform stamp is recorded but not checked.
 - An Import always creates a new Project; a Project export cannot update an existing one.
 - URLs or ids the App baked into its own config are not rewritten and need the Environment Variables editor ([Publish](publish.md)).
