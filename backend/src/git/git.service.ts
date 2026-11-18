@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -11,6 +11,7 @@ const run = promisify(execFile);
 const BASE_CONFIG = ['-c', 'safe.directory=*', '-c', 'core.hooksPath=/dev/null'];
 const COMMITTER = ['-c', 'user.email=publish@opsiforce.local', '-c', 'user.name=OpsiForce Publish'];
 const EXECUTABLE_BLOB_MODE = '100755';
+const NESTED_REPOSITORY_MODE = '160000';
 const COMMITTED_FILE_MODES = new Set(['100644', EXECUTABLE_BLOB_MODE]);
 const MAX_BLOB_BYTES = 256 * 1024 * 1024;
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -19,6 +20,15 @@ export interface CommittedFile {
   path: string;
   content: Buffer;
   executable: boolean;
+}
+
+function nestedRepositoryRefusal(folders: string[]): ConflictException {
+  const named = folders.map((folder) => `"${folder}"`).join(', ');
+  const holds = folders.length === 1 ? 'holds its own git repository' : 'hold their own git repositories';
+  return new ConflictException({
+    code: 'nested-git-repository',
+    message: `${named} ${holds}, so the files inside would be left out. Ask the agent to move the .git folder out of there, then try again.`,
+  });
 }
 
 function splitOnce(text: string, separator: string): [string, string] {
@@ -40,12 +50,31 @@ export class GitService {
   }
 
   async commitWorkingTree(dir: string, message: string): Promise<string> {
-    await this.git(dir, ['add', '-A']);
+    await this.stageWorkingTree(dir);
     const staged = await this.git(dir, ['status', '--porcelain']);
     if (staged.length > 0) {
       await this.git(dir, [...COMMITTER, 'commit', '--no-verify', '-m', message]);
     }
     return this.currentSha(dir);
+  }
+
+  private async stageWorkingTree(dir: string): Promise<void> {
+    try {
+      await this.git(dir, ['add', '-A']);
+    } catch (err) {
+      const stderr = String((err as { stderr?: unknown }).stderr);
+      const withoutCommits = /'(.+?)\/?' does not have a commit checked out/.exec(stderr);
+      if (withoutCommits) throw nestedRepositoryRefusal([withoutCommits[1]]);
+      throw err;
+    }
+    const index = await this.git(dir, ['-c', 'core.quotePath=false', 'ls-files', '--stage', '-z']);
+    const nested = index
+      .split('\0')
+      .filter((entry) => entry.startsWith(`${NESTED_REPOSITORY_MODE} `))
+      .map((entry) => splitOnce(entry, '\t')[1]);
+    if (nested.length === 0) return;
+    await this.git(dir, ['rm', '--cached', '-f', '-q', '--', ...nested]);
+    throw nestedRepositoryRefusal(nested);
   }
 
   async untrack(dir: string, paths: string[]): Promise<void> {

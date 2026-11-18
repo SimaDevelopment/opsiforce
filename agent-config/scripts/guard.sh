@@ -13,8 +13,9 @@ Use it in startup.sh for every server, worker or daemon the App needs. A one-off
 guard runs <command> in the foreground and starts it again whenever it exits, crashed or
 not: 2s after the first exit, doubling to 60s, and giving up after 50 restarts in a row that
 each ran under 30s; a run of 30s or more resets both. guard itself never returns, so always
-end the line with `&`. To restart a supervised process, kill the command, not guard; guard
-starts it again. A guard line you add to startup.sh starts once you run `app-restart`.
+end the line with `&`. To restart a supervised process, run `app-restart <name>`: it stops
+the command, not guard, and guard starts it again. A guard line you add to startup.sh starts
+once you run `app-restart`.
 
 Examples:
   guard server yarn dev &
