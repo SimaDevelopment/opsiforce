@@ -70,10 +70,12 @@ flowchart LR
 - When the Kubernetes API is unavailable, ensure answers 5xx and nothing else compensates; the frontend retries.
 - When a Project is deleted, every environment's pod is deleted, its keep-alive keys are cleared, the Bifrost team is revoked and each environment is tombstoned before its row goes ([Persistence](persistence.md)).
 - When an App sets a cookie of its own named `_opsiforce_…`, the app proxy drops that `Set-Cookie` and deletes any such cookie from every request to that App.
+- When a request reaches the backend with `Origin: null`, the origin of a sandboxed page such as an External Service's webhook answer or an HTML file preview, the backend answers 403, because the browser still sends the platform's session cookie with it.
 - When a request signed in by App Auth comes from another origin, such as another App, the app proxy sends no CORS headers and removes the App's own, so a script there cannot read the answer.
 
 ## Code
 
+- `backend/src/common/platform-cors.ts` — CORS for the platform API and the refusal of `Origin: null`.
 - `backend/src/proxy/` — the ensure, activity and failure endpoints the proxies call, App address resolution by host, and the Apps-host refusal for an External Service's Projects.
 - `backend/src/timeout/` — the two keep-alive keys and the idle-timeout floor.
 - `proxy/internal/server/` — the Go runtime proxy: routing modes, following the backend's App address answer, decision cache, WebSocket keep-alive, failure reporting, removing the platform's session cookies on the App surface, the browser error pages, the preview location reporter.
