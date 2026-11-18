@@ -133,8 +133,8 @@ func (s *webhookStack) request(t *testing.T, method string, path string, body io
 
 func assertSandboxed(t *testing.T, resp *http.Response) {
 	t.Helper()
-	if got := resp.Header.Values("Content-Security-Policy"); len(got) != 1 || got[0] != "sandbox" {
-		t.Fatalf("Content-Security-Policy = %q, want exactly sandbox", got)
+	if got := resp.Header.Values("Content-Security-Policy"); len(got) != 1 || got[0] != "sandbox allow-scripts allow-forms" {
+		t.Fatalf("Content-Security-Policy = %q, want exactly sandbox allow-scripts allow-forms", got)
 	}
 	if got := resp.Header.Values("X-Content-Type-Options"); len(got) != 1 || got[0] != "nosniff" {
 		t.Fatalf("X-Content-Type-Options = %q, want exactly nosniff", got)
