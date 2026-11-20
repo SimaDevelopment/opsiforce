@@ -27,8 +27,9 @@ import {
   tenants,
 } from '../../db/schema';
 import { legacyAppHost } from '../common/app-host';
-import { resolvePodSettings, sameResources, toK8sResources, type PodSettings } from '../pod/pod-classes';
-import { hasResources, podSettingsColumns } from '../pod/pod-settings-columns';
+import { sameResources, toK8sResources, type PodSettings } from '../pod/pod-classes';
+import { hasResources, podSettingsColumns, storedLegacyPodSettings } from '../pod/pod-settings-columns';
+import type { InactivityCleanup } from '../project/inactivity-cleanup';
 import { ProjectStatus, type ProjectKind } from '../project/project.types';
 import { assertRoomForCreatedProject, assertRoomForProject, type CreatedProjectsCap } from '../project/project-limit';
 import { PodService } from '../pod/pod.service';
@@ -71,6 +72,7 @@ export interface PoolClaim {
   description: string | null;
   timeoutIdle: number;
   appTimeoutIdle: number;
+  inactivityCleanup: InactivityCleanup;
   timezone: string;
   createdBy: string | null;
   createdByProjectId: string | null;
@@ -310,6 +312,14 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     );
   }
 
+  async reconcilePresets(): Promise<void> {
+    await this.queue.add(
+      ProjectPoolJob.Integrity,
+      { triggeredBy: 'presets-change' },
+      { jobId: `integrity__presets__${crypto.randomUUID()}`, removeOnComplete: true, removeOnFail: true }
+    );
+  }
+
   async releaseAgentSlots(agentId: string): Promise<void> {
     await db
       .update(agentSettings)
@@ -405,7 +415,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
 
   private async reservePending(agentId: string, claim: PoolClaim): Promise<PendingRow | null> {
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(claim.tenantId);
-    const resources = await readAgentPodSettings(agentId);
+    const resources = await readAgentPodSettings(agentId, claim.tenantId);
 
     return db.transaction(async (tx) => {
       await assertRoomForProject(tx, claim.tenantId, claim.kind);
@@ -444,7 +454,10 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       const row = reserved[0];
       if (!row) return null;
 
-      await tx.update(projectPodSettings).set(resources).where(eq(projectPodSettings.projectId, row.id));
+      await tx
+        .update(projectPodSettings)
+        .set(storedLegacyPodSettings(resources))
+        .where(eq(projectPodSettings.projectId, row.id));
       await tx
         .update(projects)
         .set({
@@ -472,6 +485,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .set({
           timeoutIdle: claim.timeoutIdle,
           appTimeoutIdle: claim.appTimeoutIdle,
+          ...claim.inactivityCleanup,
           timezone: claim.timezone,
         })
         .where(eq(projectSettings.projectId, row.id));
@@ -504,6 +518,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         .set({
           timeoutIdle: claim.timeoutIdle,
           appTimeoutIdle: claim.appTimeoutIdle,
+          ...claim.inactivityCleanup,
           timezone: claim.timezone,
         })
         .where(eq(projectSettings.projectId, projectId));
@@ -621,7 +636,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
         timezone: 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({ projectId: id, ...agent.resources });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(agent.resources) });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -916,6 +931,7 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
     const rows = await db
       .select({
         id: agents.id,
+        tenantId: agents.tenantId,
         name: agents.name,
         origin: agents.origin,
         warmPoolSize: agentSettings.warmPoolSize,
@@ -927,16 +943,16 @@ export class ProjectPoolService implements OnApplicationBootstrap, OnModuleDestr
       .leftJoin(agentSettings, eq(agentSettings.agentId, agents.id))
       .where(or(and(isNull(agents.tenantId), eq(agents.origin, 'built_in')), warmPooledCustomAgentsWhere()));
 
-    const podSettingsByAgent = await readAgentPodSettingsFor(rows.map((row) => row.id));
+    const podSettings = await readAgentPodSettingsFor(rows);
     const pooled = new Map<string, PooledAgent>();
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
       const builtIn = row.origin === 'built_in';
       const poolSize = row.warmPoolSize ?? 0;
       pooled.set(row.id, {
         name: row.name,
         packageName: builtIn ? row.name : CUSTOM_AGENT_PACKAGE,
         poolSize: builtIn ? poolSize : Math.min(poolSize, MAX_WARM_POOL_SIZE),
-        resources: podSettingsByAgent.get(row.id) ?? resolvePodSettings(),
+        resources: podSettings[index],
         contentVersion: builtIn ? row.version : this.agentImageVersion,
         modelSelection:
           builtIn && row.model ? { model: row.model, ...(row.variant ? { variant: row.variant } : {}) } : null,

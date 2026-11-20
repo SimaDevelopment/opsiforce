@@ -18,7 +18,7 @@ place that sets it.
 ## Where things live
 
 Tests are grouped by the area they drive, one directory deep — today `public-api/`, `store/`,
-`delivery/`, `agent-update/`, `model-provider/`, `linked-accounts/`, `external-services/` and `app-auth/`, with the tests for other areas
+`delivery/`, `agent-update/`, `model-provider/`, `linked-accounts/`, `external-services/`, `app-auth/`, `app-users/` and `custom-domains/`, with the tests for other areas
 flat at the root until one of them reaches three files. Nothing test-shaped lives under
 `src/`. The rules and the reasoning are [ADR 0037](../../docs/adr/0037-backend-tests-are-grouped-by-area-under-test-never-under-src.md);
 what follows is where to actually put a new file.
@@ -29,7 +29,7 @@ builders and small utilities. There are two of them, and a helper's home is deci
 one area, including transitively — which is why `proxy-identity.ts` lives there even though every
 direct importer is a public-API test: `project-fixtures.ts` imports it, and `agent-session.test.ts`
 imports that. An area's own `support/` (`test/public-api/support/`, `test/model-provider/support/`,
-`test/linked-accounts/support/`, `test/external-services/support/`) is for the rest. So `../support/…` in an import reaches a
+`test/linked-accounts/support/`, `test/external-services/support/`, `test/app-users/support/`, `test/custom-domains/support/`) is for the rest. So `../support/…` in an import reaches a
 shared helper and `./support/…` an area-local one; a helper in `test/support/` importing one from an
 area is the direction that would be wrong.
 
@@ -46,7 +46,10 @@ module provides.
 Faked, because they leave the process: Kubernetes (`PodService`, `PodCacheService`,
 `ProjectAuthService`), Redis (`TimeoutService`, `ProjectEventsService`, the BullMQ queues) and the
 HTTP services (`BifrostService`, `ScheduleService`, `ProjectPoolService`). Every fake records what it
-was called with: `harness.fakes.pods.callsTo('createAssignedPod')`.
+was called with: `harness.fakes.pods.callsTo('createAssignedPod')`. `CustomDomainCluster` stays real and
+reaches Kubernetes only for environments that have Custom domains, so every test that adds one fakes
+the Kubernetes client itself with `vi.mock('../../src/common/k8s-client', …)` over
+`test/custom-domains/support/fake-kube.ts`.
 
 Pod startup is gated rather than instant. `FakePodService.waitForReady()` returns a promise that
 settles only when a test calls `markPodReady(podName)` or `failPodStartup(podName, error)`, so a

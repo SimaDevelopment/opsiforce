@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useAgent } from '~/api/agents';
 import { ApiError } from '~/api/client';
 import { usePermissions } from '~/api/permissions';

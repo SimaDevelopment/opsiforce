@@ -36,9 +36,12 @@ export const PERMISSIONS = [
   'can_view_platform_storage',
   'can_manage_platform_storage',
   'can_manage_platform_limits',
+  'can_manage_platform_resources',
+  'can_manage_tenant_resources',
   'can_use_public_api',
   'can_manage_skills',
   'can_manage_agents',
+  'can_manage_custom_domains',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

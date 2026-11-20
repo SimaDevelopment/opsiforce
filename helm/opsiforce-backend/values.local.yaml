@@ -49,7 +49,8 @@ config:
   externalServicesHost: "external-services.opsiforce.localtest.me"
   externalServiceProxyControl: "proxy-external-service-control.local.svc.cluster.local:3007"
   podCaBundleConfigMap: "opsiforce-local-ca"
-  # TODO: remove in the release after External Services v2 ships: every mailgun* key and whapiApiUrl (dead /api/gateway email provider + one-time v1 importers)
+  podBrowserIgnoresHttpsErrors: true
+  # mailgunApiKey, mailgunDomain, mailgunSender and mailgunUrl send App User emails (invites and password resets); empty sends none.
   mailgunApiKey: "key-example"
   mailgunDomain: "sima"
   mailgunReceiveDomain: ""
@@ -62,6 +63,8 @@ config:
   appsHostname: "apps.opsiforce.localtest.me"
   webappServiceName: "proxy-app"
   webappServicePort: "3002"
+  customDomainsClusterIssuer: "opsiforce-local-ca"
+  customDomainsRefused: "opsiforce.localtest.me"
   oidcPluginSecret: "1198c2e7c224237098895d53543b074c"
   appAuthForwardingSigningKey: "local-app-auth-forwarding-signing-key-0123456789abcdef"
 

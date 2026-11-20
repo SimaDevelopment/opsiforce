@@ -23,6 +23,7 @@ import { scanTemplateSource } from '../agent-template/template-source';
 import { AgentTemplateStore } from '../agent-template/agent-template.store';
 import { importsRootPath } from '../project/project-import.types';
 import type { AgentServiceSettings } from '../../db/schema';
+import { INACTIVITY_CLEANUP_STEPS, inactivityCleanupFrom } from '../project/inactivity-cleanup';
 import type { DbExecutor } from '../common/locks';
 import {
   collectEntries,
@@ -57,13 +58,18 @@ import {
 import { AgentService } from './agent.service';
 import type { AgentCaller, AgentCopyGrants } from './agent.types';
 import {
-  DEFAULT_AGENT_PROJECT_SETTINGS,
+  defaultAgentProjectSettings,
   settingsForCopy,
   type AgentProjectSettings,
   type AgentProjectSettingsChoice,
 } from './agent-copy-settings';
 import { MAX_WARM_POOL_SIZE } from './agent-pod-settings';
-import { podSettingsFromRequest } from '../pod/pod-class-request';
+import {
+  defaultPodSettings,
+  podSettingsFromBundle,
+  readPresetCatalog,
+  type PresetCatalog,
+} from '../pod/resource-presets';
 
 const TEMPLATE_PREFIX = `${AGENT_EXPORT_TEMPLATE_DIR}/`;
 const SKILLS_PREFIX = `${AGENT_EXPORT_SKILLS_DIR}/`;
@@ -141,12 +147,12 @@ export class AgentImportService {
     }
   }
 
-  async inspect(archivePath: string): Promise<AgentImportInspection> {
+  async inspect(archivePath: string, tenantId: string): Promise<AgentImportInspection> {
     const manifest = await readAgentManifest(archivePath);
     return {
       displayName: manifest.agent.displayName,
       slug: manifest.agent.slug,
-      projectSettings: manifestProjectSettings(manifest),
+      projectSettings: manifestProjectSettings(manifest, await readPresetCatalog(tenantId)),
       maxWarmPoolSize: MAX_WARM_POOL_SIZE,
     };
   }
@@ -158,6 +164,7 @@ export class AgentImportService {
     request: AgentImportRequest,
     grants: AgentCopyGrants
   ): Promise<ImportPlan> {
+    const presets = await readPresetCatalog(caller.tenantId);
     const plan: ImportPlan = {
       grants,
       displayName: request.displayName?.trim() || nameFromFile(manifest),
@@ -169,7 +176,12 @@ export class AgentImportService {
         profile: manifest.profile,
         skills: [],
         template: null,
-        projectSettings: settingsForCopy(manifestProjectSettings(manifest), request.projectSettings),
+        projectSettings: settingsForCopy(
+          manifestProjectSettings(manifest, presets),
+          request.projectSettings,
+          presets,
+          grants
+        ),
       },
       pins: [],
       skillWrites: [],
@@ -504,22 +516,39 @@ export function assertAgentManifest(parsed: unknown): AgentExportManifest {
 function isAgentProjectSettings(value: unknown): boolean {
   const settings = value as Partial<AgentProjectSettings> | null;
   const resources = settings?.resources;
+  const cleanup = settings?.inactivityCleanup;
   return (
     typeof settings?.warmPoolSize === 'number' &&
-    typeof resources?.podClass === 'string' &&
+    (cleanup === undefined ||
+      cleanup === null ||
+      INACTIVITY_CLEANUP_STEPS.every((step) => isOptionalDuration(cleanup[step.field]))) &&
+    typeof resources === 'object' &&
+    resources !== null &&
     typeof resources.cpuMillicores === 'number' &&
     typeof resources.memoryRequestMib === 'number' &&
     typeof resources.memoryLimitMib === 'number'
   );
 }
 
-function manifestProjectSettings(manifest: AgentExportManifest): AgentProjectSettings {
+function manifestProjectSettings(manifest: AgentExportManifest, catalog: PresetCatalog): AgentProjectSettings {
   const carried = manifest.projectSettings;
-  if (!carried) return DEFAULT_AGENT_PROJECT_SETTINGS;
+  const inactivityCleanup = carried?.inactivityCleanup ? inactivityCleanupFrom(carried.inactivityCleanup) : null;
+  if (!carried || carried.followsDefault) {
+    return { ...defaultAgentProjectSettings(catalog), warmPoolSize: importedWarmPoolSize(carried), inactivityCleanup };
+  }
   return {
-    resources: podSettingsFromRequest(carried.resources),
-    warmPoolSize: Math.min(Math.max(Math.trunc(carried.warmPoolSize), 0), MAX_WARM_POOL_SIZE),
+    resources: podSettingsFromBundle(carried.resources, catalog) ?? defaultPodSettings(catalog),
+    warmPoolSize: importedWarmPoolSize(carried),
+    inactivityCleanup,
   };
+}
+
+function isOptionalDuration(value: unknown): boolean {
+  return value === null || typeof value === 'number';
+}
+
+function importedWarmPoolSize(carried: AgentProjectSettings | undefined): number {
+  return carried ? Math.min(Math.max(Math.trunc(carried.warmPoolSize), 0), MAX_WARM_POOL_SIZE) : 0;
 }
 
 function isOptionalString(value: unknown): boolean {

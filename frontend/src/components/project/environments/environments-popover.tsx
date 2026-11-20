@@ -1,9 +1,10 @@
 import { For, Match, Show, Switch, createMemo, createSignal } from 'solid-js';
 import { useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { usePermissions } from '~/api/permissions';
 import { useProjects } from '~/api/projects';
 import {
+  useEnvironments,
   useDeleteProjectEnvironment,
   useProjectEnvironments,
   useRestartProjectEnvironment,
@@ -11,7 +12,10 @@ import {
   type ProjectEnvironment,
 } from '~/api/environments';
 import { usePublishTargets, type PublishTarget } from '~/api/publish';
+import { useCustomDomainsOffered } from '~/api/custom-domains';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
+import { useSidebar } from '~/components/ui/sidebar';
+import { deriveEnvironmentShortName } from '~/lib/environment-label';
 import { Check, ChevronsUpDown, Layers, LoaderCircle, Upload } from '~/components/icons';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Skeleton } from '~/components/ui/skeleton';
@@ -23,6 +27,7 @@ import { EnvStatusDot } from './env-status-dot';
 import { PublishDialog } from './publish-dialog';
 import { EnvironmentVariablesDialog } from './environment-variables-dialog';
 import { EditAppUrlDialog } from '../edit-app-url-dialog';
+import { DomainsDialog } from '../custom-domains/domains-dialog';
 
 export interface EnvironmentsPopoverProps {
   projectId: string;
@@ -47,6 +52,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const canManageVariables = () => hasPermission('can_manage_environment_variables');
   const canSchedules = () => hasPermission('can_manage_schedules');
   const canEditAppDetails = () => hasPermission('can_edit_app_details');
+  const customDomainsOffered = useCustomDomainsOffered();
 
   const navigate = useNavigate();
   const [open, setOpen] = createSignal(false);
@@ -81,6 +87,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const [authEnv, setAuthEnv] = createSignal<ProjectEnvironment | null>(null);
   const [variablesEnv, setVariablesEnv] = createSignal<ProjectEnvironment | null>(null);
   const [editUrlEnv, setEditUrlEnv] = createSignal<ProjectEnvironment | null>(null);
+  const [domainsEnv, setDomainsEnv] = createSignal<ProjectEnvironment | null>(null);
   const [publishTarget, setPublishTarget] = createSignal<PublishTarget | null>(null);
   const [pendingDelete, setPendingDelete] = createSignal<ProjectEnvironment | null>(null);
   const [pendingRestart, setPendingRestart] = createSignal<ProjectEnvironment | null>(null);
@@ -103,6 +110,17 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
   const loading = () => environments.isPending || (canPublish() && targets.isPending);
 
   const activeEnvironment = createMemo(() => props.environments.find((e) => e.id === props.activeEnvironmentId));
+  // On a phone the band has room for the environment's Badge Label (Dev, Prod),
+  // not its name: the name would push the project's title off the band.
+  const sidebar = useSidebar();
+  const registry = useEnvironments({ enabled: () => sidebar.isMobile() });
+  const triggerLabel = (env: ProjectEnvironment) => {
+    if (!sidebar.isMobile()) return env.name;
+    const registered = registry.data?.find((e) => e.id === env.environmentId);
+    // capitalised, not uppercased: here the Badge Label stands in for the name
+    const short = registered?.shortName?.trim() || deriveEnvironmentShortName(env.slug ?? registered?.slug ?? env.name);
+    return short.charAt(0).toUpperCase() + short.slice(1).toLowerCase();
+  };
 
   const description = () => {
     const tail = canSchedules() ? ', or open schedules' : '';
@@ -173,10 +191,12 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
     canManageVariables: canManageVariables(),
     canSchedules: canSchedules(),
     canEditAppDetails: canEditAppDetails(),
+    customDomainsOffered: customDomainsOffered(),
     restarting: restartingId() === env.id,
     onAuth: () => setAuthEnv(env),
     onVariables: () => setVariablesEnv(env),
     onEditUrl: () => setEditUrlEnv(env),
+    onDomains: () => setDomainsEnv(env),
     onPublish: () => setPublishTarget(target),
     onSchedules: () => openSchedules(env),
     onRestart: () => setPendingRestart(env),
@@ -199,7 +219,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
       <Popover open={open()} onOpenChange={setOpen} placement="bottom-start">
         {/* a pill with its status dot, not a bordered select */}
         <PopoverTrigger class="of-chip of-chip-btn fr" aria-label="Environments">
-          <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}>
+          <Switch fallback={<Layers class="h-3.5 w-3.5 shrink-0 text-muted-foreground max-md:hidden" />}>
             <Match when={publishIndicator() === 'running'}>
               <LoaderCircle class="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
             </Match>
@@ -214,7 +234,9 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
             {(env) => (
               <span class="flex min-w-0 items-center gap-2">
                 <EnvStatusDot status={env().status} />
-                <span class="truncate font-medium text-foreground">{env().name}</span>
+                <span class="truncate font-medium text-foreground" title={env().name}>
+                  {triggerLabel(env())}
+                </span>
               </span>
             )}
           </Show>
@@ -276,6 +298,7 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         projectId={props.projectId}
         environmentId={authEnv()?.id ?? ''}
         environmentName={authEnv()?.name}
+        appUrl={authEnv()?.publicUrl ?? undefined}
         open={authEnv() !== null}
         onOpenChange={(value) => {
           if (!value) setAuthEnv(null);
@@ -295,6 +318,14 @@ export function EnvironmentsPopover(props: EnvironmentsPopoverProps) {
         environment={editUrlEnv()}
         onOpenChange={(value) => {
           if (!value) setEditUrlEnv(null);
+        }}
+      />
+
+      <DomainsDialog
+        projectId={props.projectId}
+        environment={domainsEnv()}
+        onOpenChange={(value) => {
+          if (!value) setDomainsEnv(null);
         }}
       />
 

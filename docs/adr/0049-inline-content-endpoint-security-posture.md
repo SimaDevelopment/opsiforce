@@ -1,6 +1,6 @@
 # Inline content endpoint security posture
 
-File preview serves workspace files inline from the app's origin, so the endpoint allow-lists inline disposition (PDF, raster images, inert text, HTML) and serves everything else, SVG and XML included, as an attachment. PDFs render in an un-sandboxed iframe because a sandboxed frame renders nothing in Chromium and Firefox's viewer needs script execution, measured on 2026-08-21 with two frames differing only in the `sandbox` attribute; HTML renders live but every HTML response carries a `Content-Security-Policy` of `sandbox allow-scripts; default-src 'none'` plus inline script, style and `data:`/`blob:` images, so the document lands in an opaque origin and cannot reach cookies, storage, the parent DOM or the platform API even with the session cookie riding along. The trade accepted is that a preview cannot load a CDN library or live data, which is right for a surface whose job is finished files.
+File preview serves workspace files inline from the app's origin, so the endpoint allow-lists inline disposition (PDF, raster images, inert text, HTML) and serves everything else, SVG and XML included, as an attachment. PDFs render in an un-sandboxed iframe because a sandboxed frame renders nothing in Chromium and Firefox's viewer needs script execution, measured on 2026-08-21 with two frames differing only in the `sandbox` attribute; HTML renders live but every HTML response carries a `Content-Security-Policy` of `sandbox allow-scripts; default-src 'none'` plus inline script, style and `data:`/`blob:` images, so the document lands in an opaque origin and cannot reach cookies, storage, the parent DOM or the platform API even with the session cookie riding along; the backend also refuses every request whose `Origin` is `null`. The trade accepted is that a preview cannot load a CDN library or live data, which is right for a surface whose job is finished files.
 
 ## Considered options
 
@@ -9,5 +9,5 @@ File preview serves workspace files inline from the app's origin, so the endpoin
 
 ## Consequences
 
-- A NetworkPolicy blocking agent pods from calling the converter directly was consciously deferred on 2026-08-21: agent pods share the namespace and can submit conversions, the realistic exposure is queue starvation rather than data access, and minikube's default CNI enforces no policy, so an unverifiable object was not shipped. The fix, if abuse appears, is a namespaced NetworkPolicy plus a CNI check.
+- Agent pods cannot call the converter: the agent pods' NetworkPolicy reaches only the services they need, and the converter is not one of them ([ADR-0106](0106-agent-pods-reach-only-the-platform-services-they-call-and-the-internet-and-only-platform-roles-reach-them.md)).
 - The endpoint sends `nosniff`, `no-store` and Range support, and shares the path guards and membership check with download.

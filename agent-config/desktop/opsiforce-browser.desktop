@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Chromium
+Exec=/usr/local/bin/desktop-browser %U
+Terminal=false
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+Categories=Network;WebBrowser;

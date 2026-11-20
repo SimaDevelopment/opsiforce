@@ -1,0 +1,17 @@
+{
+  "id": "20261105_app_url_public_address",
+  "requiresPodRecreate": true,
+  "operations": [
+    {
+      "type": "copy",
+      "source": "../../template/scripts/tp.sh",
+      "target": "scripts/tp.sh",
+      "managedChecksums": [
+        "26250f538e899e55b1714d0d6a67f2473579da9ba05b83dbb56065c1818fcbbe",
+        "287c8638f89e8dac8c9afa140362fe0a84eaa2ff8e9d9fcec29847cb045cdbd6",
+        "6ded32cf425f55a5c9aed0c330ad7ba690b2d62c77fd2c4378157cffa1f4f007",
+        "7b08d9f855cccefc8e77c6356e89e95f9db4d5da11c49156ef0f92c9764cb177"
+      ]
+    }
+  ]
+}

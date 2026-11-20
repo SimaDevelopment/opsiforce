@@ -1,5 +1,5 @@
 import { Match, Show, Switch, createEffect, createSignal, createUniqueId, on, onCleanup, onMount } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError } from '~/api/client';
 import {
   useDisconnectLinkedAccount,

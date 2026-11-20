@@ -51,6 +51,25 @@ function DropdownMenuItem(props: ParentProps<ComponentProps<typeof Kobalte.Item>
   );
 }
 
+function DropdownMenuCheckboxItem(props: ParentProps<ComponentProps<typeof Kobalte.CheckboxItem>>) {
+  const [local, rest] = splitProps(props, ['class', 'children']);
+  return (
+    <Kobalte.CheckboxItem
+      class={cn(
+        'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors',
+        'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        local.class
+      )}
+      {...rest}
+    >
+      {local.children}
+    </Kobalte.CheckboxItem>
+  );
+}
+
+const DropdownMenuItemIndicator = Kobalte.ItemIndicator;
+
 function DropdownMenuSeparator(props: ComponentProps<typeof Kobalte.Separator>) {
   const [local, rest] = splitProps(props, ['class']);
   return <Kobalte.Separator class={cn('-mx-1 my-1 h-px bg-border', local.class)} {...rest} />;
@@ -101,6 +120,8 @@ export {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItemIndicator,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubTrigger,

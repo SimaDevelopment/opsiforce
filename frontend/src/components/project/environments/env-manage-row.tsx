@@ -3,6 +3,7 @@ import {
   Calendar,
   Check,
   EllipsisVertical,
+  Globe,
   KeyRound,
   Rocket,
   RotateCcw,
@@ -35,6 +36,7 @@ export interface EnvManageRowProps {
   canManageVariables: boolean;
   canSchedules: boolean;
   canEditAppDetails: boolean;
+  customDomainsOffered: boolean;
   restarting: boolean;
   onAuth: () => void;
   onSchedules: () => void;
@@ -44,6 +46,7 @@ export interface EnvManageRowProps {
   onPublish: () => void;
   onVariables: () => void;
   onEditUrl: () => void;
+  onDomains: () => void;
 }
 
 export function EnvManageRow(props: EnvManageRowProps) {
@@ -53,6 +56,7 @@ export function EnvManageRow(props: EnvManageRowProps) {
   const canRestartEnv = () => props.canRestart && env().status !== 'disabled';
   const showPublish = () => props.canPublish && !isDevelopment() && props.hasApp;
   const canEditUrl = () => props.canEditAppDetails && env().hasApp;
+  const showDomains = () => props.customDomainsOffered && env().hasApp && env().publicUrl !== null;
 
   const appRunning = () => (isDevelopment() ? props.hasApp : env().deployedCommitSha !== null);
 
@@ -113,6 +117,12 @@ export function EnvManageRow(props: EnvManageRowProps) {
               <DropdownMenuItem onSelect={() => props.onAuth()}>
                 <ShieldCheck class="h-3.5 w-3.5 text-muted-foreground" />
                 Auth
+              </DropdownMenuItem>
+            </Show>
+            <Show when={showDomains()}>
+              <DropdownMenuItem onSelect={() => props.onDomains()}>
+                <Globe class="h-3.5 w-3.5 text-muted-foreground" />
+                Domains
               </DropdownMenuItem>
             </Show>
             <Show when={props.canManageVariables}>

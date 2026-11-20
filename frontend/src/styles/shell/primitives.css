@@ -703,6 +703,38 @@
     text-align: center;
   }
 
+  .of-empty > :not(.of-lattice) {
+    position: relative;
+  }
+
+  .of-empty .ttl {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-strong);
+  }
+
+  .of-empty .ds {
+    margin: 0;
+    max-width: 52ch;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-default);
+    text-wrap: balance;
+  }
+
+  .of-empty .acts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .of-lattice-empty {
+    mask-image: radial-gradient(ellipse 60% 85% at 50% 50%, transparent 35%, #000 100%);
+  }
+
   .of-lattice {
     position: absolute;
     inset: 0;

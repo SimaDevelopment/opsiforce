@@ -62,8 +62,10 @@ describe('Publish (App) carrying Project configurations', () => {
     recordedHooks().length = 0;
   });
 
-  function carry() {
-    return app.get(ProjectConfigurationCarry).carry(development.projectEnvironmentId, production.projectEnvironmentId);
+  function carry(chosenServiceIds: string[] | null = null) {
+    return app
+      .get(ProjectConfigurationCarry)
+      .carry(development.projectEnvironmentId, production.projectEnvironmentId, chosenServiceIds);
   }
 
   async function shownConfiguration(projectEnvironmentId: string) {
@@ -143,7 +145,7 @@ describe('Publish (App) carrying Project configurations', () => {
     ).toThrow();
   });
 
-  it('overwrites what the target held for the service', async () => {
+  it('overwrites what the target held for a service chosen in the Publish form', async () => {
     await saveProjectConfiguration(app, FIXTURE_SERVICE, production.projectEnvironmentId, {
       mailbox: sales,
       pipeline: 'support',
@@ -155,10 +157,40 @@ describe('Publish (App) carrying Project configurations', () => {
       accountsMode: 'all',
     });
 
-    await carry();
+    await carry([serviceId]);
 
     const carried = await readProjectConfiguration(app, FIXTURE_SERVICE, production.projectEnvironmentId);
     expect(carried.values).toEqual({ mailbox: sales, accountsMode: 'all' });
+  });
+
+  it("keeps the target's own configuration when nothing was chosen, and offers the service unchosen", async () => {
+    await saveProjectConfiguration(app, FIXTURE_SERVICE, production.projectEnvironmentId, {
+      mailbox: sales,
+      accountIds: ['acc_9'],
+    });
+    await saveProjectConfiguration(app, FIXTURE_SERVICE, development.projectEnvironmentId, {
+      mailbox: sales,
+      accountsMode: 'all',
+    });
+
+    const choices = await app
+      .get(ProjectConfigurationCarry)
+      .choices(development.projectEnvironmentId, production.projectEnvironmentId);
+
+    expect(choices).toContainEqual(expect.objectContaining({ id: serviceId, targetHasOwn: true }));
+    expect(await carry()).toEqual([]);
+    expect(
+      (await readProjectConfiguration(app, FIXTURE_SERVICE, production.projectEnvironmentId)).values
+    ).toMatchObject({ accountIds: ['acc_9'] });
+  });
+
+  it('leaves a target alone for a service left unchosen even when the target has none', async () => {
+    await saveProjectConfiguration(app, FIXTURE_SERVICE, development.projectEnvironmentId, {
+      mailbox: sales,
+      accountsMode: 'all',
+    });
+
+    expect(await carry([])).toEqual([]);
   });
 
   it('leaves a target configuration alone when Development has none for that service', async () => {
@@ -184,7 +216,7 @@ describe('Publish (App) carrying Project configurations', () => {
       signingSecret: app.get(SecretSealer).seal('copied', `${serviceId}|environment:elsewhere|signingSecret`),
     } as never);
 
-    expect(await carry()).toEqual([
+    expect(await carry([serviceId])).toEqual([
       {
         kind: 'project-configuration',
         service: FIXTURE_SERVICE,

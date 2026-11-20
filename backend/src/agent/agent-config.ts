@@ -10,7 +10,6 @@ export interface AgentRegistryEntry {
   model?: string;
   variant?: string;
   poolSize?: number;
-  podClass?: string;
 }
 
 export interface AgentRegistry {

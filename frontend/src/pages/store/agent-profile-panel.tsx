@@ -1,6 +1,6 @@
 import { Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import { useBlocker } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useAgentModels,
   useUpdateAgentProfile,

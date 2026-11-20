@@ -44,7 +44,7 @@ export function createProjectSettingsChoice() {
 }
 
 export function isDefaultProjectSettings(settings: AgentProjectSettings): boolean {
-  return settings.resources.podClass === 'small' && settings.warmPoolSize === 0;
+  return settings.followsDefault === true && settings.warmPoolSize === 0;
 }
 
 export function describeProjectSettings(settings: AgentProjectSettings): string {

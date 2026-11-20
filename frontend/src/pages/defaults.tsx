@@ -1,15 +1,16 @@
-import { Show, createMemo, createSignal, type JSX } from 'solid-js';
+import { Show, createMemo, createSignal, onMount, type JSX } from 'solid-js';
 import { useQueryClient } from '@tanstack/solid-query';
 import { createAppQuery } from '~/lib/create-app-query';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { api, type TimeoutDefaults, type BudgetDefaults } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
-import { Clock, CircleDollarSign, SlidersHorizontal } from '~/components/icons';
+import { Archive, Clock, CircleDollarSign, SlidersHorizontal } from '~/components/icons';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '~/components/ui/tabs';
 import { Button } from '~/components/ui/button';
 import { SettingsSection } from '~/components/settings/settings-section';
 import { TimeoutRow } from '~/components/ui/timeout-row';
 import { BudgetRow } from '~/components/ui/budget-row';
+import { InactivityCleanupFields, createInactivityCleanupDraft } from '~/components/inactivity-cleanup-fields';
 import { MIN_IDLE_TIMEOUT_LABEL, MIN_IDLE_TIMEOUT_MS, msToUnit, unitToMs } from '~/lib/duration-units';
 
 type Scope = 'global' | 'tenant';
@@ -81,6 +82,9 @@ function DefaultsForm(props: { scope: Scope }) {
   return (
     <div class="space-y-4 mt-4">
       <Show when={timeouts.data}>{(data) => <TimeoutsSection base={base()} data={data()} onSaved={invalidate} />}</Show>
+      <Show when={timeouts.data}>
+        {(data) => <InactivityCleanupSection scope={props.scope} base={base()} data={data()} onSaved={invalidate} />}
+      </Show>
       <Show when={budgets.data}>{(data) => <BudgetsSection base={base()} data={data()} onSaved={invalidate} />}</Show>
     </div>
   );
@@ -155,6 +159,58 @@ function TimeoutsSection(props: { base: string; data: TimeoutDefaults; onSaved: 
           setDirty(true);
         }}
       />
+    </SectionCard>
+  );
+}
+
+function InactivityCleanupSection(props: {
+  scope: Scope;
+  base: string;
+  data: TimeoutDefaults;
+  onSaved: () => Promise<void>;
+}) {
+  const draft = createInactivityCleanupDraft();
+  const [saving, setSaving] = createSignal(false);
+  onMount(() =>
+    draft.reset({
+      disableAfter: props.data.defaultDisableAfter,
+      deleteAfter: props.data.defaultDeleteAfter,
+    })
+  );
+
+  async function save() {
+    if (draft.invalid()) return;
+    const { disableAfter, deleteAfter } = draft.toCleanup();
+    setSaving(true);
+    try {
+      const saved = await api.patch<TimeoutDefaults>(`${props.base}/timeouts`, {
+        defaultDisableAfter: disableAfter,
+        defaultDeleteAfter: deleteAfter,
+      });
+      draft.reset({ disableAfter: saved.defaultDisableAfter, deleteAfter: saved.defaultDeleteAfter });
+      await props.onSaved();
+      toast.success('Inactivity cleanup updated');
+    } catch {
+      toast.error('Failed to save inactivity cleanup');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      icon={<Archive class="w-4 h-4 text-muted-foreground" />}
+      title="Inactivity cleanup"
+      saving={saving()}
+      dirty={draft.dirty() && !draft.invalid()}
+      onSave={save}
+    >
+      <p class="text-xs text-muted-foreground text-pretty">
+        {props.scope === 'global'
+          ? 'New organizations start with these rules for their Projects.'
+          : 'New Projects get these rules unless their Agent sets its own in Agent Settings.'}
+      </p>
+      <InactivityCleanupFields draft={draft} disabled={saving()} />
     </SectionCard>
   );
 }
@@ -275,7 +331,7 @@ function SectionCard(props: {
       <div class="space-y-3">{props.children}</div>
       <div class="flex justify-end pt-1">
         <Button size="sm" disabled={!props.dirty || props.saving} onClick={props.onSave}>
-          {props.saving ? 'Saving...' : 'Save'}
+          {props.saving ? 'Saving…' : 'Save'}
         </Button>
       </div>
     </div>

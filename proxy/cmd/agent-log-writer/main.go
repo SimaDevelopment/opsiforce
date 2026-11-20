@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -71,35 +72,66 @@ type streamEvent struct {
 	hasLine bool
 }
 
+const usage = `log-writer — writes a Process Log for guard. guard runs it; you never need to.
+To read what it wrote, use process-logs (process-logs --help).
+
+Usage:
+  <command> 2>&1 | log-writer --name <process>     append each input line, timestamped
+  log-writer --name <process> --line <text>         append one line
+  log-writer --name <process> --event <event> [--exit-code N] [--uptime S] [--restart N]
+
+Files live under /workspace/data/logs/<process>.log and rotate as they grow.
+
+Exit codes:
+  0  written, or --help
+  2  wrong usage: this help goes to stderr and nothing is written
+`
+
+type options struct {
+	name, line, event, exitCode, uptime, restart stringFlag
+}
+
+func parseOptions(args []string, stdout, stderr io.Writer) (o options, exitCode int, exitNow bool) {
+	flags := flag.NewFlagSet("log-writer", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.Var(&o.name, "name", "")
+	flags.Var(&o.line, "line", "")
+	flags.Var(&o.event, "event", "")
+	flags.Var(&o.exitCode, "exit-code", "")
+	flags.Var(&o.uptime, "uptime", "")
+	flags.Var(&o.restart, "restart", "")
+
+	err := flags.Parse(args)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		fmt.Fprint(stdout, usage)
+		return o, 0, true
+	case err != nil, o.name.value == "", flags.NArg() > 0:
+		fmt.Fprint(stderr, usage)
+		return o, 2, true
+	}
+	return o, 0, false
+}
+
 func main() {
-	var nameFlag stringFlag
-	var lineFlag stringFlag
-	var eventFlag stringFlag
-	var exitCodeFlag stringFlag
-	var uptimeFlag stringFlag
-	var restartFlag stringFlag
+	o, code, done := parseOptions(os.Args[1:], os.Stdout, os.Stderr)
+	if done {
+		os.Exit(code)
+	}
 
-	flag.Var(&nameFlag, "name", "")
-	flag.Var(&lineFlag, "line", "")
-	flag.Var(&eventFlag, "event", "")
-	flag.Var(&exitCodeFlag, "exit-code", "")
-	flag.Var(&uptimeFlag, "uptime", "")
-	flag.Var(&restartFlag, "restart", "")
-	flag.Parse()
-
-	log := newLogFile(logDir(), nameFlag.value, defaultRetention, time.Now)
+	log := newLogFile(logDir(), o.name.value, defaultRetention, time.Now)
 	defer log.close()
 
 	switch {
-	case eventFlag.set:
-		log.add(eventLine(eventFlag.value, []eventField{
-			{"exit_code", exitCodeFlag},
-			{"uptime_seconds", uptimeFlag},
-			{"restart_count", restartFlag},
+	case o.event.set:
+		log.add(eventLine(o.event.value, []eventField{
+			{"exit_code", o.exitCode},
+			{"uptime_seconds", o.uptime},
+			{"restart_count", o.restart},
 		}))
 		log.flush()
-	case lineFlag.set:
-		log.add(lineFlag.value)
+	case o.line.set:
+		log.add(o.line.value)
 		log.flush()
 	default:
 		log.prune()

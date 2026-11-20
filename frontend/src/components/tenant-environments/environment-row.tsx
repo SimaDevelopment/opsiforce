@@ -1,5 +1,5 @@
 import { Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { Lock, Pencil, Trash2, X } from '~/components/icons';
 import { Button } from '~/components/ui/button';
 import { ColorPicker } from '~/components/ui/color-picker';

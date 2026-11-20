@@ -77,6 +77,21 @@ body,
   overflow: hidden;
 }
 
+/* viewport-fit=cover lets the page run under a phone's notch and status bar;
+   keep the shell out of them on the top and the sides, the bottom bar handles
+   the bottom. The phone drawer is fixed, so it takes the top inset itself. */
+#root {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+@media (max-width: 767px) {
+  aside[data-state='expanded'].fixed {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
 @media (hover: none) and (pointer: coarse) {
   input:not([type='checkbox'], [type='radio'], [type='range']),
   textarea,

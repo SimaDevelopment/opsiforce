@@ -10,6 +10,7 @@ export type ConfirmDialogProps = ParentProps<{
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: 'destructive' | 'default';
+  confirmDisabled?: boolean;
   onConfirm: () => void;
 }>;
 
@@ -27,6 +28,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <Button
             variant={props.variant ?? 'default'}
             size="sm"
+            disabled={props.confirmDisabled}
             onClick={() => {
               props.onConfirm();
               props.onOpenChange(false);

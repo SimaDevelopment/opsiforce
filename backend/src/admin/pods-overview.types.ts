@@ -1,4 +1,3 @@
-import type { PodClass } from '../pod/pod-classes';
 import type { PodFailureReason } from '../pod/pod.service';
 import type { ProjectStatus } from '../project/project.types';
 import type { AgentUpdateStatus } from '../agent-update/agent-update.types';
@@ -27,7 +26,7 @@ export interface PodStatusView {
 }
 
 export interface PodResourcesView {
-  podClass: PodClass;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;

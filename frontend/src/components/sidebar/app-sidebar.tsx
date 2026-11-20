@@ -1,5 +1,5 @@
 import { Show, createSignal, type Component } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useLocation, useNavigate } from '@tanstack/solid-router';
 import { useAgents } from '~/api/agents';
 import { usePermissions } from '~/api/permissions';

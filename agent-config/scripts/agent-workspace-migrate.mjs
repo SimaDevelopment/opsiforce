@@ -14,6 +14,8 @@ const PLATFORM_IGNORES = [
   ".xdg/",
   "node_modules/",
   "data/",
+  "/user_uploaded_files/",
+  "/generated_files/",
   "**/.yarn/cache",
   "**/.yarn/unplugged",
   "**/.yarn/build-state.yml",
@@ -545,12 +547,45 @@ export async function reconcileContent(context, summary, { withMigrations = fals
   return summary
 }
 
+const USAGE = `agent-workspace-migrate — the platform's Agent Updates step; it rewrites the workspace files the Agent owns.
+The platform runs it in the pod's init container and in update Jobs. Never run it by hand: nothing
+in your work needs it, and the platform keeps your skills and Agent files current by itself.
+
+Usage:
+  agent-workspace-migrate --sync-agent-files              first-boot provisioning
+  agent-workspace-migrate --reconcile-content             rewrite owned files and write the ledger
+  agent-workspace-migrate --reconcile-content --migrate   the same, then apply workspace migrations
+  agent-workspace-migrate -h | --help                     this help
+
+Exit codes:
+  0  done, or --help
+  1  the run failed; its summary says why
+  2  wrong usage: this help goes to stderr and nothing is written
+`
+
+const MODES = {
+  "--sync-agent-files": provisionWorkspace,
+  "--reconcile-content": (ctx, sum) => reconcileContent(ctx, sum, { withMigrations: false }),
+  "--reconcile-content --migrate": (ctx, sum) => reconcileContent(ctx, sum, { withMigrations: true }),
+}
+
+function modeFor(args) {
+  const invocation = args.join(" ")
+  if (invocation === "-h" || invocation === "--help") {
+    process.stdout.write(USAGE)
+    process.exit(0)
+  }
+  if (!Object.hasOwn(MODES, invocation)) {
+    process.stderr.write(USAGE)
+    process.exit(2)
+  }
+  return MODES[invocation]
+}
+
 async function run() {
+  const mode = modeFor(process.argv.slice(2))
   const context = createContext()
   const summary = createSummary(context)
-  const mode = process.argv.includes("--sync-agent-files")
-    ? provisionWorkspace
-    : (ctx, sum) => reconcileContent(ctx, sum, { withMigrations: process.argv.includes("--migrate") })
   try {
     await mode(context, summary)
   } catch (error) {

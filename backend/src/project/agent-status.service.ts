@@ -182,7 +182,10 @@ export class AgentStatusService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private holdPod(environmentId: string): void {
-    this.timeouts.touch(environmentId).catch((err) => {
+    Promise.all([
+      this.timeouts.touch(environmentId),
+      this.projectEnvironmentService.touchActivity(environmentId),
+    ]).catch((err) => {
       this.logger.warn(`Agent keep-alive touch of ${environmentId} failed: ${(err as Error).message}`);
     });
   }

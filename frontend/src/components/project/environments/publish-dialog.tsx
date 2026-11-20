@@ -1,11 +1,13 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { ConfirmDialog } from '~/components/ui/confirm-dialog';
 import { Skeleton } from '~/components/ui/skeleton';
+import { Switch, SwitchControl, SwitchLabel, SwitchThumb } from '~/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
+import { TextField, TextFieldInput, TextFieldLabel } from '~/components/ui/text-field';
 import { GitBranch, Rocket } from '~/components/icons';
 import { usePublish, usePublishForm, type PublishFormVariable, type PublishTarget } from '~/api/publish';
 import { useProjects } from '~/api/projects';
@@ -14,6 +16,29 @@ import { useJobDock } from '~/components/project/jobs/job-dock-context';
 type VariableGroupId = 'fresh' | 'custom' | 'same';
 
 const DEFAULT_OPEN_GROUPS: Record<VariableGroupId, boolean> = { fresh: true, custom: true, same: false };
+
+function ChoiceRow(props: { label: string; hint?: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label class="flex cursor-pointer items-center gap-2.5 rounded-md border border-border px-2.5 py-2 transition-colors hover:bg-accent/50">
+      <input
+        type="checkbox"
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.currentTarget.checked)}
+        class="h-3.5 w-3.5 shrink-0 rounded border-input text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <span class="min-w-0 flex-1 truncate text-xs text-foreground">{props.label}</span>
+      <Show when={props.hint}>
+        <span class="min-w-0 max-w-[55%] truncate text-right text-[0.6875rem] text-muted-foreground">{props.hint}</span>
+      </Show>
+    </label>
+  );
+}
+
+function chosen(selection: Record<string, boolean>): string[] {
+  return Object.entries(selection)
+    .filter(([, on]) => on)
+    .map(([choiceId]) => choiceId);
+}
 
 export interface PublishDialogProps {
   projectId: string;
@@ -29,6 +54,9 @@ export function PublishDialog(props: PublishDialogProps) {
 
   const [variables, setVariables] = createSignal<Record<string, string>>({});
   const [scheduleSelection, setScheduleSelection] = createSignal<Record<string, boolean>>({});
+  const [serviceSelection, setServiceSelection] = createSignal<Record<string, boolean>>({});
+  const [withData, setWithData] = createSignal(false);
+  const [typedName, setTypedName] = createSignal('');
   const [openGroups, setOpenGroups] = createSignal(DEFAULT_OPEN_GROUPS);
   const [tab, setTab] = createSignal('variables');
   const [confirmOpen, setConfirmOpen] = createSignal(false);
@@ -46,6 +74,8 @@ export function PublishDialog(props: PublishDialogProps) {
     if (data.environmentId !== targetId()) return;
     setVariables(Object.fromEntries(data.variables.map((v) => [v.key, v.value])));
     setScheduleSelection(Object.fromEntries(data.schedules.map((s) => [s.id, s.selected])));
+    setServiceSelection(Object.fromEntries(data.services.map((s) => [s.id, s.selected])));
+    setWithData(false);
     setOpenGroups(DEFAULT_OPEN_GROUPS);
     setTab('variables');
   });
@@ -55,6 +85,9 @@ export function PublishDialog(props: PublishDialogProps) {
     setTimeout(() => {
       setVariables({});
       setScheduleSelection({});
+      setServiceSelection({});
+      setWithData(false);
+      setTypedName('');
       setOpenGroups(DEFAULT_OPEN_GROUPS);
       setConfirmOpen(false);
     }, 200);
@@ -66,6 +99,9 @@ export function PublishDialog(props: PublishDialogProps) {
 
   const formVariables = () => form.data?.variables ?? [];
   const formSchedules = () => form.data?.schedules ?? [];
+  const formServices = () => form.data?.services ?? [];
+  const replacesData = () => withData() && !isFirstPublish();
+  const confirmBlocked = () => replacesData() && typedName().trim() !== targetName();
 
   const groups = createMemo(() =>
     [
@@ -111,13 +147,16 @@ export function PublishDialog(props: PublishDialogProps) {
     const id = targetId();
     const target = props.target;
     if (!id || !target) return;
-    const selectedScheduleIds = Object.entries(scheduleSelection())
-      .filter(([, on]) => on)
-      .map(([scheduleId]) => scheduleId);
     try {
       await publish.mutateAsync({
         projectId: projectId(),
-        dto: { environmentId: id, variables: variables(), scheduleIds: selectedScheduleIds },
+        dto: {
+          environmentId: id,
+          variables: variables(),
+          scheduleIds: chosen(scheduleSelection()),
+          serviceIds: chosen(serviceSelection()),
+          withData: withData(),
+        },
       });
       jobDock.trackPublish({
         projectId: projectId(),
@@ -196,18 +235,55 @@ export function PublishDialog(props: PublishDialogProps) {
       <div class="space-y-1">
         <For each={formSchedules()}>
           {(schedule) => (
-            <label class="flex cursor-pointer items-center gap-2.5 rounded-md border border-border px-2.5 py-2 transition-colors hover:bg-accent/50">
-              <input
-                type="checkbox"
-                checked={scheduleSelection()[schedule.id] ?? false}
-                onChange={(e) => setScheduleSelection((prev) => ({ ...prev, [schedule.id]: e.currentTarget.checked }))}
-                class="h-3.5 w-3.5 rounded border-input text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <span class="truncate text-xs text-foreground">{schedule.name}</span>
-            </label>
+            <ChoiceRow
+              label={schedule.name}
+              checked={scheduleSelection()[schedule.id] ?? false}
+              onChange={(checked) => setScheduleSelection((prev) => ({ ...prev, [schedule.id]: checked }))}
+            />
           )}
         </For>
       </div>
+    </div>
+  );
+
+  const servicesPanel = () => (
+    <div class="space-y-2">
+      <p class="text-xs font-medium text-foreground">External Services</p>
+      <p class="text-xs text-muted-foreground">
+        Choose which services get Development's configuration in {targetName()}.
+      </p>
+      <div class="space-y-1">
+        <For each={formServices()}>
+          {(service) => (
+            <ChoiceRow
+              label={service.name}
+              hint={service.targetHasOwn ? `replaces ${targetName()}'s own configuration` : `connects ${targetName()}`}
+              checked={serviceSelection()[service.id] ?? false}
+              onChange={(checked) => setServiceSelection((prev) => ({ ...prev, [service.id]: checked }))}
+            />
+          )}
+        </For>
+      </div>
+    </div>
+  );
+
+  const dataPanel = (developmentHasData: boolean) => (
+    <div class="rounded-md border border-border px-3 py-2.5" classList={{ 'of-wash of-tone-failed': replacesData() }}>
+      <Switch checked={withData()} onChange={setWithData} disabled={!developmentHasData} class="gap-2.5">
+        <SwitchControl>
+          <SwitchThumb />
+        </SwitchControl>
+        <SwitchLabel class="text-xs text-foreground">Replace {targetName()}'s data with Development's</SwitchLabel>
+      </Switch>
+      <p class="mt-1.5 text-xs text-muted-foreground">
+        {!developmentHasData
+          ? 'Development has no data to copy.'
+          : !withData()
+            ? `${targetName()} keeps its own data.`
+            : isFirstPublish()
+              ? `${targetName()} starts with a copy of Development's data. Development pauses while it is copied.`
+              : `${targetName()}'s data is deleted and replaced with Development's. Development pauses while it is copied.`}
+      </p>
     </div>
   );
 
@@ -290,6 +366,10 @@ export function PublishDialog(props: PublishDialogProps) {
                           : 'Publishing again updates the running app.'}
                       </p>
                     </Show>
+
+                    <Show when={formServices().length > 0}>{servicesPanel()}</Show>
+
+                    {dataPanel(data().developmentHasData)}
                   </>
                 )}
               </Show>
@@ -313,7 +393,10 @@ export function PublishDialog(props: PublishDialogProps) {
           </Button>
           <Button
             size="sm"
-            onClick={() => setConfirmOpen(true)}
+            onClick={() => {
+              setTypedName('');
+              setConfirmOpen(true);
+            }}
             loading={publish.isPending}
             disabled={!targetId() || form.isPending}
           >
@@ -328,12 +411,41 @@ export function PublishDialog(props: PublishDialogProps) {
         onOpenChange={setConfirmOpen}
         title={isFirstPublish() ? `Publish to ${targetName()}?` : `Publish update to ${targetName()}?`}
         description={
-          isFirstPublish() ? `This publishes your Development app to ${targetName()} and starts it there.` : undefined
+          isFirstPublish()
+            ? withData()
+              ? `This publishes your Development app with a copy of its data to ${targetName()} and starts it there.`
+              : `This publishes your Development app to ${targetName()} and starts it there.`
+            : undefined
         }
         confirmLabel={submitLabel()}
         variant={isFirstPublish() ? 'default' : 'destructive'}
+        confirmDisabled={confirmBlocked()}
         onConfirm={runPublish}
       >
+        <Show when={replacesData()}>
+          <div class="mt-3 space-y-2">
+            <p class="of-note of-tone-failed text-xs">
+              {targetName()}'s data is deleted and replaced with Development's. This can't be undone.
+            </p>
+            <TextField value={typedName()} onChange={setTypedName} class="gap-1.5">
+              <TextFieldLabel>
+                Type{' '}
+                <span class="font-mono text-foreground" translate="no">
+                  {targetName()}
+                </span>{' '}
+                to confirm
+              </TextFieldLabel>
+              <TextFieldInput
+                name="confirmEnvironment"
+                autocomplete="off"
+                autocapitalize="none"
+                autocorrect="off"
+                spellcheck={false}
+                class="font-mono"
+              />
+            </TextField>
+          </div>
+        </Show>
         <Show when={unreviewedKeys().length > 0}>
           <div class="of-note of-tone-needs-you mt-3 flex-col text-xs">
             <p class="font-medium">

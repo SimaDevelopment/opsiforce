@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Link, useNavigate } from '@tanstack/solid-router';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   downloadAgentExport,
   useAgent,
@@ -245,6 +245,10 @@ function AgentHeader(props: {
     (users.data ?? []).find((user) => user.id === props.agent.createdBy)?.email ??
     null;
   const editable = () => props.canManage && props.agent.origin === 'custom';
+  const editsResources = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_resources'));
+  const editsCleanup = () =>
+    props.canManage || (props.agent.origin === 'built_in' && hasPermission('can_manage_platform_defaults'));
   const name = () => props.agent.displayName ?? props.agent.name;
   const [editingSettings, setEditingSettings] = createSignal(false);
 
@@ -312,6 +316,9 @@ function AgentHeader(props: {
             readyProjects={props.agent.settings.warmPoolSize}
             imageOwned={props.agent.origin === 'built_in'}
             onEdit={editable() ? () => setEditingSettings(true) : undefined}
+            onEditResources={editsResources() ? () => setEditingSettings(true) : undefined}
+            inactivityCleanup={props.agent.inactivityCleanup}
+            onEditCleanup={editsCleanup() ? () => setEditingSettings(true) : undefined}
           />
         </div>
         <Show when={props.canManage}>
@@ -384,11 +391,9 @@ function AgentActionsMenu(props: {
   return (
     <>
       <ActionsMenu label="Agent actions" variant="outline">
-        <Show when={props.agent.origin === 'custom'}>
-          <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
-            Settings
-          </ActionsMenuItem>
-        </Show>
+        <ActionsMenuItem icon={Settings} onSelect={() => props.onEditSettings()}>
+          Settings
+        </ActionsMenuItem>
         <Show when={props.agent.duplicable}>
           <ActionsMenuItem icon={Copy} onSelect={() => setDuplicating(true)}>
             Duplicate

@@ -6,7 +6,7 @@ import { usePermissions } from '~/api/permissions';
 import { projectKeys, useProject, useRenameProject } from '~/api/projects';
 import { projectTitleOf } from '~/lib/project-title';
 import { useWorkspaces, useWorkspaceFolders } from '~/api/workspaces';
-import { ChevronRight, Code as CodeIcon, Database, Files, MessageSquare, Moon, Sun } from '~/components/icons';
+import { ChevronRight, Code as CodeIcon, Database, Files, MessageSquare, Moon, Sun, Users } from '~/components/icons';
 import { useAppearance } from '~/lib/appearance';
 import { Badge } from '~/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
@@ -15,13 +15,14 @@ import { EnvironmentsPopover } from '~/components/project/environments/environme
 import type { ProjectStatus } from '~/api/client';
 import type { ProjectEnvironment } from '~/api/environments';
 
-export type ProjectTab = 'chat' | 'files' | 'code' | 'db';
+export type ProjectTab = 'chat' | 'files' | 'code' | 'db' | 'users';
 
 export const PROJECT_TAB_LABELS: Record<ProjectTab, string> = {
   chat: 'Chat',
   files: 'Files',
   code: 'Code',
   db: 'DB',
+  users: 'Users',
 };
 
 export interface ProjectSurfaceSlots {
@@ -38,6 +39,7 @@ export interface ProjectHeaderProps extends ProjectSurfaceSlots {
   workspaceId: string | null;
   appExists: boolean;
   showAgentTabs: boolean;
+  showUsersTab: boolean;
   activeTab: ProjectTab;
   onActiveTabChange: (tab: ProjectTab) => void;
   environments: ProjectEnvironment[];
@@ -53,6 +55,9 @@ export function ProjectHeader(props: ProjectHeaderProps) {
   const projectQuery = useProject(() => props.projectId);
   const project = () => projectQuery.data;
   const appearance = useAppearance();
+  // On a phone the tabs live in the bottom bar (ProjectMobileNav); the band
+  // keeps the title, the environment and Publish.
+  const sidebar = useSidebar();
 
   const handleEnvironmentDeleted = (environmentId: string) => {
     if (props.activeEnvironmentId === environmentId) {
@@ -64,22 +69,27 @@ export function ProjectHeader(props: ProjectHeaderProps) {
     <div class="of-band justify-between sm:pr-4">
       <div class="of-band-lead">
         {props.headerLabel}
-        <Tabs
-          value={props.activeTab}
-          onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
-          class="w-auto shrink-0 self-stretch flex"
-        >
-          <TabsList variant="folder" class="w-auto">
-            <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
-            <ProjectTabTrigger value="files" icon={Files} onPress={props.onActiveTabChange} />
-            <Show when={props.showAgentTabs && canViewCode()}>
-              <ProjectTabTrigger value="code" icon={CodeIcon} onPress={props.onActiveTabChange} />
-            </Show>
-            <Show when={props.showAgentTabs && canViewDb()}>
-              <ProjectTabTrigger value="db" icon={Database} onPress={props.onActiveTabChange} />
-            </Show>
-          </TabsList>
-        </Tabs>
+        <Show when={!sidebar.isMobile()}>
+          <Tabs
+            value={props.activeTab}
+            onChange={(v) => props.onActiveTabChange(v as ProjectTab)}
+            class="w-auto shrink-0 self-stretch flex"
+          >
+            <TabsList variant="folder" class="w-auto">
+              <ProjectTabTrigger value="chat" icon={MessageSquare} onPress={props.onActiveTabChange} />
+              <ProjectTabTrigger value="files" icon={Files} onPress={props.onActiveTabChange} />
+              <Show when={props.showAgentTabs && canViewCode()}>
+                <ProjectTabTrigger value="code" icon={CodeIcon} onPress={props.onActiveTabChange} />
+              </Show>
+              <Show when={props.showAgentTabs && canViewDb()}>
+                <ProjectTabTrigger value="db" icon={Database} onPress={props.onActiveTabChange} />
+              </Show>
+              <Show when={props.showUsersTab}>
+                <ProjectTabTrigger value="users" icon={Users} onPress={props.onActiveTabChange} />
+              </Show>
+            </TabsList>
+          </Tabs>
+        </Show>
         <Show when={project()?.importedAgent}>
           {(slug) => (
             <Badge variant="info" class="shrink-0 font-normal">

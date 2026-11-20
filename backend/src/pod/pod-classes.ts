@@ -1,49 +1,62 @@
-export type PodPreset = 'small' | 'medium' | 'large';
-
-export type PodClass = PodPreset | 'custom';
-
 export interface PodResources {
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
 }
 
-export type PodSettings = PodResources & { podClass: PodClass };
+/** A pod's size: the preset it was chosen from, or none for Custom, and the numbers it runs at. */
+export interface PodSettings extends PodResources {
+  presetId: string | null;
+  presetName: string | null;
+}
 
 export interface PodClassBounds {
   min: PodResources;
   max: PodResources;
 }
 
-export const POD_CLASS_DEFAULT: PodClass = 'small';
+export const JOB_POD_RESOURCES: PodResources = { cpuMillicores: 100, memoryRequestMib: 2048, memoryLimitMib: 4096 };
 
-const PRESETS: Record<PodPreset, PodResources> = {
-  small: { cpuMillicores: 100, memoryRequestMib: 2048, memoryLimitMib: 4096 },
-  medium: { cpuMillicores: 1000, memoryRequestMib: 4096, memoryLimitMib: 8192 },
-  large: { cpuMillicores: 2000, memoryRequestMib: 8192, memoryLimitMib: 16384 },
+const MIN_RESOURCES: PodResources = { cpuMillicores: 50, memoryRequestMib: 512, memoryLimitMib: 512 };
+
+const DEFAULT_MAX_RESOURCES: PodResources = { cpuMillicores: 4000, memoryRequestMib: 16384, memoryLimitMib: 24576 };
+
+const MAX_RESOURCE_ENV: Record<keyof PodResources, string> = {
+  cpuMillicores: 'AGENT_MAX_CPU_MILLICORES',
+  memoryRequestMib: 'AGENT_MAX_MEMORY_REQUEST_MIB',
+  memoryLimitMib: 'AGENT_MAX_MEMORY_LIMIT_MIB',
 };
 
-export const CUSTOM_BOUNDS: PodClassBounds = {
-  min: { cpuMillicores: 250, memoryRequestMib: 1024, memoryLimitMib: 2048 },
-  max: { cpuMillicores: 4000, memoryRequestMib: 16384, memoryLimitMib: 24576 },
-};
-
-export function isPreset(podClass: PodClass): podClass is PodPreset {
-  return podClass === 'small' || podClass === 'medium' || podClass === 'large';
+function maxResource(env: NodeJS.ProcessEnv, key: keyof PodResources): number {
+  const raw = env[MAX_RESOURCE_ENV[key]]?.trim();
+  if (!raw) return DEFAULT_MAX_RESOURCES[key];
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < MIN_RESOURCES[key]) {
+    throw new Error(`${MAX_RESOURCE_ENV[key]} must be a whole number of at least ${MIN_RESOURCES[key]}, got "${raw}"`);
+  }
+  return value;
 }
 
-export function resolvePreset(preset: PodPreset): PodResources {
-  return PRESETS[preset];
+export function resourceBoundsFrom(env: NodeJS.ProcessEnv): PodClassBounds {
+  const max: PodResources = {
+    cpuMillicores: maxResource(env, 'cpuMillicores'),
+    memoryRequestMib: maxResource(env, 'memoryRequestMib'),
+    memoryLimitMib: maxResource(env, 'memoryLimitMib'),
+  };
+  if (max.memoryLimitMib < max.memoryRequestMib) {
+    throw new Error(
+      `${MAX_RESOURCE_ENV.memoryLimitMib} (${max.memoryLimitMib}) must be at least ${MAX_RESOURCE_ENV.memoryRequestMib} (${max.memoryRequestMib})`
+    );
+  }
+  return { min: MIN_RESOURCES, max };
 }
 
-/** Preset projects follow the current catalog; custom projects retain saved values. */
-export function resolveStoredPodResources(settings?: PodSettings): PodResources {
-  if (!settings) return resolvePreset('small');
-  return isPreset(settings.podClass) ? resolvePreset(settings.podClass) : settings;
-}
+export const RESOURCE_BOUNDS: PodClassBounds = resourceBoundsFrom(process.env);
+
+export const PRESET_NAME_MAX_LENGTH = 40;
 
 export interface PodClassSelection {
-  podClass: PodClass;
+  presetId: string | null;
   cpuMillicores?: number;
   memoryRequestMib?: number;
   memoryLimitMib?: number;
@@ -51,39 +64,33 @@ export interface PodClassSelection {
 
 export class InvalidPodClassSelection extends Error {}
 
-export function resolvePodClassSelection(selection: PodClassSelection): PodResources {
-  if (selection.podClass === 'custom') {
-    if (
-      typeof selection.cpuMillicores !== 'number' ||
-      typeof selection.memoryRequestMib !== 'number' ||
-      typeof selection.memoryLimitMib !== 'number'
-    ) {
-      throw new InvalidPodClassSelection(
-        'Custom pod class requires numeric cpuMillicores, memoryRequestMib, and memoryLimitMib'
-      );
-    }
-    return clampCustom({
+export function resourcesOf(row: PodResources): PodResources {
+  return {
+    cpuMillicores: row.cpuMillicores,
+    memoryRequestMib: row.memoryRequestMib,
+    memoryLimitMib: row.memoryLimitMib,
+  };
+}
+
+export function customPodSettings(selection: PodClassSelection): PodSettings {
+  if (
+    typeof selection.cpuMillicores !== 'number' ||
+    typeof selection.memoryRequestMib !== 'number' ||
+    typeof selection.memoryLimitMib !== 'number'
+  ) {
+    throw new InvalidPodClassSelection(
+      'Custom Resources need numeric cpuMillicores, memoryRequestMib and memoryLimitMib'
+    );
+  }
+  return {
+    presetId: null,
+    presetName: null,
+    ...clampCustom({
       cpuMillicores: selection.cpuMillicores,
       memoryRequestMib: selection.memoryRequestMib,
       memoryLimitMib: selection.memoryLimitMib,
-    });
-  }
-  if (!isPreset(selection.podClass)) {
-    throw new InvalidPodClassSelection(`Unknown pod class: ${String(selection.podClass)}`);
-  }
-  return resolvePreset(selection.podClass);
-}
-
-export function isDefaultPodSettings(settings: PodSettings): boolean {
-  return settings.podClass === POD_CLASS_DEFAULT;
-}
-
-export function resolvePodSettings(stored?: PodSettings): PodSettings {
-  return { podClass: stored?.podClass ?? POD_CLASS_DEFAULT, ...resolveStoredPodResources(stored) };
-}
-
-export function podSettingsForSelection(selection: PodClassSelection): PodSettings {
-  return { podClass: selection.podClass, ...resolvePodClassSelection(selection) };
+    }),
+  };
 }
 
 export function sameResources(a: PodResources, b: PodResources): boolean {
@@ -102,18 +109,18 @@ function clampValue(value: number, min: number, max: number): number {
 export function clampCustom(input: PodResources): PodResources {
   const cpuMillicores = clampValue(
     input.cpuMillicores,
-    CUSTOM_BOUNDS.min.cpuMillicores,
-    CUSTOM_BOUNDS.max.cpuMillicores
+    RESOURCE_BOUNDS.min.cpuMillicores,
+    RESOURCE_BOUNDS.max.cpuMillicores
   );
   const memoryRequestMib = clampValue(
     input.memoryRequestMib,
-    CUSTOM_BOUNDS.min.memoryRequestMib,
-    CUSTOM_BOUNDS.max.memoryRequestMib
+    RESOURCE_BOUNDS.min.memoryRequestMib,
+    RESOURCE_BOUNDS.max.memoryRequestMib
   );
   const memoryLimitMib = clampValue(
     input.memoryLimitMib,
-    CUSTOM_BOUNDS.min.memoryLimitMib,
-    CUSTOM_BOUNDS.max.memoryLimitMib
+    RESOURCE_BOUNDS.min.memoryLimitMib,
+    RESOURCE_BOUNDS.max.memoryLimitMib
   );
   return {
     cpuMillicores,
@@ -134,23 +141,34 @@ export function toK8sResources(resources: PodResources): K8sResourceRequirements
   };
 }
 
-export interface PodClassPreset {
-  podClass: PodPreset;
-  resources: PodResources;
+const RESOURCE_KEYS = ['cpuMillicores', 'memoryRequestMib', 'memoryLimitMib'] as const;
+
+export function validPresetResources(input: unknown): PodResources {
+  const candidate = (input ?? {}) as Partial<Record<(typeof RESOURCE_KEYS)[number], unknown>>;
+  for (const key of RESOURCE_KEYS) {
+    const value = candidate[key];
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+      throw new InvalidPodClassSelection(`${key} must be a whole number`);
+    }
+    if (value < RESOURCE_BOUNDS.min[key] || value > RESOURCE_BOUNDS.max[key]) {
+      throw new InvalidPodClassSelection(
+        `${key} must be from ${RESOURCE_BOUNDS.min[key]} to ${RESOURCE_BOUNDS.max[key]}`
+      );
+    }
+  }
+  const resources = resourcesOf(candidate as PodResources);
+  if (resources.memoryLimitMib < resources.memoryRequestMib) {
+    throw new InvalidPodClassSelection('memoryLimitMib must be at least memoryRequestMib');
+  }
+  return resources;
 }
 
-export interface PodClassCatalog {
-  presets: PodClassPreset[];
-  customBounds: PodClassBounds;
-}
-
-export function buildPodClassCatalog(): PodClassCatalog {
-  return {
-    presets: [
-      { podClass: 'small', resources: resolvePreset('small') },
-      { podClass: 'medium', resources: resolvePreset('medium') },
-      { podClass: 'large', resources: resolvePreset('large') },
-    ],
-    customBounds: CUSTOM_BOUNDS,
-  };
+export function validPresetName(input: unknown): string {
+  const name = typeof input === 'string' ? input.trim() : '';
+  if (name.length === 0) throw new InvalidPodClassSelection('A preset needs a name');
+  if (name.length > PRESET_NAME_MAX_LENGTH) {
+    throw new InvalidPodClassSelection(`A preset name is at most ${PRESET_NAME_MAX_LENGTH} characters`);
+  }
+  if (name.toLowerCase() === 'custom') throw new InvalidPodClassSelection('Custom is reserved');
+  return name;
 }

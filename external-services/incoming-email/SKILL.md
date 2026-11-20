@@ -1,13 +1,13 @@
 ---
 name: service-incoming-email
-description: Give the App an email address it RECEIVES mail at, attachments included. Use when the user wants to email data into their App, asks "what's my App's email address?", or wants the address changed. Inbound only — sending email is not supported (see the send-email skill).
+description: Give the App an email address it RECEIVES mail at, attachments included. Use when the user wants to email data into their App, asks "what's my App's email address?", or wants the address changed. Inbound only.
 ---
 
 # Incoming email
 
 Each environment of a Project can have its own random receiving address, such as `k3p9x2mq7fd41abv@mail.example.com`. Mail sent to it is stored in this environment's `/workspace/data/external-services.db` as an `email.received` Event, attachments as files, and the App is rung so it can react. Storage does not depend on the App: mail lands while the pod is asleep or the handler is missing, and the App catches up by reading what it has not processed.
 
-**Inbound only.** For anything outbound, see `send-email`.
+**Inbound only.** This service does not send mail.
 
 ## The address
 

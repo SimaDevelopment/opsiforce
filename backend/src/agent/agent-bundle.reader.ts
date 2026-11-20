@@ -47,7 +47,7 @@ export class AgentBundleReader {
       },
       skills: await pinnedSkills(profile.id),
       template: template ? { hash: template.hash, sourceDir: template.directory } : null,
-      projectSettings: await readAgentProjectSettings(agent.id),
+      projectSettings: await readAgentProjectSettings(agent.id, tenantId),
     };
   }
 
@@ -64,7 +64,7 @@ export class AgentBundleReader {
       profile: { promptBody: readPromptBody(agent.name), ...registryModel(agent.name) },
       skills: [...byName.values()].toSorted((a, b) => a.name.localeCompare(b.name)),
       template: await this.packageTemplate(agent.name),
-      projectSettings: await readAgentProjectSettings(agent.id),
+      projectSettings: await readAgentProjectSettings(agent.id, tenantId),
     };
   }
 

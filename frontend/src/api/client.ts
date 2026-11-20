@@ -109,8 +109,6 @@ export type AgentStatus = 'working' | 'idle';
 
 export type RequestLogMode = 'off' | 'metadata' | 'full';
 
-export type PodClass = 'small' | 'medium' | 'large' | 'custom';
-
 export interface PodResources {
   cpuMillicores: number;
   memoryRequestMib: number;
@@ -118,19 +116,23 @@ export interface PodResources {
 }
 
 export interface PodClassPreset {
-  podClass: 'small' | 'medium' | 'large';
+  id: string;
+  name: string;
   resources: PodResources;
+  organization: boolean;
 }
 
 export interface PodClassCatalog {
   presets: PodClassPreset[];
+  defaultPresetId: string | null;
   customBounds: { min: PodResources; max: PodResources };
 }
 
-export type PodSettings = PodResources & { podClass: PodClass };
+/** No preset means Custom. */
+export type PodSettings = PodResources & { presetId: string | null; presetName: string | null };
 
 export interface UpdatePodClassDto {
-  podClass: PodClass;
+  presetId: string | null;
   cpuMillicores?: number;
   memoryRequestMib?: number;
   memoryLimitMib?: number;
@@ -153,10 +155,13 @@ export interface Project {
   bifrostProjectId: string | null;
   timeoutIdle: number;
   appTimeoutIdle: number;
+  disableAfter: number | null;
+  deleteAfter: number | null;
   timezone: string;
   requestLogMode: RequestLogMode;
   requestLogBodyLimit: number;
-  podClass: PodClass;
+  presetId: string | null;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
@@ -169,6 +174,7 @@ export interface Project {
   /** A chat in this Project is waiting for an answer or a permission. */
   waitingForInput?: boolean;
   lastPromptAt: string | null;
+  lastActivityAt: string;
   createdAt: string;
   disabled: boolean;
 }
@@ -192,7 +198,7 @@ export interface ProjectAppMeta {
   description: string | null;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'provider';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider' | 'app_users';
 
 export interface ProjectAuthOidcConfig {
   forwardAccessToken?: boolean;
@@ -219,6 +225,7 @@ export interface UpdateProjectAuthDto {
 
 export interface TenantConfig {
   privateWorkspaceEnabled: boolean;
+  customDomainsEnabled: boolean;
 }
 
 export type WorkspaceType = 'private' | 'shared';
@@ -334,6 +341,13 @@ export const scheduleApi = {
 export interface TimeoutDefaults {
   defaultTimeoutIdle: number;
   defaultAppTimeoutIdle: number;
+  defaultDisableAfter: number | null;
+  defaultDeleteAfter: number | null;
+}
+
+export interface InactivityCleanup {
+  disableAfter: number | null;
+  deleteAfter: number | null;
 }
 
 export interface BudgetDefaults {

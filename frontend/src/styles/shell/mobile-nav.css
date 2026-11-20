@@ -1,0 +1,67 @@
+@layer components {
+  /* ==========================================================================
+     MOBILE NAV — the project's tabs on a phone. A fixed-height bar under the
+     content; the band above keeps only the title, the environment and Publish.
+     Sits inside the home-indicator inset on an iPhone instead of under it.
+     ========================================================================== */
+  .of-mobile-nav {
+    display: flex;
+    align-items: stretch;
+    flex: none;
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--bg-app);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .of-mobile-nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 2px;
+    color: var(--ink-subtle);
+    -webkit-tap-highlight-color: transparent;
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+
+  /* the active pill, so the state reads from the icon alone, not the tint */
+  .of-mobile-nav-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 28px;
+    border-radius: var(--radius-full);
+    transition: background-color var(--dur-fast) var(--ease-standard);
+  }
+
+  .of-mobile-nav-label {
+    font: 510 calc(12px * var(--font-scale)) / 14px var(--font-sans);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .of-mobile-nav-item[aria-current='page'] {
+    color: var(--ink-accent);
+  }
+
+  .of-mobile-nav-item[aria-current='page'] .of-mobile-nav-icon {
+    background: color-mix(in srgb, var(--ink-accent) 14%, transparent);
+  }
+
+  .of-mobile-nav-item:focus-visible {
+    outline: none;
+  }
+
+  .of-mobile-nav-item:focus-visible .of-mobile-nav-icon {
+    box-shadow:
+      0 0 0 2px var(--bg-app),
+      0 0 0 4px var(--ring-accent);
+  }
+}

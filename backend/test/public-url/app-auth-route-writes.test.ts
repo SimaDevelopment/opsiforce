@@ -1,9 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CustomDomainCluster } from '../../src/custom-domain/custom-domain-cluster';
 import { AppAuthRouteReconciler } from '../../src/project/app-auth-route.reconciler';
 import { ProjectAuthService } from '../../src/project/project-auth.service';
 import type { ProjectEnvironmentService } from '../../src/project-environment/project-environment.service';
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import type { FakeProjectAuthService } from '../support/infra-fakes';
+
+const NO_CUSTOM_DOMAINS = {
+  routedEnvironmentIds: () => Promise.resolve([]),
+} as unknown as CustomDomainCluster;
 
 let harness: DomainTestHarness;
 let appAuth: FakeProjectAuthService;
@@ -44,13 +49,16 @@ describe('App Auth routes are reconciled at backend start', () => {
       { mode: 'manual', config: oidc },
       protectedApp.tenantId
     );
+    const callsBeforeStart = appAuth.calls.length;
 
     await new AppAuthRouteReconciler(
       harness.projectEnvironments,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     ).reconcileAll();
 
     const reconciled = appAuth.callsTo('reconcileRoute').map((call) => call.args);
+    expect(appAuth.calls[callsBeforeStart].method).toBe('writeIdentityHeaderStrip');
     expect(reconciled).toContainEqual(await addressesOf(protectedApp.projectId));
     expect(reconciled.map((args) => args.environmentId)).not.toContain(publicApp.projectId);
   });
@@ -65,7 +73,8 @@ describe('App Auth routes are reconciled at backend start', () => {
 
     await new AppAuthRouteReconciler(
       harness.projectEnvironments,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     ).reconcileAll();
 
     const reconciled = appAuth.callsTo('reconcileRoute').map((call) => call.args.environmentId);
@@ -85,7 +94,8 @@ describe('App Auth routes are reconciled at backend start', () => {
 
     await new AppAuthRouteReconciler(
       harness.projectEnvironments,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     ).reconcileAll();
 
     const removed = appAuth.callsTo('remove').map((call) => call.args.environmentId);
@@ -105,7 +115,8 @@ describe('App Auth routes are reconciled again once the replicas a rollout repla
     };
     const reconciler = new AppAuthRouteReconciler(
       environments as unknown as ProjectEnvironmentService,
-      appAuth as unknown as ProjectAuthService
+      appAuth as unknown as ProjectAuthService,
+      NO_CUSTOM_DOMAINS
     );
     reconciler.onApplicationBootstrap();
     return reconciler;

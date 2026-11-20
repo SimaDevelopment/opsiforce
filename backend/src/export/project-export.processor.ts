@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import archiver from 'archiver';
@@ -116,7 +116,7 @@ export class ProjectExportProcessor extends WorkerHost {
           requestLogBodyLimit: project.requestLogBodyLimit,
         },
         resources: {
-          podClass: project.podClass,
+          presetName: project.presetName,
           cpuMillicores: project.cpuMillicores,
           memoryRequestMib: project.memoryRequestMib,
           memoryLimitMib: project.memoryLimitMib,
@@ -150,7 +150,8 @@ export class ProjectExportProcessor extends WorkerHost {
       await rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
       await rm(artifactPath, { force: true }).catch(() => {});
       const message = err instanceof Error ? err.message : String(err);
-      await this.markFailed(exportJobId, projectId, userFacingExportError(message));
+      const refusal = err instanceof ConflictException ? message : undefined;
+      await this.markFailed(exportJobId, projectId, refusal ?? userFacingExportError(message));
       this.logger.warn(`Failed to export project ${projectId}: ${message}`);
     }
   }

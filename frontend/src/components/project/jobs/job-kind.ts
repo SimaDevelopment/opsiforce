@@ -1,8 +1,10 @@
-import type { Component } from 'solid-js';
+import { createSignal, type Component } from 'solid-js';
+import { toast } from '~/lib/toast';
 import type { QueryClient } from '@tanstack/solid-query';
-import { Copy, Download, ExternalLink, Layers, Package, Rocket, RotateCcw } from '~/components/icons';
+import { Ban, Copy, Download, ExternalLink, Layers, Package, Rocket, RotateCcw } from '~/components/icons';
 import { environmentKeys } from '~/api/environments';
 import {
+  cancelPublish,
   publishEventsUrl,
   publishKeys,
   type PublishJob,
@@ -36,6 +38,7 @@ export interface JobActionDescriptor {
   label: string;
   icon: IconComponent;
   variant: 'primary' | 'outline';
+  disabled?: boolean;
   href?: string;
   onSelect?: () => void;
 }
@@ -107,6 +110,9 @@ function runningStepLabel(steps: { label: string }[], index: number): string {
 }
 
 function publishReportText(line: PublishReportLine, environmentName: string): string {
+  if (line.kind === 'app-data') {
+    return `Replaced ${environmentName}'s data with Development's.`;
+  }
   if (line.kind === 'skills-off') {
     const changes = [
       line.switchedOff.length > 0 ? `switched off ${line.switchedOff.join(', ')}` : '',
@@ -120,6 +126,26 @@ function publishReportText(line: PublishReportLine, environmentName: string): st
   return `${line.displayName}: configuration copied to ${environmentName}.`;
 }
 
+const CANCELLABLE_PUBLISH_STATUSES: ReadonlySet<PublishJobStatus> = new Set(['queued', 'building', 'migrating']);
+const [cancelledPublishJobs, setCancelledPublishJobs] = createSignal<ReadonlySet<string>>(new Set());
+
+function markCancelled(jobId: string, cancelled: boolean) {
+  setCancelledPublishJobs((ids) => {
+    const next = new Set(ids);
+    if (cancelled) next.add(jobId);
+    else next.delete(jobId);
+    return next;
+  });
+}
+
+function requestPublishCancel(entry: TrackedPublish, jobId: string) {
+  markCancelled(jobId, true);
+  cancelPublish(entry.projectId, entry.id).catch((err: unknown) => {
+    markCancelled(jobId, false);
+    toast.error(err instanceof Error ? err.message : "Couldn't cancel the publish");
+  });
+}
+
 const publishAdapter: JobKindAdapter<TrackedPublish> = {
   describe(entry) {
     const job = entry.job;
@@ -131,35 +157,47 @@ const publishAdapter: JobKindAdapter<TrackedPublish> = {
           ? 'failed'
           : 'running';
     const runningIndex = job ? publishStepIndex(job.status) : 0;
+    const cancelled = !!job && cancelledPublishJobs().has(job.id);
+    const title =
+      phase === 'done'
+        ? `${entry.title} is live`
+        : phase === 'failed'
+          ? `Publish to ${entry.title} ${cancelled ? 'cancelled' : 'failed'}`
+          : `Publishing to ${entry.title}`;
     return {
       phase,
       headerIcon: Rocket,
-      cardTitle:
-        phase === 'done'
-          ? `${entry.title} is live`
-          : phase === 'failed'
-            ? `Publish to ${entry.title} failed`
-            : `Publishing to ${entry.title}`,
-      dialogTitle:
-        phase === 'done'
-          ? `${entry.title} is live`
-          : phase === 'failed'
-            ? `Publish to ${entry.title} failed`
-            : `Publishing to ${entry.title}`,
+      cardTitle: title,
+      dialogTitle: title,
       dialogNote: 'Closing this keeps the publish running; a progress card stays in the corner.',
       steps: PUBLISH_STEPS.map((step) => ({ label: step.label, detail: step.detail })),
       currentIndex: phase === 'failed' ? publishStepIndex(entry.lastStep as PublishJobStatus) : runningIndex,
       totalSteps: PUBLISH_STEPS.length,
       stepLabel: job ? runningStepLabel(PUBLISH_STEPS, runningIndex) : 'Starting',
       progressPercent: ((runningIndex + 1) / PUBLISH_STEPS.length) * 100,
-      error: job?.error ?? null,
-      notice: null,
+      error: cancelled ? null : (job?.error ?? null),
+      notice:
+        phase === 'running' && cancelled
+          ? `Cancelling. ${entry.title} goes back to how it was before this publish.`
+          : null,
       report: (job?.report ?? []).map((line) => publishReportText(line, entry.title)),
       accentPulse: true,
     };
   },
   actions(entry, host) {
     const job = entry.job;
+    if (job && CANCELLABLE_PUBLISH_STATUSES.has(job.status)) {
+      const cancelling = cancelledPublishJobs().has(job.id);
+      return [
+        {
+          label: cancelling ? 'Cancelling' : 'Cancel publish',
+          icon: Ban,
+          variant: 'outline',
+          disabled: cancelling,
+          onSelect: () => requestPublishCancel(entry, job.id),
+        },
+      ];
+    }
     if (!job || job.status !== 'done') return [];
     return [
       ...(job.publicUrl

@@ -7,6 +7,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+
+	"opsiforce/proxy/internal/desktop"
 )
 
 func runOpencodeAuthProxy() {
@@ -34,9 +36,15 @@ func runOpencodeAuthProxy() {
 		req.Header.Set("Authorization", credential)
 	}
 	proxy.FlushInterval = -1
+	desktopProxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: "127.0.0.1:6080"})
+	desktopProxy.FlushInterval = -1
+	mux := http.NewServeMux()
+	mux.Handle("/_desktop/clipboard", desktop.ClipboardHandler())
+	mux.Handle("/_desktop/", http.StripPrefix("/_desktop", desktopProxy))
+	mux.Handle("/", proxy)
 
 	log.Printf("opencode-proxy: listening on :%s -> 127.0.0.1:%s", listenPort, internalPort)
-	if err := http.ListenAndServe(":"+listenPort, proxy); err != nil {
+	if err := http.ListenAndServe(":"+listenPort, mux); err != nil {
 		log.Fatalf("opencode-proxy: server failed: %v", err)
 	}
 }

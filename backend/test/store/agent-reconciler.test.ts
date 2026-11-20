@@ -31,9 +31,9 @@ async function globalRow(name: string) {
   return row;
 }
 
-async function podClassOf(agentId: string): Promise<string | undefined> {
+async function presetOf(agentId: string): Promise<string | null | undefined> {
   const [row] = await db.select().from(agentPodSettings).where(eq(agentPodSettings.agentId, agentId));
-  return row?.podClass;
+  return row?.presetId;
 }
 
 async function poolSizeOf(agentId: string): Promise<number | undefined> {
@@ -113,18 +113,20 @@ describe('the agent reconciler', () => {
     expect(await globalRow(retired)).toBeDefined();
   });
 
-  it('mirrors the registry pod class onto the agent, back to Small when it is dropped or unknown', async () => {
+  it("leaves a Built-in Agent's Resources, set on the platform, alone", async () => {
     const slug = `agent-${randomUUID()}`;
-
-    await reconciler.reconcile(registryOf(slug, { name: 'Builder', podClass: 'medium' }));
-    const { id } = await globalRow(slug);
-    expect(await podClassOf(id)).toBe('medium');
-
-    await reconciler.reconcile(registryOf(slug, { name: 'Builder', podClass: 'huge' }));
-    expect(await podClassOf(id)).toBeUndefined();
-
-    await reconciler.reconcile(registryOf(slug, { name: 'Builder', podClass: 'large' }));
     await reconciler.reconcile(registryOf(slug, { name: 'Builder' }));
-    expect(await podClassOf(id)).toBeUndefined();
+    const { id } = await globalRow(slug);
+    await db.insert(agentPodSettings).values({
+      agentId: id,
+      presetId: 'medium',
+      cpuMillicores: 1000,
+      memoryRequestMib: 4096,
+      memoryLimitMib: 8192,
+    });
+
+    await reconciler.reconcile(registryOf(slug, { name: 'Builder' }));
+
+    expect(await presetOf(id)).toBe('medium');
   });
 });

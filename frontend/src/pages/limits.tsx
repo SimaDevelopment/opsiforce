@@ -1,6 +1,6 @@
 import { For, Show, createSignal, type Component } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import {
   useFollowPlatformLimit,
   usePlatformLimits,
@@ -49,6 +49,12 @@ const LIMITS: Record<LimitKey, { label: string; icon: Component<{ class?: string
     label: 'Ready Projects',
     icon: Layers,
     description: 'Projects kept running ahead of time so new ones open instantly, added up across the Custom Agents.',
+  },
+  custom_domains: {
+    label: 'Custom domains',
+    icon: Globe,
+    description:
+      "Custom domains an organization's Apps can have, whatever their status. A bare domain and its www count as one.",
   },
 };
 

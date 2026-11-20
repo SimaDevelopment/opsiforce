@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
+import type { DbExecutor } from '../common/locks';
 import {
+  customDomains,
   deletedProjectEnvironments,
   environments,
   projectApps,
@@ -9,6 +11,8 @@ import {
   projectSettings,
   projects,
 } from '../../db/schema';
+import { withoutWww } from '../custom-domain/hostname';
+import { connectedMainDomain, ROUTED_DOMAIN_STATUSES } from '../custom-domain/main-domain';
 import { servesAnExternalService } from '../external-services/gate/service-projects';
 import type { ProjectStatus } from '../project/project.types';
 import {
@@ -51,8 +55,14 @@ const contextFields = {
   environmentIsDefault: environments.isDefault,
   hasApp: sql<boolean>`${projectApps.projectEnvironmentId} is not null`,
   appSlug: projectApps.slug,
+  mainDomain: connectedMainDomain,
   servesAnExternalService,
 };
+
+export interface RoutedDomainEnvironment {
+  env: ProjectEnvironmentContext;
+  domain: { hostname: string; redirectsToMain: boolean };
+}
 
 @Injectable()
 export class ProjectEnvironmentService {
@@ -78,6 +88,29 @@ export class ProjectEnvironmentService {
   async findByShortIdOrNull(shortId: string): Promise<ProjectEnvironmentContext | null> {
     const [row] = await this.select(eq(projectEnvironments.shortId, shortId));
     return row ?? null;
+  }
+
+  async findByRoutedDomainOrNull(host: string): Promise<RoutedDomainEnvironment | null> {
+    const bareParent = withoutWww(host);
+    const [domain] = await db
+      .select({
+        projectEnvironmentId: customDomains.projectEnvironmentId,
+        hostname: customDomains.hostname,
+        redirectsToMain: customDomains.redirectsToMain,
+      })
+      .from(customDomains)
+      .where(
+        and(
+          inArray(customDomains.status, ROUTED_DOMAIN_STATUSES),
+          or(
+            eq(customDomains.hostname, host),
+            bareParent === host ? undefined : and(eq(customDomains.bare, true), eq(customDomains.hostname, bareParent))
+          )
+        )
+      );
+    if (!domain) return null;
+    const env = await this.findByIdOrNull(domain.projectEnvironmentId);
+    return env && { env, domain };
   }
 
   async findById(envId: string): Promise<ProjectEnvironmentContext> {
@@ -197,8 +230,11 @@ export class ProjectEnvironmentService {
       .where(eq(projectEnvironments.id, envId));
   }
 
-  async delete(env: { id: string; projectId: string; tenantId: string | null; directory: string }): Promise<void> {
-    await db
+  async delete(
+    env: { id: string; projectId: string; tenantId: string | null; directory: string },
+    executor: DbExecutor = db
+  ): Promise<void> {
+    await executor
       .insert(deletedProjectEnvironments)
       .values({
         id: env.id,
@@ -207,6 +243,6 @@ export class ProjectEnvironmentService {
         directory: env.directory,
       })
       .onConflictDoNothing();
-    await db.delete(projectEnvironments).where(eq(projectEnvironments.id, env.id));
+    await executor.delete(projectEnvironments).where(eq(projectEnvironments.id, env.id));
   }
 }

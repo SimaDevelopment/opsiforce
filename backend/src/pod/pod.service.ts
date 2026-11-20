@@ -6,7 +6,7 @@ import { AGENT_PODS_SERVICE, buildPodSpec, PodTemplateOptions } from './pod.temp
 import { fetchAsLocalhost, type PodRequestInit } from './pod-fetch';
 import { PodCacheService } from './pod.cache.service';
 import { SkillAvailability } from '../store/skill-availability';
-import { resolvePreset, toK8sResources, type K8sResourceRequirements } from './pod-classes';
+import { JOB_POD_RESOURCES, toK8sResources, type K8sResourceRequirements } from './pod-classes';
 
 export interface TenantPodOptions {
   bifrostApiKey?: string;
@@ -63,6 +63,7 @@ export class PodService {
       storageMountPath: this.configService.getOrThrow<string>('storageMountPath'),
       externalServicesHost: this.configService.get<string>('externalServicesHost') || undefined,
       caBundleConfigMap: this.configService.get<string>('podCaBundleConfigMap') || undefined,
+      browserIgnoresHttpsErrors: this.configService.get<boolean>('podBrowserIgnoresHttpsErrors', false),
       controlPort: this.configService.getOrThrow<number>('agentControlPort'),
       imagePullPolicy: this.configService.getOrThrow<string>('agentContainerImagePullPolicy'),
       resources: this.smallResources(),
@@ -78,7 +79,7 @@ export class PodService {
   }
 
   private smallResources(): K8sResourceRequirements {
-    return toK8sResources(resolvePreset('small'));
+    return toK8sResources(JOB_POD_RESOURCES);
   }
 
   assignedPodName(environmentId: string): string {

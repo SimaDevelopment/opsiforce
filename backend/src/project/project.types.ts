@@ -1,5 +1,5 @@
 import type { ProjectKindValue } from '../../db/schema';
-import type { PodClass } from '../pod/pod-classes';
+import type { PodClassSelection } from '../pod/pod-classes';
 import type { CreatedProjectsCap } from './project-limit';
 
 export const ProjectStatus = {
@@ -56,6 +56,8 @@ export interface UpdateProjectDto {
   description?: string;
   timeoutIdle?: number;
   appTimeoutIdle?: number;
+  disableAfter?: number | null;
+  deleteAfter?: number | null;
   timezone?: string;
 }
 
@@ -73,12 +75,7 @@ export interface ProjectLoggingResponse {
   bodyLimit: number;
 }
 
-export interface UpdateProjectPodClassDto {
-  podClass: PodClass;
-  cpuMillicores?: number;
-  memoryRequestMib?: number;
-  memoryLimitMib?: number;
-}
+export type UpdateProjectPodClassDto = PodClassSelection;
 
 export type ProjectKind = ProjectKindValue;
 
@@ -124,10 +121,13 @@ export interface ProjectResponse {
   authMode: ProjectAuthMode;
   timeoutIdle: number;
   appTimeoutIdle: number;
+  disableAfter: number | null;
+  deleteAfter: number | null;
   timezone: string;
   requestLogMode: RequestLogMode;
   requestLogBodyLimit: number;
-  podClass: PodClass;
+  presetId: string | null;
+  presetName: string | null;
   cpuMillicores: number;
   memoryRequestMib: number;
   memoryLimitMib: number;
@@ -138,6 +138,7 @@ export interface ProjectResponse {
   agentStatus?: AgentStatus;
   waitingForInput?: boolean;
   lastPromptAt: Date | null;
+  lastActivityAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -165,6 +166,7 @@ export interface ProjectEnvironmentSummary {
   appName: string | null;
   appDescription: string | null;
   publicUrl: string | null;
+  defaultAddress: string | null;
   appSlug: string | null;
   suggestedAppSlug: string | null;
   shortId: string;
@@ -185,9 +187,9 @@ export interface ProjectAuthOidcConfig {
   scope?: string;
 }
 
-export type ProjectAuthMode = 'public' | 'manual' | 'provider';
+export type ProjectAuthMode = 'public' | 'manual' | 'provider' | 'app_users';
 
-export const SELECTABLE_AUTH_MODES: ProjectAuthMode[] = ['public', 'manual', 'provider'];
+export const SELECTABLE_AUTH_MODES: ProjectAuthMode[] = ['public', 'manual', 'provider', 'app_users'];
 
 export interface ProjectAuthResponse {
   mode: ProjectAuthMode;

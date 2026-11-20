@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useCreateWorkspace } from '~/api/workspaces';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '~/components/ui/dialog';

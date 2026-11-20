@@ -1,5 +1,12 @@
 import { createMutation, useQueryClient } from '@tanstack/solid-query';
-import { api, currentTenant, type Agent, type PodSettings, type UpdatePodClassDto } from './client';
+import {
+  api,
+  currentTenant,
+  type Agent,
+  type InactivityCleanup,
+  type PodSettings,
+  type UpdatePodClassDto,
+} from './client';
 import { createAppQuery } from '~/lib/create-app-query';
 import { limitUsageKey } from './limits';
 import type { ServiceConfigurationOptions } from './project-external-services';
@@ -104,12 +111,25 @@ export interface UpdateAgentSettingsDto {
   warmPoolSize?: number;
 }
 
+export interface AgentInactivityCleanup {
+  cleanup: InactivityCleanup;
+  source: 'own' | 'platform' | 'default';
+  inherited: InactivityCleanup;
+  platformChoice: InactivityCleanup | null;
+}
+
 export interface AgentDetail extends StoreAgent {
   settings: AgentSettings;
   podSettings: PodSettings;
+  /** own: set on this Agent here; platform: a Built-in Agent's platform choice; default: the default preset. */
+  podSettingsSource: 'own' | 'platform' | 'default';
+  inheritedPodSettings: PodSettings;
+  /** A Built-in Agent's platform choice, a preset or Custom numbers; null when it follows the default preset. */
+  platformChoice: PodSettings | null;
   profiles: AgentProfile[];
   shippedSkills: ShippedSkill[];
   projectCount: number;
+  inactivityCleanup: AgentInactivityCleanup;
 }
 
 /** The convergence summary issue 35 adds to `GET /agents/:id/delivery`. */
@@ -349,6 +369,34 @@ export function useUpdateAgentPodClass(id: () => string) {
   );
 }
 
+export function useResetAgentPodClass(id: () => string) {
+  return useAgentMutation(id, (agentId, _: void) => api.delete<AgentDetail>(`/agents/${agentId}/pod-class`));
+}
+
+export function useSetAgentPlatformPreset(id: () => string) {
+  return useAgentMutation(id, (agentId, presetId: string | null) =>
+    api.put<unknown>(`/resource-presets/platform/agents/${agentId}`, { presetId })
+  );
+}
+
+export function useUpdateAgentInactivityCleanup(id: () => string) {
+  return useAgentMutation(id, (agentId, cleanup: Partial<InactivityCleanup>) =>
+    api.put<AgentDetail>(`/agents/${agentId}/inactivity-cleanup`, cleanup)
+  );
+}
+
+export function useResetAgentInactivityCleanup(id: () => string) {
+  return useAgentMutation(id, (agentId, _: void) => api.delete<AgentDetail>(`/agents/${agentId}/inactivity-cleanup`));
+}
+
+export function useSetAgentPlatformInactivityCleanup(id: () => string) {
+  return useAgentMutation(id, (agentId, cleanup: InactivityCleanup | null) =>
+    cleanup
+      ? api.put<unknown>(`/defaults/global/agents/${agentId}/inactivity-cleanup`, cleanup)
+      : api.delete<unknown>(`/defaults/global/agents/${agentId}/inactivity-cleanup`)
+  );
+}
+
 export function useSetAgentVisibility(id: () => string) {
   return useAgentMutation(id, (agentId, visibility: string) =>
     api.post<AgentDetail>(`/agents/${agentId}/visibility`, { visibility })
@@ -368,7 +416,9 @@ export interface AgentDuplicateResult {
 
 export interface AgentProjectSettings {
   resources: PodSettings;
+  followsDefault?: boolean;
   warmPoolSize: number;
+  inactivityCleanup?: InactivityCleanup | null;
 }
 
 export interface AgentProjectSettingsChoice {

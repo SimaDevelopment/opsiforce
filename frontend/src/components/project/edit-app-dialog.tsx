@@ -1,5 +1,5 @@
 import { Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { useUpdateApp } from '~/api/projects';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '~/components/ui/dialog';

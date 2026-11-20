@@ -25,6 +25,7 @@ import type { AgentBundle, AgentBundleSkillReference } from './agent-bundle';
 import { AgentBundleReader } from './agent-bundle.reader';
 import { assertAgentVisibleToUser } from './agent-visibility';
 import type { AgentCaller, AgentRow } from './agent.types';
+import { inactivityCleanupForCopy, type InactivityCleanupGrants } from '../project/inactivity-cleanup';
 
 interface ExportedSkill {
   name: string;
@@ -51,9 +52,13 @@ export class AgentExportService {
     private readonly serviceCatalog: ServiceSettingsCatalog
   ) {}
 
-  async export(caller: AgentCaller, agentId: string): Promise<AgentExportFile> {
+  async export(
+    caller: AgentCaller,
+    agentId: string,
+    grants: Partial<InactivityCleanupGrants> = {}
+  ): Promise<AgentExportFile> {
     const contents = await this.read(caller, agentId);
-    const manifest = this.manifest(contents);
+    const manifest = this.manifest(contents, grants);
     return { fileName: agentExportFileName(contents.agent.name), archive: await packExport(manifest, contents) };
   }
 
@@ -123,7 +128,10 @@ export class AgentExportService {
     return service ? portableServiceSettings(service.manifest, reference.serviceSettings) : null;
   }
 
-  private manifest({ agent, bundle, skills: exported }: ExportContents): AgentExportManifest {
+  private manifest(
+    { agent, bundle, skills: exported }: ExportContents,
+    grants: Partial<InactivityCleanupGrants>
+  ): AgentExportManifest {
     return {
       kind: AGENT_EXPORT_KIND,
       stamp: exportStampOf(this.configService, AGENT_EXPORT_FORMAT_VERSION),
@@ -141,7 +149,10 @@ export class AgentExportService {
         ...(skill.serviceSettings ? { serviceSettings: skill.serviceSettings } : {}),
       })),
       template: bundle.template ? { hash: bundle.template.hash } : null,
-      projectSettings: bundle.projectSettings,
+      projectSettings: {
+        ...bundle.projectSettings,
+        inactivityCleanup: inactivityCleanupForCopy(bundle.projectSettings.inactivityCleanup ?? null, grants),
+      },
     };
   }
 }

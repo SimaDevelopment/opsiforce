@@ -43,10 +43,12 @@ import { DoorbellQueueModule } from './external-services/doorbell/doorbell-queue
 import { DoorbellModule } from './external-services/doorbell/doorbell.module';
 import { StorageModule } from './storage/storage.module';
 import { LimitModule } from './limit/limit.module';
+import { ResourcePresetModule } from './resource-preset/resource-preset.module';
 import { LinkedAccountsModule } from './linked-accounts/linked-accounts.module';
 import { ModelProvidersModule } from './model-provider/model-provider.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { SignInProvidersModule } from './sign-in-provider/sign-in-provider.module';
+import { CustomDomainModule } from './custom-domain/custom-domain.module';
 
 function parseRedisUrl(url: string) {
   const parsed = new URL(url);
@@ -111,10 +113,12 @@ function parseRedisUrl(url: string) {
     DoorbellModule,
     StorageModule,
     LimitModule,
+    ResourcePresetModule,
     ModelProvidersModule,
     LinkedAccountsModule,
     PublicApiModule,
     SignInProvidersModule,
+    CustomDomainModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: TenantGuard }],

@@ -212,7 +212,9 @@ describe('lists and generated values in a Service configuration', () => {
     const developed = await saveProjectService(app, development, serviceId, {});
     const developmentAddress = developed.json().projectConfiguration.values.localPart as string;
     const carry = () =>
-      app.get(ProjectConfigurationCarry).carry(development.projectEnvironmentId, production.projectEnvironmentId);
+      app
+        .get(ProjectConfigurationCarry)
+        .carry(development.projectEnvironmentId, production.projectEnvironmentId, [serviceId]);
 
     const [line] = await carry();
     expect(line).toMatchObject({ outcome: 'carried' });

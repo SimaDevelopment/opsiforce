@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import { db } from '../../db';
 import { getDefaultTenantName, mapGroupsToTenants } from '../permission/sso-group-map';
 import { tenantSettings, tenants } from '../../db/schema';
 import { BifrostService } from '../bifrost/bifrost.service';
+import { customDomainsOffered } from '../custom-domain/custom-domains-offered';
 import { DefaultsService } from '../defaults/defaults.service';
 import { EnvironmentService } from '../environment/environment.service';
 import { PLATFORM_PROVIDER_PREFIX, isReservedTenantName } from '../model-provider/provider-names';
@@ -28,7 +30,8 @@ export class TenantService {
   constructor(
     private readonly bifrostService: BifrostService,
     private readonly defaultsService: DefaultsService,
-    private readonly environmentService: EnvironmentService
+    private readonly environmentService: EnvironmentService,
+    private readonly config: ConfigService
   ) {}
 
   parseGroupsByPrefix(groupsHeader: string, prefix: string): string[] {
@@ -117,7 +120,10 @@ export class TenantService {
   }
 
   async getTenantConfig(tenantId: string): Promise<TenantConfigResponse> {
-    return { privateWorkspaceEnabled: await this.isPrivateWorkspaceEnabled(tenantId) };
+    return {
+      privateWorkspaceEnabled: await this.isPrivateWorkspaceEnabled(tenantId),
+      customDomainsEnabled: customDomainsOffered(this.config),
+    };
   }
 
   async isPrivateWorkspaceEnabled(tenantId: string): Promise<boolean> {

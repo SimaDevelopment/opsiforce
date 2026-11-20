@@ -1,5 +1,5 @@
 import { Match, Show, Switch, createSignal, untrack, type JSX } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { labelsKey } from '@opsiforce/external-service-sdk/forms';
 import { callLogSources } from '~/api/external-service-call-log';
 import {

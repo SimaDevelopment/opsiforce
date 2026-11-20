@@ -14,7 +14,7 @@ import type { AgentExportService } from '../../src/agent/agent-export.service';
 import type { AgentImportProblem } from '../../src/agent/agent-import';
 import type { AgentImportService } from '../../src/agent/agent-import.service';
 import { BUILDER_AGENT_SLUG } from '../../src/agent/agent-visibility';
-import type { AgentCaller, AgentDetail } from '../../src/agent/agent.types';
+import type { AgentCaller, AgentCopyGrants, AgentDetail } from '../../src/agent/agent.types';
 import { hashSkillTree, packSkill, unpackSkill, type SkillTree } from '../../src/store/gate';
 import { MAX_TREE_BYTES } from '../../src/store/gate/skill-tree';
 import { readSkillTree } from '../../src/store/skill-tree';
@@ -31,6 +31,8 @@ import {
 import { createDomainTestingModule, type DomainTestHarness } from '../support/domain';
 import { createTenantRow, createUserRow } from '../support/org-fixtures';
 import { manifest, validDescription } from './support/skill-fixtures';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const volume = vi.hoisted(() => ({ freeBytes: null as number | null }));
 
@@ -156,7 +158,7 @@ async function sourceAgent(): Promise<SourceAgent> {
 }
 
 async function exportOf(agentId: string): Promise<Buffer> {
-  return (await exports.export(author, agentId)).archive;
+  return (await exports.export(author, agentId, { canDisableProjects: true, canDeleteProjects: true })).archive;
 }
 
 async function rewrite(
@@ -298,7 +300,7 @@ describe('importing an Agent export into another Organization', () => {
     });
     const [row] = await db.select().from(agents).where(eq(agents.id, agent.id));
     expect(row).toMatchObject({ tenantId: target.tenantId, createdBy: target.userId });
-    expect(agent).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { podClass: 'small' } });
+    expect(agent).toMatchObject({ settings: { warmPoolSize: 0 }, podSettings: { presetId: 'small' } });
 
     const [profile] = await db
       .select()
@@ -435,37 +437,69 @@ describe('importing an Agent export into another Organization', () => {
 describe('the Resources and Ready Projects an import starts with', () => {
   async function sizedSource(): Promise<string> {
     const agent = await harness.agents.create(author, { displayName: uniqueName('Analyst') });
-    await harness.agents.updatePodClass(author, agent.id, { podClass: 'medium' });
+    await harness.agents.updatePodClass(author, agent.id, { presetId: 'medium' });
     await harness.agents.updateSettings(author, agent.id, { warmPoolSize: 2 });
+    await harness.agents.updateInactivityCleanup(author, agent.id, {
+      disableAfter: 14 * DAY_MS,
+      deleteAfter: 30 * DAY_MS,
+    });
     return agent.id;
   }
 
   function importAs(
     caller: AgentCaller,
     archive: string,
-    projectSettings: { resources?: unknown; warmPoolSize?: unknown }
+    projectSettings: { resources?: unknown; warmPoolSize?: unknown },
+    grants: AgentCopyGrants = { canConfigureProjects: true, canDisableProjects: true, canDeleteProjects: true }
   ) {
-    return importer.import(caller, archive, { displayName: null, projectSettings }, { canConfigureProjects: true });
+    return importer.import(caller, archive, { displayName: null, projectSettings }, grants);
   }
 
   it('carries them in the export, reports them on inspection and keeps them by default', async () => {
     const archive = await archiveFile(await exportOf(await sizedSource()));
 
-    expect((await importer.inspect(archive)).projectSettings).toEqual({
-      resources: { podClass: 'medium', cpuMillicores: 1000, memoryRequestMib: 4096, memoryLimitMib: 8192 },
+    expect((await importer.inspect(archive, author.tenantId)).projectSettings).toEqual({
+      resources: {
+        presetId: 'medium',
+        presetName: 'Medium',
+        cpuMillicores: 1000,
+        memoryRequestMib: 4096,
+        memoryLimitMib: 8192,
+      },
       warmPoolSize: 2,
+      inactivityCleanup: { disableAfter: 14 * DAY_MS, deleteAfter: 30 * DAY_MS },
     });
     const { agent } = await importAs(await newTenant(), archive, {});
 
-    expect(agent).toMatchObject({ podSettings: { podClass: 'medium' }, settings: { warmPoolSize: 2 } });
+    expect(agent).toMatchObject({
+      podSettings: { presetId: 'medium' },
+      settings: { warmPoolSize: 2 },
+      inactivityCleanup: { source: 'own', cleanup: { disableAfter: 14 * DAY_MS, deleteAfter: 30 * DAY_MS } },
+    });
+  });
+
+  it('leaves the Inactivity cleanup to the Organization default when the importer may not set both counts', async () => {
+    const archive = await archiveFile(await exportOf(await sizedSource()));
+
+    const { agent } = await importAs(
+      await newTenant(),
+      archive,
+      {},
+      {
+        canConfigureProjects: true,
+        canDisableProjects: true,
+      }
+    );
+
+    expect(agent.inactivityCleanup.source).toBe('default');
   });
 
   it('applies what the importer chose instead', async () => {
     const archive = await archiveFile(await exportOf(await sizedSource()));
 
-    const { agent } = await importAs(await newTenant(), archive, { resources: { podClass: 'large' }, warmPoolSize: 0 });
+    const { agent } = await importAs(await newTenant(), archive, { resources: { presetId: 'large' }, warmPoolSize: 0 });
 
-    expect(agent).toMatchObject({ podSettings: { podClass: 'large' }, settings: { warmPoolSize: 0 } });
+    expect(agent).toMatchObject({ podSettings: { presetId: 'large' }, settings: { warmPoolSize: 0 } });
   });
 
   it('starts an export that predates them at Small with no Ready Projects', async () => {
@@ -477,7 +511,11 @@ describe('the Resources and Ready Projects an import starts with', () => {
 
     const { agent } = await importAs(await newTenant(), archive, {});
 
-    expect(agent).toMatchObject({ podSettings: { podClass: 'small' }, settings: { warmPoolSize: 0 } });
+    expect(agent).toMatchObject({
+      podSettings: { presetId: 'small' },
+      settings: { warmPoolSize: 0 },
+      inactivityCleanup: { source: 'default' },
+    });
   });
 
   it('refuses Ready Projects beyond the importing Organization’s limit and writes nothing', async () => {

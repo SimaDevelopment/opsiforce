@@ -246,7 +246,8 @@ export function fakeTimer(): FakeTimer {
 
 export type FakeAppAuthGate =
   | { mode: 'manual'; config: ProjectAuthOidcConfig; bypassAuthPaths: string[] }
-  | { mode: 'provider'; providerId: string; forwardAccessToken: boolean; bypassAuthPaths: string[] };
+  | { mode: 'provider'; providerId: string; forwardAccessToken: boolean; bypassAuthPaths: string[] }
+  | { mode: 'app_users'; bypassAuthPaths: string[] };
 
 export class FakeProjectAuthService extends RecordingFake {
   private readonly unreachable = new Set<string>();
@@ -306,6 +307,12 @@ export class FakeProjectAuthService extends RecordingFake {
 
   async inheritAuth(fromEnvironmentId: string, to: AppAuthRouteTarget): Promise<string | null> {
     this.record('inheritAuth', { fromEnvironmentId, ...addressesOf(to) });
+    const hold = this.held.get(to.id);
+    if (hold) {
+      this.held.delete(to.id);
+      hold.reached();
+      await hold.released;
+    }
     const source = this.gates.get(fromEnvironmentId);
     if (!source) throw new Error(`Cannot inherit app auth: source middleware for ${fromEnvironmentId} not found`);
     this.gates.set(to.id, source);
@@ -332,6 +339,19 @@ export class FakeProjectAuthService extends RecordingFake {
   async reconcileRoute(env: AppAuthRouteTarget): Promise<void> {
     this.record('reconcileRoute', addressesOf(env));
     if (this.unreconcilable.has(env.id)) throw new Error(`route of ${env.id} cannot be read`);
+  }
+
+  async applyAppUsers(env: AppAuthRouteTarget, bypassAuthPaths: string[] = []): Promise<void> {
+    this.record('applyAppUsers', { ...addressesOf(env), bypassAuthPaths });
+    this.gates.set(env.id, { mode: 'app_users', bypassAuthPaths });
+  }
+
+  async inheritAppUsers(fromEnvironmentId: string, to: AppAuthRouteTarget): Promise<void> {
+    await this.applyAppUsers(to, (await this.getConfig(fromEnvironmentId)).bypassAuthPaths);
+  }
+
+  async writeIdentityHeaderStrip(): Promise<void> {
+    this.record('writeIdentityHeaderStrip', {});
   }
 
   async remove(environmentId: string): Promise<void> {

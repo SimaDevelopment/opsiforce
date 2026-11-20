@@ -1,5 +1,5 @@
 import { Show, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError } from '~/api/client';
 import {
   useDeleteModelProvider,

@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  Globe,
   LoaderCircle,
   PanelRightClose,
   Pencil,
@@ -14,9 +15,11 @@ import { Button } from '~/components/ui/button';
 import { ToolbarButton } from '~/components/ui/toolbar-button';
 import { usePermissions } from '~/api/permissions';
 import { useProjectEnvironments } from '~/api/environments';
+import { useCustomDomainsOffered } from '~/api/custom-domains';
 import { readableAppUrl } from '~/lib/app-url';
 import { EditAppDialog } from '../edit-app-dialog';
 import { EditAppUrlDialog } from '../edit-app-url-dialog';
+import { DomainsDialog } from '../custom-domains/domains-dialog';
 import {
   previewMessageFrom,
   previewOrigin,
@@ -42,12 +45,17 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
   const [copied, setCopied] = createSignal(false);
   const [editAppOpen, setEditAppOpen] = createSignal(false);
   const [editUrlOpen, setEditUrlOpen] = createSignal(false);
+  const [domainsOpen, setDomainsOpen] = createSignal(false);
 
   const { hasPermission } = usePermissions();
   const canEditAppDetails = () => hasPermission('can_edit_app_details');
-  const environments = useProjectEnvironments(() => props.projectId, { enabled: canEditAppDetails });
+  const customDomainsOffered = useCustomDomainsOffered();
+  const environments = useProjectEnvironments(() => props.projectId, {
+    enabled: () => canEditAppDetails() || customDomainsOffered(),
+  });
   const activeEnv = () => environments.data?.find((e) => e.id === props.environmentId);
   const showEditAction = () => canEditAppDetails() && activeEnv()?.hasApp === true;
+  const showDomainsAction = () => customDomainsOffered() && activeEnv()?.hasApp === true;
   const readableAddressOnOffer = () => {
     const env = activeEnv();
     return showEditAction() && env && !env.appSlug && env.suggestedAppSlug
@@ -172,6 +180,11 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
                     <Pencil class="w-3 h-3" />
                   </ToolbarButton>
                 </Show>
+                <Show when={showDomainsAction()}>
+                  <ToolbarButton onClick={() => setDomainsOpen(true)} tooltip="Domains">
+                    <Globe class="w-3.5 h-3.5" />
+                  </ToolbarButton>
+                </Show>
               </>
             )}
           </Show>
@@ -249,6 +262,11 @@ export function AppPreviewPane(props: AppPreviewPaneProps) {
         projectId={props.projectId}
         environment={editUrlOpen() ? (activeEnv() ?? null) : null}
         onOpenChange={setEditUrlOpen}
+      />
+      <DomainsDialog
+        projectId={props.projectId}
+        environment={domainsOpen() ? (activeEnv() ?? null) : null}
+        onOpenChange={setDomainsOpen}
       />
     </>
   );

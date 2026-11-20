@@ -17,10 +17,6 @@ import { EmptyState } from '~/components/ui/empty-state';
 
 const COLUMN_COUNT = 7;
 
-function titleCase(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 export function PodsPage() {
   const now = useNow();
   const pods = usePods();
@@ -240,7 +236,7 @@ function PodEnvRow(props: {
           <Tooltip>
             <TooltipTrigger as="span">
               <Badge variant="outline" class="text-[0.6875rem] font-normal">
-                {titleCase(props.row.resources.podClass)}
+                {props.row.resources.presetName ?? 'Custom'}
               </Badge>
             </TooltipTrigger>
             <TooltipContent>

@@ -98,7 +98,7 @@ Pick the output that fits the use case. A few patterns:
 - **Call an external HTTP API** — if the job needs to push to a third-party service, do it with `fetch` from inside the endpoint handler. Any key or base URL it reads is App configuration (`platform` §App config and secrets), set per environment — so the same schedule can hit a test endpoint in dev and the real one in production.
 - **Log and surface in the UI** — append to a `job_runs` table so the user can see in the app whether the scheduled job succeeded.
 
-> A scheduled email (daily digest, weekly report, reminder) becomes an in-app alternative — see `send-email`.
+> A scheduled email (daily digest, weekly report, reminder) goes through an enabled email External Service; without one, make it an in-app update instead.
 
 ## Important Notes
 

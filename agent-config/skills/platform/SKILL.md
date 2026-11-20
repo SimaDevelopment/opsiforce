@@ -1,6 +1,6 @@
 ---
 name: platform
-description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the LLM gateway and the ban on local models, reaching External Services on their Service hosts and relaying their refusals, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
+description: The Opsiforce platform contract every agent runs under — an App is `/workspace/app/startup.sh` serving on `$APP_PORT`, and it goes live the moment `app/app.meta.json` exists. Also covers what a pod restart wipes and what the workspace keeps, uploaded and generated files, `app/opsiforce.env.json` and Publish, the platform environment variables, the headers a signed-in visitor's requests carry (sign-in identity and forwarded access tokens), the LLM gateway and the ban on local models, reaching External Services on their Service hosts and relaying their refusals, and the two read-only platform databases. Load it before building, serving, installing, or debugging anything.
 ---
 
 # The Opsiforce platform
@@ -74,9 +74,11 @@ guard <server> <run server on $APP_PORT in the foreground> &
 wait -n
 ```
 
-Installing or starting something in chat to try it is fine. The moment the App depends on it, it moves into `startup.sh`, or the App breaks on the next restart. An edit to `startup.sh` takes effect the next time it runs, not now, so nothing proves it but a restart. Before relying on an install or prepare line you added — anything above the `guard` lines — run that line on its own twice: the first run does the work, the second must succeed and change nothing. Never run a `guard` line or the whole script by hand in the running container, which starts a second copy of what is already running, and never stop a service the App is using to see whether it comes back; the restart is that test.
+Installing or starting something in chat to try it is fine. The moment the App depends on it, it moves into `startup.sh`, or the App breaks on the next restart. An edit to `startup.sh` takes effect the next time it runs, not now: after every edit to it, run `app-restart`, which runs it again from the top, then `process-logs --events --since 1m` to see what started. If `app-restart` is not installed in this environment yet, tell the user the edit takes effect once they restart the project (Restart in its menu), and do not look for another way to run the script again. One process that must reread what it loads only at start, such as new dependencies or a changed config file, restarts alone with `app-restart <name>`, its `guard` name; an environment that answers that with its usage text gets the form at its next Restart, and plain `app-restart` covers it until then. Before relying on an install or prepare line you added — anything above the `guard` lines — run that line on its own twice: the first run does the work, the second must succeed and change nothing. Never run a `guard` line or the whole script by hand in the running container, which starts a second copy of what is already running, and never stop a service the App is using to see whether it comes back; the restart is that test.
 
-**What Publish carries.** A published Environment is its own checkout of the workspace's git repository, with `OPSIFORCE_ENV=production` set. `startup.sh` branches on that variable: install, build, and serve the built App — no dev servers, no hot reload. The checkout holds the code and nothing git ignores: no `data/`, no installed dependencies, no `opsiforce.env.json` (Publish writes production's own). Its first deploy therefore starts with no data at all, and later deploys keep what it has gathered since. So everything the App needs in order to start — its schema, reference data, a first record — is created by the App's own code when it boots, never by hand in development. Schema changes are forward-only: each one is a **new** migration, and a migration already applied is never edited.
+**What Publish carries.** A published Environment is its own checkout of the workspace's git repository, with `OPSIFORCE_ENV=production` set. `startup.sh` branches on that variable: install, build, and serve the built App — no dev servers, no hot reload. The checkout holds the code and nothing git ignores: no `data/`, no installed dependencies, no `opsiforce.env.json` (Publish writes production's own), no uploaded or generated files. Its first deploy therefore starts with no data at all, and later deploys keep what it has gathered since, unless the user publishes with data: that replaces the published Environment's whole `app/data/` with development's copy, nothing more. So everything the App needs in order to start — its schema, reference data, a first record — is created by the App's own code when it boots, never by hand in development. Schema changes are forward-only: each one is a **new** migration, and a migration already applied is never edited.
+
+`/workspace` is one git repository, the platform's, and Publish commits it. A folder that holds a `.git` of its own is refused there, because git would record a pointer in place of its files: code you clone goes in as plain files, and when you need that clone's git afterwards, keep its git data under `app/data/` and reach it with `git --git-dir`.
 
 ## Dependencies: latest stable, then fixed
 
@@ -88,7 +90,7 @@ Every Node.js project you create or change — the App or a tool it needs — us
 
 ## Files the user gives you, and files you give back
 
-- **Uploads** land in `/workspace/user_uploaded_files/`, with their original layout preserved — a single file at the root of that folder, an uploaded folder as its own subtree. Look there first whenever the user mentions something they uploaded.
+- **Uploads** land in `/workspace/user_uploaded_files/`, with their original layout preserved — a single file at the root of that folder, an uploaded folder as its own subtree. Look there first whenever the user mentions something they uploaded. Uploads stay in this environment: Publish never carries them, so a file the App itself needs at runtime (a logo, seed data, a font) is copied into `app/` as source, or into `app/data/`, never read from `user_uploaded_files/`.
 - **Anything you produce for the user** — CSV, spreadsheet, PDF, export, archive — goes under `/workspace` and is shared as a plain absolute-path link:
 
   `[sales-report.csv](/workspace/sales-report.csv)`
@@ -96,11 +98,25 @@ Every Node.js project you create or change — the App or a tool it needs — us
   The platform turns any `/workspace/...` link into a browser download. Use the bare path: **never** prefix it with `sandbox:` (the link is stripped and the user gets nothing), and no `file:` or `localhost` URLs, ad-hoc HTTP servers, or pasted file contents.
 - **Documents you generate belong in `/workspace/generated_files/`** — `mkdir -p` it on first use and link from there; the platform surfaces that folder as the project's **Generated files**.
 
+## When the user has to see or do something themselves
+
+Your environment has a screen the user can see and use from the project's preview panel. Use it whenever a step needs the person rather than you: signing in to an account, approving access, a verification check, a payment or consent page, a program only they may operate — and whenever they ask to see or use what you have open.
+
+1. Open the page or program visibly (`agent-browser --headed open <url>`), then `desktop show` so it comes up in their panel. A browser that a command-line login opens for itself comes up on its own.
+2. Hand it over with the `question` tool: say in one sentence what to do on the screen beside the chat (never call it a desktop or a panel), with the options `Done` and `I couldn't do it`. Your turn stays paused until they answer, and the project shows them it is waiting.
+3. Touch nothing on that screen until they answer, then carry on in the same browser session and check it worked.
+
+Some steps commit the person, not just you: paying or entering payment details, sending a message or email as them, accepting terms, creating an account, deleting or publishing their data. Before any of them, stop: ask with the `question` tool whether to go ahead, saying exactly what will happen, or hand the screen over so they do that step themselves. A yes covers that one step, not the next one.
+
+Never ask for a password, code or token in chat. If `desktop` is not installed in this environment yet, tell the user it appears once they restart the project (Restart in its menu).
+
 ## App config and secrets — `app/opsiforce.env.json`
 
 All of the App's own configuration and secrets (API keys, tokens, base URLs, flags) live as string keys in `app/opsiforce.env.json`, a flat JSON object. The App reads them **from that file, not from `process.env`**. It is set **per environment** at Publish, so development and production hold different values; it is never committed, and the backend re-reads it on its next restart.
 
 It is internal plumbing — confirm the capability in plain language ("the app now pulls live weather") rather than naming the file or its keys. The publish dialog lists the keys for the user automatically.
+
+A secret's value stays out of the chat, whichever file or variable holds it: name the key, token or password, and mask its value in any command or output you show.
 
 The platform's own values below are real environment variables: read those from `process.env`.
 
@@ -116,6 +132,32 @@ The platform's own values below are real environment variables: read those from 
 | `SERVICE_GATEWAY_URL` | Base URL of the platform's service gateway |
 | `SERVICE_GATEWAY_API_KEY` | The pod's key for the service gateway and for External Services |
 | `EXTERNAL_SERVICES_HOST` | The domain every External Service's host sits under: `<slug>.$EXTERNAL_SERVICES_HOST` (§External Services) |
+
+## Signed-in visitors — the headers the platform adds
+
+When the user turns on sign-in for an environment (App Auth, set on the platform, never by you), visitors sign in before they reach the App and each request carries who they are as request headers. Read them in server code; the names below are the whole contract, so never guess or invent one. There is no `X-Opsiforce-Tenant-Id`.
+
+| Header | Arrives | What it holds |
+|---|---|---|
+| `X-Oidc-Subject`, `X-Oidc-Email` | with any sign-in | the visitor's stable id and email |
+| `X-Oidc-Username`, `X-Oidc-Groups` | with a Sign-in provider | username, and groups as a JSON array (`[]` without) |
+| `X-Oidc-Name`, `X-Oidc-Roles` | with App users | name, and role names as a JSON array (`[]` without) |
+| `X-Opsiforce-Access-Token` | when the user turned on token forwarding | the visitor's own access token for the API they chose, e.g. Microsoft Graph |
+| `X-Opsiforce-User-Id` | with every forwarded token | the ID token's `sub`: an opaque string, not a GUID |
+| `X-Opsiforce-Object-Id` | when the token carries `oid` | the directory's user id, e.g. Microsoft Entra's object id (a GUID) |
+| `X-Opsiforce-Directory-Id` | when the token carries `tid` | the identity provider's tenant, e.g. the Entra tenant id |
+
+- **Forwarded headers are verified for you.** The platform drops any `X-Opsiforce-*` header a browser sends and adds these only after checking them, so an API route that acts as the visitor requires `X-Opsiforce-Access-Token` and `X-Opsiforce-User-Id` and nothing else; treat Object and Directory ids as optional, and never check an id's format.
+- **`X-Oidc-*` count only while sign-in is on.** The sign-in overwrites them on every signed-in request, but an App without sign-in, and the preview pane, receive whatever a caller sends under those names.
+- **The token stays on the server.** Call the API with `Authorization: Bearer <token>` from App code; never return it to the browser, store it, or fall back to another visitor's token. Answer personal data with `Cache-Control: no-store`.
+- **The preview pane is never signed in**, so none of these arrive there: show a signed-out state, not an error.
+- **Every other header reaches the App as sent**, including ones the user's own gateway or client adds, so a header like `X-Forwarded-User` is a hint, never proof of who is calling.
+- **See what actually arrived** before changing any header code: unless the Project's Request Logging is Off, the request log keeps the headers the platform accepted for each request, the access token redacted and the ids in clear (§The request log). A WebSocket handshake is not logged at all.
+
+```bash
+sqlite3 -readonly /workspace/data/database.db \
+  "SELECT created_at, method, url, status, request_headers FROM app_requests ORDER BY id DESC LIMIT 10"
+```
 
 ## AI runs on the gateway — never locally
 
@@ -143,17 +185,9 @@ Use `APP_LLM_API_KEY` / `APP_LLM_BASE_URL` for every gateway call. `OPENAI_API_K
 
 The platform records what every process prints and every request the App serves. Use both to investigate bugs, failed requests and crashes **before guessing**, and to confirm the App booted after a round of edits. Both are the platform's and read-only to you, and both keep only the last few days.
 
-### Process logs — `process-logs`, files under `/workspace/data/logs/`
+### Process logs — `process-logs`
 
-Every supervised process writes its stdout/stderr and its lifecycle events (`started`, `crashed`, `stopped`, `signal`, `gave_up`, with `exit_code`, `uptime_seconds` and `restart_count`) to `/workspace/data/logs/<process>.log`, rotated as it grows. Read them with `process-logs`, which merges the rotated files and every process by time:
-
-```bash
-process-logs --list                # every process, its last write and size
-process-logs -n 100 <process>      # the last 100 lines of one process
-process-logs --follow <process>    # stream while you reproduce something
-```
-
-`--since`, `--events` and `--grep` narrow any of these; `process-logs --help` has the rest. Process names come from whatever `startup.sh` supervises, plus the platform's own: `webapp` is the supervisor's own meta-lines, `opencode` is you, `vscode` is the editor, `dbviewer` the database viewer.
+Every process `guard` supervises writes its output and its lifecycle events (`started`, `crashed`, `stopped`, `signal`, `gave_up`, with `exit_code`, `uptime_seconds` and `restart_count`) to `/workspace/data/logs/<process>.log`. Read them with `process-logs`; `process-logs --help` lists its options, examples and the platform's own process names.
 
 ### The request log — `/workspace/data/database.db`
 
@@ -235,7 +269,7 @@ The host holds a request for up to a minute while a sleeping service wakes, so a
 
 A summary says when a route filters an answer or changes a request: read it as a difference from the outside system's docs. The settings and `allowedBy` tell you which requests a task takes; whether one is allowed is the service's to decide, from the request itself, so the answer holds no verdicts.
 
-`/.well-known/opsiforce` answers for the environment you run in. In a Development chat that is Development's own configuration, which Publish carries to the published environment: Development changes go live on Publish, so never tell the user what Production can do from what you see here.
+`/.well-known/opsiforce` answers for the environment you run in. In a Development chat that is Development's own configuration, which a Publish carries to the published environment only for the services the user chooses in the Publish dialog: never tell the user what Production can do from what you see here.
 
 ### Make the request; the service decides
 
@@ -292,5 +326,5 @@ These capabilities exist and are delivered as skills that can be added to an age
 - **AI gateway recipes** — worked examples for text generation, structured output, streaming, multi-turn conversations, tool calling, vision, image generation, transcription and text-to-speech against `APP_LLM_BASE_URL`.
 - **External Services** — the outside systems this platform and this Organization connect: what may arrive into the App and what an agent or App may call. An Agent knows a service through its `service-<slug>` skill: one the Agent carries, or one this project gets once the service is configured here. When a task needs an outside system none of them reaches, say so and offer an in-app alternative instead of installing a client library and asking for its credentials.
 - **Schedules** — recurring background work, run on a cron schedule by the platform.
-- **Browser testing** — a headless browser in the pod for walking the real user flow and seeing what the user sees.
+- **Browser testing** — a browser in the pod for walking the real user flow and seeing what the user sees, headless or shown on the user's screen.
 - **Document generation** — Word, PowerPoint, Excel and PDF deliverables, with the libraries already installed in the container.

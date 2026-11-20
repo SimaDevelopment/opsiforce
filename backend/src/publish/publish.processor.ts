@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Job } from 'bullmq';
+import { DelayedError, Job } from 'bullmq';
 import path from 'node:path';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -23,14 +23,29 @@ import { ProjectConfigurationCarry, ServiceDefaultEnvironments } from '../extern
 import { DeliveryService } from '../delivery/delivery.service';
 import { EnvironmentSkillsService } from '../delivery/environment-skills';
 import { WorkspaceWriter } from '../delivery/workspace-writer';
+import { CHAT_FILE_FOLDERS } from '../delivery/platform-ignores';
+import {
+  discardReplacedAppData,
+  holdsAppData,
+  holdsReplacedAppData,
+  replaceAppData,
+  restoreReplacedAppData,
+  settleReplacedAppData,
+} from './app-data';
+import { publishJobDone } from './publish-job-done';
+import { keepingAppDetails } from './app-details-file';
+import { PublishCancellations, PublishCancelledError, unlessCancelled } from './publish-cancellations';
 
 const POD_READY_TIMEOUT_MS = 180 * 1000;
 const APP_READY_TIMEOUT_MS = 10 * 60 * 1000;
+const CONCURRENT_PUBLISHES = 4;
+const BUSY_PROJECT_RETRY_MS = 5000;
 
-@Processor(PROJECT_PUBLISH_QUEUE)
+@Processor(PROJECT_PUBLISH_QUEUE, { concurrency: CONCURRENT_PUBLISHES })
 export class PublishProcessor extends WorkerHost {
   private readonly logger = new Logger(PublishProcessor.name);
   private readonly storageMountPath: string;
+  private readonly busyProjects = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -46,33 +61,48 @@ export class PublishProcessor extends WorkerHost {
     private readonly serviceDefaults: ServiceDefaultEnvironments,
     private readonly deliveryService: DeliveryService,
     private readonly workspaceWriter: WorkspaceWriter,
-    private readonly environmentSkills: EnvironmentSkillsService
+    private readonly environmentSkills: EnvironmentSkillsService,
+    private readonly cancellations: PublishCancellations
   ) {
     super();
     this.storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
   }
 
-  async process(job: Job<PublishJobData>): Promise<void> {
-    const data = job.data;
+  async process(job: Job<PublishJobData>, token?: string): Promise<void> {
+    const { projectId } = job.data;
+    if (this.busyProjects.has(projectId)) {
+      await job.moveToDelayed(Date.now() + BUSY_PROJECT_RETRY_MS, token);
+      throw new DelayedError();
+    }
+    this.busyProjects.add(projectId);
+    try {
+      await this.publish(job.data);
+    } finally {
+      this.busyProjects.delete(projectId);
+    }
+  }
+
+  private async publish(data: PublishJobData): Promise<void> {
     let prodDir: string | null = null;
     let prodDirectory: string | null = null;
     let previousSha: string | null = null;
     let previousEnvVars: Record<string, string> | null = null;
     let deployStarted = false;
+    let appDataReplaced = false;
     let phase: PublishStatus = PublishStatus.Queued;
 
-    const existing = await this.publishService.getJob(data.publishJobId).catch(() => null);
-    if (!existing || existing.status === PublishStatus.Done || existing.status === PublishStatus.Failed) {
-      this.logger.warn(`Skipping publish ${data.publishJobId}: already ${existing?.status ?? 'missing'}`);
+    if (!(await this.publishService.claim(data.publishJobId))) {
+      this.logger.warn(`Skipping publish ${data.publishJobId}: it is no longer queued`);
       return;
     }
 
     try {
       phase = PublishStatus.Committing;
-      await this.setStatus(data.publishJobId, PublishStatus.Committing, { startedAt: new Date() });
 
       const devEnv = await this.projectEnvironmentService.findDefaultByProjectId(data.projectId);
       const devDir = path.join(this.storageMountPath, devEnv.directory);
+      await this.workspaceWriter.keepPlatformIgnores(devEnv.directory);
+      await this.git.untrack(devDir, CHAT_FILE_FOLDERS);
       const sha = await this.git.commitWorkingTree(devDir, `Publish ${data.environmentId}`);
       await this.setStatus(data.publishJobId, PublishStatus.Committing, { commitSha: sha });
 
@@ -93,9 +123,25 @@ export class PublishProcessor extends WorkerHost {
         await this.git.resetHard(prodDir, sha);
         await this.gatewayKeyService.createKey(data.projectId, data.projectEnvironmentId, data.tenantId);
       } else {
-        await this.syncIncremental(devDir, prodDir, sha);
+        const targetDir = prodDir;
+        await keepingAppDetails(targetDir, () => this.syncIncremental(devDir, targetDir, sha));
         previousEnvVars = await this.publishService.readEnvFile(prodEnv.directory);
         await writeEnvJsonBackup(this.storageMountPath, prodEnv.directory, previousEnvVars);
+      }
+
+      const leftoverAppData = await holdsReplacedAppData(prodDir);
+      if (data.withData || leftoverAppData) await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
+      if (leftoverAppData) await settleReplacedAppData(prodDir, publishJobDone);
+
+      if (data.withData) {
+        const targetDir = prodDir;
+        await this.projectService.whileHeldForDataCopy(devEnv.id, async () => {
+          if (!(await holdsAppData(devDir))) {
+            throw new ConflictException({ code: 'no-development-data', message: 'Development has no data to copy' });
+          }
+          appDataReplaced = true;
+          await replaceAppData(devDir, targetDir, data.publishJobId, publishJobDone);
+        });
       }
 
       if (!(await this.workspaceWriter.hasOpencodeDir(prodEnv.directory))) {
@@ -109,18 +155,28 @@ export class PublishProcessor extends WorkerHost {
       }
 
       phase = PublishStatus.Building;
-      await this.setStatus(data.publishJobId, PublishStatus.Building);
-      await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
+      const cancelled = this.cancellations.begin(data.publishJobId);
+      let appReady: boolean;
+      try {
+        await this.setStatus(data.publishJobId, PublishStatus.Building);
+        await this.projectService.recreatePodForDeploy(data.projectEnvironmentId, POD_READY_TIMEOUT_MS);
 
-      phase = PublishStatus.Migrating;
-      await this.setStatus(data.publishJobId, PublishStatus.Migrating);
-      const appReady = await this.appReadiness.awaitReady(data.projectEnvironmentId, APP_READY_TIMEOUT_MS);
+        phase = PublishStatus.Migrating;
+        await this.setStatus(data.publishJobId, PublishStatus.Migrating);
+        appReady = await unlessCancelled(
+          cancelled,
+          this.appReadiness.awaitReady(data.projectEnvironmentId, APP_READY_TIMEOUT_MS)
+        );
+      } finally {
+        this.cancellations.end(data.publishJobId);
+      }
       if (!appReady) {
         throw new Error('Production app did not become ready within the deploy window');
       }
 
       const report: PublishReportLine[] = [
-        ...(await this.projectConfigurationCarry.carry(devEnv.id, data.projectEnvironmentId)),
+        ...(appDataReplaced ? [{ kind: 'app-data', outcome: 'replaced' } as const] : []),
+        ...(await this.projectConfigurationCarry.carry(devEnv.id, data.projectEnvironmentId, data.serviceIds)),
         ...(await this.environmentSkills.carry(devEnv.id, data.projectEnvironmentId)),
       ];
       await this.setStatus(data.publishJobId, PublishStatus.Migrating, { report });
@@ -141,6 +197,7 @@ export class PublishProcessor extends WorkerHost {
       });
       await clearEnvJsonBackup(this.storageMountPath, prodEnv.directory).catch(() => undefined);
       await this.setStatus(data.publishJobId, PublishStatus.Done, { completedAt: new Date() });
+      if (appDataReplaced) await discardReplacedAppData(prodDir, data.publishJobId).catch(() => undefined);
       this.logger.log(
         `Published ${data.projectId} to environment ${data.environmentId} (${data.projectEnvironmentId})`
       );
@@ -150,7 +207,13 @@ export class PublishProcessor extends WorkerHost {
 
       if (!data.isFirstPublish && prodDir && prodDirectory && previousSha) {
         try {
-          await this.git.resetHard(prodDir, previousSha);
+          if (appDataReplaced) {
+            await this.projectService.stopPodForDeploy(data.projectEnvironmentId);
+            await restoreReplacedAppData(prodDir, data.publishJobId);
+          }
+          const targetDir = prodDir;
+          const restoredSha = previousSha;
+          await keepingAppDetails(targetDir, () => this.git.resetHard(targetDir, restoredSha));
           if (previousEnvVars) {
             await this.restoreEnvFile(prodDir, previousEnvVars);
           }
@@ -297,6 +360,12 @@ const PHASE_FAILURE_MESSAGE: Partial<Record<PublishStatus, string>> = {
 };
 
 function userFacingPublishError(err: unknown, phase: PublishStatus): string {
+  if (err instanceof PublishCancelledError) return 'Publish cancelled.';
+  if (err instanceof ConflictException) {
+    const refusal = err.getResponse();
+    if (typeof refusal === 'object' && 'message' in refusal && typeof refusal.message === 'string')
+      return refusal.message;
+  }
   if (err instanceof PodStartupFailedError) {
     if (err.reason === 'Unschedulable') {
       return 'Not enough capacity to start the app right now. Please try again in a few minutes.';

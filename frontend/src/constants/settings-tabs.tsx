@@ -1,5 +1,15 @@
 import type { Component } from 'solid-js';
-import { FolderKanban, Gauge, KeyRound, Layers, Palette, SlidersHorizontal, Wallet, Waypoints } from '~/components/icons';
+import {
+  Cpu,
+  FolderKanban,
+  Gauge,
+  KeyRound,
+  Layers,
+  Palette,
+  SlidersHorizontal,
+  Wallet,
+  Waypoints,
+} from '~/components/icons';
 import type { HasPermission } from '~/constants/permissions';
 import { PRIVATE_TABS } from '~/private-loader';
 
@@ -75,6 +85,14 @@ export const SETTINGS_TABS: SettingsTab[] = [
     group: 'Configuration',
     icon: Gauge,
     isPermitted: (has) => has('can_manage_platform_limits'),
+  },
+  {
+    to: '/settings/resources',
+    label: 'Resources',
+    description: 'The CPU and memory presets Projects and Agents pick from, for the platform and each organization.',
+    group: 'Configuration',
+    icon: Cpu,
+    isPermitted: (has) => has('can_manage_platform_resources') || has('can_manage_tenant_resources'),
   },
   {
     to: '/settings/billing',

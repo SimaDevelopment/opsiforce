@@ -5,6 +5,8 @@ import type { ServiceConfigurationOptions, SettableService } from '../store/serv
 import type { AgentImportNote } from './agent-import';
 import type { PodClassSelection, PodSettings } from '../pod/pod-classes';
 import type { AgentProjectSettingsChoice } from './agent-copy-settings';
+import type { AgentResourcesSource } from './agent-pod-settings';
+import type { AgentInactivityCleanup, InactivityCleanup, InactivityCleanupGrants } from '../project/inactivity-cleanup';
 export type { AgentRow } from './agent-visibility';
 
 export interface AgentResponse {
@@ -92,9 +94,13 @@ export interface ShippedSkillResponse {
 export interface AgentDetail extends AgentSummary {
   settings: AgentSettingsResponse;
   podSettings: PodSettings;
+  podSettingsSource: AgentResourcesSource;
+  inheritedPodSettings: PodSettings;
+  platformChoice: PodSettings | null;
   profiles: AgentProfileResponse[];
   shippedSkills: ShippedSkillResponse[];
   projectCount: number;
+  inactivityCleanup: AgentInactivityCleanup;
 }
 
 export interface AgentDuplicateResult {
@@ -145,6 +151,8 @@ export interface UpdateAgentSettingsDto {
 
 export type UpdateAgentPodClassDto = PodClassSelection;
 
+export type UpdateAgentInactivityCleanupDto = Partial<InactivityCleanup>;
+
 export interface SetAgentVisibilityDto {
   visibility: string;
 }
@@ -153,7 +161,7 @@ export interface DuplicateAgentDto extends AgentProjectSettingsChoice {
   displayName: string;
 }
 
-export interface AgentCopyGrants {
+export interface AgentCopyGrants extends Partial<InactivityCleanupGrants> {
   canConfigureProjects: boolean;
 }
 

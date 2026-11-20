@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { ApiError } from '~/api/client';
 import { usePermissions } from '~/api/permissions';
 import { useImportSkill, useSkills, type Skill } from '~/api/skills';

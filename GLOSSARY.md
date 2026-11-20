@@ -84,7 +84,7 @@ A tenant-scoped, named target a Project can run in and a Custom Agent can publis
 _Avoid_: Tier, Target, Deployment target
 
 **Environment Slug**:
-The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Public URL. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
+The short, immutable, URL-safe identifier an Environment carries alongside its name, naming the environment in an App's Default address. Fixed for the protected Environments (`dev` for Development, `prod` for Production); for a custom Environment it is prefilled from the whole name at creation and editable that one time before saving (it must be unique within the tenant and cannot end like an App Short ID), then immutable — renames never change it, so published URLs outlive renames. The slug is an identifier, not user-facing copy, so the "avoid Prod" rule does not apply to it.
 _Avoid_: Suffix (its position in the URL, not the concept); Code
 
 **Environment Color**:
@@ -92,7 +92,7 @@ The color an Organization gives an Environment as its visual identity — the on
 _Avoid_: Status color (the orthogonal running-state axis, not identity); Label color; Theme; Tag
 
 **Badge Label**:
-The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased.
+The editable short text (two to five letters or digits) shown on an Environment's sidebar badge, over the Environment Color as background. When empty, the badge falls back to the Environment Slug's first letters, uppercased. On a phone the Environments switcher shows it, capitalised (Dev, Prod), in place of the Environment's name, which stays in the switcher's tooltip and list.
 _Avoid_: Short name (the stored identifier, not user-facing copy); Abbreviation; Tag
 
 **ProjectEnvironment**:
@@ -105,31 +105,47 @@ _Avoid_: Dev env, working copy
 
 **Production**:
 The second protected Environment present in every tenant — the conventional target for publishing the App's live version. Beyond being guaranteed to exist and protected from rename/delete, it behaves like any other publish target.
-_Avoid_: Prod (non-canonical in user-facing copy); Live
+_Avoid_: Prod (non-canonical in user-facing copy, except as the Badge Label the phone's Environments switcher shows); Live
 
 **App**:
 The application the agent builds inside a ProjectEnvironment, served at that environment's Public URL. Each ProjectEnvironment runs its own App, carrying its own App Details — so one Project groups several Apps (one per environment), the same source captured at different published moments. Distinct from the Project (the shell that groups them).
 _Avoid_: Project (when you mean the built application); "one App per Project" (retired — each ProjectEnvironment is its own App)
 
 **App Details**:
-An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at publish and evolve independently afterwards.
+An App's human-facing identity — its name and description — carried per ProjectEnvironment, since each environment is its own App. First published by the agent when that environment's App goes live, then re-curated by humans against whichever environment they are viewing; the running App reads its own name at runtime. A published App's Details begin as a copy of Development's at its first Publish and evolve independently afterwards: a Publish update never overwrites them.
 _Avoid_: App metadata (vague); Project title (the Project shell's label — a different thing); project-level identity (retired — App Details belong to each App/environment, not the Project)
 
 **Public URL**:
-The internet address at which an App is served, the one the platform hands out and people share. It reads as the App Slug, the Environment Slug, then the App Short ID — e.g. `equipment-monitor-dev-6713b7a51450` — or, for an App with no App Slug, as the older address built from its environment's id. A Project that serves an External Service has no public App, so no Public URL.
+The internet address at which an App is served, the one the platform hands out and people share: the App's Main domain once it has a connected Custom domain, otherwise its Default address. A Project that serves an External Service has no public App, so no Public URL.
 _Avoid_: App URL, Built-in URL, Link, Domain
 
+**Default address**:
+The address every App has under the apps domain, reading as the App Slug, the Environment Slug, then the App Short ID — e.g. `equipment-monitor-dev-6713b7a51450` — or, for an App with no App Slug, as the older address built from its environment's id. It is the App's Public URL until a Custom domain connects, and keeps reaching the App after one does. A Custom domain's DNS record points at it.
+_Avoid_: Platform address, Apps address, Built-in URL, Default domain
+
 **App Slug**:
-The readable part of an App's Public URL, in front of the Environment Slug — `equipment-monitor` in `equipment-monitor-dev-6713b7a51450`. It comes from the App's name, or from the App Slug of the App it was copied from, and afterwards changes only through Edit URL, never with a rename. It need not be unique: the App Short ID already is.
+The readable part of an App's Default address, in front of the Environment Slug — `equipment-monitor` in `equipment-monitor-dev-6713b7a51450`. It comes from the App's name, or from the App Slug of the App it was copied from, and afterwards changes only through Edit URL, never with a rename. It need not be unique: the App Short ID already is.
 _Avoid_: Subdomain, Vanity URL, Name (the App Details field it derives from)
 
 **App Short ID**:
-The code at the end of an App's Public URL that identifies the App: the first twelve hex characters of its ProjectEnvironment's id with the dashes dropped, two more at a time when another App already holds that prefix. Every App has its own, unique across all Apps of every tenant, and it never changes for the App's lifetime — renames and URL edits leave it alone, which is what keeps old links working.
+The code at the end of an App's Default address that identifies the App: the first twelve hex characters of its ProjectEnvironment's id with the dashes dropped, two more at a time when another App already holds that prefix. Every App has its own, unique across all Apps of every tenant, and it never changes for the App's lifetime — renames and URL edits leave it alone, which is what keeps old links working.
 _Avoid_: Hash (it is not one); Short UUID; Code
 
 **Edit URL**:
-Choosing an App's App Slug by hand, which moves the App's Public URL to the new address while every address it answered on before keeps reaching it. The only way an App Slug changes once it is set.
+Choosing an App's App Slug by hand, which moves the App's Default address to the new address while every address it answered on before keeps reaching it. The only way an App Slug changes once it is set.
 _Avoid_: Rename (renaming the App leaves its address alone); Custom domain (an address outside the apps domain)
+
+**Custom domain**:
+An address on a domain the customer owns, outside the apps domain — e.g. `shop.example-org.com` — that they point at one ProjectEnvironment's App through their own DNS provider. It is connected once their DNS points it at the App's Default address and it is served over https. An App can have several, and Publish, Duplicate and Import never copy them, since a domain reaches one App only.
+_Avoid_: Vanity URL, Custom URL, Alias, Hostname
+
+**Main domain**:
+The one connected Custom domain of an App that is its Public URL. The App's other Custom domains serve it too, each on its own host, unless set to send visitors on to the Main domain. The first to connect becomes it, until another is made main.
+_Avoid_: Primary domain (primary already names an environment's primary Session); Default domain (confusable with the Default address)
+
+**Check**:
+The platform asking public DNS whether a Custom domain's record names its App, when the domain is added, when the owner presses Check, and when Domains is opened.
+_Avoid_: Verify, Validation
 
 **Go-live**:
 The moment an App first exists and is running in a ProjectEnvironment — for Development, when the agent finishes the first feature, it builds and boots, and the agent publishes App Details; for a published environment, when its freshly-deployed pod first serves. Go-live is decoupled from "done": it happens before the agent's feature testing, which follows with the App already live. Each environment goes live independently. Before its App goes live an environment has a pod but no App; that environment's app pane appears only once it happens.
@@ -139,9 +155,13 @@ _Avoid_: Detection (the platform's inward-facing name for noticing the same mome
 The act of materializing or updating a non-Development ProjectEnvironment from the Development one's files, so the App runs in a chosen Environment. Publishing over an already-running environment is a **Publish update**.
 _Avoid_: Deploy, Release, Promote, Redeploy; conflating with Publish (Skill) or Publish (Agent), disambiguated by object: Apps and Agent Profiles publish to Environments, Skills publish to the Store
 
+**Publish with data**:
+A Publish that also replaces the target ProjectEnvironment's App data — the databases and files the App keeps as its state — with Development's, so the target ends holding exactly Development's data and none of its own. Chosen for one Publish at a time; it never carries the platform's own per-environment records, the Environment Variables, or the agent conversation.
+_Avoid_: Copy as-is, Full copy, Clone, Sync (non-canonical); Data migration (a schema change, a different thing); conflating with Duplicate, which copies a whole Project, conversation included, into a new Project
+
 **Duplicate**:
 Creating a new Project in the same tenant and workspace from an existing one, preserving its working state in full — App source and history, the agent conversation, the App's databases, Environment Variables, settings, Resources, and App Details. The duplicate is independent: it gets its own keys, and its Schedules arrive **paused** so no automation fires twice. Only the Development ProjectEnvironment is duplicated — published environments are re-created by publishing from the duplicate.
-_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source only, never working state); Duplicate (Agent) (the Agent sense)
+_Avoid_: Copy, Clone, Fork (non-canonical); conflating with Publish (which transports App source, and App data only as a Publish with data, never the conversation or the rest of the working state); Duplicate (Agent) (the Agent sense)
 
 **Export**:
 Producing a Project export from a Project's Development working state, to carry it to a *different* Opsiforce deployment. The cross-deployment sibling of Duplicate — same bundle and carry-rules — but the destination is another instance reached through a file rather than a local copy. Only the Development ProjectEnvironment is exported.
@@ -171,25 +191,37 @@ _Avoid_: Reboot; conflating with App restart
 Stopping a Project without losing it: every ProjectEnvironment's pod is deleted and its timeouts cleared, while the workspace, the transcript and every row survive. Reversible by Enable, which starts the environments again. The canonical word for taking anything out of use — an ordinary Project, a Builder chat and a Test Project, whose pods stop, a Custom External Service, whose pods stop and which leaves its Organization's Project forms, and a Skill or a Custom Agent, which leaves the catalog (Disable (Skill), Disable (Agent)).
 _Avoid_: Archive (retired — the Store says Disable too); Deactivate, Suspend, Pause, Stop (non-canonical)
 
+**Inactivity cleanup**:
+A Project's two optional durations, **Disable after** and **Delete after** (hours or days, from 1 hour), each counted from the Project's last Keep-alive activity on any of its environments (or from its creation or its last Enable, whichever is later): past the first the Project is disabled, past the second it is deleted, the same Disable (Project) and delete a user can do by hand. Delete after is always longer than Disable after when both are set. A new Project copies them once, as a pair, from its Agent's own pair (for a Built-in Agent, its Organization's choice or else the platform's), otherwise from its Organization's default, and keeps its own from then on; empty means never. Only ordinary Projects are cleaned up, never a Builder chat, Test Project or pool slot.
+_Avoid_: TTL, Retention, Expiry, Auto-archive (non-canonical; say Inactivity cleanup, Disable after, Delete after)
+
 **App Auth**:
-Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), or **provider** (one of the Organization's Sign-in providers). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
+Per-ProjectEnvironment control over how visitors sign in to the App at that environment's URL — one of **public** (anyone), **manual** (the owner's own OIDC provider), **provider** (one of the Organization's Sign-in providers), or **app users** (the Project's own App Users, signed in by Opsiforce itself). Each ProjectEnvironment carries its own; a newly published environment is **seeded once** from Development's setting at first publish, then managed independently per environment.
 _Avoid_: Project auth (it is not project-wide — each environment has its own); Login, SSO (non-canonical)
 
 **Auth mode**:
-The chosen App Auth setting for one ProjectEnvironment — `public`, `manual` or `provider` (the stored identifier is `auth_mode`).
+The chosen App Auth setting for one ProjectEnvironment — `public`, `manual`, `provider` or `app_users` (the stored identifier is `auth_mode`).
 _Avoid_: Auth type, Auth provider
 
 **Sign-in provider**:
 An OIDC app an Organization admin registers once — issuer, client ID, client secret, scopes and an optional required claim — so that the Organization's members sign in to its Apps with it. It is shared by every App whose Auth mode is `provider` and names it.
 _Avoid_: Organization provider, Identity provider (the vendor product, not this record), Custom auth, SSO app
 
+**App User**:
+A sign-in account that belongs to one Project and lets a visitor into that Project's Apps when an environment's Auth mode is `app_users`: an email, a password they choose from an invite link (or one the owner sets), an optional name and any number of the Project's own roles, which the App receives as `X-Oidc-Roles`. Not a member of the Organization: an App User never signs in to Opsiforce itself.
+_Avoid_: End user, Visitor account, Customer (non-canonical); User (that is an Organization member)
+
 **Token forwarding**:
 An opt-in App Auth setting, available in manual and provider modes, that passes the signed-in visitor's access token from the App's OIDC provider to the App's backend, so the App can call an API as that visitor. It is off by default, set per ProjectEnvironment, and cannot be combined with paths that skip sign-in. Each visitor's request carries only that visitor's own token, never the owner's.
 _Avoid_: Delegation, OAuth delegation (the OAuth concept it enables, not the setting); Pass-through auth; Impersonation
 
 **Resources**:
-The CPU/memory size of a Project's agent pod, chosen as a class — Small, Medium, Large, or Custom. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources — from the agent image for a Built-in Agent (Small unless it declares otherwise), set per Custom Agent — copied once and the Project's own from then on.
+The CPU/memory size of a Project's agent pod: a Resources preset, or Custom numbers. A project-level policy: one choice applies to every one of the Project's ProjectEnvironment pods (Development and any published target alike). A new Project starts at its Agent's Resources, or the default Resources preset when the Agent has none, copied once and the Project's own from then on.
 _Avoid_: Pod class (the internal identifier — never user-facing); Environment size (collides with Environment); Tier, Machine size, Compute (non-canonical — say Resources)
+
+**Resources preset**:
+A named CPU/memory size, such as Small, that Projects and Agents pick for their Resources. The platform's presets are offered to every Organization, which may add presets of its own and set its own numbers for a platform preset. One preset is the default; an Organization may choose another default.
+_Avoid_: Template, Machine size, Tier, Pod class
 
 ### Agents
 
@@ -288,16 +320,20 @@ The project workspace tab where a user sees and manages the Active environment's
 _Avoid_: File browser, File manager (dev-tool connotation — it is a curated view, not the filesystem); Workspace (the Org-level Project grouping — a different thing)
 
 **User uploads**:
-Files a user added to a ProjectEnvironment — attached in chat or uploaded from the Files tab — kept durably in the environment's upload area with their original folder layout preserved.
+Files a user added to a ProjectEnvironment — attached in chat or uploaded from the Files tab — kept durably in the environment's upload area with their original folder layout preserved. They stay in the environment they were added to: a Publish never carries them, and a file the App needs at runtime belongs in the App itself.
 _Avoid_: Attachments (implies message-scoped; uploads are durable workspace files, not parts of a Prompt)
 
 **Generated files**:
-The Agent's finished deliverables — documents, reports, exports — saved by convention into the environment's designated output folder, which the Files tab surfaces as its own section. The folder comes into existence on first write; deliverables the Agent drops elsewhere still surface in the tab as other files.
+The Agent's finished deliverables — documents, reports, exports — saved by convention into the environment's designated output folder, which the Files tab surfaces as its own section. The folder comes into existence on first write; deliverables the Agent drops elsewhere still surface in the tab as other files. Like User uploads, they stay in the environment where they were made: a Publish never carries them.
 _Avoid_: Artifacts (claude.ai's concept — different mechanics); Outputs (vague); Generated app (the App source — a different thing entirely)
 
 **File preview**:
-Reading a finished workspace file in the project's right side panel instead of downloading it — opened by clicking a file link the Agent posted in chat, or a file in the Files tab. It shares the panel with the App preview through an App | File switcher, shows one file at a time, and never opens or switches modes on its own. Formats outside the supported set are not an error state: they offer a download instead.
+Reading a finished workspace file in the project's right side panel instead of downloading it — opened by clicking a file link the Agent posted in chat, or a file in the Files tab. It shares the panel with the App preview and the Desktop through a switcher, shows one file at a time, and never opens or switches modes on its own. Formats outside the supported set are not an error state: they offer a download instead.
 _Avoid_: Artifact preview (implies claude.ai's streaming artifacts; this is finished files only); Viewer, File viewer (suggests a separate surface — it is the same panel the App preview uses); App preview (the running App in that panel — the other mode, not this one)
+
+**Desktop**:
+The one GUI display inside an Agent's pod, where headed browsers and other windowed apps run, shown to people as the Desktop mode of the project's preview panel. The Agent brings it up with `desktop show` and hands it over by asking a question; whoever has the Project open can see and use it. It lives only as long as the pod.
+_Avoid_: VNC (the transport, not the thing); Virtual machine (it is a display in the same container); Remote desktop (implies the person's own machine)
 
 **Document conversion**:
 Turning a Word or PowerPoint deliverable into a PDF so File preview can render it, on a shared in-cluster converter the Agent cannot reach. It runs as a job — the panel is told a conversion is pending, then shown the PDF — and the result is transient, so reopening the same file converts it again. An unconvertible document offers a download instead of failing.
@@ -416,7 +452,7 @@ The values filled into an External Service's Service form, one per service and o
 _Avoid_: Settings, Values, Config in prose; Account, Credential, Resource, Channel (none is a concept of its own — each is an item in a Service configuration)
 
 **Project configuration**:
-The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project, and Publish carries Development's forward.
+The values filled into an External Service's Project form for one ProjectEnvironment — values only: what they allow is for the service's Service policy to decide. Having one connects that environment to the service: it gives the environment the service's Service skill, and the service refuses a call from an environment that has none. Removing one disconnects the environment. Each ProjectEnvironment carries its own, starting from its Agent's Service settings (Agent) when it has them, or from the Project form's defaults when the service connects every new Project. A Publish carries Development's for the services chosen in its form, which start chosen only where the target has none of its own, so a target's own configuration is replaced only on request.
 _Avoid_: Environment configuration (collides with Environment Variables); Permission (the platform's `can_*` word; enforcing is the Service policy's job); Grant, Scope, Settings
 
 **Disconnect (External Service)**:

@@ -51,6 +51,9 @@ import { ModelProvidersService } from '../model-provider/model-provider.service'
 import { appSlugBrokenRule, toAppSlug } from '../common/app-slug';
 import { assertIdleTimeoutMs } from '../common/validation';
 import { restoreEnvJsonBackup } from '../common/env-file';
+import { settleReplacedAppData } from '../publish/app-data';
+import { publishJobDone } from '../publish/publish-job-done';
+import { keepingAppDetails } from '../publish/app-details-file';
 import { writeJsonAtomic } from '../common/fs';
 import { lockProjectGit, type DbExecutor } from '../common/locks';
 import { DefaultsService } from '../defaults/defaults.service';
@@ -64,6 +67,7 @@ import { PROJECT_LIFECYCLE, type ProjectLifecycle } from './project-lifecycle';
 import { GitService } from '../git/git.service';
 import { ProjectEnvironmentService } from '../project-environment/project-environment.service';
 import { PublicUrlService } from '../project-environment/public-url.service';
+import { CustomDomainCluster } from '../custom-domain/custom-domain-cluster';
 import type { ProjectEnvironmentContext } from '../project-environment/project-environment.types';
 import { hasRunningPod } from '../project-environment/running-pod';
 import type { EnvironmentNotRunningState } from '../agent-session/agent-session.errors';
@@ -97,21 +101,32 @@ import {
   isChatKind,
   SELECTABLE_AUTH_MODES,
 } from './project.types';
-import {
-  buildPodClassCatalog,
-  clampCustom,
-  isPreset,
-  resolvePreset,
-  resolveStoredPodResources,
-  toK8sResources,
-  type K8sResourceRequirements,
-  type PodClass,
-  type PodClassCatalog,
-  type PodResources,
-} from '../pod/pod-classes';
+import { toK8sResources, type K8sResourceRequirements, type PodSettings } from '../pod/pod-classes';
 import { readAgentPodSettings } from '../agent/agent-pod-settings';
+import { tenantInactivityCleanup } from '../defaults/defaults.service';
+import {
+  INACTIVITY_CLEANUP_STEPS,
+  NO_INACTIVITY_CLEANUP,
+  inactivityCleanupColumns,
+  inactivityCleanupForNewProject,
+  inactivityCleanupOf,
+  patchedInactivityCleanup,
+  projectLastActivityAt,
+  type InactivityCleanup,
+} from './inactivity-cleanup';
 import { podSettingsFromRequest } from '../pod/pod-class-request';
-import { podSettingsColumns } from '../pod/pod-settings-columns';
+import {
+  PREVIOUS_RELEASE_READS_NUMBERS,
+  podSettingsColumns,
+  storedLegacyPodSettings,
+} from '../pod/pod-settings-columns';
+import {
+  defaultPodSettings,
+  podClassCatalog,
+  podSettingsFromBundle,
+  readPresetCatalog,
+  type PodClassCatalog,
+} from '../pod/resource-presets';
 
 const APP_NAME_MIN_LENGTH = 1;
 const APP_NAME_MAX_LENGTH = 80;
@@ -258,6 +273,7 @@ const projectSelectFields = {
   authMode: projectEnvironments.authMode,
   timeoutIdle: projectSettings.timeoutIdle,
   appTimeoutIdle: projectSettings.appTimeoutIdle,
+  ...inactivityCleanupColumns(projectSettings),
   timezone: projectSettings.timezone,
   requestLogMode: projectSettings.requestLogMode,
   requestLogBodyLimit: projectSettings.requestLogBodyLimit,
@@ -274,10 +290,16 @@ const projectSelectFields = {
       AND ${projectEnvAll.environmentId} IS NOT NULL
   )`.as('environment_ids'),
   lastPromptAt: projects.lastPromptAt,
+  lastActivityAt: projectLastActivityAt.as('last_activity_at'),
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 };
 
+const DATA_COPY_HOLDABLE_STATUSES: ProjectStatus[] = [
+  ProjectStatus.Active,
+  ProjectStatus.Suspended,
+  ProjectStatus.Failed,
+];
 @Injectable()
 export class ProjectService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ProjectService.name);
@@ -313,6 +335,7 @@ export class ProjectService implements OnApplicationBootstrap {
     private readonly publicUrls: PublicUrlService,
     private readonly proxyService: ProxyService,
     private readonly deliveryService: DeliveryService,
+    private readonly customDomainCluster: CustomDomainCluster,
     @InjectQueue(PROJECT_DUPLICATE_QUEUE)
     private readonly duplicateQueue: Queue<ProjectDuplicateJobData>,
     @Optional() @Inject(PROJECT_LIFECYCLE) private readonly lifecycle?: ProjectLifecycle
@@ -368,10 +391,15 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   private async rollBackStrandedPublish(env: ProjectEnvironmentContext): Promise<ProjectStatus> {
+    if (env.isDefault) return ProjectStatus.Starting;
     if (env.deployedCommitSha === null) return ProjectStatus.Failed;
     const storageMountPath = this.configService.getOrThrow<string>('storageMountPath');
     try {
-      await this.gitService.resetHard(path.join(storageMountPath, env.directory), env.deployedCommitSha);
+      const workspace = path.join(storageMountPath, env.directory);
+      const deployedCommitSha = env.deployedCommitSha;
+      await this.stopPodForDeploy(env.id);
+      await keepingAppDetails(workspace, () => this.gitService.resetHard(workspace, deployedCommitSha));
+      await settleReplacedAppData(workspace, publishJobDone);
       await restoreEnvJsonBackup(storageMountPath, env.directory);
       return ProjectStatus.Starting;
     } catch (err) {
@@ -509,6 +537,11 @@ export class ProjectService implements OnApplicationBootstrap {
     const agentId = dto?.agentId ?? (await this.agentService.getDefaultAgentId(tenantId));
     if (dto?.agentId) await this.agentService.assertLiveForProjectCreate(agentId, tenantId, createdBy, kind);
     const timeouts = await this.creationTimeouts(tenantId, kind);
+    const inactivityCleanup = await inactivityCleanupForNewProject(
+      agentId,
+      tenantId,
+      tenantInactivityCleanup(timeouts)
+    );
 
     const claimedId = await this.projectPoolService
       .claimPending(agentId, {
@@ -524,6 +557,7 @@ export class ProjectService implements OnApplicationBootstrap {
         createdProjectsCap,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
+        inactivityCleanup,
         timezone: dto?.timezone || 'UTC',
       })
       .catch((err) => {
@@ -538,7 +572,7 @@ export class ProjectService implements OnApplicationBootstrap {
       return project;
     }
 
-    return this.createDirect(dto, tenantId, agentId, timeouts, {
+    return this.createDirect(dto, tenantId, agentId, timeouts, inactivityCleanup, {
       workspaceId,
       folderId,
       createdBy,
@@ -561,6 +595,7 @@ export class ProjectService implements OnApplicationBootstrap {
     tenantId: string,
     agentId: string,
     timeouts: { defaultTimeoutIdle: number; defaultAppTimeoutIdle: number },
+    inactivityCleanup: InactivityCleanup,
     context: Required<ProjectCreationContext>
   ): Promise<ProjectResponse> {
     const {
@@ -577,7 +612,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
-    const podSettings = await readAgentPodSettings(agentId);
+    const podSettings = await readAgentPodSettings(agentId, tenantId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, kind);
@@ -599,10 +634,11 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: timeouts.defaultTimeoutIdle,
         appTimeoutIdle: timeouts.defaultAppTimeoutIdle,
+        ...inactivityCleanup,
         timezone: dto?.timezone || 'UTC',
       });
 
-      await tx.insert(projectPodSettings).values({ projectId: id, ...podSettings });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(podSettings) });
 
       await tx.insert(projectEnvironments).values({
         id,
@@ -698,6 +734,7 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: source.timeoutIdle,
         appTimeoutIdle: source.appTimeoutIdle,
+        ...inactivityCleanupOf(source),
         timezone: source.timezone,
         requestLogMode: source.requestLogMode,
         requestLogBodyLimit: source.requestLogBodyLimit,
@@ -705,10 +742,11 @@ export class ProjectService implements OnApplicationBootstrap {
 
       await tx.insert(projectPodSettings).values({
         projectId: id,
-        podClass: source.podClass,
+        presetId: source.presetId,
         cpuMillicores: source.cpuMillicores,
         memoryRequestMib: source.memoryRequestMib,
         memoryLimitMib: source.memoryLimitMib,
+        ...PREVIOUS_RELEASE_READS_NUMBERS,
       });
 
       const [copy] = await tx
@@ -813,9 +851,14 @@ export class ProjectService implements OnApplicationBootstrap {
     const directory = `projects/${id}`;
     const platformVersion = this.configService.get<string>('platformVersion', '0.1.0');
     const timeouts = await this.defaultsService.getTenantTimeouts(tenantId);
+    const inactivityCleanup = await inactivityCleanupForNewProject(
+      agentId,
+      tenantId,
+      tenantInactivityCleanup(timeouts)
+    );
     const defaultEnvironment = await this.environmentService.ensureDefaultForTenant(tenantId);
     const tz = timezone || 'UTC';
-    const podResources = await this.resolveImportedResources(resources, agentId);
+    const podResources = await this.resolveImportedResources(resources, agentId, tenantId);
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId);
@@ -835,17 +878,14 @@ export class ProjectService implements OnApplicationBootstrap {
         projectId: id,
         timeoutIdle: settings?.timeoutIdle ?? timeouts.defaultTimeoutIdle,
         appTimeoutIdle: settings?.appTimeoutIdle ?? timeouts.defaultAppTimeoutIdle,
+        ...inactivityCleanup,
         timezone: tz,
         ...(settings
           ? { requestLogMode: settings.requestLogMode, requestLogBodyLimit: settings.requestLogBodyLimit }
           : {}),
       });
 
-      await tx.insert(projectPodSettings).values({
-        projectId: id,
-        podClass: podResources.podClass,
-        ...podResources.resources,
-      });
+      await tx.insert(projectPodSettings).values({ projectId: id, ...storedLegacyPodSettings(podResources) });
 
       const [copy] = await tx
         .insert(projectEnvironments)
@@ -905,23 +945,12 @@ export class ProjectService implements OnApplicationBootstrap {
 
   private async resolveImportedResources(
     resources: ExportManifestResources | null,
-    agentId: string
-  ): Promise<{ podClass: PodClass; resources: PodResources }> {
-    if (resources?.podClass === 'custom') {
-      return {
-        podClass: 'custom',
-        resources: clampCustom({
-          cpuMillicores: resources.cpuMillicores,
-          memoryRequestMib: resources.memoryRequestMib,
-          memoryLimitMib: resources.memoryLimitMib,
-        }),
-      };
-    }
-    if (resources && isPreset(resources.podClass)) {
-      return { podClass: resources.podClass, resources: resolvePreset(resources.podClass) };
-    }
-    const { podClass, ...agentResources } = await readAgentPodSettings(agentId);
-    return { podClass, resources: agentResources };
+    agentId: string,
+    tenantId: string
+  ): Promise<PodSettings> {
+    return (
+      podSettingsFromBundle(resources, await readPresetCatalog(tenantId)) ?? readAgentPodSettings(agentId, tenantId)
+    );
   }
 
   async getSchedulesForExport(projectEnvironmentId: string): Promise<ExportManifestSchedule[]> {
@@ -1155,6 +1184,7 @@ export class ProjectService implements OnApplicationBootstrap {
           appName: app?.name ?? null,
           appDescription: app?.description ?? null,
           publicUrl: this.publicUrls.publicUrlOnceLive(env),
+          defaultAddress: this.publicUrls.defaultAddressOnceLive(env),
           appSlug: env.appSlug,
           suggestedAppSlug: app && offersAReadableAddress(env) ? toAppSlug(app.name, env) : null,
           shortId: env.shortId,
@@ -1176,8 +1206,19 @@ export class ProjectService implements OnApplicationBootstrap {
     if (dto.appTimeoutIdle !== undefined)
       settingsUpdates.appTimeoutIdle = assertIdleTimeoutMs(dto.appTimeoutIdle, 'appTimeoutIdle');
     if (dto.timezone !== undefined) settingsUpdates.timezone = dto.timezone;
+    const touchesCleanup = INACTIVITY_CLEANUP_STEPS.some((step) => dto[step.field] !== undefined);
 
     await db.transaction(async (tx) => {
+      if (touchesCleanup) {
+        const [current] = await tx
+          .select(inactivityCleanupColumns(projectSettings))
+          .from(projectSettings)
+          .where(eq(projectSettings.projectId, project.id))
+          .for('update');
+        const inactivityCleanup = patchedInactivityCleanup(current ?? NO_INACTIVITY_CLEANUP, dto);
+        if (inactivityCleanup) Object.assign(settingsUpdates, inactivityCleanup);
+      }
+
       if (Object.keys(projectUpdates).length > 0) {
         await tx
           .update(projects)
@@ -1221,15 +1262,15 @@ export class ProjectService implements OnApplicationBootstrap {
     if (named) await this.projectEventsService.publish(named.id);
   }
 
-  getPodClassCatalog(): PodClassCatalog {
-    return buildPodClassCatalog();
+  async getPodClassCatalog(tenantId: string): Promise<PodClassCatalog> {
+    return podClassCatalog(await readPresetCatalog(tenantId));
   }
 
   async updatePodClass(id: string, dto: UpdateProjectPodClassDto, tenantId: string): Promise<ProjectResponse> {
     const project = await this.findOne(id, tenantId);
     await db
       .update(projectPodSettings)
-      .set(podSettingsFromRequest(dto))
+      .set(storedLegacyPodSettings(podSettingsFromRequest(dto, await readPresetCatalog(tenantId))))
       .where(eq(projectPodSettings.projectId, project.id));
 
     return this.findOne(id, tenantId);
@@ -1240,7 +1281,7 @@ export class ProjectService implements OnApplicationBootstrap {
       .select(podSettingsColumns(projectPodSettings))
       .from(projectPodSettings)
       .where(eq(projectPodSettings.projectId, projectId));
-    return toK8sResources(resolveStoredPodResources(row));
+    return toK8sResources(row ?? defaultPodSettings(await readPresetCatalog(null)));
   }
 
   async getLogging(id: string, tenantId: string): Promise<ProjectLoggingResponse> {
@@ -1289,6 +1330,7 @@ export class ProjectService implements OnApplicationBootstrap {
     const callbackUrls = appSignInCallbackUrls(env, this.configService.getOrThrow<string>('appsHostname'));
     if (env.authMode === 'public') return { mode: 'public', callbackUrls };
     const { config, bypassAuthPaths } = await this.projectAuthService.getConfig(env.id);
+    if (env.authMode === 'app_users') return { mode: 'app_users', bypassAuthPaths, callbackUrls: [] };
     if (env.authMode === 'provider') {
       return {
         mode: 'provider',
@@ -1325,6 +1367,8 @@ export class ProjectService implements OnApplicationBootstrap {
       }
       if (dto.mode === 'manual') {
         await this.projectAuthService.apply(env, dto.config ?? {}, dto.bypassAuthPaths);
+      } else if (dto.mode === 'app_users') {
+        await this.projectAuthService.applyAppUsers(env, dto.bypassAuthPaths);
       } else if (provider) {
         await this.projectAuthService.applyProvider(
           env,
@@ -1335,6 +1379,7 @@ export class ProjectService implements OnApplicationBootstrap {
       } else {
         await this.projectAuthService.remove(env.id);
       }
+      await this.customDomainCluster.followAppAuth({ id: env.id, authMode: dto.mode });
       await tx
         .update(projectEnvironments)
         .set({ authMode: dto.mode, signInProviderId: provider?.id ?? null, updatedAt: new Date() })
@@ -1345,24 +1390,46 @@ export class ProjectService implements OnApplicationBootstrap {
   }
 
   async inheritAuth(from: { id: string }, to: AppAuthRouteTarget): Promise<void> {
-    const source = await this.projectEnvironmentService.findById(from.id);
-    let signInProviderId: string | null = null;
-    if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
-    else signInProviderId = await this.projectAuthService.inheritAuth(source.id, to);
-    const authMode = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
-    await db
-      .update(projectEnvironments)
-      .set({ authMode, signInProviderId, updatedAt: new Date() })
-      .where(eq(projectEnvironments.id, to.id));
+    const authMode = await withEnvironmentAuthLock(from.id, async (tx, source) => {
+      if (!source) throw new NotFoundException(`Environment ${from.id} not found`);
+      let signInProviderId: string | null = null;
+      if (source.authMode === 'public') await this.projectAuthService.remove(to.id);
+      else if (source.authMode === 'app_users') await this.projectAuthService.inheritAppUsers(from.id, to);
+      else signInProviderId = await this.projectAuthService.inheritAuth(from.id, to);
+      const seeded = signInProviderId ? 'provider' : source.authMode === 'provider' ? 'manual' : source.authMode;
+      await tx
+        .update(projectEnvironments)
+        .set({ authMode: seeded, signInProviderId, updatedAt: new Date() })
+        .where(eq(projectEnvironments.id, to.id));
+      return seeded;
+    });
+    await this.customDomainCluster.followAppAuth({ id: to.id, authMode });
   }
 
   /** A Builder chat's test Projects go with it (ADR-0063); a pod's ordinary Projects outlive their creator (ADR-0062). */
   async remove(id: string, tenantId: string): Promise<void> {
     await this.findOne(id, tenantId);
+    await db.update(projects).set({ deleting: true, updatedAt: new Date() }).where(eq(projects.id, id));
+    await this.removeClaimed(id, tenantId);
+  }
+
+  async removeIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
+    const claimed = await db
+      .update(projects)
+      .set({ disabled: true, deleting: true, updatedAt: new Date() })
+      .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), condition))
+      .returning({ id: projects.id });
+    if (claimed.length === 0) return false;
+    await this.removeClaimed(id, tenantId);
+    return true;
+  }
+
+  private async removeClaimed(id: string, tenantId: string): Promise<void> {
     for (const child of await this.testProjectsCreatedBy(id, tenantId)) {
       await this.remove(child.id, tenantId);
     }
     const envs = await this.projectEnvironmentService.listByProjectId(id);
+    for (const env of envs) await this.customDomainCluster.removeEnvironment(env.id);
     for (const env of envs) await this.lifecycle?.environmentRemoving(env.id);
 
     await db
@@ -1397,7 +1464,7 @@ export class ProjectService implements OnApplicationBootstrap {
     });
 
     for (const env of envs) {
-      await this.projectEnvironmentService.delete(env);
+      await this.customDomainCluster.removeEnvironment(env.id, (tx) => this.projectEnvironmentService.delete(env, tx));
     }
 
     await db.transaction(async (tx) => {
@@ -1425,11 +1492,24 @@ export class ProjectService implements OnApplicationBootstrap {
     if (project.disabled) {
       throw new BadRequestException('Project is already disabled');
     }
+    await this.disableWhere(id, tenantId);
+    return this.findOne(id, tenantId);
+  }
 
+  disableIfStill(id: string, tenantId: string, condition: SQL): Promise<boolean> {
+    return this.disableWhere(id, tenantId, condition);
+  }
+
+  private async disableWhere(id: string, tenantId: string, condition?: SQL): Promise<boolean> {
     const envs = await this.projectEnvironmentService.listByProjectId(id);
 
-    await db.transaction(async (tx) => {
-      await tx.update(projects).set({ disabled: true, updatedAt: new Date() }).where(eq(projects.id, id));
+    const claimed = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(projects)
+        .set({ disabled: true, updatedAt: new Date() })
+        .where(and(eq(projects.id, id), eq(projects.tenantId, tenantId), eq(projects.disabled, false), condition))
+        .returning({ id: projects.id });
+      if (rows.length === 0) return false;
       await tx
         .update(projectEnvironments)
         .set({ status: ProjectStatus.Suspended, updatedAt: new Date() })
@@ -1439,7 +1519,9 @@ export class ProjectService implements OnApplicationBootstrap {
             inArray(projectEnvironments.status, [ProjectStatus.Active, ProjectStatus.Starting])
           )
         );
+      return true;
     });
+    if (!claimed) return false;
 
     await Promise.allSettled([
       ...envs.map((env) => this.safeDeletePod(this.podService.assignedPodName(env.id), `disabling project ${id}`)),
@@ -1453,8 +1535,7 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await this.lifecycle?.disabled(id);
     await this.projectEventsService.publish(id);
-
-    return this.findOne(id, tenantId);
+    return true;
   }
 
   async enable(id: string, tenantId: string): Promise<ProjectResponse> {
@@ -1467,10 +1548,18 @@ export class ProjectService implements OnApplicationBootstrap {
 
     await db.transaction(async (tx) => {
       await assertRoomForProject(tx, tenantId, project.kind);
-      await tx.update(projects).set({ disabled: false, updatedAt: new Date() }).where(eq(projects.id, id));
+      const enabled = await tx
+        .update(projects)
+        .set({ disabled: false, updatedAt: new Date() })
+        .where(and(eq(projects.id, id), eq(projects.disabled, true), eq(projects.deleting, false)))
+        .returning({ id: projects.id });
+      if (enabled.length === 0) throw new ConflictException('Project is being deleted');
     });
+    const enabledAt = new Date();
     await Promise.all(
-      envs.map((env) => this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting }))
+      envs.map((env) =>
+        this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Starting, lastActiveAt: enabledAt })
+      )
     );
 
     envs.forEach((env) => this.spawnStartupWorker(env.id));
@@ -1555,6 +1644,7 @@ export class ProjectService implements OnApplicationBootstrap {
     if (env.isDefault) {
       throw new BadRequestException('The Development environment cannot be deleted');
     }
+    await this.customDomainCluster.removeEnvironment(env.id);
     await this.lifecycle?.environmentRemoving(env.id);
 
     await this.projectEnvironmentService.patch(env.id, { status: ProjectStatus.Suspended });
@@ -1581,7 +1671,7 @@ export class ProjectService implements OnApplicationBootstrap {
     this.appReadiness.clear(env.id);
     this.agentStatusService.clear(projectId, env.id);
 
-    await this.projectEnvironmentService.delete(env);
+    await this.customDomainCluster.removeEnvironment(env.id, (tx) => this.projectEnvironmentService.delete(env, tx));
 
     await this.projectEventsService.publish(projectId);
   }
@@ -1669,6 +1759,57 @@ export class ProjectService implements OnApplicationBootstrap {
       this.agentStatusService.clear(updated.projectId, envId);
       await this.projectEventsService.publish(updated.projectId).catch(() => undefined);
     }
+  }
+
+  async assertCanHoldForDataCopy(envId: string): Promise<ProjectEnvironmentContext> {
+    const env = await this.projectEnvironmentService.findById(envId);
+    if (!DATA_COPY_HOLDABLE_STATUSES.includes(env.status)) {
+      throw new ConflictException({
+        code: 'development-busy',
+        message: `Development is ${env.status}; publish with data once it is running`,
+      });
+    }
+    if (this.agentStatusService.workingEnvironmentsOf(env.projectId).has(envId)) {
+      throw new ConflictException({
+        code: 'development-agent-working',
+        message: "Development's agent is working; publish with data once it has finished",
+      });
+    }
+    return env;
+  }
+
+  async whileHeldForDataCopy(envId: string, copy: () => Promise<void>): Promise<void> {
+    const env = await this.assertCanHoldForDataCopy(envId);
+    const held = await this.projectEnvironmentService.patch(
+      envId,
+      { status: ProjectStatus.Publishing },
+      DATA_COPY_HOLDABLE_STATUSES
+    );
+    if (!held) {
+      throw new ConflictException({ code: 'development-busy', message: 'Development changed state; try again' });
+    }
+    try {
+      this.agentStatusService.clear(env.projectId, envId);
+      await this.stopPodForDeploy(envId);
+      await this.projectEventsService.publish(env.projectId).catch(() => undefined);
+      await copy();
+    } finally {
+      await this.releaseAfterDataCopy(env, env.status).catch((err) => {
+        this.logger.warn(`Releasing Development ${envId} after its data copy failed: ${(err as Error).message}`);
+      });
+    }
+  }
+
+  private async releaseAfterDataCopy(env: ProjectEnvironmentContext, previous: ProjectStatus): Promise<void> {
+    const resting = previous === ProjectStatus.Failed ? ProjectStatus.Failed : ProjectStatus.Suspended;
+    await this.projectEnvironmentService.patch(env.id, { status: resting }, ProjectStatus.Publishing);
+    if (previous === ProjectStatus.Active) await this.requestStartupForId(env.id);
+    else await this.projectEventsService.publish(env.projectId);
+  }
+
+  async stopPodForDeploy(envId: string): Promise<void> {
+    this.appReadiness.markDown(envId);
+    await this.podService.deletePodAndWait(this.podService.assignedPodName(envId));
   }
 
   async recreatePodForDeploy(envId: string, timeoutMs: number): Promise<void> {

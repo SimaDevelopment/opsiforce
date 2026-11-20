@@ -36,12 +36,14 @@ export interface PodTemplateOptions {
   externalServicesHost?: string;
   serviceWebhookUrl?: string;
   caBundleConfigMap?: string;
+  browserIgnoresHttpsErrors?: boolean;
   controlToken?: string;
   controlPort?: number;
 }
 
 export const AGENT_PODS_SERVICE = 'opsiforce-agents';
 
+const SHARED_MEMORY_VOLUME = 'shared-memory';
 const CA_BUNDLE_VOLUME = 'ca-bundle';
 const CA_BUNDLE_DIRECTORY = '/etc/opsiforce/ca';
 const CA_BUNDLE_FILE = `${CA_BUNDLE_DIRECTORY}/ca-certificates.crt`;
@@ -88,6 +90,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
     spec: {
       hostname: options.podName,
       subdomain: AGENT_PODS_SERVICE,
+      automountServiceAccountToken: false,
       ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
       ...(options.nodeSelector && Object.keys(options.nodeSelector).length > 0
         ? { nodeSelector: options.nodeSelector }
@@ -184,6 +187,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
                 ]
               : []),
             ...(options.caBundleConfigMap ? CA_BUNDLE_VARIABLES.map((name) => ({ name, value: CA_BUNDLE_FILE })) : []),
+            ...(options.browserIgnoresHttpsErrors ? [{ name: 'AGENT_BROWSER_IGNORE_HTTPS_ERRORS', value: '1' }] : []),
             ...(options.runtimeProxyUrl
               ? [{ name: 'OPSIFORCE_RUNTIME_PROXY_URL', value: options.runtimeProxyUrl }]
               : []),
@@ -191,6 +195,7 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
           ],
           volumeMounts: [
             ...volumeMounts,
+            { name: SHARED_MEMORY_VOLUME, mountPath: '/dev/shm' },
             ...(options.caBundleConfigMap
               ? [{ name: CA_BUNDLE_VOLUME, mountPath: CA_BUNDLE_DIRECTORY, readOnly: true }]
               : []),
@@ -213,6 +218,9 @@ export function buildPodSpec(options: PodTemplateOptions): k8s.V1Pod {
       ],
       volumes: [
         buildStorageVolume(options),
+        // Chromium/Electron need more than the runtime's default 64 MiB.
+        // This is a ceiling, not a reservation; usage counts toward agent memory.
+        { name: SHARED_MEMORY_VOLUME, emptyDir: { medium: 'Memory', sizeLimit: '512Mi' } },
         ...(options.caBundleConfigMap
           ? [{ name: CA_BUNDLE_VOLUME, configMap: { name: options.caBundleConfigMap } }]
           : []),

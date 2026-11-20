@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { toast } from 'solid-sonner';
+import { toast } from '~/lib/toast';
 import { currentTenant } from '~/api/client';
 import {
   usePlatformModelProviderAccess,

@@ -11,7 +11,7 @@ adrs: [0011]
 ## How it works
 
 - A [Duplicate](../../GLOSSARY.md) is a new Project in the same tenant and Workspace, copied from the source's [Development](../../GLOSSARY.md) environment only; published environments are re-created by publishing from the copy.
-- Carried: App source and git history, the agent's chat and session state, the App's databases, [Environment Variables](../../GLOSSARY.md), project settings (timeouts, [Request Logging](../../GLOSSARY.md)), [Resources](../../GLOSSARY.md), and [App Details](../../GLOSSARY.md) with the [App Slug](../../GLOSSARY.md), or one from the App's name when the source has none, cut to fit beside the copy's own App Short ID so the copy's [Public URL](../../GLOSSARY.md) reads like the source's; a copy with manual [App Auth](../../GLOSSARY.md) gets none ([Public URL](public-url.md)).
+- Carried: App source and git history, the agent's chat and session state, the App's databases, [Environment Variables](../../GLOSSARY.md), project settings (timeouts, [Inactivity cleanup](../../GLOSSARY.md), [Request Logging](../../GLOSSARY.md)), [Resources](../../GLOSSARY.md), and [App Details](../../GLOSSARY.md) with the [App Slug](../../GLOSSARY.md), or one from the App's name when the source has none, cut to fit beside the copy's own App Short ID so the copy's [Public URL](../../GLOSSARY.md) reads like the source's; a copy with manual [App Auth](../../GLOSSARY.md) gets none ([Public URL](public-url.md)).
 - Development's [App Auth](../../GLOSSARY.md) is seeded onto the copy's own hosts before its job is queued, fail-closed, by cloning the source's gate the way a first [Publish](publish.md) seeds a new environment, so the copy's [Auth mode](../../GLOSSARY.md), authentication bypass paths and sign-in settings match the source's ([ADR-0007](../adr/0007-per-environment-app-auth.md), [Environments](environments.md)).
 - Made fresh: the Project's LLM keys and service-gateway key; a Duplicate never shares credentials or budget plumbing with its source. Not carried: the source's publish jobs and audit logs.
 - [Schedules](../../GLOSSARY.md) are carried paused, so a Duplicate never fires the same automation as its original until someone enables them ([Schedule](schedule.md)).
@@ -25,6 +25,8 @@ adrs: [0011]
 
 - When the copy's App Auth cannot be written, such as for a protected source whose gate cannot be read, the Duplicate is refused and no copy is left behind.
 - When the source is `manual`, sign-in on the copy fails until the callback URLs its App Auth dialog lists are registered with the customer's identity provider.
+- When the source is `app_users`, the copy gets its own client but none of the source's [App Users](../../GLOSSARY.md), so no one can sign in until the owner adds some ([App User](app-user.md)).
+- A Duplication fails with `nested-git-repository`, naming the folder, when the source's working tree holds a folder with a `.git` of its own that git does not ignore, for the reason a [Publish](publish.md) does.
 
 ## Code
 

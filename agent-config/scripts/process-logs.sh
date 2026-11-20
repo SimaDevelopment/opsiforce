@@ -14,10 +14,23 @@ NAMES=()
 
 usage() {
   cat <<'EOF'
-process-logs — read the output and lifecycle events of every supervised process.
+process-logs — read the output and lifecycle events of every process guard supervises.
 
+Usage:
   process-logs [options] [process...]
 
+Use it to see why a server crashed, what it printed, or whether it is still restarting.
+Process names are the <name> each `guard <name> ...` was started with, plus the platform's
+own: webapp (startup.sh), opencode (you), vscode (the editor), dbviewer (the database viewer).
+
+Examples:
+  process-logs --list                          every process, its last write and size
+  process-logs -n 100 server                   the last 100 lines of one process
+  process-logs --since 5m --grep 'error|warn'  recent errors and warnings from every process
+  process-logs --events server                 when it started, crashed and restarted
+  process-logs --follow server                 stream while you reproduce something
+
+Options:
   -s, --since DURATION  only lines newer than DURATION: 90s, 2m, 1h, 3d
   -g, --grep REGEX      only lines matching REGEX (extended, case-insensitive)
   -e, --events          only lifecycle events (started, crashed, stopped, signal, gave_up)
@@ -26,8 +39,13 @@ process-logs — read the output and lifecycle events of every supervised proces
   -f, --follow          stream new lines as they are written
   -h, --help            this help
 
+--follow runs until stopped, so give it a timeout or run it in the background.
 With no process named, every process is read. When more than one process is read, each line names its process.
 Lines read "<UTC timestamp> [<process>] <line>"; events read "... [event] crashed exit_code=1 uptime_seconds=3 restart_count=2".
+
+Exit codes:
+  0  read (no lines matching is not an error)
+  2  wrong usage: this help goes to stderr
 EOF
 }
 

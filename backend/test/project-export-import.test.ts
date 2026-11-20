@@ -75,6 +75,12 @@ async function projectWith(prepare: (workspace: string) => Promise<void>): Promi
 }
 
 async function exportProject(prepare: (workspace: string) => Promise<void>): Promise<string> {
+  const { job, artifact } = await runExport(prepare);
+  expect(job.status).toBe(ProjectExportStatus.Completed);
+  return artifact;
+}
+
+async function runExport(prepare: (workspace: string) => Promise<void>) {
   const config = harness.moduleRef.get(ConfigService);
   const projectId = await projectWith(prepare);
 
@@ -91,8 +97,7 @@ async function exportProject(prepare: (workspace: string) => Promise<void>): Pro
   );
   const { id } = await exports.startExport(projectId, tenantId);
   await processor.process({ data: { exportJobId: id, projectId, tenantId } } as Job<ProjectExportJobData>);
-  expect((await exports.getJob(id)).status).toBe(ProjectExportStatus.Completed);
-  return exports.artifactPath(id);
+  return { job: await exports.getJob(id), artifact: exports.artifactPath(id) };
 }
 
 async function duplicateProject(prepare: (workspace: string) => Promise<void>): Promise<string> {
@@ -198,6 +203,22 @@ describe('Project Export and Import', () => {
     expect((await stat(path.join(imported, 'pg_logical/snapshots'))).isDirectory()).toBe(true);
     expect(await readFile(path.join(imported, 'PG_VERSION'), 'utf8')).toBe('17\n');
     expect(await modeOf(imported)).toBe(0o700);
+  });
+
+  it('fail an Export with the folder that holds its own git repository named in the error', async () => {
+    const { job } = await runExport(async (workspace) => {
+      const clone = path.join(workspace, 'app');
+      await mkdir(clone, { recursive: true });
+      await writeFile(path.join(clone, 'startup.sh'), '#!/bin/bash\n');
+      git(clone, 'init', '-q');
+      git(clone, 'add', '-A');
+      git(clone, 'commit', '-q', '-m', 'cloned');
+    });
+
+    expect(job).toMatchObject({
+      status: ProjectExportStatus.Failed,
+      error: expect.stringContaining('"app" holds its own git repository'),
+    });
   });
 
   it('still import an archive made before directories were recorded', async () => {
